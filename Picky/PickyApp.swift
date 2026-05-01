@@ -39,6 +39,16 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             )
         )
     )
+    private lazy var hudOverlayManager = PickyHUDOverlayManager(
+        viewModel: PickySessionListViewModel(
+            client: WebSocketPickyAgentClient(
+                configuration: WebSocketPickyAgentClient.Configuration(
+                    port: daemonConfiguration.port,
+                    token: daemonConfiguration.token
+                )
+            )
+        )
+    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("🎯 Picky: Starting...")
@@ -51,6 +61,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
 
         if !Self.isRunningUnitTests {
             daemonLauncher.start()
+            hudOverlayManager.start()
         }
         menuBarPanelManager = MenuBarPanelManager(companionManager: companionManager)
         companionManager.start()
@@ -64,6 +75,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         companionManager.stop()
+        hudOverlayManager.stop()
         daemonLauncher.stop()
     }
 

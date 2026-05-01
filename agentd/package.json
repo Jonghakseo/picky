@@ -9,9 +9,10 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:contracts": "vitest run src/protocol.test.ts src/prompt-builder.test.ts"
+    "test:contracts": "vitest run src/protocol.test.ts src/prompt-builder.test.ts src/pi-event-normalizer.test.ts"
   },
   "dependencies": {
+    "@mariozechner/pi-coding-agent": "^0.71.0",
     "ws": "^8.18.0",
     "zod": "^3.24.1"
   },

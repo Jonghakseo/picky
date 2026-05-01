@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { buildFollowUpPrompt, buildInitialTaskPrompt } from "./prompt-builder.js";
-import type { PickyAgentSession, PickyContextPacket } from "./protocol.js";
+import type { PickyAgentSession, PickyContextPacket, PickyExtensionUiRequest } from "./protocol.js";
 import { SessionStore } from "./session-store.js";
 import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./runtime/types.js";
 
@@ -41,7 +41,7 @@ export class SessionSupervisor extends EventEmitter {
       changedFiles: [],
     };
     await this.upsert(session);
-    const handle = await this.runtime.create(buildInitialTaskPrompt(context), { cwd: context.cwd });
+    const handle = await this.runtime.create(buildInitialTaskPrompt(context), { cwd: context.cwd, sessionId: id });
     this.runtimeHandles.set(id, handle);
     handle.subscribe((event) => void this.applyRuntimeEvent(id, event));
     await this.patch(id, { status: "running", lastSummary: "Started" });
@@ -73,13 +73,39 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(sessionId);
   }
 
+  async answerExtensionUi(sessionId: string, requestId: string, value: unknown): Promise<PickyAgentSession> {
+    const handle = this.runtimeHandles.get(sessionId);
+    if (!handle?.answerExtensionUi) throw new Error("Runtime session cannot answer extension UI requests");
+    await handle.answerExtensionUi(requestId, value);
+    const session = this.mustGet(sessionId);
+    if (session.pendingExtensionUiRequest?.id === requestId) {
+      await this.patch(sessionId, { pendingExtensionUiRequest: undefined, status: "running", lastSummary: "Extension UI answered" });
+    }
+    return this.mustGet(sessionId);
+  }
+
+  async openArtifact(sessionId: string, artifactId: string): Promise<string> {
+    const session = this.mustGet(sessionId);
+    const artifact = session.artifacts.find((candidate) => candidate.id === artifactId);
+    if (!artifact?.path && !artifact?.url) throw new Error(`Unknown artifact: ${artifactId}`);
+    return artifact.path ?? artifact.url!;
+  }
+
   private async applyRuntimeEvent(sessionId: string, event: RuntimeEvent): Promise<void> {
     if (event.type === "log") return this.appendLog(sessionId, event.line);
     if (event.type === "status") return this.patch(sessionId, { status: event.status, lastSummary: event.summary });
+    if (event.type === "extension_ui") return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
     const session = this.mustGet(sessionId);
+    const previous = session.tools.find((tool) => tool.toolCallId === event.toolCallId);
     const tools = session.tools.filter((tool) => tool.toolCallId !== event.toolCallId);
-    tools.push({ toolCallId: event.toolCallId, name: event.name, status: event.status, preview: event.preview, startedAt: new Date().toISOString() });
+    tools.push({ ...previous, toolCallId: event.toolCallId, name: event.name, status: event.status, preview: event.preview, startedAt: previous?.startedAt ?? new Date().toISOString(), endedAt: event.status === "running" ? previous?.endedAt : new Date().toISOString() });
     await this.patch(sessionId, { tools });
+  }
+
+  private async applyExtensionUiEvent(sessionId: string, rawRequest: Record<string, unknown>, waitsForInput: boolean): Promise<void> {
+    const request = rawRequest as PickyExtensionUiRequest;
+    if (waitsForInput) await this.patch(sessionId, { status: "waiting_for_input", pendingExtensionUiRequest: request, lastSummary: request.title ?? "Waiting for input" });
+    this.emit("extensionUiRequest", request);
   }
 
   private async appendLog(sessionId: string, line: string): Promise<void> {

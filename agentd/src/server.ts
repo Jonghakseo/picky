@@ -33,6 +33,7 @@ export class AgentdServer {
 
     this.options.supervisor.on("session", (session) => this.broadcast({ type: "sessionUpdated", session }));
     this.options.supervisor.on("log", (sessionId, line) => this.broadcast({ type: "sessionLogAppended", sessionId, line }));
+    this.options.supervisor.on("extensionUiRequest", (request) => this.broadcast({ type: "extensionUiRequest", request }));
 
     await new Promise<void>((resolve) => this.httpServer!.listen(this.options.port, "127.0.0.1", resolve));
     const address = this.httpServer.address();
@@ -67,8 +68,10 @@ export class AgentdServer {
       if (command.type === "followUp") await this.options.supervisor.followUp(command.sessionId, command.text, command.context);
       if (command.type === "steer") await this.options.supervisor.steer(command.sessionId, command.text);
       if (command.type === "abort") await this.options.supervisor.abort(command.sessionId);
-      if (command.type === "answerExtensionUi" || command.type === "openArtifact") {
-        this.send(ws, { type: "error", code: "not_implemented", message: `${command.type} is not implemented in mock daemon`, commandId: command.id });
+      if (command.type === "answerExtensionUi") await this.options.supervisor.answerExtensionUi(command.sessionId, command.requestId, command.value);
+      if (command.type === "openArtifact") {
+        const path = await this.options.supervisor.openArtifact(command.sessionId, command.artifactId);
+        this.send(ws, { type: "artifactOpened", sessionId: command.sessionId, artifactId: command.artifactId, path });
       }
     } catch (error) {
       const commandId = typeof parsed === "object" && parsed && "id" in parsed ? String((parsed as { id: unknown }).id) : undefined;
@@ -86,5 +89,5 @@ export class AgentdServer {
   }
 }
 
-type StripEnvelope<T> = T extends unknown ? Omit<T, "id" | "protocolVersion" | "timestamp"> : never;
-type EventPayload = StripEnvelope<EventEnvelope>;
+type RemoveEnvelope<T> = T extends unknown ? Omit<T, "id" | "protocolVersion" | "timestamp"> : never;
+type EventPayload = RemoveEnvelope<EventEnvelope>;

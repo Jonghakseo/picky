@@ -53,8 +53,11 @@ export type PickyContextPacket = z.infer<typeof PickyContextPacketSchema>;
 
 export const PickyChangedFileSchema = z.object({ path: z.string(), status: z.string(), summary: z.string().optional() });
 export const PickyArtifactSchema = z.object({ id: z.string(), kind: z.string(), title: z.string(), path: z.string().optional(), url: z.string().url().optional(), updatedAt: isoTimestamp });
+export type PickyArtifact = z.infer<typeof PickyArtifactSchema>;
 export const PickyToolActivitySchema = z.object({ toolCallId: z.string(), name: z.string(), status: z.enum(["running", "succeeded", "failed"]), preview: z.string().optional(), startedAt: isoTimestamp.optional(), endedAt: isoTimestamp.optional() });
+export type PickyToolActivity = z.infer<typeof PickyToolActivitySchema>;
 export const PickyExtensionUiRequestSchema = z.object({ id: z.string(), sessionId: z.string(), method: z.enum(["select", "confirm", "input", "editor", "notify", "setStatus", "setWidget", "setTitle", "set_editor_text"]), title: z.string().optional(), prompt: z.string().optional(), options: z.array(z.string()).optional(), createdAt: isoTimestamp });
+export type PickyExtensionUiRequest = z.infer<typeof PickyExtensionUiRequestSchema>;
 
 export const PickyAgentSessionSchema = z.object({
   id: z.string(),
@@ -96,6 +99,7 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("toolActivityUpdated"), sessionId: z.string(), tool: PickyToolActivitySchema }),
   EventBaseSchema.extend({ type: z.literal("extensionUiRequest"), request: PickyExtensionUiRequestSchema }),
   EventBaseSchema.extend({ type: z.literal("artifactUpdated"), sessionId: z.string(), artifact: PickyArtifactSchema }),
+  EventBaseSchema.extend({ type: z.literal("artifactOpened"), sessionId: z.string(), artifactId: z.string(), path: z.string() }),
   EventBaseSchema.extend({ type: z.literal("error"), code: z.string(), message: z.string(), commandId: z.string().optional() }),
 ]);
 

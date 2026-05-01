@@ -85,6 +85,13 @@ struct NavigationBubbleSizePreferenceKey: PreferenceKey {
     }
 }
 
+struct ResponseBubbleSizePreferenceKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
+}
+
 /// The buddy's behavioral mode. Controls whether it follows the cursor,
 /// is flying toward a detected UI element, or is pointing at an element.
 enum BuddyNavigationMode {
@@ -128,6 +135,7 @@ struct BlueCursorView: View {
     @State private var showWelcome: Bool = true
     @State private var bubbleSize: CGSize = .zero
     @State private var bubbleOpacity: Double = 1.0
+    @State private var responseBubbleSize: CGSize = .zero
     @State private var cursorOpacity: Double = 0.0
 
     // MARK: - Buddy Navigation State
@@ -255,6 +263,38 @@ struct BlueCursorView: View {
                     .animation(.easeOut(duration: 0.4), value: companionManager.onboardingPromptOpacity)
                     .onPreferenceChange(SizePreferenceKey.self) { newSize in
                         bubbleSize = newSize
+                    }
+            }
+
+            // Short voice response bubble — mirrors quick TTS replies next to the cursor
+            // so simple checks do not require opening the long-running agent HUD.
+            if isCursorOnThisScreen,
+               companionManager.voiceState == .responding,
+               let responseText = companionManager.latestAgentSessionSummary,
+               !responseText.isEmpty {
+                Text(responseText)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: 320, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(DS.Colors.overlayCursorBlue)
+                            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.5), radius: 8, x: 0, y: 0)
+                    )
+                    .overlay(
+                        GeometryReader { geo in
+                            Color.clear
+                                .preference(key: ResponseBubbleSizePreferenceKey.self, value: geo.size)
+                        }
+                    )
+                    .position(x: cursorPosition.x + 12 + (responseBubbleSize.width / 2), y: cursorPosition.y + 20 + (responseBubbleSize.height / 2))
+                    .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
+                    .animation(.easeOut(duration: 0.2), value: companionManager.voiceState)
+                    .onPreferenceChange(ResponseBubbleSizePreferenceKey.self) { newSize in
+                        responseBubbleSize = newSize
                     }
             }
 

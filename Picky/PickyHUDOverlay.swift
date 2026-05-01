@@ -83,7 +83,6 @@ struct PickyHUDView: View {
                             .onTapGesture {
                                 withAnimation(.easeOut(duration: 0.18)) {
                                     expandedSessionID = expandedSessionID == session.id ? nil : session.id
-                                    viewModel.select(sessionID: expandedSessionID ?? session.id)
                                 }
                             }
                         if expandedSessionID == session.id {

@@ -16,11 +16,9 @@ export interface TaskRouter {
 
 export class ConservativeMockTaskRouter implements TaskRouter {
   async route(context: PickyContextPacket): Promise<TaskRouteDecision> {
-    const text = context.transcript?.trim() ?? "";
-    if (/^(아+\s*)?(마이크|mic|테스트|test)/i.test(text) || /마이크\s*테스트/i.test(text)) {
-      return { route: "quick_reply", reply: "잘 들립니다. 마이크 테스트 확인됐어요." };
-    }
-    return { route: "handoff", reason: "Mock router only answers trivial microphone checks." };
+    const immediate = immediateQuickReply(context);
+    if (immediate) return { route: "quick_reply", reply: immediate };
+    return { route: "handoff", reason: "Mock router only answers trivial microphone/screen checks." };
   }
 }
 
@@ -30,6 +28,8 @@ export class PiQuickTaskRouter implements TaskRouter {
   async route(context: PickyContextPacket): Promise<TaskRouteDecision> {
     const transcript = context.transcript?.trim();
     if (!transcript) return { route: "handoff", reason: "No transcript to answer directly." };
+    const immediate = immediateQuickReply(context);
+    if (immediate) return { route: "quick_reply", reply: immediate };
 
     let output = "";
     const cwd = context.cwd ?? process.cwd();
@@ -84,8 +84,9 @@ function buildRouterPrompt(context: PickyContextPacket): string {
     "or",
     '{"route":"handoff","reason":"why this needs a long-running agent"}',
     "",
-    "Use quick_reply only when you can answer in 1-2 short sentences without tools, files, codebase access, browser/web lookup, screenshots, current-screen analysis, MCPs, shell commands, or multi-step work.",
-    "Use handoff for debugging, coding, investigation, modifications, file/repo tasks, web/Sentry/Slack/Notion/DB context, screenshot/current-screen questions, ambiguous tasks needing context, or anything that may take longer than a short answer.",
+    "Use quick_reply only when you can answer in 1-2 short sentences without tools, files, codebase access, browser/web lookup, screenshot analysis, MCPs, shell commands, or multi-step work.",
+    "A pure capability/check question like '이 화면 보여?', '내 화면 보여?', or '마이크 테스트' is quick_reply: acknowledge whether captured screenshots/audio are present; do not open a long-running agent just to say yes.",
+    "Use handoff for debugging, coding, investigation, modifications, file/repo tasks, web/Sentry/Slack/Notion/DB context, requests to describe/analyze/summarize what is on screen, ambiguous tasks needing context, or anything that may take longer than a short answer.",
     "Do not route based on URL patterns. Judge only the user's intent and whether tools/long-running work are needed.",
     "",
     "User request:",
@@ -99,6 +100,28 @@ function buildRouterPrompt(context: PickyContextPacket): string {
     `- Selected text present: ${Boolean(context.selectedText)}`,
   ];
   return lines.join("\n");
+}
+
+export function immediateQuickReply(context: PickyContextPacket): string | undefined {
+  const text = context.transcript?.trim() ?? "";
+  if (/^(아+\s*)?(마이크|mic|테스트|test)/i.test(text) || /마이크\s*테스트/i.test(text)) {
+    return "잘 들립니다. 마이크 테스트 확인됐어요.";
+  }
+  if (isScreenVisibilityCheck(text)) {
+    const count = context.screenshots.length;
+    if (count > 0) return `네, 현재 화면 캡처 ${count}장을 받고 있어요.`;
+    return "아직 화면 캡처는 받지 못했어요. 화면 기록 권한이나 캡처 상태를 확인해볼게요.";
+  }
+  return undefined;
+}
+
+function isScreenVisibilityCheck(text: string): boolean {
+  const normalized = text.replace(/[?？!.。~\s,，]/g, "").toLowerCase();
+  if (!normalized) return false;
+  if (/^(아+)?(내|제|이|현재)?화면(이)?(보여|보이나|보입니까|보여요|보여줘)$/.test(normalized)) return true;
+  if (/^(아+)?(이거|이것|여기)(보여|보이나|보여요)$/.test(normalized)) return true;
+  if (/^(canyousee|seemyscreen|screenvisible)/.test(normalized)) return true;
+  return false;
 }
 
 function parseDecision(text: string): TaskRouteDecision {

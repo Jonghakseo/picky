@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { ArtifactStore, extractChangedFilesFromExplicitText, extractGithubPullRequestUrls } from "./artifact-store.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt } from "./prompt-builder.js";
 import type { PickyAgentSession, PickyContextPacket, PickyExtensionUiRequest } from "./protocol.js";
 import { SessionStore } from "./session-store.js";
@@ -9,7 +10,7 @@ export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
 
-  constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore) {
+  constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, private readonly artifactStore?: ArtifactStore) {
     super();
   }
 
@@ -70,6 +71,7 @@ export class SessionSupervisor extends EventEmitter {
     const handle = this.runtimeHandles.get(sessionId);
     if (handle) await handle.abort();
     await this.patch(sessionId, { status: "cancelled", lastSummary: "Cancelled" });
+    await this.materializeTerminalArtifacts(sessionId);
     return this.mustGet(sessionId);
   }
 
@@ -93,7 +95,11 @@ export class SessionSupervisor extends EventEmitter {
 
   private async applyRuntimeEvent(sessionId: string, event: RuntimeEvent): Promise<void> {
     if (event.type === "log") return this.appendLog(sessionId, event.line);
-    if (event.type === "status") return this.patch(sessionId, { status: event.status, lastSummary: event.summary });
+    if (event.type === "status") {
+      await this.patch(sessionId, { status: event.status, lastSummary: event.summary });
+      if (["completed", "failed", "cancelled"].includes(event.status)) await this.materializeTerminalArtifacts(sessionId);
+      return;
+    }
     if (event.type === "extension_ui") return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
     const session = this.mustGet(sessionId);
     const previous = session.tools.find((tool) => tool.toolCallId === event.toolCallId);
@@ -110,8 +116,22 @@ export class SessionSupervisor extends EventEmitter {
 
   private async appendLog(sessionId: string, line: string): Promise<void> {
     const session = this.mustGet(sessionId);
-    await this.patch(sessionId, { logs: [...session.logs, line] });
+    const changedFiles = mergeChangedFiles(session.changedFiles, extractChangedFilesFromExplicitText(line));
+    await this.patch(sessionId, { logs: [...session.logs, line], changedFiles });
     this.emit("log", sessionId, line);
+  }
+
+  private async materializeTerminalArtifacts(sessionId: string): Promise<void> {
+    if (!this.artifactStore) return;
+    const session = this.mustGet(sessionId);
+    const now = new Date().toISOString();
+    const prArtifacts = extractGithubPullRequestUrls([session.lastSummary, ...session.logs, ...session.tools.map((tool) => tool.preview)].filter(Boolean).join("\n"))
+      .filter((url) => !session.artifacts.some((artifact) => artifact.url === url))
+      .map((url, index) => ({ id: `pr-${index + 1}`, kind: "pr", title: "GitHub PR", url, updatedAt: now }));
+    const report = await this.artifactStore.writeSessionReport({ ...session, artifacts: [...session.artifacts, ...prArtifacts] });
+    await this.patch(sessionId, { artifacts: mergeArtifacts([...session.artifacts, ...prArtifacts], [report]) });
+    this.emit("artifact", sessionId, report);
+    for (const artifact of prArtifacts) this.emit("artifact", sessionId, artifact);
   }
 
   private async patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void> {
@@ -136,4 +156,16 @@ function titleFromContext(context: PickyContextPacket): string {
   const text = context.transcript?.trim();
   if (!text) return "Untitled Picky task";
   return text.length > 60 ? `${text.slice(0, 57)}...` : text;
+}
+
+function mergeChangedFiles(existing: PickyAgentSession["changedFiles"], incoming: PickyAgentSession["changedFiles"]): PickyAgentSession["changedFiles"] {
+  const byPath = new Map(existing.map((file) => [file.path, file]));
+  for (const file of incoming) byPath.set(file.path, file);
+  return [...byPath.values()];
+}
+
+function mergeArtifacts(existing: PickyAgentSession["artifacts"], incoming: PickyAgentSession["artifacts"]): PickyAgentSession["artifacts"] {
+  const byId = new Map(existing.map((artifact) => [artifact.id, artifact]));
+  for (const artifact of incoming) byId.set(artifact.id, artifact);
+  return [...byId.values()];
 }

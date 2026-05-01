@@ -1,5 +1,5 @@
 import { AgentdServer } from "./server.js";
-import { defaultAppSupportRoot } from "./artifact-store.js";
+import { ArtifactStore, defaultAppSupportRoot } from "./artifact-store.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
@@ -15,7 +15,7 @@ if (!token) {
 }
 
 const runtime = process.env.PICKY_AGENTD_RUNTIME === "mock" ? new MockRuntime() : new PiSdkRuntime();
-const supervisor = new SessionSupervisor(runtime, new SessionStore(appSupportDir));
+const supervisor = new SessionSupervisor(runtime, new SessionStore(appSupportDir), new ArtifactStore(appSupportDir));
 await supervisor.load();
 const server = new AgentdServer({ port, token, supervisor });
 const boundPort = await server.start();

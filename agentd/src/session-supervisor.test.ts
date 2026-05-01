@@ -2,6 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { ArtifactStore } from "./artifact-store.js";
 import type { PickyContextPacket } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import { SessionStore } from "./session-store.js";
@@ -38,6 +39,21 @@ describe("SessionSupervisor", () => {
     const session = await supervisor.create(context("abort me"));
     const updated = await supervisor.abort(session.id);
     expect(updated.status).toBe("cancelled");
+  });
+
+  it("writes report and PR artifacts when a terminal status is observed", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new MockRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), new ArtifactStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("terminal report"));
+    await supervisor.followUp(session.id, "Changed file: M Picky/App.swift - HUD follow-up\nhttps://github.com/acme/repo/pull/42");
+    await supervisor.abort(session.id);
+
+    const updated = supervisor.get(session.id)!;
+    expect(updated.artifacts.some((artifact) => artifact.kind === "report" && artifact.path?.endsWith("report.md"))).toBe(true);
+    expect(updated.artifacts.some((artifact) => artifact.kind === "pr" && artifact.url === "https://github.com/acme/repo/pull/42")).toBe(true);
+    expect(updated.changedFiles).toEqual([{ status: "M", path: "Picky/App.swift", summary: "HUD follow-up" }]);
   });
 
   it("reloads persisted session metadata", async () => {

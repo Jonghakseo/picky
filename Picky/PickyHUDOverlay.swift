@@ -173,6 +173,7 @@ private struct PickySessionCardView: View {
 private struct PickySessionDetailView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
+    @State private var followUpText = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -226,6 +227,15 @@ private struct PickySessionDetailView: View {
                 }
             }
 
+            HStack(spacing: 6) {
+                TextField("Follow up…", text: $followUpText)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11))
+                    .onSubmit { submitFollowUp() }
+                Button("Send") { submitFollowUp() }
+                    .disabled(followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
             HStack(spacing: 8) {
                 Button("Open report") { Task { try? await viewModel.openReport(sessionID: session.id) } }
                     .disabled(session.reportArtifact == nil)
@@ -245,6 +255,12 @@ private struct PickySessionDetailView: View {
                 .fill(DS.Colors.surface1.opacity(0.96))
                 .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.65), lineWidth: 1))
         )
+    }
+
+    private func submitFollowUp() {
+        let text = followUpText
+        followUpText = ""
+        Task { try? await viewModel.followUp(text: text, sessionID: session.id) }
     }
 
     private func detailSection(title: String, text: String) -> some View {

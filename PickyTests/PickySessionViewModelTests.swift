@@ -29,6 +29,10 @@ private final class FakePickyAgentClient: PickyAgentClient {
     func emit(_ event: PickyClientEvent) { continuation.yield(event) }
 }
 
+private final class FakeSelectionStore: PickySessionSelectionStoring {
+    var selectedSessionID: String?
+}
+
 @MainActor
 struct PickySessionViewModelTests {
     @Test func eventSequenceDrivesExpectedStatusChanges() async throws {
@@ -107,6 +111,63 @@ struct PickySessionViewModelTests {
         #expect(notifications.delivered.filter { $0.identifier == "session-1:completed" }.count == 1)
     }
 
+    @Test func selectionPersistsAndDefaultsToMostRecentlyUpdatedSession() async throws {
+        let client = FakePickyAgentClient()
+        let selection = FakeSelectionStore()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "older", status: "completed", updatedAt: "2026-05-01T00:00:01.000Z"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "newer", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        try await settle()
+
+        #expect(viewModel.selectedSession?.id == "newer")
+        #expect(selection.selectedSessionID == "newer")
+        viewModel.select(sessionID: "older")
+        #expect(selection.selectedSessionID == "older")
+    }
+
+    @Test func textFollowUpTargetsSelectedSessionAndRejectsEmptyInput() async throws {
+        let client = FakePickyAgentClient()
+        let selection = FakeSelectionStore()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-follow", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        try await settle()
+
+        try await viewModel.followUp(text: "  continue here  ")
+        #expect(client.sentCommands.last?.type == .followUp)
+        #expect(client.sentCommands.last?.sessionId == "session-follow")
+        #expect(client.sentCommands.last?.text == "continue here")
+        await #expect(throws: PickySessionListViewModelError.emptyFollowUp) {
+            try await viewModel.followUp(text: "   ")
+        }
+    }
+
+    @Test func reportBuilderAndPrExtractionUseOnlyExplicitUrls() async throws {
+        let session = PickyAgentSession.fixture(lastSummary: "Opened https://github.com/acme/repo/pull/42", status: .completed)
+        let markdown = PickyArtifactReportBuilder().markdown(for: session)
+        #expect(markdown.contains("Status: `completed`"))
+        #expect(markdown.contains("https://github.com/acme/repo/pull/42"))
+        #expect(PickyArtifactReportBuilder.githubPullRequestURLs(in: "will make a PR later").isEmpty)
+    }
+
+    @Test func artifactPathValidatorRejectsTraversalAndMissingFiles() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-artifact-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("report.md")
+        try "# ok".write(to: file, atomically: true, encoding: .utf8)
+        let validator = PickyArtifactPathValidator(appSupportRoot: root)
+
+        #expect(try validator.validateReadableFile(path: file.path) == file.standardizedFileURL)
+        #expect(throws: PickyArtifactOpeningError.escapedAppSupportRoot("/tmp/evil.md")) {
+            try validator.validateReadableFile(path: "/tmp/evil.md")
+        }
+        #expect(throws: PickyArtifactOpeningError.missingFile(root.appendingPathComponent("missing.md").path)) {
+            try validator.validateReadableFile(path: root.appendingPathComponent("missing.md").path)
+        }
+    }
+
     @Test func initialTranscriptSubmitsCreateTaskThroughClient() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
@@ -164,5 +225,24 @@ private enum EventJSON {
 private extension PickyEventEnvelope {
     static func fixture(eventJSON: String) -> PickyEventEnvelope {
         try! JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(eventJSON.utf8))
+    }
+}
+
+private extension PickyAgentSession {
+    static func fixture(lastSummary: String, status: PickySessionStatus) -> PickyAgentSession {
+        PickyAgentSession(
+            id: "session-report",
+            title: "Report task",
+            status: status,
+            cwd: "/tmp/project",
+            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_100),
+            lastSummary: lastSummary,
+            logs: [],
+            tools: [PickyToolActivity(toolCallId: "tool-1", name: "bash", status: "succeeded", preview: "tests passed", startedAt: nil, endedAt: nil)],
+            artifacts: [],
+            changedFiles: [],
+            pendingExtensionUiRequest: nil
+        )
     }
 }

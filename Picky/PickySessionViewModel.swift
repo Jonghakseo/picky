@@ -32,6 +32,20 @@ final class PickySystemNotificationCenter: PickyNotificationDelivering {
     }
 }
 
+enum PickySessionListViewModelError: LocalizedError, Equatable {
+    case emptyFollowUp
+    case noSessionSelected
+    case missingReport
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyFollowUp: "Follow-up cannot be empty"
+        case .noSessionSelected: "No session selected for follow-up"
+        case .missingReport: "Report is not available yet"
+        }
+    }
+}
+
 @MainActor
 final class PickySessionListViewModel: ObservableObject {
     struct SessionCard: Equatable, Identifiable {
@@ -78,6 +92,7 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var sessions: [SessionCard] = []
     @Published private(set) var selectedSessionID: String?
     @Published private(set) var lastError: String?
+    @Published private(set) var lastOpenedArtifactPath: String?
 
     var selectedSession: SessionCard? {
         guard let selectedSessionID else { return sessions.first }
@@ -86,15 +101,24 @@ final class PickySessionListViewModel: ObservableObject {
 
     private let client: any PickyAgentClient
     private let notificationCenter: PickyNotificationDelivering
+    private let selectionStore: PickySessionSelectionStoring
+    private let artifactPathValidator: PickyArtifactPathValidator
     private var eventTask: Task<Void, Never>?
     private var deliveredNotificationKeys = Set<String>()
+    private var hasExplicitSelection = false
 
     init(
         client: any PickyAgentClient,
-        notificationCenter: PickyNotificationDelivering = PickySystemNotificationCenter()
+        notificationCenter: PickyNotificationDelivering = PickySystemNotificationCenter(),
+        selectionStore: PickySessionSelectionStoring = PickyUserDefaultsSessionSelectionStore.shared,
+        artifactPathValidator: PickyArtifactPathValidator = PickyArtifactPathValidator(appSupportRoot: PickyAppSupport.defaultRoot())
     ) {
         self.client = client
         self.notificationCenter = notificationCenter
+        self.selectionStore = selectionStore
+        self.artifactPathValidator = artifactPathValidator
+        self.selectedSessionID = selectionStore.selectedSessionID
+        self.hasExplicitSelection = self.selectedSessionID != nil
     }
 
     func start() {
@@ -115,11 +139,31 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func select(sessionID: String?) {
-        selectedSessionID = sessionID
+        hasExplicitSelection = sessionID != nil
+        if let sessionID, sessions.contains(where: { $0.id == sessionID }) {
+            selectedSessionID = sessionID
+        } else {
+            selectedSessionID = defaultSelectionID()
+        }
+        selectionStore.selectedSessionID = selectedSessionID
     }
 
     func submit(transcript: String, context: PickyContextPacket) async throws {
         _ = try await client.submit(PickyAgentSubmission(transcript: transcript, context: context))
+    }
+
+    func followUp(text: String, sessionID: String? = nil) async throws {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            lastError = "Follow-up cannot be empty"
+            throw PickySessionListViewModelError.emptyFollowUp
+        }
+        guard let target = sessionID ?? selectedSession?.id else {
+            lastError = "No session selected for follow-up"
+            throw PickySessionListViewModelError.noSessionSelected
+        }
+        try await client.send(PickyCommandEnvelope(type: .followUp, sessionId: target, text: trimmed))
+        select(sessionID: target)
     }
 
     func abort(sessionID: String) async throws {
@@ -130,9 +174,23 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    func openReport(sessionID: String) async throws {
-        guard let artifact = sessions.first(where: { $0.id == sessionID })?.reportArtifact else { return }
-        try await client.send(PickyCommandEnvelope(type: .openArtifact, sessionId: sessionID, artifactId: artifact.id))
+    func openReport(sessionID: String, workspace: NSWorkspace = .shared) async throws {
+        guard let artifact = sessions.first(where: { $0.id == sessionID })?.reportArtifact else {
+            lastError = "Report is not available yet"
+            throw PickySessionListViewModelError.missingReport
+        }
+        if let path = artifact.path {
+            do {
+                let url = try artifactPathValidator.validateReadableFile(path: path)
+                lastOpenedArtifactPath = url.path
+                workspace.open(url)
+            } catch {
+                lastError = error.localizedDescription
+                throw error
+            }
+        } else {
+            try await client.send(PickyCommandEnvelope(type: .openArtifact, sessionId: sessionID, artifactId: artifact.id))
+        }
     }
 
     func copySummary(sessionID: String, pasteboard: NSPasteboard = .general) {
@@ -163,7 +221,12 @@ final class PickySessionListViewModel: ObservableObject {
         switch event {
         case .sessionSnapshot(let snapshot):
             sessions = snapshot.map(SessionCard.init(session:)).sortedForHUD()
-            if selectedSessionID == nil { selectedSessionID = sessions.first?.id }
+            if hasExplicitSelection, let selectedSessionID, sessions.contains(where: { $0.id == selectedSessionID }) {
+                selectionStore.selectedSessionID = selectedSessionID
+            } else {
+                selectedSessionID = defaultSelectionID()
+                selectionStore.selectedSessionID = selectedSessionID
+            }
             sessions.forEach(deliverNotificationIfNeeded(for:))
         case .sessionUpdated(let session):
             upsert(SessionCard(session: session))
@@ -198,9 +261,17 @@ final class PickySessionListViewModel: ObservableObject {
                 }
                 card.updatedAt = artifact.updatedAt
             }
+        case .artifactOpened(_, _, let path):
+            do {
+                let url = try artifactPathValidator.validateReadableFile(path: path)
+                lastOpenedArtifactPath = url.path
+                NSWorkspace.shared.open(url)
+            } catch {
+                lastError = error.localizedDescription
+            }
         case .error(let error):
             lastError = error.message
-        case .hello, .artifactOpened, .unknown:
+        case .hello, .unknown:
             break
         }
     }
@@ -216,7 +287,10 @@ final class PickySessionListViewModel: ObservableObject {
             sessions.append(incoming)
         }
         sessions = sessions.sortedForHUD()
-        if selectedSessionID == nil { selectedSessionID = incoming.id }
+        if !hasExplicitSelection || selectedSessionID == nil || sessions.contains(where: { $0.id == selectedSessionID }) == false {
+            selectedSessionID = defaultSelectionID()
+            selectionStore.selectedSessionID = selectedSessionID
+        }
         deliverNotificationIfNeeded(for: incoming)
     }
 
@@ -226,7 +300,15 @@ final class PickySessionListViewModel: ObservableObject {
         mutate(&card)
         sessions[index] = card
         sessions = sessions.sortedForHUD()
+        if !hasExplicitSelection || selectedSessionID == nil {
+            selectedSessionID = defaultSelectionID()
+            selectionStore.selectedSessionID = selectedSessionID
+        }
         deliverNotificationIfNeeded(for: card)
+    }
+
+    private func defaultSelectionID() -> String? {
+        sessions.sorted { lhs, rhs in lhs.updatedAt > rhs.updatedAt }.first?.id
     }
 
     private func deliverNotificationIfNeeded(for session: SessionCard) {

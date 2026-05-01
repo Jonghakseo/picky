@@ -2,7 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ArtifactStore } from "./artifact-store.js";
+import { ArtifactStore, extractChangedFilesFromExplicitText, extractGithubPullRequestUrls, renderSessionReport } from "./artifact-store.js";
 import { LogStore } from "./log-store.js";
 
 describe("ArtifactStore", () => {
@@ -14,6 +14,33 @@ describe("ArtifactStore", () => {
     expect(artifact.path).toContain(root);
     await expect(store.read("session-1", "report.md")).resolves.toEqual(Buffer.from("# Done"));
     await expect(store.list("session-1")).resolves.toEqual(["report.md"]);
+  });
+
+  it("generates neutral terminal reports for completed, failed, and cancelled sessions", async () => {
+    for (const status of ["completed", "failed", "cancelled"] as const) {
+      const markdown = renderSessionReport({
+        id: `session-${status}`,
+        title: "Final task",
+        status,
+        cwd: "/tmp/project",
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:01.000Z",
+        lastSummary: "Final answer. PR: https://github.com/acme/repo/pull/42",
+        logs: [],
+        tools: [{ toolCallId: "tool-1", name: "bash", status: "succeeded", preview: "tests passed" }],
+        artifacts: [],
+        changedFiles: [],
+      });
+      expect(markdown).toContain(`Status: \`${status}\``);
+      expect(markdown).toContain("Final answer");
+      expect(markdown).not.toContain("Verification passed");
+    }
+  });
+
+  it("extracts PR URLs and changed files only from explicit output", () => {
+    expect(extractGithubPullRequestUrls("Created https://github.com/acme/repo/pull/42")).toEqual(["https://github.com/acme/repo/pull/42"]);
+    expect(extractGithubPullRequestUrls("I will open a PR later")).toEqual([]);
+    expect(extractChangedFilesFromExplicitText("Changed file: M Picky/App.swift - updated HUD")).toEqual([{ status: "M", path: "Picky/App.swift", summary: "updated HUD" }]);
   });
 
   it("rejects path traversal artifact names and unsafe session ids", async () => {

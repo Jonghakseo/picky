@@ -68,9 +68,14 @@ final class CompanionManager: ObservableObject {
     // streamingResponseText, so no separate response overlay manager is needed.
 
     private let agentClient: any PickyAgentClient
+    private let selectionStore: PickySessionSelectionStoring
 
-    init(agentClient: any PickyAgentClient = LocalStubPickyAgentClient()) {
+    init(
+        agentClient: any PickyAgentClient = LocalStubPickyAgentClient(),
+        selectionStore: PickySessionSelectionStoring = PickyUserDefaultsSessionSelectionStore.shared
+    ) {
         self.agentClient = agentClient
+        self.selectionStore = selectionStore
     }
 
     /// The currently running AI response task, if any. Cancelled when the user
@@ -517,10 +522,10 @@ final class CompanionManager: ObservableObject {
                     screenProvider: StaticPickyScreenContextProvider(captures: screenCaptures),
                     defaultCwd: FileManager.default.homeDirectoryForCurrentUser.path
                 )
-                let contextPacket = try assembler.assemble(source: "voice", transcript: transcript)
-                let receipt = try await agentClient.submit(
-                    PickyAgentSubmission(transcript: transcript, context: contextPacket)
-                )
+                let selectedSessionID = selectionStore.selectedSessionID
+                let source = selectedSessionID == nil ? "voice" : "voice-follow-up"
+                let contextPacket = try assembler.assemble(source: source, transcript: transcript, selectedSessionId: selectedSessionID)
+                let receipt = try await routeVoiceTranscript(transcript: transcript, contextPacket: contextPacket)
 
                 guard !Task.isCancelled else { return }
 
@@ -543,6 +548,14 @@ final class CompanionManager: ObservableObject {
                 scheduleTransientHideIfNeeded()
             }
         }
+    }
+
+    func routeVoiceTranscript(transcript: String, contextPacket: PickyContextPacket) async throws -> PickyAgentSubmissionReceipt {
+        if let selectedSessionID = selectionStore.selectedSessionID {
+            try await agentClient.send(PickyCommandEnvelope(type: .followUp, context: contextPacket, sessionId: selectedSessionID, text: transcript))
+            return PickyAgentSubmissionReceipt(sessionID: selectedSessionID, message: "Follow-up sent to selected Picky session.")
+        }
+        return try await agentClient.submit(PickyAgentSubmission(transcript: transcript, context: contextPacket))
     }
 
     private func bindAgentEvents() {

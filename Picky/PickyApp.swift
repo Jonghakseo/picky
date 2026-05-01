@@ -58,10 +58,10 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         PickyAnalytics.configure()
         PickyAnalytics.trackAppOpened()
 
-        guard !Self.isRunningUnitTests else { return }
-
-        daemonLauncher.start()
-        hudOverlayManager.start()
+        if !Self.isRunningUnitTests {
+            daemonLauncher.start()
+            hudOverlayManager.start()
+        }
         menuBarPanelManager = MenuBarPanelManager(companionManager: companionManager)
         companionManager.start()
         // Auto-open the panel if the user still needs to do something:

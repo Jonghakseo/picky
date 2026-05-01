@@ -17,6 +17,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
     var workingDirectory: URL
     var executableURL: URL
     var arguments: [String]
+    var requiredExecutableName: String? = nil
 
     static func development(
         port: Int = 17631,
@@ -34,7 +35,8 @@ struct PickyAgentDaemonConfiguration: Equatable {
             runtime: ProcessInfo.processInfo.environment["PICKY_AGENTD_RUNTIME"],
             workingDirectory: agentdRoot,
             executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-            arguments: ["pnpm", "--dir", agentdRoot.path, "dev"]
+            arguments: ["pnpm", "--dir", agentdRoot.path, "dev"],
+            requiredExecutableName: "pnpm"
         )
     }
 
@@ -87,7 +89,8 @@ struct PickyAgentdRootResolver {
         while true {
             let agentd = candidate.appendingPathComponent("agentd", isDirectory: true)
             if containsAgentdPackage(agentd, fileManager: fileManager) { return agentd }
-            let parent = candidate.deletingLastPathComponent()
+            if candidate.path == "/" { return nil }
+            let parent = candidate.deletingLastPathComponent().standardizedFileURL
             if parent.path == candidate.path { return nil }
             candidate = parent
         }
@@ -96,11 +99,14 @@ struct PickyAgentdRootResolver {
 
 enum PickyDaemonLaunchPreflightError: LocalizedError, Equatable {
     case missingAgentdPackage(String)
+    case missingRequiredExecutable(String)
 
     var errorDescription: String? {
         switch self {
         case .missingAgentdPackage(let path):
             "picky-agentd was not found at \(path). Set PICKY_AGENTD_ROOT to the local agentd directory or install the bundled daemon."
+        case .missingRequiredExecutable(let name):
+            "\(name) not found in PATH. Install \(name) or launch Picky with a PATH that includes it."
         }
     }
 }
@@ -109,6 +115,22 @@ protocol PickyProcessRunning: AnyObject {
     var terminationHandler: ((Int32) -> Void)? { get set }
     func launch(configuration: PickyAgentDaemonConfiguration, stdout: @escaping (Data) -> Void, stderr: @escaping (Data) -> Void) throws
     func terminate()
+}
+
+protocol PickyExecutableChecking {
+    func executableExists(named name: String, environment: [String: String]) -> Bool
+}
+
+struct PATHPickyExecutableChecker: PickyExecutableChecking {
+    func executableExists(named name: String, environment: [String: String]) -> Bool {
+        if name.contains("/") {
+            return FileManager.default.isExecutableFile(atPath: NSString(string: name).expandingTildeInPath)
+        }
+        let path = environment["PATH"] ?? "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        return path.split(separator: ":").contains { directory in
+            FileManager.default.isExecutableFile(atPath: URL(fileURLWithPath: String(directory)).appendingPathComponent(name).path)
+        }
+    }
 }
 
 final class FoundationPickyProcessRunner: PickyProcessRunning {
@@ -154,6 +176,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     private let runner: PickyProcessRunning
     private let logDirectory: URL
     private let fileManager: FileManager
+    private let executableChecker: PickyExecutableChecking
     private var restartTask: Task<Void, Never>?
     private var attempts = 0
     private var intentionallyStopped = false
@@ -162,12 +185,14 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         configuration: PickyAgentDaemonConfiguration,
         runner: PickyProcessRunning = FoundationPickyProcessRunner(),
         logDirectory: URL? = nil,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        executableChecker: PickyExecutableChecking = PATHPickyExecutableChecker()
     ) {
         self.configuration = configuration
         self.runner = runner
         self.logDirectory = logDirectory ?? configuration.appSupportRoot.appendingPathComponent("Logs", isDirectory: true)
         self.fileManager = fileManager
+        self.executableChecker = executableChecker
         self.runner.terminationHandler = { [weak self] code in
             Task { @MainActor in self?.processTerminated(exitCode: code) }
         }
@@ -210,6 +235,10 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         let packageURL = configuration.workingDirectory.appendingPathComponent("package.json")
         guard fileManager.fileExists(atPath: packageURL.path) else {
             throw PickyDaemonLaunchPreflightError.missingAgentdPackage(configuration.workingDirectory.path)
+        }
+        if let requiredExecutableName = configuration.requiredExecutableName,
+           !executableChecker.executableExists(named: requiredExecutableName, environment: configuration.environment) {
+            throw PickyDaemonLaunchPreflightError.missingRequiredExecutable(requiredExecutableName)
         }
     }
 

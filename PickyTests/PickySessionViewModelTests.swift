@@ -102,8 +102,8 @@ struct PickySessionViewModelTests {
         try await settle()
         try await viewModel.abort(sessionID: "session-1")
 
-        #expect(client.sentCommands.first?.type == .abort)
-        #expect(client.sentCommands.first?.sessionId == "session-1")
+        let abortCommand = try #require(client.sentCommands.first { $0.type == .abort })
+        #expect(abortCommand.sessionId == "session-1")
         #expect(viewModel.sessions.first?.status == .cancelled)
     }
 

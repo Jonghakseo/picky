@@ -139,7 +139,6 @@ final class WebSocketPickyAgentClient: PickyAgentClient {
         socket.resume()
         connected = true
         continuation.yield(.connected)
-        try? await send(PickyCommandEnvelope(type: .listSessions))
         startReceiveLoop(socket)
     }
 

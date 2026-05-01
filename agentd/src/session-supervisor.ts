@@ -57,11 +57,21 @@ export class SessionSupervisor extends EventEmitter {
       changedFiles: [],
     };
     await this.upsert(session);
-    const handle = await this.runtime.create(buildInitialTaskPrompt(context), { cwd: context.cwd, sessionId: id });
-    this.runtimeHandles.set(id, handle);
-    handle.subscribe((event) => void this.applyRuntimeEvent(id, event));
-    await this.patch(id, { status: "running", lastSummary: "Started" });
-    return this.mustGet(id);
+    try {
+      const handle = await this.runtime.create(buildInitialTaskPrompt(context), { cwd: context.cwd, sessionId: id });
+      this.runtimeHandles.set(id, handle);
+      handle.subscribe((event) => void this.applyRuntimeEvent(id, event));
+      await this.patch(id, { status: "running", lastSummary: "Started" });
+      return this.mustGet(id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.patch(id, {
+        status: "failed",
+        lastSummary: `Failed to start runtime: ${message}`,
+        logs: [...this.mustGet(id).logs, `Failed to start runtime: ${message}`],
+      });
+      throw error;
+    }
   }
 
   async followUp(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {

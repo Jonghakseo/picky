@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { ArtifactStore } from "./artifact-store.js";
 import type { PickyContextPacket } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
+import type { AgentRuntime } from "./runtime/types.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 
@@ -81,6 +82,18 @@ describe("SessionSupervisor", () => {
     expect(secondSupervisor.get(session.id)?.lastSummary).toMatch(/Runtime not attached/);
   });
 
+  it("marks task creation failures as failed instead of leaving queued ghosts", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir));
+    await supervisor.load();
+
+    await expect(supervisor.create(context("runtime fail"))).rejects.toThrow(/runtime unavailable/);
+    const failed = supervisor.list()[0];
+    expect(failed.status).toBe("failed");
+    expect(failed.lastSummary).toMatch(/Failed to start runtime: runtime unavailable/);
+    expect(failed.logs).toContain("Failed to start runtime: runtime unavailable");
+  });
+
   it("rejects invalid follow-up transitions", async () => {
     const supervisor = await makeSupervisor();
     const session = await supervisor.create(context("cancel then follow"));
@@ -88,6 +101,12 @@ describe("SessionSupervisor", () => {
     await expect(supervisor.followUp(session.id, "nope")).rejects.toThrow(/Cannot follow up/);
   });
 });
+
+class ThrowingRuntime implements AgentRuntime {
+  async create(): Promise<never> {
+    throw new Error("runtime unavailable");
+  }
+}
 
 async function makeSupervisor(): Promise<SessionSupervisor> {
   const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));

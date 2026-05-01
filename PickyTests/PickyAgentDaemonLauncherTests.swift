@@ -30,6 +30,12 @@ private final class FakeProcessRunner: PickyProcessRunning {
 
 private struct LaunchFailure: Error {}
 
+private struct FakeExecutableChecker: PickyExecutableChecking {
+    var exists: Bool
+
+    func executableExists(named name: String, environment: [String: String]) -> Bool { exists }
+}
+
 @MainActor
 struct PickyAgentDaemonLauncherTests {
     @Test func buildsDaemonEnvironmentAndCapturesLogs() throws {
@@ -155,6 +161,49 @@ struct PickyAgentDaemonLauncherTests {
 
         if case .failedToStart(let message) = launcher.state {
             #expect(message.contains("picky-agentd was not found"))
+        } else {
+            Issue.record("Expected friendly failedToStart state")
+        }
+        #expect(runner.launchedConfiguration == nil)
+    }
+
+    @Test func rootResolverTerminatesAtFilesystemRoot() throws {
+        let resolved = PickyAgentdRootResolver.resolveDevelopmentAgentdRoot(
+            environment: [:],
+            currentDirectory: URL(fileURLWithPath: "/", isDirectory: true),
+            filePath: "/missing/PickyAgentDaemonLauncher.swift",
+            bundleResourceURL: nil
+        )
+
+        #expect(resolved.path == "/agentd")
+    }
+
+    @Test func missingRequiredExecutableFailsFriendlyWithoutRestartLoop() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        try makeAgentdPackage(at: temp)
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19006,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: temp,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["pnpm", "dev"],
+            requiredExecutableName: "pnpm"
+        )
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs"),
+            executableChecker: FakeExecutableChecker(exists: false)
+        )
+
+        launcher.start()
+
+        if case .failedToStart(let message) = launcher.state {
+            #expect(message.contains("pnpm not found"))
         } else {
             Issue.record("Expected friendly failedToStart state")
         }

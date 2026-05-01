@@ -41,14 +41,29 @@ final class AppleSpeechTranscriptionProvider: BuddyTranscriptionProvider {
         )
     }
 
-    private static func makeBestAvailableSpeechRecognizer() -> SFSpeechRecognizer? {
-        let preferredLocales = [
-            Locale.autoupdatingCurrent,
-            Locale(identifier: "en-US")
+    static func preferredLocaleIdentifiers(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        currentLocaleIdentifier: String = Locale.autoupdatingCurrent.identifier
+    ) -> [String] {
+        let candidates = [
+            environment["PICKY_SPEECH_LOCALE"],
+            "ko-KR",
+            currentLocaleIdentifier,
+            "en-US"
         ]
 
-        for preferredLocale in preferredLocales {
+        var seen = Set<String>()
+        return candidates
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .filter { seen.insert($0).inserted }
+    }
+
+    private static func makeBestAvailableSpeechRecognizer() -> SFSpeechRecognizer? {
+        for localeIdentifier in preferredLocaleIdentifiers() {
+            let preferredLocale = Locale(identifier: localeIdentifier)
             if let speechRecognizer = SFSpeechRecognizer(locale: preferredLocale) {
+                print("🎙️ Apple Speech locale: \(preferredLocale.identifier)")
                 return speechRecognizer
             }
         }

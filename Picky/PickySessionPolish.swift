@@ -85,6 +85,7 @@ struct PickySessionArchive: Equatable {
                 session.cwd,
                 session.status.rawValue,
                 session.lastSummary,
+                session.finalAnswer,
                 session.artifacts.compactMap { $0.url?.absoluteString }.joined(separator: " ")
             ].compactMap { $0 }.joined(separator: " ").lowercased()
             return haystack.contains(normalized)

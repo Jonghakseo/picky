@@ -10,6 +10,7 @@ import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./runtime
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
+  private assistantDrafts = new Map<string, string>();
 
   constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, private readonly artifactStore?: ArtifactStore, private readonly taskRouter?: TaskRouter) {
     super();
@@ -69,6 +70,7 @@ export class SessionSupervisor extends EventEmitter {
     };
     await this.upsert(session);
     try {
+      this.assistantDrafts.set(id, "");
       const handle = await this.runtime.create(buildInitialTaskPrompt(context), { cwd: context.cwd, sessionId: id });
       this.runtimeHandles.set(id, handle);
       handle.subscribe((event) => void this.applyRuntimeEvent(id, event));
@@ -97,9 +99,10 @@ export class SessionSupervisor extends EventEmitter {
       await this.appendLog(sessionId, "follow-up rejected: runtime session is not attached after daemon restart");
       throw new Error("Runtime session is not attached after daemon restart; start a new task or resume support is required");
     }
+    this.assistantDrafts.set(sessionId, "");
     await this.appendLog(sessionId, `follow-up: ${text}`);
     await handle.followUp(buildFollowUpPrompt(sessionId, text, context));
-    await this.patch(sessionId, { status: "running", lastSummary: "Follow-up queued" });
+    await this.patch(sessionId, { status: "running", lastSummary: "Follow-up queued", finalAnswer: undefined });
     return this.mustGet(sessionId);
   }
 
@@ -139,9 +142,21 @@ export class SessionSupervisor extends EventEmitter {
 
   private async applyRuntimeEvent(sessionId: string, event: RuntimeEvent): Promise<void> {
     if (event.type === "log") return this.appendLog(sessionId, event.line);
+    if (event.type === "assistant_delta") {
+      this.assistantDrafts.set(sessionId, `${this.assistantDrafts.get(sessionId) ?? ""}${event.delta}`);
+      return;
+    }
     if (event.type === "status") {
-      await this.patch(sessionId, { status: event.status, lastSummary: event.summary });
-      if (["completed", "failed", "cancelled"].includes(event.status)) await this.materializeTerminalArtifacts(sessionId);
+      const terminal = ["completed", "failed", "cancelled"].includes(event.status);
+      const finalAnswer = terminal ? cleanFinalAnswer(this.assistantDrafts.get(sessionId)) : undefined;
+      const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
+      if (finalAnswer) {
+        const session = this.mustGet(sessionId);
+        patch.finalAnswer = finalAnswer;
+        patch.changedFiles = mergeChangedFiles(session.changedFiles, extractChangedFilesFromExplicitText(finalAnswer));
+      }
+      await this.patch(sessionId, patch);
+      if (terminal) await this.materializeTerminalArtifacts(sessionId);
       return;
     }
     if (event.type === "extension_ui") return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
@@ -173,7 +188,7 @@ export class SessionSupervisor extends EventEmitter {
     if (!this.artifactStore) return;
     const session = this.mustGet(sessionId);
     const now = new Date().toISOString();
-    const prArtifacts = extractGithubPullRequestUrls([session.lastSummary, ...session.logs, ...session.tools.map((tool) => tool.preview)].filter(Boolean).join("\n"))
+    const prArtifacts = extractGithubPullRequestUrls([session.finalAnswer, session.lastSummary, ...session.logs, ...session.tools.map((tool) => tool.preview)].filter(Boolean).join("\n"))
       .filter((url) => !session.artifacts.some((artifact) => artifact.url === url))
       .map((url, index) => ({ id: `pr-${index + 1}`, kind: "pr", title: "GitHub PR", url, updatedAt: now }));
     const report = await this.artifactStore.writeSessionReport({ ...session, artifacts: [...session.artifacts, ...prArtifacts] });
@@ -202,6 +217,17 @@ export class SessionSupervisor extends EventEmitter {
 
 function isTerminalStatus(status: PickyAgentSession["status"]): boolean {
   return ["completed", "failed", "cancelled"].includes(status);
+}
+
+function cleanFinalAnswer(text: string | undefined): string | undefined {
+  const normalized = text?.replace(/\r\n/g, "\n").trim();
+  return normalized ? normalized : undefined;
+}
+
+function summaryFromFinalAnswer(text: string): string {
+  const firstParagraph = text.split(/\n\s*\n/).find((part) => part.trim().length > 0)?.trim() ?? text.trim();
+  const singleLine = firstParagraph.replace(/\s+/g, " ");
+  return singleLine.length > 220 ? `${singleLine.slice(0, 217)}...` : singleLine;
 }
 
 function titleFromContext(context: PickyContextPacket): string {

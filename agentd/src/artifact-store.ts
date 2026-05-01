@@ -83,7 +83,8 @@ function safeSegment(value: string): string {
 export function renderSessionReport(session: PickyAgentSession): string {
   const lines: string[] = [`# ${session.title}`, "", `Status: \`${session.status}\``, ""];
   if (session.cwd) lines.push(`CWD: \`${session.cwd}\``, "");
-  if (session.lastSummary) lines.push("## Final answer", session.lastSummary, "");
+  const finalAnswer = session.finalAnswer || session.lastSummary;
+  if (finalAnswer) lines.push("## Final answer", finalAnswer, "");
   if (session.tools.length > 0) {
     lines.push("## Tool summary");
     for (const tool of session.tools) lines.push(`- \`${tool.name}\` ${tool.status}${tool.preview ? ` — ${tool.preview}` : ""}`);
@@ -94,7 +95,7 @@ export function renderSessionReport(session: PickyAgentSession): string {
     for (const file of session.changedFiles) lines.push(`- ${file.status} \`${file.path}\`${file.summary ? ` — ${file.summary}` : ""}`);
     lines.push("");
   }
-  const prUrls = extractGithubPullRequestUrls([session.lastSummary, ...session.logs, ...session.tools.map((tool) => tool.preview)].filter(Boolean).join("\n"));
+  const prUrls = extractGithubPullRequestUrls([session.finalAnswer, session.lastSummary, ...session.logs, ...session.tools.map((tool) => tool.preview)].filter(Boolean).join("\n"));
   if (prUrls.length > 0) lines.push("## Pull requests", ...prUrls.map((url) => `- ${url}`), "");
   return `${lines.join("\n").trimEnd()}\n`;
 }

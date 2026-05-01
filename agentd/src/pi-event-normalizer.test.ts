@@ -17,8 +17,8 @@ describe("normalizePiEvent", () => {
     expect(normalizePiEvent(await fixture("abort-error.json"))).toMatchObject({ kind: "status", status: "failed" });
   });
 
-  it("maps message deltas to logs", async () => {
-    expect(normalizePiEvent(await fixture("message-text-delta.json"))).toEqual({ kind: "log", line: "Hello" });
+  it("maps message deltas to assistant answer fragments", async () => {
+    expect(normalizePiEvent(await fixture("message-text-delta.json"))).toEqual({ kind: "assistantDelta", delta: "Hello" });
   });
 
   it("correlates tool events by toolCallId", async () => {

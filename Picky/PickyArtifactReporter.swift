@@ -11,9 +11,10 @@ struct PickyArtifactReportBuilder {
     func markdown(for session: PickyAgentSession) -> String {
         var lines: [String] = ["# \(session.title)", "", "Status: `\(session.status.rawValue)`", ""]
         if let cwd = session.cwd { lines.append("CWD: `\(cwd)`"); lines.append("") }
-        if let summary = session.lastSummary, !summary.isEmpty {
+        let finalAnswer = session.finalAnswer ?? session.lastSummary
+        if let finalAnswer, !finalAnswer.isEmpty {
             lines.append("## Final answer")
-            lines.append(summary)
+            lines.append(finalAnswer)
             lines.append("")
         }
         if !session.tools.isEmpty {
@@ -37,7 +38,7 @@ struct PickyArtifactReportBuilder {
             }
             lines.append("")
         }
-        let prURLs = PickyArtifactReportBuilder.githubPullRequestURLs(in: [session.lastSummary, session.logs.joined(separator: "\n")].compactMap { $0 }.joined(separator: "\n"))
+        let prURLs = PickyArtifactReportBuilder.githubPullRequestURLs(in: [session.finalAnswer, session.lastSummary, session.logs.joined(separator: "\n")].compactMap { $0 }.joined(separator: "\n"))
         if !prURLs.isEmpty {
             lines.append("## Pull requests")
             lines.append(contentsOf: prURLs.map { "- \($0.absoluteString)" })

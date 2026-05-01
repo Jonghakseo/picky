@@ -146,6 +146,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     let createdAt: Date
     var updatedAt: Date
     var lastSummary: String?
+    var finalAnswer: String? = nil
     var logs: [String]
     var tools: [PickyToolActivity]
     var artifacts: [PickyArtifact]

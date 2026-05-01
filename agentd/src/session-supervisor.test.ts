@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -147,6 +147,27 @@ describe("SessionSupervisor", () => {
     expect(updated?.status).toBe("running");
     expect(updated?.pendingExtensionUiRequest).toBeUndefined();
     expect(updated?.logs.at(-1)).toMatch(/extension ui: setWidget/);
+  });
+
+  it("stores the final assistant answer instead of replacing it with a generic completion label", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), new ArtifactStore(dir));
+    const session = await supervisor.create(context("summarize video"));
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "영상 요약입니다.\n\n핵심 내용은 agentic engineering입니다." });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    const updated = supervisor.get(session.id)!;
+    expect(updated.status).toBe("completed");
+    expect(updated.finalAnswer).toBe("영상 요약입니다.\n\n핵심 내용은 agentic engineering입니다.");
+    expect(updated.lastSummary).toBe("영상 요약입니다.");
+    const reportPath = updated.artifacts.find((artifact) => artifact.id === "report")?.path;
+    expect(reportPath).toBeTruthy();
+    const markdown = await readFile(reportPath!, "utf8");
+    expect(markdown).toContain("핵심 내용은 agentic engineering입니다.");
+    expect(markdown).not.toContain("## Final answer\nCompleted");
   });
 
   it("rejects invalid follow-up transitions", async () => {

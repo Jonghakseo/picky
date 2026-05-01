@@ -62,7 +62,7 @@ describe("PiSdkRuntime", () => {
     expect(events).toContainEqual({ type: "log", line: "pi diagnostic: {\"level\":\"warning\",\"message\":\"fake diagnostic\"}" });
     expect(events).toContainEqual({ type: "log", line: "pi session: /tmp/fake-session.jsonl" });
     expect(events).toContainEqual({ type: "status", status: "running", summary: "Agent started" });
-    expect(events).toContainEqual({ type: "log", line: "ok" });
+    expect(events).toContainEqual({ type: "assistant_delta", delta: "ok" });
   });
 
   it("gates real Pi integration behind PICKY_RUN_PI_INTEGRATION", async () => {

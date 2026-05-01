@@ -9,6 +9,7 @@ export interface PiEventNormalizationContext {
 
 export type NormalizedPiEvent =
   | { kind: "log"; line: string }
+  | { kind: "assistantDelta"; delta: string }
   | { kind: "status"; status: SessionStatus; summary?: string }
   | { kind: "tool"; tool: PickyToolActivity }
   | { kind: "extensionUi"; request: Record<string, unknown>; waitsForInput: boolean }
@@ -24,7 +25,7 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
   if (type === "message_update") {
     const assistantEvent = asRecord(piEvent.assistantMessageEvent);
     if (assistantEvent.type === "text_delta" && typeof assistantEvent.delta === "string") {
-      return { kind: "log", line: assistantEvent.delta };
+      return { kind: "assistantDelta", delta: assistantEvent.delta };
     }
     if (assistantEvent.type === "error") {
       return { kind: "status", status: "failed", summary: stringValue(assistantEvent.error) ?? "Agent error" };
@@ -99,6 +100,7 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
 export function runtimeEventFromPiEvent(event: unknown, context?: PiEventNormalizationContext): RuntimeEvent | undefined {
   const normalized = normalizePiEvent(event, context);
   if (normalized.kind === "log") return { type: "log", line: normalized.line };
+  if (normalized.kind === "assistantDelta") return { type: "assistant_delta", delta: normalized.delta };
   if (normalized.kind === "status") return { type: "status", status: normalized.status as RuntimeSessionStatus, summary: normalized.summary };
   if (normalized.kind === "tool") return { type: "tool", toolCallId: normalized.tool.toolCallId, name: normalized.tool.name, status: normalized.tool.status, preview: normalized.tool.preview };
   if (normalized.kind === "extensionUi") return { type: "extension_ui", request: normalized.request, waitsForInput: normalized.waitsForInput };

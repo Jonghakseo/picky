@@ -129,12 +129,7 @@ private struct PickySessionCardView: View {
                 .font(.system(size: 11))
                 .foregroundColor(DS.Colors.textTertiary)
 
-                if let activeTool = session.activeTool {
-                    Text("↳ \(activeTool.name) \(activeTool.preview ?? "")")
-                        .font(.system(size: 11))
-                        .foregroundColor(DS.Colors.textSecondary)
-                        .lineLimit(1)
-                } else if !session.lastSummary.isEmpty {
+                if !session.lastSummary.isEmpty {
                     Text(session.lastSummary)
                         .font(.system(size: 11))
                         .foregroundColor(DS.Colors.textSecondary)
@@ -186,17 +181,6 @@ private struct PickySessionDetailView: View {
 
             if !session.logPreview.isEmpty {
                 detailSection(title: "Recent log", text: session.logPreview)
-            }
-
-            if !session.tools.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Tool activity")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(DS.Colors.textTertiary)
-                    ForEach(session.tools.suffix(5)) { tool in
-                        PickyToolActivityRow(tool: tool)
-                    }
-                }
             }
 
             if !session.changedFiles.isEmpty {

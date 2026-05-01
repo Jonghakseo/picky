@@ -11,20 +11,24 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-struct PickyContextPacket: Codable, Equatable {
+struct PickyContextPacket: Codable, Equatable, Identifiable {
+    let id: String
     let source: String
-    let transcript: String
     let capturedAt: Date
-    let activeApplication: PickyApplicationContext?
+    let transcript: String?
+    let selectedText: String?
+    let cwd: String?
+    let activeApp: PickyApplicationContext?
     let activeWindow: PickyWindowContext?
-    let screens: [PickyScreenContext]
-    let defaultCwd: String?
+    let browser: PickyBrowserContext?
+    let screenshots: [PickyScreenshotContext]
+    let warnings: [String]
 }
 
 struct PickyApplicationContext: Codable, Equatable {
-    let localizedName: String?
-    let bundleIdentifier: String?
-    let processIdentifier: Int32?
+    let bundleId: String?
+    let name: String?
+    let pid: Int?
 }
 
 struct PickyWindowContext: Codable, Equatable {
@@ -32,12 +36,27 @@ struct PickyWindowContext: Codable, Equatable {
     let frame: PickyCGRect?
 }
 
-struct PickyScreenContext: Codable, Equatable {
+struct PickyBrowserContext: Codable, Equatable {
+    let url: URL?
+    let title: String?
+    let selectedText: String?
+}
+
+struct PickyScreenshotContext: Codable, Equatable, Identifiable {
+    let id: String
+    let label: String
+    let path: String
+    let screenId: String?
+    let bounds: PickyCGRect?
+}
+
+struct PickyScreenContext: Equatable {
     let label: String
     let frame: PickyCGRect
     let screenshotWidthInPixels: Int
     let screenshotHeightInPixels: Int
     let isCursorScreen: Bool
+    let imageData: Data?
 }
 
 struct PickyCGRect: Codable, Equatable {
@@ -52,25 +71,52 @@ struct PickyCGRect: Codable, Equatable {
         self.width = rect.width
         self.height = rect.height
     }
+
+    init(x: Double, y: Double, width: Double, height: Double) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
 }
 
 protocol PickyApplicationContextProviding {
     func activeApplicationContext() -> PickyApplicationContext?
 }
 
+protocol PickyWindowContextProviding {
+    func activeWindowContext() -> PickyWindowContext?
+}
+
+protocol PickyBrowserContextProviding {
+    func browserContext() -> PickyBrowserContext?
+}
+
 protocol PickyScreenContextProviding {
     func screenContexts() -> [PickyScreenContext]
+}
+
+protocol PickyScreenshotStoring {
+    func store(_ screen: PickyScreenContext, contextID: String, index: Int) throws -> PickyScreenshotContext
 }
 
 struct WorkspacePickyApplicationContextProvider: PickyApplicationContextProviding {
     func activeApplicationContext() -> PickyApplicationContext? {
         guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
         return PickyApplicationContext(
-            localizedName: app.localizedName,
-            bundleIdentifier: app.bundleIdentifier,
-            processIdentifier: app.processIdentifier
+            bundleId: app.bundleIdentifier,
+            name: app.localizedName,
+            pid: Int(app.processIdentifier)
         )
     }
+}
+
+struct NullPickyWindowContextProvider: PickyWindowContextProviding {
+    func activeWindowContext() -> PickyWindowContext? { nil }
+}
+
+struct NullPickyBrowserContextProvider: PickyBrowserContextProviding {
+    func browserContext() -> PickyBrowserContext? { nil }
 }
 
 struct StaticPickyScreenContextProvider: PickyScreenContextProviding {
@@ -83,27 +129,83 @@ struct StaticPickyScreenContextProvider: PickyScreenContextProviding {
                 frame: PickyCGRect(capture.displayFrame),
                 screenshotWidthInPixels: capture.screenshotWidthInPixels,
                 screenshotHeightInPixels: capture.screenshotHeightInPixels,
-                isCursorScreen: capture.isCursorScreen
+                isCursorScreen: capture.isCursorScreen,
+                imageData: capture.imageData
             )
         }
     }
 }
 
+struct PickyAppSupportScreenshotStore: PickyScreenshotStoring {
+    let appSupportRoot: URL
+    let fileManager: FileManager
+
+    init(appSupportRoot: URL = PickyAppSupport.defaultRoot(), fileManager: FileManager = .default) {
+        self.appSupportRoot = appSupportRoot
+        self.fileManager = fileManager
+    }
+
+    func store(_ screen: PickyScreenContext, contextID: String, index: Int) throws -> PickyScreenshotContext {
+        let directory = appSupportRoot.appendingPathComponent("Screenshots", isDirectory: true)
+            .appendingPathComponent(contextID, isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let id = "shot-\(index + 1)"
+        let fileURL = directory.appendingPathComponent("\(id).jpg")
+        if let imageData = screen.imageData {
+            try imageData.write(to: fileURL, options: .atomic)
+        } else if !fileManager.fileExists(atPath: fileURL.path) {
+            try Data().write(to: fileURL, options: .atomic)
+        }
+
+        return PickyScreenshotContext(
+            id: id,
+            label: screen.label,
+            path: fileURL.path,
+            screenId: "screen\(index + 1)",
+            bounds: screen.frame
+        )
+    }
+}
+
+enum PickyAppSupport {
+    static func defaultRoot() -> URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
+        return base.appendingPathComponent("Picky", isDirectory: true)
+    }
+}
+
 struct PickyContextPacketAssembler {
     let appProvider: PickyApplicationContextProviding
+    var windowProvider: PickyWindowContextProviding = NullPickyWindowContextProvider()
+    var browserProvider: PickyBrowserContextProviding = NullPickyBrowserContextProvider()
     let screenProvider: PickyScreenContextProviding
+    var screenshotStore: PickyScreenshotStoring = PickyAppSupportScreenshotStore()
     let defaultCwd: String?
     var now: () -> Date = Date.init
+    var idGenerator: () -> String = { "context-\(UUID().uuidString)" }
 
-    func assemble(source: String, transcript: String) -> PickyContextPacket {
-        PickyContextPacket(
+    func assemble(source: String, transcript: String, selectedSessionId: String? = nil) throws -> PickyContextPacket {
+        let contextID = idGenerator()
+        let screens = screenProvider.screenContexts()
+        let screenshots = try screens.enumerated().map { index, screen in
+            try screenshotStore.store(screen, contextID: contextID, index: index)
+        }
+        let browser = browserProvider.browserContext()
+
+        return PickyContextPacket(
+            id: contextID,
             source: source,
-            transcript: transcript,
             capturedAt: now(),
-            activeApplication: appProvider.activeApplicationContext(),
-            activeWindow: nil,
-            screens: screenProvider.screenContexts(),
-            defaultCwd: defaultCwd
+            transcript: transcript,
+            selectedText: browser?.selectedText,
+            cwd: defaultCwd,
+            activeApp: appProvider.activeApplicationContext(),
+            activeWindow: windowProvider.activeWindowContext(),
+            browser: browser,
+            screenshots: screenshots,
+            warnings: selectedSessionId.map { ["selectedSessionId=\($0)"] } ?? []
         )
     }
 }

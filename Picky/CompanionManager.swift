@@ -24,6 +24,7 @@ enum CompanionVoiceState {
 final class CompanionManager: ObservableObject {
     @Published private(set) var voiceState: CompanionVoiceState = .idle
     @Published private(set) var lastTranscript: String?
+    @Published private(set) var latestAgentSessionSummary: String?
     @Published private(set) var currentAudioPowerLevel: CGFloat = 0
     @Published private(set) var hasAccessibilityPermission = false
     @Published private(set) var hasScreenRecordingPermission = false
@@ -66,11 +67,16 @@ final class CompanionManager: ObservableObject {
     // Response text is now displayed inline on the cursor overlay via
     // streamingResponseText, so no separate response overlay manager is needed.
 
-    private let agentClient: any PickyAgentClient = LocalStubPickyAgentClient()
+    private let agentClient: any PickyAgentClient
+
+    init(agentClient: any PickyAgentClient = LocalStubPickyAgentClient()) {
+        self.agentClient = agentClient
+    }
 
     /// The currently running AI response task, if any. Cancelled when the user
     /// speaks again so a new response can begin immediately.
     private var currentResponseTask: Task<Void, Never>?
+    private var agentEventTask: Task<Void, Never>?
 
     private var shortcutTransitionCancellable: AnyCancellable?
     private var voiceStateCancellable: AnyCancellable?
@@ -122,6 +128,10 @@ final class CompanionManager: ObservableObject {
     }
 
     func start() {
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+            bindAgentEvents()
+            Task { await agentClient.connect() }
+        }
         refreshAllPermissions()
         print("🔑 Picky start — accessibility: \(hasAccessibilityPermission), screen: \(hasScreenRecordingPermission), mic: \(hasMicrophonePermission), screenContent: \(hasScreenContentPermission), onboarded: \(hasCompletedOnboarding)")
         startPermissionPolling()
@@ -240,6 +250,9 @@ final class CompanionManager: ObservableObject {
 
         currentResponseTask?.cancel()
         currentResponseTask = nil
+        agentEventTask?.cancel()
+        agentEventTask = nil
+        agentClient.disconnect()
         shortcutTransitionCancellable?.cancel()
         voiceStateCancellable?.cancel()
         audioPowerCancellable?.cancel()
@@ -504,7 +517,7 @@ final class CompanionManager: ObservableObject {
                     screenProvider: StaticPickyScreenContextProvider(captures: screenCaptures),
                     defaultCwd: FileManager.default.homeDirectoryForCurrentUser.path
                 )
-                let contextPacket = assembler.assemble(source: "voice", transcript: transcript)
+                let contextPacket = try assembler.assemble(source: "voice", transcript: transcript)
                 let receipt = try await agentClient.submit(
                     PickyAgentSubmission(transcript: transcript, context: contextPacket)
                 )
@@ -529,6 +542,42 @@ final class CompanionManager: ObservableObject {
                 voiceState = .idle
                 scheduleTransientHideIfNeeded()
             }
+        }
+    }
+
+    private func bindAgentEvents() {
+        agentEventTask?.cancel()
+        agentEventTask = Task { [weak self] in
+            guard let self else { return }
+            for await event in agentClient.events {
+                switch event {
+                case .protocolEvent(let envelope):
+                    await MainActor.run { self.applyAgentEvent(envelope.event) }
+                case .recoverableError(let message):
+                    await MainActor.run { self.latestAgentSessionSummary = "Agent event error: \(message)" }
+                case .disconnected:
+                    await MainActor.run { self.latestAgentSessionSummary = "picky-agentd disconnected" }
+                case .connected:
+                    await MainActor.run { self.latestAgentSessionSummary = "picky-agentd connected" }
+                }
+            }
+        }
+    }
+
+    private func applyAgentEvent(_ event: PickyEvent) {
+        switch event {
+        case .sessionUpdated(let session):
+            latestAgentSessionSummary = session.lastSummary ?? "\(session.title) · \(session.status.rawValue)"
+        case .sessionLogAppended(_, let line):
+            latestAgentSessionSummary = line
+        case .toolActivityUpdated(_, let tool):
+            latestAgentSessionSummary = [tool.name, tool.preview].compactMap { $0 }.joined(separator: ": ")
+        case .extensionUiRequest(let request):
+            latestAgentSessionSummary = request.prompt ?? request.title ?? "Agent is waiting for input"
+        case .error(let error):
+            latestAgentSessionSummary = error.message
+        case .hello, .sessionSnapshot, .artifactUpdated, .artifactOpened, .unknown:
+            break
         }
     }
 

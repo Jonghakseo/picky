@@ -29,7 +29,16 @@ struct PickyApp: App {
 @MainActor
 final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarPanelManager: MenuBarPanelManager?
-    private let companionManager = CompanionManager()
+    private let daemonConfiguration = PickyAgentDaemonConfiguration.development()
+    private lazy var daemonLauncher = PickyAgentDaemonLauncher(configuration: daemonConfiguration)
+    private lazy var companionManager = CompanionManager(
+        agentClient: WebSocketPickyAgentClient(
+            configuration: WebSocketPickyAgentClient.Configuration(
+                port: daemonConfiguration.port,
+                token: daemonConfiguration.token
+            )
+        )
+    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("🎯 Picky: Starting...")
@@ -40,6 +49,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         PickyAnalytics.configure()
         PickyAnalytics.trackAppOpened()
 
+        if !Self.isRunningUnitTests {
+            daemonLauncher.start()
+        }
         menuBarPanelManager = MenuBarPanelManager(companionManager: companionManager)
         companionManager.start()
         // Auto-open the panel if the user still needs to do something:
@@ -52,11 +64,16 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         companionManager.stop()
+        daemonLauncher.stop()
     }
 
     /// Registers the app as a login item so it launches automatically on
     /// startup. Uses SMAppService which shows the app in System Settings >
     /// General > Login Items, letting the user toggle it off if they want.
+    private static var isRunningUnitTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
     private func registerAsLoginItemIfNeeded() {
         let loginItemService = SMAppService.mainApp
         if loginItemService.status != .enabled {

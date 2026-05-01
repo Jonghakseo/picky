@@ -1,62 +1,66 @@
-# Release Scripts
+# Picky Release / Package Scripts
 
-## `release.sh` — Ship a new version of makesomething
+## `package-signed-app.sh` — local signed package smoke
 
-Automates the full release pipeline: build → sign → DMG → notarize → Sparkle appcast → GitHub Release.
-
-### Quick start
+Builds `Picky.app` with command-line signing overrides and verifies the result with:
 
 ```bash
-# Auto-bumps version and build number from the latest GitHub Release
-./scripts/release.sh
+codesign --verify --deep --strict --verbose=2
 ```
 
-The script checks GitHub for the latest release (e.g. `v1.5`, build 6) and automatically bumps to `v1.6`, build 7. You'll see a confirmation prompt before anything runs.
+This keeps the Xcode project defaults unchanged (`CODE_SIGNING_ALLOWED=NO` for fast normal build/test), so package signing does **not** slow down the regular Swift test workflow.
 
-### Override version or build
+### Local ad-hoc package
 
 ```bash
-# Set a specific marketing version (auto-bumps build)
-./scripts/release.sh 2.0
-
-# Set both marketing version and build number
-./scripts/release.sh 2.0 10
+./scripts/package-signed-app.sh
 ```
 
-### Safety
+Defaults:
 
-- **Duplicate detection**: If the tag already exists on GitHub, the script exits with an error and suggests what to do.
-- **Confirmation prompt**: Shows the version, build, and previous release before proceeding. Press `y` to continue.
+- scheme: `Picky`
+- configuration: `Release`
+- signing identity: `-` (`Sign to Run Locally` / ad-hoc)
+- output app: `build/package/export/Picky.app`
+- output zip: `build/package/Picky-Release-signed.zip`
 
-### What it does
+### Developer ID package
 
-1. Fetches the latest release from GitHub to determine version + build
-2. Archives the app via `xcodebuild`
-3. Exports a signed `.app` with Developer ID
-4. Creates a DMG with the drag-to-Applications background
-5. Notarizes the DMG with Apple (Gatekeeper compliance)
-6. Signs the DMG with the Sparkle EdDSA key
-7. Generates `appcast.xml` for Sparkle auto-updates
-8. Creates a GitHub Release with the DMG attached
-9. Pushes the updated `appcast.xml` to the releases repo
+```bash
+PICKY_CODE_SIGN_IDENTITY="Developer ID Application: Example (TEAMID)" \
+PICKY_DEVELOPMENT_TEAM="TEAMID" \
+./scripts/package-signed-app.sh
+```
 
-### One-time setup (prerequisites)
+### Useful environment variables
 
-1. **Xcode** with your Developer ID signing certificate
-2. **Homebrew tools**:
-   ```bash
-   brew install create-dmg gh
-   ```
-3. **GitHub CLI auth**:
-   ```bash
-   gh auth login
-   ```
-4. **Apple notarization credentials** (stored in Keychain):
-   ```bash
-   xcrun notarytool store-credentials "AC_PASSWORD" \
-       --apple-id YOUR_APPLE_ID \
-       --team-id YOUR_TEAM_ID
-   ```
-   You'll be prompted for an app-specific password (generate one at [appleid.apple.com](https://appleid.apple.com)).
-5. **Sparkle EdDSA key** — already generated and stored in Keychain (done during initial Sparkle setup)
-6. **Build the project in Xcode at least once** so SPM downloads Sparkle and the Sparkle CLI tools are available
+| Variable | Default | Description |
+| --- | --- | --- |
+| `PICKY_CONFIGURATION` | `Release` | Xcode configuration to build. |
+| `PICKY_CODE_SIGN_IDENTITY` | `-` | Signing identity. Use Developer ID for distribution. |
+| `PICKY_DEVELOPMENT_TEAM` | empty | Apple team id, required for some identities. |
+| `PICKY_PACKAGE_BUILD_DIR` | `build/package` | Package build output root. |
+| `PICKY_CREATE_ZIP` | `1` | Set `0` to skip zip creation. |
+| `PICKY_CLEAN` | `1` | Set `0` to reuse package DerivedData. |
+
+### Runtime smoke
+
+After packaging, run the signed app against the local daemon source in mock mode:
+
+```bash
+PICKY_AGENTD_RUNTIME=mock \
+PICKY_AGENTD_ROOT="$PWD/agentd" \
+build/package/export/Picky.app/Contents/MacOS/Picky
+```
+
+Expected daemon log:
+
+```text
+picky-agentd listening on 127.0.0.1:17631
+```
+
+## `release.sh`
+
+Currently delegates to `package-signed-app.sh`.
+
+A notarized DMG/appcast/GitHub release pipeline is intentionally **not** configured yet. Add that later as a separate explicit distribution workflow once Developer ID, notarization credentials, update strategy, and release repository are finalized.

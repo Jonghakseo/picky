@@ -14,4 +14,4 @@ Public Clicky source is MIT licensed and may be copied into Picky with attributi
 
 - Upstream `.git/` metadata.
 - Upstream agent-instruction files (`AGENTS.md`, `CLAUDE.md`) so this repository's Picky-specific `AGENTS.md` remains authoritative.
-- Upstream `worker/` Cloudflare backend, because Phase 1 removes/replaces remote backend code and Phase 0 only needs the macOS app baseline.
+- Upstream hosted backend package, because Picky Phase 1 keeps only the macOS app shell and local agent boundary.

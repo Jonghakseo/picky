@@ -1,0 +1,7 @@
+{
+  "id": "event-snapshot-001",
+  "protocolVersion": "2026-05-01",
+  "timestamp": "2026-05-01T00:00:01.000Z",
+  "type": "sessionSnapshot",
+  "sessions": []
+}

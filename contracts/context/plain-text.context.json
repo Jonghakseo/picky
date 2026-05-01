@@ -1,0 +1,11 @@
+{
+  "id": "context-plain-001",
+  "source": "text",
+  "capturedAt": "2026-05-01T00:00:00.000Z",
+  "transcript": "Summarize the current work",
+  "cwd": "/Users/example/project",
+  "activeApp": { "bundleId": "com.apple.dt.Xcode", "name": "Xcode", "pid": 101 },
+  "activeWindow": { "title": "Project" },
+  "screenshots": [],
+  "warnings": []
+}

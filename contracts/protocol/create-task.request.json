@@ -1,0 +1,14 @@
+{
+  "id": "cmd-create-001",
+  "protocolVersion": "2026-05-01",
+  "type": "createTask",
+  "context": {
+    "id": "context-plain-001",
+    "source": "text",
+    "capturedAt": "2026-05-01T00:00:00.000Z",
+    "transcript": "Summarize the current work",
+    "cwd": "/Users/example/project",
+    "screenshots": [],
+    "warnings": []
+  }
+}

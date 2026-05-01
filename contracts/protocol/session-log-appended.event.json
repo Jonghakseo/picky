@@ -1,0 +1,8 @@
+{
+  "id": "event-log-001",
+  "protocolVersion": "2026-05-01",
+  "timestamp": "2026-05-01T00:00:02.000Z",
+  "type": "sessionLogAppended",
+  "sessionId": "session-001",
+  "line": "mock runtime accepted prompt"
+}

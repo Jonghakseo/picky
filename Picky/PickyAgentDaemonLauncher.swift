@@ -35,7 +35,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
             runtime: ProcessInfo.processInfo.environment["PICKY_AGENTD_RUNTIME"],
             workingDirectory: agentdRoot,
             executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-            arguments: ["pnpm", "--dir", agentdRoot.path, "dev"],
+            arguments: ["pnpm", "--dir", agentdRoot.path, "exec", "tsx", "src/index.ts"],
             requiredExecutableName: "pnpm"
         )
     }

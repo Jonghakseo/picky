@@ -117,6 +117,20 @@ struct PickyAgentDaemonLauncherTests {
         #expect(launcher.state == .stopped)
     }
 
+    @Test func developmentLaunchUsesPnpmExecToAvoidNpmLifecyclePrefixPollution() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let repo = temp.appendingPathComponent("repo", isDirectory: true)
+        let agentd = repo.appendingPathComponent("agentd", isDirectory: true)
+        try makeAgentdPackage(at: agentd)
+
+        let configuration = PickyAgentDaemonConfiguration.development(
+            appSupportRoot: temp,
+            filePath: repo.appendingPathComponent("Picky/PickyAgentDaemonLauncher.swift").path
+        )
+
+        #expect(configuration.arguments == ["pnpm", "--dir", agentd.path, "exec", "tsx", "src/index.ts"])
+    }
+
     @Test func resolvesAgentdRootFromEnvironmentAndSourceTree() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
         let override = temp.appendingPathComponent("override-agentd", isDirectory: true)

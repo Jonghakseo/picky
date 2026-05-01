@@ -206,7 +206,30 @@ private struct PickySessionDetailView: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(DS.Colors.textTertiary)
                     ForEach(session.changedFiles.prefix(4), id: \.path) { file in
-                        Text("\(file.status) · \(file.path)")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(file.status) · \(file.path)")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(DS.Colors.textSecondary)
+                                .lineLimit(1)
+                            if let summary = file.summary, !summary.isEmpty {
+                                Text(summary)
+                                    .font(.system(size: 10))
+                                    .foregroundColor(DS.Colors.textTertiary)
+                                    .lineLimit(2)
+                            }
+                        }
+                    }
+                }
+            }
+
+            let diffArtifacts = session.artifacts.filter { $0.kind == "diff" }
+            if !diffArtifacts.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Diff preview")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(DS.Colors.textTertiary)
+                    ForEach(diffArtifacts.prefix(2)) { artifact in
+                        Text(artifact.title)
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundColor(DS.Colors.textSecondary)
                             .lineLimit(1)
@@ -244,6 +267,7 @@ private struct PickySessionDetailView: View {
                 Button("Stop") { Task { try? await viewModel.abort(sessionID: session.id) } }
                     .disabled(session.status.isTerminal)
                 Button("Copy") { viewModel.copySummary(sessionID: session.id) }
+                Button("Archive") { viewModel.archive(sessionID: session.id) }
             }
             .font(.system(size: 11, weight: .medium))
             .buttonStyle(.plain)

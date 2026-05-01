@@ -1,0 +1,135 @@
+//
+//  PickySettingsPolishTests.swift
+//  PickyTests
+//
+
+import Foundation
+import Testing
+@testable import Picky
+
+struct PickySettingsPolishTests {
+    @Test func settingsPersistReloadAndRejectInvalidCwd() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        let worktrees = root.appendingPathComponent("worktrees", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: worktrees, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        let settings = PickySettings(
+            defaultCwd: project.path,
+            worktreeParent: worktrees.path,
+            preferredToolVisibility: "show tool activity",
+            readOnlyInvestigationPreference: true,
+            daemonPath: "/tmp/agentd",
+            logPath: root.appendingPathComponent("Logs").path
+        )
+
+        try store.save(settings)
+        #expect(store.load() == settings)
+
+        var invalid = settings
+        invalid.defaultCwd = root.appendingPathComponent("missing").path
+        #expect(throws: PickySettingsValidationError.invalidDefaultCwd(invalid.defaultCwd)) {
+            try store.save(invalid)
+        }
+    }
+
+    @Test func diffPreviewGroupsFilesAndTruncatesSafely() {
+        let diff = """
+        diff --git a/Sources/A.swift b/Sources/A.swift
+        +aaaaaa
+        diff --git a/Sources/B.swift b/Sources/B.swift
+        +bbbbbb
+        """
+
+        let preview = PickyDiffPreviewBuilder(maxCharactersPerFile: 20).build(from: diff)
+
+        #expect(preview.files.map(\.path) == ["Sources/A.swift", "Sources/B.swift"])
+        #expect(preview.files.allSatisfy { $0.isTruncated })
+        #expect(preview.files.first?.text.contains("[diff truncated by Picky]") == true)
+    }
+
+    @Test func archiveSearchUsesTitleCwdStatusPrAndSummaryWithoutFabrication() {
+        let pr = PickyArtifact(id: "pr-1", kind: "pr", title: "PR", path: nil, url: URL(string: "https://github.com/acme/repo/pull/77")!, updatedAt: Date(timeIntervalSince1970: 1))
+        let running = session(id: "running", title: "Investigate checkout", status: .running, cwd: "/tmp/shop", summary: "looking", artifacts: [])
+        let completed = session(id: "done", title: "Ship fix", status: .completed, cwd: "/tmp/picky", summary: "final answer", artifacts: [pr])
+        var archive = PickySessionArchive(active: [running, completed])
+
+        archive.archive(sessionID: "done")
+
+        #expect(archive.active.map(\.id) == ["running"])
+        #expect(archive.archived.map(\.id) == ["done"])
+        #expect(archive.search("pull/77").map(\.id) == ["done"])
+        #expect(archive.search("running").map(\.id) == ["running"])
+        #expect(archive.search("made up verification").isEmpty)
+    }
+
+    @MainActor
+    @Test func viewModelArchivesAndSearchesSessions() async throws {
+        let client = FakePolishClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: sessionUpdatedJSON(id: "archive-me", title: "Archive Me", status: "completed", summary: "final summary"))))
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        viewModel.archive(sessionID: "archive-me")
+
+        #expect(viewModel.sessions.isEmpty)
+        #expect(viewModel.archivedSessions.map(\.id) == ["archive-me"])
+        #expect(viewModel.searchSessions(query: "final").map(\.id) == ["archive-me"])
+    }
+
+    @Test func friendlyMissingPiErrorsAreActionable() {
+        let checker = PickyRuntimeDependencyChecker(piSDKPath: "/tmp/picky-missing-sdk-\(UUID().uuidString)", pathEnvironment: "/tmp")
+
+        #expect(checker.missingPiSDKErrorIfNeeded()?.localizedDescription.contains("Pi SDK") == true)
+        #expect(checker.missingPiExecutableErrorIfNeeded() == .missingPiExecutable)
+        #expect(PickyFriendlyRuntimeError.permissionDenied("Screen Recording").localizedDescription.contains("reduced context"))
+    }
+
+    private func session(id: String, title: String, status: PickySessionStatus, cwd: String, summary: String, artifacts: [PickyArtifact]) -> PickyAgentSession {
+        PickyAgentSession(
+            id: id,
+            title: title,
+            status: status,
+            cwd: cwd,
+            createdAt: Date(timeIntervalSince1970: 1),
+            updatedAt: Date(timeIntervalSince1970: 2),
+            lastSummary: summary,
+            logs: [],
+            tools: [],
+            artifacts: artifacts,
+            changedFiles: [],
+            pendingExtensionUiRequest: nil
+        )
+    }
+}
+
+private final class FakePolishClient: PickyAgentClient {
+    private let continuation: AsyncStream<PickyClientEvent>.Continuation
+    let events: AsyncStream<PickyClientEvent>
+
+    init() {
+        var continuation: AsyncStream<PickyClientEvent>.Continuation!
+        self.events = AsyncStream { continuation = $0 }
+        self.continuation = continuation
+    }
+
+    func connect() async { continuation.yield(.connected) }
+    func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt { PickyAgentSubmissionReceipt(sessionID: "unused", message: "unused") }
+    func send(_ command: PickyCommandEnvelope) async throws {}
+    func disconnect() { continuation.yield(.disconnected) }
+    func emit(_ event: PickyClientEvent) { continuation.yield(event) }
+}
+
+private func sessionUpdatedJSON(id: String, title: String, status: String, summary: String) -> String {
+    """
+    {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/tmp/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
+    """
+}
+
+private extension PickyEventEnvelope {
+    static func fixture(eventJSON: String) -> PickyEventEnvelope {
+        try! JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(eventJSON.utf8))
+    }
+}

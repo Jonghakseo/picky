@@ -119,6 +119,11 @@ struct NullPickyBrowserContextProvider: PickyBrowserContextProviding {
     func browserContext() -> PickyBrowserContext? { nil }
 }
 
+struct AdvancedBrowserContextProviderAdapter: PickyBrowserContextProviding {
+    let provider: PickyAdvancedBrowserContextProviding
+    func browserContext() -> PickyBrowserContext? { provider.browserContextResult().value }
+}
+
 struct StaticPickyScreenContextProvider: PickyScreenContextProviding {
     let captures: [CompanionScreenCapture]
 
@@ -180,6 +185,8 @@ struct PickyContextPacketAssembler {
     let appProvider: PickyApplicationContextProviding
     var windowProvider: PickyWindowContextProviding = NullPickyWindowContextProvider()
     var browserProvider: PickyBrowserContextProviding = NullPickyBrowserContextProvider()
+    var advancedBrowserProvider: PickyAdvancedBrowserContextProviding?
+    var selectedTextProvider: PickySelectedTextProviding = NullPickySelectedTextProvider()
     let screenProvider: PickyScreenContextProviding
     var screenshotStore: PickyScreenshotStoring = PickyAppSupportScreenshotStore()
     let defaultCwd: String?
@@ -192,20 +199,31 @@ struct PickyContextPacketAssembler {
         let screenshots = try screens.enumerated().map { index, screen in
             try screenshotStore.store(screen, contextID: contextID, index: index)
         }
-        let browser = browserProvider.browserContext()
+        var warnings = selectedSessionId.map { ["selectedSessionId=\($0)"] } ?? []
+        let browser: PickyBrowserContext?
+        if let advancedBrowserProvider {
+            let result = advancedBrowserProvider.browserContextResult()
+            browser = result.value
+            warnings.append(contentsOf: result.warnings)
+        } else {
+            browser = browserProvider.browserContext()
+        }
+        let selectedTextResult = selectedTextProvider.selectedTextResult()
+        warnings.append(contentsOf: selectedTextResult.warnings)
+        let selectedText = selectedTextResult.value?.text ?? browser?.selectedText
 
         return PickyContextPacket(
             id: contextID,
             source: source,
             capturedAt: now(),
             transcript: transcript,
-            selectedText: browser?.selectedText,
+            selectedText: selectedText,
             cwd: defaultCwd,
             activeApp: appProvider.activeApplicationContext(),
             activeWindow: windowProvider.activeWindowContext(),
             browser: browser,
             screenshots: screenshots,
-            warnings: selectedSessionId.map { ["selectedSessionId=\($0)"] } ?? []
+            warnings: warnings
         )
     }
 }

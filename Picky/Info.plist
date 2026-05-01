@@ -5,10 +5,10 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Picky uses your microphone so you can talk to it</string>
+	<string>Picky uses your microphone only when you hold Control+Option to dictate a local agent task.</string>
 	<key>NSScreenCaptureUsageDescription</key>
-	<string>Picky needs screen recording access to see your screen and help you.</string>
+	<string>Picky captures screenshots only during invocation so Pi can receive neutral desktop context.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Picky uses speech recognition to transcribe your voice when you talk to it</string>
+	<string>Picky uses local speech recognition to transcribe your voice when you invoke it.</string>
 </dict>
 </plist>

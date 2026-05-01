@@ -519,8 +519,11 @@ final class CompanionManager: ObservableObject {
 
                 let assembler = PickyContextPacketAssembler(
                     appProvider: WorkspacePickyApplicationContextProvider(),
+                    windowProvider: CGWindowPickyWindowContextProvider(),
+                    advancedBrowserProvider: AppleScriptBrowserContextProvider(),
+                    selectedTextProvider: ClipboardSelectedTextProvider(),
                     screenProvider: StaticPickyScreenContextProvider(captures: screenCaptures),
-                    defaultCwd: FileManager.default.homeDirectoryForCurrentUser.path
+                    defaultCwd: PickySettingsStore().load().defaultCwd
                 )
                 let selectedSessionID = selectionStore.selectedSessionID
                 let source = selectedSessionID == nil ? "voice" : "voice-follow-up"

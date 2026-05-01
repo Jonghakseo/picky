@@ -15,11 +15,10 @@ struct PickyApp: App {
     @NSApplicationDelegateAdaptor(CompanionAppDelegate.self) var appDelegate
 
     var body: some Scene {
-        // The app lives entirely in the menu bar panel managed by the AppDelegate.
-        // This empty Settings scene satisfies SwiftUI's requirement for at least
-        // one scene but is never shown (LSUIElement=true removes the app menu).
+        // The app lives primarily in the menu bar panel managed by the AppDelegate.
+        // A compact Settings scene is kept for local paths and diagnostics.
         Settings {
-            EmptyView()
+            PickySettingsView(viewModel: PickySettingsViewModel())
         }
     }
 }

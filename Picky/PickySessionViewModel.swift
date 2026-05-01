@@ -90,6 +90,7 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     @Published private(set) var sessions: [SessionCard] = []
+    @Published private(set) var archivedSessions: [SessionCard] = []
     @Published private(set) var selectedSessionID: String?
     @Published private(set) var lastError: String?
     @Published private(set) var lastOpenedArtifactPath: String?
@@ -194,7 +195,7 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func copySummary(sessionID: String, pasteboard: NSPasteboard = .general) {
-        guard let session = sessions.first(where: { $0.id == sessionID }) else { return }
+        guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }) else { return }
         pasteboard.clearContents()
         pasteboard.setString(session.lastSummary.isEmpty ? session.title : session.lastSummary, forType: .string)
     }
@@ -202,6 +203,32 @@ final class PickySessionListViewModel: ObservableObject {
     func openTerminalDebug(sessionID: String, workspace: NSWorkspace = .shared) {
         guard let cwd = sessions.first(where: { $0.id == sessionID })?.cwd else { return }
         workspace.open(URL(fileURLWithPath: cwd))
+    }
+
+    func archive(sessionID: String) {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        archivedSessions.append(sessions.remove(at: index))
+        if selectedSessionID == sessionID {
+            hasExplicitSelection = false
+            selectedSessionID = defaultSelectionID()
+            selectionStore.selectedSessionID = selectedSessionID
+        }
+    }
+
+    func searchSessions(query: String) -> [SessionCard] {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let all = sessions + archivedSessions
+        guard !normalized.isEmpty else { return all }
+        return all.filter { session in
+            let haystack = [
+                session.title,
+                session.cwd,
+                session.status.rawValue,
+                session.lastSummary,
+                session.prArtifacts.compactMap { $0.url?.absoluteString }.joined(separator: " ")
+            ].compactMap { $0 }.joined(separator: " ").lowercased()
+            return haystack.contains(normalized)
+        }
     }
 
     private func apply(_ event: PickyClientEvent) {
@@ -281,7 +308,9 @@ final class PickySessionListViewModel: ObservableObject {
         if let existing = sessions.first(where: { $0.id == card.id }) {
             incoming = existing.merged(with: card)
         }
-        if let index = sessions.firstIndex(where: { $0.id == card.id }) {
+        if let archivedIndex = archivedSessions.firstIndex(where: { $0.id == card.id }) {
+            archivedSessions[archivedIndex] = incoming
+        } else if let index = sessions.firstIndex(where: { $0.id == card.id }) {
             sessions[index] = incoming
         } else {
             sessions.append(incoming)

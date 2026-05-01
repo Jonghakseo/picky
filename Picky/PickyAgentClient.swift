@@ -143,9 +143,9 @@ final class WebSocketPickyAgentClient: PickyAgentClient {
     }
 
     func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {
-        let command = PickyCommandEnvelope(type: .createTask, context: submission.context)
+        let command = PickyCommandEnvelope(type: .routeTask, context: submission.context)
         try await send(command)
-        return PickyAgentSubmissionReceipt(sessionID: command.id, message: "Sent to picky-agentd")
+        return PickyAgentSubmissionReceipt(sessionID: command.id, message: "")
     }
 
     func send(_ command: PickyCommandEnvelope) async throws {

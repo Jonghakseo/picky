@@ -4,6 +4,7 @@ import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
+import { ConservativeMockTaskRouter, PiQuickTaskRouter } from "./task-router.js";
 
 const port = Number(process.env.PICKY_AGENTD_PORT ?? 17631);
 const token = process.env.PICKY_AGENTD_TOKEN;
@@ -14,8 +15,10 @@ if (!token) {
   process.exit(1);
 }
 
-const runtime = process.env.PICKY_AGENTD_RUNTIME === "mock" ? new MockRuntime() : new PiSdkRuntime();
-const supervisor = new SessionSupervisor(runtime, new SessionStore(appSupportDir), new ArtifactStore(appSupportDir));
+const useMockRuntime = process.env.PICKY_AGENTD_RUNTIME === "mock";
+const runtime = useMockRuntime ? new MockRuntime() : new PiSdkRuntime();
+const taskRouter = useMockRuntime ? new ConservativeMockTaskRouter() : new PiQuickTaskRouter();
+const supervisor = new SessionSupervisor(runtime, new SessionStore(appSupportDir), new ArtifactStore(appSupportDir), taskRouter);
 await supervisor.load();
 const server = new AgentdServer({ port, token, supervisor });
 const boundPort = await server.start();

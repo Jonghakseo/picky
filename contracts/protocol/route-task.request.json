@@ -1,0 +1,14 @@
+{
+  "id": "cmd-route-001",
+  "protocolVersion": "2026-05-01",
+  "type": "routeTask",
+  "context": {
+    "id": "context-route-001",
+    "source": "voice",
+    "capturedAt": "2026-05-01T00:00:00.000Z",
+    "transcript": "마이크 테스트",
+    "cwd": "/tmp/project",
+    "screenshots": [],
+    "warnings": []
+  }
+}

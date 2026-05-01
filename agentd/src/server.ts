@@ -34,6 +34,7 @@ export class AgentdServer {
     this.options.supervisor.on("session", (session) => this.broadcast({ type: "sessionUpdated", session }));
     this.options.supervisor.on("log", (sessionId, line) => this.broadcast({ type: "sessionLogAppended", sessionId, line }));
     this.options.supervisor.on("extensionUiRequest", (request) => this.broadcast({ type: "extensionUiRequest", request }));
+    this.options.supervisor.on("quickReply", (contextId, text) => this.broadcast({ type: "quickReply", contextId, text }));
     this.options.supervisor.on("artifact", (sessionId, artifact) => this.broadcast({ type: "artifactUpdated", sessionId, artifact }));
 
     await new Promise<void>((resolve) => this.httpServer!.listen(this.options.port, "127.0.0.1", resolve));
@@ -65,6 +66,7 @@ export class AgentdServer {
         if (!session) throw new Error(`Unknown session: ${command.sessionId}`);
         this.send(ws, { type: "sessionUpdated", session });
       }
+      if (command.type === "routeTask") await this.options.supervisor.route(command.context);
       if (command.type === "createTask") await this.options.supervisor.create(command.context);
       if (command.type === "followUp") await this.options.supervisor.followUp(command.sessionId, command.text, command.context);
       if (command.type === "steer") await this.options.supervisor.steer(command.sessionId, command.text);

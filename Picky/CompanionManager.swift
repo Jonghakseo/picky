@@ -556,7 +556,7 @@ final class CompanionManager: ObservableObject {
     func routeVoiceTranscript(transcript: String, contextPacket: PickyContextPacket) async throws -> PickyAgentSubmissionReceipt {
         if let selectedSessionID = selectionStore.selectedSessionID {
             try await agentClient.send(PickyCommandEnvelope(type: .followUp, context: contextPacket, sessionId: selectedSessionID, text: transcript))
-            return PickyAgentSubmissionReceipt(sessionID: selectedSessionID, message: "Follow-up sent to selected Picky session.")
+            return PickyAgentSubmissionReceipt(sessionID: selectedSessionID, message: "")
         }
         return try await agentClient.submit(PickyAgentSubmission(transcript: transcript, context: contextPacket))
     }
@@ -590,6 +590,9 @@ final class CompanionManager: ObservableObject {
             latestAgentSessionSummary = [tool.name, tool.preview].compactMap { $0 }.joined(separator: ": ")
         case .extensionUiRequest(let request):
             latestAgentSessionSummary = request.prompt ?? request.title ?? "Agent is waiting for input"
+        case .quickReply(let reply):
+            latestAgentSessionSummary = reply.text
+            speakSystemMessage(reply.text)
         case .error(let error):
             latestAgentSessionSummary = error.message
         case .hello, .sessionSnapshot, .artifactUpdated, .artifactOpened, .unknown:

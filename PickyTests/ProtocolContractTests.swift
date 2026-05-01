@@ -55,7 +55,7 @@ struct ProtocolContractTests {
         #expect(event.event == .unknown(type: "newFutureEvent"))
     }
 
-    @Test func encodesCreateTaskCommandWithContractVersion() throws {
+    @Test func encodesRouteTaskCommandWithContractVersion() throws {
         let context = PickyContextPacket(
             id: "context-test-001",
             source: "text",
@@ -69,13 +69,29 @@ struct ProtocolContractTests {
             screenshots: [],
             warnings: []
         )
-        let command = PickyCommandEnvelope(id: "cmd-test-001", type: .createTask, context: context)
+        let command = PickyCommandEnvelope(id: "cmd-test-001", type: .routeTask, context: context)
         let data = try JSONEncoder.pickyAgentProtocolEncoder().encode(command)
         let decoded = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyCommandEnvelope.self, from: data)
 
         #expect(decoded.protocolVersion == pickyAgentProtocolVersion)
-        #expect(decoded.type == .createTask)
+        #expect(decoded.type == .routeTask)
         #expect(decoded.context?.id == "context-test-001")
+    }
+
+    @Test func decodesQuickReplyEvent() throws {
+        let json = """
+        {
+          "id":"event-quick-001",
+          "protocolVersion":"2026-05-01",
+          "timestamp":"2026-05-01T00:00:00.000Z",
+          "type":"quickReply",
+          "contextId":"context-1",
+          "text":"바로 답변"
+        }
+        """.data(using: .utf8)!
+
+        let event = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
+        #expect(event.event == .quickReply(PickyQuickReplyEvent(contextId: "context-1", text: "바로 답변")))
     }
 }
 

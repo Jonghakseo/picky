@@ -143,10 +143,12 @@ final class PickySessionListViewModel: ObservableObject {
         hasExplicitSelection = sessionID != nil
         if let sessionID, sessions.contains(where: { $0.id == sessionID }) {
             selectedSessionID = sessionID
+            selectionStore.selectedSessionID = sessionID
         } else {
+            hasExplicitSelection = false
             selectedSessionID = defaultSelectionID()
+            selectionStore.selectedSessionID = nil
         }
-        selectionStore.selectedSessionID = selectedSessionID
     }
 
     func submit(transcript: String, context: PickyContextPacket) async throws {
@@ -227,7 +229,7 @@ final class PickySessionListViewModel: ObservableObject {
         if selectedSessionID == sessionID {
             hasExplicitSelection = false
             selectedSessionID = defaultSelectionID()
-            selectionStore.selectedSessionID = selectedSessionID
+            selectionStore.selectedSessionID = nil
         }
     }
 
@@ -268,8 +270,9 @@ final class PickySessionListViewModel: ObservableObject {
             if hasExplicitSelection, let selectedSessionID, sessions.contains(where: { $0.id == selectedSessionID }) {
                 selectionStore.selectedSessionID = selectedSessionID
             } else {
+                hasExplicitSelection = false
                 selectedSessionID = defaultSelectionID()
-                selectionStore.selectedSessionID = selectedSessionID
+                selectionStore.selectedSessionID = nil
             }
             sessions.forEach(deliverNotificationIfNeeded(for:))
         case .sessionUpdated(let session):
@@ -315,7 +318,7 @@ final class PickySessionListViewModel: ObservableObject {
             }
         case .error(let error):
             lastError = error.message
-        case .hello, .unknown:
+        case .quickReply, .hello, .unknown:
             break
         }
     }
@@ -333,9 +336,12 @@ final class PickySessionListViewModel: ObservableObject {
             sessions.append(incoming)
         }
         sessions = sessions.sortedForHUD()
-        if !hasExplicitSelection || selectedSessionID == nil || sessions.contains(where: { $0.id == selectedSessionID }) == false {
-            selectedSessionID = defaultSelectionID()
+        if hasExplicitSelection, let selectedSessionID, sessions.contains(where: { $0.id == selectedSessionID }) {
             selectionStore.selectedSessionID = selectedSessionID
+        } else {
+            hasExplicitSelection = false
+            selectedSessionID = defaultSelectionID()
+            selectionStore.selectedSessionID = nil
         }
         deliverNotificationIfNeeded(for: incoming)
     }
@@ -346,9 +352,11 @@ final class PickySessionListViewModel: ObservableObject {
         mutate(&card)
         sessions[index] = card
         sessions = sessions.sortedForHUD()
-        if !hasExplicitSelection || selectedSessionID == nil {
-            selectedSessionID = defaultSelectionID()
+        if hasExplicitSelection, let selectedSessionID {
             selectionStore.selectedSessionID = selectedSessionID
+        } else {
+            selectedSessionID = defaultSelectionID()
+            selectionStore.selectedSessionID = nil
         }
         deliverNotificationIfNeeded(for: card)
     }

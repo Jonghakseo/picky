@@ -5,7 +5,9 @@ import { describe, expect, it } from "vitest";
 import { ArtifactStore } from "./artifact-store.js";
 import type { PickyContextPacket } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
-import type { AgentRuntime } from "./runtime/types.js";
+import type { BuiltPrompt } from "./prompt-builder.js";
+import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./runtime/types.js";
+import type { TaskRouteDecision, TaskRouter } from "./task-router.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 
@@ -105,6 +107,48 @@ describe("SessionSupervisor", () => {
     expect(supervisor.list()).toEqual([]);
   });
 
+  it("routes simple requests as quick replies without creating agent sessions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir), undefined, new StaticTaskRouter({ route: "quick_reply", reply: "바로 답변" }));
+    const replies: Array<{ contextId: string; text: string }> = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+
+    const result = await supervisor.route(context("마이크 테스트"));
+
+    expect(result).toBeUndefined();
+    expect(supervisor.list()).toEqual([]);
+    expect(replies).toEqual([{ contextId: "context-마이크 테스트", text: "바로 답변" }]);
+  });
+
+  it("routes complex requests to the long-running runtime", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir), undefined, new StaticTaskRouter({ route: "handoff", reason: "needs tools" }));
+
+    const session = await supervisor.route(context("코드 수정해줘"));
+
+    expect(session?.title).toBe("코드 수정해줘");
+    expect(supervisor.list()).toHaveLength(1);
+  });
+
+  it("does not turn fire-and-forget extension UI updates into pending input", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const session = await supervisor.create(context("widget update"));
+
+    runtime.handle?.emit({
+      type: "extension_ui",
+      waitsForInput: false,
+      request: { id: "widget-1", sessionId: session.id, method: "setWidget", createdAt: "2026-05-01T00:00:00.000Z", title: "setWidget" },
+    });
+    await settle();
+
+    const updated = supervisor.get(session.id);
+    expect(updated?.status).toBe("running");
+    expect(updated?.pendingExtensionUiRequest).toBeUndefined();
+    expect(updated?.logs.at(-1)).toMatch(/extension ui: setWidget/);
+  });
+
   it("rejects invalid follow-up transitions", async () => {
     const supervisor = await makeSupervisor();
     const session = await supervisor.create(context("cancel then follow"));
@@ -117,6 +161,40 @@ class ThrowingRuntime implements AgentRuntime {
   async create(): Promise<never> {
     throw new Error("runtime unavailable");
   }
+}
+
+class StaticTaskRouter implements TaskRouter {
+  constructor(private readonly decision: TaskRouteDecision) {}
+  async route(): Promise<TaskRouteDecision> {
+    return this.decision;
+  }
+}
+
+class ManualRuntime implements AgentRuntime {
+  handle?: ManualHandle;
+  async create(_prompt: BuiltPrompt, options: { sessionId?: string }): Promise<RuntimeSessionHandle> {
+    this.handle = new ManualHandle(options.sessionId ?? "manual");
+    return this.handle;
+  }
+}
+
+class ManualHandle implements RuntimeSessionHandle {
+  private listeners = new Set<(event: RuntimeEvent) => void>();
+  constructor(readonly id: string) {}
+  async followUp(): Promise<void> {}
+  async steer(): Promise<void> {}
+  async abort(): Promise<void> {}
+  subscribe(listener: (event: RuntimeEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+  emit(event: RuntimeEvent): void {
+    for (const listener of this.listeners) listener(event);
+  }
+}
+
+async function settle(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 async function makeSupervisor(): Promise<SessionSupervisor> {

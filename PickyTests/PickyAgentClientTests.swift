@@ -59,6 +59,34 @@ struct PickyAgentClientTests {
         #expect(text.contains("\"type\":\"listSessions\"") || text.contains("\"type\" : \"listSessions\""))
     }
 
+    @Test func submitRoutesTaskForQuickReplyOrHandOff() async throws {
+        let task = FakeWebSocketTask()
+        let client = WebSocketPickyAgentClient(configuration: .init(port: 19001, token: "secret", reconnectDelay: 0.01), factory: FakeWebSocketFactory(task: task))
+        await client.connect()
+        let context = PickyContextPacket(
+            id: "context-route",
+            source: "voice",
+            capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
+            transcript: "마이크 테스트",
+            selectedText: nil,
+            cwd: nil,
+            activeApp: nil,
+            activeWindow: nil,
+            browser: nil,
+            screenshots: [],
+            warnings: []
+        )
+
+        let receipt = try await client.submit(PickyAgentSubmission(transcript: "마이크 테스트", context: context))
+
+        #expect(receipt.message.isEmpty)
+        guard case .string(let text) = task.sentMessages.first else {
+            Issue.record("Expected string command")
+            return
+        }
+        #expect(text.contains("\"type\":\"routeTask\"") || text.contains("\"type\" : \"routeTask\""))
+    }
+
     @Test func receivesHelloAndSessionUpdatedEvents() async throws {
         let task = FakeWebSocketTask()
         task.receiveResults = [

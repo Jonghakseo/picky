@@ -22,7 +22,7 @@ private final class FakeVoiceClient: PickyAgentClient {
     func connect() async { continuation.yield(.connected) }
     func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {
         submissions.append(submission)
-        return PickyAgentSubmissionReceipt(sessionID: "created-session", message: "created")
+        return PickyAgentSubmissionReceipt(sessionID: "created-session", message: "")
     }
     func send(_ command: PickyCommandEnvelope) async throws { commands.append(command) }
     func disconnect() { continuation.yield(.disconnected) }
@@ -61,6 +61,7 @@ struct PickyCompanionManagerTests {
         #expect(client.commands.first?.sessionId == "session-selected")
         #expect(client.commands.first?.text == "continue")
         #expect(client.commands.first?.context?.source == "voice-follow-up")
+        #expect(receipt.message.isEmpty)
         #expect(client.submissions.isEmpty)
     }
 

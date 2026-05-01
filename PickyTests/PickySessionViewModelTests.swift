@@ -139,7 +139,7 @@ struct PickySessionViewModelTests {
         #expect(notifications.delivered.filter { $0.identifier == "session-1:completed" }.count == 1)
     }
 
-    @Test func selectionPersistsAndDefaultsToMostRecentlyUpdatedSession() async throws {
+    @Test func selectionDefaultsForHudButOnlyExplicitSelectionPersistsForVoiceFollowUp() async throws {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
@@ -150,7 +150,7 @@ struct PickySessionViewModelTests {
         try await settle()
 
         #expect(viewModel.selectedSession?.id == "newer")
-        #expect(selection.selectedSessionID == "newer")
+        #expect(selection.selectedSessionID == nil)
         viewModel.select(sessionID: "older")
         #expect(selection.selectedSessionID == "older")
     }

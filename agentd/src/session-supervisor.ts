@@ -4,13 +4,14 @@ import { ArtifactStore, extractChangedFilesFromExplicitText, extractGithubPullRe
 import { buildFollowUpPrompt, buildInitialTaskPrompt } from "./prompt-builder.js";
 import type { PickyAgentSession, PickyContextPacket, PickyExtensionUiRequest } from "./protocol.js";
 import { SessionStore } from "./session-store.js";
+import type { TaskRouter } from "./task-router.js";
 import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./runtime/types.js";
 
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
 
-  constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, private readonly artifactStore?: ArtifactStore) {
+  constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, private readonly artifactStore?: ArtifactStore, private readonly taskRouter?: TaskRouter) {
     super();
   }
 
@@ -39,6 +40,16 @@ export class SessionSupervisor extends EventEmitter {
 
   get(id: string): PickyAgentSession | undefined {
     return this.sessions.get(id);
+  }
+
+  async route(context: PickyContextPacket): Promise<PickyAgentSession | undefined> {
+    if (!this.taskRouter) return this.create(context);
+    const decision = await this.taskRouter.route(context);
+    if (decision.route === "quick_reply") {
+      this.emit("quickReply", context.id, decision.reply);
+      return undefined;
+    }
+    return this.create(context);
   }
 
   async create(context: PickyContextPacket): Promise<PickyAgentSession> {
@@ -143,7 +154,11 @@ export class SessionSupervisor extends EventEmitter {
 
   private async applyExtensionUiEvent(sessionId: string, rawRequest: Record<string, unknown>, waitsForInput: boolean): Promise<void> {
     const request = rawRequest as PickyExtensionUiRequest;
-    if (waitsForInput) await this.patch(sessionId, { status: "waiting_for_input", pendingExtensionUiRequest: request, lastSummary: request.title ?? "Waiting for input" });
+    if (!waitsForInput) {
+      await this.appendLog(sessionId, `extension ui: ${request.method}${request.title ? ` ${request.title}` : ""}`);
+      return;
+    }
+    await this.patch(sessionId, { status: "waiting_for_input", pendingExtensionUiRequest: request, lastSummary: request.prompt ?? request.title ?? "Waiting for input" });
     this.emit("extensionUiRequest", request);
   }
 

@@ -43,6 +43,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
 }
 
 enum PickyCommandType: String, Codable, Equatable {
+    case routeTask
     case createTask
     case followUp
     case steer
@@ -73,6 +74,7 @@ struct PickyEventEnvelope: Decodable, Equatable {
 
 enum PickyEvent: Equatable {
     case hello(PickyHelloEvent)
+    case quickReply(PickyQuickReplyEvent)
     case sessionSnapshot([PickyAgentSession])
     case sessionUpdated(PickyAgentSession)
     case sessionLogAppended(sessionId: String, line: String)
@@ -84,12 +86,15 @@ enum PickyEvent: Equatable {
     case unknown(type: String)
 
     private enum CodingKeys: String, CodingKey {
-        case sessions, session, sessionId, line, tool, request, artifact, artifactId, path
+        case sessions, session, sessionId, line, tool, request, artifact, artifactId, path, contextId, text
     }
 
     init(type: String, decoder: Decoder) throws {
         switch type {
         case "hello": self = .hello(try PickyHelloEvent(from: decoder))
+        case "quickReply":
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self = .quickReply(PickyQuickReplyEvent(contextId: try c.decode(String.self, forKey: .contextId), text: try c.decode(String.self, forKey: .text)))
         case "sessionSnapshot":
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self = .sessionSnapshot(try c.decode([PickyAgentSession].self, forKey: .sessions))
@@ -120,6 +125,11 @@ enum PickyEvent: Equatable {
 struct PickyHelloEvent: Decodable, Equatable {
     let serverName: String
     let supportedProtocolVersions: [String]
+}
+
+struct PickyQuickReplyEvent: Decodable, Equatable {
+    let contextId: String
+    let text: String
 }
 
 struct PickyErrorEvent: Decodable, Equatable {

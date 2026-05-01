@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -92,6 +92,17 @@ describe("SessionSupervisor", () => {
     expect(failed.status).toBe("failed");
     expect(failed.lastSummary).toMatch(/Failed to start runtime: runtime unavailable/);
     expect(failed.logs).toContain("Failed to start runtime: runtime unavailable");
+  });
+
+  it("skips corrupt persisted session metadata instead of crashing daemon startup", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sessionsDir = join(dir, "sessions");
+    await mkdir(sessionsDir, { recursive: true });
+    await writeFile(join(sessionsDir, "corrupt.json"), "{\"id\":\"broken\"}\n}");
+
+    const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+    await expect(supervisor.load()).resolves.toBeUndefined();
+    expect(supervisor.list()).toEqual([]);
   });
 
   it("rejects invalid follow-up transitions", async () => {

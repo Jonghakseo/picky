@@ -29,6 +29,7 @@ export const ScreenshotSchema = z.object({
 export const BrowserMetadataSchema = z.object({
   url: z.string().url().optional(),
   title: z.string().optional(),
+  selectedText: z.string().optional(),
 });
 
 export const PickyContextPacketSchema = z.object({

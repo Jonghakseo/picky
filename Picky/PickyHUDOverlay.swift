@@ -178,7 +178,7 @@ private struct PickySessionDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let pending = session.pendingExtensionUiRequest {
-                PickyPendingInputView(request: pending)
+                PickyPendingInputView(request: pending, viewModel: viewModel)
             }
 
             if !session.lastSummary.isEmpty {
@@ -302,9 +302,11 @@ private struct PickySessionDetailView: View {
 
 private struct PickyPendingInputView: View {
     let request: PickyExtensionUiRequest
+    @ObservedObject var viewModel: PickySessionListViewModel
+    @State private var textValue = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("Waiting for input")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundColor(DS.Colors.warning)
@@ -312,9 +314,64 @@ private struct PickyPendingInputView: View {
                 .font(.system(size: 12))
                 .foregroundColor(DS.Colors.textPrimary)
                 .lineLimit(3)
+            controls
         }
         .padding(8)
         .background(RoundedRectangle(cornerRadius: 9).fill(DS.Colors.warning.opacity(0.12)))
+    }
+
+    @ViewBuilder
+    private var controls: some View {
+        switch request.method {
+        case "confirm":
+            HStack(spacing: 6) {
+                Button("Allow") { answer(.bool(true)) }
+                Button("Cancel") { cancel() }
+            }
+            .font(.system(size: 11, weight: .medium))
+        case "select":
+            let options = request.options ?? []
+            if options.isEmpty {
+                Button("Cancel") { cancel() }
+                    .font(.system(size: 11, weight: .medium))
+            } else {
+                HStack(spacing: 6) {
+                    ForEach(options, id: \.self) { option in
+                        Button(option) { answer(.string(option)) }
+                    }
+                    Button("Cancel") { cancel() }
+                }
+                .font(.system(size: 11, weight: .medium))
+            }
+        case "input", "editor":
+            HStack(spacing: 6) {
+                TextField("Response…", text: $textValue)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11))
+                    .onSubmit { submitText() }
+                Button("Submit") { submitText() }
+                    .disabled(textValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button("Cancel") { cancel() }
+            }
+            .font(.system(size: 11, weight: .medium))
+        default:
+            Button("Dismiss") { cancel() }
+                .font(.system(size: 11, weight: .medium))
+        }
+    }
+
+    private func submitText() {
+        let trimmed = textValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        answer(.string(trimmed))
+    }
+
+    private func answer(_ value: JSONValue) {
+        Task { try? await viewModel.answerExtensionUi(sessionID: request.sessionId, requestID: request.id, value: value) }
+    }
+
+    private func cancel() {
+        Task { try? await viewModel.cancelExtensionUi(sessionID: request.sessionId, requestID: request.id) }
     }
 }
 

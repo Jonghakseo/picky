@@ -26,6 +26,16 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		28F22CE92F56440300A0FC59 /* Exceptions for "Picky" folder in "Picky" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 28F22CBE2F56440300A0FC59 /* Picky */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileReference section */
 		28F22CBF2F56440300A0FC59 /* Picky.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Picky.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		28F22CCC2F56440300A0FC59 /* PickyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "PickyTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -35,6 +45,9 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		28F22CC12F56440300A0FC59 /* Picky */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				28F22CE92F56440300A0FC59 /* Exceptions for "Picky" folder in "Picky" target */,
+			);
 			path = "Picky";
 			sourceTree = "<group>";
 		};

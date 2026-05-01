@@ -22,14 +22,10 @@ struct PickyAgentDaemonConfiguration: Equatable {
         port: Int = 17631,
         token: String = UUID().uuidString,
         appSupportRoot: URL = PickyAppSupport.defaultRoot(),
-        defaultCwd: String = FileManager.default.homeDirectoryForCurrentUser.path
+        defaultCwd: String = FileManager.default.homeDirectoryForCurrentUser.path,
+        filePath: String = #filePath
     ) -> PickyAgentDaemonConfiguration {
-        let repoRoot = Bundle.main.bundleURL
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let agentdRoot = repoRoot.appendingPathComponent("agentd", isDirectory: true)
+        let agentdRoot = PickyAgentdRootResolver.resolveDevelopmentAgentdRoot(filePath: filePath)
         return PickyAgentDaemonConfiguration(
             port: port,
             token: token,
@@ -59,6 +55,54 @@ enum PickyDaemonLifecycleState: Equatable {
     case running
     case crashed(exitCode: Int32)
     case restarting(attempt: Int, delay: TimeInterval)
+    case failedToStart(String)
+}
+
+struct PickyAgentdRootResolver {
+    static func resolveDevelopmentAgentdRoot(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true),
+        filePath: String = #filePath,
+        bundleResourceURL: URL? = Bundle.main.resourceURL,
+        fileManager: FileManager = .default
+    ) -> URL {
+        if let override = environment["PICKY_AGENTD_ROOT"] {
+            let url = URL(fileURLWithPath: NSString(string: override).expandingTildeInPath, isDirectory: true)
+            if containsAgentdPackage(url, fileManager: fileManager) { return url }
+        }
+
+        if let found = searchUpwardForAgentd(from: currentDirectory, fileManager: fileManager) { return found }
+        let sourceURL = URL(fileURLWithPath: filePath).deletingLastPathComponent()
+        if let found = searchUpwardForAgentd(from: sourceURL, fileManager: fileManager) { return found }
+        if let resourceURL = bundleResourceURL?.appendingPathComponent("agentd", isDirectory: true), containsAgentdPackage(resourceURL, fileManager: fileManager) { return resourceURL }
+        return currentDirectory.appendingPathComponent("agentd", isDirectory: true)
+    }
+
+    static func containsAgentdPackage(_ url: URL, fileManager: FileManager = .default) -> Bool {
+        fileManager.fileExists(atPath: url.appendingPathComponent("package.json").path)
+    }
+
+    private static func searchUpwardForAgentd(from start: URL, fileManager: FileManager) -> URL? {
+        var candidate = start.standardizedFileURL
+        while true {
+            let agentd = candidate.appendingPathComponent("agentd", isDirectory: true)
+            if containsAgentdPackage(agentd, fileManager: fileManager) { return agentd }
+            let parent = candidate.deletingLastPathComponent()
+            if parent.path == candidate.path { return nil }
+            candidate = parent
+        }
+    }
+}
+
+enum PickyDaemonLaunchPreflightError: LocalizedError, Equatable {
+    case missingAgentdPackage(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingAgentdPackage(let path):
+            "picky-agentd was not found at \(path). Set PICKY_AGENTD_ROOT to the local agentd directory or install the bundled daemon."
+        }
+    }
 }
 
 protocol PickyProcessRunning: AnyObject {
@@ -146,6 +190,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     private func launch() {
         state = .starting
         do {
+            try preflightConfiguration()
             try fileManager.createDirectory(at: logDirectory, withIntermediateDirectories: true)
             try runner.launch(
                 configuration: configuration,
@@ -154,8 +199,17 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             )
             attempts = 0
             state = .running
+        } catch let error as PickyDaemonLaunchPreflightError {
+            state = .failedToStart(error.localizedDescription)
         } catch {
             scheduleRestart(afterExitCode: -1)
+        }
+    }
+
+    private func preflightConfiguration() throws {
+        let packageURL = configuration.workingDirectory.appendingPathComponent("package.json")
+        guard fileManager.fileExists(atPath: packageURL.path) else {
+            throw PickyDaemonLaunchPreflightError.missingAgentdPackage(configuration.workingDirectory.path)
         }
     }
 

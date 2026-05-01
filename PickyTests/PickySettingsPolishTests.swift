@@ -34,6 +34,25 @@ struct PickySettingsPolishTests {
         }
     }
 
+    @Test func settingsNormalizeTildePathsBeforePersisting() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let settings = PickySettings(
+            defaultCwd: "~",
+            worktreeParent: "~",
+            preferredToolVisibility: "show tool activity",
+            readOnlyInvestigationPreference: true,
+            daemonPath: "/tmp/agentd",
+            logPath: root.appendingPathComponent("Logs").path
+        )
+
+        try store.save(settings)
+
+        #expect(store.load().defaultCwd == home)
+        #expect(store.load().worktreeParent == home)
+    }
+
     @Test func diffPreviewGroupsFilesAndTruncatesSafely() {
         let diff = """
         diff --git a/Sources/A.swift b/Sources/A.swift

@@ -175,6 +175,22 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
+    func answerExtensionUi(sessionID: String, requestID: String, value: JSONValue) async throws {
+        try await client.send(PickyCommandEnvelope(type: .answerExtensionUi, sessionId: sessionID, requestId: requestID, value: value))
+        update(sessionID: sessionID) { card in
+            if card.pendingExtensionUiRequest?.id == requestID {
+                card.pendingExtensionUiRequest = nil
+                card.status = .running
+                card.lastSummary = "Extension UI answered"
+            }
+            card.updatedAt = Date()
+        }
+    }
+
+    func cancelExtensionUi(sessionID: String, requestID: String) async throws {
+        try await answerExtensionUi(sessionID: sessionID, requestID: requestID, value: .object(["cancelled": .bool(true)]))
+    }
+
     func openReport(sessionID: String, workspace: NSWorkspace = .shared) async throws {
         guard let artifact = sessions.first(where: { $0.id == sessionID })?.reportArtifact else {
             lastError = "Report is not available yet"
@@ -235,6 +251,7 @@ final class PickySessionListViewModel: ObservableObject {
         switch event {
         case .connected:
             lastError = nil
+            Task { try? await client.send(PickyCommandEnvelope(type: .listSessions)) }
         case .disconnected:
             lastError = "Disconnected from picky-agentd"
         case .recoverableError(let message):

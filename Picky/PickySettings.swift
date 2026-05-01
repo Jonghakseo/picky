@@ -65,9 +65,10 @@ struct PickySettingsStore {
     }
 
     func save(_ settings: PickySettings) throws {
-        try validate(settings)
+        let normalized = settings.normalizedPaths()
+        try validate(normalized)
         try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let data = try JSONEncoder.prettyPickySettings.encode(settings)
+        let data = try JSONEncoder.prettyPickySettings.encode(normalized)
         try data.write(to: url, options: .atomic)
     }
 
@@ -83,6 +84,17 @@ struct PickySettingsStore {
         guard fileManager.fileExists(atPath: NSString(string: path).expandingTildeInPath, isDirectory: &isDirectory), isDirectory.boolValue else {
             throw error
         }
+    }
+}
+
+extension PickySettings {
+    func normalizedPaths() -> PickySettings {
+        var copy = self
+        copy.defaultCwd = NSString(string: defaultCwd).expandingTildeInPath
+        if !worktreeParent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            copy.worktreeParent = NSString(string: worktreeParent).expandingTildeInPath
+        }
+        return copy
     }
 }
 

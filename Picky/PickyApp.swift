@@ -58,10 +58,10 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         PickyAnalytics.configure()
         PickyAnalytics.trackAppOpened()
 
-        if !Self.isRunningUnitTests {
-            daemonLauncher.start()
-            hudOverlayManager.start()
-        }
+        guard !Self.isRunningUnitTests else { return }
+
+        daemonLauncher.start()
+        hudOverlayManager.start()
         menuBarPanelManager = MenuBarPanelManager(companionManager: companionManager)
         companionManager.start()
         // Auto-open the panel if the user still needs to do something:
@@ -82,7 +82,10 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     /// startup. Uses SMAppService which shows the app in System Settings >
     /// General > Login Items, letting the user toggle it off if they want.
     private static var isRunningUnitTests: Bool {
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        let environment = ProcessInfo.processInfo.environment
+        return environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCTestBundlePath"] != nil
+            || ProcessInfo.processInfo.arguments.contains { $0.contains(".xctest") || $0.contains("xctest") }
     }
 
     private func registerAsLoginItemIfNeeded() {

@@ -15,7 +15,22 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async load(): Promise<void> {
-    for (const session of await this.store.loadAll()) this.sessions.set(session.id, session);
+    for (const session of await this.store.loadAll()) {
+      if (!isTerminalStatus(session.status)) {
+        const restored = {
+          ...session,
+          status: "blocked" as const,
+          lastSummary: "Runtime not attached after daemon restart; start a new task or resume support is required",
+          logs: [...session.logs, "Runtime not attached after daemon restart; start a new task or resume support is required"],
+          pendingExtensionUiRequest: undefined,
+          updatedAt: new Date().toISOString(),
+        };
+        this.sessions.set(restored.id, restored);
+        await this.store.save(restored);
+      } else {
+        this.sessions.set(session.id, session);
+      }
+    }
   }
 
   list(): PickyAgentSession[] {
@@ -53,8 +68,16 @@ export class SessionSupervisor extends EventEmitter {
     const session = this.mustGet(sessionId);
     if (["failed", "cancelled"].includes(session.status)) throw new Error(`Cannot follow up ${session.status} session`);
     const handle = this.runtimeHandles.get(sessionId);
+    if (!handle) {
+      await this.patch(sessionId, {
+        status: "blocked",
+        lastSummary: "Runtime not attached after daemon restart; start a new task or resume support is required",
+      });
+      await this.appendLog(sessionId, "follow-up rejected: runtime session is not attached after daemon restart");
+      throw new Error("Runtime session is not attached after daemon restart; start a new task or resume support is required");
+    }
     await this.appendLog(sessionId, `follow-up: ${text}`);
-    if (handle) await handle.followUp(buildFollowUpPrompt(sessionId, text, context));
+    await handle.followUp(buildFollowUpPrompt(sessionId, text, context));
     await this.patch(sessionId, { status: "running", lastSummary: "Follow-up queued" });
     return this.mustGet(sessionId);
   }
@@ -150,6 +173,10 @@ export class SessionSupervisor extends EventEmitter {
     if (!session) throw new Error(`Unknown session: ${sessionId}`);
     return session;
   }
+}
+
+function isTerminalStatus(status: PickyAgentSession["status"]): boolean {
+  return ["completed", "failed", "cancelled"].includes(status);
 }
 
 function titleFromContext(context: PickyContextPacket): string {

@@ -56,14 +56,29 @@ describe("SessionSupervisor", () => {
     expect(updated.changedFiles).toEqual([{ status: "M", path: "Picky/App.swift", summary: "HUD follow-up" }]);
   });
 
-  it("reloads persisted session metadata", async () => {
+  it("reloads persisted session metadata as blocked when runtime is not attached", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const firstSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
     const session = await firstSupervisor.create(context("persist me"));
 
     const secondSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
     await secondSupervisor.load();
-    expect(secondSupervisor.get(session.id)?.title).toBe("persist me");
+    const restored = secondSupervisor.get(session.id);
+    expect(restored?.title).toBe("persist me");
+    expect(restored?.status).toBe("blocked");
+    expect(restored?.lastSummary).toMatch(/Runtime not attached/);
+  });
+
+  it("rejects follow-up for restored sessions without marking them running", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const firstSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+    const session = await firstSupervisor.create(context("restore follow up"));
+    const secondSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+    await secondSupervisor.load();
+
+    await expect(secondSupervisor.followUp(session.id, "continue")).rejects.toThrow(/Runtime session is not attached/);
+    expect(secondSupervisor.get(session.id)?.status).toBe("blocked");
+    expect(secondSupervisor.get(session.id)?.lastSummary).toMatch(/Runtime not attached/);
   });
 
   it("rejects invalid follow-up transitions", async () => {

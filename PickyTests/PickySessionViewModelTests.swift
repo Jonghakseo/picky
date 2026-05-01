@@ -35,6 +35,15 @@ private final class FakeSelectionStore: PickySessionSelectionStoring {
 
 @MainActor
 struct PickySessionViewModelTests {
+    @Test func startRequestsPersistedSessionsOnConnect() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        try await settle()
+
+        #expect(client.sentCommands.contains { $0.type == .listSessions })
+    }
+
     @Test func eventSequenceDrivesExpectedStatusChanges() async throws {
         let client = FakePickyAgentClient()
         let notifications = PickyNoopNotificationCenter()
@@ -96,6 +105,25 @@ struct PickySessionViewModelTests {
         #expect(client.sentCommands.first?.type == .abort)
         #expect(client.sentCommands.first?.sessionId == "session-1")
         #expect(viewModel.sessions.first?.status == .cancelled)
+    }
+
+    @Test func extensionUiAnswersEmitConfirmValueAndCancellationCommands() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "waiting_for_input"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.extensionUiRequest())))
+        try await settle()
+
+        try await viewModel.answerExtensionUi(sessionID: "session-1", requestID: "ui-1", value: .bool(true))
+        try await viewModel.cancelExtensionUi(sessionID: "session-1", requestID: "ui-2")
+
+        let answers = client.sentCommands.filter { $0.type == .answerExtensionUi }
+        #expect(answers.first?.sessionId == "session-1")
+        #expect(answers.first?.requestId == "ui-1")
+        #expect(answers.first?.value == .bool(true))
+        #expect(answers.last?.requestId == "ui-2")
+        #expect(answers.last?.value == .object(["cancelled": .bool(true)]))
     }
 
     @Test func terminalNotificationsAreDeduplicated() async throws {

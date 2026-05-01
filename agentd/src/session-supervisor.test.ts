@@ -109,7 +109,7 @@ describe("SessionSupervisor", () => {
 
   it("routes simple requests as quick replies without creating agent sessions", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
-    const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir), undefined, new StaticTaskRouter({ route: "quick_reply", reply: "바로 답변" }));
+    const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir), undefined, { taskRouter: new StaticTaskRouter({ route: "quick_reply", reply: "바로 답변" }) });
     const replies: Array<{ contextId: string; text: string }> = [];
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
 
@@ -120,9 +120,27 @@ describe("SessionSupervisor", () => {
     expect(replies).toEqual([{ contextId: "context-마이크 테스트", text: "바로 답변" }]);
   });
 
+  it("routes voice requests through the main agent when configured", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const replies: Array<{ contextId: string; text: string }> = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+
+    const result = await supervisor.route(context("안녕"));
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "안녕하세요. 무엇을 도와드릴까요?" });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(result).toBeUndefined();
+    expect(sideRuntime.handle).toBeUndefined();
+    expect(replies).toEqual([{ contextId: "context-안녕", text: "안녕하세요. 무엇을 도와드릴까요?" }]);
+  });
+
   it("routes complex requests to the long-running runtime", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
-    const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir), undefined, new StaticTaskRouter({ route: "handoff", reason: "needs tools" }));
+    const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir), undefined, { taskRouter: new StaticTaskRouter({ route: "handoff", reason: "needs tools" }) });
 
     const session = await supervisor.route(context("코드 수정해줘"));
 
@@ -215,7 +233,7 @@ class ManualHandle implements RuntimeSessionHandle {
 }
 
 async function settle(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 10));
 }
 
 async function makeSupervisor(): Promise<SessionSupervisor> {

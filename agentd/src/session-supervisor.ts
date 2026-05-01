@@ -1,18 +1,30 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { ArtifactStore, extractChangedFilesFromExplicitText, extractGithubPullRequestUrls } from "./artifact-store.js";
-import { buildFollowUpPrompt, buildInitialTaskPrompt } from "./prompt-builder.js";
+import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
 import type { PickyAgentSession, PickyContextPacket, PickyExtensionUiRequest } from "./protocol.js";
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
 import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./runtime/types.js";
 
+export interface SessionSupervisorOptions {
+  taskRouter?: TaskRouter;
+  mainRuntime?: AgentRuntime;
+}
+
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
   private assistantDrafts = new Map<string, string>();
+  private mainHandle?: RuntimeSessionHandle;
+  private mainDraft = "";
+  private mainContext?: PickyContextPacket;
+  private mainReplyContextId = "main";
+  private suppressNextMainReply = false;
+  private sideSessionIds = new Set<string>();
+  private sideCompletionNotified = new Set<string>();
 
-  constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, private readonly artifactStore?: ArtifactStore, private readonly taskRouter?: TaskRouter) {
+  constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, private readonly artifactStore?: ArtifactStore, private readonly options: SessionSupervisorOptions = {}) {
     super();
   }
 
@@ -43,9 +55,22 @@ export class SessionSupervisor extends EventEmitter {
     return this.sessions.get(id);
   }
 
+  currentMainContext(): PickyContextPacket | undefined {
+    return this.mainContext;
+  }
+
+  announceMainHandoff(contextId: string, text: string): void {
+    this.suppressNextMainReply = true;
+    this.emit("quickReply", contextId, text);
+  }
+
   async route(context: PickyContextPacket): Promise<PickyAgentSession | undefined> {
-    if (!this.taskRouter) return this.create(context);
-    const decision = await this.taskRouter.route(context);
+    if (this.options.mainRuntime) {
+      await this.routeThroughMainAgent(context);
+      return undefined;
+    }
+    if (!this.options.taskRouter) return this.create(context);
+    const decision = await this.options.taskRouter.route(context);
     if (decision.route === "quick_reply") {
       this.emit("quickReply", context.id, decision.reply);
       return undefined;
@@ -54,11 +79,22 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async create(context: PickyContextPacket): Promise<PickyAgentSession> {
+    return this.createVisibleSession(context, titleFromContext(context), buildInitialTaskPrompt(context));
+  }
+
+  async createSideFromHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string }): Promise<PickyAgentSession> {
+    const session = await this.createVisibleSession(context, handoff.title.trim() || titleFromContext(context), buildSideAgentPrompt(context, handoff));
+    this.sideSessionIds.add(session.id);
+    await this.appendLog(session.id, `main-agent handoff: ${handoff.instructions}`);
+    return this.mustGet(session.id);
+  }
+
+  private async createVisibleSession(context: PickyContextPacket, title: string, prompt = buildInitialTaskPrompt(context)): Promise<PickyAgentSession> {
     const now = new Date().toISOString();
     const id = `session-${randomUUID()}`;
     const session: PickyAgentSession = {
       id,
-      title: titleFromContext(context),
+      title,
       status: "queued",
       cwd: context.cwd,
       createdAt: now,
@@ -71,7 +107,7 @@ export class SessionSupervisor extends EventEmitter {
     await this.upsert(session);
     try {
       this.assistantDrafts.set(id, "");
-      const handle = await this.runtime.create(buildInitialTaskPrompt(context), { cwd: context.cwd, sessionId: id });
+      const handle = await this.runtime.create(prompt, { cwd: context.cwd, sessionId: id });
       this.runtimeHandles.set(id, handle);
       handle.subscribe((event) => void this.applyRuntimeEvent(id, event));
       await this.patch(id, { status: "running", lastSummary: "Started" });
@@ -85,6 +121,47 @@ export class SessionSupervisor extends EventEmitter {
       });
       throw error;
     }
+  }
+
+  private async routeThroughMainAgent(context: PickyContextPacket): Promise<void> {
+    this.mainContext = context;
+    this.mainReplyContextId = context.id;
+    this.mainDraft = "";
+    const prompt = buildMainAgentPrompt(context);
+    if (!this.mainHandle) {
+      const handle = await this.options.mainRuntime!.create(prompt, { cwd: context.cwd, sessionId: "picky-main-agent" });
+      this.mainHandle = handle;
+      handle.subscribe((event) => void this.applyMainRuntimeEvent(event));
+      return;
+    }
+    await this.mainHandle.followUp(prompt);
+  }
+
+  private async applyMainRuntimeEvent(event: RuntimeEvent): Promise<void> {
+    if (event.type === "assistant_delta") {
+      this.mainDraft += event.delta;
+      return;
+    }
+    if (event.type === "status") {
+      if (["completed", "failed", "cancelled"].includes(event.status)) {
+        const reply = cleanFinalAnswer(this.mainDraft) ?? (event.status === "failed" ? event.summary : undefined);
+        if (this.suppressNextMainReply) {
+          this.suppressNextMainReply = false;
+        } else if (reply) {
+          this.emit("quickReply", this.mainReplyContextId, reply);
+        }
+        this.mainDraft = "";
+      }
+    }
+  }
+
+  private async notifyMainOfSideCompletion(sessionId: string): Promise<void> {
+    if (!this.mainHandle || this.sideCompletionNotified.has(sessionId)) return;
+    const session = this.mustGet(sessionId);
+    this.sideCompletionNotified.add(sessionId);
+    this.mainReplyContextId = sessionId;
+    this.mainDraft = "";
+    await this.mainHandle.followUp(buildMainAgentSideCompletionPrompt(session));
   }
 
   async followUp(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
@@ -156,7 +233,10 @@ export class SessionSupervisor extends EventEmitter {
         patch.changedFiles = mergeChangedFiles(session.changedFiles, extractChangedFilesFromExplicitText(finalAnswer));
       }
       await this.patch(sessionId, patch);
-      if (terminal) await this.materializeTerminalArtifacts(sessionId);
+      if (terminal) {
+        await this.materializeTerminalArtifacts(sessionId);
+        if (this.sideSessionIds.has(sessionId)) await this.notifyMainOfSideCompletion(sessionId);
+      }
       return;
     }
     if (event.type === "extension_ui") return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);

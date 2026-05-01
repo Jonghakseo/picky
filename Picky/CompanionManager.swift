@@ -91,6 +91,9 @@ final class CompanionManager: ObservableObject {
     /// Scheduled hide for transient cursor mode — cancelled if the user
     /// speaks again before the delay elapses.
     private var transientHideTask: Task<Void, Never>?
+    private var responseStateTask: Task<Void, Never>?
+    private var speechSynthesizer: NSSpeechSynthesizer?
+    private var pendingAgentResponseStartedAt: Date?
 
     /// True when all three required permissions (accessibility, screen recording,
     /// microphone) are granted. Used by the panel to show a single "all good" state.
@@ -255,6 +258,11 @@ final class CompanionManager: ObservableObject {
 
         currentResponseTask?.cancel()
         currentResponseTask = nil
+        responseStateTask?.cancel()
+        responseStateTask = nil
+        speechSynthesizer?.stopSpeaking()
+        speechSynthesizer = nil
+        pendingAgentResponseStartedAt = nil
         agentEventTask?.cancel()
         agentEventTask = nil
         agentClient.disconnect()
@@ -511,7 +519,7 @@ final class CompanionManager: ObservableObject {
         currentResponseTask?.cancel()
 
         currentResponseTask = Task {
-            voiceState = .processing
+            beginAwaitingAgentResponse()
 
             do {
                 let screenCaptures = try await CompanionScreenCaptureUtility.captureAllScreensAsJPEG()
@@ -536,17 +544,17 @@ final class CompanionManager: ObservableObject {
                 print("🧠 Picky local agent submission accepted: \(receipt.sessionID)")
 
                 if !receipt.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    speakSystemMessage(receipt.message)
+                    finishAwaitingAgentResponse(visibleText: receipt.message, spokenText: receipt.message)
                 }
             } catch is CancellationError {
                 // User spoke again — response was interrupted.
             } catch {
                 PickyAnalytics.trackResponseError(error: error.localizedDescription)
                 print("⚠️ Picky agent submission error: \(error)")
-                speakSystemMessage("I captured that, but the local agent client is not ready yet.")
+                finishAwaitingAgentResponse(visibleText: "I captured that, but the local agent client is not ready yet.", spokenText: "I captured that, but the local agent client is not ready yet.")
             }
 
-            if !Task.isCancelled {
+            if !Task.isCancelled, pendingAgentResponseStartedAt == nil, voiceState != .responding {
                 voiceState = .idle
                 scheduleTransientHideIfNeeded()
             }
@@ -570,9 +578,9 @@ final class CompanionManager: ObservableObject {
                 case .protocolEvent(let envelope):
                     await MainActor.run { self.applyAgentEvent(envelope.event) }
                 case .recoverableError(let message):
-                    await MainActor.run { self.latestAgentSessionSummary = "Agent event error: \(message)" }
+                    await MainActor.run { self.finishAwaitingAgentResponse(visibleText: "Agent event error: \(message)", spokenText: nil) }
                 case .disconnected:
-                    await MainActor.run { self.latestAgentSessionSummary = "picky-agentd disconnected" }
+                    await MainActor.run { self.finishAwaitingAgentResponse(visibleText: "picky-agentd disconnected", spokenText: nil) }
                 case .connected:
                     await MainActor.run { self.latestAgentSessionSummary = "picky-agentd connected" }
                 }
@@ -584,17 +592,16 @@ final class CompanionManager: ObservableObject {
         switch event {
         case .sessionUpdated(let session):
             latestAgentSessionSummary = session.lastSummary ?? "\(session.title) · \(session.status.rawValue)"
-        case .sessionLogAppended(_, let line):
-            latestAgentSessionSummary = line
-        case .toolActivityUpdated(_, let tool):
-            latestAgentSessionSummary = [tool.name, tool.preview].compactMap { $0 }.joined(separator: ": ")
+        case .sessionLogAppended:
+            latestAgentSessionSummary = "작업 진행 중…"
+        case .toolActivityUpdated:
+            latestAgentSessionSummary = "사이드 에이전트가 작업 중…"
         case .extensionUiRequest(let request):
             latestAgentSessionSummary = request.prompt ?? request.title ?? "Agent is waiting for input"
         case .quickReply(let reply):
-            latestAgentSessionSummary = reply.text
-            speakSystemMessage(reply.text)
+            finishAwaitingAgentResponse(visibleText: reply.text, spokenText: reply.text)
         case .error(let error):
-            latestAgentSessionSummary = error.message
+            finishAwaitingAgentResponse(visibleText: error.message, spokenText: nil)
         case .hello, .sessionSnapshot, .artifactUpdated, .artifactOpened, .unknown:
             break
         }
@@ -624,11 +631,45 @@ final class CompanionManager: ObservableObject {
         }
     }
 
+    private func beginAwaitingAgentResponse() {
+        responseStateTask?.cancel()
+        speechSynthesizer?.stopSpeaking()
+        speechSynthesizer = nil
+        pendingAgentResponseStartedAt = Date()
+        latestAgentSessionSummary = "응답 준비 중…"
+        voiceState = .processing
+    }
+
+    private func finishAwaitingAgentResponse(visibleText: String, spokenText: String?) {
+        responseStateTask?.cancel()
+        pendingAgentResponseStartedAt = nil
+        latestAgentSessionSummary = visibleText
+        let textToSpeak = spokenText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let textToSpeak, !textToSpeak.isEmpty else {
+            voiceState = .idle
+            scheduleTransientHideIfNeeded()
+            return
+        }
+        speakSystemMessage(textToSpeak)
+    }
+
     /// Speaks a short local status message through macOS system speech.
     private func speakSystemMessage(_ utterance: String) {
+        speechSynthesizer?.stopSpeaking()
         let synthesizer = NSSpeechSynthesizer()
+        speechSynthesizer = synthesizer
         synthesizer.startSpeaking(utterance)
         voiceState = .responding
+
+        let estimatedDuration = min(max(Double(utterance.count) * 0.08, 1.6), 12.0)
+        responseStateTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(estimatedDuration * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.voiceState = .idle
+                self?.scheduleTransientHideIfNeeded()
+            }
+        }
     }
 
     // MARK: - Point Tag Parsing

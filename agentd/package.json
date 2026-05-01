@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@mariozechner/pi-coding-agent": "^0.71.0",
+    "typebox": "^1.1.37",
     "ws": "^8.18.0",
     "zod": "^3.24.1"
   },

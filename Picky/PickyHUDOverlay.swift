@@ -116,6 +116,12 @@ private struct PickySessionCardView: View {
                         .foregroundColor(DS.Colors.textPrimary)
                         .lineLimit(1)
                     Spacer(minLength: 4)
+                    if session.status == .queued || session.status == .running {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.45)
+                            .frame(width: 10, height: 10)
+                    }
                     Text(session.status.rawValue.replacingOccurrences(of: "_", with: " "))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(statusColor)

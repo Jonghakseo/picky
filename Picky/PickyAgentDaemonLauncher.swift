@@ -42,12 +42,33 @@ struct PickyAgentDaemonConfiguration: Equatable {
 
     var environment: [String: String] {
         var env = ProcessInfo.processInfo.environment
+        env["PATH"] = Self.augmentedExecutablePATH(from: env)
         env["PICKY_AGENTD_PORT"] = String(port)
         env["PICKY_AGENTD_TOKEN"] = token
         env["PICKY_APP_SUPPORT_DIR"] = appSupportRoot.path
         env["PICKY_DEFAULT_CWD"] = defaultCwd
         if let runtime { env["PICKY_AGENTD_RUNTIME"] = runtime }
         return env
+    }
+
+    static func augmentedExecutablePATH(from environment: [String: String]) -> String {
+        let home = environment["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path
+        var paths = (environment["PATH"] ?? "").split(separator: ":").map(String.init)
+        let fallbackPaths = [
+            "\(home)/Library/pnpm",
+            environment["PNPM_HOME"],
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin"
+        ].compactMap { $0 }
+
+        for path in fallbackPaths where !paths.contains(path) {
+            paths.append(path)
+        }
+        return paths.joined(separator: ":")
     }
 }
 

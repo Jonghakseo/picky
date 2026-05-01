@@ -178,6 +178,19 @@ struct PickyAgentDaemonLauncherTests {
         #expect(resolved.path == "/agentd")
     }
 
+    @Test func daemonEnvironmentAugmentsFinderStylePathForPnpm() throws {
+        let environment = PickyAgentDaemonConfiguration.augmentedExecutablePATH(from: [
+            "HOME": "/Users/example",
+            "PATH": "/usr/bin:/bin"
+        ])
+
+        let paths = environment.split(separator: ":").map(String.init)
+        #expect(paths.contains("/Users/example/Library/pnpm"))
+        #expect(paths.contains("/opt/homebrew/bin"))
+        #expect(paths.contains("/usr/local/bin"))
+        #expect(paths.filter { $0 == "/usr/bin" }.count == 1)
+    }
+
     @Test func missingRequiredExecutableFailsFriendlyWithoutRestartLoop() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
         try makeAgentdPackage(at: temp)

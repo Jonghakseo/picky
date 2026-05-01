@@ -600,7 +600,10 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         resetSessionState()
 
         guard shouldSubmitFinalDraft else { return }
-        guard !finalTranscriptText.isEmpty else { return }
+        guard !finalTranscriptText.isEmpty else {
+            lastErrorMessage = Self.noSpeechDetectedMessage
+            return
+        }
 
         currentDraftCallbacks?.submitDraftText(finalDraftText)
     }
@@ -844,7 +847,13 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         NSWorkspace.shared.open(settingsURL)
     }
 
+    private static let noSpeechDetectedMessage = "음성이 감지되지 않았어요. 버튼을 누른 상태에서 조금 더 길게 말해 주세요."
+
     private func userFacingErrorMessage(from error: Error, fallback: String) -> String {
+        if isNoSpeechDetectedError(error) {
+            return Self.noSpeechDetectedMessage
+        }
+
         if let localizedError = error as? LocalizedError,
            let errorDescription = localizedError.errorDescription?
             .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -859,5 +868,13 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         }
 
         return fallback
+    }
+
+    private func isNoSpeechDetectedError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == "kAFAssistantErrorDomain" && nsError.code == 1110 {
+            return true
+        }
+        return error.localizedDescription.localizedCaseInsensitiveContains("No speech detected")
     }
 }

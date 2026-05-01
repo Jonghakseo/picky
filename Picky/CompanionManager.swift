@@ -86,6 +86,7 @@ final class CompanionManager: ObservableObject {
     private var shortcutTransitionCancellable: AnyCancellable?
     private var voiceStateCancellable: AnyCancellable?
     private var audioPowerCancellable: AnyCancellable?
+    private var dictationErrorCancellable: AnyCancellable?
     private var accessibilityCheckTimer: Timer?
     private var pendingKeyboardShortcutStartTask: Task<Void, Never>?
     /// Scheduled hide for transient cursor mode — cancelled if the user
@@ -145,6 +146,7 @@ final class CompanionManager: ObservableObject {
         startPermissionPolling()
         bindVoiceStateObservation()
         bindAudioPowerLevel()
+        bindDictationErrors()
         bindShortcutTransitions()
         // If the user already completed onboarding AND all permissions are
         // still granted, show the cursor overlay immediately. If permissions
@@ -269,6 +271,7 @@ final class CompanionManager: ObservableObject {
         shortcutTransitionCancellable?.cancel()
         voiceStateCancellable?.cancel()
         audioPowerCancellable?.cancel()
+        dictationErrorCancellable?.cancel()
         accessibilityCheckTimer?.invalidate()
         accessibilityCheckTimer = nil
     }
@@ -395,6 +398,16 @@ final class CompanionManager: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] powerLevel in
                 self?.currentAudioPowerLevel = powerLevel
+            }
+    }
+
+    private func bindDictationErrors() {
+        dictationErrorCancellable = buddyDictationManager.$lastErrorMessage
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] message in
+                self?.finishAwaitingAgentResponse(visibleText: message, spokenText: message)
             }
     }
 

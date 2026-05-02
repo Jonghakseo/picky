@@ -72,6 +72,123 @@ final class AppleSpeechTranscriptionProvider: BuddyTranscriptionProvider {
     }
 }
 
+struct AppleSpeechTranscriptAccumulator {
+    private var accumulatedText = ""
+
+    mutating func update(with recognizedText: String) -> String {
+        let incomingText = recognizedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !incomingText.isEmpty else { return accumulatedText }
+
+        let existingText = accumulatedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !existingText.isEmpty else {
+            accumulatedText = incomingText
+            return accumulatedText
+        }
+
+        if incomingText.normalizedForTranscriptComparison.hasPrefix(existingText.normalizedForTranscriptComparison) {
+            accumulatedText = incomingText
+            return accumulatedText
+        }
+
+        if existingText.normalizedForTranscriptComparison.hasSuffix(incomingText.normalizedForTranscriptComparison) {
+            return accumulatedText
+        }
+
+        if let appendOnlySuffix = Self.appendOnlySuffix(from: incomingText, afterOverlappingWith: existingText) {
+            accumulatedText = Self.joinTranscript(existingText, appendOnlySuffix)
+            return accumulatedText
+        }
+
+        if Self.shouldAppendLikelyResetChunk(existingText: existingText, incomingText: incomingText) {
+            accumulatedText = Self.joinTranscript(existingText, incomingText)
+        } else {
+            accumulatedText = incomingText
+        }
+
+        return accumulatedText
+    }
+
+    private static func appendOnlySuffix(from incomingText: String, afterOverlappingWith existingText: String) -> String? {
+        let existingTokens = TranscriptToken.tokens(in: existingText)
+        let incomingTokens = TranscriptToken.tokens(in: incomingText)
+        guard !existingTokens.isEmpty, !incomingTokens.isEmpty else { return nil }
+
+        let maximumOverlapCount = min(existingTokens.count, incomingTokens.count)
+        guard maximumOverlapCount > 0 else { return nil }
+
+        for overlapCount in stride(from: maximumOverlapCount, through: 1, by: -1) {
+            let existingSuffix = existingTokens.suffix(overlapCount).map(\.normalized)
+            let incomingPrefix = incomingTokens.prefix(overlapCount).map(\.normalized)
+            guard existingSuffix == incomingPrefix else { continue }
+            guard isSignificantOverlap(existingSuffix) else { continue }
+
+            if overlapCount >= incomingTokens.count {
+                return ""
+            }
+
+            let suffixStartIndex = incomingTokens[overlapCount].range.lowerBound
+            return String(incomingText[suffixStartIndex...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return nil
+    }
+
+    private static func shouldAppendLikelyResetChunk(existingText: String, incomingText: String) -> Bool {
+        let existingTokens = TranscriptToken.tokens(in: existingText)
+        let incomingTokens = TranscriptToken.tokens(in: incomingText)
+
+        guard !incomingTokens.isEmpty else { return false }
+        return existingText.count >= 40 || existingTokens.count >= 8
+    }
+
+    private static func isSignificantOverlap(_ normalizedTokens: [String]) -> Bool {
+        let tokenCharacterCount = normalizedTokens.reduce(0) { $0 + $1.count }
+        return normalizedTokens.count >= 2 || tokenCharacterCount >= 8
+    }
+
+    private static func joinTranscript(_ existingText: String, _ suffixText: String) -> String {
+        let trimmedExistingText = existingText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSuffixText = suffixText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmedExistingText.isEmpty else { return trimmedSuffixText }
+        guard !trimmedSuffixText.isEmpty else { return trimmedExistingText }
+
+        if trimmedExistingText.hasSuffix(" ") || trimmedExistingText.hasSuffix("\n") {
+            return trimmedExistingText + trimmedSuffixText
+        }
+
+        return trimmedExistingText + " " + trimmedSuffixText
+    }
+
+    private struct TranscriptToken {
+        let normalized: String
+        let range: Range<String.Index>
+
+        static func tokens(in text: String) -> [TranscriptToken] {
+            text.split(whereSeparator: { $0.isWhitespace }).compactMap { tokenSlice in
+                let normalizedToken = String(tokenSlice).normalizedForTranscriptTokenComparison
+                guard !normalizedToken.isEmpty else { return nil }
+                return TranscriptToken(normalized: normalizedToken, range: tokenSlice.startIndex..<tokenSlice.endIndex)
+            }
+        }
+    }
+}
+
+private extension String {
+    var normalizedForTranscriptComparison: String {
+        trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+            .lowercased()
+    }
+
+    var normalizedForTranscriptTokenComparison: String {
+        trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
+            .lowercased()
+    }
+}
+
 private final class AppleSpeechTranscriptionSession: NSObject, BuddyStreamingTranscriptionSession {
     let finalTranscriptFallbackDelaySeconds: TimeInterval = 1.8
 
@@ -81,6 +198,7 @@ private final class AppleSpeechTranscriptionSession: NSObject, BuddyStreamingTra
     private let onFinalTranscriptReady: (String) -> Void
     private let onError: (Error) -> Void
 
+    private var transcriptAccumulator = AppleSpeechTranscriptAccumulator()
     private var latestRecognizedText = ""
     private var hasRequestedFinalTranscript = false
     private var hasDeliveredFinalTranscript = false
@@ -132,7 +250,7 @@ private final class AppleSpeechTranscriptionSession: NSObject, BuddyStreamingTra
         error: Error?
     ) {
         if let result {
-            latestRecognizedText = result.bestTranscription.formattedString
+            latestRecognizedText = transcriptAccumulator.update(with: result.bestTranscription.formattedString)
             onTranscriptUpdate(latestRecognizedText)
 
             if result.isFinal {

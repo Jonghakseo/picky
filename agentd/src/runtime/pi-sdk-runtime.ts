@@ -172,11 +172,56 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   private async promptWithOptions(prompt: BuiltPrompt, streamingBehavior?: "steer" | "followUp"): Promise<void> {
-    await this.runtime.session.prompt(prompt.text, {
+    await this.promptUntilAccepted(prompt.text, {
       images: await imageOptions(prompt.imagePaths),
       source: "rpc",
       streamingBehavior,
     });
+  }
+
+  private async promptUntilAccepted(
+    text: string,
+    options: { images?: Awaited<ReturnType<typeof imageOptions>>; source: "rpc"; streamingBehavior?: "steer" | "followUp" },
+  ): Promise<void> {
+    let accepted = false;
+    let settled = false;
+    let resolveAccepted!: () => void;
+    let rejectAccepted!: (error: unknown) => void;
+    const acceptedPromise = new Promise<void>((resolve, reject) => {
+      resolveAccepted = resolve;
+      rejectAccepted = reject;
+    });
+    const resolveOnce = () => {
+      if (settled) return;
+      settled = true;
+      resolveAccepted();
+    };
+    const rejectOnce = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      rejectAccepted(error);
+    };
+
+    const promptPromise = this.runtime.session.prompt(text, {
+      ...options,
+      preflightResult: (success: boolean) => {
+        if (!success) return;
+        accepted = true;
+        resolveOnce();
+      },
+    });
+
+    void promptPromise
+      .then(resolveOnce)
+      .catch((error) => {
+        if (accepted) {
+          this.emit({ type: "status", status: "failed", summary: messageOf(error) });
+          return;
+        }
+        rejectOnce(error);
+      });
+
+    await acceptedPromise;
   }
 
   private createBridge(): ExtensionUiBridge {

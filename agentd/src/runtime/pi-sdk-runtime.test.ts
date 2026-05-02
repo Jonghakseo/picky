@@ -16,6 +16,7 @@ class FakeSession extends EventEmitter {
   async prompt(text: string, options?: unknown): Promise<void> {
     this.prompts.push(text);
     this.promptOptions.push(options);
+    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
     this.emit("event", { type: "agent_start" });
     this.emit("event", { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "ok" } });
   }
@@ -41,6 +42,30 @@ class FakeSession extends EventEmitter {
   subscribe(listener: (event: unknown) => void): () => void {
     this.on("event", listener);
     return () => this.off("event", listener);
+  }
+}
+
+class BlockingPromptSession extends FakeSession {
+  private promptFinished: Promise<void>;
+  private finishPrompt!: () => void;
+
+  constructor() {
+    super();
+    this.promptFinished = new Promise((resolve) => {
+      this.finishPrompt = resolve;
+    });
+  }
+
+  override async prompt(text: string, options?: unknown): Promise<void> {
+    this.prompts.push(text);
+    this.promptOptions.push(options);
+    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    this.emit("event", { type: "agent_start" });
+    await this.promptFinished;
+  }
+
+  resolvePrompt(): void {
+    this.finishPrompt();
   }
 }
 
@@ -117,6 +142,40 @@ describe("PiSdkRuntime", () => {
     expect(fakeSession.promptOptions[0]).not.toMatchObject({ streamingBehavior: "followUp" });
   });
 
+  it("returns from followUp after Pi accepts the prompt instead of waiting for the whole turn", async () => {
+    const fakeSession = new BlockingPromptSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-1" });
+
+    const result = await Promise.race([
+      handle.followUp({ text: "long side-agent follow-up", imagePaths: [] }).then(() => "returned"),
+      delay(20).then(() => "timeout"),
+    ]);
+
+    expect(result).toBe("returned");
+    expect(fakeSession.prompts).toEqual(["long side-agent follow-up"]);
+    expect(fakeSession.promptOptions[0]).toMatchObject({ source: "rpc", streamingBehavior: "followUp" });
+    fakeSession.resolvePrompt();
+  });
+
+  it("returns from interrupt after Pi accepts replacement input instead of waiting for the whole turn", async () => {
+    const fakeSession = new BlockingPromptSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+    fakeSession.isStreaming = true;
+
+    const result = await Promise.race([
+      handle.interrupt!({ text: "replacement voice input", imagePaths: [] }).then(() => "returned"),
+      delay(20).then(() => "timeout"),
+    ]);
+
+    expect(result).toBe("returned");
+    expect(fakeSession.aborts).toBe(1);
+    expect(fakeSession.prompts).toEqual(["replacement voice input"]);
+    expect(fakeSession.promptOptions[0]).toMatchObject({ source: "rpc" });
+    fakeSession.resolvePrompt();
+  });
+
   it("bridges askUserQuestion forms through extension UI requests", async () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);
@@ -178,3 +237,7 @@ describe("PiSdkRuntime", () => {
     await handle.abort();
   });
 });
+
+async function delay(milliseconds: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
+}

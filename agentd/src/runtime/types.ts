@@ -11,7 +11,9 @@ export type RuntimeEvent =
 
 export interface RuntimeSessionHandle {
   id: string;
+  /** Resolves when the follow-up is accepted/queued, not when the agent finishes the turn. */
   followUp(prompt: BuiltPrompt): Promise<void>;
+  /** Resolves when replacement input is accepted/queued after interruption, not when the agent finishes the turn. */
   interrupt?(prompt: BuiltPrompt): Promise<void>;
   steer(text: string): Promise<void>;
   abort(): Promise<void>;

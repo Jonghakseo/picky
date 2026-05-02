@@ -10,6 +10,7 @@ import SwiftUI
 
 enum PickyHUDExpansion {
     static let duration: TimeInterval = 0.22
+    static let panelShrinkDelay: TimeInterval = duration + 0.03
     static let animation = Animation.easeInOut(duration: duration)
 
     static func cardSpacing(isExpanded: Bool) -> CGFloat {
@@ -23,6 +24,10 @@ enum PickyHUDExpansion {
     static func contentFrameHeight(isExpanded: Bool, measuredHeight: CGFloat) -> CGFloat? {
         guard isExpanded else { return 0 }
         return measuredHeight > 0 ? measuredHeight : nil
+    }
+
+    static func shouldDeferPanelShrink(currentHeight: CGFloat, targetHeight: CGFloat, deferShrink: Bool) -> Bool {
+        deferShrink && targetHeight < currentHeight - 1
     }
 }
 
@@ -47,6 +52,7 @@ final class PickyHUDPanel: NSPanel {
 final class PickyHUDOverlayManager {
     private let viewModel: PickySessionListViewModel
     private var panel: NSPanel?
+    private var pendingPanelShrinkTask: Task<Void, Never>?
     private let width: CGFloat = 320
     private let collapsedHeight: CGFloat = 180
     private let minimumHeight: CGFloat = 48
@@ -63,6 +69,8 @@ final class PickyHUDOverlayManager {
     }
 
     func stop() {
+        pendingPanelShrinkTask?.cancel()
+        pendingPanelShrinkTask = nil
         viewModel.stop()
         panel?.orderOut(nil)
     }
@@ -84,10 +92,10 @@ final class PickyHUDOverlayManager {
         hudPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
         let hostingView = NSHostingView(rootView: PickyHUDView(viewModel: viewModel) { [weak self] size in
-            // SwiftUI animates the card reveal itself. Keep the transparent NSPanel
-            // tightly anchored to the current layout frame instead of starting a
-            // second window-frame animation that can lag behind the content.
-            self?.resizePanel(toContentSize: size, animated: false)
+            // SwiftUI animates the card reveal itself. Grow the transparent NSPanel
+            // immediately, but defer shrinking it until the collapse animation has
+            // finished so shadows/content aren't clipped by the outer container.
+            self?.resizePanel(toContentSize: size, deferShrink: true)
         }.frame(width: width))
         hostingView.frame = NSRect(x: 0, y: 0, width: width, height: collapsedHeight)
         hostingView.autoresizingMask = [.width, .height]
@@ -96,30 +104,49 @@ final class PickyHUDOverlayManager {
     }
 
     private func positionTopRight() {
-        resizePanel(toContentSize: panel?.contentView?.fittingSize ?? CGSize(width: width, height: collapsedHeight), animated: false)
+        resizePanel(toContentSize: panel?.contentView?.fittingSize ?? CGSize(width: width, height: collapsedHeight), deferShrink: false)
     }
 
-    private func resizePanel(toContentSize contentSize: CGSize, animated: Bool) {
+    private func resizePanel(toContentSize contentSize: CGSize, deferShrink: Bool) {
         guard let panel else { return }
+        guard let targetFrame = targetFrame(forContentSize: contentSize) else { return }
+        let shouldDeferShrink = PickyHUDExpansion.shouldDeferPanelShrink(
+            currentHeight: panel.frame.height,
+            targetHeight: targetFrame.height,
+            deferShrink: deferShrink
+        )
+
+        if shouldDeferShrink {
+            pendingPanelShrinkTask?.cancel()
+            pendingPanelShrinkTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(PickyHUDExpansion.panelShrinkDelay * 1_000_000_000))
+                guard !Task.isCancelled, let self else { return }
+                self.pendingPanelShrinkTask = nil
+                self.resizePanel(toContentSize: contentSize, deferShrink: false)
+            }
+            return
+        }
+
+        pendingPanelShrinkTask?.cancel()
+        pendingPanelShrinkTask = nil
+        applyPanelFrame(targetFrame)
+    }
+
+    private func targetFrame(forContentSize contentSize: CGSize) -> NSRect? {
         let screen = NSScreen.main ?? NSScreen.screens.first
-        guard let visibleFrame = screen?.visibleFrame else { return }
+        guard let visibleFrame = screen?.visibleFrame else { return nil }
         let targetHeight = min(max(contentSize.height, minimumHeight), visibleFrame.height - 32)
-        let targetFrame = NSRect(
+        return NSRect(
             x: visibleFrame.maxX - width - 16,
             y: visibleFrame.maxY - targetHeight - 16,
             width: width,
             height: targetHeight
         )
-        guard panel.frame.integral != targetFrame.integral else { return }
-        if animated {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = PickyHUDExpansion.duration
-                context.allowsImplicitAnimation = true
-                panel.animator().setFrame(targetFrame, display: true)
-            }
-        } else {
-            panel.setFrame(targetFrame, display: true)
-        }
+    }
+
+    private func applyPanelFrame(_ targetFrame: NSRect) {
+        guard let panel, panel.frame.integral != targetFrame.integral else { return }
+        panel.setFrame(targetFrame, display: true)
     }
 }
 

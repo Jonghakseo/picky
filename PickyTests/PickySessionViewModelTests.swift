@@ -48,6 +48,7 @@ private final class FakeTerminalResumeLauncher: PickyTerminalResumeLaunching {
     }
 }
 
+@Suite(.serialized)
 @MainActor
 struct PickySessionViewModelTests {
     @Test func startRequestsPersistedSessionsOnConnect() async throws {
@@ -170,6 +171,13 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDExpansion.contentFrameHeight(isExpanded: false, measuredHeight: 120) == 0)
         #expect(PickyHUDExpansion.contentFrameHeight(isExpanded: true, measuredHeight: 120) == 120)
         #expect(PickyHUDExpansion.contentFrameHeight(isExpanded: true, measuredHeight: 0) == nil)
+    }
+
+    @Test func hudExpansionDefersOuterPanelShrinkUntilCollapseFinishes() throws {
+        #expect(PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 320, targetHeight: 80, deferShrink: true))
+        #expect(!PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 80, targetHeight: 320, deferShrink: true))
+        #expect(!PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 320, targetHeight: 80, deferShrink: false))
+        #expect(PickyHUDExpansion.panelShrinkDelay > PickyHUDExpansion.duration)
     }
 
     @Test func hudExpandedContentShowsFullSummaryAndHidesRecentLog() throws {
@@ -402,7 +410,7 @@ struct PickySessionViewModelTests {
 }
 
 private func settle() async throws {
-    try await Task.sleep(nanoseconds: 50_000_000)
+    try await Task.sleep(nanoseconds: 200_000_000)
 }
 
 private enum EventJSON {

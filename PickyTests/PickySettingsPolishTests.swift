@@ -89,7 +89,7 @@ struct PickySettingsPolishTests {
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
         client.emit(.protocolEvent(.fixture(eventJSON: sessionUpdatedJSON(id: "archive-me", title: "Archive Me", status: "completed", summary: "final summary"))))
-        try await Task.sleep(nanoseconds: 50_000_000)
+        try await Task.sleep(nanoseconds: 200_000_000)
 
         viewModel.archive(sessionID: "archive-me")
 

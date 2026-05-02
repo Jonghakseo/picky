@@ -54,7 +54,6 @@ interface PiExtensionAPI {
 }
 
 export default function pickyHandoffExtension(pi: PiExtensionAPI) {
-  registerHandoffCommand(pi, "pin-as-side-agent");
   registerHandoffCommand(pi, "handoff-to-picky");
 }
 

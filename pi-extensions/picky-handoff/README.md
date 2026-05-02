@@ -2,9 +2,8 @@
 
 This Pi extension adds slash commands that hand the current Pi session context to Picky as a new visible side agent.
 
-Commands:
+Command:
 
-- `/pin-as-side-agent [handoff request]`
 - `/handoff-to-picky [handoff request]`
 
 The command reads Picky's local daemon capability file:
@@ -29,7 +28,7 @@ Then restart Pi or run `/reload` in an existing Pi session.
 ## Usage
 
 ```text
-/pin-as-side-agent continue this investigation in Picky and produce a final report
+/handoff-to-picky continue this investigation in Picky and produce a final report
 ```
 
 If no argument is provided, the extension asks Picky to continue the current Pi task as a side agent using the recent Pi session branch excerpt as context.

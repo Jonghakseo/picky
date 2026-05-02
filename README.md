@@ -53,7 +53,7 @@ ln -sfn "$PWD/pi-extensions/picky-handoff" ~/.pi/agent/extensions/picky-handoff
 After restarting Pi or running `/reload`, use:
 
 ```text
-/pin-as-side-agent continue this investigation in Picky and produce a final report
+/handoff-to-picky continue this investigation in Picky and produce a final report
 ```
 
 This creates a new Picky-managed side agent using the current Pi session file, cwd, and recent branch excerpt as neutral context.

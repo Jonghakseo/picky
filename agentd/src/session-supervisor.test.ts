@@ -78,13 +78,13 @@ describe("SessionSupervisor", () => {
     expect(pinned.title).toBe("Pinned source");
     expect(pinned.lastSummary).toBe("Pinned completed Pi session");
     expect(pinned.finalAnswer).toMatch(/No Picky side-agent run/);
-    expect(pinned.notifyMainOnCompletion).toBe(true);
+    expect(pinned.notifyMainOnCompletion).toBe(false);
     expect(pinned.logs).toContain("pi session: /tmp/source-pi-session.jsonl");
     expect(pinned.logs.some((line) => line.startsWith("pi-extension handoff pin:"))).toBe(true);
     expect(supervisor.isSideSession(pinned.id)).toBe(true);
   });
 
-  it("notifies the main agent when a pinned side session is created", async () => {
+  it("does not notify the main agent when a local Pi session is pinned", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
     const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir), undefined, { mainRuntime });
@@ -92,18 +92,11 @@ describe("SessionSupervisor", () => {
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
     await supervisor.load();
 
-    const pinned = await supervisor.pinSideSession(context("pin completed source"), "Pinned source");
+    await supervisor.pinSideSession(context("pin completed source"), "Pinned source");
 
-    expect(mainRuntime.prewarmCalls).toBe(1);
-    expect(mainRuntime.handle?.followUps).toHaveLength(1);
-    expect(mainRuntime.handle?.followUps[0].text).toContain("# Side-agent completion");
-    expect(mainRuntime.handle?.followUps[0].text).toContain("Pinned source");
-
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "핀 완료를 확인했어요." });
-    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
-
-    expect(replies).toEqual([{ contextId: pinned.id, text: "핀 완료를 확인했어요." }]);
+    expect(mainRuntime.prewarmCalls).toBe(0);
+    expect(mainRuntime.handle?.followUps ?? []).toHaveLength(0);
+    expect(replies).toEqual([]);
   });
 
   it("lets side sessions opt out without replaying completed notifications", async () => {

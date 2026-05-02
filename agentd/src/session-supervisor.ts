@@ -149,7 +149,7 @@ export class SessionSupervisor extends EventEmitter {
       lastSummary: "Pinned completed Pi session",
       finalAnswer: "Pinned from an idle Pi session. No Picky side-agent run has been started yet.",
       logs: buildPinnedSideSessionLogs(context),
-      notifyMainOnCompletion: true,
+      notifyMainOnCompletion: false,
       tools: [],
       artifacts: [],
       changedFiles: [],
@@ -158,7 +158,6 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("side session pinned", { sessionId: id, titleChars: session.title.length, cwd: context.cwd, contextId: context.id });
     await this.upsert(session);
     await this.materializeTerminalArtifacts(id);
-    await this.notifyMainOfSideCompletion(id);
     return this.mustGet(id);
   }
 

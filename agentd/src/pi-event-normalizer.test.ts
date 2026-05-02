@@ -30,6 +30,7 @@ describe("normalizePiEvent", () => {
 
   it("marks dialog extension UI as waiting for input", async () => {
     expect(normalizePiEvent(await fixture("extension-ui-request-confirm.json"))).toMatchObject({ kind: "extensionUi", waitsForInput: true });
+    expect(normalizePiEvent({ type: "extension_ui_request", id: "ui-form", method: "askUserQuestion", questions: [] })).toMatchObject({ kind: "extensionUi", waitsForInput: true });
   });
 
   it("logs queue updates without routing policy", async () => {

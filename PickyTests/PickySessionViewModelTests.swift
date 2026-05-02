@@ -143,6 +143,27 @@ struct PickySessionViewModelTests {
         #expect(answers.last?.value == .object(["cancelled": .bool(true)]))
     }
 
+    @Test func askUserQuestionRequestStoresQuestionsAndSendsCompositeAnswer() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "waiting_for_input"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.askUserQuestionRequest())))
+        try await settle()
+
+        let request = try #require(viewModel.sessions.first?.pendingExtensionUiRequest)
+        #expect(request.method == "askUserQuestion")
+        #expect(request.questions?.map(\.type) == [.radio, .checkbox, .text])
+
+        let value: JSONValue = .object(["value": .object(["scope": .string("project"), "items": .array([.string("rule")]), "note": .string("ok")])])
+        try await viewModel.answerExtensionUi(sessionID: "session-1", requestID: "ui-form", value: value)
+
+        let answer = try #require(client.sentCommands.last)
+        #expect(answer.type == .answerExtensionUi)
+        #expect(answer.requestId == "ui-form")
+        #expect(answer.value == value)
+    }
+
     @Test func terminalNotificationsAreDeduplicated() async throws {
         let client = FakePickyAgentClient()
         let notifications = PickyNoopNotificationCenter()
@@ -451,6 +472,12 @@ private enum EventJSON {
     static func extensionUiRequest() -> String {
         """
         {"id":"event-ui","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-1","sessionId":"session-1","method":"confirm","title":"Confirm","prompt":"Proceed?","options":null,"createdAt":"2026-05-01T00:00:02.000Z"}}
+        """
+    }
+
+    static func askUserQuestionRequest() -> String {
+        """
+        {"id":"event-ui-form","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-form","sessionId":"session-1","method":"askUserQuestion","title":"Confirm memory","description":"Pick what to save","questions":[{"id":"scope","type":"radio","prompt":"Scope?","options":[{"value":"user","label":"User"},{"value":"project","label":"Project"}],"default":"project"},{"id":"items","type":"checkbox","prompt":"Items?","options":[{"value":"rule","label":"Rule"}],"default":["rule"],"allowOther":true},{"id":"note","type":"text","prompt":"Note","required":false}],"createdAt":"2026-05-01T00:00:02.000Z"}}
         """
     }
 

@@ -11,6 +11,7 @@ class FakeSession extends EventEmitter {
   aborts = 0;
   isStreaming = false;
   bound = false;
+  uiContext?: Record<string, unknown>;
 
   async prompt(text: string, options?: unknown): Promise<void> {
     this.prompts.push(text);
@@ -32,8 +33,9 @@ class FakeSession extends EventEmitter {
     this.isStreaming = false;
   }
 
-  async bindExtensions(): Promise<void> {
+  async bindExtensions(options?: { uiContext?: Record<string, unknown> }): Promise<void> {
     this.bound = true;
+    this.uiContext = options?.uiContext;
   }
 
   subscribe(listener: (event: unknown) => void): () => void {
@@ -113,6 +115,24 @@ describe("PiSdkRuntime", () => {
     expect(fakeSession.prompts).toEqual(["replacement voice input"]);
     expect(fakeSession.promptOptions[0]).toMatchObject({ source: "rpc" });
     expect(fakeSession.promptOptions[0]).not.toMatchObject({ streamingBehavior: "followUp" });
+  });
+
+  it("bridges askUserQuestion forms through extension UI requests", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-form" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    const askUserQuestion = fakeSession.uiContext?.askUserQuestion as ((request: unknown) => Promise<unknown>) | undefined;
+    expect(askUserQuestion).toBeTypeOf("function");
+    const answerPromise = askUserQuestion!({ title: "Pick", questions: [{ id: "choice", type: "radio", options: ["A", "B"] }] });
+    const event = events.find((candidate) => typeof candidate === "object" && candidate && (candidate as { type?: string }).type === "extension_ui") as { request: { id: string; method: string; questions?: unknown[] }; waitsForInput: boolean } | undefined;
+
+    expect(event).toMatchObject({ type: "extension_ui", waitsForInput: true, request: { method: "askUserQuestion" } });
+    expect(event?.request.questions).toHaveLength(1);
+    await handle.answerExtensionUi?.(event!.request.id, { choice: "B" });
+    await expect(answerPromise).resolves.toEqual({ choice: "B" });
   });
 
   it("prewarms Pi resources without sending an initial prompt", async () => {

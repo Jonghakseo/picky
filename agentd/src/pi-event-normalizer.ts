@@ -80,7 +80,7 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
 
   if (type === "extension_ui_request") {
     const method = requiredString(piEvent.method, "method");
-    return { kind: "extensionUi", request: piEvent, waitsForInput: ["select", "confirm", "input", "editor"].includes(method) };
+    return { kind: "extensionUi", request: piEvent, waitsForInput: ["select", "confirm", "input", "editor", "askUserQuestion"].includes(method) };
   }
 
   if (type === "agent_end") {

@@ -93,6 +93,22 @@ struct ProtocolContractTests {
         let event = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
         #expect(event.event == .quickReply(PickyQuickReplyEvent(contextId: "context-1", text: "바로 답변")))
     }
+
+    @Test func decodesAskUserQuestionFormEvent() throws {
+        let fixture = try #require(try fixtureURLs(in: "contracts/protocol").first { $0.lastPathComponent == "extension-ui-form-request.event.json" })
+        let event = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: try Data(contentsOf: fixture))
+
+        guard case .extensionUiRequest(let request) = event.event else {
+            Issue.record("Expected extension UI request")
+            return
+        }
+        #expect(request.method == "askUserQuestion")
+        #expect(request.title == "메모리 저장 확인")
+        #expect(request.description == "저장할 항목과 범위를 선택하세요.")
+        #expect(request.questions?.map(\.type) == [.radio, .checkbox, .text])
+        #expect(request.questions?.first?.options?.last?.description == "현재 프로젝트에만 적용")
+        #expect(request.questions?[1].defaultValue == .array([.string("rule")]))
+    }
 }
 
 func fixtureURLs(in relativeDirectory: String) throws -> [URL] {

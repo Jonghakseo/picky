@@ -505,6 +505,8 @@ private struct PickyPendingInputView: View {
     let request: PickyExtensionUiRequest
     @ObservedObject var viewModel: PickySessionListViewModel
     @State private var textValue = ""
+    @State private var formState = PickyAskUserQuestionFormState()
+    @State private var seededFormRequestID: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -515,10 +517,22 @@ private struct PickyPendingInputView: View {
                 .font(.system(size: 12))
                 .foregroundColor(DS.Colors.textPrimary)
                 .lineLimit(3)
+            if request.method == "askUserQuestion", let description = request.description, !description.isEmpty {
+                Text(description)
+                    .font(.system(size: 11))
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .lineLimit(3)
+            }
             controls
         }
         .padding(8)
         .background(RoundedRectangle(cornerRadius: 9).fill(DS.Colors.warning.opacity(0.12)))
+        .onAppear { seedFormDefaultsIfNeeded() }
+        .onChange(of: request.id) { _ in
+            formState = PickyAskUserQuestionFormState()
+            seededFormRequestID = nil
+            seedFormDefaultsIfNeeded()
+        }
     }
 
     @ViewBuilder
@@ -555,16 +569,126 @@ private struct PickyPendingInputView: View {
                 Button("Cancel") { cancel() }
             }
             .font(.system(size: 11, weight: .medium))
+        case "askUserQuestion":
+            askUserQuestionForm
         default:
             Button("Dismiss") { cancel() }
                 .font(.system(size: 11, weight: .medium))
         }
     }
 
+    private var askUserQuestionForm: some View {
+        let questions = request.questions ?? []
+        return VStack(alignment: .leading, spacing: 8) {
+            if questions.isEmpty {
+                Text("No questions provided")
+                    .font(.system(size: 11))
+                    .foregroundColor(DS.Colors.textSecondary)
+            } else {
+                ForEach(Array(questions.enumerated()), id: \.offset) { index, question in
+                    formQuestion(question, index: index)
+                }
+            }
+            HStack(spacing: 6) {
+                Button("Submit") { submitAskUserQuestion() }
+                    .disabled(!formState.isSubmittable(questions: questions))
+                Button("Cancel") { cancel() }
+            }
+            .font(.system(size: 11, weight: .medium))
+        }
+    }
+
+    private func formQuestion(_ question: PickyExtensionUiQuestion, index: Int) -> some View {
+        let key = PickyAskUserQuestionFormState.key(for: question, index: index)
+        return VStack(alignment: .leading, spacing: 5) {
+            Text(question.prompt ?? question.label ?? key)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(DS.Colors.textPrimary)
+            switch question.type {
+            case .radio:
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(question.options ?? []) { option in
+                        optionButton(label: option.label, description: option.description, selected: formState.radioValues[key] == option.value) {
+                            formState.selectRadio(question: question, index: index, value: option.value)
+                        }
+                    }
+                    if question.allowOther ?? true {
+                        optionButton(label: "Other…", description: nil, selected: formState.radioValues[key] == PickyAskUserQuestionFormState.otherSentinel) {
+                            formState.selectRadio(question: question, index: index, value: PickyAskUserQuestionFormState.otherSentinel)
+                        }
+                        TextField("Other…", text: binding($formState.otherValues, key: key))
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 11))
+                            .disabled(formState.radioValues[key] != PickyAskUserQuestionFormState.otherSentinel)
+                    }
+                }
+            case .checkbox:
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(question.options ?? []) { option in
+                        optionButton(label: option.label, description: option.description, selected: formState.checkboxValues[key]?.contains(option.value) == true) {
+                            formState.toggleCheckbox(question: question, index: index, value: option.value)
+                        }
+                    }
+                    if question.allowOther ?? true {
+                        TextField("Other…", text: binding($formState.otherValues, key: key))
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 11))
+                    }
+                }
+            case .text:
+                TextField(question.placeholder ?? "Response…", text: binding($formState.textValues, key: key))
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11))
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func optionButton(label: String, description: String?, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+                if let description, !description.isEmpty {
+                    Text(description)
+                        .font(.system(size: 10))
+                        .foregroundColor(DS.Colors.textSecondary)
+                        .lineLimit(2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 6).fill(selected ? DS.Colors.accentSubtle : DS.Colors.surface2.opacity(0.8)))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(selected ? DS.Colors.accentText : DS.Colors.borderSubtle, lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(selected ? DS.Colors.accentText : DS.Colors.textPrimary)
+    }
+
+    private func binding(_ dictionary: Binding<[String: String]>, key: String) -> Binding<String> {
+        Binding(
+            get: { dictionary.wrappedValue[key] ?? "" },
+            set: { dictionary.wrappedValue[key] = $0 }
+        )
+    }
+
     private func submitText() {
         let trimmed = textValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         answer(.string(trimmed))
+    }
+
+    private func submitAskUserQuestion() {
+        let questions = request.questions ?? []
+        guard formState.isSubmittable(questions: questions) else { return }
+        answer(.object(["value": .object(formState.answerObject(for: questions))]))
+    }
+
+    private func seedFormDefaultsIfNeeded() {
+        guard request.method == "askUserQuestion", seededFormRequestID != request.id else { return }
+        formState.seedDefaults(for: request.questions ?? [])
+        seededFormRequestID = request.id
     }
 
     private func answer(_ value: JSONValue) {

@@ -199,7 +199,12 @@ function mediaTypeFromPath(path: string): string {
 }
 
 function normalizeAnswer(value: unknown): { value?: unknown; confirmed?: boolean; cancelled?: boolean } {
-  if (value && typeof value === "object") return value as { value?: unknown; confirmed?: boolean; cancelled?: boolean };
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if ("value" in record || "confirmed" in record || "cancelled" in record) {
+      return record as { value?: unknown; confirmed?: boolean; cancelled?: boolean };
+    }
+  }
   return { value };
 }
 

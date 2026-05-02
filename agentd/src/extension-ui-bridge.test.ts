@@ -30,6 +30,27 @@ describe("ExtensionUiBridge", () => {
     await expect(input).resolves.toBeUndefined();
   });
 
+  it("resolves askUserQuestion form requests with radio checkbox and text answers", async () => {
+    const bridge = new ExtensionUiBridge("session-1");
+    const context = bridge.createContext() as ReturnType<ExtensionUiBridge["createContext"]> & { askUserQuestion: (request: unknown) => Promise<Record<string, unknown> | undefined> };
+    const requestPromise = nextRequest(bridge);
+    const promise = context.askUserQuestion({
+      title: "Confirm memory changes",
+      questions: [
+        { id: "scope", type: "radio", prompt: "Scope?", options: ["user", { value: "project", label: "Project" }], default: "project" },
+        { id: "items", type: "checkbox", prompt: "Items?", options: ["a", "b"], default: ["a"], allowOther: true },
+        { id: "note", type: "text", prompt: "Note", placeholder: "optional", required: false },
+      ],
+    });
+    const request = await requestPromise;
+
+    expect(request.method).toBe("askUserQuestion");
+    expect(request.questions?.map((question) => question.id)).toEqual(["scope", "items", "note"]);
+    expect(request.questions?.[0].options).toEqual([{ value: "user", label: "user" }, { value: "project", label: "Project" }]);
+    bridge.answer(request.id, { value: { scope: "project", items: ["a", "custom"], note: "ship it" } });
+    await expect(promise).resolves.toEqual({ scope: "project", items: ["a", "custom"], note: "ship it" });
+  });
+
   it("emits fire-and-forget requests without blocking", async () => {
     const bridge = new ExtensionUiBridge("session-1");
     const requestPromise = nextRequest(bridge);
@@ -40,6 +61,6 @@ describe("ExtensionUiBridge", () => {
   });
 });
 
-function nextRequest(bridge: ExtensionUiBridge): Promise<{ id: string; sessionId: string; method: string; prompt?: string }> {
+function nextRequest(bridge: ExtensionUiBridge): Promise<{ id: string; sessionId: string; method: string; prompt?: string; questions?: Array<{ id?: string; options?: Array<{ value: string; label: string }> }> }> {
   return new Promise((resolve) => bridge.once("request", (request) => resolve(request)));
 }

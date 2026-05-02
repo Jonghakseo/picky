@@ -57,7 +57,33 @@ export const PickyArtifactSchema = z.object({ id: z.string(), kind: z.string(), 
 export type PickyArtifact = z.infer<typeof PickyArtifactSchema>;
 export const PickyToolActivitySchema = z.object({ toolCallId: z.string(), name: z.string(), status: z.enum(["running", "succeeded", "failed"]), preview: z.string().optional(), startedAt: isoTimestamp.optional(), endedAt: isoTimestamp.optional() });
 export type PickyToolActivity = z.infer<typeof PickyToolActivitySchema>;
-export const PickyExtensionUiRequestSchema = z.object({ id: z.string(), sessionId: z.string(), method: z.enum(["select", "confirm", "input", "editor", "notify", "setStatus", "setWidget", "setTitle", "set_editor_text"]), title: z.string().optional(), prompt: z.string().optional(), options: z.array(z.string()).optional(), createdAt: isoTimestamp });
+export const PickyExtensionUiQuestionOptionSchema = z.preprocess(
+  (option) => typeof option === "string" ? { value: option, label: option } : option,
+  z.object({ value: z.string(), label: z.string(), description: z.string().optional() }),
+);
+export const PickyExtensionUiQuestionSchema = z.object({
+  id: z.string().optional(),
+  type: z.enum(["radio", "checkbox", "text"]),
+  prompt: z.string().optional(),
+  label: z.string().optional(),
+  options: z.array(PickyExtensionUiQuestionOptionSchema).optional(),
+  allowOther: z.boolean().optional(),
+  required: z.boolean().optional(),
+  placeholder: z.string().optional(),
+  default: z.union([z.string(), z.array(z.string())]).optional(),
+});
+export type PickyExtensionUiQuestion = z.infer<typeof PickyExtensionUiQuestionSchema>;
+export const PickyExtensionUiRequestSchema = z.object({
+  id: z.string(),
+  sessionId: z.string(),
+  method: z.enum(["select", "confirm", "input", "editor", "askUserQuestion", "notify", "setStatus", "setWidget", "setTitle", "set_editor_text"]),
+  title: z.string().optional(),
+  prompt: z.string().optional(),
+  description: z.string().optional(),
+  options: z.array(z.string()).optional(),
+  questions: z.array(PickyExtensionUiQuestionSchema).optional(),
+  createdAt: isoTimestamp,
+});
 export type PickyExtensionUiRequest = z.infer<typeof PickyExtensionUiRequestSchema>;
 
 export const PickyAgentSessionSchema = z.object({

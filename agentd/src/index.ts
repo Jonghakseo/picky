@@ -6,6 +6,8 @@ import { MockRuntime } from "./runtime/mock-runtime.js";
 import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyHandoffTool, createPickySideFollowUpTool, createPickySideSessionsTool } from "./application/handoff-tool.js";
+import { removeConnectionInfo, writeConnectionInfo } from "./connection-info-store.js";
+import { PROTOCOL_VERSION } from "./protocol.js";
 import { logAgentd } from "./local-log.js";
 
 const port = Number(process.env.PICKY_AGENTD_PORT ?? 17631);
@@ -55,6 +57,17 @@ supervisor = new SessionSupervisor(runtime, new SessionStore(appSupportDir), new
 await supervisor.load();
 const server = new AgentdServer({ port, token, supervisor });
 const boundPort = await server.start();
+const connectionInfoPath = await writeConnectionInfo(appSupportDir, {
+  protocolVersion: PROTOCOL_VERSION,
+  url: `ws://127.0.0.1:${boundPort}`,
+  token,
+  port: boundPort,
+  pid: process.pid,
+  appSupportDir,
+  defaultCwd,
+  startedAt: new Date().toISOString(),
+});
+logAgentd("connection info written", { path: connectionInfoPath });
 console.log(`picky-agentd listening on 127.0.0.1:${boundPort}`);
 
 if (mainRuntime) {
@@ -65,6 +78,9 @@ if (mainRuntime) {
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
-    void server.stop().then(() => process.exit(0));
+    void removeConnectionInfo(appSupportDir)
+      .catch((error) => logAgentd("connection info remove failed", { error: error instanceof Error ? error.message : String(error) }))
+      .then(() => server.stop())
+      .then(() => process.exit(0));
   });
 }

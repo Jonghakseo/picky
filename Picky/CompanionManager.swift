@@ -61,6 +61,7 @@ final class CompanionManager: ObservableObject {
 
     private let agentClient: any PickyAgentClient
     private let selectionStore: PickySessionSelectionStoring
+    private let voiceContextCaptureCoordinator = PickyVoiceContextCaptureCoordinator()
 
     init(
         agentClient: any PickyAgentClient = LocalStubPickyAgentClient(),
@@ -428,25 +429,17 @@ final class CompanionManager: ObservableObject {
             beginAwaitingAgentResponse()
 
             do {
-                let screenCaptures = try await CompanionScreenCaptureUtility.captureAllScreensAsJPEG()
-                guard !Task.isCancelled else { return }
-
-                let assembler = PickyContextPacketAssembler(
-                    appProvider: WorkspacePickyApplicationContextProvider(),
-                    windowProvider: CGWindowPickyWindowContextProvider(),
-                    advancedBrowserProvider: AppleScriptBrowserContextProvider(),
-                    selectedTextProvider: ClipboardSelectedTextProvider(),
-                    screenProvider: StaticPickyScreenContextProvider(captures: screenCaptures),
-                    defaultCwd: PickySettingsStore().load().defaultCwd
-                )
                 let voiceFollowUpSessionID = voiceFollowUpSessionIDForCurrentUtterance
-                let source = voiceFollowUpSessionID == nil ? "voice" : "voice-follow-up"
-                let contextPacket = try assembler.assemble(source: source, transcript: transcript, selectedSessionId: voiceFollowUpSessionID)
-                let receipt = try await routeVoiceTranscript(transcript: transcript, contextPacket: contextPacket, voiceFollowUpSessionID: voiceFollowUpSessionID)
+                let captureResult = try await voiceContextCaptureCoordinator.captureContext(
+                    transcript: transcript,
+                    voiceFollowUpSessionID: voiceFollowUpSessionID
+                )
+                guard !Task.isCancelled else { return }
+                let receipt = try await routeVoiceTranscript(transcript: transcript, contextPacket: captureResult.contextPacket, voiceFollowUpSessionID: voiceFollowUpSessionID)
 
                 guard !Task.isCancelled else { return }
 
-                handleAgentSubmissionAccepted(receipt: receipt, source: source)
+                handleAgentSubmissionAccepted(receipt: receipt, source: captureResult.source)
             } catch is CancellationError {
                 // User spoke again — response was interrupted.
             } catch {

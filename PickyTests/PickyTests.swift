@@ -72,4 +72,22 @@ struct PickyTests {
         #expect(!PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 200, targetHeight: 180, deferShrink: false))
     }
 
+    @Test func pushToTalkShortcutKeepsControlOptionTransitionSemantics() throws {
+        let controlOptionFlags: NSEvent.ModifierFlags = [.control, .option]
+
+        #expect(BuddyPushToTalkShortcut.pushToTalkDisplayText == "ctrl + option")
+        #expect(BuddyPushToTalkShortcut.shortcutTransition(
+            for: .flagsChanged,
+            keyCode: 0,
+            modifierFlagsRawValue: UInt64(controlOptionFlags.rawValue),
+            wasShortcutPreviouslyPressed: false
+        ) == .pressed)
+        #expect(BuddyPushToTalkShortcut.shortcutTransition(
+            for: .flagsChanged,
+            keyCode: 0,
+            modifierFlagsRawValue: 0,
+            wasShortcutPreviouslyPressed: true
+        ) == .released)
+    }
+
 }

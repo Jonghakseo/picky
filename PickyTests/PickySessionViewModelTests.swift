@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import AppKit
 import Foundation
 import Testing
 @testable import Picky
@@ -174,6 +175,20 @@ struct PickySessionViewModelTests {
     @Test func hudExpandedContentShowsFullSummaryAndHidesRecentLog() throws {
         #expect(PickyHUDExpandedContentPolicy.summaryLineLimit == nil)
         #expect(!PickyHUDExpandedContentPolicy.showsRecentLog)
+    }
+
+    @Test func hudPanelCanBecomeKeyForFollowUpTextInput() throws {
+        let panel = PickyHUDPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        defer { panel.close() }
+
+        #expect(panel.canBecomeKey)
+        #expect(!panel.canBecomeMain)
+        #expect(panel.styleMask.contains(.nonactivatingPanel))
     }
 
     @Test func selectionDefaultsForHudButOnlyExplicitSelectionPersistsForVoiceFollowUp() async throws {

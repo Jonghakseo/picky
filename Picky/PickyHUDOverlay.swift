@@ -31,6 +31,18 @@ enum PickyHUDExpandedContentPolicy {
     static let summaryLineLimit: Int? = nil
 }
 
+final class PickyHUDPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown || event.type == .rightMouseDown {
+            makeKey()
+        }
+        super.sendEvent(event)
+    }
+}
+
 @MainActor
 final class PickyHUDOverlayManager {
     private let viewModel: PickySessionListViewModel
@@ -57,7 +69,7 @@ final class PickyHUDOverlayManager {
 
     private func createPanelIfNeeded() {
         guard panel == nil else { return }
-        let hudPanel = NSPanel(
+        let hudPanel = PickyHUDPanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: collapsedHeight),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,

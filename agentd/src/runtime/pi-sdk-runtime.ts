@@ -13,8 +13,8 @@ import {
   SessionManager,
 } from "@mariozechner/pi-coding-agent";
 import type { BuiltPrompt } from "../prompt-builder.js";
-import { ExtensionUiBridge } from "../extension-ui-bridge.js";
-import { runtimeEventFromPiEvent } from "../pi-event-normalizer.js";
+import { ExtensionUiBridge } from "../application/extension-ui-bridge.js";
+import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./types.js";
 import { logAgentd } from "../local-log.js";
 

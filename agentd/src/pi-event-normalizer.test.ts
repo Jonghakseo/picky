@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { normalizePiEvent } from "./pi-event-normalizer.js";
+import { normalizePiEvent } from "./domain/pi-event-normalizer.js";
 
 const contractsRoot = join(process.cwd(), "..", "contracts", "pi-events");
 

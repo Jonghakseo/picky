@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ExtensionUiBridge } from "./extension-ui-bridge.js";
+import { ExtensionUiBridge } from "./application/extension-ui-bridge.js";
 
 describe("ExtensionUiBridge", () => {
   it("resolves confirm requests from app answers", async () => {

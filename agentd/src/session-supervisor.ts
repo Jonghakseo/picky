@@ -6,6 +6,11 @@ import type { PickyAgentSession, PickyContextPacket, PickyExtensionUiRequest } f
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
 import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./runtime/types.js";
+import { mergeArtifacts } from "./domain/artifacts.js";
+import { mergeChangedFiles } from "./domain/changed-files.js";
+import { isTerminalStatus } from "./domain/session-status.js";
+import { cleanFinalAnswer, summaryFromFinalAnswer } from "./domain/session-summary.js";
+import { titleFromContext } from "./domain/session-title.js";
 import { logAgentd } from "./local-log.js";
 
 export interface SessionSupervisorOptions {
@@ -372,37 +377,4 @@ export class SessionSupervisor extends EventEmitter {
     if (!session) throw new Error(`Unknown session: ${sessionId}`);
     return session;
   }
-}
-
-function isTerminalStatus(status: PickyAgentSession["status"]): boolean {
-  return ["completed", "failed", "cancelled"].includes(status);
-}
-
-function cleanFinalAnswer(text: string | undefined): string | undefined {
-  const normalized = text?.replace(/\r\n/g, "\n").trim();
-  return normalized ? normalized : undefined;
-}
-
-function summaryFromFinalAnswer(text: string): string {
-  const firstParagraph = text.split(/\n\s*\n/).find((part) => part.trim().length > 0)?.trim() ?? text.trim();
-  const singleLine = firstParagraph.replace(/\s+/g, " ");
-  return singleLine.length > 220 ? `${singleLine.slice(0, 217)}...` : singleLine;
-}
-
-function titleFromContext(context: PickyContextPacket): string {
-  const text = context.transcript?.trim();
-  if (!text) return "Untitled Picky task";
-  return text.length > 60 ? `${text.slice(0, 57)}...` : text;
-}
-
-function mergeChangedFiles(existing: PickyAgentSession["changedFiles"], incoming: PickyAgentSession["changedFiles"]): PickyAgentSession["changedFiles"] {
-  const byPath = new Map(existing.map((file) => [file.path, file]));
-  for (const file of incoming) byPath.set(file.path, file);
-  return [...byPath.values()];
-}
-
-function mergeArtifacts(existing: PickyAgentSession["artifacts"], incoming: PickyAgentSession["artifacts"]): PickyAgentSession["artifacts"] {
-  const byId = new Map(existing.map((artifact) => [artifact.id, artifact]));
-  for (const artifact of incoming) byId.set(artifact.id, artifact);
-  return [...byId.values()];
 }

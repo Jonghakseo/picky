@@ -5,7 +5,7 @@ import { SessionSupervisor } from "./session-supervisor.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
-import { createPickyHandoffTool } from "./handoff-tool.js";
+import { createPickyHandoffTool } from "./application/handoff-tool.js";
 import { logAgentd } from "./local-log.js";
 
 const port = Number(process.env.PICKY_AGENTD_PORT ?? 17631);

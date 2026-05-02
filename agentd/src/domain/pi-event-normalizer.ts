@@ -1,5 +1,5 @@
-import type { PickyToolActivity, SessionStatus } from "./protocol.js";
-import type { RuntimeEvent, RuntimeSessionStatus } from "./runtime/types.js";
+import type { PickyToolActivity, SessionStatus } from "../protocol.js";
+import type { RuntimeEvent, RuntimeSessionStatus } from "../runtime/types.js";
 
 export interface PiEventNormalizationContext {
   hasQueuedSteering?: boolean;

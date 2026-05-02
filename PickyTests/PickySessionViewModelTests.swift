@@ -488,6 +488,16 @@ struct PickySessionViewModelTests {
         #expect(PickyPiTerminalCommand.workingDirectory(from: "  ") == FileManager.default.homeDirectoryForCurrentUser.path)
     }
 
+    @Test func terminalEmulatorKeepsAsciiTextWhenUtf8ChunkIsPartial() throws {
+        var emulator = PickyTerminalEmulator(columns: 40, rows: 10)
+        var data = Data([0xE2])
+        data.append(contentsOf: "hello".utf8)
+
+        emulator.feed(data)
+
+        #expect(emulator.renderedText().contains("hello"))
+    }
+
     @Test func piSessionFileSyncerReadsLastActiveUserAndAssistantMessages() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("picky-pi-sync-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

@@ -114,6 +114,7 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
         panel.title = "Pi Terminal — \(title)"
         panel.level = .statusBar
         panel.isReleasedWhenClosed = false
+        panel.hidesOnDeactivate = false
         panel.isExcludedFromWindowsMenu = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.titlebarAppearsTransparent = true
@@ -479,6 +480,7 @@ final class PickyTerminalProcess {
         }
 
         if pid == 0 {
+            setTerminalEnvironment(columns: columns, rows: rows)
             cwd.withCString { pointer in
                 _ = Darwin.chdir(pointer)
             }
@@ -490,6 +492,20 @@ final class PickyTerminalProcess {
         childPID = pid
         configureReadSource(fileDescriptor: master)
         configureProcessSource(pid: pid)
+    }
+
+    private func setTerminalEnvironment(columns: Int, rows: Int) {
+        setenv("TERM", "xterm-256color", 1)
+        setenv("COLORTERM", "truecolor", 1)
+        setenv("TERM_PROGRAM", "Picky", 1)
+        setenv("COLUMNS", String(max(40, columns)), 1)
+        setenv("LINES", String(max(10, rows)), 1)
+        if getenv("LANG") == nil {
+            setenv("LANG", "en_US.UTF-8", 1)
+        }
+        if getenv("LC_CTYPE") == nil {
+            setenv("LC_CTYPE", "en_US.UTF-8", 1)
+        }
     }
 
     private func configureReadSource(fileDescriptor: Int32) {
@@ -584,7 +600,7 @@ struct PickyTerminalEmulator {
     }
 
     mutating func feed(_ data: Data) {
-        guard let text = String(data: data, encoding: .utf8) else { return }
+        let text = String(decoding: data, as: UTF8.self)
         for scalar in text.unicodeScalars {
             process(scalar)
         }

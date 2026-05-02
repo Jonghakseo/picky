@@ -61,20 +61,36 @@ export class SessionSupervisor extends EventEmitter {
       const session = isSideSession && persistedSession.notifyMainOnCompletion === undefined
         ? { ...persistedSession, notifyMainOnCompletion: true }
         : persistedSession;
+      this.sessions.set(session.id, session);
+      if (session !== persistedSession) await this.store.save(session);
+
       if (!isTerminalStatus(session.status)) {
-        const restored = {
-          ...session,
-          status: "blocked" as const,
-          lastSummary: "Runtime not attached after daemon restart; start a new task or resume support is required",
-          logs: [...session.logs, "Runtime not attached after daemon restart; start a new task or resume support is required"],
-          pendingExtensionUiRequest: undefined,
-          updatedAt: new Date().toISOString(),
-        };
-        this.sessions.set(restored.id, restored);
-        await this.store.save(restored);
-      } else {
-        this.sessions.set(session.id, session);
-        if (session !== persistedSession) await this.store.save(session);
+        if (session.archived === true) {
+          const restored = {
+            ...session,
+            status: "cancelled" as const,
+            lastSummary: "Archived session was not resumed after daemon restart",
+            pendingExtensionUiRequest: undefined,
+            updatedAt: new Date().toISOString(),
+          };
+          this.sessions.set(restored.id, restored);
+          await this.store.save(restored);
+          continue;
+        }
+
+        const resumedHandle = await this.tryResumeRuntimeHandle(session);
+        if (!resumedHandle) {
+          const restored = {
+            ...this.mustGet(session.id),
+            status: "blocked" as const,
+            lastSummary: "Runtime not attached after daemon restart; start a new task or resume support is required",
+            logs: appendUniqueLog(this.mustGet(session.id).logs, "Runtime not attached after daemon restart; start a new task or resume support is required"),
+            pendingExtensionUiRequest: undefined,
+            updatedAt: new Date().toISOString(),
+          };
+          this.sessions.set(restored.id, restored);
+          await this.store.save(restored);
+        }
       }
     }
   }
@@ -362,6 +378,11 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(sessionId);
   }
 
+  async setSessionArchived(sessionId: string, archived: boolean): Promise<PickyAgentSession> {
+    await this.patch(sessionId, { archived });
+    return this.mustGet(sessionId);
+  }
+
   async followUpSideSession(sessionId: string, text: string, _context?: PickyContextPacket): Promise<PickyAgentSession> {
     return this.steerSideSession(sessionId, text);
   }
@@ -429,7 +450,7 @@ export class SessionSupervisor extends EventEmitter {
       this.runtimeHandles.set(session.id, handle);
       handle.subscribe((event) => void this.applyRuntimeEvent(session.id, event));
       await this.appendLog(session.id, `runtime reattached from pi session: ${sessionFilePath}`);
-      await this.patch(session.id, { status: "running", lastSummary: "Runtime reattached from previous Pi session", pendingExtensionUiRequest: undefined });
+      await this.patch(session.id, { status: "waiting_for_input", lastSummary: "Runtime reattached from previous Pi session", pendingExtensionUiRequest: undefined });
       return handle;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -659,6 +680,10 @@ function piSessionFilePathFromLogs(logs: string[]): string | undefined {
     if (match?.[1]?.trim()) return match[1].trim();
   }
   return undefined;
+}
+
+function appendUniqueLog(logs: string[], line: string): string[] {
+  return logs.includes(line) ? logs : [...logs, line];
 }
 
 function hasSideSessionMarkerLog(session: PickyAgentSession): boolean {

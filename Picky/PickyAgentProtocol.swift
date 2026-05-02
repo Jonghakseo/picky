@@ -20,6 +20,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var value: JSONValue?
     var artifactId: String?
     var enabled: Bool?
+    var archived: Bool?
 
     init(
         id: String = "cmd-\(UUID().uuidString)",
@@ -30,7 +31,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
         requestId: String? = nil,
         value: JSONValue? = nil,
         artifactId: String? = nil,
-        enabled: Bool? = nil
+        enabled: Bool? = nil,
+        archived: Bool? = nil
     ) {
         self.id = id
         self.protocolVersion = pickyAgentProtocolVersion
@@ -42,6 +44,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.value = value
         self.artifactId = artifactId
         self.enabled = enabled
+        self.archived = archived
     }
 }
 
@@ -56,6 +59,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case answerExtensionUi
     case openArtifact
     case setNotifyMainOnCompletion
+    case setSessionArchived
 }
 
 struct PickyEventEnvelope: Decodable, Equatable {
@@ -161,6 +165,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     var changedFiles: [PickyChangedFile]
     var pendingExtensionUiRequest: PickyExtensionUiRequest?
     var notifyMainOnCompletion: Bool? = nil
+    var archived: Bool? = nil
 }
 
 enum PickySessionStatus: String, Codable, Equatable {

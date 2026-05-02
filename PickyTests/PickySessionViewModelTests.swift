@@ -344,8 +344,12 @@ struct PickySessionViewModelTests {
         try await settle()
 
         viewModel.archive(sessionID: "side-1")
+        try await settle()
         #expect(archiveStore.archivedSessionIDs == ["side-1"])
         #expect(viewModel.sessions.map(\.id) == ["main-1"])
+        let archiveCommand = try #require(client.sentCommands.first { $0.type == .setSessionArchived })
+        #expect(archiveCommand.sessionId == "side-1")
+        #expect(archiveCommand.archived == true)
 
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "completed", summary: "Updated"))))
         try await settle()
@@ -638,6 +642,7 @@ struct PickySessionViewModelTests {
     @Test func runtimeDetachedFollowUpFailureStaysVisible() async throws {
         let client = FakePickyAgentClient()
         let archiveStore = FakeArchiveStore()
+        archiveStore.archivedSessionIDs = ["followup-detached"]
         let viewModel = PickySessionListViewModel(
             client: client,
             notificationCenter: PickyNoopNotificationCenter(),

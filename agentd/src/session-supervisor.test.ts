@@ -288,6 +288,63 @@ describe("SessionSupervisor", () => {
     expect(restored?.lastSummary).toMatch(/Runtime not attached/);
   });
 
+  it("reattaches non-terminal persisted sessions from Pi session files during startup", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "running-with-pi-file",
+      title: "Running side agent",
+      status: "running",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "Still working before restart",
+      logs: ["main-agent handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    });
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+
+    await supervisor.load();
+
+    const restored = supervisor.get("running-with-pi-file");
+    expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/pi-session.jsonl", cwd: "/tmp/project", sessionId: "running-with-pi-file" }]);
+    expect(restored?.status).toBe("waiting_for_input");
+    expect(restored?.lastSummary).toBe("Runtime reattached from previous Pi session");
+    expect(restored?.logs).toContain("runtime reattached from pi session: /tmp/pi-session.jsonl");
+    expect(restored?.logs.some((line) => line.includes("Runtime not attached after daemon restart"))).toBe(false);
+  });
+
+  it("does not reattach archived non-terminal sessions during startup", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "archived-running-with-pi-file",
+      title: "Archived side agent",
+      status: "running",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "Archived before restart",
+      logs: ["main-agent handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      archived: true,
+    });
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+
+    await supervisor.load();
+
+    const restored = supervisor.get("archived-running-with-pi-file");
+    expect(runtime.resumeCalls).toEqual([]);
+    expect(restored?.status).toBe("cancelled");
+    expect(restored?.lastSummary).toBe("Archived session was not resumed after daemon restart");
+  });
+
   it("rejects follow-up for restored sessions without resumable Pi session state", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const firstSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));

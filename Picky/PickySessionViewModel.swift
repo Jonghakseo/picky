@@ -393,6 +393,8 @@ final class PickySessionListViewModel: ObservableObject {
         manuallyArchivedIDs.insert(sessionID)
         archiveStore.manuallyArchivedSessionIDs = manuallyArchivedIDs
 
+        Task { try? await client.send(PickyCommandEnvelope(type: .setSessionArchived, sessionId: sessionID, archived: true)) }
+
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
         let archived = sessions.remove(at: index)
         if !archivedSessions.contains(where: { $0.id == sessionID }) {
@@ -518,22 +520,16 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    private func effectiveArchivedSessionIDs(for cards: [SessionCard]) -> Set<String> {
-        var archivedIDs = archiveStore.archivedSessionIDs
+    private func effectiveArchivedSessionIDs(for _: [SessionCard]) -> Set<String> {
         let manuallyArchivedIDs = archiveStore.manuallyArchivedSessionIDs
-        let detachedRuntimeIDs = Set(cards.filter(\.isRuntimeDetachedRestoredSession).map(\.id))
-        let autoArchivedDetachedRuntimeIDs = detachedRuntimeIDs.subtracting(manuallyArchivedIDs)
-
-        if !autoArchivedDetachedRuntimeIDs.isEmpty {
-            archivedIDs.subtract(autoArchivedDetachedRuntimeIDs)
-            archiveStore.archivedSessionIDs = archivedIDs
+        if archiveStore.archivedSessionIDs != manuallyArchivedIDs {
+            archiveStore.archivedSessionIDs = manuallyArchivedIDs
         }
-
-        return archivedIDs
+        return manuallyArchivedIDs
     }
 
     private func upsert(_ card: SessionCard) {
-        let archivedIDs = archiveStore.archivedSessionIDs
+        let archivedIDs = effectiveArchivedSessionIDs(for: [card])
         let shouldArchive = archivedIDs.contains(card.id)
         var incoming = card
         if let existing = (sessions + archivedSessions).first(where: { $0.id == card.id }) {
@@ -634,10 +630,6 @@ private extension PickySessionListViewModel.SessionCard {
         self.piSessionFilePath = session.logs.compactMap(Self.piSessionFilePath(fromLogLine:)).last
         self.notifyMainOnCompletion = session.notifyMainOnCompletion
         self.hasRuntimeDetachedFollowUpRejection = session.logs.contains(where: Self.isRuntimeDetachedFollowUpRejection)
-    }
-
-    var isRuntimeDetachedRestoredSession: Bool {
-        isRuntimeDetached && !hasRuntimeDetachedFollowUpRejection
     }
 
     func merged(with incoming: Self) -> Self {

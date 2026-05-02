@@ -92,6 +92,34 @@ describe("SessionSupervisor", () => {
     });
   });
 
+  it("derives screenshot pixel dimensions from image files when context metadata is missing", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const imagePath = join(dir, "shot.jpg");
+    const jpegHeader = Buffer.from([
+      0xff, 0xd8,
+      0xff, 0xe0, 0x00, 0x10,
+      0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
+      0xff, 0xc0, 0x00, 0x11, 0x08, 0x03, 0x3b, 0x05, 0x00, 0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00,
+    ]);
+    await writeFile(imagePath, jpegHeader);
+
+    const supervisor = await makeSupervisor();
+    const session = await supervisor.create({
+      ...context("point here"),
+      screenshots: [{ id: "shot-3", label: "screen 3", path: imagePath, screenId: "screen3", bounds: { x: 0, y: 0, width: 1728, height: 1117 } }],
+    });
+
+    const result = await supervisor.requestPointerOverlay({ sourceSessionId: session.id, screenId: "screen3", x: 405, y: 180, dryRun: true });
+
+    expect(result.request).toMatchObject({
+      coordinateSpace: "screenshotPixel",
+      x: 405,
+      y: 180,
+      screenshotSize: { width: 1280, height: 827 },
+      screenBounds: { x: 0, y: 0, width: 1728, height: 1117 },
+    });
+  });
+
   it("supports pointer overlay dry runs without broadcasting", async () => {
     const supervisor = await makeSupervisor();
     await supervisor.create({

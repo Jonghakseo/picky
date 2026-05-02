@@ -226,6 +226,17 @@ struct BlueCursorView: View {
             // Nearly transparent background (helps with compositing)
             Color.black.opacity(0.001)
 
+            // Fixed target marker — independent of the cursor buddy animation so
+            // pointer requests remain visible even on another display or while
+            // the buddy is flying in/out.
+            if let pointerTargetPosition {
+                PointerTargetHighlightView()
+                    .position(pointerTargetPosition)
+                    .allowsHitTesting(false)
+                    .transition(.scale(scale: 0.82).combined(with: .opacity))
+                    .animation(.spring(response: 0.22, dampingFraction: 0.7), value: pointerTargetPosition)
+            }
+
             // Voice prompt bubble — once the push-to-talk button is released,
             // keep the recognized user prompt visible while Picky is preparing
             // and waiting for the main agent response.
@@ -381,6 +392,7 @@ struct BlueCursorView: View {
             self.cursorPosition = CGPoint(x: swiftUIPosition.x + 35, y: swiftUIPosition.y + 25)
 
             startTrackingCursor()
+            startNavigatingToCurrentPointerTargetIfNeeded()
 
             self.cursorOpacity = 1.0
         }
@@ -396,9 +408,11 @@ struct BlueCursorView: View {
                 return
             }
 
-            // Only navigate if the target is on THIS screen
-            guard screenFrame.contains(CGPoint(x: displayFrame.midX, y: displayFrame.midY))
-                  || displayFrame == screenFrame else {
+            // Only navigate if the target is on THIS screen. Use the resolved
+            // point as the primary signal because adjacent displays can have
+            // negative/non-zero origins and whole-screen frames may differ by a
+            // fraction across ScreenCaptureKit/AppKit boundaries.
+            guard pointerTargetBelongsToThisScreen(screenLocation: screenLocation, displayFrame: displayFrame) else {
                 return
             }
 
@@ -470,7 +484,45 @@ struct BlueCursorView: View {
         return CGPoint(x: x, y: y)
     }
 
+    private var pointerTargetPosition: CGPoint? {
+        guard let screenLocation = companionManager.detectedElementScreenLocation else { return nil }
+        guard pointerTargetBelongsToThisScreen(
+            screenLocation: screenLocation,
+            displayFrame: companionManager.detectedElementDisplayFrame
+        ) else { return nil }
+
+        let localPoint = convertScreenPointToSwiftUICoordinates(screenLocation)
+        return CGPoint(
+            x: max(24, min(localPoint.x, screenFrame.width - 24)),
+            y: max(24, min(localPoint.y, screenFrame.height - 24))
+        )
+    }
+
+    private func pointerTargetBelongsToThisScreen(screenLocation: CGPoint, displayFrame: CGRect?) -> Bool {
+        let expandedScreenFrame = screenFrame.insetBy(dx: -1, dy: -1)
+        if expandedScreenFrame.contains(screenLocation) { return true }
+
+        guard let displayFrame else { return false }
+        let displayCenter = CGPoint(x: displayFrame.midX, y: displayFrame.midY)
+        let screenCenter = CGPoint(x: screenFrame.midX, y: screenFrame.midY)
+        return expandedScreenFrame.contains(displayCenter)
+            || displayFrame.insetBy(dx: -1, dy: -1).contains(screenCenter)
+    }
+
     // MARK: - Element Navigation
+
+    private func startNavigatingToCurrentPointerTargetIfNeeded() {
+        guard buddyNavigationMode == .followingCursor,
+              let screenLocation = companionManager.detectedElementScreenLocation,
+              pointerTargetBelongsToThisScreen(
+                  screenLocation: screenLocation,
+                  displayFrame: companionManager.detectedElementDisplayFrame
+              ) else {
+            return
+        }
+
+        startNavigatingToElement(screenLocation: screenLocation)
+    }
 
     /// Starts animating the buddy toward a detected UI element location.
     private func startNavigatingToElement(screenLocation: CGPoint) {
@@ -703,6 +755,43 @@ private struct VoicePromptCursorBubbleView: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(Color.white.opacity(0.24), lineWidth: 0.6)
             )
+    }
+}
+
+// MARK: - Pointer Target Highlight
+
+/// A fixed marker rendered at the requested pointer target. The animated buddy
+/// may start from another display, so this marker makes the target immediately
+/// visible as soon as the request is received.
+private struct PointerTargetHighlightView: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(DS.Colors.overlayCursorBlue.opacity(0.16))
+                .frame(width: 48, height: 48)
+                .blur(radius: 1)
+
+            Circle()
+                .stroke(DS.Colors.overlayCursorBlue.opacity(0.95), lineWidth: 2.4)
+                .frame(width: 34, height: 34)
+
+            Circle()
+                .stroke(Color.white.opacity(0.85), lineWidth: 1)
+                .frame(width: 22, height: 22)
+
+            Rectangle()
+                .fill(DS.Colors.overlayCursorBlue)
+                .frame(width: 3, height: 44)
+
+            Rectangle()
+                .fill(DS.Colors.overlayCursorBlue)
+                .frame(width: 44, height: 3)
+
+            Circle()
+                .fill(Color.white)
+                .frame(width: 5, height: 5)
+        }
+        .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.8), radius: 10, x: 0, y: 0)
     }
 }
 

@@ -14,6 +14,7 @@ protocol PickySessionSelectionStoring: AnyObject {
 
 protocol PickySessionArchiveStoring: AnyObject {
     var archivedSessionIDs: Set<String> { get set }
+    var didMigrateDetachedRuntimeAutoArchive: Bool { get set }
 }
 
 final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring {
@@ -50,6 +51,7 @@ final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring
 final class PickyUserDefaultsSessionArchiveStore: PickySessionArchiveStoring {
     static let shared = PickyUserDefaultsSessionArchiveStore()
     static let key = "PickyArchivedSessionIDs"
+    static let detachedRuntimeAutoArchiveMigrationKey = "PickyDidMigrateDetachedRuntimeAutoArchive"
 
     private let defaults: UserDefaults
 
@@ -68,5 +70,10 @@ final class PickyUserDefaultsSessionArchiveStore: PickySessionArchiveStoring {
                 defaults.set(Array(newValue).sorted(), forKey: Self.key)
             }
         }
+    }
+
+    var didMigrateDetachedRuntimeAutoArchive: Bool {
+        get { defaults.bool(forKey: Self.detachedRuntimeAutoArchiveMigrationKey) }
+        set { defaults.set(newValue, forKey: Self.detachedRuntimeAutoArchiveMigrationKey) }
     }
 }

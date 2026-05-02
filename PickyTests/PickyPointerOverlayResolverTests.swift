@@ -26,6 +26,22 @@ struct PickyPointerOverlayResolverTests {
         #expect(target.duration == PickyPointerOverlayResolver.defaultDuration)
     }
 
+    @Test func resolvesSecondaryScreenScreenshotPixelCoordinates() throws {
+        let request = request(
+            x: 405,
+            y: 180,
+            coordinateSpace: .screenshotPixel,
+            screenBounds: PickyCGRect(x: 0, y: 0, width: 1728, height: 1117),
+            screenshotSize: PickyPointerScreenshotSize(width: 1280, height: 827)
+        )
+
+        let target = try PickyPointerOverlayResolver.resolve(request)
+
+        #expect(target.screenLocation.x.isApproximatelyEqual(to: 546.75))
+        #expect(target.screenLocation.y.isApproximatelyEqual(to: 873.88, absoluteTolerance: 0.01))
+        #expect(target.displayFrame == CGRect(x: 0, y: 0, width: 1728, height: 1117))
+    }
+
     @Test func clampsCoordinatesAndDuration() throws {
         let request = request(
             x: 999,
@@ -122,4 +138,10 @@ private final class FakePointerClient: PickyAgentClient {
 private final class FakePointerSelectionStore: PickySessionSelectionStoring {
     var selectedSessionID: String?
     var hoveredVoiceFollowUpSessionID: String?
+}
+
+private extension CGFloat {
+    func isApproximatelyEqual(to expected: CGFloat, absoluteTolerance: CGFloat = 0.001) -> Bool {
+        abs(self - expected) <= absoluteTolerance
+    }
 }

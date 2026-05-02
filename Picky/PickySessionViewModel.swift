@@ -443,12 +443,8 @@ final class PickySessionListViewModel: ObservableObject {
         switch event {
         case .sessionSnapshot(let snapshot):
             pickySessionLog("snapshot sessions=\(snapshot.count)")
-            var archivedIDs = archiveStore.archivedSessionIDs
             let cards = snapshot.map(SessionCard.init(session:))
-            for card in cards where card.isRuntimeDetachedRestoredSession {
-                archivedIDs.insert(card.id)
-            }
-            archiveStore.archivedSessionIDs = archivedIDs
+            let archivedIDs = migratedArchivedSessionIDs(for: cards)
             sessions = cards.filter { !archivedIDs.contains($0.id) }.sortedForHUD()
             archivedSessions = cards.filter { archivedIDs.contains($0.id) }.sortedForHUD()
             syncSelectionAfterSessionListChange()
@@ -516,6 +512,19 @@ final class PickySessionListViewModel: ObservableObject {
         case .quickReply, .pointerOverlayRequested, .hello, .unknown:
             break
         }
+    }
+
+    private func migratedArchivedSessionIDs(for cards: [SessionCard]) -> Set<String> {
+        var archivedIDs = archiveStore.archivedSessionIDs
+        guard !archiveStore.didMigrateDetachedRuntimeAutoArchive else { return archivedIDs }
+
+        let detachedRuntimeIDs = Set(cards.filter(\.isRuntimeDetachedRestoredSession).map(\.id))
+        if !detachedRuntimeIDs.isEmpty {
+            archivedIDs.subtract(detachedRuntimeIDs)
+            archiveStore.archivedSessionIDs = archivedIDs
+        }
+        archiveStore.didMigrateDetachedRuntimeAutoArchive = true
+        return archivedIDs
     }
 
     private func upsert(_ card: SessionCard) {

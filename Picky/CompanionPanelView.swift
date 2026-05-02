@@ -7,6 +7,16 @@
 
 import SwiftUI
 
+enum CompanionPanelMetrics {
+    static let contentWidth: CGFloat = 360
+    static let contentHeight: CGFloat = 480
+    static let shadowPadding: CGFloat = 16
+    static let cornerRadius: CGFloat = 18
+
+    static var panelWidth: CGFloat { contentWidth + shadowPadding * 2 }
+    static var panelHeight: CGFloat { contentHeight + shadowPadding * 2 }
+}
+
 private enum CompanionPanelTab: String, CaseIterable, Identifiable {
     case status = "Status"
     case settings = "Settings"
@@ -38,18 +48,21 @@ struct CompanionPanelView: View {
                 .background(DS.Colors.borderSubtle.opacity(0.8))
                 .padding(.horizontal, 16)
 
-            Group {
-                switch selectedTab {
-                case .status:
-                    CompanionPanelStatusView(companionManager: companionManager)
-                case .settings:
-                    CompanionPanelSettingsView(viewModel: settingsViewModel)
+            ScrollView(.vertical, showsIndicators: selectedTab == .settings) {
+                Group {
+                    switch selectedTab {
+                    case .status:
+                        CompanionPanelStatusView(companionManager: companionManager)
+                    case .settings:
+                        CompanionPanelSettingsView(viewModel: settingsViewModel)
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 12)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-
-            Spacer(minLength: 10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Divider()
                 .background(DS.Colors.borderSubtle.opacity(0.8))
@@ -59,19 +72,23 @@ struct CompanionPanelView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
         }
-        .frame(width: 360, height: 440)
+        .frame(width: CompanionPanelMetrics.contentWidth, height: CompanionPanelMetrics.contentHeight)
         .background(panelBackground)
+        .clipShape(RoundedRectangle(cornerRadius: CompanionPanelMetrics.cornerRadius, style: .continuous))
+        .shadow(color: Color.black.opacity(0.36), radius: 10, x: 0, y: 5)
+        .shadow(color: Color.black.opacity(0.22), radius: 3, x: 0, y: 1)
+        .padding(CompanionPanelMetrics.shadowPadding)
+        .frame(width: CompanionPanelMetrics.panelWidth, height: CompanionPanelMetrics.panelHeight)
+        .background(Color.clear)
     }
 
     private var panelBackground: some View {
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
+        RoundedRectangle(cornerRadius: CompanionPanelMetrics.cornerRadius, style: .continuous)
             .fill(DS.Colors.background)
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: CompanionPanelMetrics.cornerRadius, style: .continuous)
                     .stroke(DS.Colors.borderSubtle.opacity(0.75), lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(0.45), radius: 22, x: 0, y: 12)
-            .shadow(color: Color.black.opacity(0.28), radius: 5, x: 0, y: 2)
     }
 }
 

@@ -32,8 +32,8 @@ final class MenuBarPanelManager: NSObject {
     private var dismissPanelObserver: NSObjectProtocol?
 
     private let companionManager: CompanionManager
-    private let panelWidth: CGFloat = 360
-    private let panelHeight: CGFloat = 440
+    private let panelWidth: CGFloat = CompanionPanelMetrics.panelWidth
+    private let panelHeight: CGFloat = CompanionPanelMetrics.panelHeight
 
     init(companionManager: CompanionManager) {
         self.companionManager = companionManager
@@ -145,7 +145,7 @@ final class MenuBarPanelManager: NSObject {
 
     private func createPanel() {
         let companionPanelView = CompanionPanelView(companionManager: companionManager)
-            .frame(width: panelWidth)
+            .frame(width: panelWidth, height: panelHeight)
 
         let hostingView = NSHostingView(rootView: companionPanelView)
         hostingView.frame = NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight)

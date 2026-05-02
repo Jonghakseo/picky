@@ -608,14 +608,15 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    private func applyAgentEvent(_ event: PickyEvent) {
+    func applyAgentEvent(_ event: PickyEvent) {
         switch event {
         case .sessionUpdated(let session):
-            latestAgentSessionSummary = session.lastSummary ?? "\(session.title) · \(session.status.rawValue)"
-        case .sessionLogAppended:
-            latestAgentSessionSummary = "작업 진행 중…"
-        case .toolActivityUpdated:
-            latestAgentSessionSummary = "사이드 에이전트가 작업 중…"
+            updatePassiveAgentSummary(session.lastSummary ?? "\(session.title) · \(session.status.rawValue)")
+        case .sessionLogAppended, .toolActivityUpdated:
+            // Progress events are already represented in the HUD. They should not
+            // replace a cursor bubble that is currently speaking/showing a real
+            // response, otherwise generic text like "작업 진행 중…" hides the answer.
+            break
         case .extensionUiRequest(let request):
             latestAgentSessionSummary = request.prompt ?? request.title ?? "Agent is waiting for input"
         case .quickReply(let reply):
@@ -625,6 +626,11 @@ final class CompanionManager: ObservableObject {
         case .hello, .sessionSnapshot, .artifactUpdated, .artifactOpened, .unknown:
             break
         }
+    }
+
+    private func updatePassiveAgentSummary(_ summary: String) {
+        guard voiceState != .responding else { return }
+        latestAgentSessionSummary = summary
     }
 
     /// If the cursor is in transient mode (user toggled "Show Picky" off),

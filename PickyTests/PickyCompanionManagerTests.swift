@@ -91,6 +91,40 @@ struct PickyCompanionManagerTests {
         #expect(manager.latestAgentSessionSummary == "응답 준비 중…")
     }
 
+    @Test func progressEventsDoNotOverwriteVisibleCursorResponse() async throws {
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        manager.handleAgentSubmissionAccepted(
+            receipt: PickyAgentSubmissionReceipt(sessionID: "created-session", message: "기존 응답"),
+            source: "voice"
+        )
+        #expect(manager.voiceState == .responding)
+
+        manager.applyAgentEvent(.sessionLogAppended(sessionId: "side-1", line: "running"))
+        manager.applyAgentEvent(.toolActivityUpdated(sessionId: "side-1", tool: PickyToolActivity(
+            toolCallId: "tool-1",
+            name: "bash",
+            status: "running",
+            preview: nil,
+            startedAt: nil,
+            endedAt: nil
+        )))
+        manager.applyAgentEvent(.sessionUpdated(PickyAgentSession(
+            id: "side-1",
+            title: "Side",
+            status: .running,
+            cwd: nil,
+            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_001),
+            lastSummary: "Follow-up queued",
+            logs: [],
+            tools: [],
+            artifacts: [],
+            changedFiles: []
+        )))
+
+        #expect(manager.latestAgentSessionSummary == "기존 응답")
+    }
+
     private func context(source: String) -> PickyContextPacket {
         PickyContextPacket(
             id: "context-voice",

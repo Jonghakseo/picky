@@ -139,6 +139,7 @@ struct PickyCompanionManagerTests {
             isMicrophoneRecording: false,
             isFinalizingTranscript: false,
             isPreparingToRecord: false,
+            isShortcutHeld: false,
             isAwaitingAgentResponse: true,
             recognizedPrompt: "  설정 열어줘  "
         )
@@ -154,6 +155,7 @@ struct PickyCompanionManagerTests {
             isMicrophoneRecording: false,
             isFinalizingTranscript: false,
             isPreparingToRecord: true,
+            isShortcutHeld: false,
             isAwaitingAgentResponse: false,
             recognizedPrompt: nil
         )
@@ -163,6 +165,7 @@ struct PickyCompanionManagerTests {
             isMicrophoneRecording: false,
             isFinalizingTranscript: true,
             isPreparingToRecord: false,
+            isShortcutHeld: false,
             isAwaitingAgentResponse: false,
             recognizedPrompt: nil
         )
@@ -171,6 +174,35 @@ struct PickyCompanionManagerTests {
         #expect(preparing.promptBubbleState == .hidden)
         #expect(finalizing.voiceState == .processing)
         #expect(finalizing.promptBubbleState == .recognizing)
+    }
+
+    @Test func voicePresentationUsesPhysicalShortcutHoldImmediately() async throws {
+        let presentation = CompanionVoicePresentationReducer.reduce(
+            currentVoiceState: .idle,
+            isKeyboardRecording: false,
+            isMicrophoneRecording: false,
+            isFinalizingTranscript: false,
+            isPreparingToRecord: false,
+            isShortcutHeld: true,
+            isAwaitingAgentResponse: false,
+            recognizedPrompt: nil
+        )
+
+        #expect(presentation.voiceState == .listening)
+        #expect(presentation.promptBubbleState == .hidden)
+    }
+
+    @Test func quickReplyDoesNotEndVoiceProcessingBeforeMinimumDisplayDuration() async throws {
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "짧은 요청")
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(contextId: "context-voice", text: "바로 온 응답")))
+
+        #expect(manager.voiceState == .processing)
+        #expect(manager.latestAgentSessionSummary == "응답 준비 중…")
+        #expect(manager.voicePromptBubbleState == .recognized("짧은 요청"))
+
+        manager.stop()
     }
 
     @Test func progressEventsDoNotOverwriteVisibleCursorResponse() async throws {

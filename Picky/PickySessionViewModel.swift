@@ -333,6 +333,8 @@ final class PickySessionListViewModel: ObservableObject {
             return
         }
 
+        let baselineSnapshot = terminalSessionSnapshotIfAvailable(sessionFilePath: piSessionFilePath)
+
         do {
             try terminalPresenter.openTerminal(
                 sessionID: session.id,
@@ -340,7 +342,7 @@ final class PickySessionListViewModel: ObservableObject {
                 sessionFilePath: piSessionFilePath,
                 cwd: session.cwd,
                 onClose: { [weak self] in
-                    self?.syncTerminalSessionOnce(sessionID: session.id)
+                    self?.syncTerminalSessionOnce(sessionID: session.id, baselineSnapshot: baselineSnapshot)
                 }
             )
             lastError = nil
@@ -349,12 +351,13 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    func syncTerminalSessionOnce(sessionID: String) {
+    func syncTerminalSessionOnce(sessionID: String, baselineSnapshot: PickyTerminalSessionSnapshot? = nil) {
         guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
               let piSessionFilePath = session.piSessionFilePath else { return }
         do {
             let snapshot = try terminalSessionSyncer.snapshot(sessionFilePath: piSessionFilePath)
             guard !snapshot.isEmpty else { return }
+            guard baselineSnapshot != snapshot else { return }
             update(sessionID: sessionID) { card in
                 if let lastUserText = snapshot.lastUserText {
                     card.lastRequestText = lastUserText
@@ -368,6 +371,15 @@ final class PickySessionListViewModel: ObservableObject {
             lastError = nil
         } catch {
             lastError = error.localizedDescription
+        }
+    }
+
+    private func terminalSessionSnapshotIfAvailable(sessionFilePath: String) -> PickyTerminalSessionSnapshot? {
+        do {
+            let snapshot = try terminalSessionSyncer.snapshot(sessionFilePath: sessionFilePath)
+            return snapshot.isEmpty ? nil : snapshot
+        } catch {
+            return nil
         }
     }
 

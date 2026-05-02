@@ -78,10 +78,16 @@ private final class FakeTerminalOverlayPresenter: PickyTerminalOverlayPresenting
 
 private final class FakeTerminalSessionSyncer: PickyTerminalSessionSyncing {
     var snapshots: [String: PickyTerminalSessionSnapshot] = [:]
+    var snapshotSequences: [String: [PickyTerminalSessionSnapshot]] = [:]
     private(set) var paths: [String] = []
 
     func snapshot(sessionFilePath: String) throws -> PickyTerminalSessionSnapshot {
         paths.append(sessionFilePath)
+        if var sequence = snapshotSequences[sessionFilePath], !sequence.isEmpty {
+            let snapshot = sequence.removeFirst()
+            snapshotSequences[sessionFilePath] = sequence
+            return snapshot
+        }
         return snapshots[sessionFilePath] ?? PickyTerminalSessionSnapshot()
     }
 }
@@ -436,14 +442,17 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.piSessionFilePath == "/tmp/from-handoff.jsonl")
     }
 
-    @Test func terminalOverlayCloseSyncsSessionFileOnce() async throws {
+    @Test func terminalOverlayCloseSyncsSessionFileWhenSnapshotChanged() async throws {
         let client = FakePickyAgentClient()
         let presenter = FakeTerminalOverlayPresenter()
         let syncer = FakeTerminalSessionSyncer()
-        syncer.snapshots["/tmp/pi-session.jsonl"] = PickyTerminalSessionSnapshot(
-            lastUserText: "what changed?",
-            lastAssistantText: "Here is a synced terminal answer with enough text to be visible in the card."
-        )
+        syncer.snapshotSequences["/tmp/pi-session.jsonl"] = [
+            PickyTerminalSessionSnapshot(lastUserText: "old question", lastAssistantText: "Old terminal answer"),
+            PickyTerminalSessionSnapshot(
+                lastUserText: "what changed?",
+                lastAssistantText: "Here is a synced terminal answer with enough text to be visible in the card."
+            ),
+        ]
         let viewModel = PickySessionListViewModel(
             client: client,
             notificationCenter: PickyNoopNotificationCenter(),
@@ -463,10 +472,44 @@ struct PickySessionViewModelTests {
         viewModel.openTerminalOverlay(sessionID: "side-1")
         presenter.close(sessionID: "side-1")
 
-        #expect(syncer.paths == ["/tmp/pi-session.jsonl"])
+        #expect(syncer.paths == ["/tmp/pi-session.jsonl", "/tmp/pi-session.jsonl"])
         #expect(viewModel.sessions.first?.lastRequestText == "what changed?")
         #expect(viewModel.sessions.first?.lastSummary == "Here is a synced terminal answer with enough text to be visible in the card.")
         #expect(viewModel.sessions.first?.logPreview == "Synced from Pi terminal session")
+    }
+
+    @Test func terminalOverlayCloseSkipsUnchangedSessionFileSnapshot() async throws {
+        let client = FakePickyAgentClient()
+        let presenter = FakeTerminalOverlayPresenter()
+        let syncer = FakeTerminalSessionSyncer()
+        let unchangedSnapshot = PickyTerminalSessionSnapshot(
+            lastUserText: "same prompt",
+            lastAssistantText: "A long existing terminal answer that should not temporarily replace the stored HUD summary."
+        )
+        syncer.snapshotSequences["/tmp/pi-session.jsonl"] = [unchangedSnapshot, unchangedSnapshot]
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            terminalPresenter: presenter,
+            terminalSessionSyncer: syncer
+        )
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "side-1",
+            title: "Side",
+            status: "completed",
+            summary: "Stored summary",
+            logs: ["pi session: /tmp/pi-session.jsonl"]
+        ))))
+        try await settle()
+
+        viewModel.openTerminalOverlay(sessionID: "side-1")
+        presenter.close(sessionID: "side-1")
+
+        #expect(syncer.paths == ["/tmp/pi-session.jsonl", "/tmp/pi-session.jsonl"])
+        #expect(viewModel.sessions.first?.lastRequestText == nil)
+        #expect(viewModel.sessions.first?.lastSummary == "Stored summary")
+        #expect(viewModel.sessions.first?.logPreview != "Synced from Pi terminal session")
     }
 
     @Test func terminalCommandShellQuotesPaths() throws {

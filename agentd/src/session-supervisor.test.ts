@@ -154,6 +154,27 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.handle?.followUps[0].text).toContain("두 번째");
   });
 
+  it("interrupts the active main-agent turn when newer voice input arrives", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+    const replies: Array<{ contextId: string; text: string }> = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+
+    await supervisor.prewarmMainAgent("/tmp/project");
+    await supervisor.route(context("첫 질문"));
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Started" });
+    await supervisor.route(context("두 번째 질문"));
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "두 번째 응답" });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(mainRuntime.handle?.followUps).toHaveLength(1);
+    expect(mainRuntime.handle?.interrupts).toHaveLength(1);
+    expect(mainRuntime.handle?.interrupts[0].text).toContain("두 번째 질문");
+    expect(replies).toEqual([{ contextId: "context-두 번째 질문", text: "두 번째 응답" }]);
+  });
+
   it("prewarms the main agent without creating a visible session", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
@@ -268,9 +289,13 @@ class ManualRuntime implements AgentRuntime {
 class ManualHandle implements RuntimeSessionHandle {
   private listeners = new Set<(event: RuntimeEvent) => void>();
   followUps: BuiltPrompt[] = [];
+  interrupts: BuiltPrompt[] = [];
   constructor(readonly id: string) {}
   async followUp(prompt: BuiltPrompt): Promise<void> {
     this.followUps.push(prompt);
+  }
+  async interrupt(prompt: BuiltPrompt): Promise<void> {
+    this.interrupts.push(prompt);
   }
   async steer(): Promise<void> {}
   async abort(): Promise<void> {}

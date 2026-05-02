@@ -94,11 +94,19 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
   async followUp(prompt: BuiltPrompt): Promise<void> {
     try {
-      await this.runtime.session.prompt(prompt.text, {
-        images: await imageOptions(prompt.imagePaths),
-        source: "rpc",
-        streamingBehavior: "followUp",
-      });
+      await this.promptWithOptions(prompt, "followUp");
+    } catch (error) {
+      this.emit({ type: "status", status: "failed", summary: messageOf(error) });
+      throw error;
+    }
+  }
+
+  async interrupt(prompt: BuiltPrompt): Promise<void> {
+    try {
+      if (this.runtime.session.isStreaming) {
+        await this.runtime.session.abort();
+      }
+      await this.promptWithOptions(prompt);
     } catch (error) {
       this.emit({ type: "status", status: "failed", summary: messageOf(error) });
       throw error;
@@ -140,6 +148,14 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   subscribe(listener: (event: RuntimeEvent) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  private async promptWithOptions(prompt: BuiltPrompt, streamingBehavior?: "steer" | "followUp"): Promise<void> {
+    await this.runtime.session.prompt(prompt.text, {
+      images: await imageOptions(prompt.imagePaths),
+      source: "rpc",
+      streamingBehavior,
+    });
   }
 
   private createBridge(): ExtensionUiBridge {

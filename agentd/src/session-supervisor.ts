@@ -21,7 +21,9 @@ export class SessionSupervisor extends EventEmitter {
   private mainDraft = "";
   private mainContext?: PickyContextPacket;
   private mainReplyContextId = "main";
+  private mainIsProcessing = false;
   private suppressNextMainReply = false;
+  private suppressInterruptedMainCompletion = false;
   private sideSessionIds = new Set<string>();
   private sideCompletionNotified = new Set<string>();
 
@@ -136,7 +138,7 @@ export class SessionSupervisor extends EventEmitter {
     const prompt = buildMainAgentPrompt(context);
     if (this.options.mainRuntime!.prewarm) {
       const handle = await this.ensurePrewarmedMainHandle(context.cwd ?? process.cwd());
-      await handle.followUp(prompt);
+      await this.deliverMainPrompt(handle, prompt);
       return;
     }
     if (!this.mainHandle) {
@@ -144,7 +146,20 @@ export class SessionSupervisor extends EventEmitter {
       this.attachMainHandle(handle);
       return;
     }
-    await this.mainHandle.followUp(prompt);
+    await this.deliverMainPrompt(this.mainHandle, prompt);
+  }
+
+  private async deliverMainPrompt(handle: RuntimeSessionHandle, prompt: ReturnType<typeof buildMainAgentPrompt>): Promise<void> {
+    if (this.mainIsProcessing && handle.interrupt) {
+      this.suppressInterruptedMainCompletion = true;
+      this.mainDraft = "";
+      await handle.interrupt(prompt);
+      this.suppressInterruptedMainCompletion = false;
+      this.mainIsProcessing = true;
+      return;
+    }
+    this.mainIsProcessing = true;
+    await handle.followUp(prompt);
   }
 
   private async ensurePrewarmedMainHandle(cwd: string): Promise<RuntimeSessionHandle> {
@@ -171,7 +186,16 @@ export class SessionSupervisor extends EventEmitter {
       return;
     }
     if (event.type === "status") {
+      if (event.status === "running") {
+        this.mainIsProcessing = true;
+      }
       if (["completed", "failed", "cancelled"].includes(event.status)) {
+        this.mainIsProcessing = false;
+        if (this.suppressInterruptedMainCompletion) {
+          this.suppressInterruptedMainCompletion = false;
+          this.mainDraft = "";
+          return;
+        }
         const reply = cleanFinalAnswer(this.mainDraft) ?? (event.status === "failed" ? event.summary : undefined);
         if (this.suppressNextMainReply) {
           this.suppressNextMainReply = false;

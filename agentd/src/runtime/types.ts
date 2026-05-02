@@ -12,6 +12,7 @@ export type RuntimeEvent =
 export interface RuntimeSessionHandle {
   id: string;
   followUp(prompt: BuiltPrompt): Promise<void>;
+  interrupt?(prompt: BuiltPrompt): Promise<void>;
   steer(text: string): Promise<void>;
   abort(): Promise<void>;
   answerExtensionUi?(requestId: string, value: unknown): Promise<void>;

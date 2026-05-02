@@ -182,6 +182,29 @@ struct PickySessionViewModelTests {
         #expect(viewModel.archivedSessions.first(where: { $0.id == "side-1" })?.lastSummary == "Updated")
     }
 
+    @Test func runtimeDetachedRestoredSessionsAreAutoArchived() async throws {
+        let client = FakePickyAgentClient()
+        let archiveStore = FakeArchiveStore()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: archiveStore
+        )
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "lost-runtime",
+            title: "Old side agent",
+            status: "blocked",
+            summary: "Runtime not attached after daemon restart; start a new task or resume support is required"
+        ))))
+        try await settle()
+
+        #expect(viewModel.sessions.isEmpty)
+        #expect(viewModel.archivedSessions.map(\.id) == ["lost-runtime"])
+        #expect(archiveStore.archivedSessionIDs == ["lost-runtime"])
+    }
+
     @Test func textFollowUpTargetsSelectedSessionAndRejectsEmptyInput() async throws {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()

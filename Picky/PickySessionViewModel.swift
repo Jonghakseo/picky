@@ -277,8 +277,12 @@ final class PickySessionListViewModel: ObservableObject {
     private func apply(_ event: PickyEvent) {
         switch event {
         case .sessionSnapshot(let snapshot):
-            let archivedIDs = archiveStore.archivedSessionIDs
+            var archivedIDs = archiveStore.archivedSessionIDs
             let cards = snapshot.map(SessionCard.init(session:))
+            for card in cards where card.isRuntimeDetachedRestoredSession {
+                archivedIDs.insert(card.id)
+            }
+            archiveStore.archivedSessionIDs = archivedIDs
             sessions = cards.filter { !archivedIDs.contains($0.id) }.sortedForHUD()
             archivedSessions = cards.filter { archivedIDs.contains($0.id) }.sortedForHUD()
             syncSelectionAfterSessionListChange()
@@ -332,7 +336,11 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     private func upsert(_ card: SessionCard) {
-        let archivedIDs = archiveStore.archivedSessionIDs
+        var archivedIDs = archiveStore.archivedSessionIDs
+        if card.isRuntimeDetachedRestoredSession {
+            archivedIDs.insert(card.id)
+            archiveStore.archivedSessionIDs = archivedIDs
+        }
         let shouldArchive = archivedIDs.contains(card.id)
         var incoming = card
         if let existing = (sessions + archivedSessions).first(where: { $0.id == card.id }) {
@@ -418,6 +426,10 @@ private extension PickySessionListViewModel.SessionCard {
         self.artifacts = session.artifacts
         self.changedFiles = session.changedFiles
         self.pendingExtensionUiRequest = session.pendingExtensionUiRequest
+    }
+
+    var isRuntimeDetachedRestoredSession: Bool {
+        status == .blocked && lastSummary.localizedCaseInsensitiveContains("Runtime not attached after daemon restart")
     }
 
     func merged(with incoming: Self) -> Self {

@@ -83,7 +83,7 @@ struct PickyHUDView: View {
                         isExpanded: expandedSessionID == session.id,
                         viewModel: viewModel,
                         onToggle: {
-                            withAnimation(.easeOut(duration: 0.18)) {
+                            withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
                                 expandedSessionID = expandedSessionID == session.id ? nil : session.id
                             }
                         }
@@ -108,7 +108,7 @@ private struct PickySessionCardView: View {
             header
             if isExpanded {
                 expandedContent
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity)
             }
         }
         .padding(.horizontal, 10)
@@ -119,6 +119,7 @@ private struct PickySessionCardView: View {
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.65), lineWidth: 1))
                 .shadow(color: Color.black.opacity(0.28), radius: 12, x: 0, y: 7)
         )
+        .animation(.spring(response: 0.26, dampingFraction: 0.88), value: isExpanded)
     }
 
     private var header: some View {

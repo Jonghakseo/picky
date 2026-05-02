@@ -8,6 +8,8 @@ class FakeSession extends EventEmitter {
   promptOptions: unknown[] = [];
   followUps: string[] = [];
   steers: string[] = [];
+  aborts = 0;
+  isStreaming = false;
   bound = false;
 
   async prompt(text: string, options?: unknown): Promise<void> {
@@ -25,7 +27,10 @@ class FakeSession extends EventEmitter {
     this.steers.push(text);
   }
 
-  async abort(): Promise<void> {}
+  async abort(): Promise<void> {
+    this.aborts += 1;
+    this.isStreaming = false;
+  }
 
   async bindExtensions(): Promise<void> {
     this.bound = true;
@@ -94,6 +99,20 @@ describe("PiSdkRuntime", () => {
     expect(fakeSession.prompts).toEqual(["initial", "next voice input"]);
     expect(fakeSession.followUps).toEqual([]);
     expect(fakeSession.promptOptions[1]).toMatchObject({ source: "rpc", streamingBehavior: "followUp" });
+  });
+
+  it("interrupts an active Pi turn before sending replacement input", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+    fakeSession.isStreaming = true;
+    await handle.interrupt?.({ text: "replacement voice input", imagePaths: [] });
+
+    expect(fakeSession.aborts).toBe(1);
+    expect(fakeSession.prompts).toEqual(["replacement voice input"]);
+    expect(fakeSession.promptOptions[0]).toMatchObject({ source: "rpc" });
+    expect(fakeSession.promptOptions[0]).not.toMatchObject({ streamingBehavior: "followUp" });
   });
 
   it("prewarms Pi resources without sending an initial prompt", async () => {

@@ -11,10 +11,6 @@ import Foundation
 enum PickyAnalytics {
     static func configure() {}
     static func trackAppOpened() { log("app_opened") }
-    static func trackOnboardingStarted() { log("onboarding_started") }
-    static func trackOnboardingReplayed() { log("onboarding_replayed") }
-    static func trackOnboardingVideoCompleted() { log("onboarding_video_completed") }
-    static func trackOnboardingDemoTriggered() { log("onboarding_demo_triggered") }
     static func trackAllPermissionsGranted() { log("all_permissions_granted") }
     static func trackPermissionGranted(permission: String) { log("permission_granted: \(permission)") }
     static func trackPushToTalkStarted() { log("push_to_talk_started") }

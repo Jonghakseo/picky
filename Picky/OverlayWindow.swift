@@ -8,7 +8,6 @@
 //
 
 import AppKit
-import AVFoundation
 import SwiftUI
 
 class OverlayWindow: NSWindow {
@@ -76,14 +75,6 @@ private struct PiCursorIconView: View {
     }
 }
 
-// PreferenceKey for tracking bubble size
-struct SizePreferenceKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-        value = nextValue()
-    }
-}
-
 struct NavigationBubbleSizePreferenceKey: PreferenceKey {
     static var defaultValue: CGSize = .zero
     static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
@@ -127,15 +118,13 @@ enum BuddyNavigationMode {
 // streaming text bubble (responding).
 struct BlueCursorView: View {
     let screenFrame: CGRect
-    let isFirstAppearance: Bool
     @ObservedObject var companionManager: CompanionManager
 
     @State private var cursorPosition: CGPoint
     @State private var isCursorOnThisScreen: Bool
 
-    init(screenFrame: CGRect, isFirstAppearance: Bool, companionManager: CompanionManager) {
+    init(screenFrame: CGRect, companionManager: CompanionManager) {
         self.screenFrame = screenFrame
-        self.isFirstAppearance = isFirstAppearance
         self.companionManager = companionManager
 
         // Seed the cursor position from the current mouse location so the
@@ -147,12 +136,8 @@ struct BlueCursorView: View {
         _isCursorOnThisScreen = State(initialValue: screenFrame.contains(mouseLocation))
     }
     @State private var timer: Timer?
-    @State private var welcomeText: String = ""
-    @State private var showWelcome: Bool = true
-    @State private var bubbleSize: CGSize = .zero
-    @State private var bubbleOpacity: Double = 1.0
     @State private var responseBubbleSize: CGSize = .zero
-    @State private var cursorOpacity: Double = 0.0
+    @State private var cursorOpacity: Double = 1.0
 
     // MARK: - Buddy Navigation State
 
@@ -185,13 +170,6 @@ struct BlueCursorView: View {
     /// Only during the return flight can cursor movement cancel the animation.
     @State private var isReturningToCursor: Bool = false
 
-    // MARK: - Onboarding Video Layout
-
-    private let onboardingVideoPlayerWidth: CGFloat = 330
-    private let onboardingVideoPlayerHeight: CGFloat = 186
-
-    private let fullWelcomeMessage = "hey! i'm picky"
-
     private let navigationPointerPhrases = [
         "right here!",
         "this one!",
@@ -205,78 +183,6 @@ struct BlueCursorView: View {
         ZStack {
             // Nearly transparent background (helps with compositing)
             Color.black.opacity(0.001)
-
-            // Welcome speech bubble (first launch only)
-            if isCursorOnThisScreen && showWelcome && !welcomeText.isEmpty {
-                Text(welcomeText)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(DS.Colors.overlayCursorBlue)
-                            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.5), radius: 6, x: 0, y: 0)
-                    )
-                    .fixedSize()
-                    .overlay(
-                        GeometryReader { geo in
-                            Color.clear
-                                .preference(key: SizePreferenceKey.self, value: geo.size)
-                        }
-                    )
-                    .opacity(bubbleOpacity)
-                    .position(x: cursorPosition.x + 10 + (bubbleSize.width / 2), y: cursorPosition.y + 18)
-                    .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
-                    .animation(.easeOut(duration: 0.5), value: bubbleOpacity)
-                    .onPreferenceChange(SizePreferenceKey.self) { newSize in
-                        bubbleSize = newSize
-                    }
-            }
-
-            // Onboarding video — always in the view tree so opacity animation works
-            // reliably. When no player exists or opacity is 0, nothing is visible.
-            // allowsHitTesting(false) prevents it from intercepting clicks.
-            OnboardingVideoPlayerView(player: companionManager.onboardingVideoPlayer)
-                .frame(width: onboardingVideoPlayerWidth, height: onboardingVideoPlayerHeight)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .shadow(color: Color.black.opacity(0.4 * companionManager.onboardingVideoOpacity), radius: 12, x: 0, y: 6)
-                .opacity(isCursorOnThisScreen ? companionManager.onboardingVideoOpacity : 0)
-                .position(
-                    x: cursorPosition.x + 10 + (onboardingVideoPlayerWidth / 2),
-                    y: cursorPosition.y + 18 + (onboardingVideoPlayerHeight / 2)
-                )
-                .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
-                .animation(.easeInOut(duration: 2.0), value: companionManager.onboardingVideoOpacity)
-                .allowsHitTesting(false)
-
-            // Onboarding prompt — "press control + option and say hi" streamed after video ends
-            if isCursorOnThisScreen && companionManager.showOnboardingPrompt && !companionManager.onboardingPromptText.isEmpty {
-                Text(companionManager.onboardingPromptText)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(DS.Colors.overlayCursorBlue)
-                            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.5), radius: 6, x: 0, y: 0)
-                    )
-                    .fixedSize()
-                    .overlay(
-                        GeometryReader { geo in
-                            Color.clear
-                                .preference(key: SizePreferenceKey.self, value: geo.size)
-                        }
-                    )
-                    .opacity(companionManager.onboardingPromptOpacity)
-                    .position(x: cursorPosition.x + 10 + (bubbleSize.width / 2), y: cursorPosition.y + 18)
-                    .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
-                    .animation(.easeOut(duration: 0.4), value: companionManager.onboardingPromptOpacity)
-                    .onPreferenceChange(SizePreferenceKey.self) { newSize in
-                        bubbleSize = newSize
-                    }
-            }
 
             // Short voice response bubble — mirrors quick TTS replies next to the cursor
             // so simple checks do not require opening the long-running agent HUD.
@@ -400,24 +306,11 @@ struct BlueCursorView: View {
 
             startTrackingCursor()
 
-            // Only show welcome message on first appearance (app start)
-            // and only if the cursor starts on this screen
-            if isFirstAppearance && isCursorOnThisScreen {
-                withAnimation(.easeIn(duration: 2.0)) {
-                    self.cursorOpacity = 1.0
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                    self.bubbleOpacity = 0.0
-                    startWelcomeAnimation()
-                }
-            } else {
-                self.cursorOpacity = 1.0
-            }
+            self.cursorOpacity = 1.0
         }
         .onDisappear {
             timer?.invalidate()
             navigationAnimationTimer?.invalidate()
-            companionManager.tearDownOnboardingVideo()
         }
         .onChange(of: companionManager.detectedElementScreenLocation) { newLocation in
             // When a UI element location is detected, navigate the buddy to
@@ -505,9 +398,6 @@ struct BlueCursorView: View {
 
     /// Starts animating the buddy toward a detected UI element location.
     private func startNavigatingToElement(screenLocation: CGPoint) {
-        // Don't interrupt welcome animation
-        guard !showWelcome || welcomeText.isEmpty else { return }
-
         // Convert the AppKit screen location to SwiftUI coordinates for this screen
         let targetInSwiftUI = convertScreenPointToSwiftUICoordinates(screenLocation)
 
@@ -618,7 +508,7 @@ struct BlueCursorView: View {
         navigationBubbleSize = .zero
         navigationBubbleScale = 0.5
 
-        // Use custom bubble text from the companion manager (e.g. onboarding demo)
+        // Use custom bubble text from the companion manager when available.
         // if available, otherwise fall back to a random pointer phrase
         let pointerPhrase = companionManager.detectedElementBubbleText
             ?? navigationPointerPhrases.randomElement()
@@ -708,34 +598,6 @@ struct BlueCursorView: View {
         companionManager.clearDetectedElementLocation()
     }
 
-    // MARK: - Welcome Animation
-
-    private func startWelcomeAnimation() {
-        withAnimation(.easeIn(duration: 0.4)) {
-            self.bubbleOpacity = 1.0
-        }
-
-        var currentIndex = 0
-        Timer.scheduledTimer(withTimeInterval: 0.03, repeats: true) { timer in
-            guard currentIndex < self.fullWelcomeMessage.count else {
-                timer.invalidate()
-                // Hold the text for 2 seconds, then fade it out
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                    self.bubbleOpacity = 0.0
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                    self.showWelcome = false
-                    // Start the onboarding video right after the welcome text disappears
-                    self.companionManager.setupOnboardingVideo()
-                }
-                return
-            }
-
-            let index = self.fullWelcomeMessage.index(self.fullWelcomeMessage.startIndex, offsetBy: currentIndex)
-            self.welcomeText.append(self.fullWelcomeMessage[index])
-            currentIndex += 1
-        }
-    }
 }
 
 // MARK: - Blue Cursor Waveform
@@ -814,15 +676,10 @@ private struct BlueCursorSpinnerView: View {
 @MainActor
 class OverlayWindowManager {
     private var overlayWindows: [OverlayWindow] = []
-    var hasShownOverlayBefore = false
 
     func showOverlay(onScreens screens: [NSScreen], companionManager: CompanionManager) {
         // Hide any existing overlays
         hideOverlay()
-
-        // Track if this is the first time showing overlay (welcome message)
-        let isFirstAppearance = !hasShownOverlayBefore
-        hasShownOverlayBefore = true
 
         // Create one overlay window per screen
         for screen in screens {
@@ -830,7 +687,6 @@ class OverlayWindowManager {
 
             let contentView = BlueCursorView(
                 screenFrame: screen.frame,
-                isFirstAppearance: isFirstAppearance,
                 companionManager: companionManager
             )
 
@@ -872,46 +728,5 @@ class OverlayWindowManager {
 
     func isShowingOverlay() -> Bool {
         return !overlayWindows.isEmpty
-    }
-}
-
-// MARK: - Onboarding Video Player
-
-/// NSViewRepresentable wrapping an AVPlayerLayer so HLS video plays
-/// inside SwiftUI. Uses a custom NSView subclass to keep the player
-/// layer sized to the view's bounds automatically.
-private struct OnboardingVideoPlayerView: NSViewRepresentable {
-    let player: AVPlayer?
-
-    func makeNSView(context: Context) -> AVPlayerNSView {
-        let view = AVPlayerNSView()
-        view.player = player
-        return view
-    }
-
-    func updateNSView(_ nsView: AVPlayerNSView, context: Context) {
-        nsView.player = player
-    }
-}
-
-private class AVPlayerNSView: NSView {
-    var player: AVPlayer? {
-        didSet { playerLayer.player = player }
-    }
-
-    private let playerLayer = AVPlayerLayer()
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        playerLayer.videoGravity = .resizeAspectFill
-        layer?.addSublayer(playerLayer)
-    }
-
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func layout() {
-        super.layout()
-        playerLayer.frame = bounds
     }
 }

@@ -296,8 +296,8 @@ private struct PickySessionCardView: View {
                 }
                 if let notifyMainOnCompletion = session.notifyMainOnCompletion {
                     iconButton(
-                        systemName: notifyMainOnCompletion ? "bell.fill" : "bell.slash",
-                        help: notifyMainOnCompletion ? "Notify main agent on completion" : "Do not notify main agent on completion"
+                        systemName: notifyMainOnCompletion ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right",
+                        help: notifyMainOnCompletion ? "Tell main agent when this side task finishes" : "Keep completion on this side card only"
                     ) {
                         Task { try? await viewModel.setNotifyMainOnCompletion(sessionID: session.id, enabled: !notifyMainOnCompletion) }
                     }

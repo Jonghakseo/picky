@@ -286,7 +286,12 @@ export class SessionSupervisor extends EventEmitter {
 
   private async notifyMainOfSideCompletion(sessionId: string): Promise<void> {
     const session = this.mustGet(sessionId);
-    if (session.notifyMainOnCompletion === false || this.sideCompletionNotified.has(sessionId)) return;
+    if (this.sideCompletionNotified.has(sessionId)) return;
+    if (session.notifyMainOnCompletion === false) {
+      this.sideCompletionNotified.add(sessionId);
+      logAgentd("side completion notify skipped", { sessionId, status: session.status });
+      return;
+    }
     const prompt = buildMainAgentSideCompletionPrompt(session);
     this.mainReplyContextId = sessionId;
     this.mainDraft = "";
@@ -313,8 +318,6 @@ export class SessionSupervisor extends EventEmitter {
   async setNotifyMainOnCompletion(sessionId: string, enabled: boolean): Promise<PickyAgentSession> {
     if (!this.isSideSession(sessionId)) throw new Error(`Session is not a Picky side agent: ${sessionId}`);
     await this.patch(sessionId, { notifyMainOnCompletion: enabled });
-    const session = this.mustGet(sessionId);
-    if (enabled && isTerminalStatus(session.status)) await this.notifyMainOfSideCompletion(sessionId);
     return this.mustGet(sessionId);
   }
 
@@ -342,6 +345,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.appendLog(sessionId, `follow-up rejected: ${reason}`);
       throw new Error(reason);
     }
+    if (this.isSideSession(sessionId)) this.sideCompletionNotified.delete(sessionId);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id });
     await this.appendLog(sessionId, `follow-up: ${text}`);

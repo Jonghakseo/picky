@@ -106,7 +106,7 @@ describe("SessionSupervisor", () => {
     expect(replies).toEqual([{ contextId: pinned.id, text: "핀 완료를 확인했어요." }]);
   });
 
-  it("lets side sessions opt out of main-agent completion notifications", async () => {
+  it("lets side sessions opt out without replaying completed notifications", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
@@ -123,11 +123,20 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.prewarmCalls).toBe(0);
 
     const enabled = await supervisor.setNotifyMainOnCompletion(side.id, true);
+    sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Duplicate completed" });
+    await settle();
 
     expect(enabled.notifyMainOnCompletion).toBe(true);
+    expect(mainRuntime.prewarmCalls).toBe(0);
+
+    await supervisor.followUp(side.id, "다시 확인해줘");
+    sideRuntime.handle?.emit({ type: "assistant_delta", delta: "재조사 완료" });
+    sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
     expect(mainRuntime.prewarmCalls).toBe(1);
     expect(mainRuntime.handle?.followUps).toHaveLength(1);
-    expect(mainRuntime.handle?.followUps[0].text).toContain("조사 완료");
+    expect(mainRuntime.handle?.followUps[0].text).toContain("재조사 완료");
   });
 
   it("restores persisted pinned side sessions", async () => {

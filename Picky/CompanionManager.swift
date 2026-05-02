@@ -430,10 +430,10 @@ final class CompanionManager: ObservableObject {
 
             do {
                 let voiceFollowUpSessionID = voiceFollowUpSessionIDForCurrentUtterance
-                let captureResult = try await voiceContextCaptureCoordinator.captureContext(
+                guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
                     transcript: transcript,
                     voiceFollowUpSessionID: voiceFollowUpSessionID
-                )
+                ) else { return }
                 guard !Task.isCancelled else { return }
                 let receipt = try await routeVoiceTranscript(transcript: transcript, contextPacket: captureResult.contextPacket, voiceFollowUpSessionID: voiceFollowUpSessionID)
 

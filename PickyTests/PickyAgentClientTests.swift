@@ -36,16 +36,27 @@ private final class FakeWebSocketFactory: PickyWebSocketTaskMaking {
     }
 }
 
+private enum EventJSON {
+    static func hello() -> String {
+        """
+        {"id":"event-hello","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:00.000Z","type":"hello","serverName":"picky-agentd","supportedProtocolVersions":["2026-05-01"]}
+        """
+    }
+}
+
 struct PickyAgentClientTests {
     @Test func connectsToLocalhostWithTokenAndSendsListSessions() async throws {
         let task = FakeWebSocketTask()
+        task.receiveResults = [.success(.string(EventJSON.hello()))]
         let factory = FakeWebSocketFactory(task: task)
         let client = WebSocketPickyAgentClient(
             configuration: .init(port: 19001, token: "secret", reconnectDelay: 0.01),
             factory: factory
         )
+        var iterator = client.events.makeAsyncIterator()
 
         await client.connect()
+        if case .connected? = await iterator.next() {} else { Issue.record("Expected connected after hello") }
         try await client.send(PickyCommandEnvelope(id: "cmd-list-001", type: .listSessions))
 
         #expect(task.didResume)
@@ -59,10 +70,24 @@ struct PickyAgentClientTests {
         #expect(text.contains("\"type\":\"listSessions\"") || text.contains("\"type\" : \"listSessions\""))
     }
 
-    @Test func submitRoutesTaskForQuickReplyOrHandOff() async throws {
+    @Test func doesNotSendBeforeHelloOpensWebSocket() async throws {
         let task = FakeWebSocketTask()
         let client = WebSocketPickyAgentClient(configuration: .init(port: 19001, token: "secret", reconnectDelay: 0.01), factory: FakeWebSocketFactory(task: task))
+
         await client.connect()
+        await #expect(throws: PickyAgentClientError.disconnected) {
+            try await client.send(PickyCommandEnvelope(id: "cmd-list-early", type: .listSessions))
+        }
+        #expect(task.sentMessages.isEmpty)
+    }
+
+    @Test func submitRoutesTaskForQuickReplyOrHandOff() async throws {
+        let task = FakeWebSocketTask()
+        task.receiveResults = [.success(.string(EventJSON.hello()))]
+        let client = WebSocketPickyAgentClient(configuration: .init(port: 19001, token: "secret", reconnectDelay: 0.01), factory: FakeWebSocketFactory(task: task))
+        var iterator = client.events.makeAsyncIterator()
+        await client.connect()
+        if case .connected? = await iterator.next() {} else { Issue.record("Expected connected after hello") }
         let context = PickyContextPacket(
             id: "context-route",
             source: "voice",
@@ -90,9 +115,7 @@ struct PickyAgentClientTests {
     @Test func receivesHelloAndSessionUpdatedEvents() async throws {
         let task = FakeWebSocketTask()
         task.receiveResults = [
-            .success(.string("""
-            {"id":"event-hello","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:00.000Z","type":"hello","serverName":"picky-agentd","supportedProtocolVersions":["2026-05-01"]}
-            """)),
+            .success(.string(EventJSON.hello())),
             .success(.string("""
             {"id":"event-session","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionUpdated","session":{"id":"session-1","title":"Work","status":"running","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
             """))
@@ -119,10 +142,11 @@ struct PickyAgentClientTests {
 
     @Test func malformedEventIsRecoverable() async throws {
         let task = FakeWebSocketTask()
-        task.receiveResults = [.success(.string("not-json"))]
+        task.receiveResults = [.success(.string(EventJSON.hello())), .success(.string("not-json"))]
         let client = WebSocketPickyAgentClient(configuration: .init(port: 19001, token: "secret", reconnectDelay: 0.01), factory: FakeWebSocketFactory(task: task))
         var iterator = client.events.makeAsyncIterator()
         await client.connect()
+        _ = await iterator.next()
         _ = await iterator.next()
         let event = await iterator.next()
 

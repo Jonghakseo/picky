@@ -196,9 +196,18 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
 const SNAPSHOT_LOG_LIMIT = 24;
 const SNAPSHOT_IMPORTANT_LOG_LIMIT = 8;
 const SNAPSHOT_LOG_CHAR_LIMIT = 1_200;
+const SNAPSHOT_TOOL_LIMIT = 16;
+const SNAPSHOT_TOOL_PREVIEW_CHAR_LIMIT = 500;
+const SNAPSHOT_CHANGED_FILE_LIMIT = 30;
+const SNAPSHOT_CHANGED_FILE_SUMMARY_CHAR_LIMIT = 500;
 
 export function compactSessionsForSnapshot(sessions: PickyAgentSession[]): PickyAgentSession[] {
-  return sessions.map((session) => ({ ...session, logs: compactSnapshotLogs(session.logs) }));
+  return sessions.map((session) => ({
+    ...session,
+    logs: compactSnapshotLogs(session.logs),
+    tools: compactSnapshotTools(session.tools),
+    changedFiles: compactSnapshotChangedFiles(session.changedFiles),
+  }));
 }
 
 function compactSnapshotLogs(logs: string[]): string[] {
@@ -210,6 +219,20 @@ function compactSnapshotLogs(logs: string[]): string[] {
   return uniqueInOrder([...important, ...recent])
     .slice(-SNAPSHOT_LOG_LIMIT)
     .map(truncateSnapshotLogLine);
+}
+
+function compactSnapshotTools(tools: PickyAgentSession["tools"]): PickyAgentSession["tools"] {
+  return tools.slice(-SNAPSHOT_TOOL_LIMIT).map((tool) => ({
+    ...tool,
+    preview: tool.preview ? truncateText(tool.preview, SNAPSHOT_TOOL_PREVIEW_CHAR_LIMIT) : tool.preview,
+  }));
+}
+
+function compactSnapshotChangedFiles(changedFiles: PickyAgentSession["changedFiles"]): PickyAgentSession["changedFiles"] {
+  return changedFiles.slice(-SNAPSHOT_CHANGED_FILE_LIMIT).map((file) => ({
+    ...file,
+    summary: file.summary ? truncateText(file.summary, SNAPSHOT_CHANGED_FILE_SUMMARY_CHAR_LIMIT) : file.summary,
+  }));
 }
 
 function isImportantSnapshotLog(line: string): boolean {
@@ -237,8 +260,12 @@ function uniqueInOrder(lines: string[]): string[] {
 }
 
 function truncateSnapshotLogLine(line: string): string {
-  if (line.length <= SNAPSHOT_LOG_CHAR_LIMIT) return line;
-  return `${line.slice(0, SNAPSHOT_LOG_CHAR_LIMIT)}…`;
+  return truncateText(line, SNAPSHOT_LOG_CHAR_LIMIT);
+}
+
+function truncateText(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit)}…`;
 }
 
 type RemoveEnvelope<T> = T extends unknown ? Omit<T, "id" | "protocolVersion" | "timestamp"> : never;

@@ -147,9 +147,7 @@ final class WebSocketPickyAgentClient: PickyAgentClient {
         let socket = factory.makeWebSocketTask(url: configuration.url, token: configuration.token)
         task = socket
         socket.resume()
-        connected = true
-        pickyAgentClientLog("connected ws://\(configuration.host):\(configuration.port)")
-        continuation.yield(.connected)
+        pickyAgentClientLog("socket resumed ws://\(configuration.host):\(configuration.port)")
         startReceiveLoop(socket)
     }
 
@@ -214,6 +212,11 @@ final class WebSocketPickyAgentClient: PickyAgentClient {
 
         do {
             let event = try decoder.decode(PickyEventEnvelope.self, from: data)
+            if !connected, case .hello = event.event {
+                connected = true
+                pickyAgentClientLog("connected ws://\(configuration.host):\(configuration.port)")
+                continuation.yield(.connected)
+            }
             pickyAgentClientLog("receive \(event.logSummary)")
             continuation.yield(.protocolEvent(event))
         } catch {

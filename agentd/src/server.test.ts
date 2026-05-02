@@ -65,7 +65,7 @@ describe("AgentdServer", () => {
     expect(JSON.stringify(sanitized)).not.toContain("\\udf3a");
   });
 
-  it("compacts large session logs for session snapshots", () => {
+  it("compacts large session payloads for session snapshots", () => {
     const session = makeSession({
       logs: [
         "pi session: /tmp/picky.jsonl",
@@ -74,6 +74,17 @@ describe("AgentdServer", () => {
         ...Array.from({ length: 80 }, (_, index) => `extension ui: setWidget ${index}`),
         "latest useful log",
       ],
+      tools: Array.from({ length: 80 }, (_, index) => ({
+        toolCallId: `tool-${index}`,
+        name: "bash",
+        status: "succeeded" as const,
+        preview: "very long tool preview ".repeat(1_000),
+      })),
+      changedFiles: Array.from({ length: 80 }, (_, index) => ({
+        path: `file-${index}.txt`,
+        status: "modified",
+        summary: "large summary ".repeat(1_000),
+      })),
     });
 
     const [compact] = compactSessionsForSnapshot([session]);
@@ -82,6 +93,10 @@ describe("AgentdServer", () => {
     expect(compact.logs).toContain("pi session: /tmp/picky.jsonl");
     expect(compact.logs).toContain("steer: keep this visible in the HUD");
     expect(compact.logs.at(-1)).toBe("latest useful log");
+    expect(compact.tools.length).toBeLessThanOrEqual(16);
+    expect(compact.tools.at(-1)?.preview?.length).toBeLessThanOrEqual(501);
+    expect(compact.changedFiles.length).toBeLessThanOrEqual(30);
+    expect(compact.changedFiles.at(-1)?.summary?.length).toBeLessThanOrEqual(501);
     expect(JSON.stringify(compact).length).toBeLessThan(30_000);
   });
 });

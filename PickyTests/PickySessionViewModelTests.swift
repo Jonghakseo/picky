@@ -557,6 +557,26 @@ struct PickySessionViewModelTests {
         }
     }
 
+    @Test func notifyMainToggleSendsCommandAndUpdatesSession() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "session-notify",
+            status: "completed",
+            updatedAt: "2026-05-01T00:00:05.000Z",
+            notifyMainOnCompletion: true
+        ))))
+        try await settle()
+
+        try await viewModel.setNotifyMainOnCompletion(sessionID: "session-notify", enabled: false)
+
+        #expect(client.sentCommands.last?.type == .setNotifyMainOnCompletion)
+        #expect(client.sentCommands.last?.sessionId == "session-notify")
+        #expect(client.sentCommands.last?.enabled == false)
+        #expect(viewModel.sessions.first?.notifyMainOnCompletion == false)
+    }
+
     @Test func reportBuilderAndPrExtractionUseOnlyExplicitUrls() async throws {
         let session = PickyAgentSession.fixture(lastSummary: "Opened https://github.com/acme/repo/pull/42", status: .completed)
         let markdown = PickyArtifactReportBuilder().markdown(for: session)
@@ -636,11 +656,13 @@ private enum EventJSON {
         summary: String = "Started",
         createdAt: String = "2026-05-01T00:00:00.000Z",
         updatedAt: String = "2026-05-01T00:00:00.000Z",
-        logs: [String] = []
+        logs: [String] = [],
+        notifyMainOnCompletion: Bool? = nil
     ) -> String {
         let encodedLogs = String(decoding: try! JSONEncoder().encode(logs), as: UTF8.self)
+        let encodedNotify = notifyMainOnCompletion.map { ",\"notifyMainOnCompletion\":\($0)" } ?? ""
         return """
-        {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]}}
+        {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedNotify)}}
         """
     }
 

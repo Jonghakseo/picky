@@ -67,6 +67,7 @@ final class PickySessionListViewModel: ObservableObject {
         var changedFiles: [PickyChangedFile]
         var pendingExtensionUiRequest: PickyExtensionUiRequest?
         var piSessionFilePath: String?
+        var notifyMainOnCompletion: Bool?
         var hasRuntimeDetachedFollowUpRejection: Bool
 
         var activeTool: PickyToolActivity? {
@@ -238,6 +239,15 @@ final class PickySessionListViewModel: ObservableObject {
         try await client.send(PickyCommandEnvelope(type: .abort, sessionId: sessionID))
         update(sessionID: sessionID) { card in
             if !card.status.isTerminal { card.status = .cancelled }
+            card.updatedAt = Date()
+        }
+    }
+
+    func setNotifyMainOnCompletion(sessionID: String, enabled: Bool) async throws {
+        pickySessionLog("set notify main on completion session=\(sessionID) enabled=\(enabled)")
+        try await client.send(PickyCommandEnvelope(type: .setNotifyMainOnCompletion, sessionId: sessionID, enabled: enabled))
+        update(sessionID: sessionID) { card in
+            card.notifyMainOnCompletion = enabled
             card.updatedAt = Date()
         }
     }
@@ -564,6 +574,7 @@ private extension PickySessionListViewModel.SessionCard {
         self.changedFiles = session.changedFiles
         self.pendingExtensionUiRequest = session.pendingExtensionUiRequest
         self.piSessionFilePath = session.logs.compactMap(Self.piSessionFilePath(fromLogLine:)).last
+        self.notifyMainOnCompletion = session.notifyMainOnCompletion
         self.hasRuntimeDetachedFollowUpRejection = session.logs.contains(where: Self.isRuntimeDetachedFollowUpRejection)
     }
 
@@ -584,6 +595,7 @@ private extension PickySessionListViewModel.SessionCard {
         if result.changedFiles.isEmpty { result.changedFiles = changedFiles }
         if result.pendingExtensionUiRequest == nil { result.pendingExtensionUiRequest = pendingExtensionUiRequest }
         if result.piSessionFilePath == nil { result.piSessionFilePath = piSessionFilePath }
+        if result.notifyMainOnCompletion == nil { result.notifyMainOnCompletion = notifyMainOnCompletion }
         result.hasRuntimeDetachedFollowUpRejection = result.hasRuntimeDetachedFollowUpRejection || hasRuntimeDetachedFollowUpRejection
         return result
     }

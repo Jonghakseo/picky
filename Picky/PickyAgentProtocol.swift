@@ -156,7 +156,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     var artifacts: [PickyArtifact]
     var changedFiles: [PickyChangedFile]
     var pendingExtensionUiRequest: PickyExtensionUiRequest?
-    var notifyMainOnCompletion: Bool?
+    var notifyMainOnCompletion: Bool? = nil
 }
 
 enum PickySessionStatus: String, Codable, Equatable {

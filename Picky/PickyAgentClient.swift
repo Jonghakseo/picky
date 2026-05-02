@@ -240,6 +240,7 @@ private extension PickyCommandEnvelope {
         if let text { parts.append("textChars=\(text.count)") }
         if let requestId { parts.append("request=\(requestId)") }
         if let artifactId { parts.append("artifact=\(artifactId)") }
+        if let enabled { parts.append("enabled=\(enabled)") }
         return parts.joined(separator: " ")
     }
 }

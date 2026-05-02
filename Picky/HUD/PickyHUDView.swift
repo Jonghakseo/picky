@@ -280,6 +280,14 @@ private struct PickySessionCardView: View {
                 iconButton(systemName: "terminal", help: "Open Pi terminal", disabled: session.piSessionFilePath == nil || session.status.blocksTerminalOverlay) {
                     viewModel.openTerminalOverlay(sessionID: session.id)
                 }
+                if let notifyMainOnCompletion = session.notifyMainOnCompletion {
+                    iconButton(
+                        systemName: notifyMainOnCompletion ? "bell.fill" : "bell.slash",
+                        help: notifyMainOnCompletion ? "Notify main agent on completion" : "Do not notify main agent on completion"
+                    ) {
+                        Task { try? await viewModel.setNotifyMainOnCompletion(sessionID: session.id, enabled: !notifyMainOnCompletion) }
+                    }
+                }
                 iconButton(systemName: "stop.circle", help: "Stop session", disabled: session.status.isTerminal) {
                     Task { try? await viewModel.abort(sessionID: session.id) }
                 }

@@ -52,8 +52,12 @@ export class SessionSupervisor extends EventEmitter {
   async load(): Promise<void> {
     const persisted = await this.store.loadAll();
     logAgentd("sessions loading", { count: persisted.length });
-    for (const session of persisted) {
-      if (hasSideSessionMarkerLog(session)) this.sideSessionIds.add(session.id);
+    for (const persistedSession of persisted) {
+      const isSideSession = hasSideSessionMarkerLog(persistedSession);
+      if (isSideSession) this.sideSessionIds.add(persistedSession.id);
+      const session = isSideSession && persistedSession.notifyMainOnCompletion === undefined
+        ? { ...persistedSession, notifyMainOnCompletion: true }
+        : persistedSession;
       if (!isTerminalStatus(session.status)) {
         const restored = {
           ...session,
@@ -67,6 +71,7 @@ export class SessionSupervisor extends EventEmitter {
         await this.store.save(restored);
       } else {
         this.sessions.set(session.id, session);
+        if (session !== persistedSession) await this.store.save(session);
       }
     }
   }
@@ -168,7 +173,7 @@ export class SessionSupervisor extends EventEmitter {
       createdAt: now,
       updatedAt: now,
       logs: [],
-      notifyMainOnCompletion: options.notifyMainOnCompletion ?? false,
+      ...(options.notifyMainOnCompletion === undefined ? {} : { notifyMainOnCompletion: options.notifyMainOnCompletion }),
       tools: [],
       artifacts: [],
       changedFiles: [],
@@ -283,13 +288,14 @@ export class SessionSupervisor extends EventEmitter {
     const session = this.mustGet(sessionId);
     if (session.notifyMainOnCompletion === false || this.sideCompletionNotified.has(sessionId)) return;
     const prompt = buildMainAgentSideCompletionPrompt(session);
+    this.mainReplyContextId = sessionId;
+    this.mainDraft = "";
     const delivery = await this.prepareMainCompletionDelivery(prompt, session.cwd);
     if (!delivery) return;
 
     this.sideCompletionNotified.add(sessionId);
+    this.mainIsProcessing = true;
     logAgentd("side completion notifying main", { sessionId, status: session.status });
-    this.mainReplyContextId = sessionId;
-    this.mainDraft = "";
     if (delivery.sendAsFollowUp) await delivery.handle.followUp(prompt);
   }
 

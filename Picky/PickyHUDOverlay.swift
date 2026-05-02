@@ -18,7 +18,7 @@ enum PickyHUDExpansion {
     }
 
     static func cardVerticalPadding(isExpanded: Bool) -> CGFloat {
-        isExpanded ? 10 : 8
+        8
     }
 
     static func contentFrameHeight(isExpanded: Bool, measuredHeight: CGFloat) -> CGFloat? {
@@ -172,9 +172,7 @@ struct PickyHUDView: View {
                         isExpanded: expandedSessionID == session.id,
                         viewModel: viewModel,
                         onToggle: {
-                            withAnimation(PickyHUDExpansion.animation) {
-                                expandedSessionID = expandedSessionID == session.id ? nil : session.id
-                            }
+                            expandedSessionID = expandedSessionID == session.id ? nil : session.id
                         }
                     )
                 }
@@ -274,7 +272,6 @@ private struct PickySessionCardView: View {
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.65), lineWidth: 1))
                 .shadow(color: Color.black.opacity(0.28), radius: 12, x: 0, y: 7)
         )
-        .animation(PickyHUDExpansion.animation, value: isExpanded)
     }
 
     private var header: some View {

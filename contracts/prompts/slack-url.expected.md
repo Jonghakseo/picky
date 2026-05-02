@@ -10,4 +10,4 @@ Use available Pi skills, extensions, MCPs, and local tools as appropriate. Treat
 - Captured at: 2026-05-01T00:00:00.000Z
 - CWD: /Users/example/app
 - Browser title: Team thread
-- Browser URL: https://creatrip.slack.com/archives/C123/p1711111111000000
+- Browser URL: https://acme.slack.com/archives/C123/p1711111111000000

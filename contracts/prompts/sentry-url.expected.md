@@ -12,7 +12,7 @@ Use available Pi skills, extensions, MCPs, and local tools as appropriate. Treat
 - Active app: Browser / company.thebrowser.Browser
 - Active window: Issue page
 - Browser title: Issue 123456
-- Browser URL: https://creatrip.sentry.io/issues/123456/
+- Browser URL: https://acme.sentry.io/issues/123456/
 
 ## Screenshots
 - screen1-full (screen1): /tmp/picky/shot-1.png

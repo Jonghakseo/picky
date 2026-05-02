@@ -117,7 +117,7 @@ Test run with 76 tests passed after 3.635 seconds.
 Result bundle:
 
 ```text
-/Users/creatrip/Library/Developer/Xcode/DerivedData/Picky-ayfzdyoncbrdeaevflvabvbfqhee/Logs/Test/Test-Picky-2026.05.02_15-52-57-+0900.xcresult
+<user-home>/Library/Developer/Xcode/DerivedData/Picky-<hash>/Logs/Test/Test-Picky-<timestamp>.xcresult
 ```
 
 Notes:

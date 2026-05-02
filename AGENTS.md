@@ -145,12 +145,12 @@ When working on this project, use these references.
 
 ### Picky planning
 
-- `~/Documents/picky/ARCHITECTURE.md`
+- `ARCHITECTURE.md`
 
 ### Public Clicky source
 
 - GitHub: `https://github.com/farzaa/clicky/`
-- Local analysis clone, if still present: `/tmp/clicky-re/upstream`
+- Optional local analysis clone, if present: a developer-created temporary checkout of the upstream repository.
 - Important files:
   - `CLAUDE.md`
   - `leanring-buddy/CompanionManager.swift`
@@ -163,29 +163,27 @@ When working on this project, use these references.
 
 ### Local installed Clicky app reference
 
-Use the local Clicky app as a product/behavior reference for long-running agent UX. Do not treat private compiled code as implementation to copy; use clean-room reimplementation for Picky.
+A locally installed Clicky app may be used as a product/behavior reference for long-running agent UX when a developer has it available. Do not depend on a fixed installation path, and do not treat private compiled code as implementation to copy; use clean-room reimplementation for Picky.
 
-- App bundle: `/Applications/Clicky.app`
-- Binary for strings/symbol inspection: `/Applications/Clicky.app/Contents/MacOS/Clicky`
-- App metadata: `/Applications/Clicky.app/Contents/Info.plist`
-- Build metadata: `/Applications/Clicky.app/Contents/Resources/ClickyBuildInfo.plist`
-- Embedded notes: `/Applications/Clicky.app/Contents/Resources/AGENTS.md`
-- Embedded model instructions: `/Applications/Clicky.app/Contents/Resources/ClickyModelInstructions.md`
-- Bundled skills: `/Applications/Clicky.app/Contents/Resources/ClickyBundledSkills/`
-- Bundled wiki seed: `/Applications/Clicky.app/Contents/Resources/ClickyBundledWikiSeed/`
-- Bundled Codex runtime reference: `/Applications/Clicky.app/Contents/Resources/CodexRuntime/`
-- User data/runtime state: `~/Library/Application Support/Clicky/`
+Suggested reference areas, if available locally:
+
+- App bundle and metadata.
+- Main binary strings/symbols for high-level behavior discovery only.
+- Embedded notes/model instructions, bundled skills/wiki seed/runtime references.
+- User data/runtime state.
 
 ### Pi docs
 
 Read relevant Pi docs before implementing Pi integration:
 
-- `/usr/local/lib/node_modules/@mariozechner/pi-coding-agent/README.md`
-- `/usr/local/lib/node_modules/@mariozechner/pi-coding-agent/docs/sdk.md`
-- `/usr/local/lib/node_modules/@mariozechner/pi-coding-agent/docs/rpc.md`
-- `/usr/local/lib/node_modules/@mariozechner/pi-coding-agent/docs/extensions.md`
-- `/usr/local/lib/node_modules/@mariozechner/pi-coding-agent/docs/session-format.md`
-- `/usr/local/lib/node_modules/@mariozechner/pi-coding-agent/examples/sdk/`
+Resolve the installed `@mariozechner/pi-coding-agent` package location from the current environment, then read:
+
+- `README.md`
+- `docs/sdk.md`
+- `docs/rpc.md`
+- `docs/extensions.md`
+- `docs/session-format.md`
+- `examples/sdk/`
 
 ## Implementation priorities
 

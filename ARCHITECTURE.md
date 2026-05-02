@@ -29,7 +29,7 @@ User is looking at a Sentry issue in the browser
 
 Picky should **not** implement deterministic task routing such as:
 
-- "If URL matches `creatrip.sentry.io/issues/...`, force Sentry flow"
+- "If URL matches `acme.sentry.io/issues/...`, force Sentry flow"
 - "If Slack URL, force Slack flow"
 - "If user says DB, force creatrip-db flow"
 
@@ -418,7 +418,7 @@ Flow:
 ```text
 Picky captures:
 - transcript: "이 에러 원인 분석해줘"
-- active URL: https://creatrip.sentry.io/issues/...
+- active URL: https://acme.sentry.io/issues/...
 - screenshots
 - cwd: ~/Product
 
@@ -585,36 +585,33 @@ Do not silently downgrade or override Pi's configured permissions; display them.
 
 ### Pi official docs
 
-- `/usr/local/lib/node_modules/@mariozechner/pi-coding-agent/README.md`
+Resolve the installed `@mariozechner/pi-coding-agent` package location from the current environment, then read:
+
+- `README.md`
   - Pi modes, SDK, RPC, extensions, skills, packages, CLI behavior.
-- `/usr/local/lib/node_modules/@mariozechner/pi-coding-agent/docs/sdk.md`
+- `docs/sdk.md`
   - `createAgentSession`, `createAgentSessionRuntime`, `DefaultResourceLoader`, sessions, tools, events.
-- `/usr/local/lib/node_modules/@mariozechner/pi-coding-agent/docs/rpc.md`
+- `docs/rpc.md`
   - JSONL RPC protocol, event stream, extension UI request/response protocol.
-- `/usr/local/lib/node_modules/@mariozechner/pi-coding-agent/docs/extensions.md`
+- `docs/extensions.md`
   - Extension lifecycle, event hooks, tool events, input/context hooks.
-- `/usr/local/lib/node_modules/@mariozechner/pi-coding-agent/docs/session-format.md`
+- `docs/session-format.md`
   - Pi session JSONL format and tree semantics.
 
 ### Public Clicky source
 
 - `https://github.com/farzaa/clicky/`
-- Local analysis clone: `/tmp/clicky-re/upstream`
-- Key architecture doc: `/tmp/clicky-re/upstream/CLAUDE.md`
+- Optional local analysis clone: a developer-created temporary checkout of the upstream repository.
+- Key architecture doc, if an upstream checkout is available: `CLAUDE.md`.
 
 ### Local installed Clicky app reference
 
-Use the locally installed Clicky app as a behavioral/product reference for long-running agent UX, not as code to copy blindly.
+A locally installed Clicky app may be used as a behavioral/product reference for long-running agent UX when a developer has it available, not as code to copy blindly. Do not depend on a fixed installation path.
 
-- Installed app bundle: `/Applications/Clicky.app`
-- Main binary for strings/symbol inspection: `/Applications/Clicky.app/Contents/MacOS/Clicky`
-- Bundle metadata: `/Applications/Clicky.app/Contents/Info.plist`
-- Build info: `/Applications/Clicky.app/Contents/Resources/ClickyBuildInfo.plist`
-- Embedded app notes: `/Applications/Clicky.app/Contents/Resources/AGENTS.md`
-- Embedded model instructions: `/Applications/Clicky.app/Contents/Resources/ClickyModelInstructions.md`
-- Bundled skills: `/Applications/Clicky.app/Contents/Resources/ClickyBundledSkills/`
-- Bundled wiki seed: `/Applications/Clicky.app/Contents/Resources/ClickyBundledWikiSeed/`
-- Bundled Codex runtime reference: `/Applications/Clicky.app/Contents/Resources/CodexRuntime/`
-- User data/runtime state reference: `~/Library/Application Support/Clicky/`
+Suggested reference areas, if available locally:
+
+- App bundle, binary, bundle metadata, and build metadata.
+- Embedded app notes/model instructions, bundled skills, bundled wiki seed, and bundled runtime references.
+- User data/runtime state.
 
 Important constraint: the local Clicky app is a private compiled product. Treat it as a reverse-engineering reference for architecture and UX ideas only. Picky should use public Clicky MIT source plus clean-room reimplementation for private/local Clicky behaviors.

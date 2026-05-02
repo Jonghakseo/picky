@@ -1,7 +1,7 @@
 # Public Clicky Upstream Provenance
 
 - Upstream repository: https://github.com/farzaa/clicky/
-- Local source used: `/tmp/clicky-re/upstream`
+- Local source used: developer-created temporary checkout of the upstream repository.
 - Commit SHA: `a80fa80721a8aebe51a170a7780705024ebc6e46`
 - License: MIT (`LICENSE` copied from public upstream)
 - Imported for: macOS shell foundation for Picky (menu bar app, global push-to-talk, screen capture, overlays, permission handling).

@@ -6,7 +6,7 @@
   "cwd": "/Users/example/app",
   "activeApp": { "bundleId": "company.thebrowser.Browser", "name": "Browser", "pid": 202 },
   "activeWindow": { "title": "Issue page" },
-  "browser": { "url": "https://creatrip.sentry.io/issues/123456/", "title": "Issue 123456" },
+  "browser": { "url": "https://acme.sentry.io/issues/123456/", "title": "Issue 123456" },
   "screenshots": [
     { "id": "shot-1", "label": "screen1-full", "path": "/tmp/picky/shot-1.png", "screenId": "screen1" }
   ],

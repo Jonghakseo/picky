@@ -116,10 +116,6 @@ private struct PickySessionCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: PickyHUDExpansion.cardSpacing(isExpanded: isExpanded)) {
             header
-            if showsActivityLine {
-                PickyHUDActivityLineView(color: statusColor, isActive: session.status == .running)
-                    .padding(.top, 7)
-            }
             PickyHUDCollapsibleContent(isExpanded: isExpanded) {
                 expandedContent
             }
@@ -144,13 +140,16 @@ private struct PickySessionCardView: View {
             }
             .layoutPriority(1)
             Spacer(minLength: 4)
-            Text(statusLabel)
-                .font(.system(size: 9.5, weight: .semibold))
-                .foregroundColor(statusColor)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(statusColor.opacity(0.10)))
-                .lineLimit(1)
+            if let headerStatusLabel {
+                Text(headerStatusLabel)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundColor(statusColor)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(statusColor.opacity(0.10)))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
             Image(systemName: "chevron.down")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(DS.Colors.textTertiary)
@@ -169,9 +168,6 @@ private struct PickySessionCardView: View {
                 detailSection(title: "Current work", text: currentWorkDescription, lineLimit: 2)
             }
 
-            if let cwd = session.cwd, !cwd.isEmpty {
-                metaRow(icon: "folder", text: "CWD  \(cwd)")
-            }
             metaRow(icon: "clock", text: session.elapsedDescription())
 
             if let pending = session.pendingExtensionUiRequest {
@@ -365,10 +361,6 @@ private struct PickySessionCardView: View {
             )
     }
 
-    private var showsActivityLine: Bool {
-        session.status == .running
-    }
-
     private var headerSubtitle: String {
         let elapsed = session.elapsedDescription()
         switch session.status {
@@ -392,15 +384,13 @@ private struct PickySessionCardView: View {
         }
     }
 
-    private var statusLabel: String {
+    private var headerStatusLabel: String? {
         switch session.status {
-        case .queued: "queued"
-        case .running: "running"
         case .waiting_for_input: "waiting"
         case .blocked: "blocked"
         case .completed: "done"
         case .failed: "failed"
-        case .cancelled: "cancelled"
+        case .queued, .running, .cancelled: nil
         }
     }
 
@@ -491,31 +481,6 @@ private struct PickyHUDStatusBadgeView: View {
         }
         .frame(width: 22, height: 22)
         .accessibilityHidden(true)
-    }
-}
-
-private struct PickyHUDActivityLineView: View {
-    let color: Color
-    let isActive: Bool
-    @State private var isOffset = false
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(DS.Colors.surface3.opacity(0.85))
-                Capsule()
-                    .fill(color.opacity(0.85))
-                    .frame(width: max(34, proxy.size.width * 0.40))
-                    .offset(x: isActive && isOffset ? proxy.size.width * 0.55 : 0)
-                    .animation(
-                        isActive ? .easeInOut(duration: 1.4).repeatForever(autoreverses: true) : .default,
-                        value: isOffset
-                    )
-            }
-        }
-        .frame(height: 3)
-        .onAppear { isOffset = true }
     }
 }
 

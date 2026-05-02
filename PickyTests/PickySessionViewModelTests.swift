@@ -33,6 +33,10 @@ private final class FakeSelectionStore: PickySessionSelectionStoring {
     var selectedSessionID: String?
 }
 
+private final class FakeArchiveStore: PickySessionArchiveStoring {
+    var archivedSessionIDs = Set<String>()
+}
+
 @MainActor
 struct PickySessionViewModelTests {
     @Test func startRequestsPersistedSessionsOnConnect() async throws {
@@ -153,6 +157,29 @@ struct PickySessionViewModelTests {
         #expect(selection.selectedSessionID == nil)
         viewModel.select(sessionID: "older")
         #expect(selection.selectedSessionID == "older")
+    }
+
+    @Test func archivedSessionsStayHiddenAcrossSnapshots() async throws {
+        let client = FakePickyAgentClient()
+        let archiveStore = FakeArchiveStore()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: archiveStore
+        )
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "main-1", title: "Main", status: "completed"))))
+        try await settle()
+
+        viewModel.archive(sessionID: "side-1")
+        #expect(archiveStore.archivedSessionIDs == ["side-1"])
+        #expect(viewModel.sessions.map(\.id) == ["main-1"])
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "completed", summary: "Updated"))))
+        try await settle()
+        #expect(viewModel.sessions.map(\.id) == ["main-1"])
+        #expect(viewModel.archivedSessions.first(where: { $0.id == "side-1" })?.lastSummary == "Updated")
     }
 
     @Test func textFollowUpTargetsSelectedSessionAndRejectsEmptyInput() async throws {

@@ -103,6 +103,7 @@ final class PickySessionListViewModel: ObservableObject {
     private let client: any PickyAgentClient
     private let notificationCenter: PickyNotificationDelivering
     private let selectionStore: PickySessionSelectionStoring
+    private let archiveStore: PickySessionArchiveStoring
     private let artifactPathValidator: PickyArtifactPathValidator
     private var eventTask: Task<Void, Never>?
     private var deliveredNotificationKeys = Set<String>()
@@ -112,11 +113,13 @@ final class PickySessionListViewModel: ObservableObject {
         client: any PickyAgentClient,
         notificationCenter: PickyNotificationDelivering = PickySystemNotificationCenter(),
         selectionStore: PickySessionSelectionStoring = PickyUserDefaultsSessionSelectionStore.shared,
+        archiveStore: PickySessionArchiveStoring = PickyUserDefaultsSessionArchiveStore.shared,
         artifactPathValidator: PickyArtifactPathValidator = PickyArtifactPathValidator(appSupportRoot: PickyAppSupport.defaultRoot())
     ) {
         self.client = client
         self.notificationCenter = notificationCenter
         self.selectionStore = selectionStore
+        self.archiveStore = archiveStore
         self.artifactPathValidator = artifactPathValidator
         self.selectedSessionID = selectionStore.selectedSessionID
         self.hasExplicitSelection = self.selectedSessionID != nil
@@ -224,8 +227,16 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func archive(sessionID: String) {
+        var archivedIDs = archiveStore.archivedSessionIDs
+        archivedIDs.insert(sessionID)
+        archiveStore.archivedSessionIDs = archivedIDs
+
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
-        archivedSessions.append(sessions.remove(at: index))
+        let archived = sessions.remove(at: index)
+        if !archivedSessions.contains(where: { $0.id == sessionID }) {
+            archivedSessions.append(archived)
+        }
+        archivedSessions = archivedSessions.sortedForHUD()
         if selectedSessionID == sessionID {
             hasExplicitSelection = false
             selectedSessionID = defaultSelectionID()
@@ -266,14 +277,11 @@ final class PickySessionListViewModel: ObservableObject {
     private func apply(_ event: PickyEvent) {
         switch event {
         case .sessionSnapshot(let snapshot):
-            sessions = snapshot.map(SessionCard.init(session:)).sortedForHUD()
-            if hasExplicitSelection, let selectedSessionID, sessions.contains(where: { $0.id == selectedSessionID }) {
-                selectionStore.selectedSessionID = selectedSessionID
-            } else {
-                hasExplicitSelection = false
-                selectedSessionID = defaultSelectionID()
-                selectionStore.selectedSessionID = nil
-            }
+            let archivedIDs = archiveStore.archivedSessionIDs
+            let cards = snapshot.map(SessionCard.init(session:))
+            sessions = cards.filter { !archivedIDs.contains($0.id) }.sortedForHUD()
+            archivedSessions = cards.filter { archivedIDs.contains($0.id) }.sortedForHUD()
+            syncSelectionAfterSessionListChange()
             sessions.forEach(deliverNotificationIfNeeded(for:))
         case .sessionUpdated(let session):
             upsert(SessionCard(session: session))
@@ -324,18 +332,46 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     private func upsert(_ card: SessionCard) {
+        let archivedIDs = archiveStore.archivedSessionIDs
+        let shouldArchive = archivedIDs.contains(card.id)
         var incoming = card
-        if let existing = sessions.first(where: { $0.id == card.id }) {
+        if let existing = (sessions + archivedSessions).first(where: { $0.id == card.id }) {
             incoming = existing.merged(with: card)
         }
-        if let archivedIndex = archivedSessions.firstIndex(where: { $0.id == card.id }) {
-            archivedSessions[archivedIndex] = incoming
-        } else if let index = sessions.firstIndex(where: { $0.id == card.id }) {
-            sessions[index] = incoming
+
+        sessions.removeAll { $0.id == card.id }
+        archivedSessions.removeAll { $0.id == card.id }
+        if shouldArchive {
+            archivedSessions.append(incoming)
         } else {
             sessions.append(incoming)
         }
         sessions = sessions.sortedForHUD()
+        archivedSessions = archivedSessions.sortedForHUD()
+        syncSelectionAfterSessionListChange()
+        if !shouldArchive {
+            deliverNotificationIfNeeded(for: incoming)
+        }
+    }
+
+    private func update(sessionID: String, mutate: (inout SessionCard) -> Void) {
+        if let index = sessions.firstIndex(where: { $0.id == sessionID }) {
+            var card = sessions[index]
+            mutate(&card)
+            sessions[index] = card
+            sessions = sessions.sortedForHUD()
+            syncSelectionAfterSessionListChange()
+            deliverNotificationIfNeeded(for: card)
+            return
+        }
+        guard let archivedIndex = archivedSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        var archivedCard = archivedSessions[archivedIndex]
+        mutate(&archivedCard)
+        archivedSessions[archivedIndex] = archivedCard
+        archivedSessions = archivedSessions.sortedForHUD()
+    }
+
+    private func syncSelectionAfterSessionListChange() {
         if hasExplicitSelection, let selectedSessionID, sessions.contains(where: { $0.id == selectedSessionID }) {
             selectionStore.selectedSessionID = selectedSessionID
         } else {
@@ -343,22 +379,6 @@ final class PickySessionListViewModel: ObservableObject {
             selectedSessionID = defaultSelectionID()
             selectionStore.selectedSessionID = nil
         }
-        deliverNotificationIfNeeded(for: incoming)
-    }
-
-    private func update(sessionID: String, mutate: (inout SessionCard) -> Void) {
-        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
-        var card = sessions[index]
-        mutate(&card)
-        sessions[index] = card
-        sessions = sessions.sortedForHUD()
-        if hasExplicitSelection, let selectedSessionID {
-            selectionStore.selectedSessionID = selectedSessionID
-        } else {
-            selectedSessionID = defaultSelectionID()
-            selectionStore.selectedSessionID = nil
-        }
-        deliverNotificationIfNeeded(for: card)
     }
 
     private func defaultSelectionID() -> String? {

@@ -12,8 +12,8 @@ import SwiftUI
 final class PickyHUDOverlayManager {
     private let viewModel: PickySessionListViewModel
     private var panel: NSPanel?
-    private let width: CGFloat = 380
-    private let collapsedHeight: CGFloat = 220
+    private let width: CGFloat = 320
+    private let collapsedHeight: CGFloat = 180
 
     init(viewModel: PickySessionListViewModel) {
         self.viewModel = viewModel
@@ -73,27 +73,25 @@ struct PickyHUDView: View {
     }
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 8) {
+        VStack(alignment: .trailing, spacing: 6) {
             if visibleSessions.isEmpty {
                 EmptyView()
             } else {
                 ForEach(visibleSessions) { session in
-                    VStack(spacing: 8) {
-                        PickySessionCardView(session: session, isExpanded: expandedSessionID == session.id)
-                            .onTapGesture {
-                                withAnimation(.easeOut(duration: 0.18)) {
-                                    expandedSessionID = expandedSessionID == session.id ? nil : session.id
-                                }
+                    PickySessionCardView(
+                        session: session,
+                        isExpanded: expandedSessionID == session.id,
+                        viewModel: viewModel,
+                        onToggle: {
+                            withAnimation(.easeOut(duration: 0.18)) {
+                                expandedSessionID = expandedSessionID == session.id ? nil : session.id
                             }
-                        if expandedSessionID == session.id {
-                            PickySessionDetailView(session: session, viewModel: viewModel)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
                         }
-                    }
+                    )
                 }
             }
         }
-        .padding(10)
+        .padding(8)
         .frame(maxWidth: .infinity, alignment: .topTrailing)
     }
 }
@@ -101,82 +99,55 @@ struct PickyHUDView: View {
 private struct PickySessionCardView: View {
     let session: PickySessionListViewModel.SessionCard
     let isExpanded: Bool
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 9, height: 9)
-                .padding(.top, 5)
-
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 6) {
-                    Text(session.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(DS.Colors.textPrimary)
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    if session.status == .queued || session.status == .running {
-                        ProgressView()
-                            .controlSize(.small)
-                            .scaleEffect(0.45)
-                            .frame(width: 10, height: 10)
-                    }
-                    Text(session.status.rawValue.replacingOccurrences(of: "_", with: " "))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(statusColor)
-                }
-
-                HStack(spacing: 8) {
-                    Text(shortCwd(session.cwd))
-                    Text(session.elapsedDescription())
-                    Text("\(session.toolCount) tools")
-                }
-                .font(.system(size: 11))
-                .foregroundColor(DS.Colors.textTertiary)
-
-                if !session.lastSummary.isEmpty {
-                    Text(session.lastSummary)
-                        .font(.system(size: 11))
-                        .foregroundColor(DS.Colors.textSecondary)
-                        .lineLimit(1)
-                }
-            }
-
-            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(DS.Colors.textTertiary)
-                .padding(.top, 4)
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(DS.Colors.surface1.opacity(0.95))
-                .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.65), lineWidth: 1))
-                .shadow(color: Color.black.opacity(0.30), radius: 14, x: 0, y: 8)
-        )
-    }
-
-    private var statusColor: Color {
-        switch session.status {
-        case .queued: DS.Colors.textTertiary
-        case .running: DS.Colors.accentText
-        case .waiting_for_input: DS.Colors.warning
-        case .blocked: DS.Colors.warningText
-        case .completed: DS.Colors.success
-        case .failed: DS.Colors.destructiveText
-        case .cancelled: DS.Colors.textTertiary
-        }
-    }
-}
-
-private struct PickySessionDetailView: View {
-    let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
+    let onToggle: () -> Void
     @State private var followUpText = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: isExpanded ? 9 : 0) {
+            header
+            if isExpanded {
+                expandedContent
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, isExpanded ? 10 : 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(DS.Colors.surface1.opacity(0.95))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.65), lineWidth: 1))
+                .shadow(color: Color.black.opacity(0.28), radius: 12, x: 0, y: 7)
+        )
+    }
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 8) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 8, height: 8)
+            Text(session.title)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundColor(DS.Colors.textPrimary)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(DS.Colors.textTertiary)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onToggle)
+    }
+
+    private var expandedContent: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Divider().opacity(0.35)
+
+            if let cwd = session.cwd, !cwd.isEmpty {
+                metaRow(icon: "folder", text: "CWD  \(cwd)")
+            }
+            metaRow(icon: "clock", text: session.elapsedDescription())
+
             if let pending = session.pendingExtensionUiRequest {
                 PickyPendingInputView(request: pending, viewModel: viewModel)
             }
@@ -191,13 +162,11 @@ private struct PickySessionDetailView: View {
 
             if !session.changedFiles.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Changed files")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(DS.Colors.textTertiary)
+                    detailTitle("Changed files")
                     ForEach(session.changedFiles.prefix(4), id: \.path) { file in
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(file.status) · \(file.path)")
-                                .font(.system(size: 11, design: .monospaced))
+                                .font(.system(size: 10.5, design: .monospaced))
                                 .foregroundColor(DS.Colors.textSecondary)
                                 .lineLimit(1)
                             if let summary = file.summary, !summary.isEmpty {
@@ -214,12 +183,10 @@ private struct PickySessionDetailView: View {
             let diffArtifacts = session.artifacts.filter { $0.kind == "diff" }
             if !diffArtifacts.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Diff preview")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(DS.Colors.textTertiary)
+                    detailTitle("Diff preview")
                     ForEach(diffArtifacts.prefix(2)) { artifact in
                         Text(artifact.title)
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(.system(size: 10.5, design: .monospaced))
                             .foregroundColor(DS.Colors.textSecondary)
                             .lineLimit(1)
                     }
@@ -232,8 +199,8 @@ private struct PickySessionDetailView: View {
                         Text(artifact.title)
                             .font(.system(size: 10, weight: .medium))
                             .foregroundColor(DS.Colors.accentText)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
                             .background(Capsule().fill(DS.Colors.accentSubtle))
                     }
                 }
@@ -244,30 +211,36 @@ private struct PickySessionDetailView: View {
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 11))
                     .onSubmit { submitFollowUp() }
-                Button("Send") { submitFollowUp() }
-                    .disabled(followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                iconButton(
+                    systemName: "paperplane.fill",
+                    help: "Send follow-up",
+                    disabled: followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    action: submitFollowUp
+                )
             }
 
-            HStack(spacing: 8) {
-                Button("Open report") { Task { try? await viewModel.openReport(sessionID: session.id) } }
-                    .disabled(session.reportArtifact == nil)
-                Button("Debug") { viewModel.openTerminalDebug(sessionID: session.id) }
-                Button("Follow up") { viewModel.select(sessionID: session.id) }
-                Button("Stop") { Task { try? await viewModel.abort(sessionID: session.id) } }
-                    .disabled(session.status.isTerminal)
-                Button("Copy") { viewModel.copySummary(sessionID: session.id) }
-                Button("Archive") { viewModel.archive(sessionID: session.id) }
+            HStack(spacing: 10) {
+                iconButton(systemName: "doc.text.magnifyingglass", help: "Open report", disabled: session.reportArtifact == nil) {
+                    Task { try? await viewModel.openReport(sessionID: session.id) }
+                }
+                iconButton(systemName: "terminal", help: "Open debug folder") {
+                    viewModel.openTerminalDebug(sessionID: session.id)
+                }
+                iconButton(systemName: "text.bubble", help: "Use this session for voice follow-up") {
+                    viewModel.select(sessionID: session.id)
+                }
+                iconButton(systemName: "stop.circle", help: "Stop session", disabled: session.status.isTerminal) {
+                    Task { try? await viewModel.abort(sessionID: session.id) }
+                }
+                iconButton(systemName: "doc.on.doc", help: "Copy summary") {
+                    viewModel.copySummary(sessionID: session.id)
+                }
+                iconButton(systemName: "archivebox", help: "Archive session") {
+                    viewModel.archive(sessionID: session.id)
+                }
+                Spacer(minLength: 0)
             }
-            .font(.system(size: 11, weight: .medium))
-            .buttonStyle(.plain)
-            .foregroundColor(DS.Colors.textSecondary)
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(DS.Colors.surface1.opacity(0.96))
-                .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.65), lineWidth: 1))
-        )
     }
 
     private func submitFollowUp() {
@@ -276,15 +249,56 @@ private struct PickySessionDetailView: View {
         Task { try? await viewModel.followUp(text: text, sessionID: session.id) }
     }
 
-    private func detailSection(title: String, text: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(DS.Colors.textTertiary)
+    private func metaRow(icon: String, text: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .medium))
+                .frame(width: 12)
             Text(text)
-                .font(.system(size: 12))
+                .font(.system(size: 10.5))
+                .lineLimit(1)
+        }
+        .foregroundColor(DS.Colors.textTertiary)
+    }
+
+    private func detailSection(title: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            detailTitle(title)
+            Text(text)
+                .font(.system(size: 11.5))
                 .foregroundColor(DS.Colors.textSecondary)
                 .lineLimit(3)
+        }
+    }
+
+    private func detailTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 10.5, weight: .semibold))
+            .foregroundColor(DS.Colors.textTertiary)
+    }
+
+    private func iconButton(systemName: String, help: String, disabled: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 18, height: 18)
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(DS.Colors.textSecondary)
+        .opacity(disabled ? 0.35 : 1)
+        .disabled(disabled)
+        .help(help)
+    }
+
+    private var statusColor: Color {
+        switch session.status {
+        case .queued: DS.Colors.textTertiary
+        case .running: DS.Colors.accentText
+        case .waiting_for_input: DS.Colors.warning
+        case .blocked: DS.Colors.warningText
+        case .completed: DS.Colors.success
+        case .failed: DS.Colors.destructiveText
+        case .cancelled: DS.Colors.textTertiary
         }
     }
 }

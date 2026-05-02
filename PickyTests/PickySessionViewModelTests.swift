@@ -178,6 +178,7 @@ struct PickySessionViewModelTests {
         #expect(!PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 80, targetHeight: 320, deferShrink: true))
         #expect(!PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 320, targetHeight: 80, deferShrink: false))
         #expect(PickyHUDExpansion.panelShrinkDelay > PickyHUDExpansion.duration)
+        #expect(PickyHUDExpansion.anchorsContentToPanelTopDuringDeferredShrink)
     }
 
     @Test func hudExpandedContentShowsFullSummaryAndHidesRecentLog() throws {

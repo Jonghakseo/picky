@@ -26,6 +26,8 @@ enum PickyHUDExpansion {
         return measuredHeight > 0 ? measuredHeight : nil
     }
 
+    static let anchorsContentToPanelTopDuringDeferredShrink = true
+
     static func shouldDeferPanelShrink(currentHeight: CGFloat, targetHeight: CGFloat, deferShrink: Bool) -> Bool {
         deferShrink && targetHeight < currentHeight - 1
     }
@@ -179,8 +181,8 @@ struct PickyHUDView: View {
             }
         }
         .padding(8)
-        .frame(maxWidth: .infinity, alignment: .topTrailing)
         .background(PickyHUDSizeReader())
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: onSizeChange)
     }
 }

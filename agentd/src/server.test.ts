@@ -6,7 +6,7 @@ import WebSocket from "ws";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PROTOCOL_VERSION, type EventEnvelope, type PickyAgentSession } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
-import { AgentdServer, compactSessionsForSnapshot } from "./server.js";
+import { AgentdServer, compactSessionsForSnapshot, sanitizeForJson } from "./server.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 
@@ -47,6 +47,22 @@ describe("AgentdServer", () => {
     expect(snapshot.type).toBe("sessionSnapshot");
     if (snapshot.type === "sessionSnapshot") expect(snapshot.sessions).toEqual([]);
     ws.close();
+  });
+
+  it("sanitizes unpaired surrogate strings before JSON serialization", () => {
+    const sanitized = sanitizeForJson({
+      brokenHigh: "tool output: \uD83C",
+      brokenLow: "tool output: \uDF3A",
+      validPair: "tool output: \uD83C\uDF3A",
+      nested: [{ preview: "bash: \uD83C" }],
+    });
+
+    expect(sanitized.brokenHigh).toBe("tool output: �");
+    expect(sanitized.brokenLow).toBe("tool output: �");
+    expect(sanitized.validPair).toBe("tool output: 🌺");
+    expect(sanitized.nested[0].preview).toBe("bash: �");
+    expect(JSON.stringify(sanitized)).not.toContain("\\ud83c");
+    expect(JSON.stringify(sanitized)).not.toContain("\\udf3a");
   });
 
   it("compacts large session logs for session snapshots", () => {

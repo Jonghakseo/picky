@@ -8,6 +8,24 @@
 import AppKit
 import SwiftUI
 
+enum PickyHUDExpansion {
+    static let duration: TimeInterval = 0.22
+    static let animation = Animation.easeInOut(duration: duration)
+
+    static func cardSpacing(isExpanded: Bool) -> CGFloat {
+        isExpanded ? 9 : 0
+    }
+
+    static func cardVerticalPadding(isExpanded: Bool) -> CGFloat {
+        isExpanded ? 10 : 8
+    }
+
+    static func contentFrameHeight(isExpanded: Bool, measuredHeight: CGFloat) -> CGFloat? {
+        guard isExpanded else { return 0 }
+        return measuredHeight > 0 ? measuredHeight : nil
+    }
+}
+
 @MainActor
 final class PickyHUDOverlayManager {
     private let viewModel: PickySessionListViewModel
@@ -49,7 +67,10 @@ final class PickyHUDOverlayManager {
         hudPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
         let hostingView = NSHostingView(rootView: PickyHUDView(viewModel: viewModel) { [weak self] size in
-            self?.resizePanel(toContentSize: size, animated: true)
+            // SwiftUI animates the card reveal itself. Keep the transparent NSPanel
+            // tightly anchored to the current layout frame instead of starting a
+            // second window-frame animation that can lag behind the content.
+            self?.resizePanel(toContentSize: size, animated: false)
         }.frame(width: width))
         hostingView.frame = NSRect(x: 0, y: 0, width: width, height: collapsedHeight)
         hostingView.autoresizingMask = [.width, .height]
@@ -75,7 +96,7 @@ final class PickyHUDOverlayManager {
         guard panel.frame.integral != targetFrame.integral else { return }
         if animated {
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.18
+                context.duration = PickyHUDExpansion.duration
                 context.allowsImplicitAnimation = true
                 panel.animator().setFrame(targetFrame, display: true)
             }
@@ -105,7 +126,7 @@ struct PickyHUDView: View {
                         isExpanded: expandedSessionID == session.id,
                         viewModel: viewModel,
                         onToggle: {
-                            withAnimation(.easeInOut(duration: 0.20)) {
+                            withAnimation(PickyHUDExpansion.animation) {
                                 expandedSessionID = expandedSessionID == session.id ? nil : session.id
                             }
                         }
@@ -137,6 +158,54 @@ private struct PickyHUDSizeReader: View {
     }
 }
 
+private struct PickyHUDCollapsibleContentHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let next = nextValue()
+        if next > 0 { value = next }
+    }
+}
+
+private struct PickyHUDCollapsibleContent<Content: View>: View {
+    let isExpanded: Bool
+    private let content: Content
+    @State private var measuredHeight: CGFloat = 0
+
+    init(isExpanded: Bool, @ViewBuilder content: () -> Content) {
+        self.isExpanded = isExpanded
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .fixedSize(horizontal: false, vertical: true)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: PickyHUDCollapsibleContentHeightPreferenceKey.self,
+                        value: proxy.size.height
+                    )
+                }
+            )
+            .frame(
+                height: PickyHUDExpansion.contentFrameHeight(
+                    isExpanded: isExpanded,
+                    measuredHeight: measuredHeight
+                ),
+                alignment: .top
+            )
+            .opacity(isExpanded ? 1 : 0)
+            .clipped()
+            .allowsHitTesting(isExpanded)
+            .accessibilityHidden(!isExpanded)
+            .animation(PickyHUDExpansion.animation, value: isExpanded)
+            .onPreferenceChange(PickyHUDCollapsibleContentHeightPreferenceKey.self) { height in
+                measuredHeight = height
+            }
+    }
+}
+
 private struct PickySessionCardView: View {
     let session: PickySessionListViewModel.SessionCard
     let isExpanded: Bool
@@ -145,26 +214,21 @@ private struct PickySessionCardView: View {
     @State private var followUpText = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: isExpanded ? 9 : 0) {
+        VStack(alignment: .leading, spacing: PickyHUDExpansion.cardSpacing(isExpanded: isExpanded)) {
             header
-            if isExpanded {
+            PickyHUDCollapsibleContent(isExpanded: isExpanded) {
                 expandedContent
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .top).combined(with: .opacity),
-                        removal: .move(edge: .top).combined(with: .opacity)
-                    ))
-                    .clipped()
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, isExpanded ? 10 : 8)
+        .padding(.vertical, PickyHUDExpansion.cardVerticalPadding(isExpanded: isExpanded))
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(DS.Colors.surface1.opacity(0.95))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.65), lineWidth: 1))
                 .shadow(color: Color.black.opacity(0.28), radius: 12, x: 0, y: 7)
         )
-        .animation(.easeInOut(duration: 0.20), value: isExpanded)
+        .animation(PickyHUDExpansion.animation, value: isExpanded)
     }
 
     private var header: some View {
@@ -177,9 +241,11 @@ private struct PickySessionCardView: View {
                 .foregroundColor(DS.Colors.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: 4)
-            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+            Image(systemName: "chevron.down")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(DS.Colors.textTertiary)
+                .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                .animation(PickyHUDExpansion.animation, value: isExpanded)
         }
         .contentShape(Rectangle())
         .onTapGesture(perform: onToggle)

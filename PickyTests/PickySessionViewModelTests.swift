@@ -163,6 +163,14 @@ struct PickySessionViewModelTests {
         #expect(PickySessionStatus.cancelled.hudTone == .other)
     }
 
+    @Test func hudExpansionKeepsCollapsedContentHeightMasked() throws {
+        #expect(PickyHUDExpansion.cardSpacing(isExpanded: false) == 0)
+        #expect(PickyHUDExpansion.cardSpacing(isExpanded: true) > 0)
+        #expect(PickyHUDExpansion.contentFrameHeight(isExpanded: false, measuredHeight: 120) == 0)
+        #expect(PickyHUDExpansion.contentFrameHeight(isExpanded: true, measuredHeight: 120) == 120)
+        #expect(PickyHUDExpansion.contentFrameHeight(isExpanded: true, measuredHeight: 0) == nil)
+    }
+
     @Test func selectionDefaultsForHudButOnlyExplicitSelectionPersistsForVoiceFollowUp() async throws {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()

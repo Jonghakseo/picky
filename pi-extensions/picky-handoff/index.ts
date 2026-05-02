@@ -225,7 +225,7 @@ function parseEventData(data: unknown): Record<string, any> | undefined {
 }
 
 function makeTitle(goal: string, sessionName?: string, cwd?: string): string {
-  const basis = goal || sessionName || cwd || "current Pi session";
+  const basis = sessionName || goal || cwd || "current Pi session";
   return `Pi handoff: ${truncate(basis.replace(/\s+/g, " ").trim(), 44)}`;
 }
 

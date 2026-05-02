@@ -55,23 +55,31 @@ class OverlayWindow: NSWindow {
 private struct PiCursorIconView: View {
     var body: some View {
         ZStack {
-            Text("π")
-                .font(.system(size: 20, weight: .black, design: .rounded))
-                .foregroundColor(DS.Colors.overlayCursorBlue.opacity(0.28))
-                .blur(radius: 3)
-                .scaleEffect(1.2)
+            Image("PiSymbol")
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
+                .foregroundColor(DS.Colors.overlayCursorBlue.opacity(0.32))
+                .frame(width: 17, height: 17)
+                .blur(radius: 1.8)
+                .scaleEffect(1.18)
 
-            Text("π")
-                .font(.system(size: 19, weight: .black, design: .rounded))
+            Image("PiSymbol")
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
                 .foregroundColor(DS.Colors.overlayCursorBlue)
+                .frame(width: 15, height: 15)
 
-            Text("π")
-                .font(.system(size: 19, weight: .black, design: .rounded))
-                .foregroundColor(.white.opacity(0.2))
-                .offset(x: -0.7, y: -0.8)
+            Image("PiSymbol")
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
+                .foregroundColor(.white.opacity(0.16))
+                .frame(width: 15, height: 15)
+                .offset(x: -0.4, y: -0.4)
         }
         .frame(width: 22, height: 22)
-        .offset(y: -1)
     }
 }
 

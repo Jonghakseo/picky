@@ -501,19 +501,6 @@ struct PickySessionViewModelTests {
         #expect(environment.contains("LC_CTYPE=en_US.UTF-8"))
     }
 
-    @Test func terminalDebugConfigurationReadsEnvironment() throws {
-        let config = PickyTerminalDebugConfiguration.fromEnvironment([
-            "PICKY_TERMINAL_DEBUG_SESSION": "~/debug-session.jsonl",
-            "PICKY_TERMINAL_DEBUG_CWD": "~/debug-cwd",
-            "PICKY_TERMINAL_DEBUG_TITLE": "Debug title",
-        ])
-
-        #expect(config?.sessionFilePath.hasSuffix("/debug-session.jsonl") == true)
-        #expect(config?.cwd?.hasSuffix("/debug-cwd") == true)
-        #expect(config?.title == "Debug title")
-        #expect(PickyTerminalDebugConfiguration.fromEnvironment([:]) == nil)
-    }
-
     @Test func piSessionFileSyncerReadsLastActiveUserAndAssistantMessages() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("picky-pi-sync-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

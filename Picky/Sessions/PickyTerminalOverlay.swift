@@ -361,10 +361,6 @@ struct PickySwiftTermViewRepresentable: NSViewRepresentable {
 }
 
 final class PickySwiftTermView: LocalProcessTerminalView {
-    private var imeLoggingEnabled: Bool {
-        ProcessInfo.processInfo.environment["PICKY_TERMINAL_DEBUG_IME_LOG"] == "1"
-    }
-
     func configurePickyAppearance() {
         font = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
         nativeForegroundColor = NSColor(calibratedWhite: 0.90, alpha: 1)
@@ -379,33 +375,13 @@ final class PickySwiftTermView: LocalProcessTerminalView {
     override func insertText(_ string: Any, replacementRange: NSRange) {
         if let text = terminalInputString(from: string), shouldBypassKittyKeyboardForIMECommit(text) {
             applyTerminalReplacementIfNeeded(for: string, replacementRange: replacementRange)
-            logIME("unicode commit bypass range=\(format(replacementRange)) selected=\(format(super.selectedRange())) text=\(text.debugDescription)")
             super.unmarkText()
             send(txt: text)
             return
         }
 
-        if applyTerminalReplacementIfNeeded(for: string, replacementRange: replacementRange) {
-            logIME("replacement backspace count=\(replacementRange.length) range=\(format(replacementRange)) selected=\(format(super.selectedRange())) text=\(describeInput(string))")
-        } else {
-            logIME("insert range=\(format(replacementRange)) selected=\(format(super.selectedRange())) text=\(describeInput(string))")
-        }
+        applyTerminalReplacementIfNeeded(for: string, replacementRange: replacementRange)
         super.insertText(string, replacementRange: replacementRange)
-    }
-
-    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
-        logIME("marked selected=\(format(selectedRange)) replacement=\(format(replacementRange)) text=\(describeInput(string))")
-        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
-    }
-
-    override func unmarkText() {
-        logIME("unmark marked=\(format(super.markedRange())) selected=\(format(super.selectedRange()))")
-        super.unmarkText()
-    }
-
-    override func send(source: TerminalView, data: ArraySlice<UInt8>) {
-        logIME("send bytes=\(data.map { String(format: "%02X", $0) }.joined(separator: " ")) text=\(String(bytes: data, encoding: .utf8)?.debugDescription ?? "nil")")
-        super.send(source: source, data: data)
     }
 
     private func shouldBypassKittyKeyboardForIMECommit(_ text: String) -> Bool {
@@ -450,25 +426,6 @@ final class PickySwiftTermView: LocalProcessTerminalView {
             return attributed.string
         default:
             return nil
-        }
-    }
-
-    private func describeInput(_ value: Any) -> String {
-        terminalInputString(from: value)?.debugDescription ?? "nil"
-    }
-
-    private func format(_ range: NSRange) -> String {
-        if range.location == NSNotFound {
-            return "{NSNotFound,\(range.length)}"
-        }
-        return "{\(range.location),\(range.length)}"
-    }
-
-    private func logIME(_ message: String) {
-        guard imeLoggingEnabled else { return }
-        let line = "🧪 IME \(message)\n"
-        if let data = line.data(using: .utf8) {
-            FileHandle.standardOutput.write(data)
         }
     }
 }

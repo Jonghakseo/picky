@@ -541,23 +541,34 @@ Do not silently downgrade or override Pi's configured permissions; display them.
 - Session archive/search.
 - App settings UI.
 
-## 16. Open Questions
+## 16. Resolved Questions
 
 1. Should `picky-agentd` run as a child process of Picky.app or as a LaunchAgent?
-   - MVP: child process.
-   - Later: LaunchAgent for persistence across app restarts.
+   - **Decision**: run `picky-agentd` as a child process of Picky.app for v1/MVP.
+   - Rationale: prioritize implementation speed and simple lifecycle control. Picky starts the daemon on app launch and owns shutdown/restart behavior.
+   - Not in MVP: LaunchAgent persistence across app restarts. Revisit only after the core long-running session UX is validated.
 
 2. Should Picky use the same `~/.pi/agent` session directory or a Picky-specific session directory?
-   - Recommendation: use normal Pi sessions for transparency, plus Picky metadata in Application Support.
+   - **Decision**: use normal Pi session storage plus separate Picky metadata.
+   - Pi session JSONL files stay in the standard `~/.pi/agent/sessions` location so Ghostty/Pi and Picky can inspect or resume the same underlying sessions.
+   - Picky-specific state stays under `~/Library/Application Support/Picky/`, including overlay card metadata, task status, screenshots, reports, logs, and app-level artifacts.
 
 3. Should the app default to `~/Product` or infer cwd from frontmost terminal/editor?
-   - Recommendation: default to `~/Product`, allow quick override.
+   - **Decision**: make the default working directory configurable in Picky settings.
+   - Initial/default value can be `~/Product` for the user's current Creatrip workflow, but it must be editable from the app settings.
+   - Each task should use the configured default unless the user explicitly overrides the cwd from the overlay/session controls.
+   - Do not rely on fragile frontmost terminal/editor cwd inference for v1.
 
 4. How should extension UI be bridged in SDK mode?
-   - Need implementation spike. RPC mode has a documented extension UI protocol; SDK mode may require custom extension UI hooks or a daemon-side adapter.
+   - **Decision**: support Pi extension UI requests with native Picky UI from v1.
+   - Confirm/select/input/editor-style requests should surface through macOS-native overlay or modal components instead of falling back to the terminal.
+   - `picky-agentd` must expose an app-facing extension UI bridge so Pi sessions can pause in `waiting_for_input` and resume after the user answers in Picky.
+   - Implementation note: study Pi RPC's documented `extension_ui_request` semantics and mirror the same concepts in the SDK-backed daemon/app protocol.
 
 5. How much of public Clicky should be kept versus rewritten?
-   - Recommendation: keep macOS-specific working parts first, then gradually refactor into Picky names/modules.
+   - **Decision**: fork/copy the public Clicky source and incrementally refactor it into Picky.
+   - Rationale: preserve working macOS primitives first: menu bar, hotkey, permissions, ScreenCaptureKit, overlay/cursor, and push-to-talk behavior.
+   - Refactor direction: remove remote backend/analytics/SaaS pieces early, then rename/reorganize modules around Picky concepts as the Pi-backed long-running agent UX stabilizes.
 
 ## 17. References
 
@@ -579,3 +590,20 @@ Do not silently downgrade or override Pi's configured permissions; display them.
 - `https://github.com/farzaa/clicky/`
 - Local analysis clone: `/tmp/clicky-re/upstream`
 - Key architecture doc: `/tmp/clicky-re/upstream/CLAUDE.md`
+
+### Local installed Clicky app reference
+
+Use the locally installed Clicky app as a behavioral/product reference for long-running agent UX, not as code to copy blindly.
+
+- Installed app bundle: `/Applications/Clicky.app`
+- Main binary for strings/symbol inspection: `/Applications/Clicky.app/Contents/MacOS/Clicky`
+- Bundle metadata: `/Applications/Clicky.app/Contents/Info.plist`
+- Build info: `/Applications/Clicky.app/Contents/Resources/ClickyBuildInfo.plist`
+- Embedded app notes: `/Applications/Clicky.app/Contents/Resources/AGENTS.md`
+- Embedded model instructions: `/Applications/Clicky.app/Contents/Resources/ClickyModelInstructions.md`
+- Bundled skills: `/Applications/Clicky.app/Contents/Resources/ClickyBundledSkills/`
+- Bundled wiki seed: `/Applications/Clicky.app/Contents/Resources/ClickyBundledWikiSeed/`
+- Bundled Codex runtime reference: `/Applications/Clicky.app/Contents/Resources/CodexRuntime/`
+- User data/runtime state reference: `~/Library/Application Support/Clicky/`
+
+Important constraint: the local Clicky app is a private compiled product. Treat it as a reverse-engineering reference for architecture and UX ideas only. Picky should use public Clicky MIT source plus clean-room reimplementation for private/local Clicky behaviors.

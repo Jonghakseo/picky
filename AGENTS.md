@@ -161,6 +161,21 @@ When working on this project, use these references.
   - `leanring-buddy/MenuBarPanelManager.swift`
   - `leanring-buddy/WindowPositionManager.swift`
 
+### Local installed Clicky app reference
+
+Use the local Clicky app as a product/behavior reference for long-running agent UX. Do not treat private compiled code as implementation to copy; use clean-room reimplementation for Picky.
+
+- App bundle: `/Applications/Clicky.app`
+- Binary for strings/symbol inspection: `/Applications/Clicky.app/Contents/MacOS/Clicky`
+- App metadata: `/Applications/Clicky.app/Contents/Info.plist`
+- Build metadata: `/Applications/Clicky.app/Contents/Resources/ClickyBuildInfo.plist`
+- Embedded notes: `/Applications/Clicky.app/Contents/Resources/AGENTS.md`
+- Embedded model instructions: `/Applications/Clicky.app/Contents/Resources/ClickyModelInstructions.md`
+- Bundled skills: `/Applications/Clicky.app/Contents/Resources/ClickyBundledSkills/`
+- Bundled wiki seed: `/Applications/Clicky.app/Contents/Resources/ClickyBundledWikiSeed/`
+- Bundled Codex runtime reference: `/Applications/Clicky.app/Contents/Resources/CodexRuntime/`
+- User data/runtime state: `~/Library/Application Support/Clicky/`
+
 ### Pi docs
 
 Read relevant Pi docs before implementing Pi integration:
@@ -194,6 +209,47 @@ Follow `ARCHITECTURE.md`, but the high-level order is:
 6. Add follow-up voice/text into selected session.
 7. Persist reports/artifacts/session metadata.
 8. Add advanced context capture and polish.
+
+## Packaging and signing usage
+
+Keep normal project build/test fast. Do **not** flip the Xcode project defaults to always sign the app just to verify packaging; that made hosted Swift tests slow during smoke validation.
+
+Use the separate package script when a signed local app bundle is needed:
+
+```bash
+./scripts/package-signed-app.sh
+```
+
+Default behavior:
+
+- Builds scheme `Picky` in `Release` configuration.
+- Uses ad-hoc `Sign to Run Locally` signing (`PICKY_CODE_SIGN_IDENTITY=-`).
+- Verifies the exported app with `codesign --verify --deep --strict --verbose=2`.
+- Writes output to `build/package/export/Picky.app`.
+- Writes a zip to `build/package/Picky-Release-signed.zip`.
+
+For Developer ID signing, pass identity/team through env instead of editing the project defaults:
+
+```bash
+PICKY_CODE_SIGN_IDENTITY="Developer ID Application: Example (TEAMID)" \
+PICKY_DEVELOPMENT_TEAM="TEAMID" \
+./scripts/package-signed-app.sh
+```
+
+Runtime smoke for the signed local package:
+
+```bash
+PICKY_AGENTD_RUNTIME=mock \
+PICKY_AGENTD_ROOT="$PWD/agentd" \
+build/package/export/Picky.app/Contents/MacOS/Picky
+```
+
+Expected evidence:
+
+- `picky-agentd listening on 127.0.0.1:17631`
+- app quit closes the daemon/port.
+
+`./scripts/release.sh` currently delegates to `package-signed-app.sh`. A notarized DMG/appcast/GitHub release pipeline is intentionally deferred until Developer ID, notarization credentials, update strategy, and release repository are finalized.
 
 ## Design constraints
 

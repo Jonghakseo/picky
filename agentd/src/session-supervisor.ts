@@ -346,11 +346,29 @@ export class SessionSupervisor extends EventEmitter {
     }
     if (this.isSideSession(sessionId)) this.sideCompletionNotified.delete(sessionId);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
+    const prompt = buildFollowUpPrompt(sessionId, text, context);
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id });
     await this.appendLog(sessionId, `follow-up: ${text}`);
-    await handle.followUp(buildFollowUpPrompt(sessionId, text, context));
     await this.patch(sessionId, { status: "running", lastSummary: "Follow-up queued", finalAnswer: undefined });
+    this.queueFollowUpDelivery(sessionId, handle, prompt);
     return this.mustGet(sessionId);
+  }
+
+  private queueFollowUpDelivery(sessionId: string, handle: RuntimeSessionHandle, prompt: ReturnType<typeof buildFollowUpPrompt>): void {
+    // Pi SDK followUp may resolve only after an idle session finishes its whole next turn.
+    // Picky follow-ups are enqueue semantics, so do not hold the caller/main-agent tool open.
+    void handle.followUp(prompt)
+      .then(() => logAgentd("follow-up delivery finished", { sessionId }))
+      .catch((error) => void this.handleFollowUpDeliveryError(sessionId, error));
+  }
+
+  private async handleFollowUpDeliveryError(sessionId: string, error: unknown): Promise<void> {
+    const message = error instanceof Error ? error.message : String(error);
+    logAgentd("follow-up delivery failed", { sessionId, error: message });
+    await this.appendLog(sessionId, `follow-up failed: ${message}`);
+    const current = this.sessions.get(sessionId);
+    if (!current || ["completed", "cancelled"].includes(current.status)) return;
+    await this.patch(sessionId, { status: "failed", lastSummary: `Follow-up failed: ${message}` });
   }
 
   private async tryResumeRuntimeHandle(session: PickyAgentSession): Promise<RuntimeSessionHandle | undefined> {

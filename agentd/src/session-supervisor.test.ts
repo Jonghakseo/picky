@@ -51,6 +51,46 @@ describe("SessionSupervisor", () => {
     await expect(supervisor.followUpSideSession(regular.id, "wrong target")).rejects.toThrow(/not a Picky side agent/);
   });
 
+  it("returns as soon as a side follow-up is queued instead of waiting for that side turn to finish", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    let resolveFollowUp!: () => void;
+    const followUpBlocker = new Promise<void>((resolve) => {
+      resolveFollowUp = resolve;
+    });
+    const runtime = new BlockingFollowUpRuntime(followUpBlocker);
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    runtime.handle?.emit({ type: "assistant_delta", delta: "초기 조사 완료" });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    const followUpPromise = supervisor.followUpSideSession(side.id, "추가로 원인도 정리해줘", context("follow-up"));
+    try {
+      const result = await Promise.race([
+        followUpPromise.then((session) => ({ kind: "session" as const, session })),
+        delay(20).then(() => ({ kind: "timeout" as const })),
+      ]);
+
+      expect(result.kind).toBe("session");
+      if (result.kind === "session") {
+        expect(result.session.status).toBe("running");
+        expect(result.session.logs.some((line) => line.includes("추가로 원인도 정리해줘"))).toBe(true);
+      }
+      expect(runtime.handle?.followUps).toHaveLength(1);
+
+      runtime.handle?.emit({ type: "assistant_delta", delta: "후속 조사 완료" });
+      runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+      await settle();
+      expect(supervisor.get(side.id)?.status).toBe("completed");
+    } finally {
+      resolveFollowUp();
+      await followUpPromise.catch(() => undefined);
+    }
+    await settle();
+    expect(supervisor.get(side.id)?.status).toBe("completed");
+  });
+
   it("restores persisted side-session markers from handoff logs", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const firstSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
@@ -501,8 +541,34 @@ class ManualHandle implements RuntimeSessionHandle {
   }
 }
 
+class BlockingFollowUpRuntime implements AgentRuntime {
+  handle?: BlockingFollowUpHandle;
+
+  constructor(private readonly followUpBlocker: Promise<void>) {}
+
+  async create(_prompt: BuiltPrompt, options: { sessionId?: string }): Promise<RuntimeSessionHandle> {
+    this.handle = new BlockingFollowUpHandle(options.sessionId ?? "manual", this.followUpBlocker);
+    return this.handle;
+  }
+}
+
+class BlockingFollowUpHandle extends ManualHandle {
+  constructor(id: string, private readonly followUpBlocker: Promise<void>) {
+    super(id);
+  }
+
+  async followUp(prompt: BuiltPrompt): Promise<void> {
+    this.followUps.push(prompt);
+    await this.followUpBlocker;
+  }
+}
+
 async function settle(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  await delay(10);
+}
+
+async function delay(milliseconds: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function makeSupervisor(): Promise<SessionSupervisor> {

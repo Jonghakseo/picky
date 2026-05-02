@@ -32,7 +32,6 @@ private final class FakePickyAgentClient: PickyAgentClient {
 
 private final class FakeSelectionStore: PickySessionSelectionStoring {
     var selectedSessionID: String?
-    var activeVoiceFollowUpSessionID: String?
     var hoveredVoiceFollowUpSessionID: String?
 }
 
@@ -262,7 +261,7 @@ struct PickySessionViewModelTests {
         #expect(panel.firstResponder !== probeView)
     }
 
-    @Test func selectionDefaultsForHudButOnlyExplicitSelectionPersistsForVoiceFollowUp() async throws {
+    @Test func selectionDefaultsForHudButOnlyExplicitSelectionPersistsForHoveredVoiceFollowUp() async throws {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
@@ -274,15 +273,6 @@ struct PickySessionViewModelTests {
 
         #expect(viewModel.selectedSession?.id == "newer")
         #expect(selection.selectedSessionID == nil)
-
-        viewModel.beginVoiceFollowUp(sessionID: "older")
-        #expect(viewModel.activeVoiceFollowUpSessionID == "older")
-        #expect(selection.activeVoiceFollowUpSessionID == "older")
-        #expect(selection.selectedSessionID == nil)
-
-        viewModel.endVoiceFollowUp(sessionID: "older")
-        #expect(viewModel.activeVoiceFollowUpSessionID == nil)
-        #expect(selection.activeVoiceFollowUpSessionID == nil)
 
         viewModel.beginHoveredVoiceFollowUp(sessionID: "older")
         #expect(viewModel.hoveredVoiceFollowUpSessionID == "older")

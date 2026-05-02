@@ -432,7 +432,7 @@ final class CompanionManager: ObservableObject {
             pendingAgentResponseStartedAt = nil
             currentVoicePromptPreview = nil
             voicePromptBubbleState = .hidden
-            voiceFollowUpSessionIDForCurrentUtterance = selectionStore.activeVoiceFollowUpSessionID ?? selectionStore.hoveredVoiceFollowUpSessionID
+            voiceFollowUpSessionIDForCurrentUtterance = selectionStore.hoveredVoiceFollowUpSessionID
 
             // Cancel any pending transient hide so the overlay stays visible
             transientHideTask?.cancel()
@@ -527,7 +527,7 @@ final class CompanionManager: ObservableObject {
         contextPacket: PickyContextPacket,
         voiceFollowUpSessionID: String? = nil
     ) async throws -> PickyAgentSubmissionReceipt {
-        if let targetSessionID = voiceFollowUpSessionID ?? selectionStore.activeVoiceFollowUpSessionID ?? selectionStore.hoveredVoiceFollowUpSessionID {
+        if let targetSessionID = voiceFollowUpSessionID ?? selectionStore.hoveredVoiceFollowUpSessionID {
             try await agentClient.send(PickyCommandEnvelope(type: .followUp, context: contextPacket, sessionId: targetSessionID, text: transcript))
             return PickyAgentSubmissionReceipt(sessionID: targetSessionID, message: "")
         }

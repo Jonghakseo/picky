@@ -192,7 +192,6 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var sessions: [SessionCard] = []
     @Published private(set) var archivedSessions: [SessionCard] = []
     @Published private(set) var selectedSessionID: String?
-    @Published private(set) var activeVoiceFollowUpSessionID: String?
     @Published private(set) var hoveredVoiceFollowUpSessionID: String?
     @Published private(set) var lastError: String?
     @Published private(set) var lastOpenedArtifactPath: String?
@@ -224,7 +223,6 @@ final class PickySessionListViewModel: ObservableObject {
         self.archiveStore = archiveStore
         self.artifactPathValidator = artifactPathValidator
         self.selectedSessionID = selectionStore.selectedSessionID
-        self.activeVoiceFollowUpSessionID = selectionStore.activeVoiceFollowUpSessionID
         self.hoveredVoiceFollowUpSessionID = selectionStore.hoveredVoiceFollowUpSessionID
         self.hasExplicitSelection = self.selectedSessionID != nil
     }
@@ -264,20 +262,6 @@ final class PickySessionListViewModel: ObservableObject {
     func submit(transcript: String, context: PickyContextPacket) async throws {
         pickySessionLog("submit context=\(context.id) source=\(context.source) transcriptChars=\(transcript.count)")
         _ = try await client.submit(PickyAgentSubmission(transcript: transcript, context: context))
-    }
-
-    func beginVoiceFollowUp(sessionID: String) {
-        guard sessions.contains(where: { $0.id == sessionID }) else { return }
-        activeVoiceFollowUpSessionID = sessionID
-        selectionStore.activeVoiceFollowUpSessionID = sessionID
-        pickySessionLog("voice follow-up active session=\(sessionID)")
-    }
-
-    func endVoiceFollowUp(sessionID: String) {
-        guard activeVoiceFollowUpSessionID == sessionID else { return }
-        activeVoiceFollowUpSessionID = nil
-        selectionStore.activeVoiceFollowUpSessionID = nil
-        pickySessionLog("voice follow-up cleared session=\(sessionID)")
     }
 
     func beginHoveredVoiceFollowUp(sessionID: String) {
@@ -359,12 +343,6 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    func copySummary(sessionID: String, pasteboard: NSPasteboard = .general) {
-        guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }) else { return }
-        pasteboard.clearContents()
-        pasteboard.setString(session.lastSummary.isEmpty ? session.title : session.lastSummary, forType: .string)
-    }
-
     func resumeInGhostty(sessionID: String, launcher: PickyTerminalResumeLaunching = PickyGhosttyResumeLauncher()) {
         pickySessionLog("resume in Ghostty session=\(sessionID)")
         guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
@@ -396,10 +374,6 @@ final class PickySessionListViewModel: ObservableObject {
             hasExplicitSelection = false
             selectedSessionID = defaultSelectionID()
             selectionStore.selectedSessionID = nil
-        }
-        if activeVoiceFollowUpSessionID == sessionID {
-            activeVoiceFollowUpSessionID = nil
-            selectionStore.activeVoiceFollowUpSessionID = nil
         }
         if hoveredVoiceFollowUpSessionID == sessionID {
             hoveredVoiceFollowUpSessionID = nil
@@ -572,13 +546,6 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     private func syncVoiceFollowUpAfterSessionListChange() {
-        if let activeVoiceFollowUpSessionID, sessions.contains(where: { $0.id == activeVoiceFollowUpSessionID }) {
-            selectionStore.activeVoiceFollowUpSessionID = activeVoiceFollowUpSessionID
-        } else {
-            activeVoiceFollowUpSessionID = nil
-            selectionStore.activeVoiceFollowUpSessionID = nil
-        }
-
         if let hoveredVoiceFollowUpSessionID, sessions.contains(where: { $0.id == hoveredVoiceFollowUpSessionID }) {
             selectionStore.hoveredVoiceFollowUpSessionID = hoveredVoiceFollowUpSessionID
         } else {

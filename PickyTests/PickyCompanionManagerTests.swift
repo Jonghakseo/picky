@@ -31,6 +31,7 @@ private final class FakeVoiceClient: PickyAgentClient {
 private final class FakeVoiceSelectionStore: PickySessionSelectionStoring {
     var selectedSessionID: String?
     var activeVoiceFollowUpSessionID: String?
+    var hoveredVoiceFollowUpSessionID: String?
 }
 
 @MainActor
@@ -53,6 +54,7 @@ struct PickyCompanionManagerTests {
         let selection = FakeVoiceSelectionStore()
         selection.selectedSessionID = "stale-selected-session"
         selection.activeVoiceFollowUpSessionID = "session-active"
+        selection.hoveredVoiceFollowUpSessionID = "session-hovered"
         let manager = CompanionManager(agentClient: client, selectionStore: selection)
         let context = context(source: "voice-follow-up")
 
@@ -64,6 +66,24 @@ struct PickyCompanionManagerTests {
         #expect(client.commands.first?.text == "continue")
         #expect(client.commands.first?.context?.source == "voice-follow-up")
         #expect(receipt.message.isEmpty)
+        #expect(client.submissions.isEmpty)
+    }
+
+    @Test func voiceTranscriptFollowsUpToHoveredVoiceTargetWhenNoActiveTarget() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.selectedSessionID = "stale-selected-session"
+        selection.hoveredVoiceFollowUpSessionID = "session-hovered"
+        let manager = CompanionManager(agentClient: client, selectionStore: selection)
+        let context = context(source: "voice-follow-up")
+
+        let receipt = try await manager.routeVoiceTranscript(transcript: "hover follow-up", contextPacket: context)
+
+        #expect(receipt.sessionID == "session-hovered")
+        #expect(client.commands.first?.type == .followUp)
+        #expect(client.commands.first?.sessionId == "session-hovered")
+        #expect(client.commands.first?.text == "hover follow-up")
+        #expect(client.commands.first?.context?.source == "voice-follow-up")
         #expect(client.submissions.isEmpty)
     }
 

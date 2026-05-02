@@ -366,7 +366,7 @@ final class CompanionManager: ObservableObject {
         case .pressed:
             guard !buddyDictationManager.isDictationInProgress else { return }
             interruptSpokenResponseForVoiceInput()
-            voiceFollowUpSessionIDForCurrentUtterance = selectionStore.activeVoiceFollowUpSessionID
+            voiceFollowUpSessionIDForCurrentUtterance = selectionStore.activeVoiceFollowUpSessionID ?? selectionStore.hoveredVoiceFollowUpSessionID
 
             // Cancel any pending transient hide so the overlay stays visible
             transientHideTask?.cancel()
@@ -462,7 +462,7 @@ final class CompanionManager: ObservableObject {
         contextPacket: PickyContextPacket,
         voiceFollowUpSessionID: String? = nil
     ) async throws -> PickyAgentSubmissionReceipt {
-        if let targetSessionID = voiceFollowUpSessionID ?? selectionStore.activeVoiceFollowUpSessionID {
+        if let targetSessionID = voiceFollowUpSessionID ?? selectionStore.activeVoiceFollowUpSessionID ?? selectionStore.hoveredVoiceFollowUpSessionID {
             try await agentClient.send(PickyCommandEnvelope(type: .followUp, context: contextPacket, sessionId: targetSessionID, text: transcript))
             return PickyAgentSubmissionReceipt(sessionID: targetSessionID, message: "")
         }

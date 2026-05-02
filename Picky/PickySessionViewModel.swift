@@ -165,6 +165,7 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var archivedSessions: [SessionCard] = []
     @Published private(set) var selectedSessionID: String?
     @Published private(set) var activeVoiceFollowUpSessionID: String?
+    @Published private(set) var hoveredVoiceFollowUpSessionID: String?
     @Published private(set) var lastError: String?
     @Published private(set) var lastOpenedArtifactPath: String?
 
@@ -196,6 +197,7 @@ final class PickySessionListViewModel: ObservableObject {
         self.artifactPathValidator = artifactPathValidator
         self.selectedSessionID = selectionStore.selectedSessionID
         self.activeVoiceFollowUpSessionID = selectionStore.activeVoiceFollowUpSessionID
+        self.hoveredVoiceFollowUpSessionID = selectionStore.hoveredVoiceFollowUpSessionID
         self.hasExplicitSelection = self.selectedSessionID != nil
     }
 
@@ -248,6 +250,20 @@ final class PickySessionListViewModel: ObservableObject {
         activeVoiceFollowUpSessionID = nil
         selectionStore.activeVoiceFollowUpSessionID = nil
         pickySessionLog("voice follow-up cleared session=\(sessionID)")
+    }
+
+    func beginHoveredVoiceFollowUp(sessionID: String) {
+        guard sessions.contains(where: { $0.id == sessionID }) else { return }
+        hoveredVoiceFollowUpSessionID = sessionID
+        selectionStore.hoveredVoiceFollowUpSessionID = sessionID
+        pickySessionLog("voice follow-up hovered session=\(sessionID)")
+    }
+
+    func endHoveredVoiceFollowUp(sessionID: String) {
+        guard hoveredVoiceFollowUpSessionID == sessionID else { return }
+        hoveredVoiceFollowUpSessionID = nil
+        selectionStore.hoveredVoiceFollowUpSessionID = nil
+        pickySessionLog("voice follow-up hover cleared session=\(sessionID)")
     }
 
     func followUp(text: String, sessionID: String? = nil) async throws {
@@ -352,6 +368,10 @@ final class PickySessionListViewModel: ObservableObject {
         if activeVoiceFollowUpSessionID == sessionID {
             activeVoiceFollowUpSessionID = nil
             selectionStore.activeVoiceFollowUpSessionID = nil
+        }
+        if hoveredVoiceFollowUpSessionID == sessionID {
+            hoveredVoiceFollowUpSessionID = nil
+            selectionStore.hoveredVoiceFollowUpSessionID = nil
         }
     }
 
@@ -523,6 +543,13 @@ final class PickySessionListViewModel: ObservableObject {
         } else {
             activeVoiceFollowUpSessionID = nil
             selectionStore.activeVoiceFollowUpSessionID = nil
+        }
+
+        if let hoveredVoiceFollowUpSessionID, sessions.contains(where: { $0.id == hoveredVoiceFollowUpSessionID }) {
+            selectionStore.hoveredVoiceFollowUpSessionID = hoveredVoiceFollowUpSessionID
+        } else {
+            hoveredVoiceFollowUpSessionID = nil
+            selectionStore.hoveredVoiceFollowUpSessionID = nil
         }
     }
 

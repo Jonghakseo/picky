@@ -113,6 +113,12 @@ private struct PickySessionCardView: View {
     @State private var followUpText = ""
     @State private var isVoiceFollowUpButtonPressed = false
 
+    private var isVoiceFollowUpTarget: Bool {
+        viewModel.activeVoiceFollowUpSessionID == session.id
+            || viewModel.hoveredVoiceFollowUpSessionID == session.id
+            || isVoiceFollowUpButtonPressed
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: PickyHUDExpansion.cardSpacing(isExpanded: isExpanded)) {
             header
@@ -123,6 +129,16 @@ private struct PickySessionCardView: View {
         .padding(.horizontal, 9)
         .padding(.vertical, PickyHUDExpansion.cardVerticalPadding(isExpanded: isExpanded))
         .background(cardBackground)
+        .onHover { isHovering in
+            if isHovering {
+                viewModel.beginHoveredVoiceFollowUp(sessionID: session.id)
+            } else {
+                viewModel.endHoveredVoiceFollowUp(sessionID: session.id)
+            }
+        }
+        .onDisappear {
+            viewModel.endHoveredVoiceFollowUp(sessionID: session.id)
+        }
     }
 
     private var header: some View {
@@ -140,6 +156,15 @@ private struct PickySessionCardView: View {
             }
             .layoutPriority(1)
             Spacer(minLength: 4)
+            if isVoiceFollowUpTarget {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundColor(DS.Colors.accentText)
+                    .frame(width: 18, height: 18)
+                    .background(Circle().fill(DS.Colors.accentSubtle.opacity(0.95)))
+                    .help("Voice follow-up target")
+                    .transition(.scale.combined(with: .opacity))
+            }
             if let headerStatusLabel {
                 Text(headerStatusLabel)
                     .font(.system(size: 9.5, weight: .semibold))
@@ -430,6 +455,10 @@ private struct PickySessionCardView: View {
     }
 
     private var cardBorderColor: Color {
+        if isVoiceFollowUpTarget {
+            return DS.Colors.accentText.opacity(0.72)
+        }
+
         switch session.status {
         case .waiting_for_input:
             return DS.Colors.warning.opacity(0.55)

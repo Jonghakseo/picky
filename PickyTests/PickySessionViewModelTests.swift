@@ -33,6 +33,7 @@ private final class FakePickyAgentClient: PickyAgentClient {
 private final class FakeSelectionStore: PickySessionSelectionStoring {
     var selectedSessionID: String?
     var activeVoiceFollowUpSessionID: String?
+    var hoveredVoiceFollowUpSessionID: String?
 }
 
 private final class FakeArchiveStore: PickySessionArchiveStoring {
@@ -282,6 +283,14 @@ struct PickySessionViewModelTests {
         viewModel.endVoiceFollowUp(sessionID: "older")
         #expect(viewModel.activeVoiceFollowUpSessionID == nil)
         #expect(selection.activeVoiceFollowUpSessionID == nil)
+
+        viewModel.beginHoveredVoiceFollowUp(sessionID: "older")
+        #expect(viewModel.hoveredVoiceFollowUpSessionID == "older")
+        #expect(selection.hoveredVoiceFollowUpSessionID == "older")
+
+        viewModel.endHoveredVoiceFollowUp(sessionID: "older")
+        #expect(viewModel.hoveredVoiceFollowUpSessionID == nil)
+        #expect(selection.hoveredVoiceFollowUpSessionID == nil)
 
         viewModel.select(sessionID: "older")
         #expect(selection.selectedSessionID == "older")

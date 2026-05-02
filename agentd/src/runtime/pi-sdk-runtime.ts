@@ -48,7 +48,14 @@ export class PiSdkRuntime implements AgentRuntime {
     return handle;
   }
 
-  private async createHandle(options: { cwd?: string; sessionId?: string }): Promise<PiSdkRuntimeSession> {
+  async resume(sessionFilePath: string, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
+    logAgentd("pi runtime resume", { sessionId: options.sessionId, cwd: options.cwd, sessionFilePath });
+    const handle = await this.createHandle({ ...options, sessionFilePath });
+    setTimeout(() => handle.reportDiagnostics(), 0);
+    return handle;
+  }
+
+  private async createHandle(options: { cwd?: string; sessionId?: string; sessionFilePath?: string }): Promise<PiSdkRuntimeSession> {
     const cwd = options.cwd ?? process.cwd();
     const sessionId = options.sessionId ?? "picky-pi-session";
     const createServices = this.options.createServices ?? createAgentSessionServices;
@@ -68,7 +75,7 @@ export class PiSdkRuntime implements AgentRuntime {
     const runtime = await createRuntimeImpl(createRuntime, {
       cwd,
       agentDir,
-      sessionManager: SessionManager.create(cwd),
+      sessionManager: options.sessionFilePath ? SessionManager.open(options.sessionFilePath, undefined, cwd) : SessionManager.create(cwd),
     });
 
     const handle = new PiSdkRuntimeSession(sessionId, runtime);

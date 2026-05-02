@@ -399,7 +399,7 @@ private struct PickySessionCardView: View {
         case .waiting_for_input:
             return "input needed · \(elapsed)"
         case .blocked:
-            return "blocked · \(elapsed)"
+            return session.isRuntimeDetached ? "detached · resume needed · \(elapsed)" : "blocked · \(elapsed)"
         case .completed:
             return session.reportArtifact == nil ? "completed · \(elapsed)" : "report ready · \(elapsed)"
         case .failed:
@@ -412,7 +412,7 @@ private struct PickySessionCardView: View {
     private var headerStatusLabel: String? {
         switch session.status {
         case .waiting_for_input: "waiting"
-        case .blocked: "blocked"
+        case .blocked: session.isRuntimeDetached ? "detached" : "blocked"
         case .completed: "done"
         case .failed: "failed"
         case .queued, .running, .cancelled: nil
@@ -436,6 +436,9 @@ private struct PickySessionCardView: View {
             }
             return "Waiting for your input."
         case .blocked:
+            if session.isRuntimeDetached {
+                return "Picky lost the live Pi runtime after daemon restart. The card stays visible; resume in Ghostty or start a new task if automatic reattach is unavailable."
+            }
             return session.lastSummary.isEmpty ? "This session is blocked." : session.lastSummary
         case .failed:
             return session.lastSummary.isEmpty ? "This session failed. Open the report or logs for details." : session.lastSummary

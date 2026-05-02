@@ -125,7 +125,7 @@ describe("SessionSupervisor", () => {
     expect(restored?.lastSummary).toMatch(/Runtime not attached/);
   });
 
-  it("rejects follow-up for restored sessions without marking them running", async () => {
+  it("rejects follow-up for restored sessions without resumable Pi session state", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const firstSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
     const session = await firstSupervisor.create(context("restore follow up"));
@@ -134,7 +134,35 @@ describe("SessionSupervisor", () => {
 
     await expect(secondSupervisor.followUp(session.id, "continue")).rejects.toThrow(/Runtime session is not attached/);
     expect(secondSupervisor.get(session.id)?.status).toBe("blocked");
-    expect(secondSupervisor.get(session.id)?.lastSummary).toMatch(/Runtime not attached/);
+    expect(secondSupervisor.get(session.id)?.lastSummary).toMatch(/cannot resume saved Pi sessions/);
+  });
+
+  it("reattaches restored sessions from recorded Pi session files before follow-up", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "restored-with-pi-file",
+      title: "Restored side agent",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "Completed before restart",
+      logs: ["pi session: /tmp/pi-session.jsonl"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    });
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+
+    const updated = await supervisor.followUp("restored-with-pi-file", "continue after restart");
+
+    expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/pi-session.jsonl", cwd: "/tmp/project", sessionId: "restored-with-pi-file" }]);
+    expect(runtime.handle?.followUps[0].text).toContain("continue after restart");
+    expect(updated.status).toBe("running");
+    expect(updated.logs).toContain("runtime reattached from pi session: /tmp/pi-session.jsonl");
   });
 
   it("marks task creation failures as failed instead of leaving queued ghosts", async () => {
@@ -355,6 +383,22 @@ class StaticTaskRouter implements TaskRouter {
   constructor(private readonly decision: TaskRouteDecision) {}
   async route(): Promise<TaskRouteDecision> {
     return this.decision;
+  }
+}
+
+class ResumableRuntime implements AgentRuntime {
+  handle?: ManualHandle;
+  resumeCalls: Array<{ sessionFilePath: string; cwd?: string; sessionId?: string }> = [];
+
+  async create(_prompt: BuiltPrompt, options: { sessionId?: string }): Promise<RuntimeSessionHandle> {
+    this.handle = new ManualHandle(options.sessionId ?? "manual");
+    return this.handle;
+  }
+
+  async resume(sessionFilePath: string, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
+    this.resumeCalls.push({ sessionFilePath, cwd: options.cwd, sessionId: options.sessionId });
+    this.handle = new ManualHandle(options.sessionId ?? "manual");
+    return this.handle;
   }
 }
 

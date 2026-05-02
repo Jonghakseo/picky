@@ -398,17 +398,43 @@ struct PickySessionViewModelTests {
         )
         viewModel.start()
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "lost-runtime",
-            title: "Old side agent",
-            status: "blocked",
-            summary: "Runtime not attached after daemon restart; start a new task or resume support is required"
-        ))))
+        client.emit(.protocolEvent(.fixture(eventJSON: """
+        {"id":"snapshot-detached","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionSnapshot","sessions":[{"id":"lost-runtime","title":"Old side agent","status":"blocked","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Runtime not attached after daemon restart; start a new task or resume support is required","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
+        """)))
         try await settle()
 
         #expect(viewModel.sessions.isEmpty)
         #expect(viewModel.archivedSessions.map(\.id) == ["lost-runtime"])
         #expect(archiveStore.archivedSessionIDs == ["lost-runtime"])
+    }
+
+    @Test func runtimeDetachedFollowUpFailureStaysVisible() async throws {
+        let client = FakePickyAgentClient()
+        let archiveStore = FakeArchiveStore()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: archiveStore
+        )
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "followup-detached",
+            title: "Detached side agent",
+            status: "blocked",
+            summary: "Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or resume in Ghostty"
+        ))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(
+            sessionId: "followup-detached",
+            line: "follow-up rejected: Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or resume in Ghostty"
+        ))))
+        try await settle()
+
+        #expect(viewModel.sessions.map(\.id) == ["followup-detached"])
+        #expect(viewModel.sessions.first?.status == .blocked)
+        #expect(viewModel.sessions.first?.isRuntimeDetached == true)
+        #expect(viewModel.archivedSessions.isEmpty)
+        #expect(archiveStore.archivedSessionIDs.isEmpty)
     }
 
     @Test func textFollowUpTargetsSelectedSessionAndRejectsEmptyInput() async throws {

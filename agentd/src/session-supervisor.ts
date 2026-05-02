@@ -295,14 +295,20 @@ export class SessionSupervisor extends EventEmitter {
   async followUp(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
     if (["failed", "cancelled"].includes(session.status)) throw new Error(`Cannot follow up ${session.status} session`);
-    const handle = this.runtimeHandles.get(sessionId);
+    const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
     if (!handle) {
+      const hasPiSessionFile = Boolean(piSessionFilePathFromLogs(session.logs));
+      const reason = this.runtime.resume
+        ? hasPiSessionFile
+          ? "Runtime session is not attached after daemon restart and automatic Pi session reattach failed; start a new task or resume in Ghostty"
+          : "Runtime session is not attached after daemon restart and no Pi session file is available to resume; start a new task or resume in Ghostty"
+        : "Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or resume in Ghostty";
       await this.patch(sessionId, {
         status: "blocked",
-        lastSummary: "Runtime not attached after daemon restart; start a new task or resume support is required",
+        lastSummary: reason,
       });
-      await this.appendLog(sessionId, "follow-up rejected: runtime session is not attached after daemon restart");
-      throw new Error("Runtime session is not attached after daemon restart; start a new task or resume support is required");
+      await this.appendLog(sessionId, `follow-up rejected: ${reason}`);
+      throw new Error(reason);
     }
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id });
@@ -310,6 +316,27 @@ export class SessionSupervisor extends EventEmitter {
     await handle.followUp(buildFollowUpPrompt(sessionId, text, context));
     await this.patch(sessionId, { status: "running", lastSummary: "Follow-up queued", finalAnswer: undefined });
     return this.mustGet(sessionId);
+  }
+
+  private async tryResumeRuntimeHandle(session: PickyAgentSession): Promise<RuntimeSessionHandle | undefined> {
+    if (!this.runtime.resume) return undefined;
+    const sessionFilePath = piSessionFilePathFromLogs(session.logs);
+    if (!sessionFilePath) return undefined;
+
+    try {
+      logAgentd("runtime resume requested", { sessionId: session.id, sessionFilePath });
+      const handle = await this.runtime.resume(sessionFilePath, { cwd: session.cwd, sessionId: session.id });
+      this.runtimeHandles.set(session.id, handle);
+      handle.subscribe((event) => void this.applyRuntimeEvent(session.id, event));
+      await this.appendLog(session.id, `runtime reattached from pi session: ${sessionFilePath}`);
+      await this.patch(session.id, { status: "running", lastSummary: "Runtime reattached from previous Pi session", pendingExtensionUiRequest: undefined });
+      return handle;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logAgentd("runtime resume failed", { sessionId: session.id, sessionFilePath, error: message });
+      await this.appendLog(session.id, `runtime reattach failed: ${message}`);
+      return undefined;
+    }
   }
 
   async steer(sessionId: string, text: string): Promise<PickyAgentSession> {
@@ -388,6 +415,14 @@ function buildPinnedSideSessionLogs(context: PickyContextPacket): string[] {
   if (context.cwd) logs.push(`source cwd: ${context.cwd}`);
   if (context.transcript?.trim()) logs.push(`source transcript:\n${context.transcript.trim()}`);
   return logs;
+}
+
+function piSessionFilePathFromLogs(logs: string[]): string | undefined {
+  for (const line of [...logs].reverse()) {
+    const match = line.match(/^pi session:\s*(.+)$/);
+    if (match?.[1]?.trim()) return match[1].trim();
+  }
+  return undefined;
 }
 
 function hasSideSessionMarkerLog(session: PickyAgentSession): boolean {

@@ -136,6 +136,7 @@ final class PickySessionListViewModel: ObservableObject {
         var changedFiles: [PickyChangedFile]
         var pendingExtensionUiRequest: PickyExtensionUiRequest?
         var piSessionFilePath: String?
+        var hasRuntimeDetachedFollowUpRejection: Bool
 
         var activeTool: PickyToolActivity? {
             tools.last { $0.isActive }
@@ -153,6 +154,12 @@ final class PickySessionListViewModel: ObservableObject {
             artifacts.filter { artifact in
                 artifact.kind == "pr" || artifact.url?.absoluteString.contains("/pull/") == true
             }
+        }
+
+        var isRuntimeDetached: Bool {
+            status == .blocked
+                && (lastSummary.localizedCaseInsensitiveContains("Runtime session is not attached after daemon restart")
+                    || lastSummary.localizedCaseInsensitiveContains("Runtime not attached after daemon restart"))
         }
 
         func elapsedDescription(now: Date = Date()) -> String {
@@ -438,6 +445,9 @@ final class PickySessionListViewModel: ObservableObject {
                 if let piSessionFilePath = SessionCard.piSessionFilePath(fromLogLine: line) {
                     card.piSessionFilePath = piSessionFilePath
                 }
+                if SessionCard.isRuntimeDetachedFollowUpRejection(line) {
+                    card.hasRuntimeDetachedFollowUpRejection = true
+                }
                 card.updatedAt = Date()
             }
         case .toolActivityUpdated(let sessionId, let tool):
@@ -485,11 +495,7 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     private func upsert(_ card: SessionCard) {
-        var archivedIDs = archiveStore.archivedSessionIDs
-        if card.isRuntimeDetachedRestoredSession {
-            archivedIDs.insert(card.id)
-            archiveStore.archivedSessionIDs = archivedIDs
-        }
+        let archivedIDs = archiveStore.archivedSessionIDs
         let shouldArchive = archivedIDs.contains(card.id)
         var incoming = card
         if let existing = (sessions + archivedSessions).first(where: { $0.id == card.id }) {
@@ -594,10 +600,11 @@ private extension PickySessionListViewModel.SessionCard {
         self.changedFiles = session.changedFiles
         self.pendingExtensionUiRequest = session.pendingExtensionUiRequest
         self.piSessionFilePath = session.logs.compactMap(Self.piSessionFilePath(fromLogLine:)).last
+        self.hasRuntimeDetachedFollowUpRejection = session.logs.contains(where: Self.isRuntimeDetachedFollowUpRejection)
     }
 
     var isRuntimeDetachedRestoredSession: Bool {
-        status == .blocked && lastSummary.localizedCaseInsensitiveContains("Runtime not attached after daemon restart")
+        isRuntimeDetached && !hasRuntimeDetachedFollowUpRejection
     }
 
     func merged(with incoming: Self) -> Self {
@@ -612,6 +619,7 @@ private extension PickySessionListViewModel.SessionCard {
         if result.changedFiles.isEmpty { result.changedFiles = changedFiles }
         if result.pendingExtensionUiRequest == nil { result.pendingExtensionUiRequest = pendingExtensionUiRequest }
         if result.piSessionFilePath == nil { result.piSessionFilePath = piSessionFilePath }
+        result.hasRuntimeDetachedFollowUpRejection = result.hasRuntimeDetachedFollowUpRejection || hasRuntimeDetachedFollowUpRejection
         return result
     }
 
@@ -624,6 +632,11 @@ private extension PickySessionListViewModel.SessionCard {
 
     static func isDisplayableLogPreview(_ line: String) -> Bool {
         !line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("extension ui:")
+    }
+
+    static func isRuntimeDetachedFollowUpRejection(_ line: String) -> Bool {
+        line.localizedCaseInsensitiveContains("follow-up rejected:")
+            && line.localizedCaseInsensitiveContains("Runtime session is not attached after daemon restart")
     }
 }
 

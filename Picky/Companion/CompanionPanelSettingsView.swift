@@ -22,20 +22,6 @@ struct CompanionPanelSettingsView: View {
                 )
             }
 
-            CompanionPanelSettingsSection(title: "Agent behavior", subtitle: "Keep the default flow calm and low-risk.") {
-                Toggle(isOn: $viewModel.settings.readOnlyInvestigationPreference) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Prefer read-only investigation")
-                            .font(.system(size: 11.5, weight: .semibold))
-                            .foregroundColor(DS.Colors.textSecondary)
-                        Text("Picky nudges Pi to inspect before changing things.")
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundColor(DS.Colors.textTertiary)
-                    }
-                }
-                .toggleStyle(.switch)
-            }
-
             if let error = viewModel.validationError {
                 Text(error)
                     .font(.system(size: 10.5, weight: .medium))

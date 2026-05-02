@@ -37,6 +37,16 @@ private final class FakeArchiveStore: PickySessionArchiveStoring {
     var archivedSessionIDs = Set<String>()
 }
 
+private final class FakeTerminalResumeLauncher: PickyTerminalResumeLaunching {
+    private(set) var calls: [(sessionFilePath: String, cwd: String?)] = []
+    var error: Error?
+
+    func resume(sessionFilePath: String, cwd: String?) throws {
+        if let error { throw error }
+        calls.append((sessionFilePath, cwd))
+    }
+}
+
 @MainActor
 struct PickySessionViewModelTests {
     @Test func startRequestsPersistedSessionsOnConnect() async throws {
@@ -182,6 +192,27 @@ struct PickySessionViewModelTests {
         #expect(viewModel.archivedSessions.first(where: { $0.id == "side-1" })?.lastSummary == "Updated")
     }
 
+    @Test func resumeInGhosttyUsesCapturedPiSessionFile() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        let launcher = FakeTerminalResumeLauncher()
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "side-1",
+            title: "Side",
+            status: "completed",
+            logs: ["pi session: /tmp/pi-session.jsonl"]
+        ))))
+        try await settle()
+
+        viewModel.resumeInGhostty(sessionID: "side-1", launcher: launcher)
+
+        #expect(launcher.calls.count == 1)
+        #expect(launcher.calls.first?.sessionFilePath == "/tmp/pi-session.jsonl")
+        #expect(launcher.calls.first?.cwd == "/Users/creatrip/Documents/picky")
+        #expect(viewModel.lastError == nil)
+    }
+
     @Test func runtimeDetachedRestoredSessionsAreAutoArchived() async throws {
         let client = FakePickyAgentClient()
         let archiveStore = FakeArchiveStore()
@@ -280,10 +311,12 @@ private enum EventJSON {
         title: String = "Investigate current screen",
         status: String = "running",
         summary: String = "Started",
-        updatedAt: String = "2026-05-01T00:00:00.000Z"
+        updatedAt: String = "2026-05-01T00:00:00.000Z",
+        logs: [String] = []
     ) -> String {
-        """
-        {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
+        let encodedLogs = String(decoding: try! JSONEncoder().encode(logs), as: UTF8.self)
+        return """
+        {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]}}
         """
     }
 

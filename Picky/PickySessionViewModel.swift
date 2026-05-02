@@ -36,12 +36,80 @@ enum PickySessionListViewModelError: LocalizedError, Equatable {
     case emptyFollowUp
     case noSessionSelected
     case missingReport
+    case missingPiSessionFile
 
     var errorDescription: String? {
         switch self {
         case .emptyFollowUp: "Follow-up cannot be empty"
         case .noSessionSelected: "No session selected for follow-up"
         case .missingReport: "Report is not available yet"
+        case .missingPiSessionFile: "Pi session file is not available yet"
+        }
+    }
+}
+
+protocol PickyTerminalResumeLaunching {
+    func resume(sessionFilePath: String, cwd: String?) throws
+}
+
+struct PickyGhosttyResumeLauncher: PickyTerminalResumeLaunching {
+    func resume(sessionFilePath: String, cwd: String?) throws {
+        guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.mitchellh.ghostty") != nil else {
+            throw PickyGhosttyResumeLauncherError.ghosttyNotInstalled
+        }
+
+        let workingDirectory = cwd?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? cwd!
+            : FileManager.default.homeDirectoryForCurrentUser.path
+        let command = "cd \(Self.shellQuoted(workingDirectory)) && exec pi --session \(Self.shellQuoted(sessionFilePath))"
+        let script = """
+        set resumeCommand to \"\(Self.appleScriptString(command))\"
+        set wasRunning to application \"Ghostty\" is running
+        tell application \"Ghostty\" to activate
+        if wasRunning then
+          delay 0.2
+        else
+          delay 0.8
+        end if
+        tell application \"System Events\"
+          tell process \"Ghostty\"
+            if wasRunning then
+              keystroke \"t\" using command down
+              delay 0.15
+            end if
+            set the clipboard to resumeCommand
+            keystroke \"v\" using command down
+            key code 36
+          end tell
+        end tell
+        """
+
+        var errorInfo: NSDictionary?
+        guard NSAppleScript(source: script)?.executeAndReturnError(&errorInfo) != nil else {
+            throw PickyGhosttyResumeLauncherError.appleScriptFailed(errorInfo?.description ?? "Unknown AppleScript error")
+        }
+    }
+
+    private static func shellQuoted(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    private static func appleScriptString(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+    }
+}
+
+enum PickyGhosttyResumeLauncherError: LocalizedError, Equatable {
+    case ghosttyNotInstalled
+    case appleScriptFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .ghosttyNotInstalled: "Ghostty is not installed."
+        case .appleScriptFailed(let message): "Failed to open Ghostty: \(message)"
         }
     }
 }
@@ -61,6 +129,7 @@ final class PickySessionListViewModel: ObservableObject {
         var artifacts: [PickyArtifact]
         var changedFiles: [PickyChangedFile]
         var pendingExtensionUiRequest: PickyExtensionUiRequest?
+        var piSessionFilePath: String?
 
         var activeTool: PickyToolActivity? {
             tools.last { $0.isActive }
@@ -226,6 +295,20 @@ final class PickySessionListViewModel: ObservableObject {
         workspace.open(URL(fileURLWithPath: cwd))
     }
 
+    func resumeInGhostty(sessionID: String, launcher: PickyTerminalResumeLaunching = PickyGhosttyResumeLauncher()) {
+        guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
+              let piSessionFilePath = session.piSessionFilePath else {
+            lastError = PickySessionListViewModelError.missingPiSessionFile.localizedDescription
+            return
+        }
+        do {
+            try launcher.resume(sessionFilePath: piSessionFilePath, cwd: session.cwd)
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     func archive(sessionID: String) {
         var archivedIDs = archiveStore.archivedSessionIDs
         archivedIDs.insert(sessionID)
@@ -292,6 +375,9 @@ final class PickySessionListViewModel: ObservableObject {
         case .sessionLogAppended(let sessionId, let line):
             update(sessionID: sessionId) { card in
                 card.logPreview = line
+                if let piSessionFilePath = SessionCard.piSessionFilePath(fromLogLine: line) {
+                    card.piSessionFilePath = piSessionFilePath
+                }
                 card.updatedAt = Date()
             }
         case .toolActivityUpdated(let sessionId, let tool):
@@ -426,6 +512,7 @@ private extension PickySessionListViewModel.SessionCard {
         self.artifacts = session.artifacts
         self.changedFiles = session.changedFiles
         self.pendingExtensionUiRequest = session.pendingExtensionUiRequest
+        self.piSessionFilePath = session.logs.compactMap(Self.piSessionFilePath(fromLogLine:)).last
     }
 
     var isRuntimeDetachedRestoredSession: Bool {
@@ -443,7 +530,15 @@ private extension PickySessionListViewModel.SessionCard {
         if result.artifacts.isEmpty { result.artifacts = artifacts }
         if result.changedFiles.isEmpty { result.changedFiles = changedFiles }
         if result.pendingExtensionUiRequest == nil { result.pendingExtensionUiRequest = pendingExtensionUiRequest }
+        if result.piSessionFilePath == nil { result.piSessionFilePath = piSessionFilePath }
         return result
+    }
+
+    static func piSessionFilePath(fromLogLine line: String) -> String? {
+        let prefix = "pi session: "
+        guard line.hasPrefix(prefix) else { return nil }
+        let path = String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return path.isEmpty ? nil : path
     }
 }
 

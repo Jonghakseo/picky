@@ -227,6 +227,9 @@ private struct PickySessionCardView: View {
                 iconButton(systemName: "terminal", help: "Open debug folder") {
                     viewModel.openTerminalDebug(sessionID: session.id)
                 }
+                iconButton(systemName: "play.rectangle", help: "Resume in Ghostty", disabled: session.piSessionFilePath == nil) {
+                    viewModel.resumeInGhostty(sessionID: session.id)
+                }
                 iconButton(systemName: "text.bubble", help: "Use this session for voice follow-up") {
                     viewModel.select(sessionID: session.id)
                 }

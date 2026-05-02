@@ -50,6 +50,18 @@ enum PickySessionListViewModelError: LocalizedError, Equatable {
     }
 }
 
+protocol PickyClipboardWriting {
+    func copy(_ text: String)
+}
+
+struct PickyPasteboardClipboardWriter: PickyClipboardWriting {
+    func copy(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+}
+
 @MainActor
 final class PickySessionListViewModel: ObservableObject {
     struct SessionCard: Equatable, Identifiable {
@@ -137,6 +149,7 @@ final class PickySessionListViewModel: ObservableObject {
     private let selectionStore: PickySessionSelectionStoring
     private let archiveStore: PickySessionArchiveStoring
     private let artifactPathValidator: PickyArtifactPathValidator
+    private let clipboardWriter: PickyClipboardWriting
     private let terminalPresenter: PickyTerminalOverlayPresenting
     private let terminalSessionSyncer: PickyTerminalSessionSyncing
     private var eventTask: Task<Void, Never>?
@@ -149,6 +162,7 @@ final class PickySessionListViewModel: ObservableObject {
         selectionStore: PickySessionSelectionStoring = PickyUserDefaultsSessionSelectionStore.shared,
         archiveStore: PickySessionArchiveStoring = PickyUserDefaultsSessionArchiveStore.shared,
         artifactPathValidator: PickyArtifactPathValidator = PickyArtifactPathValidator(appSupportRoot: PickyAppSupport.defaultRoot()),
+        clipboardWriter: PickyClipboardWriting = PickyPasteboardClipboardWriter(),
         terminalPresenter: PickyTerminalOverlayPresenting? = nil,
         terminalSessionSyncer: PickyTerminalSessionSyncing = PickyPiSessionFileSyncer()
     ) {
@@ -157,6 +171,7 @@ final class PickySessionListViewModel: ObservableObject {
         self.selectionStore = selectionStore
         self.archiveStore = archiveStore
         self.artifactPathValidator = artifactPathValidator
+        self.clipboardWriter = clipboardWriter
         self.terminalPresenter = terminalPresenter ?? PickyTerminalOverlayPresenter.shared
         self.terminalSessionSyncer = terminalSessionSyncer
         self.selectedSessionID = selectionStore.selectedSessionID
@@ -287,6 +302,23 @@ final class PickySessionListViewModel: ObservableObject {
         } else {
             try await client.send(PickyCommandEnvelope(type: .openArtifact, sessionId: sessionID, artifactId: artifact.id))
         }
+    }
+
+    func copyTerminalResumeCommand(sessionID: String) {
+        pickySessionLog("copy terminal resume command session=\(sessionID)")
+        guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
+              let piSessionFilePath = session.piSessionFilePath else {
+            lastError = PickySessionListViewModelError.missingPiSessionFile.localizedDescription
+            return
+        }
+        let command = PickyPiTerminalCommand.makeCliResumeCommand(sessionFilePath: piSessionFilePath, cwd: session.cwd)
+        clipboardWriter.copy(command)
+        notificationCenter.deliver(
+            title: "Pi resume command copied",
+            body: "Paste it in a terminal to resume this session.",
+            identifier: "picky-resume-command-\(sessionID)"
+        )
+        lastError = nil
     }
 
     func openTerminalOverlay(sessionID: String) {
@@ -601,10 +633,22 @@ private extension PickySessionListViewModel.SessionCard {
     }
 
     static func piSessionFilePath(fromLogLine line: String) -> String? {
-        let prefix = "pi session: "
-        guard line.hasPrefix(prefix) else { return nil }
-        let path = String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
-        return path.isEmpty ? nil : path
+        for candidate in line.components(separatedBy: .newlines) {
+            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            for prefix in ["pi session: ", "- Session file: "] {
+                guard trimmed.hasPrefix(prefix) else { continue }
+                let path = String(trimmed.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if isUsablePiSessionFilePath(path) { return path }
+            }
+        }
+        return nil
+    }
+
+    private static func isUsablePiSessionFilePath(_ path: String) -> Bool {
+        !path.isEmpty
+            && !path.hasPrefix("(")
+            && path != "ephemeral"
+            && path != "unavailable"
     }
 
     static func isDisplayableLogPreview(_ line: String) -> Bool {

@@ -111,9 +111,15 @@ private struct PickySessionCardView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     let onToggle: () -> Void
     @State private var followUpText = ""
+    @State private var gitStatus: PickyGitRepositoryStatus?
+    @State private var isGitSectionExpanded = true
 
     private var isVoiceFollowUpTarget: Bool {
         viewModel.hoveredVoiceFollowUpSessionID == session.id
+    }
+
+    private var gitStatusRefreshKey: String {
+        "\(session.cwd ?? "")|\(session.updatedAt.timeIntervalSince1970)"
     }
 
     var body: some View {
@@ -135,6 +141,11 @@ private struct PickySessionCardView: View {
         }
         .onDisappear {
             viewModel.endHoveredVoiceFollowUp(sessionID: session.id)
+        }
+        .task(id: gitStatusRefreshKey) {
+            let loadedStatus = await PickyGitRepositoryStatus.load(cwd: session.cwd)
+            guard !Task.isCancelled else { return }
+            gitStatus = loadedStatus
         }
     }
 
@@ -190,6 +201,10 @@ private struct PickySessionCardView: View {
                 metaRow(icon: "folder", text: compactCwd)
             }
 
+            if let gitStatus {
+                gitStatusSection(gitStatus)
+            }
+
             if let lastRequestText = session.lastRequestText {
                 lastRequestBubble(text: lastRequestText)
             }
@@ -203,11 +218,7 @@ private struct PickySessionCardView: View {
             }
 
             if PickyHUDExpandedContentPolicy.showsSummary(for: session.status), !session.lastSummary.isEmpty {
-                detailSection(
-                    title: "Summary",
-                    text: session.lastSummary,
-                    lineLimit: PickyHUDExpandedContentPolicy.summaryLineLimit
-                )
+                assistantSummaryBubble(text: session.lastSummary)
             }
 
             if PickyHUDExpandedContentPolicy.showsRecentLog, !session.logPreview.isEmpty {
@@ -277,6 +288,9 @@ private struct PickySessionCardView: View {
                 iconButton(systemName: "doc.text.magnifyingglass", help: "Open report", disabled: session.reportArtifact == nil) {
                     Task { try? await viewModel.openReport(sessionID: session.id) }
                 }
+                iconButton(systemName: "doc.on.doc", help: "Copy Pi resume command", disabled: session.piSessionFilePath == nil) {
+                    viewModel.copyTerminalResumeCommand(sessionID: session.id)
+                }
                 iconButton(systemName: "terminal", help: "Open Pi terminal", disabled: session.piSessionFilePath == nil || session.status.blocksTerminalOverlay) {
                     viewModel.openTerminalOverlay(sessionID: session.id)
                 }
@@ -318,6 +332,64 @@ private struct PickySessionCardView: View {
         .foregroundColor(DS.Colors.textTertiary)
     }
 
+    private func gitStatusSection(_ status: PickyGitRepositoryStatus) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(PickyHUDExpansion.animation) {
+                    isGitSectionExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .rotationEffect(.degrees(isGitSectionExpanded ? 90 : 0))
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundColor(DS.Colors.success.opacity(0.92))
+                    Text(status.repositoryDisplayName)
+                        .font(.system(size: 10.8, weight: .semibold, design: .monospaced))
+                        .foregroundColor(DS.Colors.textSecondary)
+                        .lineLimit(1)
+                    Text(status.branchName)
+                        .font(.system(size: 10.2, weight: .medium, design: .monospaced))
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isGitSectionExpanded {
+                HStack(spacing: 6) {
+                    gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
+                    gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
+                    gitMetricPill("↑\(status.aheadCount)", color: DS.Colors.accentText)
+                    gitMetricPill("↓\(status.behindCount)", color: DS.Colors.warningText)
+                    Spacer(minLength: 0)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(DS.Colors.surface2.opacity(0.45))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.45), lineWidth: 0.8))
+        )
+    }
+
+    private func gitMetricPill(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 10.2, weight: .semibold, design: .monospaced))
+            .foregroundColor(color.opacity(0.92))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(color.opacity(0.10)))
+    }
+
     private func lastRequestBubble(text: String) -> some View {
         HStack(alignment: .top, spacing: 6) {
             Image(systemName: "person.crop.circle.fill")
@@ -340,6 +412,32 @@ private struct PickySessionCardView: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(DS.Colors.surface2.opacity(0.62))
                     .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8))
+            )
+        }
+    }
+
+    private func assistantSummaryBubble(text: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(DS.Colors.success.opacity(0.9))
+                .frame(width: 14)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Picky")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(DS.Colors.textTertiary)
+                Text(text)
+                    .font(.system(size: 11.5))
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .lineLimit(PickyHUDExpandedContentPolicy.summaryLineLimit)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(DS.Colors.success.opacity(0.07))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DS.Colors.success.opacity(0.18), lineWidth: 0.8))
             )
         }
     }

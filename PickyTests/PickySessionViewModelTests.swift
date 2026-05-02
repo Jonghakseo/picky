@@ -39,6 +39,14 @@ private final class FakeArchiveStore: PickySessionArchiveStoring {
     var archivedSessionIDs = Set<String>()
 }
 
+private final class FakeClipboardWriter: PickyClipboardWriting {
+    private(set) var copied: [String] = []
+
+    func copy(_ text: String) {
+        copied.append(text)
+    }
+}
+
 private final class FakeTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
     struct Call: Equatable {
         let sessionID: String
@@ -338,6 +346,31 @@ struct PickySessionViewModelTests {
         #expect(viewModel.archivedSessions.first(where: { $0.id == "side-1" })?.lastSummary == "Updated")
     }
 
+    @Test func copyTerminalResumeCommandUsesCapturedPiSessionFileAndCwd() async throws {
+        let client = FakePickyAgentClient()
+        let notifications = PickyNoopNotificationCenter()
+        let clipboard = FakeClipboardWriter()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: notifications,
+            clipboardWriter: clipboard
+        )
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "side-1",
+            title: "Side",
+            status: "running",
+            logs: ["pi session: /tmp/pi-session.jsonl"]
+        ))))
+        try await settle()
+
+        viewModel.copyTerminalResumeCommand(sessionID: "side-1")
+
+        #expect(clipboard.copied == ["cd '/Users/creatrip/Documents/picky' && pi --session '/tmp/pi-session.jsonl'"])
+        #expect(notifications.delivered.last?.title == "Pi resume command copied")
+        #expect(viewModel.lastError == nil)
+    }
+
     @Test func openTerminalOverlayUsesCapturedPiSessionFileAndCwd() async throws {
         let client = FakePickyAgentClient()
         let presenter = FakeTerminalOverlayPresenter()
@@ -388,6 +421,21 @@ struct PickySessionViewModelTests {
         #expect(viewModel.lastError == PickySessionListViewModelError.sessionActiveForTerminal.localizedDescription)
     }
 
+    @Test func sessionCardExtractsPiSessionFileFromHandoffTranscript() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "pinned-side",
+            title: "Pinned",
+            status: "completed",
+            logs: ["source transcript:\n## Source Pi session\n- Session file: /tmp/from-handoff.jsonl"]
+        ))))
+        try await settle()
+
+        #expect(viewModel.sessions.first?.piSessionFilePath == "/tmp/from-handoff.jsonl")
+    }
+
     @Test func terminalOverlayCloseSyncsSessionFileOnce() async throws {
         let client = FakePickyAgentClient()
         let presenter = FakeTerminalOverlayPresenter()
@@ -422,12 +470,18 @@ struct PickySessionViewModelTests {
     }
 
     @Test func terminalCommandShellQuotesPaths() throws {
-        let command = PickyPiTerminalCommand.make(
+        let cliCommand = PickyPiTerminalCommand.makeCliResumeCommand(
+            sessionFilePath: "/tmp/pi session's.jsonl",
+            cwd: "/Users/example/Project Folder"
+        )
+        let overlayCommand = PickyPiTerminalCommand.makeOverlayCommand(
             sessionFilePath: "/tmp/pi session's.jsonl",
             cwd: "/Users/example/Project Folder"
         )
 
-        #expect(command == "cd '/Users/example/Project Folder' && exec pi --session '/tmp/pi session'\\''s.jsonl'")
+        #expect(cliCommand == "cd '/Users/example/Project Folder' && pi --session '/tmp/pi session'\\''s.jsonl'")
+        #expect(overlayCommand.contains("cd '/Users/example/Project Folder' && exec pi --session '/tmp/pi session'\\''s.jsonl'"))
+        #expect(overlayCommand.contains("export PATH="))
     }
 
     @Test func terminalCommandDefaultsBlankCwdToHomeDirectory() throws {

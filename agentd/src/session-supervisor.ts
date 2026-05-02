@@ -445,8 +445,20 @@ export class SessionSupervisor extends EventEmitter {
 function buildPinnedSideSessionLogs(context: PickyContextPacket): string[] {
   const logs = ["pi-extension handoff pin: completed idle Pi session", `source context id: ${context.id}`];
   if (context.cwd) logs.push(`source cwd: ${context.cwd}`);
+  const sessionFile = piSessionFilePathFromHandoffTranscript(context.transcript);
+  if (sessionFile) logs.push(`pi session: ${sessionFile}`);
   if (context.transcript?.trim()) logs.push(`source transcript:\n${context.transcript.trim()}`);
   return logs;
+}
+
+function piSessionFilePathFromHandoffTranscript(transcript: string | undefined): string | undefined {
+  if (!transcript) return undefined;
+  for (const line of transcript.split(/\r?\n/)) {
+    const match = line.match(/^\s*-\s*Session file:\s*(.+)$/);
+    const path = match?.[1]?.trim();
+    if (path && !path.startsWith("(") && path !== "ephemeral" && path !== "unavailable") return path;
+  }
+  return undefined;
 }
 
 function piSessionFilePathFromLogs(logs: string[]): string | undefined {

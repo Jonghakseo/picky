@@ -37,9 +37,14 @@ enum PickyTerminalOverlayError: LocalizedError, Equatable {
 }
 
 enum PickyPiTerminalCommand {
-    static func make(sessionFilePath: String, cwd: String?) -> String {
+    static func makeCliResumeCommand(sessionFilePath: String, cwd: String?) -> String {
         let workingDirectory = workingDirectory(from: cwd)
-        return "cd \(shellQuoted(workingDirectory)) && exec pi --session \(shellQuoted(sessionFilePath))"
+        return "cd \(shellQuoted(workingDirectory)) && pi --session \(shellQuoted(sessionFilePath))"
+    }
+
+    static func makeOverlayCommand(sessionFilePath: String, cwd: String?) -> String {
+        let workingDirectory = workingDirectory(from: cwd)
+        return "export PATH=\(shellQuoted(defaultPATH)):$PATH && cd \(shellQuoted(workingDirectory)) && exec pi --session \(shellQuoted(sessionFilePath))"
     }
 
     static func workingDirectory(from cwd: String?) -> String {
@@ -50,6 +55,15 @@ enum PickyPiTerminalCommand {
     static func shellQuoted(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
+
+    private static let defaultPATH = [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ].joined(separator: ":")
 }
 
 @MainActor
@@ -76,7 +90,9 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
         onClose: @escaping @MainActor () -> Void
     ) throws {
         if let existing = records[sessionID] {
-            existing.panel.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            existing.panel.orderFrontRegardless()
+            existing.panel.makeKey()
             return
         }
 
@@ -96,7 +112,7 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
             defer: false
         )
         panel.title = "Pi Terminal — \(title)"
-        panel.level = .floating
+        panel.level = .statusBar
         panel.isReleasedWhenClosed = false
         panel.isExcludedFromWindowsMenu = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -118,7 +134,9 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
         }
         panel.delegate = delegate
         records[sessionID] = TerminalRecord(panel: panel, model: model, delegate: delegate)
-        panel.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        panel.orderFrontRegardless()
+        panel.makeKey()
     }
 
     private func remove(panel: NSPanel) {
@@ -186,7 +204,7 @@ final class PickyTerminalModel: ObservableObject {
     }
 
     func start() throws {
-        let command = PickyPiTerminalCommand.make(sessionFilePath: sessionFilePath, cwd: cwd)
+        let command = PickyPiTerminalCommand.makeOverlayCommand(sessionFilePath: sessionFilePath, cwd: cwd)
         do {
             process = try PickyTerminalProcess(
                 command: command,

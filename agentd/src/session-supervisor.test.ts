@@ -68,13 +68,18 @@ describe("SessionSupervisor", () => {
     const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir));
     await supervisor.load();
 
-    const pinned = await supervisor.pinSideSession(context("pin completed source"), "Pinned source");
+    const pinnedContext = {
+      ...context("pin completed source"),
+      transcript: "## Source Pi session\n- CWD: /tmp/project\n- Session file: /tmp/source-pi-session.jsonl\n",
+    };
+    const pinned = await supervisor.pinSideSession(pinnedContext, "Pinned source");
 
     expect(pinned.status).toBe("completed");
     expect(pinned.title).toBe("Pinned source");
     expect(pinned.lastSummary).toBe("Pinned completed Pi session");
     expect(pinned.finalAnswer).toMatch(/No Picky side-agent run/);
     expect(pinned.notifyMainOnCompletion).toBe(true);
+    expect(pinned.logs).toContain("pi session: /tmp/source-pi-session.jsonl");
     expect(pinned.logs.some((line) => line.startsWith("pi-extension handoff pin:"))).toBe(true);
     expect(supervisor.isSideSession(pinned.id)).toBe(true);
   });

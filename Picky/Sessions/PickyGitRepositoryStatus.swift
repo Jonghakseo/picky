@@ -20,6 +20,10 @@ struct PickyGitRepositoryStatus: Equatable {
         hasUncommittedChanges ? "\(repositoryName)*" : repositoryName
     }
 
+    var hasVisibleMetrics: Bool {
+        insertions > 0 || deletions > 0 || aheadCount > 0 || behindCount > 0
+    }
+
     static func load(cwd: String?) async -> PickyGitRepositoryStatus? {
         await Task.detached(priority: .utility) {
             loadSynchronously(cwd: cwd)

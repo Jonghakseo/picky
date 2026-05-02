@@ -347,14 +347,11 @@ private struct PickySessionCardView: View {
                     Image(systemName: "point.3.connected.trianglepath.dotted")
                         .font(.system(size: 10.5, weight: .semibold))
                         .foregroundColor(DS.Colors.success.opacity(0.92))
-                    Text(status.repositoryDisplayName)
+                    Text(status.branchName)
                         .font(.system(size: 10.8, weight: .semibold, design: .monospaced))
                         .foregroundColor(DS.Colors.textSecondary)
                         .lineLimit(1)
-                    Text(status.branchName)
-                        .font(.system(size: 10.2, weight: .medium, design: .monospaced))
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .lineLimit(1)
+                        .truncationMode(.middle)
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())
@@ -362,12 +359,30 @@ private struct PickySessionCardView: View {
             .buttonStyle(.plain)
 
             if isGitSectionExpanded {
-                HStack(spacing: 6) {
-                    gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
-                    gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
-                    gitMetricPill("↑\(status.aheadCount)", color: DS.Colors.accentText)
-                    gitMetricPill("↓\(status.behindCount)", color: DS.Colors.warningText)
-                    Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(status.repositoryDisplayName)
+                        .font(.system(size: 10.4, weight: .medium, design: .monospaced))
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    if status.hasVisibleMetrics {
+                        HStack(spacing: 6) {
+                            if status.insertions > 0 {
+                                gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
+                            }
+                            if status.deletions > 0 {
+                                gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
+                            }
+                            if status.aheadCount > 0 {
+                                gitMetricPill("↑\(status.aheadCount)", color: DS.Colors.accentText)
+                            }
+                            if status.behindCount > 0 {
+                                gitMetricPill("↓\(status.behindCount)", color: DS.Colors.warningText)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                    }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }

@@ -256,7 +256,7 @@ struct BlueCursorView: View {
                         }
                     )
                     .position(x: cursorPosition.x + 12 + (voicePromptBubbleSize.width / 2), y: cursorPosition.y + 20 + (voicePromptBubbleSize.height / 2))
-                    .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0), value: cursorPosition)
                     .animation(.easeOut(duration: 0.2), value: companionManager.voiceState)
                     .animation(.easeOut(duration: 0.16), value: companionManager.voicePromptBubbleState)
                     .onPreferenceChange(VoicePromptBubbleSizePreferenceKey.self) { newSize in
@@ -297,7 +297,7 @@ struct BlueCursorView: View {
                         }
                     )
                     .position(x: cursorPosition.x + 12 + (responseBubbleSize.width / 2), y: cursorPosition.y + 20 + (responseBubbleSize.height / 2))
-                    .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0), value: cursorPosition)
                     .animation(.easeOut(duration: 0.2), value: companionManager.voiceState)
                     .onPreferenceChange(ResponseBubbleSizePreferenceKey.self) { newSize in
                         responseBubbleSize = newSize
@@ -332,7 +332,7 @@ struct BlueCursorView: View {
                     .scaleEffect(navigationBubbleScale)
                     .opacity(navigationBubbleOpacity)
                     .position(x: cursorPosition.x + 10 + (navigationBubbleSize.width / 2), y: cursorPosition.y + 18)
-                    .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0), value: cursorPosition)
                     .animation(.spring(response: 0.4, dampingFraction: 0.6), value: navigationBubbleScale)
                     .animation(.easeOut(duration: 0.5), value: navigationBubbleOpacity)
                     .onPreferenceChange(NavigationBubbleSizePreferenceKey.self) { newSize in
@@ -360,7 +360,7 @@ struct BlueCursorView: View {
                 .position(cursorPosition)
                 .animation(
                     buddyNavigationMode == .followingCursor
-                        ? .spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0)
+                        ? .spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0)
                         : nil,
                     value: cursorPosition
                 )
@@ -370,14 +370,14 @@ struct BlueCursorView: View {
             BlueCursorWaveformView(audioPowerLevel: companionManager.currentAudioPowerLevel)
                 .opacity(buddyIsVisibleOnThisScreen && companionManager.voiceState == .listening ? cursorOpacity : 0)
                 .position(cursorPosition)
-                .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
+                .animation(.spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0), value: cursorPosition)
                 .animation(.easeIn(duration: 0.15), value: companionManager.voiceState)
 
             // Blue spinner — shown while local capture/submission is processing
             BlueCursorSpinnerView()
                 .opacity(buddyIsVisibleOnThisScreen && companionManager.voiceState == .processing ? cursorOpacity : 0)
                 .position(cursorPosition)
-                .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
+                .animation(.spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0), value: cursorPosition)
                 .animation(.easeIn(duration: 0.15), value: companionManager.voiceState)
 
         }

@@ -96,7 +96,7 @@ enum PickySpeechPlaybackPreparation {
     /// Short pre-roll for macOS system speech. Some output devices need a tiny
     /// amount of generated audio time before the first audible phoneme; without
     /// it, the start of short TTS replies can be clipped.
-    static let prerollSilenceMilliseconds = 180
+    static let prerollSilenceMilliseconds = 500
 
     static func prepareForPlayback(_ utterance: String) -> String {
         "[[slnc \(prerollSilenceMilliseconds)]]\(utterance)"

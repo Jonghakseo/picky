@@ -26,6 +26,11 @@ enum PickyHUDExpansion {
     }
 }
 
+enum PickyHUDExpandedContentPolicy {
+    static let showsRecentLog = false
+    static let summaryLineLimit: Int? = nil
+}
+
 @MainActor
 final class PickyHUDOverlayManager {
     private let viewModel: PickySessionListViewModel
@@ -265,10 +270,14 @@ private struct PickySessionCardView: View {
             }
 
             if !session.lastSummary.isEmpty {
-                detailSection(title: "Summary", text: session.lastSummary)
+                detailSection(
+                    title: "Summary",
+                    text: session.lastSummary,
+                    lineLimit: PickyHUDExpandedContentPolicy.summaryLineLimit
+                )
             }
 
-            if !session.logPreview.isEmpty {
+            if PickyHUDExpandedContentPolicy.showsRecentLog, !session.logPreview.isEmpty {
                 detailSection(title: "Recent log", text: session.logPreview)
             }
 
@@ -373,13 +382,13 @@ private struct PickySessionCardView: View {
         .foregroundColor(DS.Colors.textTertiary)
     }
 
-    private func detailSection(title: String, text: String) -> some View {
+    private func detailSection(title: String, text: String, lineLimit: Int? = 3) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             detailTitle(title)
             Text(text)
                 .font(.system(size: 11.5))
                 .foregroundColor(DS.Colors.textSecondary)
-                .lineLimit(3)
+                .lineLimit(lineLimit)
         }
     }
 

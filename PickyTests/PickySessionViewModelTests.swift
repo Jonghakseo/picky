@@ -171,6 +171,11 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDExpansion.contentFrameHeight(isExpanded: true, measuredHeight: 0) == nil)
     }
 
+    @Test func hudExpandedContentShowsFullSummaryAndHidesRecentLog() throws {
+        #expect(PickyHUDExpandedContentPolicy.summaryLineLimit == nil)
+        #expect(!PickyHUDExpandedContentPolicy.showsRecentLog)
+    }
+
     @Test func selectionDefaultsForHudButOnlyExplicitSelectionPersistsForVoiceFollowUp() async throws {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()

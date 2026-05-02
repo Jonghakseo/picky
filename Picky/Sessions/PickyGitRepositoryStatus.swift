@@ -17,7 +17,11 @@ struct PickyGitRepositoryStatus: Equatable {
     let behindCount: Int
 
     var repositoryDisplayName: String {
-        hasUncommittedChanges ? "\(repositoryName)*" : repositoryName
+        repositoryName
+    }
+
+    var branchDisplayName: String {
+        hasUncommittedChanges ? "\(branchName)*" : branchName
     }
 
     var hasVisibleMetrics: Bool {

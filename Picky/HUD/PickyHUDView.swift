@@ -347,7 +347,7 @@ private struct PickySessionCardView: View {
                     Image(systemName: "point.3.connected.trianglepath.dotted")
                         .font(.system(size: 10.5, weight: .semibold))
                         .foregroundColor(DS.Colors.success.opacity(0.92))
-                    Text(status.branchName)
+                    Text(status.repositoryDisplayName)
                         .font(.system(size: 10.8, weight: .semibold, design: .monospaced))
                         .foregroundColor(DS.Colors.textSecondary)
                         .lineLimit(1)
@@ -360,7 +360,7 @@ private struct PickySessionCardView: View {
 
             if isGitSectionExpanded {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(status.repositoryDisplayName)
+                    Text(status.branchDisplayName)
                         .font(.system(size: 10.4, weight: .medium, design: .monospaced))
                         .foregroundColor(DS.Colors.textTertiary)
                         .lineLimit(1)

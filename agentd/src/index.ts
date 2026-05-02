@@ -5,7 +5,7 @@ import { SessionSupervisor } from "./session-supervisor.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
-import { createPickyHandoffTool } from "./application/handoff-tool.js";
+import { createPickyHandoffTool, createPickySideFollowUpTool, createPickySideSessionsTool } from "./application/handoff-tool.js";
 import { logAgentd } from "./local-log.js";
 
 const port = Number(process.env.PICKY_AGENTD_PORT ?? 17631);
@@ -37,6 +37,14 @@ const mainRuntime = useMockRuntime
           const session = await supervisor.createSideFromHandoff(context, { title: request.title, instructions: request.instructions });
           logAgentd("handoff started", { contextId: context.id, sessionId: session.id, titleChars: session.title.length });
           return { sessionId: session.id, title: session.title };
+        }),
+        createPickySideSessionsTool(() => supervisor.listSideSessions()),
+        createPickySideFollowUpTool(async (request) => {
+          const context = supervisor.currentMainContext();
+          logAgentd("side follow-up requested", { sessionId: request.sessionId, textChars: request.message.length, contextId: context?.id });
+          const session = await supervisor.followUpSideSession(request.sessionId, request.message, context);
+          logAgentd("side follow-up queued", { sessionId: session.id, status: session.status });
+          return session;
         }),
       ],
     });

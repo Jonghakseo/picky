@@ -53,6 +53,7 @@ export class SessionSupervisor extends EventEmitter {
     const persisted = await this.store.loadAll();
     logAgentd("sessions loading", { count: persisted.length });
     for (const session of persisted) {
+      if (hasMainAgentHandoffLog(session)) this.sideSessionIds.add(session.id);
       if (!isTerminalStatus(session.status)) {
         const restored = {
           ...session,
@@ -72,6 +73,14 @@ export class SessionSupervisor extends EventEmitter {
 
   list(): PickyAgentSession[] {
     return [...this.sessions.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  listSideSessions(): PickyAgentSession[] {
+    return this.list().filter((session) => this.sideSessionIds.has(session.id));
+  }
+
+  isSideSession(sessionId: string): boolean {
+    return this.sideSessionIds.has(sessionId);
   }
 
   get(id: string): PickyAgentSession | undefined {
@@ -253,6 +262,12 @@ export class SessionSupervisor extends EventEmitter {
     await this.mainHandle.followUp(buildMainAgentSideCompletionPrompt(session));
   }
 
+  async followUpSideSession(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
+    if (!this.isSideSession(sessionId)) throw new Error(`Session is not a Picky side agent: ${sessionId}`);
+    this.sideCompletionNotified.delete(sessionId);
+    return this.followUp(sessionId, text, context);
+  }
+
   async followUp(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
     if (["failed", "cancelled"].includes(session.status)) throw new Error(`Cannot follow up ${session.status} session`);
@@ -342,4 +357,8 @@ export class SessionSupervisor extends EventEmitter {
     if (!session) throw new Error(`Unknown session: ${sessionId}`);
     return session;
   }
+}
+
+function hasMainAgentHandoffLog(session: PickyAgentSession): boolean {
+  return session.logs.some((line) => line.startsWith("main-agent handoff:"));
 }

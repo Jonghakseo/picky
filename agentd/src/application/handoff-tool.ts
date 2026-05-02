@@ -1,10 +1,29 @@
 import { defineTool, type ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
+import type { PickyAgentSession } from "../protocol.js";
 
 export interface PickyHandoffRequest {
   title: string;
   instructions: string;
   userMessage?: string;
+}
+
+export interface PickySideFollowUpRequest {
+  sessionId: string;
+  message: string;
+}
+
+interface SideSessionSummary {
+  id: string;
+  title: string;
+  status: PickyAgentSession["status"];
+  updatedAt: string;
+  lastSummary?: string;
+  finalAnswer?: string;
+  pendingInput: boolean;
+  recentLogs: string[];
+  artifacts: Array<{ kind: string; title: string; path?: string; url?: string }>;
+  changedFiles: Array<{ path: string; status: string; summary?: string }>;
 }
 
 export function createPickyHandoffTool(onHandoff: (request: PickyHandoffRequest) => Promise<{ sessionId: string; title: string }>): ToolDefinition {
@@ -39,4 +58,105 @@ export function createPickyHandoffTool(onHandoff: (request: PickyHandoffRequest)
       };
     },
   });
+}
+
+export function createPickySideSessionsTool(onList: () => PickyAgentSession[]): ToolDefinition {
+  return defineTool({
+    name: "picky_side_sessions",
+    label: "Picky side sessions",
+    description: "List side Pi agents that the Picky main agent has already delegated work to, so follow-up requests can reuse the right side agent instead of starting a duplicate.",
+    promptSnippet: "picky_side_sessions: list current and recent side Pi agents in the Picky HUD before deciding whether to resume one.",
+    promptGuidelines: [
+      "Use picky_side_sessions when the user refers to an existing delegated task, side agent, running work, recent completion, or asks to continue/change/check progress.",
+      "Prefer resuming a relevant side session with picky_side_followup over creating a duplicate side agent.",
+    ],
+    parameters: Type.Object({
+      includeTerminal: Type.Optional(Type.Boolean({ description: "Whether to include completed, failed, and cancelled side sessions. Defaults to true." })),
+      limit: Type.Optional(Type.Number({ description: "Maximum number of side sessions to return. Defaults to 10." })),
+    }),
+    execute: async (_toolCallId, params) => {
+      const includeTerminal = params.includeTerminal !== false;
+      const limit = clampLimit(params.limit, 10);
+      const allSessions = onList().filter((session) => includeTerminal || !["completed", "failed", "cancelled"].includes(session.status));
+      const sessions = allSessions.slice(0, limit).map(summarizeSideSession);
+      const omitted = Math.max(0, allSessions.length - sessions.length);
+      return {
+        content: [{ type: "text", text: formatSideSessions(sessions, omitted) }],
+        details: { sessions, total: allSessions.length, omitted },
+      };
+    },
+  });
+}
+
+export function createPickySideFollowUpTool(onFollowUp: (request: PickySideFollowUpRequest) => Promise<PickyAgentSession>): ToolDefinition {
+  return defineTool({
+    name: "picky_side_followup",
+    label: "Picky side follow-up",
+    description: "Send follow-up instructions to an existing side Pi agent that was started by picky_handoff.",
+    promptSnippet: "picky_side_followup: resume or steer an existing delegated side Pi agent with additional user instructions.",
+    promptGuidelines: [
+      "Use picky_side_followup after picky_side_sessions identifies the side agent that should receive the user's new instruction.",
+      "Do not use this for unrelated new work; call picky_handoff for a new delegated task instead.",
+      "After calling picky_side_followup, tell the user in Korean that the existing side agent has been updated and progress remains visible in the top-right overlay.",
+    ],
+    parameters: Type.Object({
+      sessionId: Type.String({ description: "ID of the side session to resume, as returned by picky_side_sessions." }),
+      message: Type.String({ description: "Self-contained follow-up instructions to send to the side Pi agent." }),
+    }),
+    execute: async (_toolCallId, params) => {
+      const session = await onFollowUp({ sessionId: params.sessionId, message: params.message });
+      const summary = summarizeSideSession(session);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Follow-up sent to side agent: ${session.title} (${session.id}). Status is ${session.status}. Now tell the user in Korean that the existing side agent was updated and progress is visible in the top-right overlay.`,
+          },
+        ],
+        details: { session: summary },
+      };
+    },
+  });
+}
+
+function summarizeSideSession(session: PickyAgentSession): SideSessionSummary {
+  return {
+    id: session.id,
+    title: session.title,
+    status: session.status,
+    updatedAt: session.updatedAt,
+    lastSummary: session.lastSummary,
+    finalAnswer: session.finalAnswer,
+    pendingInput: Boolean(session.pendingExtensionUiRequest),
+    recentLogs: session.logs.slice(-3).map((line) => truncate(line, 240)),
+    artifacts: session.artifacts.map((artifact) => ({ kind: artifact.kind, title: artifact.title, path: artifact.path, url: artifact.url })),
+    changedFiles: session.changedFiles,
+  };
+}
+
+function formatSideSessions(sessions: SideSessionSummary[], omitted: number): string {
+  if (sessions.length === 0) return "No side agents are currently known.";
+  const lines = [`Side agents (${sessions.length}${omitted > 0 ? ` shown, ${omitted} omitted` : ""}):`];
+  for (const session of sessions) {
+    const pendingInput = session.pendingInput ? "; waiting for input" : "";
+    const summary = session.lastSummary ? `; summary=${truncate(session.lastSummary, 160)}` : "";
+    const finalAnswer = session.finalAnswer ? `; final=${truncate(session.finalAnswer, 160)}` : "";
+    lines.push(`- ${session.id} | ${session.title} | status=${session.status}${pendingInput}; updated=${session.updatedAt}${summary}${finalAnswer}`);
+    if (session.recentLogs.length > 0) {
+      lines.push(`  recent logs: ${session.recentLogs.join(" / ")}`);
+    }
+    if (session.artifacts.length > 0) {
+      lines.push(`  artifacts: ${session.artifacts.map((artifact) => `${artifact.kind}:${artifact.title}`).join(", ")}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function clampLimit(value: number | undefined, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.min(50, Math.floor(value!)));
+}
+
+function truncate(value: string, maxChars: number): string {
+  return value.length <= maxChars ? value : `${value.slice(0, Math.max(0, maxChars - 1))}…`;
 }

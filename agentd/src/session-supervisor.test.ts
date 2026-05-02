@@ -37,6 +37,32 @@ describe("SessionSupervisor", () => {
     expect(updated.logs.some((line) => line.includes("next step"))).toBe(true);
   });
 
+  it("lists and resumes side sessions created from main-agent handoff", async () => {
+    const supervisor = await makeSupervisor();
+    const regular = await supervisor.create(context("regular"));
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+
+    expect(supervisor.isSideSession(side.id)).toBe(true);
+    expect(supervisor.listSideSessions().map((session) => session.id)).toEqual([side.id]);
+
+    const updated = await supervisor.followUpSideSession(side.id, "추가로 원인도 정리해줘");
+    expect(updated.status).toBe("running");
+    expect(updated.logs.some((line) => line.includes("추가로 원인도 정리해줘"))).toBe(true);
+    await expect(supervisor.followUpSideSession(regular.id, "wrong target")).rejects.toThrow(/not a Picky side agent/);
+  });
+
+  it("restores persisted side-session markers from handoff logs", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const firstSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+    const side = await firstSupervisor.createSideFromHandoff(context("persist side"), { title: "사이드 유지", instructions: "Keep marker" });
+
+    const secondSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+    await secondSupervisor.load();
+
+    expect(secondSupervisor.isSideSession(side.id)).toBe(true);
+    expect(secondSupervisor.listSideSessions().map((session) => session.id)).toEqual([side.id]);
+  });
+
   it("aborts a session", async () => {
     const supervisor = await makeSupervisor();
     const session = await supervisor.create(context("abort me"));

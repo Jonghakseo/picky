@@ -14,6 +14,7 @@ final class PickyHUDOverlayManager {
     private var panel: NSPanel?
     private let width: CGFloat = 320
     private let collapsedHeight: CGFloat = 180
+    private let minimumHeight: CGFloat = 48
 
     init(viewModel: PickySessionListViewModel) {
         self.viewModel = viewModel
@@ -47,25 +48,46 @@ final class PickyHUDOverlayManager {
         hudPanel.isExcludedFromWindowsMenu = true
         hudPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
-        let hostingView = NSHostingView(rootView: PickyHUDView(viewModel: viewModel).frame(width: width))
+        let hostingView = NSHostingView(rootView: PickyHUDView(viewModel: viewModel) { [weak self] size in
+            self?.resizePanel(toContentSize: size, animated: true)
+        }.frame(width: width))
         hostingView.frame = NSRect(x: 0, y: 0, width: width, height: collapsedHeight)
+        hostingView.autoresizingMask = [.width, .height]
         hudPanel.contentView = hostingView
         panel = hudPanel
     }
 
     private func positionTopRight() {
+        resizePanel(toContentSize: panel?.contentView?.fittingSize ?? CGSize(width: width, height: collapsedHeight), animated: false)
+    }
+
+    private func resizePanel(toContentSize contentSize: CGSize, animated: Bool) {
         guard let panel else { return }
         let screen = NSScreen.main ?? NSScreen.screens.first
         guard let visibleFrame = screen?.visibleFrame else { return }
-        let fittingSize = panel.contentView?.fittingSize ?? CGSize(width: width, height: collapsedHeight)
-        let height = min(max(fittingSize.height, 96), visibleFrame.height - 32)
-        let origin = CGPoint(x: visibleFrame.maxX - width - 16, y: visibleFrame.maxY - height - 16)
-        panel.setFrame(NSRect(origin: origin, size: CGSize(width: width, height: height)), display: true)
+        let targetHeight = min(max(contentSize.height, minimumHeight), visibleFrame.height - 32)
+        let targetFrame = NSRect(
+            x: visibleFrame.maxX - width - 16,
+            y: visibleFrame.maxY - targetHeight - 16,
+            width: width,
+            height: targetHeight
+        )
+        guard panel.frame.integral != targetFrame.integral else { return }
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.18
+                context.allowsImplicitAnimation = true
+                panel.animator().setFrame(targetFrame, display: true)
+            }
+        } else {
+            panel.setFrame(targetFrame, display: true)
+        }
     }
 }
 
 struct PickyHUDView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
+    var onSizeChange: (CGSize) -> Void = { _ in }
     @State private var expandedSessionID: String?
 
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {
@@ -83,7 +105,7 @@ struct PickyHUDView: View {
                         isExpanded: expandedSessionID == session.id,
                         viewModel: viewModel,
                         onToggle: {
-                            withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
+                            withAnimation(.easeInOut(duration: 0.20)) {
                                 expandedSessionID = expandedSessionID == session.id ? nil : session.id
                             }
                         }
@@ -93,6 +115,25 @@ struct PickyHUDView: View {
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .topTrailing)
+        .background(PickyHUDSizeReader())
+        .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: onSizeChange)
+    }
+}
+
+private struct PickyHUDSizePreferenceKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let next = nextValue()
+        if next != .zero { value = next }
+    }
+}
+
+private struct PickyHUDSizeReader: View {
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(key: PickyHUDSizePreferenceKey.self, value: proxy.size)
+        }
     }
 }
 
@@ -108,7 +149,11 @@ private struct PickySessionCardView: View {
             header
             if isExpanded {
                 expandedContent
-                    .transition(.opacity)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .top).combined(with: .opacity),
+                        removal: .move(edge: .top).combined(with: .opacity)
+                    ))
+                    .clipped()
             }
         }
         .padding(.horizontal, 10)
@@ -119,7 +164,7 @@ private struct PickySessionCardView: View {
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.65), lineWidth: 1))
                 .shadow(color: Color.black.opacity(0.28), radius: 12, x: 0, y: 7)
         )
-        .animation(.spring(response: 0.26, dampingFraction: 0.88), value: isExpanded)
+        .animation(.easeInOut(duration: 0.20), value: isExpanded)
     }
 
     private var header: some View {

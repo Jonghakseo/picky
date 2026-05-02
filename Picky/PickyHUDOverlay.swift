@@ -224,10 +224,7 @@ private struct PickySessionCardView: View {
                 iconButton(systemName: "doc.text.magnifyingglass", help: "Open report", disabled: session.reportArtifact == nil) {
                     Task { try? await viewModel.openReport(sessionID: session.id) }
                 }
-                iconButton(systemName: "terminal", help: "Open debug folder") {
-                    viewModel.openTerminalDebug(sessionID: session.id)
-                }
-                iconButton(systemName: "play.rectangle", help: "Resume in Ghostty", disabled: session.piSessionFilePath == nil) {
+                iconButton(systemName: "terminal", help: "Resume in Ghostty", disabled: session.piSessionFilePath == nil || session.status == .running) {
                     viewModel.resumeInGhostty(sessionID: session.id)
                 }
                 iconButton(systemName: "text.bubble", help: "Use this session for voice follow-up") {

@@ -298,11 +298,6 @@ final class PickySessionListViewModel: ObservableObject {
         pasteboard.setString(session.lastSummary.isEmpty ? session.title : session.lastSummary, forType: .string)
     }
 
-    func openTerminalDebug(sessionID: String, workspace: NSWorkspace = .shared) {
-        guard let cwd = sessions.first(where: { $0.id == sessionID })?.cwd else { return }
-        workspace.open(URL(fileURLWithPath: cwd))
-    }
-
     func resumeInGhostty(sessionID: String, launcher: PickyTerminalResumeLaunching = PickyGhosttyResumeLauncher()) {
         pickySessionLog("resume in Ghostty session=\(sessionID)")
         guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),

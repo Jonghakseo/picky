@@ -604,4 +604,3 @@ private struct BlueCursorSpinnerView: View {
             }
     }
 }
-

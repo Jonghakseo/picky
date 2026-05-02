@@ -47,4 +47,3 @@ class OverlayWindow: NSWindow {
         return false
     }
 }
-

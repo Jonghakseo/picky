@@ -63,4 +63,3 @@ private func shortCwd(_ cwd: String?) -> String {
     let last = url.lastPathComponent
     return last.isEmpty ? cwd : last
 }
-

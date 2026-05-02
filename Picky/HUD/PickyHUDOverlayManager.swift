@@ -121,4 +121,3 @@ final class PickyHUDOverlayManager {
         panel.setFrame(targetFrame, display: true)
     }
 }
-

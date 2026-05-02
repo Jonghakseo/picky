@@ -80,4 +80,3 @@ enum BuddyNavigationMode {
     /// Buddy has arrived at the target and is pointing at it with a speech bubble
     case pointingAtTarget
 }
-

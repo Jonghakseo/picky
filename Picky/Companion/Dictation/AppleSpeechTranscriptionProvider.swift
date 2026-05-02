@@ -85,17 +85,26 @@ struct AppleSpeechTranscriptAccumulator {
             return accumulatedText
         }
 
-        if incomingText.normalizedForTranscriptComparison.hasPrefix(existingText.normalizedForTranscriptComparison) {
+        let normalizedIncomingText = incomingText.normalizedForTranscriptComparison
+        let normalizedExistingText = existingText.normalizedForTranscriptComparison
+
+        if normalizedIncomingText.hasPrefix(normalizedExistingText) {
             accumulatedText = incomingText
             return accumulatedText
         }
 
-        if existingText.normalizedForTranscriptComparison.hasSuffix(incomingText.normalizedForTranscriptComparison) {
+        if normalizedExistingText.hasSuffix(normalizedIncomingText)
+            || normalizedExistingText.contains(normalizedIncomingText) {
             return accumulatedText
         }
 
         if let appendOnlySuffix = Self.appendOnlySuffix(from: incomingText, afterOverlappingWith: existingText) {
             accumulatedText = Self.joinTranscript(existingText, appendOnlySuffix)
+            return accumulatedText
+        }
+
+        if Self.shouldTreatAsRevisionOfExistingResult(existingText: existingText, incomingText: incomingText) {
+            accumulatedText = incomingText
             return accumulatedText
         }
 
@@ -140,6 +149,61 @@ struct AppleSpeechTranscriptAccumulator {
 
         guard !incomingTokens.isEmpty else { return false }
         return existingText.count >= 40 || existingTokens.count >= 8
+    }
+
+    private static func shouldTreatAsRevisionOfExistingResult(existingText: String, incomingText: String) -> Bool {
+        let existingTokens = TranscriptToken.tokens(in: existingText)
+        let incomingTokens = TranscriptToken.tokens(in: incomingText)
+
+        guard existingTokens.count >= 6, incomingTokens.count >= 6 else { return false }
+        guard sharesStartingAnchor(existingTokens: existingTokens, incomingTokens: incomingTokens) else { return false }
+        guard Double(incomingTokens.count) >= Double(existingTokens.count) * 0.75 else { return false }
+
+        let sharedTokenCount = longestCommonSubsequenceLength(
+            existingTokens.map(\.normalized),
+            incomingTokens.map(\.normalized)
+        )
+        let shorterTokenCount = min(existingTokens.count, incomingTokens.count)
+        guard shorterTokenCount > 0 else { return false }
+
+        return Double(sharedTokenCount) / Double(shorterTokenCount) >= 0.72
+    }
+
+    private static func sharesStartingAnchor(existingTokens: [TranscriptToken], incomingTokens: [TranscriptToken]) -> Bool {
+        guard let incomingFirstToken = incomingTokens.first?.normalized else { return false }
+        let existingPrefixTokens = existingTokens.prefix(3).map(\.normalized)
+        guard existingPrefixTokens.contains(incomingFirstToken) else { return false }
+
+        if existingTokens.first?.normalized == incomingFirstToken {
+            return true
+        }
+
+        guard incomingTokens.count > 1 else { return true }
+        let incomingSecondToken = incomingTokens[1].normalized
+        return existingPrefixTokens.contains(incomingSecondToken)
+            || existingTokens.prefix(5).map(\.normalized).contains(incomingSecondToken)
+    }
+
+    private static func longestCommonSubsequenceLength(_ leftTokens: [String], _ rightTokens: [String]) -> Int {
+        guard !leftTokens.isEmpty, !rightTokens.isEmpty else { return 0 }
+
+        var previousRow = Array(repeating: 0, count: rightTokens.count + 1)
+        var currentRow = previousRow
+
+        for leftIndex in leftTokens.indices {
+            currentRow[0] = 0
+            for rightOffset in rightTokens.indices {
+                let column = rightOffset + 1
+                if leftTokens[leftIndex] == rightTokens[rightOffset] {
+                    currentRow[column] = previousRow[column - 1] + 1
+                } else {
+                    currentRow[column] = max(previousRow[column], currentRow[column - 1])
+                }
+            }
+            swap(&previousRow, &currentRow)
+        }
+
+        return previousRow[rightTokens.count]
     }
 
     private static func isSignificantOverlap(_ normalizedTokens: [String]) -> Bool {

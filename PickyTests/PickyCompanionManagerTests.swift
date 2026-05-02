@@ -126,6 +126,14 @@ struct PickyCompanionManagerTests {
         #expect(manager.voiceState == .responding)
     }
 
+    @Test func recognizedVoicePromptDisplayTextIsCappedForOverlayOnly() async throws {
+        let longPrompt = String(repeating: "긴", count: 350)
+        let bubbleState = CompanionVoicePromptBubbleState.recognized(longPrompt)
+
+        #expect(bubbleState.displayText.count == 281)
+        #expect(bubbleState.displayText.hasSuffix("…"))
+    }
+
     @Test func speechPlaybackPreparationAddsShortSilentPreroll() {
         let prepared = PickySpeechPlaybackPreparation.prepareForPlayback("안녕하세요")
 

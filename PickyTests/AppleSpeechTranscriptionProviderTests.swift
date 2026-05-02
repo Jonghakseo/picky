@@ -61,4 +61,32 @@ struct AppleSpeechTranscriptionProviderTests {
 
         #expect(transcript == "피키로 열어")
     }
+
+    @Test func transcriptAccumulatorTreatsLongSimilarIncomingAsRevisionNotAppend() {
+        var accumulator = AppleSpeechTranscriptAccumulator()
+
+        _ = accumulator.update(with: "오늘 예약건 확인하고 결제 상태도 봐줘 그리고 고객 메모도 같이 확인해줘")
+        let transcript = accumulator.update(with: "오늘 예약 건 확인하고 결제 상태도 봐줘 그리고 고객 메모도 같이 확인해줘")
+
+        #expect(transcript == "오늘 예약 건 확인하고 결제 상태도 봐줘 그리고 고객 메모도 같이 확인해줘")
+    }
+
+    @Test func transcriptAccumulatorDoesNotGrowByAppendingRepeatedRevisions() {
+        var accumulator = AppleSpeechTranscriptAccumulator()
+
+        _ = accumulator.update(with: "첫 번째 문장입니다 두 번째 문장입니다 세 번째 문장입니다 네 번째 문장입니다")
+        _ = accumulator.update(with: "첫 번째 문장입니다 두 번째 문장입니다 세번째 문장입니다 네 번째 문장입니다")
+        let transcript = accumulator.update(with: "첫 번째 문장입니다 두 번째 문장입니다 세번째 문장입니다 네 번째 문장입니다 다섯 번째 문장입니다")
+
+        #expect(transcript == "첫 번째 문장입니다 두 번째 문장입니다 세번째 문장입니다 네 번째 문장입니다 다섯 번째 문장입니다")
+    }
+
+    @Test func transcriptAccumulatorIgnoresContainedOlderPartialResult() {
+        var accumulator = AppleSpeechTranscriptAccumulator()
+
+        _ = accumulator.update(with: "첫 번째 문장입니다 두 번째 문장입니다 세 번째 문장입니다 네 번째 문장입니다")
+        let transcript = accumulator.update(with: "첫 번째 문장입니다 두 번째 문장입니다")
+
+        #expect(transcript == "첫 번째 문장입니다 두 번째 문장입니다 세 번째 문장입니다 네 번째 문장입니다")
+    }
 }

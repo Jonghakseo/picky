@@ -21,6 +21,8 @@ enum CompanionVoiceState {
 }
 
 enum CompanionVoicePromptBubbleState: Equatable {
+    private static let recognizedPromptPreviewCharacterLimit = 280
+
     case hidden
     case recognizing
     case recognized(String)
@@ -34,8 +36,16 @@ enum CompanionVoicePromptBubbleState: Equatable {
         case .hidden, .recognizing:
             return "음성 인식 중…"
         case .recognized(let prompt):
-            return prompt
+            return Self.truncatedPreviewText(for: prompt)
         }
+    }
+
+    private static func truncatedPreviewText(for prompt: String) -> String {
+        guard prompt.count > recognizedPromptPreviewCharacterLimit else { return prompt }
+
+        let previewEndIndex = prompt.index(prompt.startIndex, offsetBy: recognizedPromptPreviewCharacterLimit)
+        return String(prompt[..<previewEndIndex])
+            .trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 }
 

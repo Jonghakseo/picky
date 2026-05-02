@@ -18,7 +18,7 @@ private struct PiCursorIconView: View {
                 .scaledToFit()
                 .foregroundColor(DS.Colors.overlayCursorBlue.opacity(0.32))
                 .frame(width: 17, height: 17)
-                .blur(radius: 1.8)
+                .blur(radius: 0.7)
                 .scaleEffect(1.18)
 
             Image("PiSymbol")

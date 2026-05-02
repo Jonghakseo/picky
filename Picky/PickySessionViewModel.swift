@@ -164,6 +164,7 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var sessions: [SessionCard] = []
     @Published private(set) var archivedSessions: [SessionCard] = []
     @Published private(set) var selectedSessionID: String?
+    @Published private(set) var activeVoiceFollowUpSessionID: String?
     @Published private(set) var lastError: String?
     @Published private(set) var lastOpenedArtifactPath: String?
 
@@ -194,6 +195,7 @@ final class PickySessionListViewModel: ObservableObject {
         self.archiveStore = archiveStore
         self.artifactPathValidator = artifactPathValidator
         self.selectedSessionID = selectionStore.selectedSessionID
+        self.activeVoiceFollowUpSessionID = selectionStore.activeVoiceFollowUpSessionID
         self.hasExplicitSelection = self.selectedSessionID != nil
     }
 
@@ -232,6 +234,20 @@ final class PickySessionListViewModel: ObservableObject {
     func submit(transcript: String, context: PickyContextPacket) async throws {
         pickySessionLog("submit context=\(context.id) source=\(context.source) transcriptChars=\(transcript.count)")
         _ = try await client.submit(PickyAgentSubmission(transcript: transcript, context: context))
+    }
+
+    func beginVoiceFollowUp(sessionID: String) {
+        guard sessions.contains(where: { $0.id == sessionID }) else { return }
+        activeVoiceFollowUpSessionID = sessionID
+        selectionStore.activeVoiceFollowUpSessionID = sessionID
+        pickySessionLog("voice follow-up active session=\(sessionID)")
+    }
+
+    func endVoiceFollowUp(sessionID: String) {
+        guard activeVoiceFollowUpSessionID == sessionID else { return }
+        activeVoiceFollowUpSessionID = nil
+        selectionStore.activeVoiceFollowUpSessionID = nil
+        pickySessionLog("voice follow-up cleared session=\(sessionID)")
     }
 
     func followUp(text: String, sessionID: String? = nil) async throws {
@@ -333,6 +349,10 @@ final class PickySessionListViewModel: ObservableObject {
             selectedSessionID = defaultSelectionID()
             selectionStore.selectedSessionID = nil
         }
+        if activeVoiceFollowUpSessionID == sessionID {
+            activeVoiceFollowUpSessionID = nil
+            selectionStore.activeVoiceFollowUpSessionID = nil
+        }
     }
 
     func searchSessions(query: String) -> [SessionCard] {
@@ -381,6 +401,7 @@ final class PickySessionListViewModel: ObservableObject {
             sessions = cards.filter { !archivedIDs.contains($0.id) }.sortedForHUD()
             archivedSessions = cards.filter { archivedIDs.contains($0.id) }.sortedForHUD()
             syncSelectionAfterSessionListChange()
+            syncVoiceFollowUpAfterSessionListChange()
             sessions.forEach(deliverNotificationIfNeeded(for:))
         case .sessionUpdated(let session):
             pickySessionLog("session updated session=\(session.id) status=\(session.status.rawValue)")
@@ -462,6 +483,7 @@ final class PickySessionListViewModel: ObservableObject {
         sessions = sessions.sortedForHUD()
         archivedSessions = archivedSessions.sortedForHUD()
         syncSelectionAfterSessionListChange()
+        syncVoiceFollowUpAfterSessionListChange()
         if !shouldArchive {
             deliverNotificationIfNeeded(for: incoming)
         }
@@ -474,6 +496,7 @@ final class PickySessionListViewModel: ObservableObject {
             sessions[index] = card
             sessions = sessions.sortedForHUD()
             syncSelectionAfterSessionListChange()
+            syncVoiceFollowUpAfterSessionListChange()
             deliverNotificationIfNeeded(for: card)
             return
         }
@@ -491,6 +514,15 @@ final class PickySessionListViewModel: ObservableObject {
             hasExplicitSelection = false
             selectedSessionID = defaultSelectionID()
             selectionStore.selectedSessionID = nil
+        }
+    }
+
+    private func syncVoiceFollowUpAfterSessionListChange() {
+        if let activeVoiceFollowUpSessionID, sessions.contains(where: { $0.id == activeVoiceFollowUpSessionID }) {
+            selectionStore.activeVoiceFollowUpSessionID = activeVoiceFollowUpSessionID
+        } else {
+            activeVoiceFollowUpSessionID = nil
+            selectionStore.activeVoiceFollowUpSessionID = nil
         }
     }
 

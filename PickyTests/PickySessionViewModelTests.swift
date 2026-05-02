@@ -32,6 +32,7 @@ private final class FakePickyAgentClient: PickyAgentClient {
 
 private final class FakeSelectionStore: PickySessionSelectionStoring {
     var selectedSessionID: String?
+    var activeVoiceFollowUpSessionID: String?
 }
 
 private final class FakeArchiveStore: PickySessionArchiveStoring {
@@ -220,6 +221,16 @@ struct PickySessionViewModelTests {
 
         #expect(viewModel.selectedSession?.id == "newer")
         #expect(selection.selectedSessionID == nil)
+
+        viewModel.beginVoiceFollowUp(sessionID: "older")
+        #expect(viewModel.activeVoiceFollowUpSessionID == "older")
+        #expect(selection.activeVoiceFollowUpSessionID == "older")
+        #expect(selection.selectedSessionID == nil)
+
+        viewModel.endVoiceFollowUp(sessionID: "older")
+        #expect(viewModel.activeVoiceFollowUpSessionID == nil)
+        #expect(selection.activeVoiceFollowUpSessionID == nil)
+
         viewModel.select(sessionID: "older")
         #expect(selection.selectedSessionID == "older")
     }

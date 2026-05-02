@@ -9,6 +9,7 @@ import Foundation
 
 protocol PickySessionSelectionStoring: AnyObject {
     var selectedSessionID: String? { get set }
+    var activeVoiceFollowUpSessionID: String? { get set }
 }
 
 protocol PickySessionArchiveStoring: AnyObject {
@@ -20,6 +21,7 @@ final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring
     static let key = "PickySelectedSessionID"
 
     private let defaults: UserDefaults
+    private var transientVoiceFollowUpSessionID: String?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -37,6 +39,11 @@ final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring
                 defaults.removeObject(forKey: Self.key)
             }
         }
+    }
+
+    var activeVoiceFollowUpSessionID: String? {
+        get { transientVoiceFollowUpSessionID }
+        set { transientVoiceFollowUpSessionID = newValue?.isEmpty == true ? nil : newValue }
     }
 }
 

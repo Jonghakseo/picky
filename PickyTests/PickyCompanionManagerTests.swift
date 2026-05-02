@@ -30,6 +30,7 @@ private final class FakeVoiceClient: PickyAgentClient {
 
 private final class FakeVoiceSelectionStore: PickySessionSelectionStoring {
     var selectedSessionID: String?
+    var activeVoiceFollowUpSessionID: String?
 }
 
 @MainActor
@@ -47,22 +48,37 @@ struct PickyCompanionManagerTests {
         #expect(client.commands.isEmpty)
     }
 
-    @Test func voiceTranscriptFollowsUpSelectedSession() async throws {
+    @Test func voiceTranscriptFollowsUpOnlyActiveVoiceTarget() async throws {
         let client = FakeVoiceClient()
         let selection = FakeVoiceSelectionStore()
-        selection.selectedSessionID = "session-selected"
+        selection.selectedSessionID = "stale-selected-session"
+        selection.activeVoiceFollowUpSessionID = "session-active"
         let manager = CompanionManager(agentClient: client, selectionStore: selection)
         let context = context(source: "voice-follow-up")
 
         let receipt = try await manager.routeVoiceTranscript(transcript: "continue", contextPacket: context)
 
-        #expect(receipt.sessionID == "session-selected")
+        #expect(receipt.sessionID == "session-active")
         #expect(client.commands.first?.type == .followUp)
-        #expect(client.commands.first?.sessionId == "session-selected")
+        #expect(client.commands.first?.sessionId == "session-active")
         #expect(client.commands.first?.text == "continue")
         #expect(client.commands.first?.context?.source == "voice-follow-up")
         #expect(receipt.message.isEmpty)
         #expect(client.submissions.isEmpty)
+    }
+
+    @Test func staleSelectedSessionDoesNotCaptureVoiceTranscript() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.selectedSessionID = "stale-selected-session"
+        let manager = CompanionManager(agentClient: client, selectionStore: selection)
+        let context = context(source: "voice")
+
+        let receipt = try await manager.routeVoiceTranscript(transcript: "new task", contextPacket: context)
+
+        #expect(receipt.sessionID == "created-session")
+        #expect(client.submissions.first?.transcript == "new task")
+        #expect(client.commands.isEmpty)
     }
 
     @Test func emptyVoiceFollowUpReceiptClearsProcessingState() async throws {

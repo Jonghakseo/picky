@@ -75,6 +75,7 @@ final class CompanionManager: ObservableObject {
     private var responseStateTask: Task<Void, Never>?
     private var speechSynthesizer: NSSpeechSynthesizer?
     private var pendingAgentResponseStartedAt: Date?
+    private var voiceFollowUpSessionIDForCurrentUtterance: String?
 
     /// True when all three required permissions (accessibility, screen recording,
     /// microphone) are granted. Used by the panel to show a single "all good" state.
@@ -293,6 +294,7 @@ final class CompanionManager: ObservableObject {
             .filter { !$0.isEmpty }
             .receive(on: DispatchQueue.main)
             .sink { [weak self] message in
+                self?.voiceFollowUpSessionIDForCurrentUtterance = nil
                 self?.finishAwaitingAgentResponse(visibleText: message, spokenText: message)
             }
     }
@@ -300,11 +302,12 @@ final class CompanionManager: ObservableObject {
     private func bindVoiceStateObservation() {
         voiceStateCancellable = buddyDictationManager.$isRecordingFromKeyboardShortcut
             .combineLatest(
+                buddyDictationManager.$isRecordingFromMicrophoneButton,
                 buddyDictationManager.$isFinalizingTranscript,
                 buddyDictationManager.$isPreparingToRecord
             )
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] isRecording, isFinalizing, isPreparing in
+            .sink { [weak self] isKeyboardRecording, isMicrophoneRecording, isFinalizing, isPreparing in
                 guard let self else { return }
                 // Don't override .responding — the AI response pipeline
                 // manages that state directly until streaming finishes.
@@ -312,7 +315,7 @@ final class CompanionManager: ObservableObject {
 
                 if isFinalizing {
                     self.voiceState = .processing
-                } else if isRecording {
+                } else if isKeyboardRecording || isMicrophoneRecording {
                     self.voiceState = .listening
                 } else if isPreparing {
                     self.voiceState = .processing
@@ -344,6 +347,8 @@ final class CompanionManager: ObservableObject {
         switch transition {
         case .pressed:
             guard !buddyDictationManager.isDictationInProgress else { return }
+            voiceFollowUpSessionIDForCurrentUtterance = selectionStore.activeVoiceFollowUpSessionID
+
             // Cancel any pending transient hide so the overlay stays visible
             transientHideTask?.cancel()
             transientHideTask = nil
@@ -416,10 +421,10 @@ final class CompanionManager: ObservableObject {
                     screenProvider: StaticPickyScreenContextProvider(captures: screenCaptures),
                     defaultCwd: PickySettingsStore().load().defaultCwd
                 )
-                let selectedSessionID = selectionStore.selectedSessionID
-                let source = selectedSessionID == nil ? "voice" : "voice-follow-up"
-                let contextPacket = try assembler.assemble(source: source, transcript: transcript, selectedSessionId: selectedSessionID)
-                let receipt = try await routeVoiceTranscript(transcript: transcript, contextPacket: contextPacket)
+                let voiceFollowUpSessionID = voiceFollowUpSessionIDForCurrentUtterance
+                let source = voiceFollowUpSessionID == nil ? "voice" : "voice-follow-up"
+                let contextPacket = try assembler.assemble(source: source, transcript: transcript, selectedSessionId: voiceFollowUpSessionID)
+                let receipt = try await routeVoiceTranscript(transcript: transcript, contextPacket: contextPacket, voiceFollowUpSessionID: voiceFollowUpSessionID)
 
                 guard !Task.isCancelled else { return }
 
@@ -432,6 +437,8 @@ final class CompanionManager: ObservableObject {
                 finishAwaitingAgentResponse(visibleText: "I captured that, but the local agent client is not ready yet.", spokenText: "I captured that, but the local agent client is not ready yet.")
             }
 
+            voiceFollowUpSessionIDForCurrentUtterance = nil
+
             if !Task.isCancelled, pendingAgentResponseStartedAt == nil, voiceState != .responding {
                 voiceState = .idle
                 scheduleTransientHideIfNeeded()
@@ -439,10 +446,14 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    func routeVoiceTranscript(transcript: String, contextPacket: PickyContextPacket) async throws -> PickyAgentSubmissionReceipt {
-        if let selectedSessionID = selectionStore.selectedSessionID {
-            try await agentClient.send(PickyCommandEnvelope(type: .followUp, context: contextPacket, sessionId: selectedSessionID, text: transcript))
-            return PickyAgentSubmissionReceipt(sessionID: selectedSessionID, message: "")
+    func routeVoiceTranscript(
+        transcript: String,
+        contextPacket: PickyContextPacket,
+        voiceFollowUpSessionID: String? = nil
+    ) async throws -> PickyAgentSubmissionReceipt {
+        if let targetSessionID = voiceFollowUpSessionID ?? selectionStore.activeVoiceFollowUpSessionID {
+            try await agentClient.send(PickyCommandEnvelope(type: .followUp, context: contextPacket, sessionId: targetSessionID, text: transcript))
+            return PickyAgentSubmissionReceipt(sessionID: targetSessionID, message: "")
         }
         return try await agentClient.submit(PickyAgentSubmission(transcript: transcript, context: contextPacket))
     }

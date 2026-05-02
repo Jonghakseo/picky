@@ -265,6 +265,7 @@ private struct PickySessionCardView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     let onToggle: () -> Void
     @State private var followUpText = ""
+    @State private var isVoiceFollowUpButtonPressed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: PickyHUDExpansion.cardSpacing(isExpanded: isExpanded)) {
@@ -394,9 +395,7 @@ private struct PickySessionCardView: View {
                 iconButton(systemName: "terminal", help: "Resume in Ghostty", disabled: session.piSessionFilePath == nil || session.status == .running) {
                     viewModel.resumeInGhostty(sessionID: session.id)
                 }
-                iconButton(systemName: "text.bubble", help: "Use this session for voice follow-up") {
-                    viewModel.select(sessionID: session.id)
-                }
+                voiceFollowUpHoldButton
                 iconButton(systemName: "stop.circle", help: "Stop session", disabled: session.status.isTerminal) {
                     Task { try? await viewModel.abort(sessionID: session.id) }
                 }
@@ -409,6 +408,40 @@ private struct PickySessionCardView: View {
                 Spacer(minLength: 0)
             }
         }
+    }
+
+    private var voiceFollowUpHoldButton: some View {
+        let isActive = viewModel.activeVoiceFollowUpSessionID == session.id || isVoiceFollowUpButtonPressed
+        return Image(systemName: "text.bubble")
+            .font(.system(size: 12, weight: .semibold))
+            .frame(width: 18, height: 18)
+            .foregroundColor(isActive ? DS.Colors.accentText : DS.Colors.textSecondary)
+            .opacity(session.status == .running ? 0.85 : 1)
+            .background(
+                Circle()
+                    .fill(isActive ? DS.Colors.accentSubtle.opacity(0.9) : Color.clear)
+                    .frame(width: 24, height: 24)
+            )
+            .contentShape(Rectangle())
+            .help("Hold for voice follow-up")
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        guard !isVoiceFollowUpButtonPressed else { return }
+                        isVoiceFollowUpButtonPressed = true
+                        viewModel.beginVoiceFollowUp(sessionID: session.id)
+                    }
+                    .onEnded { _ in
+                        isVoiceFollowUpButtonPressed = false
+                        viewModel.endVoiceFollowUp(sessionID: session.id)
+                    }
+            )
+            .onDisappear {
+                if isVoiceFollowUpButtonPressed {
+                    isVoiceFollowUpButtonPressed = false
+                    viewModel.endVoiceFollowUp(sessionID: session.id)
+                }
+            }
     }
 
     private func submitFollowUp() {

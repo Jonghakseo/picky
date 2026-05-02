@@ -684,51 +684,24 @@ private struct VoicePromptCursorBubbleView: View {
     let textWidth: CGFloat
 
     var body: some View {
-        HStack(alignment: .top, spacing: 7) {
-            VoicePromptLoadingIndicatorView()
-                .padding(.top, 1)
-
-            Text(text)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(Color.black.opacity(0.82))
-                .multilineTextAlignment(.leading)
-                .frame(width: textWidth, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .lineLimit(4)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(DS.Colors.warning)
-                .shadow(color: DS.Colors.warning.opacity(0.45), radius: 8, x: 0, y: 0)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.white.opacity(0.24), lineWidth: 0.6)
-        )
-    }
-}
-
-private struct VoicePromptLoadingIndicatorView: View {
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-            Circle()
-                .trim(from: 0.18, to: 0.82)
-                .stroke(
-                    AngularGradient(
-                        colors: [
-                            Color.black.opacity(0.0),
-                            Color.black.opacity(0.74)
-                        ],
-                        center: .center
-                    ),
-                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
-                )
-                .frame(width: 12, height: 12)
-                .rotationEffect(.degrees(context.date.timeIntervalSinceReferenceDate * 420))
-        }
-        .frame(width: 12, height: 12)
+        Text(text)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundColor(Color.black.opacity(0.82))
+            .multilineTextAlignment(.leading)
+            .frame(width: textWidth, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .lineLimit(4)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(DS.Colors.warning)
+                    .shadow(color: DS.Colors.warning.opacity(0.45), radius: 8, x: 0, y: 0)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.white.opacity(0.24), lineWidth: 0.6)
+            )
     }
 }
 

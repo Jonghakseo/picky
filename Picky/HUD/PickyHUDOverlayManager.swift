@@ -25,7 +25,7 @@ final class PickyHUDOverlayManager {
     private let viewModel: PickySessionListViewModel
     private var panel: NSPanel?
     private var pendingPanelShrinkTask: Task<Void, Never>?
-    private let width: CGFloat = 320
+    private let width: CGFloat = 304
     private let collapsedHeight: CGFloat = 180
     private let minimumHeight: CGFloat = 48
 

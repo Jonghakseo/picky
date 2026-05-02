@@ -116,35 +116,41 @@ private struct PickySessionCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: PickyHUDExpansion.cardSpacing(isExpanded: isExpanded)) {
             header
+            if showsActivityLine {
+                PickyHUDActivityLineView(color: statusColor, isActive: session.status == .running)
+                    .padding(.top, 7)
+            }
             PickyHUDCollapsibleContent(isExpanded: isExpanded) {
                 expandedContent
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 9)
         .padding(.vertical, PickyHUDExpansion.cardVerticalPadding(isExpanded: isExpanded))
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(DS.Colors.surface1.opacity(0.95))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.65), lineWidth: 1))
-                .shadow(
-                    color: Color.black.opacity(PickyHUDExpansion.cardShadowOpacity),
-                    radius: PickyHUDExpansion.cardShadowRadius,
-                    x: 0,
-                    y: PickyHUDExpansion.cardShadowYOffset
-                )
-        )
+        .background(cardBackground)
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 8) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 8, height: 8)
-            Text(session.title)
-                .font(.system(size: 12.5, weight: .semibold))
-                .foregroundColor(DS.Colors.textPrimary)
-                .lineLimit(1)
+        HStack(alignment: .center, spacing: 9) {
+            PickyHUDStatusBadgeView(color: statusColor, isActive: session.status == .running)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(session.title)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundColor(DS.Colors.textPrimary)
+                    .lineLimit(1)
+                Text(headerSubtitle)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .lineLimit(1)
+            }
+            .layoutPriority(1)
             Spacer(minLength: 4)
+            Text(statusLabel)
+                .font(.system(size: 9.5, weight: .semibold))
+                .foregroundColor(statusColor)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(statusColor.opacity(0.10)))
+                .lineLimit(1)
             Image(systemName: "chevron.down")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(DS.Colors.textTertiary)
@@ -158,6 +164,10 @@ private struct PickySessionCardView: View {
     private var expandedContent: some View {
         VStack(alignment: .leading, spacing: 9) {
             Divider().opacity(0.35)
+
+            if let currentWorkDescription {
+                detailSection(title: "Current work", text: currentWorkDescription, lineLimit: 2)
+            }
 
             if let cwd = session.cwd, !cwd.isEmpty {
                 metaRow(icon: "folder", text: "CWD  \(cwd)")
@@ -342,13 +352,170 @@ private struct PickySessionCardView: View {
         .help(help)
     }
 
-    private var statusColor: Color {
-        switch session.status.hudTone {
-        case .inProgress: DS.Colors.warning
-        case .error: DS.Colors.destructiveText
-        case .completed: DS.Colors.success
-        case .other: DS.Colors.accentText
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(DS.Colors.surface1.opacity(session.status == .completed ? 0.88 : 0.95))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(statusColor.opacity(cardTintOpacity)))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(cardBorderColor, lineWidth: 1))
+            .shadow(
+                color: Color.black.opacity(PickyHUDExpansion.cardShadowOpacity),
+                radius: PickyHUDExpansion.cardShadowRadius,
+                x: 0,
+                y: PickyHUDExpansion.cardShadowYOffset
+            )
+    }
+
+    private var showsActivityLine: Bool {
+        session.status == .running
+    }
+
+    private var headerSubtitle: String {
+        let elapsed = session.elapsedDescription()
+        switch session.status {
+        case .queued:
+            return "queued · \(elapsed)"
+        case .running:
+            if let activeTool = session.activeTool {
+                return "\(activeTool.name) · \(elapsed)"
+            }
+            return "working · \(elapsed)"
+        case .waiting_for_input:
+            return "input needed · \(elapsed)"
+        case .blocked:
+            return "blocked · \(elapsed)"
+        case .completed:
+            return session.reportArtifact == nil ? "completed · \(elapsed)" : "report ready · \(elapsed)"
+        case .failed:
+            return "failed · \(elapsed)"
+        case .cancelled:
+            return "cancelled · \(elapsed)"
         }
+    }
+
+    private var statusLabel: String {
+        switch session.status {
+        case .queued: "queued"
+        case .running: "running"
+        case .waiting_for_input: "waiting"
+        case .blocked: "blocked"
+        case .completed: "done"
+        case .failed: "failed"
+        case .cancelled: "cancelled"
+        }
+    }
+
+    private var currentWorkDescription: String? {
+        switch session.status {
+        case .running:
+            if let activeTool = session.activeTool {
+                if let preview = activeTool.preview, !preview.isEmpty {
+                    return "\(activeTool.name): \(preview)"
+                }
+                return "Using \(activeTool.name)."
+            }
+            return session.lastSummary.isEmpty ? "Pi is working on this task." : session.lastSummary
+        case .waiting_for_input:
+            if let pending = session.pendingExtensionUiRequest {
+                let prompt = pending.prompt ?? pending.title ?? pending.method
+                return "Waiting for your input: \(prompt)"
+            }
+            return "Waiting for your input."
+        case .blocked:
+            return session.lastSummary.isEmpty ? "This session is blocked." : session.lastSummary
+        case .failed:
+            return session.lastSummary.isEmpty ? "This session failed. Open the report or logs for details." : session.lastSummary
+        default:
+            return nil
+        }
+    }
+
+    private var cardTintOpacity: Double {
+        switch session.status {
+        case .running: 0.04
+        case .waiting_for_input: 0.08
+        case .blocked, .failed: 0.07
+        case .completed: 0.03
+        case .queued, .cancelled: 0.02
+        }
+    }
+
+    private var cardBorderColor: Color {
+        switch session.status {
+        case .waiting_for_input:
+            return DS.Colors.warning.opacity(0.55)
+        case .blocked, .failed:
+            return DS.Colors.destructiveText.opacity(0.55)
+        case .completed:
+            return DS.Colors.success.opacity(0.42)
+        case .running:
+            return statusColor.opacity(0.50)
+        case .queued, .cancelled:
+            return DS.Colors.borderSubtle.opacity(0.65)
+        }
+    }
+
+    private var statusColor: Color {
+        switch session.status {
+        case .running:
+            return DS.Colors.overlayCursorBlue
+        case .waiting_for_input:
+            return DS.Colors.warning
+        case .blocked, .failed:
+            return DS.Colors.destructiveText
+        case .completed:
+            return DS.Colors.success
+        case .queued:
+            return DS.Colors.accentText
+        case .cancelled:
+            return DS.Colors.textTertiary
+        }
+    }
+}
+
+private struct PickyHUDStatusBadgeView: View {
+    let color: Color
+    let isActive: Bool
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(color.opacity(isActive ? 0.16 : 0.10))
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(color.opacity(isActive ? 0.70 : 0.45), lineWidth: 0.8)
+            Image("PiSymbol")
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
+                .foregroundColor(color)
+                .frame(width: 12.5, height: 12.5)
+        }
+        .frame(width: 22, height: 22)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct PickyHUDActivityLineView: View {
+    let color: Color
+    let isActive: Bool
+    @State private var isOffset = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(DS.Colors.surface3.opacity(0.85))
+                Capsule()
+                    .fill(color.opacity(0.85))
+                    .frame(width: max(34, proxy.size.width * 0.40))
+                    .offset(x: isActive && isOffset ? proxy.size.width * 0.55 : 0)
+                    .animation(
+                        isActive ? .easeInOut(duration: 1.4).repeatForever(autoreverses: true) : .default,
+                        value: isOffset
+                    )
+            }
+        }
+        .frame(height: 3)
+        .onAppear { isOffset = true }
     }
 }
 

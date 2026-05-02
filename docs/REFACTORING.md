@@ -1,6 +1,18 @@
 # Picky Refactoring Plan — Final after Self-healing
 
-Scope: Safe, behavior-preserving refactoring plan for the Picky codebase. This document is a plan only; no production code changes are included. Goal is to reduce oversized files, clarify module responsibilities, and preserve the current thin-Picky / Pi-decides architecture.
+Scope: Safe, behavior-preserving refactoring plan for the Picky codebase. Goal is to reduce oversized files, clarify module responsibilities, and preserve the current thin-Picky / Pi-decides architecture.
+
+## Execution status
+
+This plan has now been executed through the documentation finalization phase.
+
+- Phase 0A completed in `3187113 docs: add refactoring phase 0 baseline`; artifact: [`docs/refactoring/phase-0a-baseline.md`](refactoring/phase-0a-baseline.md).
+- Phase 1 completed in `1bc5c92 refactor: organize phase 1 module boundaries`; focused on low-risk folder placement and pure module boundaries.
+- Phase 2 completed in `eb87370` plus formatting fix `984df2e`; focused on HUD/overlay/panel UI decomposition.
+- Phase 3 completed in `298db42` plus cancellation boundary fix `9db897b`; focused on Companion/dictation responsibility separation while preserving cancellation behavior.
+- Phase 4 completed in `26d2a1c refactor: decompose agentd session application layer`; focused on agentd application collaborators behind the existing `SessionSupervisor` facade.
+- Phase 5 was intentionally skipped by the YAGNI gate after verifier/reviewer pass: `agentd/src/server.ts` and `agentd/src/runtime/pi-sdk-runtime.ts` remain understandable, and splitting transport/runtime helpers would add indirection without enough reuse or independent test value.
+- Phase 6 is this documentation finalization pass: architecture snapshots, deferred items, and maintenance rules are recorded without production code changes.
 
 ## Self-healing summary
 
@@ -242,9 +254,31 @@ Notes:
 - When an agentd source file moves, its matching `*.test.ts` should move with it or have imports updated in the same PR.
 - Optional files are created only if a source function is actually extracted.
 
+## Deferred items after Phase 6
+
+These were intentionally left for future work because they did not clearly reduce complexity in the completed refactor slices:
+
+- `PickyAgentClient.swift` split deferred until the app/daemon boundary grows enough to justify separate protocol, WebSocket, and stub files.
+- `DesignSystem.swift` split deferred until design tokens/styles need independent ownership or tests.
+- HUD session card separate file deferred; keep card extraction conservative and avoid promoting nested session-card types to top-level without separate approval.
+- Cursor response/navigation bubble extraction deferred until overlay view complexity grows or pure layout testing needs it.
+- Broader `main-agent-orchestrator` / visible lifecycle extraction beyond the Phase 4 application-layer split deferred until session orchestration responsibilities grow again.
+- Phase 5 transport/runtime split skipped until `server.ts` or `pi-sdk-runtime.ts` complexity grows enough that extraction has net maintainability value.
+
+## Maintenance rules
+
+- Protocol changes require contract fixtures and both Swift/TypeScript tests in the same PR.
+- UI manual smoke requires user approval before launching or restarting Picky.
+- Avoid app restart unless the user explicitly requests it.
+- Keep one responsibility per PR; do not mix UI restructuring, protocol changes, and runtime behavior changes.
+- Access-control widening (`private` / `fileprivate` to broader visibility) must be explicit in PR notes and justified by the file boundary being introduced.
+- Optional line-count checks may be added later as warning-only maintenance aids; do not make them CI-blocking for urgent hotfixes.
+
 ## Phase plan
 
 ### Phase 0A — Minimal baseline and preflight
+
+Status: completed in `3187113`; execution artifact is [`docs/refactoring/phase-0a-baseline.md`](refactoring/phase-0a-baseline.md).
 
 Purpose: establish the safety net without turning Phase 0 into a large implementation project.
 
@@ -482,6 +516,8 @@ Exit criteria:
 
 ### Phase 1 — Low-risk pure extraction and folder placement
 
+Status: completed in `1bc5c92`; low-risk module placement and pure boundaries were organized while preserving behavior.
+
 Purpose: reduce root clutter and file size by moving independent helpers without changing behavior.
 
 Swift tasks:
@@ -538,6 +574,8 @@ Exit criteria:
 
 ### Phase 2 — HUD, overlay, and panel UI decomposition
 
+Status: completed in `eb87370` with formatting fix `984df2e`; HUD/overlay/panel rendering responsibilities were split without changing protocol or runtime behavior.
+
 Purpose: split SwiftUI/AppKit rendering from state and panel lifecycle after phase-local characterization tests exist.
 
 Tasks:
@@ -577,6 +615,8 @@ Exit criteria:
 
 ### Phase 3 — Companion and dictation responsibility split
 
+Status: completed in `298db42` with cancellation boundary fix `9db897b`; Companion/dictation responsibilities were separated while preserving lifecycle, actor, and cancellation behavior.
+
 Purpose: shrink `CompanionManager` without changing lifecycle or actor behavior.
 
 Tasks:
@@ -604,6 +644,8 @@ Exit criteria:
 - Any access widening is called out explicitly in PR notes.
 
 ### Phase 4 — agentd application-layer decomposition
+
+Status: completed in `26d2a1c`; application-layer collaborators were extracted while `SessionSupervisor` remained the app-facing facade.
 
 Purpose: keep `SessionSupervisor` as facade but move separate workflows into focused collaborators.
 
@@ -639,6 +681,8 @@ Exit criteria:
 
 ### Phase 5 — Optional agentd transport/runtime boundary cleanup
 
+Status: skipped by YAGNI gate after verifier/reviewer pass; no commit was created. `server.ts` and `pi-sdk-runtime.ts` remained small/readable, and candidate helper splits did not provide enough reuse or independent test value.
+
 Purpose: make IO boundaries explicit only where complexity justifies it.
 
 YAGNI gate:
@@ -662,6 +706,8 @@ Exit criteria:
 - Net complexity reduction is justified in PR notes with before/after responsibilities.
 
 ### Phase 6 — Documentation and maintenance rules
+
+Status: completed by the documentation finalization PR; no Swift/TypeScript runtime code changes are part of this phase.
 
 Purpose: prevent regression into giant files and unclear ownership.
 

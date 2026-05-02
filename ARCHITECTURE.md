@@ -1,6 +1,6 @@
 # Picky Architecture Plan
 
-_Last updated: 2026-05-01_
+_Last updated: 2026-05-02_
 
 ## 1. Goal
 
@@ -128,6 +128,17 @@ Why a daemon instead of Swift spawning one `pi --mode rpc` process per request?
 - We need to preserve existing Pi resource discovery and extension behavior.
 
 Pi RPC remains useful as a fallback/debug integration, but the primary backend should be the Pi SDK via `picky-agentd`.
+
+### Current implementation snapshot
+
+The current codebase follows this split:
+
+- `Picky/`: SwiftUI/AppKit macOS shell. App/menu bar, settings, companion voice flow, dictation helpers, context capture, overlay windows, HUD rendering, session selection/archive state, and daemon launch/client code live here.
+- `Picky/Context/`: neutral context packet assembly and app-support screenshot storage helpers. Advanced browser/window/selection capture remains in `Picky/PickyAdvancedContext.swift`.
+- `Picky/Companion/` and `Picky/Companion/Dictation/`: companion panel components plus speech, audio conversion, transcription, and global shortcut helpers.
+- `Picky/HUD/`, `Picky/Overlay/`, `Picky/Sessions/`, `Picky/App/Settings/`: focused Swift modules for session UI, overlay lifecycle/layout, persisted session UI state, and user settings.
+- `agentd/src/`: TypeScript daemon with root WebSocket server/runtime entry points plus focused `application/`, `domain/`, and `runtime/` helpers. `SessionSupervisor` remains the facade for app-visible session operations.
+- `agentd/src/server.ts` and `agentd/src/runtime/pi-sdk-runtime.ts` intentionally remain unsplit while they are small and readable; transport/runtime extraction is deferred until it clearly reduces complexity.
 
 ## 6. Picky.app Responsibilities
 

@@ -37,6 +37,7 @@ enum PickySessionListViewModelError: LocalizedError, Equatable {
     case noSessionSelected
     case missingReport
     case missingPiSessionFile
+    case sessionActiveForTerminal
 
     var errorDescription: String? {
         switch self {
@@ -44,35 +45,8 @@ enum PickySessionListViewModelError: LocalizedError, Equatable {
         case .noSessionSelected: "No session selected for follow-up"
         case .missingReport: "Report is not available yet"
         case .missingPiSessionFile: "Pi session file is not available yet"
+        case .sessionActiveForTerminal: "Pi terminal is unavailable while this session is active"
         }
-    }
-}
-
-protocol PickyClipboardWriting {
-    func copy(_ text: String)
-}
-
-struct PickyPasteboardClipboardWriter: PickyClipboardWriting {
-    func copy(_ text: String) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-    }
-}
-
-enum PickyTerminalResumeCommand {
-    static func make(sessionFilePath: String, cwd: String?) -> String {
-        let workingDirectory = workingDirectory(from: cwd)
-        return "cd \(shellQuoted(workingDirectory)) && pi --session \(shellQuoted(sessionFilePath))"
-    }
-
-    static func workingDirectory(from cwd: String?) -> String {
-        let trimmedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmedCwd.isEmpty ? FileManager.default.homeDirectoryForCurrentUser.path : trimmedCwd
-    }
-
-    static func shellQuoted(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
 
@@ -162,7 +136,8 @@ final class PickySessionListViewModel: ObservableObject {
     private let selectionStore: PickySessionSelectionStoring
     private let archiveStore: PickySessionArchiveStoring
     private let artifactPathValidator: PickyArtifactPathValidator
-    private let clipboardWriter: PickyClipboardWriting
+    private let terminalPresenter: PickyTerminalOverlayPresenting
+    private let terminalSessionSyncer: PickyTerminalSessionSyncing
     private var eventTask: Task<Void, Never>?
     private var deliveredNotificationKeys = Set<String>()
     private var hasExplicitSelection = false
@@ -173,14 +148,16 @@ final class PickySessionListViewModel: ObservableObject {
         selectionStore: PickySessionSelectionStoring = PickyUserDefaultsSessionSelectionStore.shared,
         archiveStore: PickySessionArchiveStoring = PickyUserDefaultsSessionArchiveStore.shared,
         artifactPathValidator: PickyArtifactPathValidator = PickyArtifactPathValidator(appSupportRoot: PickyAppSupport.defaultRoot()),
-        clipboardWriter: PickyClipboardWriting = PickyPasteboardClipboardWriter()
+        terminalPresenter: PickyTerminalOverlayPresenting? = nil,
+        terminalSessionSyncer: PickyTerminalSessionSyncing = PickyPiSessionFileSyncer()
     ) {
         self.client = client
         self.notificationCenter = notificationCenter
         self.selectionStore = selectionStore
         self.archiveStore = archiveStore
         self.artifactPathValidator = artifactPathValidator
-        self.clipboardWriter = clipboardWriter
+        self.terminalPresenter = terminalPresenter ?? PickyTerminalOverlayPresenter.shared
+        self.terminalSessionSyncer = terminalSessionSyncer
         self.selectedSessionID = selectionStore.selectedSessionID
         self.hoveredVoiceFollowUpSessionID = selectionStore.hoveredVoiceFollowUpSessionID
         self.hasExplicitSelection = self.selectedSessionID != nil
@@ -302,22 +279,54 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    func copyTerminalResumeCommand(sessionID: String) {
-        pickySessionLog("copy terminal resume command session=\(sessionID)")
+    func openTerminalOverlay(sessionID: String) {
+        pickySessionLog("open terminal overlay session=\(sessionID)")
         guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
               let piSessionFilePath = session.piSessionFilePath else {
             lastError = PickySessionListViewModelError.missingPiSessionFile.localizedDescription
             return
         }
+        guard !session.status.blocksTerminalOverlay else {
+            lastError = PickySessionListViewModelError.sessionActiveForTerminal.localizedDescription
+            return
+        }
 
-        let command = PickyTerminalResumeCommand.make(sessionFilePath: piSessionFilePath, cwd: session.cwd)
-        clipboardWriter.copy(command)
-        notificationCenter.deliver(
-            title: "Pi resume command copied",
-            body: "Paste it in a terminal to resume this session.",
-            identifier: "picky-resume-command-\(sessionID)"
-        )
-        lastError = nil
+        do {
+            try terminalPresenter.openTerminal(
+                sessionID: session.id,
+                title: session.title,
+                sessionFilePath: piSessionFilePath,
+                cwd: session.cwd,
+                onClose: { [weak self] in
+                    self?.syncTerminalSessionOnce(sessionID: session.id)
+                }
+            )
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func syncTerminalSessionOnce(sessionID: String) {
+        guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
+              let piSessionFilePath = session.piSessionFilePath else { return }
+        do {
+            let snapshot = try terminalSessionSyncer.snapshot(sessionFilePath: piSessionFilePath)
+            guard !snapshot.isEmpty else { return }
+            update(sessionID: sessionID) { card in
+                if let lastUserText = snapshot.lastUserText {
+                    card.lastRequestText = lastUserText
+                }
+                if let lastAssistantText = snapshot.lastAssistantText {
+                    card.lastSummary = lastAssistantText.terminalCardSummary
+                    card.logPreview = "Synced from Pi terminal session"
+                }
+                card.updatedAt = Date()
+            }
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
     }
 
     func archive(sessionID: String) {
@@ -656,6 +665,13 @@ extension PickySessionStatus {
         switch self {
         case .completed, .failed, .cancelled: true
         case .queued, .running, .waiting_for_input, .blocked: false
+        }
+    }
+
+    var blocksTerminalOverlay: Bool {
+        switch self {
+        case .queued, .running, .waiting_for_input: true
+        case .blocked, .completed, .failed, .cancelled: false
         }
     }
 

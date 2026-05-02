@@ -125,7 +125,7 @@ export class SessionSupervisor extends EventEmitter {
 
   async createSideFromHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string }): Promise<PickyAgentSession> {
     logAgentd("side session create requested", { contextId: context.id, titleChars: handoff.title.length, instructionChars: handoff.instructions.length });
-    const session = await this.createVisibleSession(context, handoff.title.trim() || titleFromContext(context), buildSideAgentPrompt(context, handoff));
+    const session = await this.createVisibleSession(context, handoff.title.trim() || titleFromContext(context), buildSideAgentPrompt(context, handoff), { notifyMainOnCompletion: true });
     this.sideSessionIds.add(session.id);
     await this.appendLog(session.id, `main-agent handoff: ${handoff.instructions}`);
     return this.mustGet(session.id);
@@ -144,6 +144,7 @@ export class SessionSupervisor extends EventEmitter {
       lastSummary: "Pinned completed Pi session",
       finalAnswer: "Pinned from an idle Pi session. No Picky side-agent run has been started yet.",
       logs: buildPinnedSideSessionLogs(context),
+      notifyMainOnCompletion: true,
       tools: [],
       artifacts: [],
       changedFiles: [],
@@ -152,10 +153,11 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("side session pinned", { sessionId: id, titleChars: session.title.length, cwd: context.cwd, contextId: context.id });
     await this.upsert(session);
     await this.materializeTerminalArtifacts(id);
+    await this.notifyMainOfSideCompletion(id);
     return this.mustGet(id);
   }
 
-  private async createVisibleSession(context: PickyContextPacket, title: string, prompt = buildInitialTaskPrompt(context)): Promise<PickyAgentSession> {
+  private async createVisibleSession(context: PickyContextPacket, title: string, prompt = buildInitialTaskPrompt(context), options: { notifyMainOnCompletion?: boolean } = {}): Promise<PickyAgentSession> {
     const now = new Date().toISOString();
     const id = `session-${randomUUID()}`;
     const session: PickyAgentSession = {
@@ -166,6 +168,7 @@ export class SessionSupervisor extends EventEmitter {
       createdAt: now,
       updatedAt: now,
       logs: [],
+      notifyMainOnCompletion: options.notifyMainOnCompletion ?? false,
       tools: [],
       artifacts: [],
       changedFiles: [],
@@ -277,13 +280,36 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async notifyMainOfSideCompletion(sessionId: string): Promise<void> {
-    if (!this.mainHandle || this.sideCompletionNotified.has(sessionId)) return;
     const session = this.mustGet(sessionId);
+    if (session.notifyMainOnCompletion === false || this.sideCompletionNotified.has(sessionId)) return;
+    const prompt = buildMainAgentSideCompletionPrompt(session);
+    const delivery = await this.prepareMainCompletionDelivery(prompt, session.cwd);
+    if (!delivery) return;
+
     this.sideCompletionNotified.add(sessionId);
     logAgentd("side completion notifying main", { sessionId, status: session.status });
     this.mainReplyContextId = sessionId;
     this.mainDraft = "";
-    await this.mainHandle.followUp(buildMainAgentSideCompletionPrompt(session));
+    if (delivery.sendAsFollowUp) await delivery.handle.followUp(prompt);
+  }
+
+  private async prepareMainCompletionDelivery(prompt: ReturnType<typeof buildMainAgentSideCompletionPrompt>, cwd?: string): Promise<{ handle: RuntimeSessionHandle; sendAsFollowUp: boolean } | undefined> {
+    if (this.mainHandle) return { handle: this.mainHandle, sendAsFollowUp: true };
+    if (!this.options.mainRuntime) return undefined;
+    if (this.mainHandlePromise) return { handle: await this.mainHandlePromise, sendAsFollowUp: true };
+    if (this.options.mainRuntime.prewarm) return { handle: await this.ensurePrewarmedMainHandle(cwd ?? process.cwd()), sendAsFollowUp: true };
+
+    const handle = await this.options.mainRuntime.create(prompt, { cwd, sessionId: "picky-main-agent" });
+    this.attachMainHandle(handle);
+    return { handle, sendAsFollowUp: false };
+  }
+
+  async setNotifyMainOnCompletion(sessionId: string, enabled: boolean): Promise<PickyAgentSession> {
+    if (!this.isSideSession(sessionId)) throw new Error(`Session is not a Picky side agent: ${sessionId}`);
+    await this.patch(sessionId, { notifyMainOnCompletion: enabled });
+    const session = this.mustGet(sessionId);
+    if (enabled && isTerminalStatus(session.status)) await this.notifyMainOfSideCompletion(sessionId);
+    return this.mustGet(sessionId);
   }
 
   async followUpSideSession(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
@@ -300,9 +326,9 @@ export class SessionSupervisor extends EventEmitter {
       const hasPiSessionFile = Boolean(piSessionFilePathFromLogs(session.logs));
       const reason = this.runtime.resume
         ? hasPiSessionFile
-          ? "Runtime session is not attached after daemon restart and automatic Pi session reattach failed; start a new task or copy the Pi resume command from the terminal button"
+          ? "Runtime session is not attached after daemon restart and automatic Pi session reattach failed; start a new task or open the Pi terminal overlay"
           : "Runtime session is not attached after daemon restart and no Pi session file is available to resume; start a new task"
-        : "Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or copy the Pi resume command from the terminal button";
+        : "Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or open the Pi terminal overlay";
       await this.patch(sessionId, {
         status: "blocked",
         lastSummary: reason,

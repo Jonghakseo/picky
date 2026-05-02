@@ -100,6 +100,7 @@ export const PickyAgentSessionSchema = z.object({
   artifacts: z.array(PickyArtifactSchema).default([]),
   changedFiles: z.array(PickyChangedFileSchema).default([]),
   pendingExtensionUiRequest: PickyExtensionUiRequestSchema.optional(),
+  notifyMainOnCompletion: z.boolean().optional(),
 });
 
 export type PickyAgentSession = z.infer<typeof PickyAgentSessionSchema>;
@@ -109,6 +110,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("routeTask"), context: PickyContextPacketSchema }),
   CommandBaseSchema.extend({ type: z.literal("createTask"), context: PickyContextPacketSchema }),
   CommandBaseSchema.extend({ type: z.literal("pinSideSession"), context: PickyContextPacketSchema, title: z.string().min(1).optional() }),
+  CommandBaseSchema.extend({ type: z.literal("setNotifyMainOnCompletion"), sessionId: z.string(), enabled: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("followUp"), sessionId: z.string(), text: z.string().min(1), context: PickyContextPacketSchema.optional() }),
   CommandBaseSchema.extend({ type: z.literal("steer"), sessionId: z.string(), text: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("abort"), sessionId: z.string() }),

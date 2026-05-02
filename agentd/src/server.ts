@@ -78,6 +78,7 @@ export class AgentdServer {
       if (command.type === "routeTask") await this.options.supervisor.route(command.context);
       if (command.type === "createTask") await this.options.supervisor.create(command.context);
       if (command.type === "pinSideSession") await this.options.supervisor.pinSideSession(command.context, command.title);
+      if (command.type === "setNotifyMainOnCompletion") await this.options.supervisor.setNotifyMainOnCompletion(command.sessionId, command.enabled);
       if (command.type === "followUp") await this.options.supervisor.followUp(command.sessionId, command.text, command.context);
       if (command.type === "steer") await this.options.supervisor.steer(command.sessionId, command.text);
       if (command.type === "abort") await this.options.supervisor.abort(command.sessionId);
@@ -113,6 +114,8 @@ function commandLogFields(command: ReturnType<typeof parseCommand>): Record<stri
     case "followUp":
     case "steer":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, textChars: command.text.length };
+    case "setNotifyMainOnCompletion":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, enabled: command.enabled ? 1 : 0 };
     case "abort":
     case "getSession":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId };

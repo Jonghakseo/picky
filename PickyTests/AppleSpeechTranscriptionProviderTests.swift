@@ -89,4 +89,13 @@ struct AppleSpeechTranscriptionProviderTests {
 
         #expect(transcript == "첫 번째 문장입니다 두 번째 문장입니다 세 번째 문장입니다 네 번째 문장입니다")
     }
+
+    @Test func transcriptAccumulatorTreatsFuzzySameBeginningAsRevisionNotResetChunk() {
+        var accumulator = AppleSpeechTranscriptAccumulator()
+
+        _ = accumulator.update(with: "최근 실행 된 사이트 케이션트 다섯개 개 중 최근 실행 된 사이트 케이션트 5개 중 최근 실행 된 사이트케이션트 5개 중에 몇 개")
+        let transcript = accumulator.update(with: "최근 실행 된 사이트케이션트 5개 중에 몇 개가 최근 실행 된 사이트케이션트 5개 중에 몇 개가")
+
+        #expect(transcript == "최근 실행 된 사이트케이션트 5개 중에 몇 개가 최근 실행 된 사이트케이션트 5개 중에 몇 개가")
+    }
 }

@@ -389,6 +389,10 @@ final class PickySessionListViewModel: ObservableObject {
         archivedIDs.insert(sessionID)
         archiveStore.archivedSessionIDs = archivedIDs
 
+        var manuallyArchivedIDs = archiveStore.manuallyArchivedSessionIDs
+        manuallyArchivedIDs.insert(sessionID)
+        archiveStore.manuallyArchivedSessionIDs = manuallyArchivedIDs
+
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
         let archived = sessions.remove(at: index)
         if !archivedSessions.contains(where: { $0.id == sessionID }) {
@@ -444,7 +448,7 @@ final class PickySessionListViewModel: ObservableObject {
         case .sessionSnapshot(let snapshot):
             pickySessionLog("snapshot sessions=\(snapshot.count)")
             let cards = snapshot.map(SessionCard.init(session:))
-            let archivedIDs = migratedArchivedSessionIDs(for: cards)
+            let archivedIDs = effectiveArchivedSessionIDs(for: cards)
             sessions = cards.filter { !archivedIDs.contains($0.id) }.sortedForHUD()
             archivedSessions = cards.filter { archivedIDs.contains($0.id) }.sortedForHUD()
             syncSelectionAfterSessionListChange()
@@ -514,16 +518,17 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    private func migratedArchivedSessionIDs(for cards: [SessionCard]) -> Set<String> {
+    private func effectiveArchivedSessionIDs(for cards: [SessionCard]) -> Set<String> {
         var archivedIDs = archiveStore.archivedSessionIDs
-        guard !archiveStore.didMigrateDetachedRuntimeAutoArchive else { return archivedIDs }
-
+        let manuallyArchivedIDs = archiveStore.manuallyArchivedSessionIDs
         let detachedRuntimeIDs = Set(cards.filter(\.isRuntimeDetachedRestoredSession).map(\.id))
-        if !detachedRuntimeIDs.isEmpty {
-            archivedIDs.subtract(detachedRuntimeIDs)
+        let autoArchivedDetachedRuntimeIDs = detachedRuntimeIDs.subtracting(manuallyArchivedIDs)
+
+        if !autoArchivedDetachedRuntimeIDs.isEmpty {
+            archivedIDs.subtract(autoArchivedDetachedRuntimeIDs)
             archiveStore.archivedSessionIDs = archivedIDs
         }
-        archiveStore.didMigrateDetachedRuntimeAutoArchive = true
+
         return archivedIDs
     }
 

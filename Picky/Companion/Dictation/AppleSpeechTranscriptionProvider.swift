@@ -103,6 +103,13 @@ struct AppleSpeechTranscriptAccumulator {
             return accumulatedText
         }
 
+        if Self.hasMeaningfulSharedBeginning(existingText: existingText, incomingText: incomingText) {
+            if Self.isComparableLengthRevision(existingText: existingText, incomingText: incomingText) {
+                accumulatedText = incomingText
+            }
+            return accumulatedText
+        }
+
         if Self.shouldTreatAsRevisionOfExistingResult(existingText: existingText, incomingText: incomingText) {
             accumulatedText = incomingText
             return accumulatedText
@@ -149,6 +156,22 @@ struct AppleSpeechTranscriptAccumulator {
 
         guard !incomingTokens.isEmpty else { return false }
         return existingText.count >= 40 || existingTokens.count >= 8
+    }
+
+    private static func hasMeaningfulSharedBeginning(existingText: String, incomingText: String) -> Bool {
+        let existingPrefixText = existingText.normalizedForTranscriptPrefixComparison
+        let incomingPrefixText = incomingText.normalizedForTranscriptPrefixComparison
+        guard existingPrefixText.count >= 12, incomingPrefixText.count >= 12 else { return false }
+
+        let commonPrefixLength = zip(existingPrefixText, incomingPrefixText).prefix { pair in pair.0 == pair.1 }.count
+        return commonPrefixLength >= 10
+    }
+
+    private static func isComparableLengthRevision(existingText: String, incomingText: String) -> Bool {
+        let existingLength = existingText.normalizedForTranscriptPrefixComparison.count
+        let incomingLength = incomingText.normalizedForTranscriptPrefixComparison.count
+        guard existingLength > 0 else { return true }
+        return Double(incomingLength) >= Double(existingLength) * 0.6
     }
 
     private static func shouldTreatAsRevisionOfExistingResult(existingText: String, incomingText: String) -> Bool {
@@ -250,6 +273,14 @@ private extension String {
     var normalizedForTranscriptTokenComparison: String {
         trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
             .lowercased()
+    }
+
+    var normalizedForTranscriptPrefixComparison: String {
+        String(unicodeScalars.filter { scalar in
+            !CharacterSet.whitespacesAndNewlines.contains(scalar)
+                && !CharacterSet.punctuationCharacters.contains(scalar)
+        })
+        .lowercased()
     }
 }
 

@@ -37,7 +37,7 @@ private final class FakeSelectionStore: PickySessionSelectionStoring {
 
 private final class FakeArchiveStore: PickySessionArchiveStoring {
     var archivedSessionIDs = Set<String>()
-    var didMigrateDetachedRuntimeAutoArchive = false
+    var manuallyArchivedSessionIDs = Set<String>()
 }
 
 private final class FakeClipboardWriter: PickyClipboardWriting {
@@ -602,10 +602,11 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.lastRequestText == "include CWD in the HUD")
     }
 
-    @Test func runtimeDetachedRestoredSessionsStayVisibleAndMigrateAutoArchive() async throws {
+    @Test func runtimeDetachedRestoredSessionsStayVisibleAndClearAutoArchiveState() async throws {
         let client = FakePickyAgentClient()
         let archiveStore = FakeArchiveStore()
         archiveStore.archivedSessionIDs = ["lost-runtime", "manual-completed"]
+        archiveStore.manuallyArchivedSessionIDs = ["manual-completed"]
         let viewModel = PickySessionListViewModel(
             client: client,
             notificationCenter: PickyNoopNotificationCenter(),
@@ -621,10 +622,10 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.map(\.id) == ["lost-runtime"])
         #expect(viewModel.archivedSessions.map(\.id) == ["manual-completed"])
         #expect(archiveStore.archivedSessionIDs == ["manual-completed"])
-        #expect(archiveStore.didMigrateDetachedRuntimeAutoArchive)
 
         viewModel.archive(sessionID: "lost-runtime")
         #expect(archiveStore.archivedSessionIDs == ["lost-runtime", "manual-completed"])
+        #expect(archiveStore.manuallyArchivedSessionIDs == ["lost-runtime", "manual-completed"])
 
         client.emit(.protocolEvent(.fixture(eventJSON: """
         {"id":"snapshot-detached-2","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionSnapshot","sessions":[{"id":"lost-runtime","title":"Old side agent","status":"blocked","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","lastSummary":"Runtime not attached after daemon restart; start a new task or resume support is required","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},{"id":"manual-completed","title":"Manual archive","status":"completed","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}

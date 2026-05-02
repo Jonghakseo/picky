@@ -52,21 +52,27 @@ class OverlayWindow: NSWindow {
     }
 }
 
-// Cursor-like triangle shape (equilateral)
-struct Triangle: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let size = min(rect.width, rect.height)
-        let height = size * sqrt(3.0) / 2.0
+// Pi-shaped cursor buddy icon.
+private struct PiCursorIconView: View {
+    var body: some View {
+        ZStack {
+            Text("π")
+                .font(.system(size: 20, weight: .black, design: .rounded))
+                .foregroundColor(DS.Colors.overlayCursorBlue.opacity(0.28))
+                .blur(radius: 3)
+                .scaleEffect(1.2)
 
-        // Top vertex
-        path.move(to: CGPoint(x: rect.midX, y: rect.midY - height / 1.5))
-        // Bottom left vertex
-        path.addLine(to: CGPoint(x: rect.midX - size / 2, y: rect.midY + height / 3))
-        // Bottom right vertex
-        path.addLine(to: CGPoint(x: rect.midX + size / 2, y: rect.midY + height / 3))
-        path.closeSubpath()
-        return path
+            Text("π")
+                .font(.system(size: 19, weight: .black, design: .rounded))
+                .foregroundColor(DS.Colors.overlayCursorBlue)
+
+            Text("π")
+                .font(.system(size: 19, weight: .black, design: .rounded))
+                .foregroundColor(.white.opacity(0.2))
+                .offset(x: -0.7, y: -0.8)
+        }
+        .frame(width: 22, height: 22)
+        .offset(y: -1)
     }
 }
 
@@ -116,7 +122,7 @@ enum BuddyNavigationMode {
 // SwiftUI view for the blue glowing cursor pointer.
 // Each screen gets its own BlueCursorView. The view checks whether
 // the cursor is currently on THIS screen and only shows the buddy
-// triangle when it is. During voice interaction, the triangle is
+// pi icon when it is. During voice interaction, the pi icon is
 // replaced by a waveform (listening), spinner (processing), or
 // streaming text bubble (responding).
 struct BlueCursorView: View {
@@ -153,10 +159,6 @@ struct BlueCursorView: View {
     /// The buddy's current behavioral mode (following cursor, navigating, or pointing).
     @State private var buddyNavigationMode: BuddyNavigationMode = .followingCursor
 
-    /// The rotation angle of the triangle in degrees. Default is -35° (cursor-like).
-    /// Changes to face the direction of travel when navigating to a target.
-    @State private var triangleRotationDegrees: Double = -35.0
-
     /// Speech bubble text shown when pointing at a detected element.
     @State private var navigationBubbleText: String = ""
     @State private var navigationBubbleOpacity: Double = 0.0
@@ -170,7 +172,7 @@ struct BlueCursorView: View {
     /// Invalidated when the flight completes, is canceled, or the view disappears.
     @State private var navigationAnimationTimer: Timer?
 
-    /// Scale factor applied to the buddy triangle during flight. Grows to ~1.3x
+    /// Scale factor applied to the buddy pi icon during flight. Grows to ~1.3x
     /// at the midpoint of the arc and shrinks back to 1.0x on landing, creating
     /// an energetic "swooping" feel.
     @State private var buddyFlightScale: CGFloat = 1.0
@@ -350,18 +352,15 @@ struct BlueCursorView: View {
                     }
             }
 
-            // Blue triangle cursor — shown when idle or while TTS is playing (responding).
-            // All three states (triangle, waveform, spinner) stay in the view tree
+            // Blue pi cursor — shown when idle or while TTS is playing (responding).
+            // All three states (pi icon, waveform, spinner) stay in the view tree
             // permanently and cross-fade via opacity so SwiftUI doesn't remove/re-insert
             // them (which caused a visible cursor "pop").
             //
             // During cursor following: fast spring animation for snappy tracking.
             // During navigation: NO implicit animation — the frame-by-frame bezier
             // timer controls position directly at 60fps for a smooth arc flight.
-            Triangle()
-                .fill(DS.Colors.overlayCursorBlue)
-                .frame(width: 16, height: 16)
-                .rotationEffect(.degrees(triangleRotationDegrees))
+            PiCursorIconView()
                 .shadow(color: DS.Colors.overlayCursorBlue, radius: 8 + (buddyFlightScale - 1.0) * 20, x: 0, y: 0)
                 .scaleEffect(buddyFlightScale)
                 .opacity(buddyIsVisibleOnThisScreen && (companionManager.voiceState == .idle || companionManager.voiceState == .responding) ? cursorOpacity : 0)
@@ -373,12 +372,8 @@ struct BlueCursorView: View {
                     value: cursorPosition
                 )
                 .animation(.easeIn(duration: 0.25), value: companionManager.voiceState)
-                .animation(
-                    buddyNavigationMode == .navigatingToTarget ? nil : .easeInOut(duration: 0.3),
-                    value: triangleRotationDegrees
-                )
 
-            // Blue waveform — replaces the triangle while listening
+            // Blue waveform — replaces the pi icon while listening
             BlueCursorWaveformView(audioPowerLevel: companionManager.currentAudioPowerLevel)
                 .opacity(buddyIsVisibleOnThisScreen && companionManager.voiceState == .listening ? cursorOpacity : 0)
                 .position(cursorPosition)
@@ -442,7 +437,7 @@ struct BlueCursorView: View {
         }
     }
 
-    /// Whether the buddy triangle should be visible on this screen.
+    /// Whether the buddy pi icon should be visible on this screen.
     /// True when cursor is on this screen during normal following, or
     /// when navigating/pointing at a target on this screen. When another
     /// screen is navigating (detectedElementScreenLocation is set but this
@@ -545,9 +540,8 @@ struct BlueCursorView: View {
     }
 
     /// Animates the buddy along a quadratic bezier arc from its current position
-    /// to the specified destination. The triangle rotates to face its direction
-    /// of travel (tangent to the curve) each frame, scales up at the midpoint
-    /// for a "swooping" feel, and the glow intensifies during flight.
+    /// to the specified destination. The pi icon scales up at the midpoint for
+    /// a "swooping" feel, and the glow intensifies during flight.
     private func animateBezierFlightArc(
         to destination: CGPoint,
         onComplete: @escaping () -> Void
@@ -606,16 +600,6 @@ struct BlueCursorView: View {
 
             self.cursorPosition = CGPoint(x: bezierX, y: bezierY)
 
-            // Rotation: face the direction of travel by computing the tangent
-            // to the bezier curve. B'(t) = 2(1-t)(P1-P0) + 2t(P2-P1)
-            let tangentX = 2.0 * oneMinusT * (controlPoint.x - startPosition.x)
-                         + 2.0 * t * (endPosition.x - controlPoint.x)
-            let tangentY = 2.0 * oneMinusT * (controlPoint.y - startPosition.y)
-                         + 2.0 * t * (endPosition.y - controlPoint.y)
-            // +90° offset because the triangle's "tip" points up at 0° rotation,
-            // and atan2 returns 0° for rightward movement
-            self.triangleRotationDegrees = atan2(tangentY, tangentX) * (180.0 / .pi) + 90.0
-
             // Scale pulse: sin curve peaks at midpoint of the flight.
             // Buddy grows to ~1.3x at the apex, then shrinks back to 1.0x on landing.
             let scalePulse = sin(linearProgress * .pi)
@@ -627,9 +611,6 @@ struct BlueCursorView: View {
     /// scale-in entrance and variable-speed character streaming.
     private func startPointingAtElement() {
         buddyNavigationMode = .pointingAtTarget
-
-        // Rotate back to default pointer angle now that we've arrived
-        triangleRotationDegrees = -35.0
 
         // Reset navigation bubble state — start small for the scale-bounce entrance
         navigationBubbleText = ""
@@ -720,7 +701,6 @@ struct BlueCursorView: View {
         navigationAnimationTimer = nil
         buddyNavigationMode = .followingCursor
         isReturningToCursor = false
-        triangleRotationDegrees = -35.0
         buddyFlightScale = 1.0
         navigationBubbleText = ""
         navigationBubbleOpacity = 0.0
@@ -760,7 +740,7 @@ struct BlueCursorView: View {
 
 // MARK: - Blue Cursor Waveform
 
-/// A small blue waveform that replaces the triangle cursor while
+/// A small blue waveform that replaces the pi cursor while
 /// the user is holding the push-to-talk shortcut and speaking.
 private struct BlueCursorWaveformView: View {
     let audioPowerLevel: CGFloat
@@ -800,7 +780,7 @@ private struct BlueCursorWaveformView: View {
 
 // MARK: - Blue Cursor Spinner
 
-/// A small blue spinning indicator that replaces the triangle cursor
+/// A small blue spinning indicator that replaces the pi cursor
 /// while the AI is processing a voice input.
 private struct BlueCursorSpinnerView: View {
     @State private var isSpinning = false

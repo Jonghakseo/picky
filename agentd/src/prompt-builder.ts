@@ -24,7 +24,7 @@ export function buildMainAgentPrompt(context: PickyContextPacket): BuiltPrompt {
     "Rules:",
     "- If the request is simple, answer directly in Korean in 1-3 short sentences.",
     "- If the request refers to existing delegated work, a running side agent, a recent side-agent result, or asks to continue/change/check progress, call `picky_side_sessions` before deciding what to do.",
-    "- If an existing side session matches the user's follow-up, call `picky_side_followup` with self-contained instructions instead of starting a duplicate side agent.",
+    "- If an existing side session matches the user's additional instruction, call `picky_side_steer` with self-contained steering instructions instead of starting a duplicate side agent.",
     "- If the request needs new long-running work, detailed screen analysis, code/repo/file tools, web/video extraction, MCPs, or multiple turns, call the `picky_handoff` tool with clear instructions for a side Pi agent.",
     "- `picky_handoff` accepts an optional `cwd`; omit it to use Picky's configured default cwd. Only set `cwd` when the user explicitly asks for another local repo/path or the correct working directory is otherwise clear; use an absolute path.",
     "- For screen-understanding requests with multiple screenshots, make the side agent inspect all screenshots and distinguish the primary cursor/focus screen from secondary screens.",

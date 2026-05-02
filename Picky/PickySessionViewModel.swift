@@ -41,8 +41,8 @@ enum PickySessionListViewModelError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .emptyFollowUp: "Follow-up cannot be empty"
-        case .noSessionSelected: "No session selected for follow-up"
+        case .emptyFollowUp: "Steer message cannot be empty"
+        case .noSessionSelected: "No session selected for steering"
         case .missingReport: "Report is not available yet"
         case .missingPiSessionFile: "Pi session file is not available yet"
         case .sessionActiveForTerminal: "Pi terminal is unavailable while this session is active"
@@ -233,15 +233,15 @@ final class PickySessionListViewModel: ObservableObject {
     func followUp(text: String, sessionID: String? = nil) async throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            lastError = "Follow-up cannot be empty"
+            lastError = "Steer message cannot be empty"
             throw PickySessionListViewModelError.emptyFollowUp
         }
         guard let target = sessionID ?? selectedSession?.id else {
-            lastError = "No session selected for follow-up"
+            lastError = "No session selected for steering"
             throw PickySessionListViewModelError.noSessionSelected
         }
-        pickySessionLog("follow-up session=\(target) textChars=\(trimmed.count)")
-        try await client.send(PickyCommandEnvelope(type: .followUp, sessionId: target, text: trimmed))
+        pickySessionLog("steer session=\(target) textChars=\(trimmed.count)")
+        try await client.send(PickyCommandEnvelope(type: .steer, sessionId: target, text: trimmed))
         update(sessionID: target) { card in
             card.lastRequestText = trimmed
             card.updatedAt = Date()
@@ -673,7 +673,7 @@ private extension PickySessionListViewModel.SessionCard {
 
     static func requestText(fromLogLine line: String) -> String? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        for prefix in ["follow-up: ", "main-agent handoff: "] {
+        for prefix in ["steer: ", "follow-up: ", "main-agent handoff: "] {
             if trimmed.hasPrefix(prefix) {
                 return normalizedRequestText(String(trimmed.dropFirst(prefix.count)))
             }
@@ -692,7 +692,7 @@ private extension PickySessionListViewModel.SessionCard {
     }
 
     static func isRuntimeDetachedFollowUpRejection(_ line: String) -> Bool {
-        line.localizedCaseInsensitiveContains("follow-up rejected:")
+        (line.localizedCaseInsensitiveContains("follow-up rejected:") || line.localizedCaseInsensitiveContains("steer rejected:"))
             && line.localizedCaseInsensitiveContains("Runtime session is not attached after daemon restart")
     }
 }

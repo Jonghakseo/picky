@@ -589,14 +589,14 @@ struct PickySessionViewModelTests {
         viewModel.start()
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
             status: "running",
-            logs: ["main-agent handoff: initial screen check", "follow-up: summarize the failing case"]
+            logs: ["main-agent handoff: initial screen check", "steer: summarize the failing case"]
         ))))
         try await settle()
 
         #expect(viewModel.sessions.first?.lastRequestText == "summarize the failing case")
         #expect(viewModel.sessions.first?.compactCwdDescription == "~/Documents/picky")
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "session-1", line: "follow-up: include CWD in the HUD"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "session-1", line: "steer: include CWD in the HUD"))))
         try await settle()
         #expect(viewModel.sessions.first?.lastRequestText == "include CWD in the HUD")
     }
@@ -639,7 +639,7 @@ struct PickySessionViewModelTests {
         ))))
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(
             sessionId: "followup-detached",
-            line: "follow-up rejected: Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or open the Pi terminal overlay"
+            line: "steer rejected: Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or open the Pi terminal overlay"
         ))))
         try await settle()
 
@@ -650,7 +650,7 @@ struct PickySessionViewModelTests {
         #expect(archiveStore.archivedSessionIDs.isEmpty)
     }
 
-    @Test func textFollowUpTargetsSelectedSessionAndRejectsEmptyInput() async throws {
+    @Test func textSteerTargetsSelectedSessionAndRejectsEmptyInput() async throws {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
@@ -659,7 +659,7 @@ struct PickySessionViewModelTests {
         try await settle()
 
         try await viewModel.followUp(text: "  continue here  ")
-        #expect(client.sentCommands.last?.type == .followUp)
+        #expect(client.sentCommands.last?.type == .steer)
         #expect(client.sentCommands.last?.sessionId == "session-follow")
         #expect(client.sentCommands.last?.text == "continue here")
         await #expect(throws: PickySessionListViewModelError.emptyFollowUp) {

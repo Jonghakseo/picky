@@ -361,14 +361,19 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(sessionId);
   }
 
-  async followUpSideSession(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
+  async followUpSideSession(sessionId: string, text: string, _context?: PickyContextPacket): Promise<PickyAgentSession> {
+    return this.steerSideSession(sessionId, text);
+  }
+
+  async steerSideSession(sessionId: string, text: string): Promise<PickyAgentSession> {
     if (!this.isSideSession(sessionId)) throw new Error(`Session is not a Picky side agent: ${sessionId}`);
     this.sideCompletionNotified.delete(sessionId);
-    return this.followUp(sessionId, text, context);
+    return this.steer(sessionId, text);
   }
 
   async followUp(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
+    if (this.isSideSession(sessionId)) return this.steerSideSession(sessionId, text);
     if (["failed", "cancelled"].includes(session.status)) throw new Error(`Cannot follow up ${session.status} session`);
     const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
     if (!handle) {
@@ -434,10 +439,19 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async steer(sessionId: string, text: string): Promise<PickyAgentSession> {
-    const handle = this.runtimeHandles.get(sessionId);
-    if (!handle) throw new Error("Runtime session is not attached");
+    const session = this.mustGet(sessionId);
+    if (["failed", "cancelled"].includes(session.status)) throw new Error(`Cannot steer ${session.status} session`);
+    const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
+    if (!handle) {
+      const reason = "Runtime session is not attached";
+      await this.appendLog(sessionId, `steer rejected: ${reason}`);
+      throw new Error(reason);
+    }
+    if (this.isSideSession(sessionId)) this.sideCompletionNotified.delete(sessionId);
+    logAgentd("steer requested", { sessionId, textChars: text.length });
     await handle.steer(text);
     await this.appendLog(sessionId, `steer: ${text}`);
+    await this.patch(sessionId, { lastSummary: "Steering message sent" });
     return this.mustGet(sessionId);
   }
 

@@ -45,10 +45,10 @@ describe("SessionSupervisor", () => {
     expect(supervisor.isSideSession(side.id)).toBe(true);
     expect(supervisor.listSideSessions().map((session) => session.id)).toEqual([side.id]);
 
-    const updated = await supervisor.followUpSideSession(side.id, "추가로 원인도 정리해줘");
-    expect(updated.status).toBe("running");
+    const updated = await supervisor.steerSideSession(side.id, "추가로 원인도 정리해줘");
+    expect(updated.lastSummary).toBe("Steering message sent");
     expect(updated.logs.some((line) => line.includes("추가로 원인도 정리해줘"))).toBe(true);
-    await expect(supervisor.followUpSideSession(regular.id, "wrong target")).rejects.toThrow(/not a Picky side agent/);
+    await expect(supervisor.steerSideSession(regular.id, "wrong target")).rejects.toThrow(/not a Picky side agent/);
   });
 
   it("validates and emits visual-only pointer overlays against captured screenshots", async () => {
@@ -122,44 +122,14 @@ describe("SessionSupervisor", () => {
     expect(runtime.creates[0].prompt.text).toContain("- CWD: /tmp/override-project");
   });
 
-  it("returns as soon as a side follow-up is queued instead of waiting for that side turn to finish", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
-    let resolveFollowUp!: () => void;
-    const followUpBlocker = new Promise<void>((resolve) => {
-      resolveFollowUp = resolve;
-    });
-    const runtime = new BlockingFollowUpRuntime(followUpBlocker);
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
-    await supervisor.load();
+  it("routes side-session follow-up compatibility calls through steer", async () => {
+    const supervisor = await makeSupervisor();
     const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
-    runtime.handle?.emit({ type: "assistant_delta", delta: "초기 조사 완료" });
-    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
 
-    const followUpPromise = supervisor.followUpSideSession(side.id, "추가로 원인도 정리해줘", context("follow-up"));
-    try {
-      const result = await Promise.race([
-        followUpPromise.then((session) => ({ kind: "session" as const, session })),
-        delay(20).then(() => ({ kind: "timeout" as const })),
-      ]);
+    const result = await supervisor.followUpSideSession(side.id, "추가로 원인도 정리해줘", context("follow-up"));
 
-      expect(result.kind).toBe("session");
-      if (result.kind === "session") {
-        expect(result.session.status).toBe("running");
-        expect(result.session.logs.some((line) => line.includes("추가로 원인도 정리해줘"))).toBe(true);
-      }
-      expect(runtime.handle?.followUps).toHaveLength(1);
-
-      runtime.handle?.emit({ type: "assistant_delta", delta: "후속 조사 완료" });
-      runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-      await settle();
-      expect(supervisor.get(side.id)?.status).toBe("completed");
-    } finally {
-      resolveFollowUp();
-      await followUpPromise.catch(() => undefined);
-    }
-    await settle();
-    expect(supervisor.get(side.id)?.status).toBe("completed");
+    expect(result.lastSummary).toBe("Steering message sent");
+    expect(result.logs.some((line) => line === "steer: 추가로 원인도 정리해줘")).toBe(true);
   });
 
   it("restores persisted side-session markers from handoff logs", async () => {
@@ -610,7 +580,10 @@ class ManualHandle implements RuntimeSessionHandle {
   async interrupt(prompt: BuiltPrompt): Promise<void> {
     this.interrupts.push(prompt);
   }
-  async steer(): Promise<void> {}
+  steers: string[] = [];
+  async steer(text: string): Promise<void> {
+    this.steers.push(text);
+  }
   async abort(): Promise<void> {}
   subscribe(listener: (event: RuntimeEvent) => void): () => void {
     this.listeners.add(listener);
@@ -618,28 +591,6 @@ class ManualHandle implements RuntimeSessionHandle {
   }
   emit(event: RuntimeEvent): void {
     for (const listener of this.listeners) listener(event);
-  }
-}
-
-class BlockingFollowUpRuntime implements AgentRuntime {
-  handle?: BlockingFollowUpHandle;
-
-  constructor(private readonly followUpBlocker: Promise<void>) {}
-
-  async create(_prompt: BuiltPrompt, options: { sessionId?: string }): Promise<RuntimeSessionHandle> {
-    this.handle = new BlockingFollowUpHandle(options.sessionId ?? "manual", this.followUpBlocker);
-    return this.handle;
-  }
-}
-
-class BlockingFollowUpHandle extends ManualHandle {
-  constructor(id: string, private readonly followUpBlocker: Promise<void>) {
-    super(id);
-  }
-
-  async followUp(prompt: BuiltPrompt): Promise<void> {
-    this.followUps.push(prompt);
-    await this.followUpBlocker;
   }
 }
 

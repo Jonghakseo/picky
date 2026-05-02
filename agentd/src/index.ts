@@ -5,7 +5,7 @@ import { SessionSupervisor } from "./session-supervisor.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
-import { createPickyHandoffTool, createPickySideFollowUpTool, createPickySideSessionsTool } from "./application/handoff-tool.js";
+import { createPickyHandoffTool, createPickySideSessionsTool, createPickySideSteerTool } from "./application/handoff-tool.js";
 import { createPickyShowPointerTool } from "./application/pointer-tool.js";
 import { removeConnectionInfo, writeConnectionInfo } from "./connection-info-store.js";
 import { PROTOCOL_VERSION } from "./protocol.js";
@@ -46,11 +46,10 @@ const mainRuntime = useMockRuntime
           return { sessionId: session.id, title: session.title, cwd: session.cwd };
         }),
         createPickySideSessionsTool(() => supervisor.listSideSessions()),
-        createPickySideFollowUpTool(async (request) => {
-          const context = supervisor.currentMainContext();
-          logAgentd("side follow-up requested", { sessionId: request.sessionId, textChars: request.message.length, contextId: context?.id });
-          const session = await supervisor.followUpSideSession(request.sessionId, request.message, context);
-          logAgentd("side follow-up queued", { sessionId: session.id, status: session.status });
+        createPickySideSteerTool(async (request) => {
+          logAgentd("side steer requested", { sessionId: request.sessionId, textChars: request.message.length });
+          const session = await supervisor.steerSideSession(request.sessionId, request.message);
+          logAgentd("side steer sent", { sessionId: session.id, status: session.status });
           return session;
         }),
       ],

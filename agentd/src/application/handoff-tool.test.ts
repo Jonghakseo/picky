@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PickyAgentSession } from "../protocol.js";
-import { createPickyHandoffTool, createPickySideSessionsTool, type PickyHandoffRequest } from "./handoff-tool.js";
+import { createPickyHandoffTool, createPickySideSessionsTool, createPickySideSteerTool, type PickyHandoffRequest } from "./handoff-tool.js";
 
 describe("handoff tools", () => {
   it("passes an optional cwd override to the handoff callback and result details", async () => {
@@ -69,6 +69,21 @@ describe("handoff tools", () => {
 
     expect(details.sessions.map((session) => session.id)).toEqual(["side-2", "side-4"]);
     expect(details).toMatchObject({ pageSize: 2, hasMore: true, nextPage: 2 });
+  });
+
+  it("sends side-agent messages through the steering tool", async () => {
+    let received: { sessionId: string; message: string } | undefined;
+    const tool = createPickySideSteerTool(async (request) => {
+      received = request;
+      return makeSession(7, "running");
+    });
+
+    const result = await tool.execute("tool-1", { sessionId: "side-7", message: "stay focused" } as never, undefined, undefined, {} as never);
+
+    expect(received).toEqual({ sessionId: "side-7", message: "stay focused" });
+    expect(result.content[0]).toMatchObject({ type: "text" });
+    if (result.content[0]?.type !== "text") throw new Error("expected text content");
+    expect(result.content[0].text).toContain("Steering sent to side agent");
   });
 });
 

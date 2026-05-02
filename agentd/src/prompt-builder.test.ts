@@ -40,10 +40,10 @@ describe("neutral prompt builder", () => {
     expect(prompt.text).toContain("Please continue");
   });
 
-  it("tells the main agent to inspect and resume existing side sessions before duplicating handoff", () => {
+  it("tells the main agent to inspect and steer existing side sessions before duplicating handoff", () => {
     const prompt = buildMainAgentPrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")));
     expect(prompt.text).toContain("picky_side_sessions");
-    expect(prompt.text).toContain("picky_side_followup");
+    expect(prompt.text).toContain("picky_side_steer");
     expect(prompt.text).toContain("instead of starting a duplicate side agent");
   });
 

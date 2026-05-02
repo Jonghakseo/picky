@@ -583,7 +583,7 @@ final class CompanionManager: ObservableObject {
         voiceFollowUpSessionID: String? = nil
     ) async throws -> PickyAgentSubmissionReceipt {
         if let targetSessionID = voiceFollowUpSessionID ?? selectionStore.hoveredVoiceFollowUpSessionID {
-            try await agentClient.send(PickyCommandEnvelope(type: .followUp, context: contextPacket, sessionId: targetSessionID, text: transcript))
+            try await agentClient.send(PickyCommandEnvelope(type: .steer, context: contextPacket, sessionId: targetSessionID, text: transcript))
             return PickyAgentSubmissionReceipt(sessionID: targetSessionID, message: "")
         }
         return try await agentClient.submit(PickyAgentSubmission(transcript: transcript, context: contextPacket))
@@ -597,7 +597,7 @@ final class CompanionManager: ObservableObject {
         if !receiptMessage.isEmpty {
             finishAwaitingAgentResponse(visibleText: receiptMessage, spokenText: receiptMessage)
         } else if source == "voice-follow-up" {
-            finishAwaitingAgentResponse(visibleText: "후속 입력을 선택한 세션에 전달했어요.", spokenText: nil)
+            finishAwaitingAgentResponse(visibleText: "선택한 세션에 스티어링 메시지를 전달했어요.", spokenText: nil)
         }
     }
 

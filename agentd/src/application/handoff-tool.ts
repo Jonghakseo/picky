@@ -15,7 +15,7 @@ interface PickyHandoffResult {
   cwd?: string;
 }
 
-export interface PickySideFollowUpRequest {
+export interface PickySideSteerRequest {
   sessionId: string;
   message: string;
 }
@@ -77,12 +77,12 @@ export function createPickySideSessionsTool(onList: () => PickyAgentSession[]): 
   return defineTool({
     name: "picky_side_sessions",
     label: "Picky side sessions",
-    description: "List one bounded page of side Pi agents that the Picky main agent has already delegated work to, so follow-up requests can reuse the right side agent instead of starting a duplicate.",
-    promptSnippet: "picky_side_sessions: list one bounded page of current and recent side Pi agents in the Picky HUD before deciding whether to resume one.",
+    description: "List one bounded page of side Pi agents that the Picky main agent has already delegated work to, so steering requests can reuse the right side agent instead of starting a duplicate.",
+    promptSnippet: "picky_side_sessions: list one bounded page of current and recent side Pi agents in the Picky HUD before deciding whether to steer one.",
     promptGuidelines: [
       "Use picky_side_sessions when the user refers to an existing delegated task, side agent, running work, recent completion, or asks to continue/change/check progress.",
       "The tool returns at most one small page at a time; follow nextPage only when needed for the user's request.",
-      "Prefer resuming a relevant side session with picky_side_followup over creating a duplicate side agent.",
+      "Prefer steering a relevant side session with picky_side_steer over creating a duplicate side agent.",
     ],
     parameters: Type.Object({
       includeTerminal: Type.Optional(Type.Boolean({ description: "Whether to include completed, failed, and cancelled side sessions. Defaults to true." })),
@@ -107,29 +107,29 @@ export function createPickySideSessionsTool(onList: () => PickyAgentSession[]): 
   });
 }
 
-export function createPickySideFollowUpTool(onFollowUp: (request: PickySideFollowUpRequest) => Promise<PickyAgentSession>): ToolDefinition {
+export function createPickySideSteerTool(onSteer: (request: PickySideSteerRequest) => Promise<PickyAgentSession>): ToolDefinition {
   return defineTool({
-    name: "picky_side_followup",
-    label: "Picky side follow-up",
-    description: "Send follow-up instructions to an existing side Pi agent that was started by picky_handoff.",
-    promptSnippet: "picky_side_followup: resume or steer an existing delegated side Pi agent with additional user instructions.",
+    name: "picky_side_steer",
+    label: "Picky side steer",
+    description: "Send steering instructions to an existing side Pi agent that was started by picky_handoff.",
+    promptSnippet: "picky_side_steer: steer an existing delegated side Pi agent with additional user instructions.",
     promptGuidelines: [
-      "Use picky_side_followup after picky_side_sessions identifies the side agent that should receive the user's new instruction.",
+      "Use picky_side_steer after picky_side_sessions identifies the side agent that should receive the user's new instruction.",
       "Do not use this for unrelated new work; call picky_handoff for a new delegated task instead.",
-      "After calling picky_side_followup, tell the user in Korean that the existing side agent has been updated and progress remains visible in the top-right overlay.",
+      "After calling picky_side_steer, tell the user in Korean that the existing side agent has been steered and progress remains visible in the top-right overlay.",
     ],
     parameters: Type.Object({
-      sessionId: Type.String({ description: "ID of the side session to resume, as returned by picky_side_sessions." }),
-      message: Type.String({ description: "Self-contained follow-up instructions to send to the side Pi agent." }),
+      sessionId: Type.String({ description: "ID of the side session to steer, as returned by picky_side_sessions." }),
+      message: Type.String({ description: "Self-contained steering instructions to send to the side Pi agent." }),
     }),
     execute: async (_toolCallId, params) => {
-      const session = await onFollowUp({ sessionId: params.sessionId, message: params.message });
+      const session = await onSteer({ sessionId: params.sessionId, message: params.message });
       const summary = summarizeSideSession(session);
       return {
         content: [
           {
             type: "text",
-            text: `Follow-up sent to side agent: ${session.title} (${session.id}). Status is ${session.status}. Now tell the user in Korean that the existing side agent was updated and progress is visible in the top-right overlay.`,
+            text: `Steering sent to side agent: ${session.title} (${session.id}). Status is ${session.status}. Now tell the user in Korean that the existing side agent was steered and progress is visible in the top-right overlay.`,
           },
         ],
         details: { session: summary },

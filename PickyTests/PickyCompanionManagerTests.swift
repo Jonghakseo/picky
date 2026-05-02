@@ -59,7 +59,7 @@ struct PickyCompanionManagerTests {
         let receipt = try await manager.routeVoiceTranscript(transcript: "hover follow-up", contextPacket: context)
 
         #expect(receipt.sessionID == "session-hovered")
-        #expect(client.commands.first?.type == .followUp)
+        #expect(client.commands.first?.type == .steer)
         #expect(client.commands.first?.sessionId == "session-hovered")
         #expect(client.commands.first?.text == "hover follow-up")
         #expect(client.commands.first?.context?.source == "voice-follow-up")
@@ -90,7 +90,7 @@ struct PickyCompanionManagerTests {
         )
 
         #expect(manager.voiceState == .idle)
-        #expect(manager.latestAgentSessionSummary == "후속 입력을 선택한 세션에 전달했어요.")
+        #expect(manager.latestAgentSessionSummary == "선택한 세션에 스티어링 메시지를 전달했어요.")
     }
 
     @Test func emptyNewVoiceTaskReceiptKeepsWaitingForAgentEvents() async throws {

@@ -170,7 +170,7 @@ private struct PickySessionCardView: View {
                     .foregroundColor(DS.Colors.accentText)
                     .frame(width: 18, height: 18)
                     .background(Circle().fill(DS.Colors.accentSubtle.opacity(0.95)))
-                    .help("Voice follow-up target")
+                    .help("Voice steering target")
                     .transition(.scale.combined(with: .opacity))
             }
             if let headerStatusLabel {
@@ -272,13 +272,13 @@ private struct PickySessionCardView: View {
             }
 
             HStack(spacing: 6) {
-                TextField("Follow up…", text: $followUpText)
+                TextField("Steer this agent…", text: $followUpText)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 11))
                     .onSubmit { submitFollowUp() }
                 iconButton(
                     systemName: "paperplane.fill",
-                    help: "Send follow-up",
+                    help: "Send steering message",
                     disabled: followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                     action: submitFollowUp
                 )

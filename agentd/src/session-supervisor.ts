@@ -17,6 +17,7 @@ export class SessionSupervisor extends EventEmitter {
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
   private assistantDrafts = new Map<string, string>();
   private mainHandle?: RuntimeSessionHandle;
+  private mainHandlePromise?: Promise<RuntimeSessionHandle>;
   private mainDraft = "";
   private mainContext?: PickyContextPacket;
   private mainReplyContextId = "main";
@@ -57,6 +58,11 @@ export class SessionSupervisor extends EventEmitter {
 
   currentMainContext(): PickyContextPacket | undefined {
     return this.mainContext;
+  }
+
+  async prewarmMainAgent(cwd = process.cwd()): Promise<void> {
+    if (!this.options.mainRuntime?.prewarm || this.mainHandle) return;
+    await this.ensurePrewarmedMainHandle(cwd);
   }
 
   announceMainHandoff(contextId: string, text: string): void {
@@ -128,13 +134,35 @@ export class SessionSupervisor extends EventEmitter {
     this.mainReplyContextId = context.id;
     this.mainDraft = "";
     const prompt = buildMainAgentPrompt(context);
+    if (this.options.mainRuntime!.prewarm) {
+      const handle = await this.ensurePrewarmedMainHandle(context.cwd ?? process.cwd());
+      await handle.followUp(prompt);
+      return;
+    }
     if (!this.mainHandle) {
       const handle = await this.options.mainRuntime!.create(prompt, { cwd: context.cwd, sessionId: "picky-main-agent" });
-      this.mainHandle = handle;
-      handle.subscribe((event) => void this.applyMainRuntimeEvent(event));
+      this.attachMainHandle(handle);
       return;
     }
     await this.mainHandle.followUp(prompt);
+  }
+
+  private async ensurePrewarmedMainHandle(cwd: string): Promise<RuntimeSessionHandle> {
+    if (this.mainHandle) return this.mainHandle;
+    if (!this.mainHandlePromise) {
+      this.mainHandlePromise = this.options.mainRuntime!.prewarm!({ cwd, sessionId: "picky-main-agent" })
+        .then((handle) => this.attachMainHandle(handle))
+        .finally(() => {
+          this.mainHandlePromise = undefined;
+        });
+    }
+    return this.mainHandlePromise;
+  }
+
+  private attachMainHandle(handle: RuntimeSessionHandle): RuntimeSessionHandle {
+    this.mainHandle = handle;
+    handle.subscribe((event) => void this.applyMainRuntimeEvent(event));
+    return handle;
   }
 
   private async applyMainRuntimeEvent(event: RuntimeEvent): Promise<void> {

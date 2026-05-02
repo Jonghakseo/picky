@@ -37,6 +37,22 @@ class FakeSession extends EventEmitter {
   }
 }
 
+function makeRuntime(fakeSession: FakeSession): PiSdkRuntime {
+  return new PiSdkRuntime({
+    getAgentDir: () => "/tmp/.pi/agent",
+    createServices: vi.fn(async () => ({ diagnostics: [] })) as never,
+    createSessionFromServices: vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } })) as never,
+    createRuntime: vi.fn(async (factory, options) => {
+      const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
+      return {
+        session: result.session,
+        diagnostics: result.diagnostics,
+        setRebindSession: vi.fn(),
+      };
+    }) as never,
+  });
+}
+
 describe("PiSdkRuntime", () => {
   it("creates a Pi session through injected documented factory hooks without live model calls", async () => {
     const fakeSession = new FakeSession();
@@ -69,19 +85,7 @@ describe("PiSdkRuntime", () => {
 
   it("starts an idle Pi turn for follow-up input instead of only queueing it", async () => {
     const fakeSession = new FakeSession();
-    const runtime = new PiSdkRuntime({
-      getAgentDir: () => "/tmp/.pi/agent",
-      createServices: vi.fn(async () => ({ diagnostics: [] })) as never,
-      createSessionFromServices: vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } })) as never,
-      createRuntime: vi.fn(async (factory, options) => {
-        const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
-        return {
-          session: result.session,
-          diagnostics: result.diagnostics,
-          setRebindSession: vi.fn(),
-        };
-      }) as never,
-    });
+    const runtime = makeRuntime(fakeSession);
 
     const handle = await runtime.create({ text: "initial", imagePaths: [] }, { cwd: "/tmp/project", sessionId: "session-1" });
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -90,6 +94,18 @@ describe("PiSdkRuntime", () => {
     expect(fakeSession.prompts).toEqual(["initial", "next voice input"]);
     expect(fakeSession.followUps).toEqual([]);
     expect(fakeSession.promptOptions[1]).toMatchObject({ source: "rpc", streamingBehavior: "followUp" });
+  });
+
+  it("prewarms Pi resources without sending an initial prompt", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(handle.id).toBe("picky-main-agent");
+    expect(fakeSession.bound).toBe(true);
+    expect(fakeSession.prompts).toEqual([]);
   });
 
   it("gates real Pi integration behind PICKY_RUN_PI_INTEGRATION", async () => {

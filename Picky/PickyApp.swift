@@ -28,7 +28,8 @@ struct PickyApp: App {
 @MainActor
 final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarPanelManager: MenuBarPanelManager?
-    private let daemonConfiguration = PickyAgentDaemonConfiguration.development()
+    private let settingsStore = PickySettingsStore()
+    private lazy var daemonConfiguration = PickyAgentDaemonConfiguration.development(defaultCwd: settingsStore.load().normalizedPaths().defaultCwd)
     private lazy var daemonLauncher = PickyAgentDaemonLauncher(configuration: daemonConfiguration)
     private lazy var companionManager = CompanionManager(
         agentClient: WebSocketPickyAgentClient(

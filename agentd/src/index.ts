@@ -10,6 +10,7 @@ import { createPickyHandoffTool } from "./handoff-tool.js";
 const port = Number(process.env.PICKY_AGENTD_PORT ?? 17631);
 const token = process.env.PICKY_AGENTD_TOKEN;
 const appSupportDir = process.env.PICKY_APP_SUPPORT_DIR ?? defaultAppSupportRoot();
+const defaultCwd = process.env.PICKY_DEFAULT_CWD ?? process.cwd();
 
 if (!token) {
   console.error("PICKY_AGENTD_TOKEN is required");
@@ -43,6 +44,12 @@ await supervisor.load();
 const server = new AgentdServer({ port, token, supervisor });
 const boundPort = await server.start();
 console.log(`picky-agentd listening on 127.0.0.1:${boundPort}`);
+
+if (mainRuntime) {
+  void supervisor.prewarmMainAgent(defaultCwd)
+    .then(() => console.log(`picky main agent prewarmed for ${defaultCwd}`))
+    .catch((error) => console.error(`picky main agent prewarm failed: ${error instanceof Error ? error.message : String(error)}`));
+}
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {

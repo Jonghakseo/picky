@@ -21,4 +21,5 @@ export interface RuntimeSessionHandle {
 
 export interface AgentRuntime {
   create(prompt: BuiltPrompt, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle>;
+  prewarm?(options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle>;
 }

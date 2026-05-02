@@ -31,6 +31,21 @@ export class PiSdkRuntime implements AgentRuntime {
   constructor(private readonly options: PiSdkRuntimeOptions = {}) {}
 
   async create(prompt: BuiltPrompt, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
+    const handle = await this.createHandle(options);
+    setTimeout(() => {
+      handle.reportDiagnostics();
+      void handle.prompt(prompt);
+    }, 0);
+    return handle;
+  }
+
+  async prewarm(options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
+    const handle = await this.createHandle(options);
+    setTimeout(() => handle.reportDiagnostics(), 0);
+    return handle;
+  }
+
+  private async createHandle(options: { cwd?: string; sessionId?: string }): Promise<PiSdkRuntimeSession> {
     const cwd = options.cwd ?? process.cwd();
     const sessionId = options.sessionId ?? "picky-pi-session";
     const createServices = this.options.createServices ?? createAgentSessionServices;
@@ -55,10 +70,6 @@ export class PiSdkRuntime implements AgentRuntime {
 
     const handle = new PiSdkRuntimeSession(sessionId, runtime);
     await handle.bindCurrentSession();
-    setTimeout(() => {
-      handle.reportDiagnostics();
-      void handle.prompt(prompt);
-    }, 0);
     return handle;
   }
 }

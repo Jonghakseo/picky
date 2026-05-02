@@ -154,6 +154,23 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.handle?.followUps[0].text).toContain("두 번째");
   });
 
+  it("prewarms the main agent without creating a visible session", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+
+    await supervisor.prewarmMainAgent("/tmp/project");
+    const prewarmedHandle = mainRuntime.handle;
+    await supervisor.route(context("첫 실제 입력"));
+
+    expect(mainRuntime.prewarmCalls).toBe(1);
+    expect(mainRuntime.createCalls).toBe(0);
+    expect(mainRuntime.handle).toBe(prewarmedHandle);
+    expect(prewarmedHandle?.followUps).toHaveLength(1);
+    expect(prewarmedHandle?.followUps[0].text).toContain("첫 실제 입력");
+    expect(supervisor.list()).toEqual([]);
+  });
+
   it("routes complex requests to the long-running runtime", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir), undefined, { taskRouter: new StaticTaskRouter({ route: "handoff", reason: "needs tools" }) });
@@ -228,6 +245,19 @@ class StaticTaskRouter implements TaskRouter {
 class ManualRuntime implements AgentRuntime {
   handle?: ManualHandle;
   createCalls = 0;
+  prewarmCalls = 0;
+  prewarm?: (options: { cwd?: string; sessionId?: string }) => Promise<RuntimeSessionHandle>;
+
+  constructor(options: { supportsPrewarm?: boolean } = {}) {
+    if (options.supportsPrewarm) {
+      this.prewarm = async (prewarmOptions) => {
+        this.prewarmCalls += 1;
+        this.handle = new ManualHandle(prewarmOptions.sessionId ?? "manual");
+        return this.handle;
+      };
+    }
+  }
+
   async create(_prompt: BuiltPrompt, options: { sessionId?: string }): Promise<RuntimeSessionHandle> {
     this.createCalls += 1;
     this.handle = new ManualHandle(options.sessionId ?? "manual");

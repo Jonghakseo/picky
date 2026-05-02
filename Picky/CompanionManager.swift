@@ -92,6 +92,17 @@ private final class PickySpeechSynthesizerDelegate: NSObject, NSSpeechSynthesize
     }
 }
 
+enum PickySpeechPlaybackPreparation {
+    /// Short pre-roll for macOS system speech. Some output devices need a tiny
+    /// amount of generated audio time before the first audible phoneme; without
+    /// it, the start of short TTS replies can be clipped.
+    static let prerollSilenceMilliseconds = 180
+
+    static func prepareForPlayback(_ utterance: String) -> String {
+        "[[slnc \(prerollSilenceMilliseconds)]]\(utterance)"
+    }
+}
+
 @MainActor
 final class CompanionManager: ObservableObject {
     @Published private(set) var voiceState: CompanionVoiceState = .idle
@@ -700,13 +711,16 @@ final class CompanionManager: ObservableObject {
                 self?.handleSpeechFinished(speechID: speechID, didFinish: didFinish)
             }
         }
-        let synthesizer = NSSpeechSynthesizer()
+        let synthesizer = reusableSpeechSynthesizer()
         synthesizer.delegate = delegate
         speechSynthesizerDelegate = delegate
-        speechSynthesizer = synthesizer
         voiceState = .responding
 
-        guard synthesizer.startSpeaking(utterance) else {
+        let preparedUtterance = PickySpeechPlaybackPreparation.prepareForPlayback(utterance)
+        #if DEBUG
+        print("🔊 Picky TTS start — id: \(speechID), chars: \(utterance.count), prerollMs: \(PickySpeechPlaybackPreparation.prerollSilenceMilliseconds)")
+        #endif
+        guard synthesizer.startSpeaking(preparedUtterance) else {
             handleSpeechFinished(speechID: speechID, didFinish: false)
             return
         }
@@ -732,13 +746,21 @@ final class CompanionManager: ObservableObject {
         }
     }
 
+    private func reusableSpeechSynthesizer() -> NSSpeechSynthesizer {
+        if let speechSynthesizer {
+            return speechSynthesizer
+        }
+        let synthesizer = NSSpeechSynthesizer()
+        speechSynthesizer = synthesizer
+        return synthesizer
+    }
+
     private func stopCurrentSpeech() {
         activeSpeechID = nil
         responseStateTask?.cancel()
         responseStateTask = nil
         speechSynthesizer?.delegate = nil
         speechSynthesizer?.stopSpeaking()
-        speechSynthesizer = nil
         speechSynthesizerDelegate = nil
     }
 
@@ -748,8 +770,10 @@ final class CompanionManager: ObservableObject {
         responseStateTask?.cancel()
         responseStateTask = nil
         speechSynthesizer?.delegate = nil
-        speechSynthesizer = nil
         speechSynthesizerDelegate = nil
+        #if DEBUG
+        print("🔊 Picky TTS finish — id: \(speechID)")
+        #endif
         if voiceState == .responding {
             voiceState = .idle
         }

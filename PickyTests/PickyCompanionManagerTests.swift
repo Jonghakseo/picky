@@ -126,6 +126,12 @@ struct PickyCompanionManagerTests {
         #expect(manager.voiceState == .responding)
     }
 
+    @Test func speechPlaybackPreparationAddsShortSilentPreroll() {
+        let prepared = PickySpeechPlaybackPreparation.prepareForPlayback("안녕하세요")
+
+        #expect(prepared == "[[slnc 180]]안녕하세요")
+    }
+
     @Test func voicePresentationKeepsAwaitingAgentStateAfterDictationResetsToIdle() async throws {
         let presentation = CompanionVoicePresentationReducer.reduce(
             currentVoiceState: .processing,

@@ -141,6 +141,20 @@ struct PickyCompanionManagerTests {
         #expect(manager.latestAgentSessionSummary == "기존 응답")
     }
 
+    @Test func voiceInputInterruptsSpokenResponseImmediately() async throws {
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        manager.handleAgentSubmissionAccepted(
+            receipt: PickyAgentSubmissionReceipt(sessionID: "created-session", message: "말하는 중"),
+            source: "voice"
+        )
+        #expect(manager.voiceState == .responding)
+
+        manager.interruptSpokenResponseForVoiceInput()
+
+        #expect(manager.voiceState == .idle)
+        #expect(manager.latestAgentSessionSummary == "말하는 중")
+    }
+
     private func context(source: String) -> PickyContextPacket {
         PickyContextPacket(
             id: "context-voice",

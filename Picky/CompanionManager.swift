@@ -347,6 +347,7 @@ final class CompanionManager: ObservableObject {
         switch transition {
         case .pressed:
             guard !buddyDictationManager.isDictationInProgress else { return }
+            interruptSpokenResponseForVoiceInput()
             voiceFollowUpSessionIDForCurrentUtterance = selectionStore.activeVoiceFollowUpSessionID
 
             // Cancel any pending transient hide so the overlay stays visible
@@ -538,8 +539,19 @@ final class CompanionManager: ObservableObject {
         }
     }
 
+    func interruptSpokenResponseForVoiceInput() {
+        responseStateTask?.cancel()
+        responseStateTask = nil
+        speechSynthesizer?.stopSpeaking()
+        speechSynthesizer = nil
+        if voiceState == .responding {
+            voiceState = .idle
+        }
+    }
+
     func beginAwaitingAgentResponse() {
         responseStateTask?.cancel()
+        responseStateTask = nil
         speechSynthesizer?.stopSpeaking()
         speechSynthesizer = nil
         pendingAgentResponseStartedAt = Date()

@@ -12,6 +12,10 @@ enum PickyHUDExpansion {
     static let duration: TimeInterval = 0.22
     static let panelShrinkDelay: TimeInterval = duration + 0.03
     static let animation = Animation.easeInOut(duration: duration)
+    static let outerPadding: CGFloat = 14
+    static let cardShadowOpacity = 0.12
+    static let cardShadowRadius: CGFloat = 8
+    static let cardShadowYOffset: CGFloat = 4
 
     static func cardSpacing(isExpanded: Bool) -> CGFloat {
         isExpanded ? 9 : 0
@@ -187,7 +191,7 @@ struct PickyHUDView: View {
                 }
             }
         }
-        .padding(8)
+        .padding(PickyHUDExpansion.outerPadding)
         .background(PickyHUDSizeReader())
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: onSizeChange)
@@ -280,7 +284,12 @@ private struct PickySessionCardView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(DS.Colors.surface1.opacity(0.95))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.65), lineWidth: 1))
-                .shadow(color: Color.black.opacity(0.28), radius: 12, x: 0, y: 7)
+                .shadow(
+                    color: Color.black.opacity(PickyHUDExpansion.cardShadowOpacity),
+                    radius: PickyHUDExpansion.cardShadowRadius,
+                    x: 0,
+                    y: PickyHUDExpansion.cardShadowYOffset
+                )
         )
     }
 

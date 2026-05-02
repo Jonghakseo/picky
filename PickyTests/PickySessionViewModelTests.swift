@@ -204,6 +204,13 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDExpansion.anchorsContentToPanelTopDuringDeferredShrink)
     }
 
+    @Test func hudChromeUsesSoftShadowWithExtraTransparentPadding() throws {
+        #expect(PickyHUDExpansion.outerPadding > 8)
+        #expect(PickyHUDExpansion.cardShadowOpacity < 0.2)
+        #expect(PickyHUDExpansion.cardShadowRadius <= 8)
+        #expect(PickyHUDExpansion.cardShadowYOffset <= 4)
+    }
+
     @Test func hudExpandedContentShowsFullSummaryAndHidesRecentLog() throws {
         #expect(PickyHUDExpandedContentPolicy.summaryLineLimit == nil)
         #expect(!PickyHUDExpandedContentPolicy.showsRecentLog)

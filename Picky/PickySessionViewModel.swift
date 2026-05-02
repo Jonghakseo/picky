@@ -70,11 +70,14 @@ struct PickyGhosttyResumeLauncher: PickyTerminalResumeLaunching {
     static func makeAppleScript(sessionFilePath: String, workingDirectory: String) -> String {
         let command = "cd \(Self.shellQuoted(workingDirectory)) && exec pi --session \(Self.shellQuoted(sessionFilePath))"
         return """
-        set resumeCommand to \"\(Self.appleScriptString(command))\" & linefeed
+        set resumeCommand to \"\(Self.appleScriptString(command))\"
         set resumeWorkingDirectory to \"\(Self.appleScriptString(workingDirectory))\"
         set wasRunning to application \"Ghostty\" is running
         tell application \"Ghostty\"
-          set resumeConfig to new surface configuration from {initial working directory:resumeWorkingDirectory, initial input:resumeCommand}
+          set resumeConfig to new surface configuration
+          set initial working directory of resumeConfig to resumeWorkingDirectory
+          set command of resumeConfig to resumeCommand
+          set wait after command of resumeConfig to true
           if wasRunning and ((count of windows) is greater than 0) then
             set targetWindow to front window
             set resumedTab to new tab in targetWindow with configuration resumeConfig

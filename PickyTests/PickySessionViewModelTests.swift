@@ -340,19 +340,24 @@ struct PickySessionViewModelTests {
         #expect(viewModel.lastError == nil)
     }
 
-    @Test func ghosttyResumeUsesNativeTabScriptInsteadOfKeystrokes() throws {
+    @Test func ghosttyResumeUsesCommandConfigurationInsteadOfPastingInput() throws {
         let script = PickyGhosttyResumeLauncher.makeAppleScript(
             sessionFilePath: "/tmp/pi session's.jsonl",
             workingDirectory: "/Users/example/Project Folder"
         )
 
         #expect(script.contains("new surface configuration"))
-        #expect(script.contains("initial input:resumeCommand"))
+        #expect(script.contains("set initial working directory of resumeConfig to resumeWorkingDirectory"))
+        #expect(script.contains("set command of resumeConfig to resumeCommand"))
+        #expect(script.contains("set wait after command of resumeConfig to true"))
         #expect(script.contains("new tab in targetWindow with configuration resumeConfig"))
         #expect(script.contains("new window with configuration resumeConfig"))
         #expect(script.contains("exec pi --session"))
         #expect(script.contains("/tmp/pi session"))
         #expect(script.contains("s.jsonl"))
+        #expect(!script.contains("initial input"))
+        #expect(!script.contains("input text"))
+        #expect(!script.contains("send key"))
         #expect(!script.contains("System Events"))
         #expect(!script.contains("keystroke"))
         #expect(!script.contains("clipboard"))

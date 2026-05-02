@@ -242,6 +242,48 @@ describe("SessionSupervisor", () => {
     expect(markdown).not.toContain("## Final answer\nCompleted");
   });
 
+  it("emits terminal session update before terminal artifacts", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), new ArtifactStore(dir));
+    const events: string[] = [];
+    supervisor.on("session", (updated) => {
+      if (updated.status === "completed") events.push("session:completed");
+    });
+    supervisor.on("artifact", (_sessionId, artifact) => events.push(`artifact:${artifact.kind}`));
+    const session = await supervisor.create(context("ordering terminal"));
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "Done" });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(events.indexOf("session:completed")).toBeGreaterThanOrEqual(0);
+    expect(events.indexOf("artifact:report")).toBeGreaterThan(events.indexOf("session:completed"));
+    expect(supervisor.get(session.id)?.status).toBe("completed");
+  });
+
+  it("emits waiting_for_input session update before extension UI request", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const events: string[] = [];
+    supervisor.on("session", (updated) => {
+      if (updated.status === "waiting_for_input") events.push("session:waiting_for_input");
+    });
+    supervisor.on("extensionUiRequest", (request) => events.push(`extension:${request.id}`));
+    const session = await supervisor.create(context("extension ordering"));
+
+    runtime.handle?.emit({
+      type: "extension_ui",
+      waitsForInput: true,
+      request: { id: "question-1", sessionId: session.id, method: "input", createdAt: "2026-05-01T00:00:00.000Z", prompt: "Need input" },
+    });
+    await settle();
+
+    expect(events).toEqual(["session:waiting_for_input", "extension:question-1"]);
+    expect(supervisor.get(session.id)?.pendingExtensionUiRequest?.id).toBe("question-1");
+  });
+
   it("rejects invalid follow-up transitions", async () => {
     const supervisor = await makeSupervisor();
     const session = await supervisor.create(context("cancel then follow"));

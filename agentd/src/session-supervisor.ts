@@ -1,15 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { ArtifactStore, extractChangedFilesFromExplicitText, extractGithubPullRequestUrls } from "./artifact-store.js";
+import { ArtifactStore, extractChangedFilesFromExplicitText } from "./artifact-store.js";
+import { ArtifactMaterializer } from "./application/artifact-materializer.js";
+import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
-import type { PickyAgentSession, PickyContextPacket, PickyExtensionUiRequest } from "./protocol.js";
+import type { PickyAgentSession, PickyContextPacket } from "./protocol.js";
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
 import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./runtime/types.js";
-import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
 import { isTerminalStatus } from "./domain/session-status.js";
-import { cleanFinalAnswer, summaryFromFinalAnswer } from "./domain/session-summary.js";
+import { cleanFinalAnswer } from "./domain/session-summary.js";
 import { titleFromContext } from "./domain/session-title.js";
 import { logAgentd } from "./local-log.js";
 
@@ -21,7 +22,8 @@ export interface SessionSupervisorOptions {
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
-  private assistantDrafts = new Map<string, string>();
+  private readonly artifactMaterializer: ArtifactMaterializer;
+  private readonly runtimeEventHandler: RuntimeEventHandler;
   private mainHandle?: RuntimeSessionHandle;
   private mainHandlePromise?: Promise<RuntimeSessionHandle>;
   private mainDraft = "";
@@ -33,8 +35,18 @@ export class SessionSupervisor extends EventEmitter {
   private sideSessionIds = new Set<string>();
   private sideCompletionNotified = new Set<string>();
 
-  constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, private readonly artifactStore?: ArtifactStore, private readonly options: SessionSupervisorOptions = {}) {
+  constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, artifactStore?: ArtifactStore, private readonly options: SessionSupervisorOptions = {}) {
     super();
+    this.artifactMaterializer = new ArtifactMaterializer(artifactStore);
+    this.runtimeEventHandler = new RuntimeEventHandler({
+      getSession: (sessionId) => this.mustGet(sessionId),
+      patchSession: (sessionId, patch) => this.patch(sessionId, patch),
+      appendLog: (sessionId, line) => this.appendLog(sessionId, line),
+      materializeTerminalArtifacts: (sessionId) => this.materializeTerminalArtifacts(sessionId),
+      notifySideCompletion: (sessionId) => this.notifyMainOfSideCompletion(sessionId),
+      isSideSession: (sessionId) => this.sideSessionIds.has(sessionId),
+      emitExtensionUiRequest: (request) => this.emit("extensionUiRequest", request),
+    });
   }
 
   async load(): Promise<void> {
@@ -128,7 +140,7 @@ export class SessionSupervisor extends EventEmitter {
     await this.upsert(session);
     logAgentd("session queued", { sessionId: id, titleChars: title.length, cwd: context.cwd });
     try {
-      this.assistantDrafts.set(id, "");
+      this.runtimeEventHandler.resetAssistantDraft(id);
       const handle = await this.runtime.create(prompt, { cwd: context.cwd, sessionId: id });
       this.runtimeHandles.set(id, handle);
       logAgentd("runtime attached", { sessionId: id });
@@ -253,7 +265,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.appendLog(sessionId, "follow-up rejected: runtime session is not attached after daemon restart");
       throw new Error("Runtime session is not attached after daemon restart; start a new task or resume support is required");
     }
-    this.assistantDrafts.set(sessionId, "");
+    this.runtimeEventHandler.resetAssistantDraft(sessionId);
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id });
     await this.appendLog(sessionId, `follow-up: ${text}`);
     await handle.followUp(buildFollowUpPrompt(sessionId, text, context));
@@ -297,48 +309,7 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async applyRuntimeEvent(sessionId: string, event: RuntimeEvent): Promise<void> {
-    if (event.type === "log") return this.appendLog(sessionId, event.line);
-    if (event.type === "assistant_delta") {
-      this.assistantDrafts.set(sessionId, `${this.assistantDrafts.get(sessionId) ?? ""}${event.delta}`);
-      return;
-    }
-    if (event.type === "status") {
-      logAgentd("session status", { sessionId, status: event.status, summaryChars: event.summary?.length });
-      const terminal = ["completed", "failed", "cancelled"].includes(event.status);
-      const finalAnswer = terminal ? cleanFinalAnswer(this.assistantDrafts.get(sessionId)) : undefined;
-      const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
-      if (finalAnswer) {
-        const session = this.mustGet(sessionId);
-        patch.finalAnswer = finalAnswer;
-        patch.changedFiles = mergeChangedFiles(session.changedFiles, extractChangedFilesFromExplicitText(finalAnswer));
-      }
-      await this.patch(sessionId, patch);
-      if (terminal) {
-        await this.materializeTerminalArtifacts(sessionId);
-        if (this.sideSessionIds.has(sessionId)) await this.notifyMainOfSideCompletion(sessionId);
-      }
-      return;
-    }
-    if (event.type === "extension_ui") {
-      logAgentd("extension ui event", { sessionId, waitsForInput: event.waitsForInput, method: typeof event.request.method === "string" ? event.request.method : undefined });
-      return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
-    }
-    const session = this.mustGet(sessionId);
-    const previous = session.tools.find((tool) => tool.toolCallId === event.toolCallId);
-    const tools = session.tools.filter((tool) => tool.toolCallId !== event.toolCallId);
-    tools.push({ ...previous, toolCallId: event.toolCallId, name: event.name, status: event.status, preview: event.preview, startedAt: previous?.startedAt ?? new Date().toISOString(), endedAt: event.status === "running" ? previous?.endedAt : new Date().toISOString() });
-    logAgentd("tool activity", { sessionId, tool: event.name, status: event.status, previewChars: event.preview?.length });
-    await this.patch(sessionId, { tools });
-  }
-
-  private async applyExtensionUiEvent(sessionId: string, rawRequest: Record<string, unknown>, waitsForInput: boolean): Promise<void> {
-    const request = rawRequest as PickyExtensionUiRequest;
-    if (!waitsForInput) {
-      await this.appendLog(sessionId, `extension ui: ${request.method}${request.title ? ` ${request.title}` : ""}`);
-      return;
-    }
-    await this.patch(sessionId, { status: "waiting_for_input", pendingExtensionUiRequest: request, lastSummary: request.prompt ?? request.title ?? "Waiting for input" });
-    this.emit("extensionUiRequest", request);
+    await this.runtimeEventHandler.handle(sessionId, event);
   }
 
   private async appendLog(sessionId: string, line: string): Promise<void> {
@@ -349,16 +320,10 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async materializeTerminalArtifacts(sessionId: string): Promise<void> {
-    if (!this.artifactStore) return;
-    const session = this.mustGet(sessionId);
-    const now = new Date().toISOString();
-    const prArtifacts = extractGithubPullRequestUrls([session.finalAnswer, session.lastSummary, ...session.logs, ...session.tools.map((tool) => tool.preview)].filter(Boolean).join("\n"))
-      .filter((url) => !session.artifacts.some((artifact) => artifact.url === url))
-      .map((url, index) => ({ id: `pr-${index + 1}`, kind: "pr", title: "GitHub PR", url, updatedAt: now }));
-    const report = await this.artifactStore.writeSessionReport({ ...session, artifacts: [...session.artifacts, ...prArtifacts] });
-    await this.patch(sessionId, { artifacts: mergeArtifacts([...session.artifacts, ...prArtifacts], [report]) });
-    this.emit("artifact", sessionId, report);
-    for (const artifact of prArtifacts) this.emit("artifact", sessionId, artifact);
+    const materialized = await this.artifactMaterializer.materializeTerminalArtifacts(this.mustGet(sessionId));
+    if (!materialized) return;
+    await this.patch(sessionId, { artifacts: materialized.artifacts });
+    for (const artifact of materialized.emittedArtifacts) this.emit("artifact", sessionId, artifact);
   }
 
   private async patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void> {

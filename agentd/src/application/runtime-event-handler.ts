@@ -1,0 +1,77 @@
+import { extractChangedFilesFromExplicitText } from "../artifact-store.js";
+import { mergeChangedFiles } from "../domain/changed-files.js";
+import { cleanFinalAnswer, summaryFromFinalAnswer } from "../domain/session-summary.js";
+import { logAgentd } from "../local-log.js";
+import type { PickyAgentSession, PickyExtensionUiRequest } from "../protocol.js";
+import type { RuntimeEvent } from "../runtime/types.js";
+import { extensionUiLogLine, extensionUiWaitingSummary, mapExtensionUiRequest } from "./extension-ui-request-mapper.js";
+
+export interface RuntimeEventHandlerDependencies {
+  getSession(sessionId: string): PickyAgentSession;
+  patchSession(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+  appendLog(sessionId: string, line: string): Promise<void>;
+  materializeTerminalArtifacts(sessionId: string): Promise<void>;
+  notifySideCompletion(sessionId: string): Promise<void>;
+  isSideSession(sessionId: string): boolean;
+  emitExtensionUiRequest(request: PickyExtensionUiRequest): void;
+}
+
+export class RuntimeEventHandler {
+  private readonly assistantDrafts = new Map<string, string>();
+
+  constructor(private readonly dependencies: RuntimeEventHandlerDependencies) {}
+
+  resetAssistantDraft(sessionId: string): void {
+    this.assistantDrafts.set(sessionId, "");
+  }
+
+  async handle(sessionId: string, event: RuntimeEvent): Promise<void> {
+    if (event.type === "log") return this.dependencies.appendLog(sessionId, event.line);
+    if (event.type === "assistant_delta") {
+      this.assistantDrafts.set(sessionId, `${this.assistantDrafts.get(sessionId) ?? ""}${event.delta}`);
+      return;
+    }
+    if (event.type === "status") return this.applyStatusEvent(sessionId, event);
+    if (event.type === "extension_ui") {
+      logAgentd("extension ui event", { sessionId, waitsForInput: event.waitsForInput, method: typeof event.request.method === "string" ? event.request.method : undefined });
+      return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
+    }
+    return this.applyToolEvent(sessionId, event);
+  }
+
+  private async applyStatusEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "status" }>): Promise<void> {
+    logAgentd("session status", { sessionId, status: event.status, summaryChars: event.summary?.length });
+    const terminal = ["completed", "failed", "cancelled"].includes(event.status);
+    const finalAnswer = terminal ? cleanFinalAnswer(this.assistantDrafts.get(sessionId)) : undefined;
+    const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
+    if (finalAnswer) {
+      const session = this.dependencies.getSession(sessionId);
+      patch.finalAnswer = finalAnswer;
+      patch.changedFiles = mergeChangedFiles(session.changedFiles, extractChangedFilesFromExplicitText(finalAnswer));
+    }
+    await this.dependencies.patchSession(sessionId, patch);
+    if (terminal) {
+      await this.dependencies.materializeTerminalArtifacts(sessionId);
+      if (this.dependencies.isSideSession(sessionId)) await this.dependencies.notifySideCompletion(sessionId);
+    }
+  }
+
+  private async applyExtensionUiEvent(sessionId: string, rawRequest: Record<string, unknown>, waitsForInput: boolean): Promise<void> {
+    const request = mapExtensionUiRequest(rawRequest);
+    if (!waitsForInput) {
+      await this.dependencies.appendLog(sessionId, extensionUiLogLine(request));
+      return;
+    }
+    await this.dependencies.patchSession(sessionId, { status: "waiting_for_input", pendingExtensionUiRequest: request, lastSummary: extensionUiWaitingSummary(request) });
+    this.dependencies.emitExtensionUiRequest(request);
+  }
+
+  private async applyToolEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "tool" }>): Promise<void> {
+    const session = this.dependencies.getSession(sessionId);
+    const previous = session.tools.find((tool) => tool.toolCallId === event.toolCallId);
+    const tools = session.tools.filter((tool) => tool.toolCallId !== event.toolCallId);
+    tools.push({ ...previous, toolCallId: event.toolCallId, name: event.name, status: event.status, preview: event.preview, startedAt: previous?.startedAt ?? new Date().toISOString(), endedAt: event.status === "running" ? previous?.endedAt : new Date().toISOString() });
+    logAgentd("tool activity", { sessionId, tool: event.name, status: event.status, previewChars: event.preview?.length });
+    await this.dependencies.patchSession(sessionId, { tools });
+  }
+}

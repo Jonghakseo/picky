@@ -6,37 +6,146 @@
 //
 
 import AppKit
+import Combine
 import SwiftUI
+
+// Runtime-tweakable style values for the Pi-shaped cursor buddy icon.
+private struct PickyCursorStyle: Codable, Equatable {
+    var colorHex = "#3380FF"
+    var frameSize = 30.0
+    var glowOpacity = 0.3
+    var glowBlur = 0.3
+    var glowScale = 1.18
+    var glowSize = 13.0
+    var iconSize = 15.0
+    var highlightOpacity = 0.12
+    var highlightOffsetX = -0.4
+    var highlightOffsetY = -0.4
+    var outerShadowOpacity = 0.6
+    var outerShadowRadius = 10.0
+    var outerShadowFlightMultiplier = 90.0
+
+    var cursorColor: Color { Color(hex: colorHex) }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let defaults = PickyCursorStyle()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        colorHex = try container.decodeIfPresent(String.self, forKey: .colorHex) ?? defaults.colorHex
+        frameSize = try container.decodeIfPresent(Double.self, forKey: .frameSize) ?? defaults.frameSize
+        glowOpacity = try container.decodeIfPresent(Double.self, forKey: .glowOpacity) ?? defaults.glowOpacity
+        glowBlur = try container.decodeIfPresent(Double.self, forKey: .glowBlur) ?? defaults.glowBlur
+        glowScale = try container.decodeIfPresent(Double.self, forKey: .glowScale) ?? defaults.glowScale
+        glowSize = try container.decodeIfPresent(Double.self, forKey: .glowSize) ?? defaults.glowSize
+        iconSize = try container.decodeIfPresent(Double.self, forKey: .iconSize) ?? defaults.iconSize
+        highlightOpacity = try container.decodeIfPresent(Double.self, forKey: .highlightOpacity) ?? defaults.highlightOpacity
+        highlightOffsetX = try container.decodeIfPresent(Double.self, forKey: .highlightOffsetX) ?? defaults.highlightOffsetX
+        highlightOffsetY = try container.decodeIfPresent(Double.self, forKey: .highlightOffsetY) ?? defaults.highlightOffsetY
+        outerShadowOpacity = try container.decodeIfPresent(Double.self, forKey: .outerShadowOpacity) ?? defaults.outerShadowOpacity
+        outerShadowRadius = try container.decodeIfPresent(Double.self, forKey: .outerShadowRadius) ?? defaults.outerShadowRadius
+        outerShadowFlightMultiplier = try container.decodeIfPresent(Double.self, forKey: .outerShadowFlightMultiplier) ?? defaults.outerShadowFlightMultiplier
+    }
+}
+
+#if DEBUG
+@MainActor
+private final class PickyCursorStyleStore: ObservableObject {
+    static let shared = PickyCursorStyleStore()
+    static let styleURL = PickyAppSupport.defaultRoot().appendingPathComponent("dev-cursor-style.json", isDirectory: false)
+
+    @Published private(set) var style = PickyCursorStyle()
+
+    private var timer: Timer?
+    private var lastSignature: String?
+    private let decoder = JSONDecoder()
+    private let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return encoder
+    }()
+
+    private init() {
+        writeDefaultStyleFileIfNeeded()
+        reloadIfChanged()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.reloadIfChanged()
+            }
+        }
+    }
+
+    deinit { timer?.invalidate() }
+
+    private func writeDefaultStyleFileIfNeeded() {
+        let url = Self.styleURL
+        guard !FileManager.default.fileExists(atPath: url.path) else { return }
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let data = try encoder.encode(PickyCursorStyle())
+            try data.write(to: url, options: .atomic)
+        } catch {
+            print("🖱️ Picky cursor style — failed to write default style: \(error.localizedDescription)")
+        }
+    }
+
+    private func reloadIfChanged() {
+        let url = Self.styleURL
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else { return }
+        let modifiedAt = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+        let size = attributes[.size] as? NSNumber
+        let signature = "\(modifiedAt):\(size?.uint64Value ?? 0)"
+        guard signature != lastSignature else { return }
+        lastSignature = signature
+
+        do {
+            let data = try Data(contentsOf: url)
+            style = try decoder.decode(PickyCursorStyle.self, from: data)
+        } catch {
+            print("🖱️ Picky cursor style — keeping previous style; invalid JSON at \(url.path): \(error.localizedDescription)")
+        }
+    }
+}
+#else
+@MainActor
+private final class PickyCursorStyleStore: ObservableObject {
+    static let shared = PickyCursorStyleStore()
+    @Published private(set) var style = PickyCursorStyle()
+    private init() {}
+}
+#endif
 
 // Pi-shaped cursor buddy icon.
 private struct PiCursorIconView: View {
+    let style: PickyCursorStyle
+
     var body: some View {
         ZStack {
             Image("PiSymbol")
                 .resizable()
                 .renderingMode(.template)
                 .scaledToFit()
-                .foregroundColor(DS.Colors.overlayCursorBlue.opacity(0.32))
-                .frame(width: 17, height: 17)
-                .blur(radius: 0.7)
-                .scaleEffect(1.18)
+                .foregroundColor(style.cursorColor.opacity(style.glowOpacity))
+                .frame(width: CGFloat(style.glowSize), height: CGFloat(style.glowSize))
+                .blur(radius: CGFloat(style.glowBlur))
+                .scaleEffect(CGFloat(style.glowScale))
 
             Image("PiSymbol")
                 .resizable()
                 .renderingMode(.template)
                 .scaledToFit()
-                .foregroundColor(DS.Colors.overlayCursorBlue)
-                .frame(width: 15, height: 15)
+                .foregroundColor(style.cursorColor)
+                .frame(width: CGFloat(style.iconSize), height: CGFloat(style.iconSize))
 
             Image("PiSymbol")
                 .resizable()
                 .renderingMode(.template)
                 .scaledToFit()
-                .foregroundColor(.white.opacity(0.16))
-                .frame(width: 15, height: 15)
-                .offset(x: -0.4, y: -0.4)
+                .foregroundColor(.white.opacity(style.highlightOpacity))
+                .frame(width: CGFloat(style.iconSize), height: CGFloat(style.iconSize))
+                .offset(x: CGFloat(style.highlightOffsetX), y: CGFloat(style.highlightOffsetY))
         }
-        .frame(width: 22, height: 22)
+        .frame(width: CGFloat(style.frameSize), height: CGFloat(style.frameSize))
     }
 }
 
@@ -50,6 +159,7 @@ private struct PiCursorIconView: View {
 struct BlueCursorView: View {
     let screenFrame: CGRect
     @ObservedObject var companionManager: CompanionManager
+    @ObservedObject private var cursorStyleStore = PickyCursorStyleStore.shared
 
     @State private var cursorPosition: CGPoint
     @State private var isCursorOnThisScreen: Bool
@@ -227,8 +337,13 @@ struct BlueCursorView: View {
             // During cursor following: fast spring animation for snappy tracking.
             // During navigation: NO implicit animation — the frame-by-frame bezier
             // timer controls position directly at 60fps for a smooth arc flight.
-            PiCursorIconView()
-                .shadow(color: DS.Colors.overlayCursorBlue, radius: 8 + (buddyFlightScale - 1.0) * 20, x: 0, y: 0)
+            PiCursorIconView(style: cursorStyleStore.style)
+                .shadow(
+                    color: cursorStyleStore.style.cursorColor.opacity(cursorStyleStore.style.outerShadowOpacity),
+                    radius: CGFloat(cursorStyleStore.style.outerShadowRadius) + (buddyFlightScale - 1.0) * CGFloat(cursorStyleStore.style.outerShadowFlightMultiplier),
+                    x: 0,
+                    y: 0
+                )
                 .scaleEffect(buddyFlightScale)
                 .opacity(buddyIsVisibleOnThisScreen && (companionManager.voiceState == .idle || companionManager.voiceState == .responding) ? cursorOpacity : 0)
                 .position(cursorPosition)

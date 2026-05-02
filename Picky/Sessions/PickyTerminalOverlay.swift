@@ -305,7 +305,7 @@ struct PickyTerminalTextViewRepresentable: NSViewRepresentable {
     let text: String
     let onInput: (Data) -> Void
 
-    func makeNSView(context: Context) -> NSScrollView {
+    func makeNSView(context: Context) -> PickyTerminalScrollView {
         let textView = PickyTerminalTextView()
         textView.inputHandler = onInput
         textView.isEditable = false
@@ -320,31 +320,64 @@ struct PickyTerminalTextViewRepresentable: NSViewRepresentable {
         textView.isAutomaticTextReplacementEnabled = false
         textView.string = text
 
-        let scrollView = NSScrollView()
+        let scrollView = PickyTerminalScrollView()
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
         scrollView.documentView = textView
+        scrollView.resizeTerminalDocumentView()
 
         DispatchQueue.main.async {
+            scrollView.resizeTerminalDocumentView()
             scrollView.window?.makeFirstResponder(textView)
         }
         return scrollView
     }
 
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+    func updateNSView(_ scrollView: PickyTerminalScrollView, context: Context) {
         guard let textView = scrollView.documentView as? PickyTerminalTextView else { return }
         textView.inputHandler = onInput
         if textView.string != text {
             textView.string = text
+            scrollView.resizeTerminalDocumentView()
             textView.scrollToEndOfDocument(nil)
         }
         DispatchQueue.main.async {
+            scrollView.resizeTerminalDocumentView()
             if scrollView.window?.firstResponder == nil {
                 scrollView.window?.makeFirstResponder(textView)
             }
+        }
+    }
+}
+
+final class PickyTerminalScrollView: NSScrollView {
+    override func layout() {
+        super.layout()
+        resizeTerminalDocumentView()
+    }
+
+    func resizeTerminalDocumentView() {
+        guard let textView = documentView as? NSTextView else { return }
+        let contentSize = contentSize
+        let width = max(1, contentSize.width)
+        textView.minSize = NSSize(width: 0, height: contentSize.height)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+        textView.frame.size.width = width
+
+        if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
+            layoutManager.ensureLayout(for: textContainer)
+            let usedHeight = ceil(layoutManager.usedRect(for: textContainer).height + textView.textContainerInset.height * 2)
+            textView.frame.size.height = max(contentSize.height, usedHeight)
+        } else {
+            textView.frame.size.height = max(contentSize.height, textView.frame.height)
         }
     }
 }

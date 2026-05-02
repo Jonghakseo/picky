@@ -498,6 +498,21 @@ struct PickySessionViewModelTests {
         #expect(emulator.renderedText().contains("hello"))
     }
 
+    @MainActor
+    @Test func terminalScrollViewGivesTextViewVisibleWidth() throws {
+        let scrollView = PickyTerminalScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 320))
+        let textView = PickyTerminalTextView()
+        textView.textContainerInset = NSSize(width: 12, height: 10)
+        textView.string = "hello from pi"
+        scrollView.documentView = textView
+
+        scrollView.resizeTerminalDocumentView()
+
+        #expect(textView.frame.width >= 600)
+        #expect(textView.frame.height >= 320)
+        #expect(textView.textContainer?.widthTracksTextView == true)
+    }
+
     @Test func piSessionFileSyncerReadsLastActiveUserAndAssistantMessages() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("picky-pi-sync-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

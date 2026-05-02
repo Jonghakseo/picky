@@ -20,6 +20,66 @@ enum CompanionVoiceState {
     case responding
 }
 
+enum CompanionVoicePromptBubbleState: Equatable {
+    case hidden
+    case recognizing
+    case recognized(String)
+
+    var isVisible: Bool {
+        self != .hidden
+    }
+
+    var displayText: String {
+        switch self {
+        case .hidden, .recognizing:
+            return "음성 인식 중…"
+        case .recognized(let prompt):
+            return prompt
+        }
+    }
+}
+
+struct CompanionVoicePresentationState: Equatable {
+    let voiceState: CompanionVoiceState
+    let promptBubbleState: CompanionVoicePromptBubbleState
+}
+
+enum CompanionVoicePresentationReducer {
+    static func reduce(
+        currentVoiceState: CompanionVoiceState,
+        isKeyboardRecording: Bool,
+        isMicrophoneRecording: Bool,
+        isFinalizingTranscript: Bool,
+        isPreparingToRecord: Bool,
+        isAwaitingAgentResponse: Bool,
+        recognizedPrompt: String?
+    ) -> CompanionVoicePresentationState {
+        let trimmedPrompt = recognizedPrompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let promptBubbleState: CompanionVoicePromptBubbleState
+        if isFinalizingTranscript {
+            promptBubbleState = .recognizing
+        } else if isAwaitingAgentResponse {
+            promptBubbleState = trimmedPrompt.isEmpty ? .recognizing : .recognized(trimmedPrompt)
+        } else {
+            promptBubbleState = .hidden
+        }
+
+        if currentVoiceState == .responding {
+            return CompanionVoicePresentationState(voiceState: .responding, promptBubbleState: .hidden)
+        }
+        if isFinalizingTranscript || isPreparingToRecord {
+            return CompanionVoicePresentationState(voiceState: .processing, promptBubbleState: promptBubbleState)
+        }
+        if isKeyboardRecording || isMicrophoneRecording {
+            return CompanionVoicePresentationState(voiceState: .listening, promptBubbleState: promptBubbleState)
+        }
+        if isAwaitingAgentResponse {
+            return CompanionVoicePresentationState(voiceState: .processing, promptBubbleState: promptBubbleState)
+        }
+        return CompanionVoicePresentationState(voiceState: .idle, promptBubbleState: .hidden)
+    }
+}
+
 private final class PickySpeechSynthesizerDelegate: NSObject, NSSpeechSynthesizerDelegate {
     private let onFinish: (Bool) -> Void
 
@@ -37,6 +97,7 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var voiceState: CompanionVoiceState = .idle
     @Published private(set) var lastTranscript: String?
     @Published private(set) var currentVoicePromptPreview: String?
+    @Published private(set) var voicePromptBubbleState: CompanionVoicePromptBubbleState = .hidden
     @Published private(set) var latestAgentSessionSummary: String?
     @Published private(set) var currentAudioPowerLevel: CGFloat = 0
     @Published private(set) var hasAccessibilityPermission = false
@@ -170,6 +231,7 @@ final class CompanionManager: ObservableObject {
         speechSynthesizerDelegate = nil
         pendingAgentResponseStartedAt = nil
         currentVoicePromptPreview = nil
+        voicePromptBubbleState = .hidden
         agentEventTask?.cancel()
         agentEventTask = nil
         agentClient.disconnect()
@@ -329,27 +391,26 @@ final class CompanionManager: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isKeyboardRecording, isMicrophoneRecording, isFinalizing, isPreparing in
                 guard let self else { return }
-                // Don't override .responding — the AI response pipeline
-                // manages that state directly until streaming finishes.
-                guard self.voiceState != .responding else { return }
+                let presentation = CompanionVoicePresentationReducer.reduce(
+                    currentVoiceState: self.voiceState,
+                    isKeyboardRecording: isKeyboardRecording,
+                    isMicrophoneRecording: isMicrophoneRecording,
+                    isFinalizingTranscript: isFinalizing,
+                    isPreparingToRecord: isPreparing,
+                    isAwaitingAgentResponse: self.pendingAgentResponseStartedAt != nil,
+                    recognizedPrompt: self.currentVoicePromptPreview
+                )
+                self.voiceState = presentation.voiceState
+                self.voicePromptBubbleState = presentation.promptBubbleState
 
-                if isFinalizing {
-                    self.voiceState = .processing
-                } else if isKeyboardRecording || isMicrophoneRecording {
-                    self.voiceState = .listening
-                } else if isPreparing {
-                    self.voiceState = .processing
-                } else {
-                    self.voiceState = .idle
-                    // If the user pressed and released the hotkey without
-                    // saying anything, no response task runs — schedule the
-                    // transient hide here so the overlay doesn't get stuck.
-                    // Only do this when no response is in flight, otherwise
-                    // the brief idle gap between recording and processing
-                    // would prematurely hide the overlay.
-                    if self.currentResponseTask == nil {
-                        self.scheduleTransientHideIfNeeded()
-                    }
+                // If the user pressed and released the hotkey without
+                // saying anything, no response task runs — schedule the
+                // transient hide here so the overlay doesn't get stuck.
+                // Only do this when no response is in flight, otherwise
+                // the brief idle gap between recording and processing
+                // would prematurely hide the overlay.
+                if presentation.voiceState == .idle, self.pendingAgentResponseStartedAt == nil {
+                    self.scheduleTransientHideIfNeeded()
                 }
             }
     }
@@ -368,7 +429,9 @@ final class CompanionManager: ObservableObject {
         case .pressed:
             guard !buddyDictationManager.isDictationInProgress else { return }
             interruptSpokenResponseForVoiceInput()
+            pendingAgentResponseStartedAt = nil
             currentVoicePromptPreview = nil
+            voicePromptBubbleState = .hidden
             voiceFollowUpSessionIDForCurrentUtterance = selectionStore.activeVoiceFollowUpSessionID ?? selectionStore.hoveredVoiceFollowUpSessionID
 
             // Cancel any pending transient hide so the overlay stays visible
@@ -562,6 +625,7 @@ final class CompanionManager: ObservableObject {
         stopCurrentSpeech()
         let trimmedTranscript = recognizedTranscript?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         currentVoicePromptPreview = trimmedTranscript.isEmpty ? nil : trimmedTranscript
+        voicePromptBubbleState = trimmedTranscript.isEmpty ? .recognizing : .recognized(trimmedTranscript)
         pendingAgentResponseStartedAt = Date()
         latestAgentSessionSummary = "응답 준비 중…"
         voiceState = .processing
@@ -573,6 +637,7 @@ final class CompanionManager: ObservableObject {
         pendingAgentResponseStartedAt = nil
         latestAgentSessionSummary = visibleText
         currentVoicePromptPreview = nil
+        voicePromptBubbleState = .hidden
         let textToSpeak = spokenText?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let textToSpeak, !textToSpeak.isEmpty else {
             voiceState = .idle

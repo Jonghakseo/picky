@@ -230,8 +230,8 @@ struct BlueCursorView: View {
             // keep the recognized user prompt visible while Picky is preparing
             // and waiting for the main agent response.
             if isCursorOnThisScreen,
-               companionManager.voiceState == .processing {
-                let bubbleText = voicePromptBubbleText
+               companionManager.voicePromptBubbleState.isVisible {
+                let bubbleText = companionManager.voicePromptBubbleState.displayText
                 let textWidth = PickyBubbleLayout.textWidth(
                     for: bubbleText,
                     font: .systemFont(ofSize: 11, weight: .medium),
@@ -247,7 +247,7 @@ struct BlueCursorView: View {
                     .position(x: cursorPosition.x + 12 + (voicePromptBubbleSize.width / 2), y: cursorPosition.y + 20 + (voicePromptBubbleSize.height / 2))
                     .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
                     .animation(.easeOut(duration: 0.2), value: companionManager.voiceState)
-                    .animation(.easeOut(duration: 0.16), value: companionManager.currentVoicePromptPreview)
+                    .animation(.easeOut(duration: 0.16), value: companionManager.voicePromptBubbleState)
                     .onPreferenceChange(VoicePromptBubbleSizePreferenceKey.self) { newSize in
                         voicePromptBubbleSize = newSize
                     }
@@ -424,12 +424,6 @@ struct BlueCursorView: View {
         case .navigatingToTarget, .pointingAtTarget:
             return true
         }
-    }
-
-    private var voicePromptBubbleText: String {
-        let prompt = companionManager.currentVoicePromptPreview?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return prompt.isEmpty ? "음성 인식 중…" : prompt
     }
 
     // MARK: - Cursor Tracking

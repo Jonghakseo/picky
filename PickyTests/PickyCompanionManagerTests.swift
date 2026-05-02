@@ -134,6 +134,7 @@ struct PickyCompanionManagerTests {
 
         #expect(manager.voiceState == .processing)
         #expect(manager.currentVoicePromptPreview == "설정 열어줘")
+        #expect(manager.voicePromptBubbleState == .recognized("설정 열어줘"))
 
         manager.handleAgentSubmissionAccepted(
             receipt: PickyAgentSubmissionReceipt(sessionID: "created-session", message: "열어볼게요."),
@@ -141,8 +142,50 @@ struct PickyCompanionManagerTests {
         )
 
         #expect(manager.currentVoicePromptPreview == nil)
+        #expect(manager.voicePromptBubbleState == .hidden)
         #expect(manager.latestAgentSessionSummary == "열어볼게요.")
         #expect(manager.voiceState == .responding)
+    }
+
+    @Test func voicePresentationKeepsAwaitingAgentStateAfterDictationResetsToIdle() async throws {
+        let presentation = CompanionVoicePresentationReducer.reduce(
+            currentVoiceState: .processing,
+            isKeyboardRecording: false,
+            isMicrophoneRecording: false,
+            isFinalizingTranscript: false,
+            isPreparingToRecord: false,
+            isAwaitingAgentResponse: true,
+            recognizedPrompt: "  설정 열어줘  "
+        )
+
+        #expect(presentation.voiceState == .processing)
+        #expect(presentation.promptBubbleState == .recognized("설정 열어줘"))
+    }
+
+    @Test func voicePresentationShowsPromptBubbleOnlyAfterReleaseOrRecognizedPrompt() async throws {
+        let preparing = CompanionVoicePresentationReducer.reduce(
+            currentVoiceState: .idle,
+            isKeyboardRecording: false,
+            isMicrophoneRecording: false,
+            isFinalizingTranscript: false,
+            isPreparingToRecord: true,
+            isAwaitingAgentResponse: false,
+            recognizedPrompt: nil
+        )
+        let finalizing = CompanionVoicePresentationReducer.reduce(
+            currentVoiceState: .listening,
+            isKeyboardRecording: false,
+            isMicrophoneRecording: false,
+            isFinalizingTranscript: true,
+            isPreparingToRecord: false,
+            isAwaitingAgentResponse: false,
+            recognizedPrompt: nil
+        )
+
+        #expect(preparing.voiceState == .processing)
+        #expect(preparing.promptBubbleState == .hidden)
+        #expect(finalizing.voiceState == .processing)
+        #expect(finalizing.promptBubbleState == .recognizing)
     }
 
     @Test func progressEventsDoNotOverwriteVisibleCursorResponse() async throws {

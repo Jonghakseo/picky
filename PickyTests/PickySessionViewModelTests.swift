@@ -213,6 +213,28 @@ struct PickySessionViewModelTests {
         #expect(viewModel.lastError == nil)
     }
 
+    @Test func ghosttyResumeUsesNativeTabScriptInsteadOfKeystrokes() throws {
+        let script = PickyGhosttyResumeLauncher.makeAppleScript(
+            sessionFilePath: "/tmp/pi session's.jsonl",
+            workingDirectory: "/Users/example/Project Folder"
+        )
+
+        #expect(script.contains("new surface configuration"))
+        #expect(script.contains("initial input:resumeCommand"))
+        #expect(script.contains("new tab in targetWindow with configuration resumeConfig"))
+        #expect(script.contains("new window with configuration resumeConfig"))
+        #expect(script.contains("exec pi --session"))
+        #expect(script.contains("/tmp/pi session"))
+        #expect(script.contains("s.jsonl"))
+        #expect(!script.contains("System Events"))
+        #expect(!script.contains("keystroke"))
+        #expect(!script.contains("clipboard"))
+    }
+
+    @Test func ghosttyResumeDefaultsBlankCwdToHomeDirectory() throws {
+        #expect(PickyGhosttyResumeLauncher.workingDirectory(from: "  ") == FileManager.default.homeDirectoryForCurrentUser.path)
+    }
+
     @Test func extensionUiLogsAreHiddenFromRecentLogPreview() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())

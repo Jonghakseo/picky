@@ -58,31 +58,8 @@ struct PickyGhosttyResumeLauncher: PickyTerminalResumeLaunching {
             throw PickyGhosttyResumeLauncherError.ghosttyNotInstalled
         }
 
-        let workingDirectory = cwd?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-            ? cwd!
-            : FileManager.default.homeDirectoryForCurrentUser.path
-        let command = "cd \(Self.shellQuoted(workingDirectory)) && exec pi --session \(Self.shellQuoted(sessionFilePath))"
-        let script = """
-        set resumeCommand to \"\(Self.appleScriptString(command))\"
-        set wasRunning to application \"Ghostty\" is running
-        tell application \"Ghostty\" to activate
-        if wasRunning then
-          delay 0.2
-        else
-          delay 0.8
-        end if
-        tell application \"System Events\"
-          tell process \"Ghostty\"
-            if wasRunning then
-              keystroke \"t\" using command down
-              delay 0.15
-            end if
-            set the clipboard to resumeCommand
-            keystroke \"v\" using command down
-            key code 36
-          end tell
-        end tell
-        """
+        let workingDirectory = Self.workingDirectory(from: cwd)
+        let script = Self.makeAppleScript(sessionFilePath: sessionFilePath, workingDirectory: workingDirectory)
 
         var errorInfo: NSDictionary?
         guard NSAppleScript(source: script)?.executeAndReturnError(&errorInfo) != nil else {
@@ -90,14 +67,40 @@ struct PickyGhosttyResumeLauncher: PickyTerminalResumeLaunching {
         }
     }
 
-    private static func shellQuoted(_ value: String) -> String {
+    static func makeAppleScript(sessionFilePath: String, workingDirectory: String) -> String {
+        let command = "cd \(Self.shellQuoted(workingDirectory)) && exec pi --session \(Self.shellQuoted(sessionFilePath))"
+        return """
+        set resumeCommand to \"\(Self.appleScriptString(command))\" & linefeed
+        set resumeWorkingDirectory to \"\(Self.appleScriptString(workingDirectory))\"
+        set wasRunning to application \"Ghostty\" is running
+        tell application \"Ghostty\"
+          set resumeConfig to new surface configuration from {initial working directory:resumeWorkingDirectory, initial input:resumeCommand}
+          if wasRunning and ((count of windows) is greater than 0) then
+            set targetWindow to front window
+            set resumedTab to new tab in targetWindow with configuration resumeConfig
+            select tab resumedTab
+          else
+            set resumedWindow to new window with configuration resumeConfig
+          end if
+          activate
+        end tell
+        """
+    }
+
+    static func workingDirectory(from cwd: String?) -> String {
+        let trimmedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmedCwd.isEmpty ? FileManager.default.homeDirectoryForCurrentUser.path : trimmedCwd
+    }
+
+    static func shellQuoted(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    private static func appleScriptString(_ value: String) -> String {
+    static func appleScriptString(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\r", with: "\\r")
             .replacingOccurrences(of: "\n", with: "\\n")
     }
 }

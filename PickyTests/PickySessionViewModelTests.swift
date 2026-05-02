@@ -213,6 +213,27 @@ struct PickySessionViewModelTests {
         #expect(viewModel.lastError == nil)
     }
 
+    @Test func extensionUiLogsAreHiddenFromRecentLogPreview() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            status: "running",
+            logs: ["visible log", "extension ui: setWidget"]
+        ))))
+        try await settle()
+
+        #expect(viewModel.sessions.first?.logPreview == "visible log")
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "session-1", line: "extension ui: notify"))))
+        try await settle()
+        #expect(viewModel.sessions.first?.logPreview == "visible log")
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "session-1", line: "done"))))
+        try await settle()
+        #expect(viewModel.sessions.first?.logPreview == "done")
+    }
+
     @Test func runtimeDetachedRestoredSessionsAreAutoArchived() async throws {
         let client = FakePickyAgentClient()
         let archiveStore = FakeArchiveStore()
@@ -323,6 +344,13 @@ private enum EventJSON {
     static func extensionUiRequest() -> String {
         """
         {"id":"event-ui","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-1","sessionId":"session-1","method":"confirm","title":"Confirm","prompt":"Proceed?","options":null,"createdAt":"2026-05-01T00:00:02.000Z"}}
+        """
+    }
+
+    static func sessionLog(sessionId: String, line: String) -> String {
+        let encodedLine = String(decoding: try! JSONEncoder().encode(line), as: UTF8.self)
+        return """
+        {"id":"event-log","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:03.000Z","type":"sessionLogAppended","sessionId":"\(sessionId)","line":\(encodedLine)}
         """
     }
 

@@ -385,7 +385,9 @@ final class PickySessionListViewModel: ObservableObject {
         case .sessionLogAppended(let sessionId, let line):
             pickySessionLog("session log session=\(sessionId) lineChars=\(line.count)")
             update(sessionID: sessionId) { card in
-                card.logPreview = line
+                if SessionCard.isDisplayableLogPreview(line) {
+                    card.logPreview = line
+                }
                 if let piSessionFilePath = SessionCard.piSessionFilePath(fromLogLine: line) {
                     card.piSessionFilePath = piSessionFilePath
                 }
@@ -521,7 +523,7 @@ private extension PickySessionListViewModel.SessionCard {
         self.createdAt = session.createdAt
         self.updatedAt = session.updatedAt
         self.lastSummary = session.lastSummary ?? ""
-        self.logPreview = session.logs.last ?? session.tools.last?.preview ?? ""
+        self.logPreview = session.logs.reversed().first(where: Self.isDisplayableLogPreview) ?? session.tools.last?.preview ?? ""
         self.tools = session.tools
         self.artifacts = session.artifacts
         self.changedFiles = session.changedFiles
@@ -553,6 +555,10 @@ private extension PickySessionListViewModel.SessionCard {
         guard line.hasPrefix(prefix) else { return nil }
         let path = String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
         return path.isEmpty ? nil : path
+    }
+
+    static func isDisplayableLogPreview(_ line: String) -> Bool {
+        !line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("extension ui:")
     }
 }
 

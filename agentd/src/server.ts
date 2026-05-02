@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createServer, type Server as HttpServer } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import { isAuthorized } from "./auth.js";
-import { PROTOCOL_VERSION, parseCommand, type EventEnvelope } from "./protocol.js";
+import { PROTOCOL_VERSION, parseCommand, type EventEnvelope, type PickyAgentSession } from "./protocol.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
 
@@ -70,7 +70,7 @@ export class AgentdServer {
       parsed = JSON.parse(raw);
       const command = parseCommand(parsed);
       logAgentd("command received", commandLogFields(command));
-      if (command.type === "listSessions") this.send(ws, { type: "sessionSnapshot", sessions: this.options.supervisor.list() });
+      if (command.type === "listSessions") this.send(ws, { type: "sessionSnapshot", sessions: compactSessionsForSnapshot(this.options.supervisor.list()) });
       if (command.type === "getSession") {
         const session = this.options.supervisor.get(command.sessionId);
         if (!session) throw new Error(`Unknown session: ${command.sessionId}`);
@@ -154,6 +154,52 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
     case "error":
       return { eventId: event.id, type: event.type, commandId: event.commandId, code: event.code };
   }
+}
+
+const SNAPSHOT_LOG_LIMIT = 24;
+const SNAPSHOT_IMPORTANT_LOG_LIMIT = 8;
+const SNAPSHOT_LOG_CHAR_LIMIT = 1_200;
+
+export function compactSessionsForSnapshot(sessions: PickyAgentSession[]): PickyAgentSession[] {
+  return sessions.map((session) => ({ ...session, logs: compactSnapshotLogs(session.logs) }));
+}
+
+function compactSnapshotLogs(logs: string[]): string[] {
+  if (logs.length <= SNAPSHOT_LOG_LIMIT && logs.every((line) => line.length <= SNAPSHOT_LOG_CHAR_LIMIT)) return logs;
+
+  const important = logs.filter(isImportantSnapshotLog).slice(-SNAPSHOT_IMPORTANT_LOG_LIMIT);
+  const recentSlots = Math.max(SNAPSHOT_LOG_LIMIT - important.length, 0);
+  const recent = logs.slice(-recentSlots);
+  return uniqueInOrder([...important, ...recent])
+    .slice(-SNAPSHOT_LOG_LIMIT)
+    .map(truncateSnapshotLogLine);
+}
+
+function isImportantSnapshotLog(line: string): boolean {
+  const trimmed = line.trimStart();
+  return trimmed.startsWith("pi session: ")
+    || trimmed.startsWith("- Session file: ")
+    || trimmed.startsWith("source transcript:")
+    || trimmed.startsWith("follow-up: ")
+    || trimmed.startsWith("main-agent handoff: ")
+    || trimmed.includes("Runtime session is not attached after daemon restart")
+    || trimmed.includes("Runtime not attached after daemon restart");
+}
+
+function uniqueInOrder(lines: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const line of lines) {
+    if (seen.has(line)) continue;
+    seen.add(line);
+    result.push(line);
+  }
+  return result;
+}
+
+function truncateSnapshotLogLine(line: string): string {
+  if (line.length <= SNAPSHOT_LOG_CHAR_LIMIT) return line;
+  return `${line.slice(0, SNAPSHOT_LOG_CHAR_LIMIT)}…`;
 }
 
 type RemoveEnvelope<T> = T extends unknown ? Omit<T, "id" | "protocolVersion" | "timestamp"> : never;

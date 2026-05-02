@@ -107,6 +107,44 @@ enum PickyBubbleLayout {
     }
 }
 
+enum PickyBubbleMarkdown {
+    static func attributedText(for text: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        if let attributed = try? AttributedString(markdown: text, options: options) {
+            return attributed
+        }
+        return AttributedString(sanitizedPlainText(text))
+    }
+
+    static func displayString(for text: String) -> String {
+        String(attributedText(for: text).characters)
+    }
+
+    private static func sanitizedPlainText(_ text: String) -> String {
+        var sanitized = text
+        let replacements: [(String, String)] = [
+            (#"\[([^\]]+)\]\([^\)]+\)"#, "$1"),
+            (#"\*\*([^*]+)\*\*"#, "$1"),
+            (#"__([^_]+)__"#, "$1"),
+            (#"`([^`]+)`"#, "$1"),
+            (#"\*([^*]+)\*"#, "$1"),
+            (#"_([^_]+)_"#, "$1")
+        ]
+
+        for (pattern, template) in replacements {
+            sanitized = sanitized.replacingOccurrences(
+                of: pattern,
+                with: template,
+                options: .regularExpression
+            )
+        }
+
+        return sanitized
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "__", with: "")
+    }
+}
+
 /// The buddy's behavioral mode. Controls whether it follows the cursor,
 /// is flying toward a detected UI element, or is pointing at an element.
 enum BuddyNavigationMode {
@@ -198,12 +236,14 @@ struct BlueCursorView: View {
                companionManager.voiceState == .responding,
                let responseText = companionManager.latestAgentSessionSummary,
                !responseText.isEmpty {
+                let renderedText = PickyBubbleMarkdown.displayString(for: responseText)
+                let attributedText = PickyBubbleMarkdown.attributedText(for: responseText)
                 let textWidth = PickyBubbleLayout.textWidth(
-                    for: responseText,
+                    for: renderedText,
                     font: .systemFont(ofSize: 11, weight: .medium),
                     maxWidth: 302
                 )
-                Text(responseText)
+                Text(attributedText)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.leading)

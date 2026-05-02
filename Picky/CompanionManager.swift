@@ -20,6 +20,18 @@ enum CompanionVoiceState {
     case responding
 }
 
+private final class PickySpeechSynthesizerDelegate: NSObject, NSSpeechSynthesizerDelegate {
+    private let onFinish: (Bool) -> Void
+
+    init(onFinish: @escaping (Bool) -> Void) {
+        self.onFinish = onFinish
+    }
+
+    func speechSynthesizer(_ sender: NSSpeechSynthesizer, didFinishSpeaking finishedSpeaking: Bool) {
+        onFinish(finishedSpeaking)
+    }
+}
+
 @MainActor
 final class CompanionManager: ObservableObject {
     @Published private(set) var voiceState: CompanionVoiceState = .idle
@@ -74,6 +86,8 @@ final class CompanionManager: ObservableObject {
     private var transientHideTask: Task<Void, Never>?
     private var responseStateTask: Task<Void, Never>?
     private var speechSynthesizer: NSSpeechSynthesizer?
+    private var speechSynthesizerDelegate: PickySpeechSynthesizerDelegate?
+    private var activeSpeechID: UUID?
     private var pendingAgentResponseStartedAt: Date?
     private var voiceFollowUpSessionIDForCurrentUtterance: String?
 
@@ -147,8 +161,11 @@ final class CompanionManager: ObservableObject {
         currentResponseTask = nil
         responseStateTask?.cancel()
         responseStateTask = nil
+        activeSpeechID = nil
+        speechSynthesizer?.delegate = nil
         speechSynthesizer?.stopSpeaking()
         speechSynthesizer = nil
+        speechSynthesizerDelegate = nil
         pendingAgentResponseStartedAt = nil
         agentEventTask?.cancel()
         agentEventTask = nil
@@ -540,20 +557,14 @@ final class CompanionManager: ObservableObject {
     }
 
     func interruptSpokenResponseForVoiceInput() {
-        responseStateTask?.cancel()
-        responseStateTask = nil
-        speechSynthesizer?.stopSpeaking()
-        speechSynthesizer = nil
+        stopCurrentSpeech()
         if voiceState == .responding {
             voiceState = .idle
         }
     }
 
     func beginAwaitingAgentResponse() {
-        responseStateTask?.cancel()
-        responseStateTask = nil
-        speechSynthesizer?.stopSpeaking()
-        speechSynthesizer = nil
+        stopCurrentSpeech()
         pendingAgentResponseStartedAt = Date()
         latestAgentSessionSummary = "응답 준비 중…"
         voiceState = .processing
@@ -561,6 +572,7 @@ final class CompanionManager: ObservableObject {
 
     private func finishAwaitingAgentResponse(visibleText: String, spokenText: String?) {
         responseStateTask?.cancel()
+        responseStateTask = nil
         pendingAgentResponseStartedAt = nil
         latestAgentSessionSummary = visibleText
         let textToSpeak = spokenText?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -574,21 +586,70 @@ final class CompanionManager: ObservableObject {
 
     /// Speaks a short local status message through macOS system speech.
     private func speakSystemMessage(_ utterance: String) {
-        speechSynthesizer?.stopSpeaking()
-        let synthesizer = NSSpeechSynthesizer()
-        speechSynthesizer = synthesizer
-        synthesizer.startSpeaking(utterance)
-        voiceState = .responding
+        stopCurrentSpeech()
 
-        let estimatedDuration = min(max(Double(utterance.count) * 0.08, 1.6), 12.0)
-        responseStateTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(estimatedDuration * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                self?.voiceState = .idle
-                self?.scheduleTransientHideIfNeeded()
+        let speechID = UUID()
+        activeSpeechID = speechID
+
+        let delegate = PickySpeechSynthesizerDelegate { [weak self] didFinish in
+            Task { @MainActor [weak self] in
+                self?.handleSpeechFinished(speechID: speechID, didFinish: didFinish)
             }
         }
+        let synthesizer = NSSpeechSynthesizer()
+        synthesizer.delegate = delegate
+        speechSynthesizerDelegate = delegate
+        speechSynthesizer = synthesizer
+        voiceState = .responding
+
+        guard synthesizer.startSpeaking(utterance) else {
+            handleSpeechFinished(speechID: speechID, didFinish: false)
+            return
+        }
+
+        responseStateTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled else { return }
+                let shouldFinish = await MainActor.run { [weak self] in
+                    guard let self,
+                          self.activeSpeechID == speechID,
+                          let synthesizer = self.speechSynthesizer else {
+                        return false
+                    }
+                    return !synthesizer.isSpeaking
+                }
+                guard shouldFinish else { continue }
+                await MainActor.run { [weak self] in
+                    self?.handleSpeechFinished(speechID: speechID, didFinish: true)
+                }
+                return
+            }
+        }
+    }
+
+    private func stopCurrentSpeech() {
+        activeSpeechID = nil
+        responseStateTask?.cancel()
+        responseStateTask = nil
+        speechSynthesizer?.delegate = nil
+        speechSynthesizer?.stopSpeaking()
+        speechSynthesizer = nil
+        speechSynthesizerDelegate = nil
+    }
+
+    private func handleSpeechFinished(speechID: UUID, didFinish _: Bool) {
+        guard activeSpeechID == speechID else { return }
+        activeSpeechID = nil
+        responseStateTask?.cancel()
+        responseStateTask = nil
+        speechSynthesizer?.delegate = nil
+        speechSynthesizer = nil
+        speechSynthesizerDelegate = nil
+        if voiceState == .responding {
+            voiceState = .idle
+        }
+        scheduleTransientHideIfNeeded()
     }
 
     // MARK: - Point Tag Parsing

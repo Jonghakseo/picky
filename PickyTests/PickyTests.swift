@@ -54,4 +54,14 @@ struct PickyTests {
         #expect(longWidth == maxWidth)
     }
 
+    @Test func bubbleMarkdownRendersEmphasisWithoutRawDelimiters() throws {
+        let attributed = PickyBubbleMarkdown.attributedText(for: "이건 **중요**해요")
+
+        #expect(String(attributed.characters) == "이건 중요해요")
+        #expect(PickyBubbleMarkdown.displayString(for: "이건 **중요**해요") == "이건 중요해요")
+        #expect(attributed.runs.contains { run in
+            run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true
+        })
+    }
+
 }

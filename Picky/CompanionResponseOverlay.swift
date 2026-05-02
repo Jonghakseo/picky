@@ -196,12 +196,14 @@ private struct CompanionResponseOverlayView: View {
     var body: some View {
         if viewModel.isShowingResponse {
             let responseText = viewModel.streamingResponseText.isEmpty ? "..." : viewModel.streamingResponseText
+            let renderedText = PickyBubbleMarkdown.displayString(for: responseText)
+            let attributedText = PickyBubbleMarkdown.attributedText(for: responseText)
             let textWidth = PickyBubbleLayout.textWidth(
-                for: responseText,
+                for: renderedText,
                 font: .systemFont(ofSize: 13, weight: .regular),
                 maxWidth: 300
             )
-            Text(responseText)
+            Text(attributedText)
                 .font(.system(size: 13, weight: .regular))
                 .foregroundColor(DS.Colors.textPrimary)
                 .lineSpacing(3)

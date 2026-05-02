@@ -488,61 +488,30 @@ struct PickySessionViewModelTests {
         #expect(PickyPiTerminalCommand.workingDirectory(from: "  ") == FileManager.default.homeDirectoryForCurrentUser.path)
     }
 
-    @Test func terminalEmulatorKeepsAsciiTextWhenUtf8ChunkIsPartial() throws {
-        var emulator = PickyTerminalEmulator(columns: 40, rows: 10)
-        var data = Data([0xE2])
-        data.append(contentsOf: "hello".utf8)
+    @Test func terminalCommandEnvironmentPrependsFinderSafePath() throws {
+        let environment = PickyPiTerminalCommand.makeOverlayEnvironment([
+            "PATH": "/custom/bin",
+            "LANG": "ko_KR.UTF-8",
+        ])
 
-        emulator.feed(data)
-
-        #expect(emulator.renderedText().contains("hello"))
+        #expect(environment.contains("PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/custom/bin"))
+        #expect(environment.contains("TERM=xterm-256color"))
+        #expect(environment.contains("COLORTERM=truecolor"))
+        #expect(environment.contains("LANG=ko_KR.UTF-8"))
+        #expect(environment.contains("LC_CTYPE=en_US.UTF-8"))
     }
 
-    @Test func terminalEmulatorStripsOscSequences() throws {
-        var emulator = PickyTerminalEmulator(columns: 80, rows: 10)
+    @Test func terminalDebugConfigurationReadsEnvironment() throws {
+        let config = PickyTerminalDebugConfiguration.fromEnvironment([
+            "PICKY_TERMINAL_DEBUG_SESSION": "~/debug-session.jsonl",
+            "PICKY_TERMINAL_DEBUG_CWD": "~/debug-cwd",
+            "PICKY_TERMINAL_DEBUG_TITLE": "Debug title",
+        ])
 
-        emulator.feed(Data("hello \u{1B}]8;;https://example.com\u{7}link\u{1B}]8;;\u{7} world".utf8))
-
-        let rendered = emulator.renderedText()
-        #expect(rendered.contains("hello link world"))
-        #expect(!rendered.contains("8;;"))
-        #expect(!rendered.contains("https://example.com"))
-    }
-
-    @Test func terminalEmulatorStripsOscSequencesAcrossChunks() throws {
-        var emulator = PickyTerminalEmulator(columns: 80, rows: 10)
-
-        emulator.feed(Data("before \u{1B}]0;".utf8))
-        emulator.feed(Data("ignored title\u{1B}\\ after".utf8))
-
-        let rendered = emulator.renderedText()
-        #expect(rendered.contains("before  after"))
-        #expect(!rendered.contains("ignored title"))
-    }
-
-    @Test func terminalEmulatorReplacesPrivateUseGlyphs() throws {
-        var emulator = PickyTerminalEmulator(columns: 80, rows: 10)
-
-        emulator.feed(Data("repo \u{E0A0} main".utf8))
-
-        let rendered = emulator.renderedText()
-        #expect(rendered.contains("repo   main"))
-        #expect(!rendered.contains("\u{E0A0}"))
-    }
-
-    @MainActor
-    @Test func terminalScrollViewGivesTextViewVisibleWidth() throws {
-        let scrollView = PickyTerminalScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 320))
-        let textView = PickyTerminalTextView()
-        textView.textContainerInset = NSSize(width: 12, height: 10)
-        textView.string = "hello from pi"
-        scrollView.documentView = textView
-
-        scrollView.resizeTerminalDocumentView()
-
-        #expect(textView.frame.width >= 600)
-        #expect(textView.frame.height >= 320)
-        #expect(textView.textContainer?.widthTracksTextView == true)
+        #expect(config?.sessionFilePath.hasSuffix("/debug-session.jsonl") == true)
+        #expect(config?.cwd?.hasSuffix("/debug-cwd") == true)
+        #expect(config?.title == "Debug title")
+        #expect(PickyTerminalDebugConfiguration.fromEnvironment([:]) == nil)
     }
 
     @Test func piSessionFileSyncerReadsLastActiveUserAndAssistantMessages() throws {

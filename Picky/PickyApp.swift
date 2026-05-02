@@ -28,6 +28,8 @@ struct PickyApp: App {
 @MainActor
 final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarPanelManager: MenuBarPanelManager?
+    private var terminalDebugController: PickyTerminalDebugController?
+    private var isTerminalDebugMode = false
     private let settingsStore = PickySettingsStore()
     private lazy var daemonConfiguration = PickyAgentDaemonConfiguration.development(defaultCwd: settingsStore.load().normalizedPaths().defaultCwd)
     private lazy var daemonLauncher = PickyAgentDaemonLauncher(configuration: daemonConfiguration)
@@ -56,6 +58,13 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
 
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 0])
 
+        if !Self.isRunningUnitTests, let terminalDebugConfiguration = PickyTerminalDebugConfiguration.fromEnvironment() {
+            isTerminalDebugMode = true
+            terminalDebugController = PickyTerminalDebugController(configuration: terminalDebugConfiguration)
+            terminalDebugController?.start()
+            return
+        }
+
         PickyAnalytics.configure()
         PickyAnalytics.trackAppOpened()
 
@@ -73,6 +82,10 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if isTerminalDebugMode {
+            terminalDebugController?.stop()
+            return
+        }
         companionManager.stop()
         hudOverlayManager.stop()
         daemonLauncher.stop()

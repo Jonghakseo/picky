@@ -2,13 +2,13 @@
 //  PickyTerminalOverlay.swift
 //  Picky
 //
-//  Lightweight in-app Pi terminal overlay for quickly resuming a saved Pi session.
+//  In-app Pi terminal overlay backed by SwiftTerm.
 //
 
 import AppKit
 import Combine
-import Darwin
 import Foundation
+import SwiftTerm
 import SwiftUI
 
 @MainActor
@@ -47,6 +47,24 @@ enum PickyPiTerminalCommand {
         return "export PATH=\(shellQuoted(defaultPATH)):$PATH && cd \(shellQuoted(workingDirectory)) && exec pi --session \(shellQuoted(sessionFilePath))"
     }
 
+    static func makeOverlayEnvironment(_ baseEnvironment: [String: String] = ProcessInfo.processInfo.environment) -> [String] {
+        var environment = baseEnvironment
+        let existingPATH = environment["PATH"] ?? ""
+        environment["PATH"] = existingPATH.isEmpty ? defaultPATH : "\(defaultPATH):\(existingPATH)"
+        environment["TERM"] = "xterm-256color"
+        environment["COLORTERM"] = "truecolor"
+        environment["TERM_PROGRAM"] = "Picky"
+        if environment["LANG"]?.isEmpty ?? true {
+            environment["LANG"] = "en_US.UTF-8"
+        }
+        if environment["LC_CTYPE"]?.isEmpty ?? true {
+            environment["LC_CTYPE"] = "en_US.UTF-8"
+        }
+        return environment
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+    }
+
     static func workingDirectory(from cwd: String?) -> String {
         let trimmedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmedCwd.isEmpty ? FileManager.default.homeDirectoryForCurrentUser.path : trimmedCwd
@@ -77,8 +95,6 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
     }
 
     private var records: [String: TerminalRecord] = [:]
-    private let columns = 100
-    private let rows = 30
 
     private init() {}
 
@@ -99,11 +115,9 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
         let model = PickyTerminalModel(
             title: title,
             sessionFilePath: sessionFilePath,
-            cwd: cwd,
-            columns: columns,
-            rows: rows
+            cwd: cwd
         )
-        try model.start()
+        try model.prepare()
 
         let panel = PickyTerminalPanel(
             contentRect: targetFrame(),
@@ -119,7 +133,7 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.titlebarAppearsTransparent = true
         panel.backgroundColor = NSColor(calibratedWhite: 0.04, alpha: 0.98)
-        panel.minSize = NSSize(width: 560, height: 320)
+        panel.minSize = NSSize(width: 680, height: 420)
 
         let hostingView = NSHostingView(rootView: PickyTerminalOverlayView(model: model))
         hostingView.frame = NSRect(origin: .zero, size: panel.frame.size)
@@ -147,8 +161,8 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
     private func targetFrame() -> NSRect {
         let screen = NSScreen.main ?? NSScreen.screens.first
         let visibleFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
-        let width = min(CGFloat(860), visibleFrame.width - 48)
-        let height = min(CGFloat(520), visibleFrame.height - 48)
+        let width = min(CGFloat(980), visibleFrame.width - 48)
+        let height = min(CGFloat(640), visibleFrame.height - 48)
         return NSRect(
             x: visibleFrame.maxX - width - 24,
             y: visibleFrame.maxY - height - 24,
@@ -182,70 +196,64 @@ final class PickyTerminalPanelDelegate: NSObject, NSWindowDelegate {
 
 @MainActor
 final class PickyTerminalModel: ObservableObject {
-    @Published private(set) var screenText: String
     @Published private(set) var statusText = "Starting pi --session…"
 
     let title: String
     let sessionFilePath: String
     let cwd: String?
 
-    private var emulator: PickyTerminalEmulator
-    private var process: PickyTerminalProcess?
-    private let columns: Int
-    private let rows: Int
+    private weak var terminalView: LocalProcessTerminalView?
+    private var didStartProcess = false
 
-    init(title: String, sessionFilePath: String, cwd: String?, columns: Int, rows: Int) {
+    init(title: String, sessionFilePath: String, cwd: String?) {
         self.title = title
         self.sessionFilePath = sessionFilePath
         self.cwd = cwd
-        self.columns = columns
-        self.rows = rows
-        self.emulator = PickyTerminalEmulator(columns: columns, rows: rows)
-        self.screenText = emulator.renderedText()
     }
 
-    func start() throws {
-        let command = PickyPiTerminalCommand.makeOverlayCommand(sessionFilePath: sessionFilePath, cwd: cwd)
-        do {
-            process = try PickyTerminalProcess(
-                command: command,
-                cwd: PickyPiTerminalCommand.workingDirectory(from: cwd),
-                columns: columns,
-                rows: rows,
-                onOutput: { [weak self] data in
-                    Task { @MainActor in self?.receive(data) }
-                },
-                onExit: { [weak self] exitCode in
-                    Task { @MainActor in self?.processExited(exitCode: exitCode) }
-                }
-            )
-            statusText = "Attached to \(compactPath(sessionFilePath))"
-        } catch {
-            throw PickyTerminalOverlayError.failedToStart(error.localizedDescription)
+    func prepare() throws {
+        guard FileManager.default.fileExists(atPath: sessionFilePath) else {
+            throw PickyTerminalOverlayError.failedToStart("Session file does not exist: \(sessionFilePath)")
         }
+        statusText = "Attached to \(compactPath(sessionFilePath))"
     }
 
-    func send(_ data: Data) {
-        process?.write(data)
+    func attach(_ terminalView: LocalProcessTerminalView) {
+        self.terminalView = terminalView
+        startProcessIfNeeded(in: terminalView)
     }
 
     func close() {
-        process?.terminate()
-        process = nil
+        terminalView?.terminate()
+        terminalView = nil
+        didStartProcess = false
     }
 
-    private func receive(_ data: Data) {
-        emulator.feed(data)
-        screenText = emulator.renderedText()
-    }
-
-    private func processExited(exitCode: Int32?) {
-        process = nil
+    func processExited(exitCode: Int32?) {
+        terminalView = nil
+        didStartProcess = false
         if let exitCode {
             statusText = "Pi terminal exited with code \(exitCode). Close to sync the session card."
         } else {
             statusText = "Pi terminal closed. Close to sync the session card."
         }
+    }
+
+    func updateTerminalTitle(_ terminalTitle: String) {
+        guard !terminalTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        statusText = "Attached to \(compactPath(sessionFilePath))"
+    }
+
+    private func startProcessIfNeeded(in terminalView: LocalProcessTerminalView) {
+        guard !didStartProcess else { return }
+        didStartProcess = true
+        let command = PickyPiTerminalCommand.makeOverlayCommand(sessionFilePath: sessionFilePath, cwd: cwd)
+        terminalView.startProcess(
+            executable: "/bin/zsh",
+            args: ["-lc", command],
+            environment: PickyPiTerminalCommand.makeOverlayEnvironment(),
+            currentDirectory: PickyPiTerminalCommand.workingDirectory(from: cwd)
+        )
     }
 
     private func compactPath(_ path: String) -> String {
@@ -286,593 +294,182 @@ struct PickyTerminalOverlayView: View {
             .padding(.horizontal, 14)
             .padding(.top, 14)
 
-            PickyTerminalTextViewRepresentable(text: model.screenText) { data in
-                model.send(data)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
-            )
-            .padding(.horizontal, 12)
-            .padding(.bottom, 12)
+            PickySwiftTermViewRepresentable(model: model)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
         }
         .background(Color(red: 0.035, green: 0.038, blue: 0.045).opacity(0.98))
     }
 }
 
-struct PickyTerminalTextViewRepresentable: NSViewRepresentable {
-    let text: String
-    let onInput: (Data) -> Void
+struct PickySwiftTermViewRepresentable: NSViewRepresentable {
+    @ObservedObject var model: PickyTerminalModel
 
-    func makeNSView(context: Context) -> PickyTerminalScrollView {
-        let textView = PickyTerminalTextView()
-        textView.inputHandler = onInput
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.drawsBackground = true
-        textView.backgroundColor = NSColor(calibratedRed: 0.02, green: 0.024, blue: 0.03, alpha: 1)
-        textView.textColor = NSColor(calibratedWhite: 0.90, alpha: 1)
-        textView.font = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
-        textView.textContainerInset = NSSize(width: 12, height: 10)
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.isAutomaticDashSubstitutionEnabled = false
-        textView.isAutomaticTextReplacementEnabled = false
-        textView.string = text
+    func makeCoordinator() -> Coordinator {
+        Coordinator(model: model)
+    }
 
-        let scrollView = PickyTerminalScrollView()
-        scrollView.drawsBackground = false
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = true
-        scrollView.borderType = .noBorder
-        scrollView.documentView = textView
-        scrollView.resizeTerminalDocumentView()
-
+    func makeNSView(context: Context) -> PickySwiftTermView {
+        let terminalView = PickySwiftTermView(frame: .zero)
+        terminalView.processDelegate = context.coordinator
+        terminalView.autoresizingMask = [.width, .height]
+        terminalView.configurePickyAppearance()
         DispatchQueue.main.async {
-            scrollView.resizeTerminalDocumentView()
-            scrollView.window?.makeFirstResponder(textView)
+            terminalView.window?.makeFirstResponder(terminalView)
         }
-        return scrollView
+        model.attach(terminalView)
+        return terminalView
     }
 
-    func updateNSView(_ scrollView: PickyTerminalScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? PickyTerminalTextView else { return }
-        textView.inputHandler = onInput
-        if textView.string != text {
-            textView.string = text
-            scrollView.resizeTerminalDocumentView()
-            textView.scrollToEndOfDocument(nil)
+    func updateNSView(_ terminalView: PickySwiftTermView, context: Context) {
+        terminalView.processDelegate = context.coordinator
+        if terminalView.window?.firstResponder == nil {
+            DispatchQueue.main.async {
+                terminalView.window?.makeFirstResponder(terminalView)
+            }
         }
-        DispatchQueue.main.async {
-            scrollView.resizeTerminalDocumentView()
-            if scrollView.window?.firstResponder == nil {
-                scrollView.window?.makeFirstResponder(textView)
+    }
+
+    final class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
+        weak var model: PickyTerminalModel?
+
+        init(model: PickyTerminalModel) {
+            self.model = model
+        }
+
+        func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
+
+        func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
+            Task { @MainActor [weak self] in
+                self?.model?.updateTerminalTitle(title)
+            }
+        }
+
+        func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+
+        func processTerminated(source: TerminalView, exitCode: Int32?) {
+            Task { @MainActor [weak self] in
+                self?.model?.processExited(exitCode: exitCode)
             }
         }
     }
 }
 
-final class PickyTerminalScrollView: NSScrollView {
-    override func layout() {
-        super.layout()
-        resizeTerminalDocumentView()
+final class PickySwiftTermView: LocalProcessTerminalView {
+    private var imeLoggingEnabled: Bool {
+        ProcessInfo.processInfo.environment["PICKY_TERMINAL_DEBUG_IME_LOG"] == "1"
     }
 
-    func resizeTerminalDocumentView() {
-        guard let textView = documentView as? NSTextView else { return }
-        let contentSize = contentSize
-        let width = max(1, contentSize.width)
-        textView.minSize = NSSize(width: 0, height: contentSize.height)
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
-        textView.frame.size.width = width
+    func configurePickyAppearance() {
+        font = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
+        nativeForegroundColor = NSColor(calibratedWhite: 0.90, alpha: 1)
+        nativeBackgroundColor = NSColor(calibratedRed: 0.02, green: 0.024, blue: 0.03, alpha: 1)
+        layer?.backgroundColor = nativeBackgroundColor.cgColor
+        backspaceSendsControlH = false
+        caretViewTracksFocus = false
+        antiAliasCustomBlockGlyphs = false
+        postsFrameChangedNotifications = true
+    }
 
-        if let layoutManager = textView.layoutManager, let textContainer = textView.textContainer {
-            layoutManager.ensureLayout(for: textContainer)
-            let usedHeight = ceil(layoutManager.usedRect(for: textContainer).height + textView.textContainerInset.height * 2)
-            textView.frame.size.height = max(contentSize.height, usedHeight)
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        if let text = terminalInputString(from: string), shouldBypassKittyKeyboardForIMECommit(text) {
+            applyTerminalReplacementIfNeeded(for: string, replacementRange: replacementRange)
+            logIME("unicode commit bypass range=\(format(replacementRange)) selected=\(format(super.selectedRange())) text=\(text.debugDescription)")
+            super.unmarkText()
+            send(txt: text)
+            return
+        }
+
+        if applyTerminalReplacementIfNeeded(for: string, replacementRange: replacementRange) {
+            logIME("replacement backspace count=\(replacementRange.length) range=\(format(replacementRange)) selected=\(format(super.selectedRange())) text=\(describeInput(string))")
         } else {
-            textView.frame.size.height = max(contentSize.height, textView.frame.height)
+            logIME("insert range=\(format(replacementRange)) selected=\(format(super.selectedRange())) text=\(describeInput(string))")
         }
-    }
-}
-
-final class PickyTerminalTextView: NSTextView {
-    var inputHandler: ((Data) -> Void)?
-
-    override var acceptsFirstResponder: Bool { true }
-
-    override func keyDown(with event: NSEvent) {
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) {
-            super.keyDown(with: event)
-            return
-        }
-        guard let data = PickyTerminalKeyMapper.data(for: event) else {
-            super.keyDown(with: event)
-            return
-        }
-        inputHandler?(data)
-    }
-}
-
-enum PickyTerminalKeyMapper {
-    static func data(for event: NSEvent) -> Data? {
-        switch event.keyCode {
-        case 36, 76:
-            return Data([13])
-        case 48:
-            return Data([9])
-        case 51, 117:
-            return Data([127])
-        case 53:
-            return Data([27])
-        case 123:
-            return Data("\u{1B}[D".utf8)
-        case 124:
-            return Data("\u{1B}[C".utf8)
-        case 125:
-            return Data("\u{1B}[B".utf8)
-        case 126:
-            return Data("\u{1B}[A".utf8)
-        default:
-            break
-        }
-
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if flags.contains(.control),
-           let scalar = event.charactersIgnoringModifiers?.lowercased().unicodeScalars.first,
-           scalar.value >= 64,
-           scalar.value <= 126 {
-            return Data([UInt8(scalar.value & 0x1F)])
-        }
-
-        guard let characters = event.characters, !characters.isEmpty else { return nil }
-        return characters.data(using: .utf8)
-    }
-}
-
-final class PickyTerminalProcess {
-    private let queue = DispatchQueue(label: "com.jonghakseo.picky.terminal-process")
-    private let onOutput: (Data) -> Void
-    private let onExit: (Int32?) -> Void
-    private var masterFD: Int32 = -1
-    private var childPID: pid_t = -1
-    private var readSource: DispatchSourceRead?
-    private var processSource: DispatchSourceProcess?
-    private var didFinish = false
-
-    init(
-        command: String,
-        cwd: String,
-        columns: Int,
-        rows: Int,
-        onOutput: @escaping (Data) -> Void,
-        onExit: @escaping (Int32?) -> Void
-    ) throws {
-        self.onOutput = onOutput
-        self.onExit = onExit
-        try start(command: command, cwd: cwd, columns: columns, rows: rows)
+        super.insertText(string, replacementRange: replacementRange)
     }
 
-    deinit {
-        if !didFinish, childPID > 0 {
-            Darwin.kill(childPID, SIGHUP)
-            Darwin.kill(childPID, SIGTERM)
-        }
-        if masterFD >= 0 {
-            Darwin.close(masterFD)
-            masterFD = -1
-        }
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        logIME("marked selected=\(format(selectedRange)) replacement=\(format(replacementRange)) text=\(describeInput(string))")
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
     }
 
-    func write(_ data: Data) {
-        queue.async { [weak self] in
-            guard let self, self.masterFD >= 0, !self.didFinish else { return }
-            data.withUnsafeBytes { rawBuffer in
-                guard let baseAddress = rawBuffer.baseAddress else { return }
-                _ = Darwin.write(self.masterFD, baseAddress, rawBuffer.count)
-            }
-        }
+    override func unmarkText() {
+        logIME("unmark marked=\(format(super.markedRange())) selected=\(format(super.selectedRange()))")
+        super.unmarkText()
     }
 
-    func terminate() {
-        queue.async {
-            guard !self.didFinish else { return }
-            if self.childPID > 0 {
-                Darwin.kill(self.childPID, SIGHUP)
-                Darwin.kill(self.childPID, SIGTERM)
-            }
-            self.finish(exitCode: nil)
-        }
+    override func send(source: TerminalView, data: ArraySlice<UInt8>) {
+        logIME("send bytes=\(data.map { String(format: "%02X", $0) }.joined(separator: " ")) text=\(String(bytes: data, encoding: .utf8)?.debugDescription ?? "nil")")
+        super.send(source: source, data: data)
     }
 
-    private func start(command: String, cwd: String, columns: Int, rows: Int) throws {
-        var master: Int32 = -1
-        var size = winsize(ws_row: UInt16(max(10, rows)), ws_col: UInt16(max(40, columns)), ws_xpixel: 0, ws_ypixel: 0)
-        let executable = "/bin/zsh"
-        var argv: [UnsafeMutablePointer<CChar>?] = [
-            strdup(executable),
-            strdup("-lc"),
-            strdup(command),
-            nil,
-        ]
-        defer {
-            for arg in argv {
-                if let arg { free(arg) }
-            }
-        }
-
-        let pid = forkpty(&master, nil, nil, &size)
-        if pid < 0 {
-            throw POSIXError.fromErrno()
-        }
-
-        if pid == 0 {
-            setTerminalEnvironment(columns: columns, rows: rows)
-            cwd.withCString { pointer in
-                _ = Darwin.chdir(pointer)
-            }
-            execv(executable, &argv)
-            _exit(127)
-        }
-
-        masterFD = master
-        childPID = pid
-        configureReadSource(fileDescriptor: master)
-        configureProcessSource(pid: pid)
+    private func shouldBypassKittyKeyboardForIMECommit(_ text: String) -> Bool {
+        guard !terminal.keyboardEnhancementFlags.isEmpty else { return false }
+        guard text.unicodeScalars.contains(where: { $0.value > 0x7f }) else { return false }
+        return !text.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
     }
 
-    private func setTerminalEnvironment(columns: Int, rows: Int) {
-        setenv("TERM", "xterm-256color", 1)
-        setenv("COLORTERM", "truecolor", 1)
-        setenv("TERM_PROGRAM", "Picky", 1)
-        setenv("COLUMNS", String(max(40, columns)), 1)
-        setenv("LINES", String(max(10, rows)), 1)
-        if getenv("LANG") == nil {
-            setenv("LANG", "en_US.UTF-8", 1)
-        }
-        if getenv("LC_CTYPE") == nil {
-            setenv("LC_CTYPE", "en_US.UTF-8", 1)
-        }
+    @discardableResult
+    private func applyTerminalReplacementIfNeeded(for string: Any, replacementRange: NSRange) -> Bool {
+        guard shouldApplyTerminalReplacement(for: string, replacementRange: replacementRange) else { return false }
+        send(Array(repeating: backspaceSendsControlH ? UInt8(8) : UInt8(0x7f), count: replacementRange.length))
+        return true
     }
 
-    private func configureReadSource(fileDescriptor: Int32) {
-        let source = DispatchSource.makeReadSource(fileDescriptor: fileDescriptor, queue: queue)
-        source.setEventHandler { [weak self] in
-            guard let self else { return }
-            var buffer = [UInt8](repeating: 0, count: 4096)
-            let count = Darwin.read(fileDescriptor, &buffer, buffer.count)
-            if count > 0 {
-                self.onOutput(Data(buffer.prefix(count)))
-            } else if count == 0 || errno != EAGAIN {
-                self.finish(exitCode: nil)
-            }
-        }
-        source.setCancelHandler { [weak self] in
-            guard let self else { return }
-            if self.masterFD >= 0 {
-                Darwin.close(self.masterFD)
-                self.masterFD = -1
-            }
-        }
-        readSource = source
-        source.resume()
-    }
-
-    private func configureProcessSource(pid: pid_t) {
-        let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: queue)
-        source.setEventHandler { [weak self] in
-            guard let self else { return }
-            var status: Int32 = 0
-            _ = waitpid(pid, &status, WNOHANG)
-            self.finish(exitCode: Self.exitCode(fromWaitStatus: status))
-        }
-        processSource = source
-        source.resume()
-    }
-
-    private static func exitCode(fromWaitStatus status: Int32) -> Int32? {
-        let signalStatus = status & 0x7F
-        if signalStatus == 0 {
-            return (status >> 8) & 0xFF
-        }
-        if signalStatus != 0x7F {
-            return 128 + signalStatus
-        }
-        return nil
-    }
-
-    private func finish(exitCode: Int32?) {
-        guard !didFinish else { return }
-        didFinish = true
-        var resolvedExitCode = exitCode
-        if resolvedExitCode == nil, childPID > 0 {
-            var status: Int32 = 0
-            if waitpid(childPID, &status, WNOHANG) == childPID {
-                resolvedExitCode = Self.exitCode(fromWaitStatus: status)
-            }
-        }
-        readSource?.cancel()
-        readSource = nil
-        processSource?.cancel()
-        processSource = nil
-        onExit(resolvedExitCode)
-    }
-}
-
-private extension POSIXError {
-    static func fromErrno() -> POSIXError {
-        POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-    }
-}
-
-struct PickyTerminalEmulator {
-    private enum ParserState: Equatable {
-        case normal
-        case escape
-        case csi(String)
-        case osc
-        case oscEscape
-    }
-
-    private let columns: Int
-    private let rows: Int
-    private var grid: [[Character]]
-    private var cursorRow = 0
-    private var cursorColumn = 0
-    private var savedCursor: (row: Int, column: Int)?
-    private var state: ParserState = .normal
-
-    init(columns: Int, rows: Int) {
-        self.columns = max(40, columns)
-        self.rows = max(10, rows)
-        self.grid = Array(repeating: Array(repeating: " ", count: max(40, columns)), count: max(10, rows))
-    }
-
-    mutating func feed(_ data: Data) {
-        let text = String(decoding: data, as: UTF8.self)
-        for scalar in text.unicodeScalars {
-            process(scalar)
-        }
-    }
-
-    func renderedText() -> String {
-        grid.map { row in
-            String(row).trimmingTrailingSpaces()
-        }
-        .joined(separator: "\n")
-    }
-
-    private mutating func process(_ scalar: UnicodeScalar) {
-        switch state {
-        case .normal:
-            processNormal(scalar)
-        case .escape:
-            processEscape(scalar)
-        case .csi(let sequence):
-            processCSI(sequence: sequence, scalar: scalar)
-        case .osc:
-            processOSC(scalar)
-        case .oscEscape:
-            processOSCEscape(scalar)
-        }
-    }
-
-    private mutating func processNormal(_ scalar: UnicodeScalar) {
-        switch scalar.value {
-        case 0x1B:
-            state = .escape
-        case 0x0D:
-            cursorColumn = 0
-        case 0x0A:
-            newline()
-        case 0x08:
-            cursorColumn = max(0, cursorColumn - 1)
-        case 0x09:
-            let nextTab = min(columns - 1, ((cursorColumn / 8) + 1) * 8)
-            while cursorColumn < nextTab { put(" ") }
-        default:
-            guard !CharacterSet.controlCharacters.contains(scalar) else { return }
-            if isUnsupportedTerminalGlyph(scalar) {
-                put(" ")
-            } else {
-                put(Character(scalar))
-            }
-        }
-    }
-
-    private mutating func processEscape(_ scalar: UnicodeScalar) {
-        switch scalar {
-        case "[":
-            state = .csi("")
-        case "]":
-            state = .osc
-        case "c":
-            clearAll()
-            state = .normal
-        case "7":
-            savedCursor = (cursorRow, cursorColumn)
-            state = .normal
-        case "8":
-            if let savedCursor {
-                cursorRow = savedCursor.row
-                cursorColumn = savedCursor.column
-            }
-            state = .normal
-        default:
-            state = .normal
-        }
-    }
-
-    private mutating func processOSC(_ scalar: UnicodeScalar) {
-        switch scalar.value {
-        case 0x07:
-            state = .normal
-        case 0x1B:
-            state = .oscEscape
-        default:
-            break
-        }
-    }
-
-    private mutating func processOSCEscape(_ scalar: UnicodeScalar) {
-        if scalar == "\\" {
-            state = .normal
-        } else if scalar.value == 0x07 {
-            state = .normal
-        } else {
-            state = .osc
-        }
-    }
-
-    private mutating func processCSI(sequence: String, scalar: UnicodeScalar) {
-        guard scalar.value >= 0x40, scalar.value <= 0x7E else {
-            state = .csi(sequence + String(scalar))
-            return
-        }
-        handleCSI(sequence: sequence, final: Character(scalar))
-        state = .normal
-    }
-
-    private mutating func handleCSI(sequence: String, final: Character) {
-        let isPrivate = sequence.hasPrefix("?")
-        let cleaned = sequence.trimmingCharacters(in: CharacterSet(charactersIn: "?"))
-        let params = cleaned
-            .split(separator: ";", omittingEmptySubsequences: false)
-            .map { Int($0) ?? 0 }
-        let first = params.first ?? 0
-
-        switch final {
-        case "A":
-            cursorRow = max(0, cursorRow - max(1, first))
-        case "B":
-            cursorRow = min(rows - 1, cursorRow + max(1, first))
-        case "C":
-            cursorColumn = min(columns - 1, cursorColumn + max(1, first))
-        case "D":
-            cursorColumn = max(0, cursorColumn - max(1, first))
-        case "G":
-            cursorColumn = clampedColumn(max(1, first) - 1)
-        case "H", "f":
-            let row = max(1, params[safe: 0] ?? 1) - 1
-            let column = max(1, params[safe: 1] ?? 1) - 1
-            cursorRow = clampedRow(row)
-            cursorColumn = clampedColumn(column)
-        case "J":
-            handleEraseDisplay(first)
-        case "K":
-            handleEraseLine(first)
-        case "s":
-            savedCursor = (cursorRow, cursorColumn)
-        case "u":
-            if let savedCursor {
-                cursorRow = savedCursor.row
-                cursorColumn = savedCursor.column
-            }
-        case "h" where isPrivate && cleaned.contains("1049"):
-            clearAll()
-        case "l" where isPrivate && cleaned.contains("1049"):
-            clearAll()
-        default:
-            break
-        }
-    }
-
-    private func isUnsupportedTerminalGlyph(_ scalar: UnicodeScalar) -> Bool {
-        switch scalar.value {
-        case 0xE000...0xF8FF,
-             0xF0000...0xFFFFD,
-             0x100000...0x10FFFD,
-             0xFFFD:
-            return true
-        default:
+    private func shouldApplyTerminalReplacement(for string: Any, replacementRange: NSRange) -> Bool {
+        guard replacementRange.location != NSNotFound,
+              replacementRange.length > 0,
+              terminalInputString(from: string)?.isEmpty == false else {
             return false
         }
-    }
 
-    private mutating func put(_ character: Character) {
-        guard cursorRow >= 0, cursorRow < rows, cursorColumn >= 0, cursorColumn < columns else { return }
-        grid[cursorRow][cursorColumn] = character
-        cursorColumn += 1
-        if cursorColumn >= columns {
-            cursorColumn = 0
-            newline()
+        // Korean IME on macOS may commit intermediate jamo/syllables via insertText
+        // with a replacementRange. SwiftTerm's default insertText ignores that range,
+        // so the terminal receives leaked raw jamo. A terminal cannot mutate text
+        // storage directly, but when the replacement is immediately before the caret
+        // we can emulate the AppKit replacement by sending DEL before the committed text.
+        let selectedRange = super.selectedRange()
+        guard selectedRange.location == NSNotFound else {
+            return replacementRange.location + replacementRange.length <= selectedRange.location
         }
+        return true
     }
 
-    private mutating func newline() {
-        if cursorRow >= rows - 1 {
-            grid.removeFirst()
-            grid.append(Array(repeating: " ", count: columns))
-        } else {
-            cursorRow += 1
-        }
-    }
-
-    private mutating func clearAll() {
-        grid = Array(repeating: Array(repeating: " ", count: columns), count: rows)
-        cursorRow = 0
-        cursorColumn = 0
-    }
-
-    private mutating func handleEraseDisplay(_ mode: Int) {
-        switch mode {
-        case 2, 3:
-            clearAll()
-        case 1:
-            for row in 0...cursorRow {
-                let endColumn = row == cursorRow ? cursorColumn : columns - 1
-                guard endColumn >= 0 else { continue }
-                for column in 0...endColumn { grid[row][column] = " " }
-            }
+    private func terminalInputString(from value: Any) -> String? {
+        switch value {
+        case let string as String:
+            return string
+        case let string as NSString:
+            return string as String
+        case let attributed as NSAttributedString:
+            return attributed.string
         default:
-            for row in cursorRow..<rows {
-                let startColumn = row == cursorRow ? cursorColumn : 0
-                guard startColumn < columns else { continue }
-                for column in startColumn..<columns { grid[row][column] = " " }
-            }
+            return nil
         }
     }
 
-    private mutating func handleEraseLine(_ mode: Int) {
-        switch mode {
-        case 1:
-            for column in 0...cursorColumn { grid[cursorRow][column] = " " }
-        case 2:
-            grid[cursorRow] = Array(repeating: " ", count: columns)
-        default:
-            guard cursorColumn < columns else { return }
-            for column in cursorColumn..<columns { grid[cursorRow][column] = " " }
+    private func describeInput(_ value: Any) -> String {
+        terminalInputString(from: value)?.debugDescription ?? "nil"
+    }
+
+    private func format(_ range: NSRange) -> String {
+        if range.location == NSNotFound {
+            return "{NSNotFound,\(range.length)}"
         }
+        return "{\(range.location),\(range.length)}"
     }
 
-    private func clampedRow(_ row: Int) -> Int {
-        min(max(0, row), rows - 1)
-    }
-
-    private func clampedColumn(_ column: Int) -> Int {
-        min(max(0, column), columns - 1)
-    }
-}
-
-private extension Array {
-    subscript(safe index: Int) -> Element? {
-        indices.contains(index) ? self[index] : nil
-    }
-}
-
-private extension String {
-    func trimmingTrailingSpaces() -> String {
-        var result = self
-        while result.last == " " {
-            result.removeLast()
+    private func logIME(_ message: String) {
+        guard imeLoggingEnabled else { return }
+        let line = "🧪 IME \(message)\n"
+        if let data = line.data(using: .utf8) {
+            FileHandle.standardOutput.write(data)
         }
-        return result
     }
 }
 

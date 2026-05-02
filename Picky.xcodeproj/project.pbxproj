@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EEAD1FD3827B40F48220A79C /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = FA606A6D792443B3BC19DE3C /* SwiftTerm */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -68,6 +69,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EEAD1FD3827B40F48220A79C /* SwiftTerm in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -128,6 +130,7 @@
 			);
 			name = "Picky";
 			packageProductDependencies = (
+				FA606A6D792443B3BC19DE3C /* SwiftTerm */,
 			);
 			productName = "Picky";
 			productReference = 28F22CBF2F56440300A0FC59 /* Picky.app */;
@@ -212,6 +215,7 @@
 			mainGroup = 28F22CB62F56440300A0FC59;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				13D3B18451574315A6DBCBB2 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 28F22CC02F56440300A0FC59 /* Products */;
@@ -285,6 +289,25 @@
 			targetProxy = 28F22CD72F56440300A0FC59 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		13D3B18451574315A6DBCBB2 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		FA606A6D792443B3BC19DE3C /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 13D3B18451574315A6DBCBB2 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		28F22CDE2F56440300A0FC59 /* Debug */ = {

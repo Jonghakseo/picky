@@ -48,46 +48,22 @@ enum PickySessionListViewModelError: LocalizedError, Equatable {
     }
 }
 
-protocol PickyTerminalResumeLaunching {
-    func resume(sessionFilePath: String, cwd: String?) throws
+protocol PickyClipboardWriting {
+    func copy(_ text: String)
 }
 
-struct PickyGhosttyResumeLauncher: PickyTerminalResumeLaunching {
-    func resume(sessionFilePath: String, cwd: String?) throws {
-        guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.mitchellh.ghostty") != nil else {
-            throw PickyGhosttyResumeLauncherError.ghosttyNotInstalled
-        }
-
-        let workingDirectory = Self.workingDirectory(from: cwd)
-        let script = Self.makeAppleScript(sessionFilePath: sessionFilePath, workingDirectory: workingDirectory)
-
-        var errorInfo: NSDictionary?
-        guard NSAppleScript(source: script)?.executeAndReturnError(&errorInfo) != nil else {
-            throw PickyGhosttyResumeLauncherError.appleScriptFailed(errorInfo?.description ?? "Unknown AppleScript error")
-        }
+struct PickyPasteboardClipboardWriter: PickyClipboardWriting {
+    func copy(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
     }
+}
 
-    static func makeAppleScript(sessionFilePath: String, workingDirectory: String) -> String {
-        let command = "cd \(Self.shellQuoted(workingDirectory)) && exec pi --session \(Self.shellQuoted(sessionFilePath))"
-        return """
-        set resumeCommand to \"\(Self.appleScriptString(command))\"
-        set resumeWorkingDirectory to \"\(Self.appleScriptString(workingDirectory))\"
-        set wasRunning to application \"Ghostty\" is running
-        tell application \"Ghostty\"
-          set resumeConfig to new surface configuration
-          set initial working directory of resumeConfig to resumeWorkingDirectory
-          set command of resumeConfig to resumeCommand
-          set wait after command of resumeConfig to true
-          if wasRunning and ((count of windows) is greater than 0) then
-            set targetWindow to front window
-            set resumedTab to new tab in targetWindow with configuration resumeConfig
-            select tab resumedTab
-          else
-            set resumedWindow to new window with configuration resumeConfig
-          end if
-          activate
-        end tell
-        """
+enum PickyTerminalResumeCommand {
+    static func make(sessionFilePath: String, cwd: String?) -> String {
+        let workingDirectory = workingDirectory(from: cwd)
+        return "cd \(shellQuoted(workingDirectory)) && pi --session \(shellQuoted(sessionFilePath))"
     }
 
     static func workingDirectory(from cwd: String?) -> String {
@@ -97,26 +73,6 @@ struct PickyGhosttyResumeLauncher: PickyTerminalResumeLaunching {
 
     static func shellQuoted(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
-
-    static func appleScriptString(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\r", with: "\\r")
-            .replacingOccurrences(of: "\n", with: "\\n")
-    }
-}
-
-enum PickyGhosttyResumeLauncherError: LocalizedError, Equatable {
-    case ghosttyNotInstalled
-    case appleScriptFailed(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .ghosttyNotInstalled: "Ghostty is not installed."
-        case .appleScriptFailed(let message): "Failed to open Ghostty: \(message)"
-        }
     }
 }
 
@@ -206,6 +162,7 @@ final class PickySessionListViewModel: ObservableObject {
     private let selectionStore: PickySessionSelectionStoring
     private let archiveStore: PickySessionArchiveStoring
     private let artifactPathValidator: PickyArtifactPathValidator
+    private let clipboardWriter: PickyClipboardWriting
     private var eventTask: Task<Void, Never>?
     private var deliveredNotificationKeys = Set<String>()
     private var hasExplicitSelection = false
@@ -215,13 +172,15 @@ final class PickySessionListViewModel: ObservableObject {
         notificationCenter: PickyNotificationDelivering = PickySystemNotificationCenter(),
         selectionStore: PickySessionSelectionStoring = PickyUserDefaultsSessionSelectionStore.shared,
         archiveStore: PickySessionArchiveStoring = PickyUserDefaultsSessionArchiveStore.shared,
-        artifactPathValidator: PickyArtifactPathValidator = PickyArtifactPathValidator(appSupportRoot: PickyAppSupport.defaultRoot())
+        artifactPathValidator: PickyArtifactPathValidator = PickyArtifactPathValidator(appSupportRoot: PickyAppSupport.defaultRoot()),
+        clipboardWriter: PickyClipboardWriting = PickyPasteboardClipboardWriter()
     ) {
         self.client = client
         self.notificationCenter = notificationCenter
         self.selectionStore = selectionStore
         self.archiveStore = archiveStore
         self.artifactPathValidator = artifactPathValidator
+        self.clipboardWriter = clipboardWriter
         self.selectedSessionID = selectionStore.selectedSessionID
         self.hoveredVoiceFollowUpSessionID = selectionStore.hoveredVoiceFollowUpSessionID
         self.hasExplicitSelection = self.selectedSessionID != nil
@@ -343,19 +302,22 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    func resumeInGhostty(sessionID: String, launcher: PickyTerminalResumeLaunching = PickyGhosttyResumeLauncher()) {
-        pickySessionLog("resume in Ghostty session=\(sessionID)")
+    func copyTerminalResumeCommand(sessionID: String) {
+        pickySessionLog("copy terminal resume command session=\(sessionID)")
         guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
               let piSessionFilePath = session.piSessionFilePath else {
             lastError = PickySessionListViewModelError.missingPiSessionFile.localizedDescription
             return
         }
-        do {
-            try launcher.resume(sessionFilePath: piSessionFilePath, cwd: session.cwd)
-            lastError = nil
-        } catch {
-            lastError = error.localizedDescription
-        }
+
+        let command = PickyTerminalResumeCommand.make(sessionFilePath: piSessionFilePath, cwd: session.cwd)
+        clipboardWriter.copy(command)
+        notificationCenter.deliver(
+            title: "Pi resume command copied",
+            body: "Paste it in a terminal to resume this session.",
+            identifier: "picky-resume-command-\(sessionID)"
+        )
+        lastError = nil
     }
 
     func archive(sessionID: String) {

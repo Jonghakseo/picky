@@ -277,8 +277,8 @@ private struct PickySessionCardView: View {
                 iconButton(systemName: "doc.text.magnifyingglass", help: "Open report", disabled: session.reportArtifact == nil) {
                     Task { try? await viewModel.openReport(sessionID: session.id) }
                 }
-                iconButton(systemName: "terminal", help: "Resume in Ghostty", disabled: session.piSessionFilePath == nil || session.status == .running) {
-                    viewModel.resumeInGhostty(sessionID: session.id)
+                iconButton(systemName: "terminal", help: "Copy Pi resume command", disabled: session.piSessionFilePath == nil || session.status == .running) {
+                    viewModel.copyTerminalResumeCommand(sessionID: session.id)
                 }
                 iconButton(systemName: "stop.circle", help: "Stop session", disabled: session.status.isTerminal) {
                     Task { try? await viewModel.abort(sessionID: session.id) }
@@ -429,7 +429,7 @@ private struct PickySessionCardView: View {
             return "Waiting for your input."
         case .blocked:
             if session.isRuntimeDetached {
-                return "Picky lost the live Pi runtime after daemon restart. The card stays visible; resume in Ghostty or start a new task if automatic reattach is unavailable."
+                return "Picky lost the live Pi runtime after daemon restart. The card stays visible; copy the Pi resume command with the terminal button or start a new task if automatic reattach is unavailable."
             }
             return session.lastSummary.isEmpty ? "This session is blocked." : session.lastSummary
         case .failed:

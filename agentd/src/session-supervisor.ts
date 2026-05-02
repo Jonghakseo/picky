@@ -300,9 +300,9 @@ export class SessionSupervisor extends EventEmitter {
       const hasPiSessionFile = Boolean(piSessionFilePathFromLogs(session.logs));
       const reason = this.runtime.resume
         ? hasPiSessionFile
-          ? "Runtime session is not attached after daemon restart and automatic Pi session reattach failed; start a new task or resume in Ghostty"
-          : "Runtime session is not attached after daemon restart and no Pi session file is available to resume; start a new task or resume in Ghostty"
-        : "Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or resume in Ghostty";
+          ? "Runtime session is not attached after daemon restart and automatic Pi session reattach failed; start a new task or copy the Pi resume command from the terminal button"
+          : "Runtime session is not attached after daemon restart and no Pi session file is available to resume; start a new task"
+        : "Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or copy the Pi resume command from the terminal button";
       await this.patch(sessionId, {
         status: "blocked",
         lastSummary: reason,

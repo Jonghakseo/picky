@@ -39,13 +39,11 @@ private final class FakeArchiveStore: PickySessionArchiveStoring {
     var archivedSessionIDs = Set<String>()
 }
 
-private final class FakeTerminalResumeLauncher: PickyTerminalResumeLaunching {
-    private(set) var calls: [(sessionFilePath: String, cwd: String?)] = []
-    var error: Error?
+private final class FakeClipboardWriter: PickyClipboardWriting {
+    private(set) var copied: [String] = []
 
-    func resume(sessionFilePath: String, cwd: String?) throws {
-        if let error { throw error }
-        calls.append((sessionFilePath, cwd))
+    func copy(_ text: String) {
+        copied.append(text)
     }
 }
 
@@ -309,10 +307,15 @@ struct PickySessionViewModelTests {
         #expect(viewModel.archivedSessions.first(where: { $0.id == "side-1" })?.lastSummary == "Updated")
     }
 
-    @Test func resumeInGhosttyUsesCapturedPiSessionFile() async throws {
+    @Test func copyTerminalResumeCommandUsesCapturedPiSessionFileAndCwd() async throws {
         let client = FakePickyAgentClient()
-        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
-        let launcher = FakeTerminalResumeLauncher()
+        let notifications = PickyNoopNotificationCenter()
+        let clipboard = FakeClipboardWriter()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: notifications,
+            clipboardWriter: clipboard
+        )
         viewModel.start()
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
             id: "side-1",
@@ -322,39 +325,24 @@ struct PickySessionViewModelTests {
         ))))
         try await settle()
 
-        viewModel.resumeInGhostty(sessionID: "side-1", launcher: launcher)
+        viewModel.copyTerminalResumeCommand(sessionID: "side-1")
 
-        #expect(launcher.calls.count == 1)
-        #expect(launcher.calls.first?.sessionFilePath == "/tmp/pi-session.jsonl")
-        #expect(launcher.calls.first?.cwd == "/Users/creatrip/Documents/picky")
+        #expect(clipboard.copied == ["cd '/Users/creatrip/Documents/picky' && pi --session '/tmp/pi-session.jsonl'"])
+        #expect(notifications.delivered.last?.title == "Pi resume command copied")
         #expect(viewModel.lastError == nil)
     }
 
-    @Test func ghosttyResumeUsesCommandConfigurationInsteadOfPastingInput() throws {
-        let script = PickyGhosttyResumeLauncher.makeAppleScript(
+    @Test func terminalResumeCommandShellQuotesPaths() throws {
+        let command = PickyTerminalResumeCommand.make(
             sessionFilePath: "/tmp/pi session's.jsonl",
-            workingDirectory: "/Users/example/Project Folder"
+            cwd: "/Users/example/Project Folder"
         )
 
-        #expect(script.contains("new surface configuration"))
-        #expect(script.contains("set initial working directory of resumeConfig to resumeWorkingDirectory"))
-        #expect(script.contains("set command of resumeConfig to resumeCommand"))
-        #expect(script.contains("set wait after command of resumeConfig to true"))
-        #expect(script.contains("new tab in targetWindow with configuration resumeConfig"))
-        #expect(script.contains("new window with configuration resumeConfig"))
-        #expect(script.contains("exec pi --session"))
-        #expect(script.contains("/tmp/pi session"))
-        #expect(script.contains("s.jsonl"))
-        #expect(!script.contains("initial input"))
-        #expect(!script.contains("input text"))
-        #expect(!script.contains("send key"))
-        #expect(!script.contains("System Events"))
-        #expect(!script.contains("keystroke"))
-        #expect(!script.contains("clipboard"))
+        #expect(command == "cd '/Users/example/Project Folder' && pi --session '/tmp/pi session'\\''s.jsonl'")
     }
 
-    @Test func ghosttyResumeDefaultsBlankCwdToHomeDirectory() throws {
-        #expect(PickyGhosttyResumeLauncher.workingDirectory(from: "  ") == FileManager.default.homeDirectoryForCurrentUser.path)
+    @Test func terminalResumeCommandDefaultsBlankCwdToHomeDirectory() throws {
+        #expect(PickyTerminalResumeCommand.workingDirectory(from: "  ") == FileManager.default.homeDirectoryForCurrentUser.path)
     }
 
     @Test func extensionUiLogsAreHiddenFromRecentLogPreview() async throws {
@@ -430,11 +418,11 @@ struct PickySessionViewModelTests {
             id: "followup-detached",
             title: "Detached side agent",
             status: "blocked",
-            summary: "Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or resume in Ghostty"
+            summary: "Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or copy the Pi resume command from the terminal button"
         ))))
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(
             sessionId: "followup-detached",
-            line: "follow-up rejected: Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or resume in Ghostty"
+            line: "follow-up rejected: Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or copy the Pi resume command from the terminal button"
         ))))
         try await settle()
 

@@ -20,11 +20,6 @@ struct CompanionPanelSettingsView: View {
                     text: $viewModel.settings.defaultCwd,
                     chooseAction: { chooseDirectory(binding: $viewModel.settings.defaultCwd) }
                 )
-                CompanionPanelPathField(
-                    title: "Worktrees",
-                    text: $viewModel.settings.worktreeParent,
-                    chooseAction: { chooseDirectory(binding: $viewModel.settings.worktreeParent) }
-                )
             }
 
             CompanionPanelSettingsSection(title: "Agent behavior", subtitle: "Keep the default flow calm and low-risk.") {
@@ -39,19 +34,6 @@ struct CompanionPanelSettingsView: View {
                     }
                 }
                 .toggleStyle(.switch)
-            }
-
-            CompanionPanelSettingsSection(title: "Local runtime", subtitle: "Useful when startup feels slow.") {
-                HStack(spacing: 8) {
-                    CompanionPanelPill(icon: "shippingbox", text: "Pi runtime")
-                    CompanionPanelPill(icon: "folder", text: "Local logs")
-                    Spacer(minLength: 0)
-                    Button("Open") { openLogs() }
-                        .font(.system(size: 11, weight: .semibold))
-                        .buttonStyle(.plain)
-                        .foregroundColor(DS.Colors.accentText)
-                        .pointerCursor()
-                }
             }
 
             if let error = viewModel.validationError {
@@ -92,11 +74,6 @@ struct CompanionPanelSettingsView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         binding.wrappedValue = url.path
         didSave = false
-    }
-
-    private func openLogs() {
-        let url = URL(fileURLWithPath: NSString(string: viewModel.settings.logPath).expandingTildeInPath, isDirectory: true)
-        NSWorkspace.shared.open(url)
     }
 }
 

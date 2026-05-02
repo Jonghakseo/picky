@@ -1,55 +1,12 @@
 //
-//  OverlayWindow.swift
+//  BlueCursorView.swift
 //  Picky
 //
-//  System-wide transparent overlay window for blue glowing cursor.
-//  One OverlayWindow is created per screen so the cursor buddy
-//  seamlessly follows the cursor across multiple monitors.
+//  SwiftUI cursor buddy rendering and navigation animation.
 //
 
 import AppKit
 import SwiftUI
-
-class OverlayWindow: NSWindow {
-    init(screen: NSScreen) {
-        // Create window covering entire screen
-        super.init(
-            contentRect: screen.frame,
-            styleMask: .borderless,
-            backing: .buffered,
-            defer: false
-        )
-
-        // Make window transparent and non-interactive
-        self.isOpaque = false
-        self.backgroundColor = .clear
-        self.level = .screenSaver  // Always on top, above submenus and popups
-        self.ignoresMouseEvents = true  // Click-through
-        self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
-        self.isReleasedWhenClosed = false
-        self.hasShadow = false
-
-        // Important: Allow the window to appear even when app is not active
-        self.hidesOnDeactivate = false
-
-        // Cover the entire screen
-        self.setFrame(screen.frame, display: true)
-
-        // Make sure it's on the right screen
-        if let screenForWindow = NSScreen.screens.first(where: { $0.frame == screen.frame }) {
-            self.setFrameOrigin(screenForWindow.frame.origin)
-        }
-    }
-
-    // Prevent window from becoming key (no focus stealing)
-    override var canBecomeKey: Bool {
-        return false
-    }
-
-    override var canBecomeMain: Bool {
-        return false
-    }
-}
 
 // Pi-shaped cursor buddy icon.
 private struct PiCursorIconView: View {
@@ -83,78 +40,6 @@ private struct PiCursorIconView: View {
     }
 }
 
-struct NavigationBubbleSizePreferenceKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-        value = nextValue()
-    }
-}
-
-struct ResponseBubbleSizePreferenceKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-        value = nextValue()
-    }
-}
-
-enum PickyBubbleLayout {
-    static func textWidth(for text: String, font: NSFont, maxWidth: CGFloat) -> CGFloat {
-        let lines = text.components(separatedBy: .newlines)
-        let widestLine = lines.map { line in
-            NSAttributedString(string: line.isEmpty ? " " : line, attributes: [.font: font]).size().width
-        }.max() ?? 1
-        return ceil(min(max(widestLine, 1), maxWidth))
-    }
-}
-
-enum PickyBubbleMarkdown {
-    static func attributedText(for text: String) -> AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        if let attributed = try? AttributedString(markdown: text, options: options) {
-            return attributed
-        }
-        return AttributedString(sanitizedPlainText(text))
-    }
-
-    static func displayString(for text: String) -> String {
-        String(attributedText(for: text).characters)
-    }
-
-    private static func sanitizedPlainText(_ text: String) -> String {
-        var sanitized = text
-        let replacements: [(String, String)] = [
-            (#"\[([^\]]+)\]\([^\)]+\)"#, "$1"),
-            (#"\*\*([^*]+)\*\*"#, "$1"),
-            (#"__([^_]+)__"#, "$1"),
-            (#"`([^`]+)`"#, "$1"),
-            (#"\*([^*]+)\*"#, "$1"),
-            (#"_([^_]+)_"#, "$1")
-        ]
-
-        for (pattern, template) in replacements {
-            sanitized = sanitized.replacingOccurrences(
-                of: pattern,
-                with: template,
-                options: .regularExpression
-            )
-        }
-
-        return sanitized
-            .replacingOccurrences(of: "**", with: "")
-            .replacingOccurrences(of: "__", with: "")
-    }
-}
-
-/// The buddy's behavioral mode. Controls whether it follows the cursor,
-/// is flying toward a detected UI element, or is pointing at an element.
-enum BuddyNavigationMode {
-    /// Default — buddy follows the mouse cursor with spring animation
-    case followingCursor
-    /// Buddy is animating toward a detected UI element location
-    case navigatingToTarget
-    /// Buddy has arrived at the target and is pointing at it with a speech bubble
-    case pointingAtTarget
-}
 
 // SwiftUI view for the blue glowing cursor pointer.
 // Each screen gets its own BlueCursorView. The view checks whether
@@ -648,6 +533,7 @@ struct BlueCursorView: View {
 
 }
 
+
 // MARK: - Blue Cursor Waveform
 
 /// A small blue waveform that replaces the pi cursor while
@@ -719,62 +605,3 @@ private struct BlueCursorSpinnerView: View {
     }
 }
 
-// Manager for overlay windows — creates one per screen so the cursor
-// buddy seamlessly follows the cursor across multiple monitors.
-@MainActor
-class OverlayWindowManager {
-    private var overlayWindows: [OverlayWindow] = []
-
-    func showOverlay(onScreens screens: [NSScreen], companionManager: CompanionManager) {
-        // Hide any existing overlays
-        hideOverlay()
-
-        // Create one overlay window per screen
-        for screen in screens {
-            let window = OverlayWindow(screen: screen)
-
-            let contentView = BlueCursorView(
-                screenFrame: screen.frame,
-                companionManager: companionManager
-            )
-
-            let hostingView = NSHostingView(rootView: contentView)
-            hostingView.frame = screen.frame
-            window.contentView = hostingView
-
-            overlayWindows.append(window)
-            window.orderFrontRegardless()
-        }
-    }
-
-    func hideOverlay() {
-        for window in overlayWindows {
-            window.orderOut(nil)
-            window.contentView = nil
-        }
-        overlayWindows.removeAll()
-    }
-
-    /// Fades out overlay windows over `duration` seconds, then removes them.
-    func fadeOutAndHideOverlay(duration: TimeInterval = 0.4) {
-        let windowsToFade = overlayWindows
-        overlayWindows.removeAll()
-
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = duration
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            for window in windowsToFade {
-                window.animator().alphaValue = 0
-            }
-        }, completionHandler: {
-            for window in windowsToFade {
-                window.orderOut(nil)
-                window.contentView = nil
-            }
-        })
-    }
-
-    func isShowingOverlay() -> Bool {
-        return !overlayWindows.isEmpty
-    }
-}

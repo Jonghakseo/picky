@@ -553,12 +553,7 @@ final class CompanionManager: ObservableObject {
 
                 guard !Task.isCancelled else { return }
 
-                PickyAnalytics.trackAgentSubmissionAccepted(sessionID: receipt.sessionID)
-                print("🧠 Picky local agent submission accepted: \(receipt.sessionID)")
-
-                if !receipt.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    finishAwaitingAgentResponse(visibleText: receipt.message, spokenText: receipt.message)
-                }
+                handleAgentSubmissionAccepted(receipt: receipt, source: source)
             } catch is CancellationError {
                 // User spoke again — response was interrupted.
             } catch {
@@ -580,6 +575,18 @@ final class CompanionManager: ObservableObject {
             return PickyAgentSubmissionReceipt(sessionID: selectedSessionID, message: "")
         }
         return try await agentClient.submit(PickyAgentSubmission(transcript: transcript, context: contextPacket))
+    }
+
+    func handleAgentSubmissionAccepted(receipt: PickyAgentSubmissionReceipt, source: String) {
+        PickyAnalytics.trackAgentSubmissionAccepted(sessionID: receipt.sessionID)
+        print("🧠 Picky local agent submission accepted: \(receipt.sessionID)")
+
+        let receiptMessage = receipt.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !receiptMessage.isEmpty {
+            finishAwaitingAgentResponse(visibleText: receiptMessage, spokenText: receiptMessage)
+        } else if source == "voice-follow-up" {
+            finishAwaitingAgentResponse(visibleText: "후속 입력을 선택한 세션에 전달했어요.", spokenText: nil)
+        }
     }
 
     private func bindAgentEvents() {
@@ -644,7 +651,7 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    private func beginAwaitingAgentResponse() {
+    func beginAwaitingAgentResponse() {
         responseStateTask?.cancel()
         speechSynthesizer?.stopSpeaking()
         speechSynthesizer = nil

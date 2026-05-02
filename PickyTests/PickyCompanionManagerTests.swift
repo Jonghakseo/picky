@@ -65,6 +65,32 @@ struct PickyCompanionManagerTests {
         #expect(client.submissions.isEmpty)
     }
 
+    @Test func emptyVoiceFollowUpReceiptClearsProcessingState() async throws {
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        manager.beginAwaitingAgentResponse()
+
+        manager.handleAgentSubmissionAccepted(
+            receipt: PickyAgentSubmissionReceipt(sessionID: "session-selected", message: ""),
+            source: "voice-follow-up"
+        )
+
+        #expect(manager.voiceState == .idle)
+        #expect(manager.latestAgentSessionSummary == "후속 입력을 선택한 세션에 전달했어요.")
+    }
+
+    @Test func emptyNewVoiceTaskReceiptKeepsWaitingForAgentEvents() async throws {
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        manager.beginAwaitingAgentResponse()
+
+        manager.handleAgentSubmissionAccepted(
+            receipt: PickyAgentSubmissionReceipt(sessionID: "created-session", message: ""),
+            source: "voice"
+        )
+
+        #expect(manager.voiceState == .processing)
+        #expect(manager.latestAgentSessionSummary == "응답 준비 중…")
+    }
+
     private func context(source: String) -> PickyContextPacket {
         PickyContextPacket(
             id: "context-voice",

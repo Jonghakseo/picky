@@ -32,14 +32,15 @@ const mainRuntime = useMockRuntime
         createPickyHandoffTool(async (request) => {
           const context = supervisor.currentMainContext();
           if (!context) throw new Error("No active Picky main-agent context to hand off.");
-          logAgentd("handoff requested", { contextId: context.id, titleChars: request.title.length, instructionChars: request.instructions.length });
+          const cwd = request.cwd?.trim() || context.cwd || defaultCwd;
+          logAgentd("handoff requested", { contextId: context.id, titleChars: request.title.length, instructionChars: request.instructions.length, cwd });
           supervisor.announceMainHandoff(
             context.id,
             request.userMessage?.trim() || "복잡한 작업이라 사이드 에이전트에 위임하겠습니다. 진행 상황은 오른쪽 위 오버레이에서 볼 수 있어요.",
           );
-          const session = await supervisor.createSideFromHandoff(context, { title: request.title, instructions: request.instructions });
-          logAgentd("handoff started", { contextId: context.id, sessionId: session.id, titleChars: session.title.length });
-          return { sessionId: session.id, title: session.title };
+          const session = await supervisor.createSideFromHandoff(context, { title: request.title, instructions: request.instructions, cwd });
+          logAgentd("handoff started", { contextId: context.id, sessionId: session.id, titleChars: session.title.length, cwd: session.cwd });
+          return { sessionId: session.id, title: session.title, cwd: session.cwd };
         }),
         createPickySideSessionsTool(() => supervisor.listSideSessions()),
         createPickySideFollowUpTool(async (request) => {

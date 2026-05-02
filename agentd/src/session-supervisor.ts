@@ -128,11 +128,14 @@ export class SessionSupervisor extends EventEmitter {
     return this.createVisibleSession(context, titleFromContext(context), buildInitialTaskPrompt(context));
   }
 
-  async createSideFromHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string }): Promise<PickyAgentSession> {
-    logAgentd("side session create requested", { contextId: context.id, titleChars: handoff.title.length, instructionChars: handoff.instructions.length });
-    const session = await this.createVisibleSession(context, handoff.title.trim() || titleFromContext(context), buildSideAgentPrompt(context, handoff), { notifyMainOnCompletion: true });
+  async createSideFromHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string }): Promise<PickyAgentSession> {
+    const cwd = normalizeOptionalString(handoff.cwd) ?? context.cwd;
+    const handoffContext = cwd ? { ...context, cwd } : context;
+    logAgentd("side session create requested", { contextId: context.id, titleChars: handoff.title.length, instructionChars: handoff.instructions.length, cwd: handoffContext.cwd });
+    const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildSideAgentPrompt(handoffContext, handoff), { notifyMainOnCompletion: true });
     this.sideSessionIds.add(session.id);
     await this.appendLog(session.id, `main-agent handoff: ${handoff.instructions}`);
+    if (handoffContext.cwd) await this.appendLog(session.id, `main-agent handoff cwd: ${handoffContext.cwd}`);
     return this.mustGet(session.id);
   }
 
@@ -461,6 +464,11 @@ export class SessionSupervisor extends EventEmitter {
     if (!session) throw new Error(`Unknown session: ${sessionId}`);
     return session;
   }
+}
+
+function normalizeOptionalString(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 function buildPinnedSideSessionLogs(context: PickyContextPacket): string[] {

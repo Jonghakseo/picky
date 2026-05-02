@@ -26,6 +26,7 @@ export function buildMainAgentPrompt(context: PickyContextPacket): BuiltPrompt {
     "- If the request refers to existing delegated work, a running side agent, a recent side-agent result, or asks to continue/change/check progress, call `picky_side_sessions` before deciding what to do.",
     "- If an existing side session matches the user's follow-up, call `picky_side_followup` with self-contained instructions instead of starting a duplicate side agent.",
     "- If the request needs new long-running work, detailed screen analysis, code/repo/file tools, web/video extraction, MCPs, or multiple turns, call the `picky_handoff` tool with clear instructions for a side Pi agent.",
+    "- `picky_handoff` accepts an optional `cwd`; omit it to use Picky's configured default cwd. Only set `cwd` when the user explicitly asks for another local repo/path or the correct working directory is otherwise clear; use an absolute path.",
     "- For screen-understanding requests with multiple screenshots, make the side agent inspect all screenshots and distinguish the primary cursor/focus screen from secondary screens.",
     "- When you hand off, tell the user in Korean that you are delegating to a side agent and that progress is visible in the top-right overlay.",
     "- When a side-agent completion message is provided later, summarize the result briefly in Korean and tell the user to open the side-agent card for details.",

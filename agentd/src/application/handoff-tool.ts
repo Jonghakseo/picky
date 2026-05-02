@@ -6,6 +6,13 @@ export interface PickyHandoffRequest {
   title: string;
   instructions: string;
   userMessage?: string;
+  cwd?: string;
+}
+
+interface PickyHandoffResult {
+  sessionId: string;
+  title: string;
+  cwd?: string;
 }
 
 export interface PickySideFollowUpRequest {
@@ -24,9 +31,10 @@ interface SideSessionSummary {
   recentLogs: string[];
   artifacts: Array<{ kind: string; title: string; path?: string; url?: string }>;
   changedFiles: Array<{ path: string; status: string; summary?: string }>;
+  cwd?: string;
 }
 
-export function createPickyHandoffTool(onHandoff: (request: PickyHandoffRequest) => Promise<{ sessionId: string; title: string }>): ToolDefinition {
+export function createPickyHandoffTool(onHandoff: (request: PickyHandoffRequest) => Promise<PickyHandoffResult>): ToolDefinition {
   return defineTool({
     name: "picky_handoff",
     label: "Picky handoff",
@@ -40,12 +48,14 @@ export function createPickyHandoffTool(onHandoff: (request: PickyHandoffRequest)
       title: Type.String({ description: "Short Korean title for the side-agent HUD card." }),
       instructions: Type.String({ description: "Detailed instructions for the side Pi agent, including what to inspect, what output to produce, and any constraints." }),
       userMessage: Type.Optional(Type.String({ description: "Optional short Korean message you intend to tell the user after handoff." })),
+      cwd: Type.Optional(Type.String({ description: "Optional absolute working directory for the side Pi agent. Omit to use Picky's configured default cwd." })),
     }),
     execute: async (_toolCallId, params) => {
       const session = await onHandoff({
         title: params.title,
         instructions: params.instructions,
         userMessage: params.userMessage,
+        cwd: normalizeOptionalString(params.cwd),
       });
       return {
         content: [
@@ -126,6 +136,7 @@ function summarizeSideSession(session: PickyAgentSession): SideSessionSummary {
     status: session.status,
     updatedAt: session.updatedAt,
     lastSummary: session.lastSummary,
+    cwd: session.cwd,
     finalAnswer: session.finalAnswer,
     pendingInput: Boolean(session.pendingExtensionUiRequest),
     recentLogs: session.logs.slice(-3).map((line) => truncate(line, 240)),
@@ -141,7 +152,8 @@ function formatSideSessions(sessions: SideSessionSummary[], omitted: number): st
     const pendingInput = session.pendingInput ? "; waiting for input" : "";
     const summary = session.lastSummary ? `; summary=${truncate(session.lastSummary, 160)}` : "";
     const finalAnswer = session.finalAnswer ? `; final=${truncate(session.finalAnswer, 160)}` : "";
-    lines.push(`- ${session.id} | ${session.title} | status=${session.status}${pendingInput}; updated=${session.updatedAt}${summary}${finalAnswer}`);
+    const cwd = session.cwd ? `; cwd=${truncate(session.cwd, 120)}` : "";
+    lines.push(`- ${session.id} | ${session.title} | status=${session.status}${pendingInput}; updated=${session.updatedAt}${cwd}${summary}${finalAnswer}`);
     if (session.recentLogs.length > 0) {
       lines.push(`  recent logs: ${session.recentLogs.join(" / ")}`);
     }
@@ -155,6 +167,11 @@ function formatSideSessions(sessions: SideSessionSummary[], omitted: number): st
 function clampLimit(value: number | undefined, fallback: number): number {
   if (!Number.isFinite(value)) return fallback;
   return Math.max(1, Math.min(50, Math.floor(value!)));
+}
+
+function normalizeOptionalString(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 function truncate(value: string, maxChars: number): string {

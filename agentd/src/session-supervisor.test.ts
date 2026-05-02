@@ -51,6 +51,20 @@ describe("SessionSupervisor", () => {
     await expect(supervisor.followUpSideSession(regular.id, "wrong target")).rejects.toThrow(/not a Picky side agent/);
   });
 
+  it("uses the handoff cwd override for side session metadata, prompt context, and runtime cwd", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new RecordingRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate", cwd: "  /tmp/override-project  " });
+
+    expect(side.cwd).toBe("/tmp/override-project");
+    expect(side.logs).toContain("main-agent handoff cwd: /tmp/override-project");
+    expect(runtime.creates[0].options.cwd).toBe("/tmp/override-project");
+    expect(runtime.creates[0].prompt.text).toContain("- CWD: /tmp/override-project");
+  });
+
   it("returns as soon as a side follow-up is queued instead of waiting for that side turn to finish", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     let resolveFollowUp!: () => void;
@@ -493,6 +507,15 @@ class ResumableRuntime implements AgentRuntime {
     this.resumeCalls.push({ sessionFilePath, cwd: options.cwd, sessionId: options.sessionId });
     this.handle = new ManualHandle(options.sessionId ?? "manual");
     return this.handle;
+  }
+}
+
+class RecordingRuntime implements AgentRuntime {
+  creates: Array<{ prompt: BuiltPrompt; options: { cwd?: string; sessionId?: string } }> = [];
+
+  async create(prompt: BuiltPrompt, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
+    this.creates.push({ prompt, options });
+    return new ManualHandle(options.sessionId ?? "manual");
   }
 }
 

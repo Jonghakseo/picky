@@ -46,4 +46,10 @@ describe("neutral prompt builder", () => {
     expect(prompt.text).toContain("picky_side_followup");
     expect(prompt.text).toContain("instead of starting a duplicate side agent");
   });
+
+  it("tells the main agent that handoff cwd is optional and defaults to configured cwd", () => {
+    const prompt = buildMainAgentPrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")));
+    expect(prompt.text).toContain("`picky_handoff` accepts an optional `cwd`");
+    expect(prompt.text).toContain("omit it to use Picky's configured default cwd");
+  });
 });

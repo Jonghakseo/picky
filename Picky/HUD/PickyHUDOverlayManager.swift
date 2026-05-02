@@ -15,8 +15,15 @@ final class PickyHUDPanel: NSPanel {
     override func sendEvent(_ event: NSEvent) {
         if event.type == .leftMouseDown || event.type == .rightMouseDown {
             makeKey()
+            resignFocusedControl()
         }
         super.sendEvent(event)
+    }
+
+    @discardableResult
+    func resignFocusedControl() -> Bool {
+        guard firstResponder != nil else { return false }
+        return makeFirstResponder(nil)
     }
 }
 

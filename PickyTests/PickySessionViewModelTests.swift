@@ -49,6 +49,10 @@ private final class FakeTerminalResumeLauncher: PickyTerminalResumeLaunching {
     }
 }
 
+private final class FirstResponderProbeView: NSView {
+    override var acceptsFirstResponder: Bool { true }
+}
+
 @Suite(.serialized)
 @MainActor
 struct PickySessionViewModelTests {
@@ -235,6 +239,26 @@ struct PickySessionViewModelTests {
         #expect(panel.canBecomeKey)
         #expect(!panel.canBecomeMain)
         #expect(panel.styleMask.contains(.nonactivatingPanel))
+    }
+
+    @Test func hudPanelResignsFocusedControlBeforeHandlingMouseCollapse() throws {
+        let panel = PickyHUDPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        let probeView = FirstResponderProbeView(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
+        let contentView = NSView(frame: panel.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 320, height: 180))
+        contentView.addSubview(probeView)
+        panel.contentView = contentView
+        defer { panel.close() }
+
+        #expect(panel.makeFirstResponder(probeView))
+        #expect(panel.firstResponder === probeView)
+
+        #expect(panel.resignFocusedControl())
+        #expect(panel.firstResponder !== probeView)
     }
 
     @Test func selectionDefaultsForHudButOnlyExplicitSelectionPersistsForVoiceFollowUp() async throws {

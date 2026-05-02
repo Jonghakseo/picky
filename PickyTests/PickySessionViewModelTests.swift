@@ -282,6 +282,25 @@ struct PickySessionViewModelTests {
         #expect(PickyArtifactReportBuilder.githubPullRequestURLs(in: "will make a PR later").isEmpty)
     }
 
+    @Test func reportBuilderToolSummaryUsesOnlyToolCallCounts() async throws {
+        let session = PickyAgentSession.fixture(
+            lastSummary: "Done",
+            status: .completed,
+            tools: [
+                PickyToolActivity(toolCallId: "tool-1", name: "bash", status: "succeeded", preview: "tests passed", startedAt: nil, endedAt: nil),
+                PickyToolActivity(toolCallId: "tool-2", name: "bash", status: "failed", preview: "error output", startedAt: nil, endedAt: nil),
+                PickyToolActivity(toolCallId: "tool-3", name: "read", status: "succeeded", preview: "file contents", startedAt: nil, endedAt: nil)
+            ]
+        )
+        let markdown = PickyArtifactReportBuilder().markdown(for: session)
+
+        #expect(markdown.contains("## Tool summary\n- `bash`: 2\n- `read`: 1"))
+        #expect(!markdown.contains("tests passed"))
+        #expect(!markdown.contains("error output"))
+        #expect(!markdown.contains("succeeded"))
+        #expect(!markdown.contains("failed"))
+    }
+
     @Test func artifactPathValidatorRejectsTraversalAndMissingFiles() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-artifact-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -368,7 +387,11 @@ private extension PickyEventEnvelope {
 }
 
 private extension PickyAgentSession {
-    static func fixture(lastSummary: String, status: PickySessionStatus) -> PickyAgentSession {
+    static func fixture(
+        lastSummary: String,
+        status: PickySessionStatus,
+        tools: [PickyToolActivity] = [PickyToolActivity(toolCallId: "tool-1", name: "bash", status: "succeeded", preview: "tests passed", startedAt: nil, endedAt: nil)]
+    ) -> PickyAgentSession {
         PickyAgentSession(
             id: "session-report",
             title: "Report task",
@@ -378,7 +401,7 @@ private extension PickyAgentSession {
             updatedAt: Date(timeIntervalSince1970: 1_800_000_100),
             lastSummary: lastSummary,
             logs: [],
-            tools: [PickyToolActivity(toolCallId: "tool-1", name: "bash", status: "succeeded", preview: "tests passed", startedAt: nil, endedAt: nil)],
+            tools: tools,
             artifacts: [],
             changedFiles: [],
             pendingExtensionUiRequest: nil

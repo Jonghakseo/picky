@@ -85,9 +85,10 @@ export function renderSessionReport(session: PickyAgentSession): string {
   if (session.cwd) lines.push(`CWD: \`${session.cwd}\``, "");
   const finalAnswer = session.finalAnswer || session.lastSummary;
   if (finalAnswer) lines.push("## Final answer", finalAnswer, "");
-  if (session.tools.length > 0) {
+  const toolCounts = summarizeToolCalls(session.tools);
+  if (toolCounts.length > 0) {
     lines.push("## Tool summary");
-    for (const tool of session.tools) lines.push(`- \`${tool.name}\` ${tool.status}${tool.preview ? ` — ${tool.preview}` : ""}`);
+    for (const tool of toolCounts) lines.push(`- \`${tool.name}\`: ${tool.count}`);
     lines.push("");
   }
   if (session.changedFiles.length > 0) {
@@ -98,6 +99,12 @@ export function renderSessionReport(session: PickyAgentSession): string {
   const prUrls = extractGithubPullRequestUrls([session.finalAnswer, session.lastSummary, ...session.logs, ...session.tools.map((tool) => tool.preview)].filter(Boolean).join("\n"));
   if (prUrls.length > 0) lines.push("## Pull requests", ...prUrls.map((url) => `- ${url}`), "");
   return `${lines.join("\n").trimEnd()}\n`;
+}
+
+function summarizeToolCalls(tools: PickyAgentSession["tools"]): Array<{ name: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const tool of tools) counts.set(tool.name, (counts.get(tool.name) ?? 0) + 1);
+  return [...counts.entries()].map(([name, count]) => ({ name, count }));
 }
 
 export function extractGithubPullRequestUrls(text: string): string[] {

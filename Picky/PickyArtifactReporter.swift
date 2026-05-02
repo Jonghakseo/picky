@@ -17,11 +17,11 @@ struct PickyArtifactReportBuilder {
             lines.append(finalAnswer)
             lines.append("")
         }
-        if !session.tools.isEmpty {
+        let toolCounts = toolCallCounts(session.tools)
+        if !toolCounts.isEmpty {
             lines.append("## Tool summary")
-            for tool in session.tools {
-                let preview = tool.preview.map { " — \($0)" } ?? ""
-                lines.append("- `\(tool.name)` \(tool.status)\(preview)")
+            for tool in toolCounts {
+                lines.append("- `\(tool.name)`: \(tool.count)")
             }
             lines.append("")
         }
@@ -45,6 +45,16 @@ struct PickyArtifactReportBuilder {
             lines.append("")
         }
         return lines.joined(separator: "\n")
+    }
+
+    private func toolCallCounts(_ tools: [PickyToolActivity]) -> [(name: String, count: Int)] {
+        var counts: [String: Int] = [:]
+        var orderedNames: [String] = []
+        for tool in tools {
+            if counts[tool.name] == nil { orderedNames.append(tool.name) }
+            counts[tool.name, default: 0] += 1
+        }
+        return orderedNames.map { (name: $0, count: counts[$0] ?? 0) }
     }
 
     static func githubPullRequestURLs(in text: String) -> [URL] {

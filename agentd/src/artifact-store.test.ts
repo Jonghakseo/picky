@@ -37,6 +37,31 @@ describe("ArtifactStore", () => {
     }
   });
 
+  it("renders tool summary as tool call counts only", () => {
+    const markdown = renderSessionReport({
+      id: "session-tools",
+      title: "Tool task",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:01.000Z",
+      logs: [],
+      tools: [
+        { toolCallId: "tool-1", name: "bash", status: "succeeded", preview: "tests passed" },
+        { toolCallId: "tool-2", name: "bash", status: "failed", preview: "error output" },
+        { toolCallId: "tool-3", name: "read", status: "succeeded", preview: "file contents" },
+      ],
+      artifacts: [],
+      changedFiles: [],
+    });
+
+    expect(markdown).toContain("## Tool summary\n- `bash`: 2\n- `read`: 1");
+    expect(markdown).not.toContain("tests passed");
+    expect(markdown).not.toContain("error output");
+    expect(markdown).not.toContain("succeeded");
+    expect(markdown).not.toContain("failed");
+  });
+
   it("extracts PR URLs and changed files only from explicit output", () => {
     expect(extractGithubPullRequestUrls("Created https://github.com/acme/repo/pull/42")).toEqual(["https://github.com/acme/repo/pull/42"]);
     expect(extractGithubPullRequestUrls("I will open a PR later")).toEqual([]);

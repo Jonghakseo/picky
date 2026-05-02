@@ -108,6 +108,7 @@ const CommandBaseSchema = z.object({ id: z.string(), protocolVersion: z.literal(
 export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("routeTask"), context: PickyContextPacketSchema }),
   CommandBaseSchema.extend({ type: z.literal("createTask"), context: PickyContextPacketSchema }),
+  CommandBaseSchema.extend({ type: z.literal("pinSideSession"), context: PickyContextPacketSchema, title: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("followUp"), sessionId: z.string(), text: z.string().min(1), context: PickyContextPacketSchema.optional() }),
   CommandBaseSchema.extend({ type: z.literal("steer"), sessionId: z.string(), text: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("abort"), sessionId: z.string() }),

@@ -28,6 +28,25 @@ describe("protocol contract fixtures", () => {
     });
   });
 
+  it("parses completed side-session pin commands", () => {
+    expect(() =>
+      CommandEnvelopeSchema.parse({
+        id: "cmd-pin",
+        protocolVersion: "2026-05-01",
+        type: "pinSideSession",
+        title: "Pinned Pi session",
+        context: {
+          id: "context-pin",
+          source: "text",
+          capturedAt: "2026-05-02T00:00:00.000Z",
+          transcript: "Pin this completed Pi session",
+          screenshots: [],
+          warnings: [],
+        },
+      }),
+    ).not.toThrow();
+  });
+
   it("rejects invalid protocol versions", () => {
     expect(() => CommandEnvelopeSchema.parse({ id: "bad", protocolVersion: "old", type: "listSessions" })).toThrow(/Invalid literal value/);
   });

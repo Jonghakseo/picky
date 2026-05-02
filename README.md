@@ -32,7 +32,7 @@ Picky asks for the local macOS permissions needed by its shell:
 - `Picky/Context/` and `Picky/PickyAdvancedContext.swift` build neutral context packets: transcript, app/window metadata, browser URL/title/selection, screenshots, cwd, and selected session.
 - `Picky/HUD/` plus `Picky/PickySessionViewModel.swift` render and manage long-running session cards, follow-ups, archive/search, artifacts, and Ghostty resume.
 - `agentd/` is the TypeScript daemon. It owns WebSocket transport, session supervision, Pi SDK/runtime adapters, event normalization, extension UI bridging, session metadata, and artifacts.
-- `pi-extensions/picky-handoff/` contains the optional Pi slash-command bridge for handing an existing Pi conversation off to a new Picky side agent.
+- `pi-extensions/picky-handoff/` contains the optional Pi slash-command bridge for pinning an idle Pi conversation to Picky as a completed side-agent card.
 - Picky does not hard-code Sentry/Slack/DB routing. It passes context; Pi skills/extensions decide the workflow.
 
 ## Optional Pi handoff command
@@ -56,7 +56,7 @@ After restarting Pi or running `/reload`, use:
 /handoff-to-picky continue this investigation in Picky and produce a final report
 ```
 
-This creates a new Picky-managed side agent using the current Pi session file, cwd, and recent branch excerpt as neutral context.
+This is allowed only while Pi is idle. It creates a completed Picky side-agent card using the current Pi session file, cwd, and recent branch excerpt as neutral context; it does not start a new Picky agent run.
 
 ## Attribution
 

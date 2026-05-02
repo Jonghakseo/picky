@@ -53,7 +53,7 @@ export class SessionSupervisor extends EventEmitter {
     const persisted = await this.store.loadAll();
     logAgentd("sessions loading", { count: persisted.length });
     for (const session of persisted) {
-      if (hasMainAgentHandoffLog(session)) this.sideSessionIds.add(session.id);
+      if (hasSideSessionMarkerLog(session)) this.sideSessionIds.add(session.id);
       if (!isTerminalStatus(session.status)) {
         const restored = {
           ...session,
@@ -129,6 +129,30 @@ export class SessionSupervisor extends EventEmitter {
     this.sideSessionIds.add(session.id);
     await this.appendLog(session.id, `main-agent handoff: ${handoff.instructions}`);
     return this.mustGet(session.id);
+  }
+
+  async pinSideSession(context: PickyContextPacket, title?: string): Promise<PickyAgentSession> {
+    const now = new Date().toISOString();
+    const id = `session-${randomUUID()}`;
+    const session: PickyAgentSession = {
+      id,
+      title: title?.trim() || titleFromContext(context),
+      status: "completed",
+      cwd: context.cwd,
+      createdAt: now,
+      updatedAt: now,
+      lastSummary: "Pinned completed Pi session",
+      finalAnswer: "Pinned from an idle Pi session. No Picky side-agent run has been started yet.",
+      logs: buildPinnedSideSessionLogs(context),
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    };
+    this.sideSessionIds.add(id);
+    logAgentd("side session pinned", { sessionId: id, titleChars: session.title.length, cwd: context.cwd, contextId: context.id });
+    await this.upsert(session);
+    await this.materializeTerminalArtifacts(id);
+    return this.mustGet(id);
   }
 
   private async createVisibleSession(context: PickyContextPacket, title: string, prompt = buildInitialTaskPrompt(context)): Promise<PickyAgentSession> {
@@ -359,6 +383,13 @@ export class SessionSupervisor extends EventEmitter {
   }
 }
 
-function hasMainAgentHandoffLog(session: PickyAgentSession): boolean {
-  return session.logs.some((line) => line.startsWith("main-agent handoff:"));
+function buildPinnedSideSessionLogs(context: PickyContextPacket): string[] {
+  const logs = ["pi-extension handoff pin: completed idle Pi session", `source context id: ${context.id}`];
+  if (context.cwd) logs.push(`source cwd: ${context.cwd}`);
+  if (context.transcript?.trim()) logs.push(`source transcript:\n${context.transcript.trim()}`);
+  return logs;
+}
+
+function hasSideSessionMarkerLog(session: PickyAgentSession): boolean {
+  return session.logs.some((line) => line.startsWith("main-agent handoff:") || line.startsWith("pi-extension handoff pin:"));
 }

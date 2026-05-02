@@ -63,6 +63,33 @@ describe("SessionSupervisor", () => {
     expect(secondSupervisor.listSideSessions().map((session) => session.id)).toEqual([side.id]);
   });
 
+  it("pins an idle Pi handoff as a completed side session without starting runtime", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir));
+    await supervisor.load();
+
+    const pinned = await supervisor.pinSideSession(context("pin completed source"), "Pinned source");
+
+    expect(pinned.status).toBe("completed");
+    expect(pinned.title).toBe("Pinned source");
+    expect(pinned.lastSummary).toBe("Pinned completed Pi session");
+    expect(pinned.finalAnswer).toMatch(/No Picky side-agent run/);
+    expect(pinned.logs.some((line) => line.startsWith("pi-extension handoff pin:"))).toBe(true);
+    expect(supervisor.isSideSession(pinned.id)).toBe(true);
+  });
+
+  it("restores persisted pinned side sessions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const firstSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+    const pinned = await firstSupervisor.pinSideSession(context("persist pinned"), "Pinned persisted");
+
+    const secondSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+    await secondSupervisor.load();
+
+    expect(secondSupervisor.get(pinned.id)?.status).toBe("completed");
+    expect(secondSupervisor.isSideSession(pinned.id)).toBe(true);
+  });
+
   it("aborts a session", async () => {
     const supervisor = await makeSupervisor();
     const session = await supervisor.create(context("abort me"));

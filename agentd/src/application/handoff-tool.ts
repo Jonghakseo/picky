@@ -70,29 +70,38 @@ export function createPickyHandoffTool(onHandoff: (request: PickyHandoffRequest)
   });
 }
 
+const SIDE_SESSIONS_DEFAULT_PAGE_SIZE = 10;
+const SIDE_SESSIONS_MAX_PAGE_SIZE = 10;
+
 export function createPickySideSessionsTool(onList: () => PickyAgentSession[]): ToolDefinition {
   return defineTool({
     name: "picky_side_sessions",
     label: "Picky side sessions",
-    description: "List side Pi agents that the Picky main agent has already delegated work to, so follow-up requests can reuse the right side agent instead of starting a duplicate.",
-    promptSnippet: "picky_side_sessions: list current and recent side Pi agents in the Picky HUD before deciding whether to resume one.",
+    description: "List one bounded page of side Pi agents that the Picky main agent has already delegated work to, so follow-up requests can reuse the right side agent instead of starting a duplicate.",
+    promptSnippet: "picky_side_sessions: list one bounded page of current and recent side Pi agents in the Picky HUD before deciding whether to resume one.",
     promptGuidelines: [
       "Use picky_side_sessions when the user refers to an existing delegated task, side agent, running work, recent completion, or asks to continue/change/check progress.",
+      "The tool returns at most one small page at a time; follow nextPage only when needed for the user's request.",
       "Prefer resuming a relevant side session with picky_side_followup over creating a duplicate side agent.",
     ],
     parameters: Type.Object({
       includeTerminal: Type.Optional(Type.Boolean({ description: "Whether to include completed, failed, and cancelled side sessions. Defaults to true." })),
-      limit: Type.Optional(Type.Number({ description: "Maximum number of side sessions to return. Defaults to 10." })),
+      page: Type.Optional(Type.Number({ description: "1-based page number to return. Defaults to 1.", minimum: 1 })),
+      limit: Type.Optional(Type.Number({ description: `Maximum number of side sessions to return on this page. Defaults to ${SIDE_SESSIONS_DEFAULT_PAGE_SIZE}; capped at ${SIDE_SESSIONS_MAX_PAGE_SIZE}.`, minimum: 1, maximum: SIDE_SESSIONS_MAX_PAGE_SIZE })),
     }),
     execute: async (_toolCallId, params) => {
       const includeTerminal = params.includeTerminal !== false;
-      const limit = clampLimit(params.limit, 10);
+      const page = normalizePage(params.page);
+      const pageSize = clampLimit(params.limit, SIDE_SESSIONS_DEFAULT_PAGE_SIZE);
+      const start = (page - 1) * pageSize;
+      const end = start + pageSize;
       const allSessions = onList().filter((session) => includeTerminal || !["completed", "failed", "cancelled"].includes(session.status));
-      const sessions = allSessions.slice(0, limit).map(summarizeSideSession);
-      const omitted = Math.max(0, allSessions.length - sessions.length);
+      const sessions = allSessions.slice(start, end).map(summarizeSideSession);
+      const hasMore = allSessions.length > end;
+      const nextPage = hasMore ? page + 1 : undefined;
       return {
-        content: [{ type: "text", text: formatSideSessions(sessions, omitted) }],
-        details: { sessions, total: allSessions.length, omitted },
+        content: [{ type: "text", text: formatSideSessions(sessions, { page, pageSize, hasMore, nextPage }) }],
+        details: { sessions, page, pageSize, hasMore, nextPage },
       };
     },
   });
@@ -145,9 +154,10 @@ function summarizeSideSession(session: PickyAgentSession): SideSessionSummary {
   };
 }
 
-function formatSideSessions(sessions: SideSessionSummary[], omitted: number): string {
-  if (sessions.length === 0) return "No side agents are currently known.";
-  const lines = [`Side agents (${sessions.length}${omitted > 0 ? ` shown, ${omitted} omitted` : ""}):`];
+function formatSideSessions(sessions: SideSessionSummary[], pagination: { page: number; pageSize: number; hasMore: boolean; nextPage?: number }): string {
+  if (sessions.length === 0) return `No side agents returned on page ${pagination.page}.`;
+  const nextPageHint = pagination.hasMore && pagination.nextPage ? `; more available, request page ${pagination.nextPage}` : "";
+  const lines = [`Side agents page ${pagination.page} (${sessions.length} shown, page size ${pagination.pageSize}${nextPageHint}):`];
   for (const session of sessions) {
     const pendingInput = session.pendingInput ? "; waiting for input" : "";
     const summary = session.lastSummary ? `; summary=${truncate(session.lastSummary, 160)}` : "";
@@ -166,7 +176,12 @@ function formatSideSessions(sessions: SideSessionSummary[], omitted: number): st
 
 function clampLimit(value: number | undefined, fallback: number): number {
   if (!Number.isFinite(value)) return fallback;
-  return Math.max(1, Math.min(50, Math.floor(value!)));
+  return Math.max(1, Math.min(SIDE_SESSIONS_MAX_PAGE_SIZE, Math.floor(value!)));
+}
+
+function normalizePage(value: number | undefined): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.max(1, Math.floor(value!));
 }
 
 function normalizeOptionalString(value: string | undefined): string | undefined {

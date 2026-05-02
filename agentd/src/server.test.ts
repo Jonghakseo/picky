@@ -54,6 +54,7 @@ describe("AgentdServer", () => {
       logs: [
         "pi session: /tmp/picky.jsonl",
         "source transcript:\n" + "질문 ".repeat(1_000),
+        "steer: keep this visible in the HUD",
         ...Array.from({ length: 80 }, (_, index) => `extension ui: setWidget ${index}`),
         "latest useful log",
       ],
@@ -63,6 +64,7 @@ describe("AgentdServer", () => {
 
     expect(compact.logs.length).toBeLessThanOrEqual(24);
     expect(compact.logs).toContain("pi session: /tmp/picky.jsonl");
+    expect(compact.logs).toContain("steer: keep this visible in the HUD");
     expect(compact.logs.at(-1)).toBe("latest useful log");
     expect(JSON.stringify(compact).length).toBeLessThan(30_000);
   });

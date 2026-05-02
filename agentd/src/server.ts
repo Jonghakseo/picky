@@ -181,6 +181,8 @@ function isImportantSnapshotLog(line: string): boolean {
     || trimmed.startsWith("- Session file: ")
     || trimmed.startsWith("source transcript:")
     || trimmed.startsWith("follow-up: ")
+    || trimmed.startsWith("steer: ")
+    || trimmed.startsWith("steer rejected:")
     || trimmed.startsWith("main-agent handoff: ")
     || trimmed.includes("Runtime session is not attached after daemon restart")
     || trimmed.includes("Runtime not attached after daemon restart");

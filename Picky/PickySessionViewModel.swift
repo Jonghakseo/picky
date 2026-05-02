@@ -513,7 +513,7 @@ final class PickySessionListViewModel: ObservableObject {
         case .error(let error):
             pickySessionLog("protocol error code=\(error.code) command=\(error.commandId ?? "none")")
             lastError = error.message
-        case .quickReply, .hello, .unknown:
+        case .quickReply, .pointerOverlayRequested, .hello, .unknown:
             break
         }
     }

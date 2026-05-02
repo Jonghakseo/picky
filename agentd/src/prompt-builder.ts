@@ -104,8 +104,9 @@ function appendContext(lines: string[], context: PickyContextPacket): void {
     for (const screenshot of context.screenshots) {
       const screen = screenshot.screenId ? ` (${screenshot.screenId})` : "";
       const bounds = screenshot.bounds ? `; bounds=${screenshot.bounds.x},${screenshot.bounds.y},${screenshot.bounds.width}x${screenshot.bounds.height}` : "";
-      const focus = context.screenshots.length > 1 ? (screenshot.label.toLowerCase().includes("cursor") || screenshot.label.toLowerCase().includes("primary") ? "; primary cursor/focus screen" : "; secondary screen") : "";
-      lines.push(`- ${screenshot.label}${screen}${focus}${bounds}: ${screenshot.path}`);
+      const pixelSize = screenshot.screenshotWidthInPixels && screenshot.screenshotHeightInPixels ? `; screenshotPixels=${screenshot.screenshotWidthInPixels}x${screenshot.screenshotHeightInPixels}` : "";
+      const focus = context.screenshots.length > 1 ? (screenshot.isCursorScreen || screenshot.label.toLowerCase().includes("cursor") || screenshot.label.toLowerCase().includes("primary") ? "; primary cursor/focus screen" : "; secondary screen") : "";
+      lines.push(`- ${screenshot.label}${screen}${focus}${bounds}${pixelSize}: ${screenshot.path}`);
     }
   }
   if (context.warnings.length > 0) {

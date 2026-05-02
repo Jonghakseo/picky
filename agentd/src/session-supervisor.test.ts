@@ -51,6 +51,63 @@ describe("SessionSupervisor", () => {
     await expect(supervisor.followUpSideSession(regular.id, "wrong target")).rejects.toThrow(/not a Picky side agent/);
   });
 
+  it("validates and emits visual-only pointer overlays against captured screenshots", async () => {
+    const supervisor = await makeSupervisor();
+    const pointerContext: PickyContextPacket = {
+      ...context("point here"),
+      screenshots: [
+        {
+          id: "shot-1",
+          label: "screen 1 — cursor is on this screen",
+          path: "/tmp/shot-1.jpg",
+          screenId: "screen1",
+          bounds: { x: 100, y: 200, width: 300, height: 400 },
+          screenshotWidthInPixels: 600,
+          screenshotHeightInPixels: 800,
+          isCursorScreen: true,
+        },
+      ],
+    };
+    const session = await supervisor.create(pointerContext);
+    const emitted: unknown[] = [];
+    supervisor.on("pointerOverlayRequested", (request) => emitted.push(request));
+
+    const result = await supervisor.requestPointerOverlay({ sourceSessionId: session.id, screenIndex: 1, x: -20, y: 900, label: "target", durationMs: 99_999, confidence: 0.8 });
+
+    expect(result.emitted).toBe(true);
+    expect(emitted).toHaveLength(1);
+    expect(result.request).toMatchObject({
+      contextId: pointerContext.id,
+      sourceSessionId: session.id,
+      screenId: "screen1",
+      screenIndex: 1,
+      x: 0,
+      y: 800,
+      coordinateSpace: "screenshotPixel",
+      clamped: true,
+      durationMs: 10_000,
+      confidence: 0.8,
+      screenBounds: { x: 100, y: 200, width: 300, height: 400 },
+      screenshotSize: { width: 600, height: 800 },
+    });
+  });
+
+  it("supports pointer overlay dry runs without broadcasting", async () => {
+    const supervisor = await makeSupervisor();
+    await supervisor.create({
+      ...context("point here"),
+      screenshots: [{ id: "shot-1", label: "screen 1", path: "/tmp/shot-1.jpg", screenId: "screen1", bounds: { x: 0, y: 0, width: 100, height: 100 } }],
+    });
+    const emitted: unknown[] = [];
+    supervisor.on("pointerOverlayRequested", (request) => emitted.push(request));
+
+    const result = await supervisor.requestPointerOverlay({ coordinateSpace: "displayPoint", x: 50, y: 60, dryRun: true });
+
+    expect(result.emitted).toBe(false);
+    expect(emitted).toHaveLength(0);
+    expect(result.request).toMatchObject({ coordinateSpace: "displayPoint", dryRun: true, x: 50, y: 60 });
+  });
+
   it("uses the handoff cwd override for side session metadata, prompt context, and runtime cwd", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new RecordingRuntime();

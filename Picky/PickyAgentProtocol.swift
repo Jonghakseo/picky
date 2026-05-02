@@ -86,6 +86,7 @@ enum PickyEvent: Equatable {
     case extensionUiRequest(PickyExtensionUiRequest)
     case artifactUpdated(sessionId: String, artifact: PickyArtifact)
     case artifactOpened(sessionId: String, artifactId: String, path: String)
+    case pointerOverlayRequested(PickyPointerOverlayRequest)
     case error(PickyErrorEvent)
     case unknown(type: String)
 
@@ -120,6 +121,9 @@ enum PickyEvent: Equatable {
         case "artifactOpened":
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self = .artifactOpened(sessionId: try c.decode(String.self, forKey: .sessionId), artifactId: try c.decode(String.self, forKey: .artifactId), path: try c.decode(String.self, forKey: .path))
+        case "pointerOverlayRequested":
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self = .pointerOverlayRequested(try c.decode(PickyPointerOverlayRequest.self, forKey: .request))
         case "error": self = .error(try PickyErrorEvent(from: decoder))
         default: self = .unknown(type: type)
         }

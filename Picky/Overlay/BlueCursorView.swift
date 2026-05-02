@@ -591,8 +591,9 @@ struct BlueCursorView: View {
             ?? "right here!"
 
         streamNavigationBubbleCharacter(phrase: pointerPhrase, characterIndex: 0) {
-            // All characters streamed — hold for 3 seconds, then fly back
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            // All characters streamed — hold for the request duration, then fly back.
+            let holdDuration = self.companionManager.detectedElementDisplayDuration ?? PickyPointerOverlayResolver.defaultDuration
+            DispatchQueue.main.asyncAfter(deadline: .now() + holdDuration) {
                 guard self.buddyNavigationMode == .pointingAtTarget else { return }
                 self.navigationBubbleOpacity = 0.0
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {

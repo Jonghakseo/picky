@@ -6,6 +6,7 @@ import { MockRuntime } from "./runtime/mock-runtime.js";
 import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyHandoffTool, createPickySideFollowUpTool, createPickySideSessionsTool } from "./application/handoff-tool.js";
+import { createPickyShowPointerTool } from "./application/pointer-tool.js";
 import { removeConnectionInfo, writeConnectionInfo } from "./connection-info-store.js";
 import { PROTOCOL_VERSION } from "./protocol.js";
 import { logAgentd } from "./local-log.js";
@@ -22,13 +23,15 @@ if (!token) {
 
 const useMockRuntime = process.env.PICKY_AGENTD_RUNTIME === "mock";
 logAgentd("startup", { port, runtime: useMockRuntime ? "mock" : "pi", appSupportDir, defaultCwd });
-const runtime = useMockRuntime ? new MockRuntime() : new PiSdkRuntime();
 let supervisor: SessionSupervisor;
+const pointerTool = createPickyShowPointerTool(async (request) => supervisor.requestPointerOverlay(request));
+const runtime = useMockRuntime ? new MockRuntime() : new PiSdkRuntime({ customTools: [pointerTool] });
 const mainRuntime = useMockRuntime
   ? undefined
   : new PiSdkRuntime({
       thinkingLevel: "medium",
       customTools: [
+        pointerTool,
         createPickyHandoffTool(async (request) => {
           const context = supervisor.currentMainContext();
           if (!context) throw new Error("No active Picky main-agent context to hand off.");

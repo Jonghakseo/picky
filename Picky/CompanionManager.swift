@@ -128,6 +128,8 @@ final class CompanionManager: ObservableObject {
     /// Custom speech bubble text for the pointing animation. When set,
     /// BlueCursorView uses this instead of a random pointer phrase.
     @Published var detectedElementBubbleText: String?
+    /// How long the buddy should keep the pointer bubble visible after arriving.
+    @Published var detectedElementDisplayDuration: TimeInterval?
 
     let buddyDictationManager = BuddyDictationManager()
     let globalPushToTalkShortcutMonitor = GlobalPushToTalkShortcutMonitor()
@@ -234,6 +236,8 @@ final class CompanionManager: ObservableObject {
         detectedElementScreenLocation = nil
         detectedElementDisplayFrame = nil
         detectedElementBubbleText = nil
+        detectedElementDisplayDuration = nil
+        scheduleTransientHideIfNeeded()
     }
 
     func stop() {
@@ -629,10 +633,30 @@ final class CompanionManager: ObservableObject {
             latestAgentSessionSummary = request.prompt ?? request.title ?? "Agent is waiting for input"
         case .quickReply(let reply):
             finishAwaitingAgentResponse(visibleText: reply.text, spokenText: reply.text, enforceMinimumProcessingDuration: true)
+        case .pointerOverlayRequested(let request):
+            applyPointerOverlayRequest(request)
         case .error(let error):
             finishAwaitingAgentResponse(visibleText: error.message, spokenText: nil)
         case .hello, .sessionSnapshot, .artifactUpdated, .artifactOpened, .unknown:
             break
+        }
+    }
+
+    private func applyPointerOverlayRequest(_ request: PickyPointerOverlayRequest) {
+        do {
+            let target = try PickyPointerOverlayResolver.resolve(request)
+            detectedElementDisplayFrame = target.displayFrame
+            detectedElementBubbleText = target.bubbleText
+            detectedElementDisplayDuration = target.duration
+            detectedElementScreenLocation = target.screenLocation
+            latestAgentSessionSummary = target.bubbleText.map { "가리키는 중: \($0)" } ?? "화면 위치를 가리키는 중…"
+
+            if !overlayWindowManager.isShowingOverlay(), ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+                overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
+                isOverlayVisible = true
+            }
+        } catch {
+            latestAgentSessionSummary = "Pointer overlay ignored: \(error.localizedDescription)"
         }
     }
 

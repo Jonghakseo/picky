@@ -40,7 +40,10 @@ struct PickyAppSupportScreenshotStore: PickyScreenshotStoring {
             label: screen.label,
             path: fileURL.path,
             screenId: "screen\(index + 1)",
-            bounds: screen.frame
+            bounds: screen.frame,
+            screenshotWidthInPixels: screen.screenshotWidthInPixels,
+            screenshotHeightInPixels: screen.screenshotHeightInPixels,
+            isCursorScreen: screen.isCursorScreen
         )
     }
 }

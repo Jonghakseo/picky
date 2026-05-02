@@ -47,6 +47,35 @@ struct PickyScreenshotContext: Codable, Equatable, Identifiable {
     let path: String
     let screenId: String?
     let bounds: PickyCGRect?
+    /// Width of the stored screenshot image in pixels. Used by visual-only
+    /// pointer overlays to convert screenshot pixels into display points.
+    let screenshotWidthInPixels: Int?
+    /// Height of the stored screenshot image in pixels. Used by visual-only
+    /// pointer overlays to convert screenshot pixels into display points.
+    let screenshotHeightInPixels: Int?
+    /// True when this screenshot was captured from the display containing the
+    /// physical cursor / primary focus at capture time.
+    let isCursorScreen: Bool?
+
+    init(
+        id: String,
+        label: String,
+        path: String,
+        screenId: String?,
+        bounds: PickyCGRect?,
+        screenshotWidthInPixels: Int? = nil,
+        screenshotHeightInPixels: Int? = nil,
+        isCursorScreen: Bool? = nil
+    ) {
+        self.id = id
+        self.label = label
+        self.path = path
+        self.screenId = screenId
+        self.bounds = bounds
+        self.screenshotWidthInPixels = screenshotWidthInPixels
+        self.screenshotHeightInPixels = screenshotHeightInPixels
+        self.isCursorScreen = isCursorScreen
+    }
 }
 
 struct PickyScreenContext: Equatable {

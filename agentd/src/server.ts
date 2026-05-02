@@ -37,6 +37,7 @@ export class AgentdServer {
     this.options.supervisor.on("log", (sessionId, line) => this.broadcast({ type: "sessionLogAppended", sessionId, line }));
     this.options.supervisor.on("extensionUiRequest", (request) => this.broadcast({ type: "extensionUiRequest", request }));
     this.options.supervisor.on("quickReply", (contextId, text) => this.broadcast({ type: "quickReply", contextId, text }));
+    this.options.supervisor.on("pointerOverlayRequested", (request) => this.broadcast({ type: "pointerOverlayRequested", request }));
     this.options.supervisor.on("artifact", (sessionId, artifact) => this.broadcast({ type: "artifactUpdated", sessionId, artifact }));
 
     await new Promise<void>((resolve) => this.httpServer!.listen(this.options.port, "127.0.0.1", resolve));
@@ -148,6 +149,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, artifactId: event.artifact.id, kind: event.artifact.kind };
     case "artifactOpened":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, artifactId: event.artifactId };
+    case "pointerOverlayRequested":
+      return { eventId: event.id, type: event.type, requestId: event.request.id, screenId: event.request.screenId, screenIndex: event.request.screenIndex };
     case "error":
       return { eventId: event.id, type: event.type, commandId: event.commandId, code: event.code };
   }

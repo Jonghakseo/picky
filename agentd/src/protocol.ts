@@ -16,14 +16,17 @@ export const SessionStatusSchema = z.enum([
 
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 
+const BoundsSchema = z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() });
+
 export const ScreenshotSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
   path: z.string().min(1),
   screenId: z.string().optional(),
-  bounds: z
-    .object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() })
-    .optional(),
+  bounds: BoundsSchema.optional(),
+  screenshotWidthInPixels: z.number().int().positive().optional(),
+  screenshotHeightInPixels: z.number().int().positive().optional(),
+  isCursorScreen: z.boolean().optional(),
 });
 
 export const BrowserMetadataSchema = z.object({
@@ -105,6 +108,27 @@ export const PickyAgentSessionSchema = z.object({
 
 export type PickyAgentSession = z.infer<typeof PickyAgentSessionSchema>;
 
+export const PointerCoordinateSpaceSchema = z.enum(["screenshotPixel", "displayPoint"]);
+export type PointerCoordinateSpace = z.infer<typeof PointerCoordinateSpaceSchema>;
+export const PickyPointerOverlayRequestSchema = z.object({
+  id: z.string().min(1),
+  contextId: z.string().optional(),
+  sourceSessionId: z.string().optional(),
+  screenId: z.string().optional(),
+  screenIndex: z.number().int().min(1).optional(),
+  x: z.number().finite(),
+  y: z.number().finite(),
+  coordinateSpace: PointerCoordinateSpaceSchema,
+  label: z.string().optional(),
+  durationMs: z.number().int().min(250).max(10_000).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  dryRun: z.boolean().optional(),
+  clamped: z.boolean().optional(),
+  screenBounds: BoundsSchema,
+  screenshotSize: z.object({ width: z.number().positive(), height: z.number().positive() }).optional(),
+});
+export type PickyPointerOverlayRequest = z.infer<typeof PickyPointerOverlayRequestSchema>;
+
 const CommandBaseSchema = z.object({ id: z.string(), protocolVersion: z.literal(PROTOCOL_VERSION) });
 export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("routeTask"), context: PickyContextPacketSchema }),
@@ -133,6 +157,7 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("extensionUiRequest"), request: PickyExtensionUiRequestSchema }),
   EventBaseSchema.extend({ type: z.literal("artifactUpdated"), sessionId: z.string(), artifact: PickyArtifactSchema }),
   EventBaseSchema.extend({ type: z.literal("artifactOpened"), sessionId: z.string(), artifactId: z.string(), path: z.string() }),
+  EventBaseSchema.extend({ type: z.literal("pointerOverlayRequested"), request: PickyPointerOverlayRequestSchema }),
   EventBaseSchema.extend({ type: z.literal("error"), code: z.string(), message: z.string(), commandId: z.string().optional() }),
 ]);
 

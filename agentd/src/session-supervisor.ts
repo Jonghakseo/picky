@@ -5,6 +5,7 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
 import type { PickyAgentSession, PickyContextPacket } from "./protocol.js";
+import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
 import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./runtime/types.js";
@@ -34,6 +35,7 @@ export class SessionSupervisor extends EventEmitter {
   private suppressInterruptedMainCompletion = false;
   private sideSessionIds = new Set<string>();
   private sideCompletionNotified = new Set<string>();
+  private sessionContexts = new Map<string, PickyContextPacket>();
 
   constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, artifactStore?: ArtifactStore, private readonly options: SessionSupervisorOptions = {}) {
     super();
@@ -94,6 +96,41 @@ export class SessionSupervisor extends EventEmitter {
 
   currentMainContext(): PickyContextPacket | undefined {
     return this.mainContext;
+  }
+
+  async requestPointerOverlay(request: PickyShowPointerRequest): Promise<PickyShowPointerResult> {
+    const context = this.contextForPointerRequest(request);
+    if (!context) throw new Error("No captured Picky context is available for pointer overlay validation.");
+    const { screenshot, index } = selectScreenshot(context, request);
+    if (!screenshot.bounds) throw new Error(`No display bounds are available for ${screenshot.screenId ?? screenshot.id}.`);
+    const coordinateSpace = request.coordinateSpace ?? "screenshotPixel";
+    const screenshotSize = screenshot.screenshotWidthInPixels && screenshot.screenshotHeightInPixels
+      ? { width: screenshot.screenshotWidthInPixels, height: screenshot.screenshotHeightInPixels }
+      : undefined;
+    if (coordinateSpace === "screenshotPixel" && !screenshotSize) {
+      throw new Error(`Screenshot pixel coordinates require screenshot dimensions for ${screenshot.screenId ?? screenshot.id}.`);
+    }
+
+    const bounded = clampPointerCoordinates(request, coordinateSpace, screenshot.bounds, screenshotSize);
+    const overlayRequest = {
+      ...makePointerOverlayRequest({ ...request, ...bounded, coordinateSpace }, {
+        contextId: context.id,
+        screenId: screenshot.screenId,
+        screenIndex: index + 1,
+        screenBounds: screenshot.bounds,
+        screenshotSize,
+      }),
+      ...(bounded.clamped ? { clamped: true } : {}),
+    };
+    const emitted = overlayRequest.dryRun !== true;
+    if (emitted) this.emit("pointerOverlayRequested", overlayRequest);
+    return { request: overlayRequest, emitted };
+  }
+
+  private contextForPointerRequest(request: PickyShowPointerRequest): PickyContextPacket | undefined {
+    const sourceSessionId = request.sourceSessionId?.trim();
+    if (sourceSessionId) return this.sessionContexts.get(sourceSessionId) ?? this.mainContext;
+    return this.mainContext ?? [...this.sessionContexts.values()].at(-1);
   }
 
   async prewarmMainAgent(cwd = process.cwd()): Promise<void> {
@@ -180,11 +217,12 @@ export class SessionSupervisor extends EventEmitter {
       artifacts: [],
       changedFiles: [],
     };
+    this.sessionContexts.set(id, context);
     await this.upsert(session);
     logAgentd("session queued", { sessionId: id, titleChars: title.length, cwd: context.cwd });
     try {
       this.runtimeEventHandler.resetAssistantDraft(id);
-      const handle = await this.runtime.create(prompt, { cwd: context.cwd, sessionId: id });
+      const handle = await this.runtime.create(withPointerToolSessionHint(prompt, id), { cwd: context.cwd, sessionId: id });
       this.runtimeHandles.set(id, handle);
       logAgentd("runtime attached", { sessionId: id });
       handle.subscribe((event) => void this.applyRuntimeEvent(id, event));
@@ -464,6 +502,57 @@ export class SessionSupervisor extends EventEmitter {
     if (!session) throw new Error(`Unknown session: ${sessionId}`);
     return session;
   }
+}
+
+type ScreenshotContext = PickyContextPacket["screenshots"][number];
+
+function selectScreenshot(context: PickyContextPacket, request: PickyShowPointerRequest): { screenshot: ScreenshotContext; index: number } {
+  if (context.screenshots.length === 0) throw new Error("No screenshots are available for pointer overlay validation.");
+  const requestedScreenId = request.screenId?.trim();
+  if (requestedScreenId) {
+    const index = context.screenshots.findIndex((screenshot) => screenshot.screenId === requestedScreenId || screenshot.id === requestedScreenId);
+    if (index < 0) throw new Error(`Unknown pointer overlay screenId: ${requestedScreenId}`);
+    return { screenshot: context.screenshots[index]!, index };
+  }
+  if (Number.isFinite(request.screenIndex)) {
+    const index = Math.max(1, Math.floor(request.screenIndex!)) - 1;
+    const screenshot = context.screenshots[index];
+    if (!screenshot) throw new Error(`Unknown pointer overlay screenIndex: ${request.screenIndex}`);
+    return { screenshot, index };
+  }
+  const cursorIndex = context.screenshots.findIndex((screenshot) => screenshot.isCursorScreen === true || /cursor|primary|focus/i.test(screenshot.label));
+  const index = cursorIndex >= 0 ? cursorIndex : 0;
+  return { screenshot: context.screenshots[index]!, index };
+}
+
+function clampPointerCoordinates(
+  request: PickyShowPointerRequest,
+  coordinateSpace: "screenshotPixel" | "displayPoint",
+  bounds: { width: number; height: number },
+  screenshotSize: { width: number; height: number } | undefined,
+): { x: number; y: number; clamped?: boolean } {
+  const width = coordinateSpace === "screenshotPixel" ? screenshotSize!.width : bounds.width;
+  const height = coordinateSpace === "screenshotPixel" ? screenshotSize!.height : bounds.height;
+  const x = clamp(request.x, 0, width);
+  const y = clamp(request.y, 0, height);
+  return { x, y, clamped: x !== request.x || y !== request.y ? true : undefined };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function withPointerToolSessionHint(prompt: ReturnType<typeof buildInitialTaskPrompt>, sessionId: string): ReturnType<typeof buildInitialTaskPrompt> {
+  return {
+    ...prompt,
+    text: [
+      prompt.text,
+      "",
+      "## Picky visual pointer overlay",
+      "- Tool available: `picky_show_pointer` shows a click-through visual overlay only; it never moves/clicks/drags/types with the real OS cursor.",
+      `- If you call it from this side/visible session, pass sourceSessionId: ${sessionId} so Picky validates coordinates against this session's captured screenshots.`,
+    ].join("\n"),
+  };
 }
 
 function normalizeOptionalString(value: string | undefined): string | undefined {

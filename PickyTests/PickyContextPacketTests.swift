@@ -65,6 +65,9 @@ struct PickyContextPacketTests {
         #expect(packet.browser?.url?.absoluteString == "https://example.com/issue/123")
         #expect(packet.screenshots.first?.label == "primary focus")
         #expect(packet.screenshots.first?.path.hasPrefix(appSupport.path) == true)
+        #expect(packet.screenshots.first?.screenshotWidthInPixels == 3024)
+        #expect(packet.screenshots.first?.screenshotHeightInPixels == 1964)
+        #expect(packet.screenshots.first?.isCursorScreen == true)
         #expect(FileManager.default.fileExists(atPath: packet.screenshots.first?.path ?? ""))
         #expect(packet.cwd == "/Users/test/project")
     }

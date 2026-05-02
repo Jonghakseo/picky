@@ -498,6 +498,38 @@ struct PickySessionViewModelTests {
         #expect(emulator.renderedText().contains("hello"))
     }
 
+    @Test func terminalEmulatorStripsOscSequences() throws {
+        var emulator = PickyTerminalEmulator(columns: 80, rows: 10)
+
+        emulator.feed(Data("hello \u{1B}]8;;https://example.com\u{7}link\u{1B}]8;;\u{7} world".utf8))
+
+        let rendered = emulator.renderedText()
+        #expect(rendered.contains("hello link world"))
+        #expect(!rendered.contains("8;;"))
+        #expect(!rendered.contains("https://example.com"))
+    }
+
+    @Test func terminalEmulatorStripsOscSequencesAcrossChunks() throws {
+        var emulator = PickyTerminalEmulator(columns: 80, rows: 10)
+
+        emulator.feed(Data("before \u{1B}]0;".utf8))
+        emulator.feed(Data("ignored title\u{1B}\\ after".utf8))
+
+        let rendered = emulator.renderedText()
+        #expect(rendered.contains("before  after"))
+        #expect(!rendered.contains("ignored title"))
+    }
+
+    @Test func terminalEmulatorReplacesPrivateUseGlyphs() throws {
+        var emulator = PickyTerminalEmulator(columns: 80, rows: 10)
+
+        emulator.feed(Data("repo \u{E0A0} main".utf8))
+
+        let rendered = emulator.renderedText()
+        #expect(rendered.contains("repo   main"))
+        #expect(!rendered.contains("\u{E0A0}"))
+    }
+
     @MainActor
     @Test func terminalScrollViewGivesTextViewVisibleWidth() throws {
         let scrollView = PickyTerminalScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 320))

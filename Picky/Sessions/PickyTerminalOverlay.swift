@@ -616,6 +616,8 @@ struct PickyTerminalEmulator {
         case normal
         case escape
         case csi(String)
+        case osc
+        case oscEscape
     }
 
     private let columns: Int
@@ -654,6 +656,10 @@ struct PickyTerminalEmulator {
             processEscape(scalar)
         case .csi(let sequence):
             processCSI(sequence: sequence, scalar: scalar)
+        case .osc:
+            processOSC(scalar)
+        case .oscEscape:
+            processOSCEscape(scalar)
         }
     }
 
@@ -672,7 +678,11 @@ struct PickyTerminalEmulator {
             while cursorColumn < nextTab { put(" ") }
         default:
             guard !CharacterSet.controlCharacters.contains(scalar) else { return }
-            put(Character(scalar))
+            if isUnsupportedTerminalGlyph(scalar) {
+                put(" ")
+            } else {
+                put(Character(scalar))
+            }
         }
     }
 
@@ -680,6 +690,8 @@ struct PickyTerminalEmulator {
         switch scalar {
         case "[":
             state = .csi("")
+        case "]":
+            state = .osc
         case "c":
             clearAll()
             state = .normal
@@ -694,6 +706,27 @@ struct PickyTerminalEmulator {
             state = .normal
         default:
             state = .normal
+        }
+    }
+
+    private mutating func processOSC(_ scalar: UnicodeScalar) {
+        switch scalar.value {
+        case 0x07:
+            state = .normal
+        case 0x1B:
+            state = .oscEscape
+        default:
+            break
+        }
+    }
+
+    private mutating func processOSCEscape(_ scalar: UnicodeScalar) {
+        if scalar == "\\" {
+            state = .normal
+        } else if scalar.value == 0x07 {
+            state = .normal
+        } else {
+            state = .osc
         }
     }
 
@@ -747,6 +780,18 @@ struct PickyTerminalEmulator {
             clearAll()
         default:
             break
+        }
+    }
+
+    private func isUnsupportedTerminalGlyph(_ scalar: UnicodeScalar) -> Bool {
+        switch scalar.value {
+        case 0xE000...0xF8FF,
+             0xF0000...0xFFFFD,
+             0x100000...0x10FFFD,
+             0xFFFD:
+            return true
+        default:
+            return false
         }
     }
 

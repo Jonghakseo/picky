@@ -36,6 +36,15 @@ enum PickyHUDExpansion {
 enum PickyHUDExpandedContentPolicy {
     static let showsRecentLog = false
     static let summaryLineLimit: Int? = nil
+
+    static func showsSummary(for status: PickySessionStatus) -> Bool {
+        switch status {
+        case .queued, .running, .waiting_for_input:
+            return false
+        case .blocked, .completed, .failed, .cancelled:
+            return true
+        }
+    }
 }
 
 final class PickyHUDPanel: NSPanel {
@@ -307,7 +316,7 @@ private struct PickySessionCardView: View {
                 PickyPendingInputView(request: pending, viewModel: viewModel)
             }
 
-            if !session.lastSummary.isEmpty {
+            if PickyHUDExpandedContentPolicy.showsSummary(for: session.status), !session.lastSummary.isEmpty {
                 detailSection(
                     title: "Summary",
                     text: session.lastSummary,

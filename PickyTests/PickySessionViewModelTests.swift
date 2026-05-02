@@ -185,6 +185,13 @@ struct PickySessionViewModelTests {
     @Test func hudExpandedContentShowsFullSummaryAndHidesRecentLog() throws {
         #expect(PickyHUDExpandedContentPolicy.summaryLineLimit == nil)
         #expect(!PickyHUDExpandedContentPolicy.showsRecentLog)
+        #expect(!PickyHUDExpandedContentPolicy.showsSummary(for: .queued))
+        #expect(!PickyHUDExpandedContentPolicy.showsSummary(for: .running))
+        #expect(!PickyHUDExpandedContentPolicy.showsSummary(for: .waiting_for_input))
+        #expect(PickyHUDExpandedContentPolicy.showsSummary(for: .blocked))
+        #expect(PickyHUDExpandedContentPolicy.showsSummary(for: .completed))
+        #expect(PickyHUDExpandedContentPolicy.showsSummary(for: .failed))
+        #expect(PickyHUDExpandedContentPolicy.showsSummary(for: .cancelled))
     }
 
     @Test func hudPanelCanBecomeKeyForFollowUpTextInput() throws {

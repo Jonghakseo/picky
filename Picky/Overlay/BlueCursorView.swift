@@ -68,6 +68,7 @@ struct BlueCursorView: View {
     }
     @State private var timer: Timer?
     @State private var responseBubbleSize: CGSize = .zero
+    @State private var voicePromptBubbleSize: CGSize = .zero
     @State private var cursorOpacity: Double = 1.0
 
     // MARK: - Buddy Navigation State
@@ -114,6 +115,33 @@ struct BlueCursorView: View {
         ZStack {
             // Nearly transparent background (helps with compositing)
             Color.black.opacity(0.001)
+
+            // Voice prompt bubble — once the push-to-talk button is released,
+            // keep the recognized user prompt visible while Picky is preparing
+            // and waiting for the main agent response.
+            if isCursorOnThisScreen,
+               companionManager.voiceState == .processing {
+                let bubbleText = voicePromptBubbleText
+                let textWidth = PickyBubbleLayout.textWidth(
+                    for: bubbleText,
+                    font: .systemFont(ofSize: 11, weight: .medium),
+                    maxWidth: 282
+                )
+                VoicePromptCursorBubbleView(text: bubbleText, textWidth: textWidth)
+                    .overlay(
+                        GeometryReader { geo in
+                            Color.clear
+                                .preference(key: VoicePromptBubbleSizePreferenceKey.self, value: geo.size)
+                        }
+                    )
+                    .position(x: cursorPosition.x + 12 + (voicePromptBubbleSize.width / 2), y: cursorPosition.y + 20 + (voicePromptBubbleSize.height / 2))
+                    .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
+                    .animation(.easeOut(duration: 0.2), value: companionManager.voiceState)
+                    .animation(.easeOut(duration: 0.16), value: companionManager.currentVoicePromptPreview)
+                    .onPreferenceChange(VoicePromptBubbleSizePreferenceKey.self) { newSize in
+                        voicePromptBubbleSize = newSize
+                    }
+            }
 
             // Short voice response bubble — mirrors quick TTS replies next to the cursor
             // so simple checks do not require opening the long-running agent HUD.
@@ -281,6 +309,12 @@ struct BlueCursorView: View {
         case .navigatingToTarget, .pointingAtTarget:
             return true
         }
+    }
+
+    private var voicePromptBubbleText: String {
+        let prompt = companionManager.currentVoicePromptPreview?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return prompt.isEmpty ? "음성 인식 중…" : prompt
     }
 
     // MARK: - Cursor Tracking
@@ -533,6 +567,61 @@ struct BlueCursorView: View {
 
 }
 
+
+// MARK: - Voice Prompt Bubble
+
+private struct VoicePromptCursorBubbleView: View {
+    let text: String
+    let textWidth: CGFloat
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 7) {
+            VoicePromptLoadingIndicatorView()
+                .padding(.top, 1)
+
+            Text(text)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(Color.black.opacity(0.82))
+                .multilineTextAlignment(.leading)
+                .frame(width: textWidth, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(4)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(DS.Colors.warning)
+                .shadow(color: DS.Colors.warning.opacity(0.45), radius: 8, x: 0, y: 0)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.white.opacity(0.24), lineWidth: 0.6)
+        )
+    }
+}
+
+private struct VoicePromptLoadingIndicatorView: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+            Circle()
+                .trim(from: 0.18, to: 0.82)
+                .stroke(
+                    AngularGradient(
+                        colors: [
+                            Color.black.opacity(0.0),
+                            Color.black.opacity(0.74)
+                        ],
+                        center: .center
+                    ),
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                )
+                .frame(width: 12, height: 12)
+                .rotationEffect(.degrees(context.date.timeIntervalSinceReferenceDate * 420))
+        }
+        .frame(width: 12, height: 12)
+    }
+}
 
 // MARK: - Blue Cursor Waveform
 

@@ -127,6 +127,24 @@ struct PickyCompanionManagerTests {
         #expect(manager.latestAgentSessionSummary == "응답 준비 중…")
     }
 
+    @Test func recognizedVoicePromptStaysVisibleUntilSpokenResponseStarts() async throws {
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "  설정 열어줘  ")
+
+        #expect(manager.voiceState == .processing)
+        #expect(manager.currentVoicePromptPreview == "설정 열어줘")
+
+        manager.handleAgentSubmissionAccepted(
+            receipt: PickyAgentSubmissionReceipt(sessionID: "created-session", message: "열어볼게요."),
+            source: "voice"
+        )
+
+        #expect(manager.currentVoicePromptPreview == nil)
+        #expect(manager.latestAgentSessionSummary == "열어볼게요.")
+        #expect(manager.voiceState == .responding)
+    }
+
     @Test func progressEventsDoNotOverwriteVisibleCursorResponse() async throws {
         let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
         manager.handleAgentSubmissionAccepted(

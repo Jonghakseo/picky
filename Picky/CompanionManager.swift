@@ -36,6 +36,7 @@ private final class PickySpeechSynthesizerDelegate: NSObject, NSSpeechSynthesize
 final class CompanionManager: ObservableObject {
     @Published private(set) var voiceState: CompanionVoiceState = .idle
     @Published private(set) var lastTranscript: String?
+    @Published private(set) var currentVoicePromptPreview: String?
     @Published private(set) var latestAgentSessionSummary: String?
     @Published private(set) var currentAudioPowerLevel: CGFloat = 0
     @Published private(set) var hasAccessibilityPermission = false
@@ -168,6 +169,7 @@ final class CompanionManager: ObservableObject {
         speechSynthesizer = nil
         speechSynthesizerDelegate = nil
         pendingAgentResponseStartedAt = nil
+        currentVoicePromptPreview = nil
         agentEventTask?.cancel()
         agentEventTask = nil
         agentClient.disconnect()
@@ -366,6 +368,7 @@ final class CompanionManager: ObservableObject {
         case .pressed:
             guard !buddyDictationManager.isDictationInProgress else { return }
             interruptSpokenResponseForVoiceInput()
+            currentVoicePromptPreview = nil
             voiceFollowUpSessionIDForCurrentUtterance = selectionStore.activeVoiceFollowUpSessionID ?? selectionStore.hoveredVoiceFollowUpSessionID
 
             // Cancel any pending transient hide so the overlay stays visible
@@ -424,10 +427,9 @@ final class CompanionManager: ObservableObject {
     /// pipeline.
     private func submitTranscriptToPickyAgent(transcript: String) {
         currentResponseTask?.cancel()
+        beginAwaitingAgentResponse(recognizedTranscript: transcript)
 
         currentResponseTask = Task {
-            beginAwaitingAgentResponse()
-
             do {
                 let voiceFollowUpSessionID = voiceFollowUpSessionIDForCurrentUtterance
                 guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
@@ -556,8 +558,10 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    func beginAwaitingAgentResponse() {
+    func beginAwaitingAgentResponse(recognizedTranscript: String? = nil) {
         stopCurrentSpeech()
+        let trimmedTranscript = recognizedTranscript?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        currentVoicePromptPreview = trimmedTranscript.isEmpty ? nil : trimmedTranscript
         pendingAgentResponseStartedAt = Date()
         latestAgentSessionSummary = "응답 준비 중…"
         voiceState = .processing
@@ -568,6 +572,7 @@ final class CompanionManager: ObservableObject {
         responseStateTask = nil
         pendingAgentResponseStartedAt = nil
         latestAgentSessionSummary = visibleText
+        currentVoicePromptPreview = nil
         let textToSpeak = spokenText?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let textToSpeak, !textToSpeak.isEmpty else {
             voiceState = .idle

@@ -215,6 +215,30 @@ struct PickyCompanionManagerTests {
         #expect(manager.latestAgentSessionSummary == "말하는 중")
     }
 
+    @Test func voiceInputSuppressesQuickReplySpeechWithoutQueueing() async throws {
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+
+        manager.interruptSpokenResponseForVoiceInput()
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(contextId: "context-voice", text: "입력 중 도착한 응답")))
+
+        #expect(manager.latestAgentSessionSummary == "입력 중 도착한 응답")
+        #expect(manager.voiceState != .responding)
+    }
+
+    @Test func completedVoiceInputAllowsCurrentResponseSpeech() async throws {
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+
+        manager.interruptSpokenResponseForVoiceInput()
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "새 질문")
+        manager.handleAgentSubmissionAccepted(
+            receipt: PickyAgentSubmissionReceipt(sessionID: "created-session", message: "새 답변"),
+            source: "voice"
+        )
+
+        #expect(manager.latestAgentSessionSummary == "새 답변")
+        #expect(manager.voiceState == .responding)
+    }
+
     private func context(source: String) -> PickyContextPacket {
         PickyContextPacket(
             id: "context-voice",

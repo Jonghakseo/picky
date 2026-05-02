@@ -151,6 +151,13 @@ final class CompanionManager: ObservableObject {
     private var speechSynthesizer: NSSpeechSynthesizer?
     private var speechSynthesizerDelegate: PickySpeechSynthesizerDelegate?
     private var activeSpeechID: UUID?
+    /// Tracks the physical push-to-talk hold separately from dictation state so
+    /// audio stays suppressed even if recording fails before the key is released.
+    private var isPushToTalkShortcutHeld = false
+    /// Suppresses local spoken audio while the user is starting, holding,
+    /// or finalizing voice input. Responses arriving in this window update
+    /// visible UI only and are not queued for delayed playback.
+    private var isVoiceInputAudioSuppressionActive = false
     private var pendingAgentResponseStartedAt: Date?
     private var voiceFollowUpSessionIDForCurrentUtterance: String?
 
@@ -391,6 +398,8 @@ final class CompanionManager: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isKeyboardRecording, isMicrophoneRecording, isFinalizing, isPreparing in
                 guard let self else { return }
+                let isVoiceInputActive = isKeyboardRecording || isMicrophoneRecording || isFinalizing || isPreparing
+                self.updateVoiceInputAudioSuppression(isVoiceInputActive: isVoiceInputActive)
                 let presentation = CompanionVoicePresentationReducer.reduce(
                     currentVoiceState: self.voiceState,
                     isKeyboardRecording: isKeyboardRecording,
@@ -427,6 +436,7 @@ final class CompanionManager: ObservableObject {
     private func handleShortcutTransition(_ transition: BuddyPushToTalkShortcut.ShortcutTransition) {
         switch transition {
         case .pressed:
+            isPushToTalkShortcutHeld = true
             guard !buddyDictationManager.isDictationInProgress else { return }
             interruptSpokenResponseForVoiceInput()
             pendingAgentResponseStartedAt = nil
@@ -469,6 +479,7 @@ final class CompanionManager: ObservableObject {
                 )
             }
         case .released:
+            isPushToTalkShortcutHeld = false
             // Cancel the pending start task in case the user released the shortcut
             // before the async startPushToTalk had a chance to begin recording.
             // Without this, a quick press-and-release drops the release event and
@@ -477,6 +488,9 @@ final class CompanionManager: ObservableObject {
             pendingKeyboardShortcutStartTask?.cancel()
             pendingKeyboardShortcutStartTask = nil
             buddyDictationManager.stopPushToTalkFromKeyboardShortcut()
+            if !buddyDictationManager.isDictationInProgress {
+                updateVoiceInputAudioSuppression(isVoiceInputActive: false)
+            }
         case .none:
             break
         }
@@ -614,14 +628,31 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    func interruptSpokenResponseForVoiceInput() {
+    private var shouldSuppressSpokenAudioForVoiceInput: Bool {
+        isPushToTalkShortcutHeld || isVoiceInputAudioSuppressionActive || buddyDictationManager.isDictationInProgress
+    }
+
+    private func updateVoiceInputAudioSuppression(isVoiceInputActive: Bool) {
+        guard isVoiceInputActive else {
+            isVoiceInputAudioSuppressionActive = false
+            return
+        }
+
+        isVoiceInputAudioSuppressionActive = true
         stopCurrentSpeech()
         if voiceState == .responding {
             voiceState = .idle
         }
     }
 
+    func interruptSpokenResponseForVoiceInput() {
+        updateVoiceInputAudioSuppression(isVoiceInputActive: true)
+    }
+
     func beginAwaitingAgentResponse(recognizedTranscript: String? = nil) {
+        if !buddyDictationManager.isDictationInProgress {
+            updateVoiceInputAudioSuppression(isVoiceInputActive: false)
+        }
         stopCurrentSpeech()
         let trimmedTranscript = recognizedTranscript?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         currentVoicePromptPreview = trimmedTranscript.isEmpty ? nil : trimmedTranscript
@@ -640,8 +671,14 @@ final class CompanionManager: ObservableObject {
         voicePromptBubbleState = .hidden
         let textToSpeak = spokenText?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let textToSpeak, !textToSpeak.isEmpty else {
-            voiceState = .idle
-            scheduleTransientHideIfNeeded()
+            if !shouldSuppressSpokenAudioForVoiceInput {
+                voiceState = .idle
+                scheduleTransientHideIfNeeded()
+            }
+            return
+        }
+        guard !shouldSuppressSpokenAudioForVoiceInput else {
+            stopCurrentSpeech()
             return
         }
         speakSystemMessage(textToSpeak)
@@ -649,6 +686,10 @@ final class CompanionManager: ObservableObject {
 
     /// Speaks a short local status message through macOS system speech.
     private func speakSystemMessage(_ utterance: String) {
+        guard !shouldSuppressSpokenAudioForVoiceInput else {
+            stopCurrentSpeech()
+            return
+        }
         stopCurrentSpeech()
 
         let speechID = UUID()

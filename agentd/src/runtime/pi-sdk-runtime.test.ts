@@ -147,6 +147,29 @@ describe("PiSdkRuntime", () => {
     expect(fakeSession.prompts).toEqual([]);
   });
 
+  it("passes an explicit thinking level override to Pi session creation", async () => {
+    const fakeSession = new FakeSession();
+    const createSessionFromServices = vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } }));
+    const runtime = new PiSdkRuntime({
+      getAgentDir: () => "/tmp/.pi/agent",
+      thinkingLevel: "medium",
+      createServices: vi.fn(async () => ({ diagnostics: [] })) as never,
+      createSessionFromServices: createSessionFromServices as never,
+      createRuntime: vi.fn(async (factory, options) => {
+        const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
+        return {
+          session: result.session,
+          diagnostics: result.diagnostics,
+          setRebindSession: vi.fn(),
+        };
+      }) as never,
+    });
+
+    await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+
+    expect(createSessionFromServices).toHaveBeenCalledWith(expect.objectContaining({ thinkingLevel: "medium" }));
+  });
+
   it("gates real Pi integration behind PICKY_RUN_PI_INTEGRATION", async () => {
     if (process.env.PICKY_RUN_PI_INTEGRATION !== "1") return;
     const runtime = new PiSdkRuntime();

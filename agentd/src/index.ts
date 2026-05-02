@@ -27,6 +27,7 @@ let supervisor: SessionSupervisor;
 const mainRuntime = useMockRuntime
   ? undefined
   : new PiSdkRuntime({
+      thinkingLevel: "medium",
       customTools: [
         createPickyHandoffTool(async (request) => {
           const context = supervisor.currentMainContext();

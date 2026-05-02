@@ -18,6 +18,8 @@ import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./types.js";
 import { logAgentd } from "../local-log.js";
 
+type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
 export interface PiSdkRuntimeOptions {
   agentDir?: string;
   createRuntime?: typeof createAgentSessionRuntime;
@@ -26,6 +28,7 @@ export interface PiSdkRuntimeOptions {
   getAgentDir?: typeof getAgentDir;
   resourceLoaderOptions?: CreateAgentSessionServicesOptions["resourceLoaderOptions"];
   customTools?: ToolDefinition[];
+  thinkingLevel?: ThinkingLevel;
 }
 
 export class PiSdkRuntime implements AgentRuntime {
@@ -66,7 +69,7 @@ export class PiSdkRuntime implements AgentRuntime {
     const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd: runtimeCwd, sessionManager, sessionStartEvent }) => {
       const services = await createServices({ cwd: runtimeCwd, agentDir, resourceLoaderOptions: this.options.resourceLoaderOptions });
       return {
-        ...(await createSessionFromServices({ services, sessionManager, sessionStartEvent, customTools: this.options.customTools })),
+        ...(await createSessionFromServices({ services, sessionManager, sessionStartEvent, customTools: this.options.customTools, thinkingLevel: this.options.thinkingLevel })),
         services,
         diagnostics: services.diagnostics,
       };

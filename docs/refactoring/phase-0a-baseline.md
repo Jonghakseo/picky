@@ -28,13 +28,13 @@ git branch --show-current
 Result:
 
 ```text
-?? docs/REFACTORING.md
+?? refactoring planning draft
 main
 ```
 
 Notes:
 - Branch: `main`.
-- Working tree was not clean before this artifact was created: `docs/REFACTORING.md` was already untracked from the planning step.
+- Working tree was not clean before this artifact was created: a refactoring planning draft was already untracked from the planning step.
 - Phase 0A added only documentation artifacts; no production runtime files were edited.
 
 ## 0A-2 Toolchain versions
@@ -342,7 +342,7 @@ Phase 1 guardrails:
 Phase 0A is **READY** because required baselines are green and preflight maps are recorded.
 
 Remaining caution:
-- The baseline working tree already included untracked `docs/REFACTORING.md`; do not mix additional unrelated work into the first refactor PR.
+- The baseline working tree already included an untracked refactoring planning draft; do not mix additional unrelated work into the first refactor PR.
 - Xcode tests execute the test host app, so test logs can include app startup lines even though no manual app launch/restart was performed.
 
 ## References

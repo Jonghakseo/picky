@@ -337,14 +337,11 @@ private struct PickySessionCardView: View {
     }
 
     private var statusColor: Color {
-        switch session.status {
-        case .queued: DS.Colors.textTertiary
-        case .running: DS.Colors.accentText
-        case .waiting_for_input: DS.Colors.warning
-        case .blocked: DS.Colors.warningText
+        switch session.status.hudTone {
+        case .inProgress: DS.Colors.warning
+        case .error: DS.Colors.destructiveText
         case .completed: DS.Colors.success
-        case .failed: DS.Colors.destructiveText
-        case .cancelled: DS.Colors.textTertiary
+        case .other: DS.Colors.accentText
         }
     }
 }

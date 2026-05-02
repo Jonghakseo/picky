@@ -576,7 +576,27 @@ private extension Array where Element == PickySessionListViewModel.SessionCard {
     }
 }
 
+enum PickyHUDStatusTone: Equatable {
+    case inProgress
+    case error
+    case completed
+    case other
+}
+
 extension PickySessionStatus {
+    var hudTone: PickyHUDStatusTone {
+        switch self {
+        case .running:
+            return .inProgress
+        case .blocked, .failed:
+            return .error
+        case .completed:
+            return .completed
+        case .queued, .waiting_for_input, .cancelled:
+            return .other
+        }
+    }
+
     var isTerminal: Bool {
         switch self {
         case .completed, .failed, .cancelled: true

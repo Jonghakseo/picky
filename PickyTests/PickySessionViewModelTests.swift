@@ -153,6 +153,16 @@ struct PickySessionViewModelTests {
         #expect(notifications.delivered.filter { $0.identifier == "session-1:completed" }.count == 1)
     }
 
+    @Test func hudStatusToneMatchesSideAgentColorRules() throws {
+        #expect(PickySessionStatus.running.hudTone == .inProgress)
+        #expect(PickySessionStatus.blocked.hudTone == .error)
+        #expect(PickySessionStatus.failed.hudTone == .error)
+        #expect(PickySessionStatus.completed.hudTone == .completed)
+        #expect(PickySessionStatus.queued.hudTone == .other)
+        #expect(PickySessionStatus.waiting_for_input.hudTone == .other)
+        #expect(PickySessionStatus.cancelled.hudTone == .other)
+    }
+
     @Test func selectionDefaultsForHudButOnlyExplicitSelectionPersistsForVoiceFollowUp() async throws {
         let client = FakePickyAgentClient()
         let selection = FakeSelectionStore()

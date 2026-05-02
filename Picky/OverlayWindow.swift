@@ -92,6 +92,16 @@ struct ResponseBubbleSizePreferenceKey: PreferenceKey {
     }
 }
 
+enum PickyBubbleLayout {
+    static func textWidth(for text: String, font: NSFont, maxWidth: CGFloat) -> CGFloat {
+        let lines = text.components(separatedBy: .newlines)
+        let widestLine = lines.map { line in
+            NSAttributedString(string: line.isEmpty ? " " : line, attributes: [.font: font]).size().width
+        }.max() ?? 1
+        return ceil(min(max(widestLine, 1), maxWidth))
+    }
+}
+
 /// The buddy's behavioral mode. Controls whether it follows the cursor,
 /// is flying toward a detected UI element, or is pointing at an element.
 enum BuddyNavigationMode {
@@ -272,13 +282,19 @@ struct BlueCursorView: View {
                companionManager.voiceState == .responding,
                let responseText = companionManager.latestAgentSessionSummary,
                !responseText.isEmpty {
+                let textWidth = PickyBubbleLayout.textWidth(
+                    for: responseText,
+                    font: .systemFont(ofSize: 11, weight: .medium),
+                    maxWidth: 302
+                )
                 Text(responseText)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.white)
+                    .multilineTextAlignment(.leading)
+                    .frame(width: textWidth, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 6)
-                    .frame(maxWidth: 320, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(DS.Colors.overlayCursorBlue)

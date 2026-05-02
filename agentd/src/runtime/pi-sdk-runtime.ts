@@ -16,6 +16,7 @@ import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge } from "../extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../pi-event-normalizer.js";
 import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./types.js";
+import { logAgentd } from "../local-log.js";
 
 export interface PiSdkRuntimeOptions {
   agentDir?: string;
@@ -31,6 +32,7 @@ export class PiSdkRuntime implements AgentRuntime {
   constructor(private readonly options: PiSdkRuntimeOptions = {}) {}
 
   async create(prompt: BuiltPrompt, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
+    logAgentd("pi runtime create", { sessionId: options.sessionId, cwd: options.cwd, promptChars: prompt.text.length, images: prompt.imagePaths?.length ?? 0 });
     const handle = await this.createHandle(options);
     setTimeout(() => {
       handle.reportDiagnostics();
@@ -40,6 +42,7 @@ export class PiSdkRuntime implements AgentRuntime {
   }
 
   async prewarm(options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
+    logAgentd("pi runtime prewarm", { sessionId: options.sessionId, cwd: options.cwd });
     const handle = await this.createHandle(options);
     setTimeout(() => handle.reportDiagnostics(), 0);
     return handle;
@@ -85,6 +88,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   async prompt(prompt: BuiltPrompt): Promise<void> {
+    logAgentd("pi prompt", { sessionId: this.id, promptChars: prompt.text.length, images: prompt.imagePaths?.length ?? 0 });
     try {
       await this.runtime.session.prompt(prompt.text, { images: await imageOptions(prompt.imagePaths), source: "rpc" });
     } catch (error) {
@@ -93,6 +97,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   async followUp(prompt: BuiltPrompt): Promise<void> {
+    logAgentd("pi follow-up", { sessionId: this.id, promptChars: prompt.text.length, images: prompt.imagePaths?.length ?? 0 });
     try {
       await this.promptWithOptions(prompt, "followUp");
     } catch (error) {
@@ -102,6 +107,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   async interrupt(prompt: BuiltPrompt): Promise<void> {
+    logAgentd("pi interrupt", { sessionId: this.id, wasStreaming: this.runtime.session.isStreaming, promptChars: prompt.text.length });
     try {
       if (this.runtime.session.isStreaming) {
         await this.runtime.session.abort();
@@ -118,6 +124,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   async abort(): Promise<void> {
+    logAgentd("pi abort", { sessionId: this.id });
     await this.runtime.session.abort();
     this.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
   }
@@ -127,6 +134,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   async bindCurrentSession(): Promise<void> {
+    logAgentd("pi bind session", { sessionId: this.id });
     this.unsubscribe?.();
     this.uiBridge = this.createBridge();
     const session = this.runtime.session;
@@ -142,7 +150,10 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       this.emit({ type: "log", line: `pi diagnostic: ${JSON.stringify(diagnostic)}` });
     }
     const sessionFile = this.runtime.session.sessionFile;
-    if (sessionFile) this.emit({ type: "log", line: `pi session: ${sessionFile}` });
+    if (sessionFile) {
+      logAgentd("pi session file", { sessionId: this.id, sessionFile });
+      this.emit({ type: "log", line: `pi session: ${sessionFile}` });
+    }
   }
 
   subscribe(listener: (event: RuntimeEvent) => void): () => void {

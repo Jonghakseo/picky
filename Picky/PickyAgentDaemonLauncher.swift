@@ -221,11 +221,13 @@ final class PickyAgentDaemonLauncher: ObservableObject {
 
     func start() {
         guard state == .stopped else { return }
+        pickyDaemonLog("start requested port=\(configuration.port) cwd=\(configuration.defaultCwd)")
         intentionallyStopped = false
         launch()
     }
 
     func stop() {
+        pickyDaemonLog("stop requested")
         intentionallyStopped = true
         restartTask?.cancel()
         restartTask = nil
@@ -234,6 +236,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     }
 
     private func launch() {
+        pickyDaemonLog("launching executable=\(configuration.executableURL.path) args=\(configuration.arguments.joined(separator: " "))")
         state = .starting
         do {
             try preflightConfiguration()
@@ -245,9 +248,12 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             )
             attempts = 0
             state = .running
+            pickyDaemonLog("running logDir=\(logDirectory.path)")
         } catch let error as PickyDaemonLaunchPreflightError {
+            pickyDaemonLog("preflight failed error=\(error.localizedDescription)")
             state = .failedToStart(error.localizedDescription)
         } catch {
+            pickyDaemonLog("launch failed error=\(error.localizedDescription)")
             scheduleRestart(afterExitCode: -1)
         }
     }
@@ -265,6 +271,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
 
     private func processTerminated(exitCode: Int32) {
         guard !intentionallyStopped else { return }
+        pickyDaemonLog("terminated exitCode=\(exitCode)")
         state = .crashed(exitCode: exitCode)
         scheduleRestart(afterExitCode: exitCode)
     }
@@ -273,6 +280,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         attempts += 1
         let delay = min(pow(2.0, Double(attempts - 1)), 30.0)
         state = .restarting(attempt: attempts, delay: delay)
+        pickyDaemonLog("restart scheduled attempt=\(attempts) delay=\(delay)")
         restartTask?.cancel()
         restartTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
@@ -292,4 +300,9 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         try? handle.seekToEnd()
         try? handle.write(contentsOf: data)
     }
+}
+
+private func pickyDaemonLog(_ message: String) {
+    guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+    print("🛠️ Picky agentd launcher — \(message)")
 }

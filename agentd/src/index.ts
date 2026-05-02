@@ -6,6 +6,7 @@ import { MockRuntime } from "./runtime/mock-runtime.js";
 import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyHandoffTool } from "./handoff-tool.js";
+import { logAgentd } from "./local-log.js";
 
 const port = Number(process.env.PICKY_AGENTD_PORT ?? 17631);
 const token = process.env.PICKY_AGENTD_TOKEN;
@@ -18,6 +19,7 @@ if (!token) {
 }
 
 const useMockRuntime = process.env.PICKY_AGENTD_RUNTIME === "mock";
+logAgentd("startup", { port, runtime: useMockRuntime ? "mock" : "pi", appSupportDir, defaultCwd });
 const runtime = useMockRuntime ? new MockRuntime() : new PiSdkRuntime();
 let supervisor: SessionSupervisor;
 const mainRuntime = useMockRuntime
@@ -27,11 +29,13 @@ const mainRuntime = useMockRuntime
         createPickyHandoffTool(async (request) => {
           const context = supervisor.currentMainContext();
           if (!context) throw new Error("No active Picky main-agent context to hand off.");
+          logAgentd("handoff requested", { contextId: context.id, titleChars: request.title.length, instructionChars: request.instructions.length });
           supervisor.announceMainHandoff(
             context.id,
             request.userMessage?.trim() || "복잡한 작업이라 사이드 에이전트에 위임하겠습니다. 진행 상황은 오른쪽 위 오버레이에서 볼 수 있어요.",
           );
           const session = await supervisor.createSideFromHandoff(context, { title: request.title, instructions: request.instructions });
+          logAgentd("handoff started", { contextId: context.id, sessionId: session.id, titleChars: session.title.length });
           return { sessionId: session.id, title: session.title };
         }),
       ],

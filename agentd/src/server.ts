@@ -4,6 +4,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { isAuthorized } from "./auth.js";
 import { PROTOCOL_VERSION, parseCommand, type EventEnvelope } from "./protocol.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
+import { logAgentd } from "./local-log.js";
 
 export interface AgentdServerOptions {
   port: number;
@@ -24,6 +25,7 @@ export class AgentdServer {
 
     this.httpServer.on("upgrade", (request, socket, head) => {
       if (!isAuthorized(request, this.options.token)) {
+        logAgentd("ws unauthorized", { remoteAddress: request.socket.remoteAddress });
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
         socket.destroy();
         return;
@@ -39,7 +41,9 @@ export class AgentdServer {
 
     await new Promise<void>((resolve) => this.httpServer!.listen(this.options.port, "127.0.0.1", resolve));
     const address = this.httpServer.address();
-    return typeof address === "object" && address ? address.port : this.options.port;
+    const boundPort = typeof address === "object" && address ? address.port : this.options.port;
+    logAgentd("server listening", { port: boundPort });
+    return boundPort;
   }
 
   async stop(): Promise<void> {
@@ -50,7 +54,11 @@ export class AgentdServer {
 
   private accept(ws: WebSocket): void {
     this.clients.add(ws);
-    ws.on("close", () => this.clients.delete(ws));
+    logAgentd("ws connected", { clients: this.clients.size });
+    ws.on("close", () => {
+      this.clients.delete(ws);
+      logAgentd("ws disconnected", { clients: this.clients.size });
+    });
     ws.on("message", (data) => void this.handleMessage(ws, data.toString()));
     this.send(ws, { type: "hello", serverName: "picky-agentd", supportedProtocolVersions: [PROTOCOL_VERSION] });
   }
@@ -60,6 +68,7 @@ export class AgentdServer {
     try {
       parsed = JSON.parse(raw);
       const command = parseCommand(parsed);
+      logAgentd("command received", commandLogFields(command));
       if (command.type === "listSessions") this.send(ws, { type: "sessionSnapshot", sessions: this.options.supervisor.list() });
       if (command.type === "getSession") {
         const session = this.options.supervisor.get(command.sessionId);
@@ -78,6 +87,7 @@ export class AgentdServer {
       }
     } catch (error) {
       const commandId = typeof parsed === "object" && parsed && "id" in parsed ? String((parsed as { id: unknown }).id) : undefined;
+      logAgentd("command failed", { commandId, error: error instanceof Error ? error.message : String(error) });
       this.send(ws, { type: "error", code: "bad_message", message: error instanceof Error ? error.message : String(error), commandId });
     }
   }
@@ -88,7 +98,53 @@ export class AgentdServer {
 
   private send(ws: WebSocket, payload: EventPayload): void {
     const event: EventEnvelope = { id: `event-${randomUUID()}`, protocolVersion: PROTOCOL_VERSION, timestamp: new Date().toISOString(), ...payload } as EventEnvelope;
+    logAgentd("event sent", eventLogFields(event));
     ws.send(JSON.stringify(event));
+  }
+}
+
+function commandLogFields(command: ReturnType<typeof parseCommand>): Record<string, string | number | undefined> {
+  switch (command.type) {
+    case "routeTask":
+    case "createTask":
+      return { commandId: command.id, type: command.type, contextId: command.context.id, source: command.context.source, transcriptChars: command.context.transcript?.length, screenshots: command.context.screenshots.length };
+    case "followUp":
+    case "steer":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, textChars: command.text.length };
+    case "abort":
+    case "getSession":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId };
+    case "answerExtensionUi":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, requestId: command.requestId };
+    case "openArtifact":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, artifactId: command.artifactId };
+    case "listSessions":
+      return { commandId: command.id, type: command.type };
+  }
+}
+
+function eventLogFields(event: EventEnvelope): Record<string, string | number | undefined> {
+  switch (event.type) {
+    case "hello":
+      return { eventId: event.id, type: event.type };
+    case "quickReply":
+      return { eventId: event.id, type: event.type, contextId: event.contextId, textChars: event.text.length };
+    case "sessionSnapshot":
+      return { eventId: event.id, type: event.type, sessions: event.sessions.length };
+    case "sessionUpdated":
+      return { eventId: event.id, type: event.type, sessionId: event.session.id, status: event.session.status };
+    case "sessionLogAppended":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, lineChars: event.line.length };
+    case "toolActivityUpdated":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, tool: event.tool.name, status: event.tool.status };
+    case "extensionUiRequest":
+      return { eventId: event.id, type: event.type, sessionId: event.request.sessionId, requestId: event.request.id, method: event.request.method };
+    case "artifactUpdated":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, artifactId: event.artifact.id, kind: event.artifact.kind };
+    case "artifactOpened":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, artifactId: event.artifactId };
+    case "error":
+      return { eventId: event.id, type: event.type, commandId: event.commandId, code: event.code };
   }
 }
 

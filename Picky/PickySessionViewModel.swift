@@ -195,6 +195,7 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func start() {
+        pickySessionLog("viewModel start")
         eventTask?.cancel()
         eventTask = Task { [weak self] in
             guard let self else { return }
@@ -206,12 +207,14 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func stop() {
+        pickySessionLog("viewModel stop")
         eventTask?.cancel()
         eventTask = nil
         client.disconnect()
     }
 
     func select(sessionID: String?) {
+        pickySessionLog("select requested session=\(sessionID ?? "default")")
         hasExplicitSelection = sessionID != nil
         if let sessionID, sessions.contains(where: { $0.id == sessionID }) {
             selectedSessionID = sessionID
@@ -224,6 +227,7 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func submit(transcript: String, context: PickyContextPacket) async throws {
+        pickySessionLog("submit context=\(context.id) source=\(context.source) transcriptChars=\(transcript.count)")
         _ = try await client.submit(PickyAgentSubmission(transcript: transcript, context: context))
     }
 
@@ -237,11 +241,13 @@ final class PickySessionListViewModel: ObservableObject {
             lastError = "No session selected for follow-up"
             throw PickySessionListViewModelError.noSessionSelected
         }
+        pickySessionLog("follow-up session=\(target) textChars=\(trimmed.count)")
         try await client.send(PickyCommandEnvelope(type: .followUp, sessionId: target, text: trimmed))
         select(sessionID: target)
     }
 
     func abort(sessionID: String) async throws {
+        pickySessionLog("abort session=\(sessionID)")
         try await client.send(PickyCommandEnvelope(type: .abort, sessionId: sessionID))
         update(sessionID: sessionID) { card in
             if !card.status.isTerminal { card.status = .cancelled }
@@ -250,6 +256,7 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func answerExtensionUi(sessionID: String, requestID: String, value: JSONValue) async throws {
+        pickySessionLog("answer extension-ui session=\(sessionID) request=\(requestID)")
         try await client.send(PickyCommandEnvelope(type: .answerExtensionUi, sessionId: sessionID, requestId: requestID, value: value))
         update(sessionID: sessionID) { card in
             if card.pendingExtensionUiRequest?.id == requestID {
@@ -266,6 +273,7 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func openReport(sessionID: String, workspace: NSWorkspace = .shared) async throws {
+        pickySessionLog("open report session=\(sessionID)")
         guard let artifact = sessions.first(where: { $0.id == sessionID })?.reportArtifact else {
             lastError = "Report is not available yet"
             throw PickySessionListViewModelError.missingReport
@@ -296,6 +304,7 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func resumeInGhostty(sessionID: String, launcher: PickyTerminalResumeLaunching = PickyGhosttyResumeLauncher()) {
+        pickySessionLog("resume in Ghostty session=\(sessionID)")
         guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
               let piSessionFilePath = session.piSessionFilePath else {
             lastError = PickySessionListViewModelError.missingPiSessionFile.localizedDescription
@@ -310,6 +319,7 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func archive(sessionID: String) {
+        pickySessionLog("archive session=\(sessionID)")
         var archivedIDs = archiveStore.archivedSessionIDs
         archivedIDs.insert(sessionID)
         archiveStore.archivedSessionIDs = archivedIDs
@@ -346,11 +356,14 @@ final class PickySessionListViewModel: ObservableObject {
     private func apply(_ event: PickyClientEvent) {
         switch event {
         case .connected:
+            pickySessionLog("client connected")
             lastError = nil
             Task { try? await client.send(PickyCommandEnvelope(type: .listSessions)) }
         case .disconnected:
+            pickySessionLog("client disconnected")
             lastError = "Disconnected from picky-agentd"
         case .recoverableError(let message):
+            pickySessionLog("client recoverable error=\(message)")
             lastError = message
         case .protocolEvent(let envelope):
             apply(envelope.event)
@@ -360,6 +373,7 @@ final class PickySessionListViewModel: ObservableObject {
     private func apply(_ event: PickyEvent) {
         switch event {
         case .sessionSnapshot(let snapshot):
+            pickySessionLog("snapshot sessions=\(snapshot.count)")
             var archivedIDs = archiveStore.archivedSessionIDs
             let cards = snapshot.map(SessionCard.init(session:))
             for card in cards where card.isRuntimeDetachedRestoredSession {
@@ -371,8 +385,10 @@ final class PickySessionListViewModel: ObservableObject {
             syncSelectionAfterSessionListChange()
             sessions.forEach(deliverNotificationIfNeeded(for:))
         case .sessionUpdated(let session):
+            pickySessionLog("session updated session=\(session.id) status=\(session.status.rawValue)")
             upsert(SessionCard(session: session))
         case .sessionLogAppended(let sessionId, let line):
+            pickySessionLog("session log session=\(sessionId) lineChars=\(line.count)")
             update(sessionID: sessionId) { card in
                 card.logPreview = line
                 if let piSessionFilePath = SessionCard.piSessionFilePath(fromLogLine: line) {
@@ -391,6 +407,7 @@ final class PickySessionListViewModel: ObservableObject {
                 card.updatedAt = tool.endedAt ?? Date()
             }
         case .extensionUiRequest(let request):
+            pickySessionLog("extension-ui request session=\(request.sessionId) request=\(request.id) method=\(request.method)")
             update(sessionID: request.sessionId) { card in
                 card.status = .waiting_for_input
                 card.pendingExtensionUiRequest = request
@@ -398,6 +415,7 @@ final class PickySessionListViewModel: ObservableObject {
                 card.updatedAt = request.createdAt
             }
         case .artifactUpdated(let sessionId, let artifact):
+            pickySessionLog("artifact updated session=\(sessionId) artifact=\(artifact.id) kind=\(artifact.kind)")
             update(sessionID: sessionId) { card in
                 if let index = card.artifacts.firstIndex(where: { $0.id == artifact.id }) {
                     card.artifacts[index] = artifact
@@ -415,6 +433,7 @@ final class PickySessionListViewModel: ObservableObject {
                 lastError = error.localizedDescription
             }
         case .error(let error):
+            pickySessionLog("protocol error code=\(error.code) command=\(error.commandId ?? "none")")
             lastError = error.message
         case .quickReply, .hello, .unknown:
             break
@@ -609,4 +628,9 @@ extension PickyToolActivity {
 
 enum PickyToolRiskLevel: Equatable {
     case normal, elevated, external
+}
+
+private func pickySessionLog(_ message: String) {
+    guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+    print("🧭 Picky session UI — \(message)")
 }

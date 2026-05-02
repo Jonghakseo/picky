@@ -6,6 +6,7 @@ import type { PickyAgentSession, PickyContextPacket, PickyExtensionUiRequest } f
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
 import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./runtime/types.js";
+import { logAgentd } from "./local-log.js";
 
 export interface SessionSupervisorOptions {
   taskRouter?: TaskRouter;
@@ -32,7 +33,9 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async load(): Promise<void> {
-    for (const session of await this.store.loadAll()) {
+    const persisted = await this.store.loadAll();
+    logAgentd("sessions loading", { count: persisted.length });
+    for (const session of persisted) {
       if (!isTerminalStatus(session.status)) {
         const restored = {
           ...session,
@@ -64,15 +67,18 @@ export class SessionSupervisor extends EventEmitter {
 
   async prewarmMainAgent(cwd = process.cwd()): Promise<void> {
     if (!this.options.mainRuntime?.prewarm || this.mainHandle) return;
+    logAgentd("main prewarm requested", { cwd });
     await this.ensurePrewarmedMainHandle(cwd);
   }
 
   announceMainHandoff(contextId: string, text: string): void {
+    logAgentd("main handoff announced", { contextId, textChars: text.length });
     this.suppressNextMainReply = true;
     this.emit("quickReply", contextId, text);
   }
 
   async route(context: PickyContextPacket): Promise<PickyAgentSession | undefined> {
+    logAgentd("route requested", { contextId: context.id, source: context.source, transcriptChars: context.transcript?.length, screenshots: context.screenshots.length });
     if (this.options.mainRuntime) {
       await this.routeThroughMainAgent(context);
       return undefined;
@@ -80,6 +86,7 @@ export class SessionSupervisor extends EventEmitter {
     if (!this.options.taskRouter) return this.create(context);
     const decision = await this.options.taskRouter.route(context);
     if (decision.route === "quick_reply") {
+      logAgentd("quick reply routed", { contextId: context.id, textChars: decision.reply.length });
       this.emit("quickReply", context.id, decision.reply);
       return undefined;
     }
@@ -91,6 +98,7 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async createSideFromHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string }): Promise<PickyAgentSession> {
+    logAgentd("side session create requested", { contextId: context.id, titleChars: handoff.title.length, instructionChars: handoff.instructions.length });
     const session = await this.createVisibleSession(context, handoff.title.trim() || titleFromContext(context), buildSideAgentPrompt(context, handoff));
     this.sideSessionIds.add(session.id);
     await this.appendLog(session.id, `main-agent handoff: ${handoff.instructions}`);
@@ -113,15 +121,18 @@ export class SessionSupervisor extends EventEmitter {
       changedFiles: [],
     };
     await this.upsert(session);
+    logAgentd("session queued", { sessionId: id, titleChars: title.length, cwd: context.cwd });
     try {
       this.assistantDrafts.set(id, "");
       const handle = await this.runtime.create(prompt, { cwd: context.cwd, sessionId: id });
       this.runtimeHandles.set(id, handle);
+      logAgentd("runtime attached", { sessionId: id });
       handle.subscribe((event) => void this.applyRuntimeEvent(id, event));
       await this.patch(id, { status: "running", lastSummary: "Started" });
       return this.mustGet(id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      logAgentd("runtime start failed", { sessionId: id, error: message });
       await this.patch(id, {
         status: "failed",
         lastSummary: `Failed to start runtime: ${message}`,
@@ -132,6 +143,7 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async routeThroughMainAgent(context: PickyContextPacket): Promise<void> {
+    logAgentd("main route requested", { contextId: context.id, source: context.source, transcriptChars: context.transcript?.length });
     this.mainContext = context;
     this.mainReplyContextId = context.id;
     this.mainDraft = "";
@@ -151,6 +163,7 @@ export class SessionSupervisor extends EventEmitter {
 
   private async deliverMainPrompt(handle: RuntimeSessionHandle, prompt: ReturnType<typeof buildMainAgentPrompt>): Promise<void> {
     if (this.mainIsProcessing && handle.interrupt) {
+      logAgentd("main interrupt", { contextId: this.mainReplyContextId });
       this.suppressInterruptedMainCompletion = true;
       this.mainDraft = "";
       await handle.interrupt(prompt);
@@ -159,6 +172,7 @@ export class SessionSupervisor extends EventEmitter {
       return;
     }
     this.mainIsProcessing = true;
+    logAgentd("main prompt delivered", { contextId: this.mainReplyContextId });
     await handle.followUp(prompt);
   }
 
@@ -166,7 +180,10 @@ export class SessionSupervisor extends EventEmitter {
     if (this.mainHandle) return this.mainHandle;
     if (!this.mainHandlePromise) {
       this.mainHandlePromise = this.options.mainRuntime!.prewarm!({ cwd, sessionId: "picky-main-agent" })
-        .then((handle) => this.attachMainHandle(handle))
+        .then((handle) => {
+          logAgentd("main prewarmed", { cwd });
+          return this.attachMainHandle(handle);
+        })
         .finally(() => {
           this.mainHandlePromise = undefined;
         });
@@ -196,10 +213,12 @@ export class SessionSupervisor extends EventEmitter {
           this.mainDraft = "";
           return;
         }
+        logAgentd("main status", { status: event.status, contextId: this.mainReplyContextId, draftChars: this.mainDraft.length });
         const reply = cleanFinalAnswer(this.mainDraft) ?? (event.status === "failed" ? event.summary : undefined);
         if (this.suppressNextMainReply) {
           this.suppressNextMainReply = false;
         } else if (reply) {
+          logAgentd("main quick reply", { contextId: this.mainReplyContextId, textChars: reply.length });
           this.emit("quickReply", this.mainReplyContextId, reply);
         }
         this.mainDraft = "";
@@ -211,6 +230,7 @@ export class SessionSupervisor extends EventEmitter {
     if (!this.mainHandle || this.sideCompletionNotified.has(sessionId)) return;
     const session = this.mustGet(sessionId);
     this.sideCompletionNotified.add(sessionId);
+    logAgentd("side completion notifying main", { sessionId, status: session.status });
     this.mainReplyContextId = sessionId;
     this.mainDraft = "";
     await this.mainHandle.followUp(buildMainAgentSideCompletionPrompt(session));
@@ -229,6 +249,7 @@ export class SessionSupervisor extends EventEmitter {
       throw new Error("Runtime session is not attached after daemon restart; start a new task or resume support is required");
     }
     this.assistantDrafts.set(sessionId, "");
+    logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id });
     await this.appendLog(sessionId, `follow-up: ${text}`);
     await handle.followUp(buildFollowUpPrompt(sessionId, text, context));
     await this.patch(sessionId, { status: "running", lastSummary: "Follow-up queued", finalAnswer: undefined });
@@ -245,6 +266,7 @@ export class SessionSupervisor extends EventEmitter {
 
   async abort(sessionId: string): Promise<PickyAgentSession> {
     const handle = this.runtimeHandles.get(sessionId);
+    logAgentd("abort requested", { sessionId, hasHandle: Boolean(handle) });
     if (handle) await handle.abort();
     await this.patch(sessionId, { status: "cancelled", lastSummary: "Cancelled" });
     await this.materializeTerminalArtifacts(sessionId);
@@ -276,6 +298,7 @@ export class SessionSupervisor extends EventEmitter {
       return;
     }
     if (event.type === "status") {
+      logAgentd("session status", { sessionId, status: event.status, summaryChars: event.summary?.length });
       const terminal = ["completed", "failed", "cancelled"].includes(event.status);
       const finalAnswer = terminal ? cleanFinalAnswer(this.assistantDrafts.get(sessionId)) : undefined;
       const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
@@ -291,11 +314,15 @@ export class SessionSupervisor extends EventEmitter {
       }
       return;
     }
-    if (event.type === "extension_ui") return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
+    if (event.type === "extension_ui") {
+      logAgentd("extension ui event", { sessionId, waitsForInput: event.waitsForInput, method: typeof event.request.method === "string" ? event.request.method : undefined });
+      return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
+    }
     const session = this.mustGet(sessionId);
     const previous = session.tools.find((tool) => tool.toolCallId === event.toolCallId);
     const tools = session.tools.filter((tool) => tool.toolCallId !== event.toolCallId);
     tools.push({ ...previous, toolCallId: event.toolCallId, name: event.name, status: event.status, preview: event.preview, startedAt: previous?.startedAt ?? new Date().toISOString(), endedAt: event.status === "running" ? previous?.endedAt : new Date().toISOString() });
+    logAgentd("tool activity", { sessionId, tool: event.name, status: event.status, previewChars: event.preview?.length });
     await this.patch(sessionId, { tools });
   }
 

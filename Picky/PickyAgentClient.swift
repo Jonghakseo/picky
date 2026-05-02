@@ -54,7 +54,10 @@ final class LocalStubPickyAgentClient: PickyAgentClient {
         self.continuation = continuation
     }
 
-    func connect() async { continuation.yield(.connected) }
+    func connect() async {
+        pickyAgentClientLog("stub connected")
+        continuation.yield(.connected)
+    }
 
     func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {
         let stableSessionInput = [
@@ -65,14 +68,20 @@ final class LocalStubPickyAgentClient: PickyAgentClient {
         ].joined(separator: "|")
         let sessionID = "local-stub-\(abs(stableSessionInput.hashValue))"
 
+        pickyAgentClientLog("stub submit context=\(submission.context.id) transcriptChars=\(submission.transcript.count) receipt=\(sessionID)")
         return PickyAgentSubmissionReceipt(
             sessionID: sessionID,
             message: "Task captured locally. picky-agentd integration will run this through Pi when the daemon is connected."
         )
     }
 
-    func send(_ command: PickyCommandEnvelope) async throws {}
-    func disconnect() { continuation.yield(.disconnected) }
+    func send(_ command: PickyCommandEnvelope) async throws {
+        pickyAgentClientLog("stub send \(command.logSummary)")
+    }
+    func disconnect() {
+        pickyAgentClientLog("stub disconnected")
+        continuation.yield(.disconnected)
+    }
 }
 
 protocol PickyWebSocketTask: AnyObject {
@@ -134,28 +143,36 @@ final class WebSocketPickyAgentClient: PickyAgentClient {
 
     func connect() async {
         guard task == nil else { return }
+        pickyAgentClientLog("connecting ws://\(configuration.host):\(configuration.port)")
         let socket = factory.makeWebSocketTask(url: configuration.url, token: configuration.token)
         task = socket
         socket.resume()
         connected = true
+        pickyAgentClientLog("connected ws://\(configuration.host):\(configuration.port)")
         continuation.yield(.connected)
         startReceiveLoop(socket)
     }
 
     func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {
+        pickyAgentClientLog("submit context=\(submission.context.id) source=\(submission.context.source) transcriptChars=\(submission.transcript.count)")
         let command = PickyCommandEnvelope(type: .routeTask, context: submission.context)
         try await send(command)
         return PickyAgentSubmissionReceipt(sessionID: command.id, message: "")
     }
 
     func send(_ command: PickyCommandEnvelope) async throws {
-        guard connected, let task else { throw PickyAgentClientError.disconnected }
+        guard connected, let task else {
+            pickyAgentClientLog("send failed disconnected \(command.logSummary)")
+            throw PickyAgentClientError.disconnected
+        }
+        pickyAgentClientLog("send \(command.logSummary)")
         let data = try encoder.encode(command)
         let text = String(decoding: data, as: UTF8.self)
         try await task.send(.string(text))
     }
 
     func disconnect() {
+        pickyAgentClientLog("disconnect requested")
         receiveLoop?.cancel()
         receiveLoop = nil
         task?.cancel(with: .goingAway, reason: nil)
@@ -175,6 +192,7 @@ final class WebSocketPickyAgentClient: PickyAgentClient {
                 } catch is CancellationError {
                     return
                 } catch {
+                    pickyAgentClientLog("receive loop disconnected error=\(error.localizedDescription)")
                     self.connected = false
                     self.task = nil
                     self.continuation.yield(.disconnected)
@@ -196,9 +214,61 @@ final class WebSocketPickyAgentClient: PickyAgentClient {
 
         do {
             let event = try decoder.decode(PickyEventEnvelope.self, from: data)
+            pickyAgentClientLog("receive \(event.logSummary)")
             continuation.yield(.protocolEvent(event))
         } catch {
+            pickyAgentClientLog("decode error=\(error.localizedDescription)")
             continuation.yield(.recoverableError(error.localizedDescription))
+        }
+    }
+}
+
+private func pickyAgentClientLog(_ message: String) {
+    guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+    print("🔌 Picky agent client — \(message)")
+}
+
+private extension PickyCommandEnvelope {
+    var logSummary: String {
+        var parts = ["type=\(type.rawValue)", "id=\(id)"]
+        if let sessionId { parts.append("session=\(sessionId)") }
+        if let context {
+            parts.append("context=\(context.id)")
+            parts.append("source=\(context.source)")
+            parts.append("transcriptChars=\(context.transcript?.count ?? 0)")
+        }
+        if let text { parts.append("textChars=\(text.count)") }
+        if let requestId { parts.append("request=\(requestId)") }
+        if let artifactId { parts.append("artifact=\(artifactId)") }
+        return parts.joined(separator: " ")
+    }
+}
+
+private extension PickyEventEnvelope {
+    var logSummary: String {
+        switch event {
+        case .hello:
+            return "type=hello id=\(id)"
+        case .quickReply(let reply):
+            return "type=quickReply id=\(id) context=\(reply.contextId) textChars=\(reply.text.count)"
+        case .sessionSnapshot(let sessions):
+            return "type=sessionSnapshot id=\(id) sessions=\(sessions.count)"
+        case .sessionUpdated(let session):
+            return "type=sessionUpdated id=\(id) session=\(session.id) status=\(session.status.rawValue)"
+        case .sessionLogAppended(let sessionId, let line):
+            return "type=sessionLogAppended id=\(id) session=\(sessionId) lineChars=\(line.count)"
+        case .toolActivityUpdated(let sessionId, let tool):
+            return "type=toolActivityUpdated id=\(id) session=\(sessionId) tool=\(tool.name) status=\(tool.status)"
+        case .extensionUiRequest(let request):
+            return "type=extensionUiRequest id=\(id) session=\(request.sessionId) request=\(request.id) method=\(request.method)"
+        case .artifactUpdated(let sessionId, let artifact):
+            return "type=artifactUpdated id=\(id) session=\(sessionId) artifact=\(artifact.id) kind=\(artifact.kind)"
+        case .artifactOpened(let sessionId, let artifactId, _):
+            return "type=artifactOpened id=\(id) session=\(sessionId) artifact=\(artifactId)"
+        case .error(let error):
+            return "type=error id=\(id) command=\(error.commandId ?? "none") code=\(error.code)"
+        case .unknown(let type):
+            return "type=unknown(\(type)) id=\(id)"
         }
     }
 }

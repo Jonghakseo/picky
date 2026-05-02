@@ -83,7 +83,11 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
   async followUp(prompt: BuiltPrompt): Promise<void> {
     try {
-      await this.runtime.session.followUp(prompt.text);
+      await this.runtime.session.prompt(prompt.text, {
+        images: await imageOptions(prompt.imagePaths),
+        source: "rpc",
+        streamingBehavior: "followUp",
+      });
     } catch (error) {
       this.emit({ type: "status", status: "failed", summary: messageOf(error) });
       throw error;

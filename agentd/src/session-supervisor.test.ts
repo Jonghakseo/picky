@@ -138,6 +138,22 @@ describe("SessionSupervisor", () => {
     expect(replies).toEqual([{ contextId: "context-안녕", text: "안녕하세요. 무엇을 도와드릴까요?" }]);
   });
 
+  it("reuses the same main agent handle for later voice turns", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+
+    await supervisor.route(context("첫 번째"));
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "첫 응답" });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+    await supervisor.route(context("두 번째"));
+
+    expect(mainRuntime.createCalls).toBe(1);
+    expect(mainRuntime.handle?.followUps).toHaveLength(1);
+    expect(mainRuntime.handle?.followUps[0].text).toContain("두 번째");
+  });
+
   it("routes complex requests to the long-running runtime", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir), undefined, { taskRouter: new StaticTaskRouter({ route: "handoff", reason: "needs tools" }) });
@@ -211,7 +227,9 @@ class StaticTaskRouter implements TaskRouter {
 
 class ManualRuntime implements AgentRuntime {
   handle?: ManualHandle;
+  createCalls = 0;
   async create(_prompt: BuiltPrompt, options: { sessionId?: string }): Promise<RuntimeSessionHandle> {
+    this.createCalls += 1;
     this.handle = new ManualHandle(options.sessionId ?? "manual");
     return this.handle;
   }
@@ -219,8 +237,11 @@ class ManualRuntime implements AgentRuntime {
 
 class ManualHandle implements RuntimeSessionHandle {
   private listeners = new Set<(event: RuntimeEvent) => void>();
+  followUps: BuiltPrompt[] = [];
   constructor(readonly id: string) {}
-  async followUp(): Promise<void> {}
+  async followUp(prompt: BuiltPrompt): Promise<void> {
+    this.followUps.push(prompt);
+  }
   async steer(): Promise<void> {}
   async abort(): Promise<void> {}
   subscribe(listener: (event: RuntimeEvent) => void): () => void {

@@ -131,6 +131,7 @@ final class PickySessionListViewModel: ObservableObject {
         var updatedAt: Date
         var lastSummary: String
         var logPreview: String
+        var lastRequestText: String?
         var tools: [PickyToolActivity]
         var artifacts: [PickyArtifact]
         var changedFiles: [PickyChangedFile]
@@ -140,6 +141,10 @@ final class PickySessionListViewModel: ObservableObject {
 
         var activeTool: PickyToolActivity? {
             tools.last { $0.isActive }
+        }
+
+        var compactCwdDescription: String? {
+            Self.compactCwd(cwd)
         }
 
         var toolCount: Int { tools.count }
@@ -168,6 +173,19 @@ final class PickySessionListViewModel: ObservableObject {
             let minutes = seconds / 60
             if minutes < 60 { return "\(minutes)m" }
             return "\(minutes / 60)h \(minutes % 60)m"
+        }
+
+        private static func compactCwd(_ cwd: String?) -> String? {
+            let trimmed = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !trimmed.isEmpty else { return nil }
+
+            let homePath = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+            let standardizedPath = NSString(string: trimmed).standardizingPath
+            if standardizedPath == homePath { return "~" }
+            if standardizedPath.hasPrefix(homePath + "/") {
+                return "~" + String(standardizedPath.dropFirst(homePath.count))
+            }
+            return trimmed
         }
     }
 
@@ -288,6 +306,10 @@ final class PickySessionListViewModel: ObservableObject {
         }
         pickySessionLog("follow-up session=\(target) textChars=\(trimmed.count)")
         try await client.send(PickyCommandEnvelope(type: .followUp, sessionId: target, text: trimmed))
+        update(sessionID: target) { card in
+            card.lastRequestText = trimmed
+            card.updatedAt = Date()
+        }
         select(sessionID: target)
     }
 
@@ -445,6 +467,9 @@ final class PickySessionListViewModel: ObservableObject {
                 if let piSessionFilePath = SessionCard.piSessionFilePath(fromLogLine: line) {
                     card.piSessionFilePath = piSessionFilePath
                 }
+                if let requestText = SessionCard.requestText(fromLogLine: line) {
+                    card.lastRequestText = requestText
+                }
                 if SessionCard.isRuntimeDetachedFollowUpRejection(line) {
                     card.hasRuntimeDetachedFollowUpRejection = true
                 }
@@ -595,6 +620,7 @@ private extension PickySessionListViewModel.SessionCard {
         self.updatedAt = session.updatedAt
         self.lastSummary = session.lastSummary ?? ""
         self.logPreview = session.logs.reversed().first(where: Self.isDisplayableLogPreview) ?? session.tools.last?.preview ?? ""
+        self.lastRequestText = Self.lastRequestText(from: session.logs)
         self.tools = session.tools
         self.artifacts = session.artifacts
         self.changedFiles = session.changedFiles
@@ -614,6 +640,7 @@ private extension PickySessionListViewModel.SessionCard {
         }
         if result.logPreview.isEmpty { result.logPreview = logPreview }
         if result.lastSummary.isEmpty { result.lastSummary = lastSummary }
+        if result.lastRequestText == nil { result.lastRequestText = lastRequestText }
         if result.tools.isEmpty { result.tools = tools }
         if result.artifacts.isEmpty { result.artifacts = artifacts }
         if result.changedFiles.isEmpty { result.changedFiles = changedFiles }
@@ -634,6 +661,30 @@ private extension PickySessionListViewModel.SessionCard {
         !line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("extension ui:")
     }
 
+    static func lastRequestText(from logs: [String]) -> String? {
+        logs.reversed().compactMap(requestText(fromLogLine:)).first
+    }
+
+    static func requestText(fromLogLine line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        for prefix in ["follow-up: ", "main-agent handoff: "] {
+            if trimmed.hasPrefix(prefix) {
+                return normalizedRequestText(String(trimmed.dropFirst(prefix.count)))
+            }
+        }
+
+        let transcriptPrefix = "source transcript:"
+        if line.hasPrefix(transcriptPrefix) {
+            return normalizedRequestText(String(line.dropFirst(transcriptPrefix.count)))
+        }
+        return nil
+    }
+
+    private static func normalizedRequestText(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     static func isRuntimeDetachedFollowUpRejection(_ line: String) -> Bool {
         line.localizedCaseInsensitiveContains("follow-up rejected:")
             && line.localizedCaseInsensitiveContains("Runtime session is not attached after daemon restart")
@@ -643,10 +694,10 @@ private extension PickySessionListViewModel.SessionCard {
 private extension Array where Element == PickySessionListViewModel.SessionCard {
     func sortedForHUD() -> [Element] {
         sorted { lhs, rhs in
-            if lhs.status.hudPriority != rhs.status.hudPriority {
-                return lhs.status.hudPriority < rhs.status.hudPriority
+            if lhs.createdAt != rhs.createdAt {
+                return lhs.createdAt > rhs.createdAt
             }
-            return lhs.updatedAt > rhs.updatedAt
+            return lhs.id < rhs.id
         }
     }
 }

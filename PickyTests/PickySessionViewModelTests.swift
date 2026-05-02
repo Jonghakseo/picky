@@ -84,17 +84,17 @@ struct PickySessionViewModelTests {
         #expect(notifications.delivered.map(\.title).contains("분석이 끝났습니다"))
     }
 
-    @Test func activeAndRecentOrderingKeepsCompletedSessionsVisible() async throws {
+    @Test func sessionsRemainOrderedByCreationTimeAcrossStatusChanges() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "completed", title: "Completed", status: "completed", updatedAt: "2026-05-01T00:00:10.000Z"))))
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "running", title: "Running", status: "running", updatedAt: "2026-05-01T00:00:00.000Z"))))
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "waiting", title: "Waiting", status: "waiting_for_input", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "completed", title: "Completed", status: "completed", createdAt: "2026-05-01T00:00:00.000Z", updatedAt: "2026-05-01T00:00:30.000Z"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "running", title: "Running", status: "running", createdAt: "2026-05-01T00:00:20.000Z", updatedAt: "2026-05-01T00:00:00.000Z"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "waiting", title: "Waiting", status: "waiting_for_input", createdAt: "2026-05-01T00:00:10.000Z", updatedAt: "2026-05-01T00:00:40.000Z"))))
         try await settle()
 
-        #expect(viewModel.sessions.map(\.id) == ["waiting", "running", "completed"])
+        #expect(viewModel.sessions.map(\.id) == ["running", "waiting", "completed"])
         #expect(viewModel.sessions.contains { $0.id == "completed" && $0.status == .completed })
     }
 
@@ -388,6 +388,24 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.logPreview == "done")
     }
 
+    @Test func sessionCardsExposeLastRequestAndCompactCwd() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            status: "running",
+            logs: ["main-agent handoff: initial screen check", "follow-up: summarize the failing case"]
+        ))))
+        try await settle()
+
+        #expect(viewModel.sessions.first?.lastRequestText == "summarize the failing case")
+        #expect(viewModel.sessions.first?.compactCwdDescription == "~/Documents/picky")
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "session-1", line: "follow-up: include CWD in the HUD"))))
+        try await settle()
+        #expect(viewModel.sessions.first?.lastRequestText == "include CWD in the HUD")
+    }
+
     @Test func runtimeDetachedRestoredSessionsAreAutoArchived() async throws {
         let client = FakePickyAgentClient()
         let archiveStore = FakeArchiveStore()
@@ -531,12 +549,13 @@ private enum EventJSON {
         title: String = "Investigate current screen",
         status: String = "running",
         summary: String = "Started",
+        createdAt: String = "2026-05-01T00:00:00.000Z",
         updatedAt: String = "2026-05-01T00:00:00.000Z",
         logs: [String] = []
     ) -> String {
         let encodedLogs = String(decoding: try! JSONEncoder().encode(logs), as: UTF8.self)
         return """
-        {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]}}
+        {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]}}
         """
     }
 

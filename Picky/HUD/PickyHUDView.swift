@@ -189,11 +189,17 @@ private struct PickySessionCardView: View {
         VStack(alignment: .leading, spacing: 9) {
             Divider().opacity(0.35)
 
+            if let compactCwd = session.compactCwdDescription {
+                metaRow(icon: "folder", text: compactCwd)
+            }
+
+            if let lastRequestText = session.lastRequestText {
+                lastRequestBubble(text: lastRequestText)
+            }
+
             if let currentWorkDescription {
                 detailSection(title: "Current work", text: currentWorkDescription, lineLimit: 2)
             }
-
-            metaRow(icon: "clock", text: session.elapsedDescription())
 
             if let pending = session.pendingExtensionUiRequest {
                 PickyPendingInputView(request: pending, viewModel: viewModel)
@@ -340,8 +346,35 @@ private struct PickySessionCardView: View {
             Text(text)
                 .font(.system(size: 10.5))
                 .lineLimit(1)
+                .truncationMode(.middle)
         }
         .foregroundColor(DS.Colors.textTertiary)
+    }
+
+    private func lastRequestBubble(text: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "person.crop.circle.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(DS.Colors.accentText.opacity(0.9))
+                .frame(width: 14)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("You")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(DS.Colors.textTertiary)
+                Text(text)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(DS.Colors.surface2.opacity(0.62))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8))
+            )
+        }
     }
 
     private func detailSection(title: String, text: String, lineLimit: Int? = 3) -> some View {

@@ -9,6 +9,7 @@
 
 import ServiceManagement
 import SwiftUI
+import UserNotifications
 
 @main
 struct PickyApp: App {
@@ -55,6 +56,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         print("🎯 Picky: Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")")
 
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 0])
+        UNUserNotificationCenter.current().delegate = self
 
         PickyAnalytics.configure()
         PickyAnalytics.trackAppOpened()
@@ -100,4 +102,14 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+}
+
+extension CompanionAppDelegate: UNUserNotificationCenterDelegate {
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list, .sound])
+    }
 }

@@ -225,6 +225,45 @@ struct PickySessionViewModelTests {
         #expect(notifications.delivered.filter { $0.identifier == "session-1:completed" }.count == 1)
     }
 
+    @Test func terminalNotificationResetsAfterSessionRunsAgain() async throws {
+        let client = FakePickyAgentClient()
+        let notifications = PickyNoopNotificationCenter()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications)
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "First done"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Running again"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Second done", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        try await settle()
+
+        #expect(notifications.delivered.filter { $0.identifier == "session-1:completed" }.count == 2)
+    }
+
+    @Test func snapshotHydrationDoesNotNotifyHistoricalCompletedSessions() async throws {
+        let client = FakePickyAgentClient()
+        let notifications = PickyNoopNotificationCenter()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications)
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(status: "completed", summary: "Already done"))))
+        try await settle()
+
+        #expect(notifications.delivered.isEmpty)
+    }
+
+    @Test func snapshotTransitionFromRunningToCompletedDeliversNotification() async throws {
+        let client = FakePickyAgentClient()
+        let notifications = PickyNoopNotificationCenter()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications)
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Running"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        try await settle()
+
+        #expect(notifications.delivered.map(\.title).contains("분석이 끝났습니다"))
+    }
+
     @Test func hudStatusToneMatchesSideAgentColorRules() throws {
         #expect(PickySessionStatus.running.hudTone == .inProgress)
         #expect(PickySessionStatus.blocked.hudTone == .error)
@@ -818,6 +857,19 @@ private enum EventJSON {
         let encodedNotify = notifyMainOnCompletion.map { ",\"notifyMainOnCompletion\":\($0)" } ?? ""
         return """
         {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedNotify)}}
+        """
+    }
+
+    static func sessionSnapshot(
+        id: String = "session-1",
+        title: String = "Investigate current screen",
+        status: String = "running",
+        summary: String = "Started",
+        createdAt: String = "2026-05-01T00:00:00.000Z",
+        updatedAt: String = "2026-05-01T00:00:00.000Z"
+    ) -> String {
+        """
+        {"id":"snapshot-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionSnapshot","sessions":[{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
         """
     }
 

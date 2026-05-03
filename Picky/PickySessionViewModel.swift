@@ -24,11 +24,45 @@ final class PickyNoopNotificationCenter: PickyNotificationDelivering {
 
 final class PickySystemNotificationCenter: PickyNotificationDelivering {
     func deliver(title: String, body: String, identifier: String) {
+        let center = UNUserNotificationCenter.current()
+        let request = makeRequest(title: title, body: body, identifier: identifier)
+        center.getNotificationSettings { settings in
+            switch settings.authorizationStatus {
+            case .authorized, .provisional:
+                Self.add(request, to: center)
+            case .notDetermined:
+                center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+                    if let error {
+                        print("⚠️ Picky notification authorization failed: \(error.localizedDescription)")
+                    }
+                    guard granted else {
+                        print("⚠️ Picky notification skipped: authorization denied")
+                        return
+                    }
+                    Self.add(request, to: center)
+                }
+            case .denied:
+                print("⚠️ Picky notification skipped: authorization denied")
+            @unknown default:
+                print("⚠️ Picky notification skipped: unsupported authorization status")
+            }
+        }
+    }
+
+    private func makeRequest(title: String, body: String, identifier: String) -> UNNotificationRequest {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
+        content.sound = .default
+        return UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+    }
+
+    private static func add(_ request: UNNotificationRequest, to center: UNUserNotificationCenter) {
+        center.add(request) { error in
+            if let error {
+                print("⚠️ Picky notification delivery failed: \(error.localizedDescription)")
+            }
+        }
     }
 }
 
@@ -450,13 +484,20 @@ final class PickySessionListViewModel: ObservableObject {
         switch event {
         case .sessionSnapshot(let snapshot):
             pickySessionLog("snapshot sessions=\(snapshot.count)")
+            let previousCardsByID = Dictionary(uniqueKeysWithValues: (sessions + archivedSessions).map { ($0.id, $0) })
             let cards = snapshot.map(SessionCard.init(session:))
             let archivedIDs = effectiveArchivedSessionIDs(for: cards)
             sessions = cards.filter { !archivedIDs.contains($0.id) }.sortedForHUD()
             archivedSessions = cards.filter { archivedIDs.contains($0.id) }.sortedForHUD()
             syncSelectionAfterSessionListChange()
             syncVoiceFollowUpAfterSessionListChange()
-            sessions.forEach(deliverNotificationIfNeeded(for:))
+            for card in sessions {
+                if previousCardsByID[card.id] == nil {
+                    markNotificationDeliveredIfNeeded(for: card)
+                } else {
+                    deliverNotificationIfNeeded(for: card)
+                }
+            }
         case .sessionUpdated(let session):
             pickySessionLog("session updated session=\(session.id) status=\(session.status.rawValue)")
             upsert(SessionCard(session: session))
@@ -594,7 +635,23 @@ final class PickySessionListViewModel: ObservableObject {
         sessions.sorted { lhs, rhs in lhs.updatedAt > rhs.updatedAt }.first?.id
     }
 
+    private func markNotificationDeliveredIfNeeded(for session: SessionCard) {
+        guard let notification = notification(for: session) else { return }
+        deliveredNotificationKeys.insert(notification.key)
+    }
+
     private func deliverNotificationIfNeeded(for session: SessionCard) {
+        guard let notification = notification(for: session) else {
+            resetTerminalNotificationKeysIfNeeded(for: session)
+            return
+        }
+
+        guard !deliveredNotificationKeys.contains(notification.key) else { return }
+        deliveredNotificationKeys.insert(notification.key)
+        notificationCenter.deliver(title: notification.title, body: notification.body, identifier: notification.key)
+    }
+
+    private func notification(for session: SessionCard) -> (key: String, title: String, body: String)? {
         let notification: (key: String, title: String, body: String)?
         switch session.status {
         case .completed:
@@ -607,9 +664,13 @@ final class PickySessionListViewModel: ObservableObject {
             notification = nil
         }
 
-        guard let notification, !deliveredNotificationKeys.contains(notification.key) else { return }
-        deliveredNotificationKeys.insert(notification.key)
-        notificationCenter.deliver(title: notification.title, body: notification.body, identifier: notification.key)
+        return notification
+    }
+
+    private func resetTerminalNotificationKeysIfNeeded(for session: SessionCard) {
+        guard !session.status.isTerminal else { return }
+        deliveredNotificationKeys.remove("\(session.id):completed")
+        deliveredNotificationKeys.remove("\(session.id):failed")
     }
 }
 

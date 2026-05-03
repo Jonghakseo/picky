@@ -19,6 +19,7 @@ struct CompanionScreenCapture {
     let displayFrame: CGRect
     let screenshotWidthInPixels: Int
     let screenshotHeightInPixels: Int
+    let cursor: PickyCursorContext?
 }
 
 @MainActor
@@ -101,6 +102,27 @@ enum CompanionScreenCaptureUtility {
                 continue
             }
 
+            let cursorContext: PickyCursorContext?
+            if isCursorScreen {
+                let displayLocalX = mouseLocation.x - displayFrame.origin.x
+                let displayLocalYFromBottom = mouseLocation.y - displayFrame.origin.y
+                let displayPoint = CGPoint(
+                    x: displayLocalX,
+                    y: displayFrame.height - displayLocalYFromBottom
+                )
+                let screenshotPixel = CGPoint(
+                    x: displayPoint.x * CGFloat(configuration.width) / max(displayFrame.width, 1),
+                    y: displayPoint.y * CGFloat(configuration.height) / max(displayFrame.height, 1)
+                )
+                cursorContext = PickyCursorContext(
+                    globalPoint: PickyCGPoint(mouseLocation),
+                    displayPoint: PickyCGPoint(displayPoint),
+                    screenshotPixel: PickyCGPoint(screenshotPixel)
+                )
+            } else {
+                cursorContext = nil
+            }
+
             let screenLabel: String
             if sortedDisplays.count == 1 {
                 screenLabel = "user's screen (cursor is here)"
@@ -118,7 +140,8 @@ enum CompanionScreenCaptureUtility {
                 displayHeightInPoints: Int(displayFrame.height),
                 displayFrame: displayFrame,
                 screenshotWidthInPixels: configuration.width,
-                screenshotHeightInPixels: configuration.height
+                screenshotHeightInPixels: configuration.height,
+                cursor: cursorContext
             ))
         }
 

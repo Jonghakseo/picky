@@ -41,6 +41,7 @@ struct StaticPickyScreenContextProvider: PickyScreenContextProviding {
                 screenshotWidthInPixels: capture.screenshotWidthInPixels,
                 screenshotHeightInPixels: capture.screenshotHeightInPixels,
                 isCursorScreen: capture.isCursorScreen,
+                cursor: capture.cursor,
                 imageData: capture.imageData
             )
         }

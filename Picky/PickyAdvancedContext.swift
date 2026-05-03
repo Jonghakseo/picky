@@ -192,6 +192,6 @@ struct PickyRegionScreenshotContext: Codable, Equatable {
 
 extension PickyScreenContext {
     var pointConventionLabel: String {
-        "[POINT:x,y:\(label):screen]"
+        "picky_show_pointer(x, y, label: \(label), coordinateSpace: screenshotPixel)"
     }
 }

@@ -34,8 +34,8 @@ private struct AdvancedFakeWindowProvider: PickyWindowContextProviding {
 private struct MultiDisplayScreenProvider: PickyScreenContextProviding {
     func screenContexts() -> [PickyScreenContext] {
         [
-            PickyScreenContext(label: "left display", frame: PickyCGRect(x: -1440, y: 0, width: 1440, height: 900), screenshotWidthInPixels: 2880, screenshotHeightInPixels: 1800, isCursorScreen: false, imageData: Data()),
-            PickyScreenContext(label: "main display", frame: PickyCGRect(x: 0, y: 0, width: 1512, height: 982), screenshotWidthInPixels: 3024, screenshotHeightInPixels: 1964, isCursorScreen: true, imageData: Data())
+            PickyScreenContext(label: "left display", frame: PickyCGRect(x: -1440, y: 0, width: 1440, height: 900), screenshotWidthInPixels: 2880, screenshotHeightInPixels: 1800, isCursorScreen: false, cursor: nil, imageData: Data()),
+            PickyScreenContext(label: "main display", frame: PickyCGRect(x: 0, y: 0, width: 1512, height: 982), screenshotWidthInPixels: 3024, screenshotHeightInPixels: 1964, isCursorScreen: true, cursor: PickyCursorContext(globalPoint: PickyCGPoint(x: 100, y: 200), displayPoint: PickyCGPoint(x: 100, y: 782), screenshotPixel: PickyCGPoint(x: 200, y: 1564)), imageData: Data())
         ]
     }
 }

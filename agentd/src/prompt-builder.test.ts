@@ -52,4 +52,41 @@ describe("neutral prompt builder", () => {
     expect(prompt.text).toContain("`picky_handoff` accepts an optional `cwd`");
     expect(prompt.text).toContain("omit it to use Picky's configured default cwd");
   });
+
+  it("tells the main agent to use the pointer overlay for concrete visual locations", () => {
+    const prompt = buildMainAgentPrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")));
+    expect(prompt.text).toContain("call `picky_show_pointer`");
+    expect(prompt.text).toContain("coordinateSpace='screenshotPixel'");
+    expect(prompt.text).toContain("Screenshot coordinates use top-left origin");
+    expect(prompt.text).not.toContain("[POINT:");
+  });
+
+  it("includes captured cursor coordinates when available", () => {
+    const context = PickyContextPacketSchema.parse({
+      ...readJson("context/plain-text.context.json"),
+      screenshots: [
+        {
+          id: "shot-cursor",
+          label: "cursor screen",
+          path: "/tmp/picky/cursor.jpg",
+          screenId: "screen1",
+          bounds: { x: 0, y: 0, width: 1512, height: 982 },
+          screenshotWidthInPixels: 3024,
+          screenshotHeightInPixels: 1964,
+          isCursorScreen: true,
+          cursor: {
+            globalPoint: { x: 100, y: 200 },
+            displayPoint: { x: 100, y: 782 },
+            screenshotPixel: { x: 200, y: 1564 },
+          },
+        },
+      ],
+    });
+
+    const prompt = buildInitialTaskPrompt(context);
+
+    expect(prompt.text).toContain("cursorDisplayPoint=100,782");
+    expect(prompt.text).toContain("cursorScreenshotPixel=200,1564");
+    expect(prompt.text).toContain("cursorGlobalAppKit=100,200");
+  });
 });

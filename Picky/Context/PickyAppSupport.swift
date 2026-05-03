@@ -43,7 +43,8 @@ struct PickyAppSupportScreenshotStore: PickyScreenshotStoring {
             bounds: screen.frame,
             screenshotWidthInPixels: screen.screenshotWidthInPixels,
             screenshotHeightInPixels: screen.screenshotHeightInPixels,
-            isCursorScreen: screen.isCursorScreen
+            isCursorScreen: screen.isCursorScreen,
+            cursor: screen.cursor
         )
     }
 }

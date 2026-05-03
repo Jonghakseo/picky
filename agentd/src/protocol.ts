@@ -17,6 +17,12 @@ export const SessionStatusSchema = z.enum([
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 
 const BoundsSchema = z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() });
+const PointSchema = z.object({ x: z.number(), y: z.number() });
+const CursorContextSchema = z.object({
+  globalPoint: PointSchema,
+  displayPoint: PointSchema,
+  screenshotPixel: PointSchema,
+});
 
 export const ScreenshotSchema = z.object({
   id: z.string().min(1),
@@ -27,6 +33,7 @@ export const ScreenshotSchema = z.object({
   screenshotWidthInPixels: z.number().int().positive().optional(),
   screenshotHeightInPixels: z.number().int().positive().optional(),
   isCursorScreen: z.boolean().optional(),
+  cursor: CursorContextSchema.optional(),
 });
 
 export const BrowserMetadataSchema = z.object({

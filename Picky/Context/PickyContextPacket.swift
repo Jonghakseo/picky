@@ -56,6 +56,10 @@ struct PickyScreenshotContext: Codable, Equatable, Identifiable {
     /// True when this screenshot was captured from the display containing the
     /// physical cursor / primary focus at capture time.
     let isCursorScreen: Bool?
+    /// Physical cursor position at capture time, populated only for the cursor
+    /// screen. displayPoint and screenshotPixel use top-left origin to match
+    /// picky_show_pointer coordinate conventions.
+    let cursor: PickyCursorContext?
 
     init(
         id: String,
@@ -65,7 +69,8 @@ struct PickyScreenshotContext: Codable, Equatable, Identifiable {
         bounds: PickyCGRect?,
         screenshotWidthInPixels: Int? = nil,
         screenshotHeightInPixels: Int? = nil,
-        isCursorScreen: Bool? = nil
+        isCursorScreen: Bool? = nil,
+        cursor: PickyCursorContext? = nil
     ) {
         self.id = id
         self.label = label
@@ -75,7 +80,17 @@ struct PickyScreenshotContext: Codable, Equatable, Identifiable {
         self.screenshotWidthInPixels = screenshotWidthInPixels
         self.screenshotHeightInPixels = screenshotHeightInPixels
         self.isCursorScreen = isCursorScreen
+        self.cursor = cursor
     }
+}
+
+struct PickyCursorContext: Codable, Equatable {
+    /// Global AppKit screen point, bottom-left origin across the desktop.
+    let globalPoint: PickyCGPoint
+    /// Point relative to the display, top-left origin, in display points.
+    let displayPoint: PickyCGPoint
+    /// Point relative to the captured screenshot image, top-left origin, in pixels.
+    let screenshotPixel: PickyCGPoint
 }
 
 struct PickyScreenContext: Equatable {
@@ -84,7 +99,23 @@ struct PickyScreenContext: Equatable {
     let screenshotWidthInPixels: Int
     let screenshotHeightInPixels: Int
     let isCursorScreen: Bool
+    let cursor: PickyCursorContext?
     let imageData: Data?
+}
+
+struct PickyCGPoint: Codable, Equatable {
+    let x: Double
+    let y: Double
+
+    init(_ point: CGPoint) {
+        self.x = point.x
+        self.y = point.y
+    }
+
+    init(x: Double, y: Double) {
+        self.x = x
+        self.y = y
+    }
 }
 
 struct PickyCGRect: Codable, Equatable {

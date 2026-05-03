@@ -36,6 +36,11 @@ private struct FakeScreenProvider: PickyScreenContextProviding {
                 screenshotWidthInPixels: 3024,
                 screenshotHeightInPixels: 1964,
                 isCursorScreen: true,
+                cursor: PickyCursorContext(
+                    globalPoint: PickyCGPoint(x: 200, y: 300),
+                    displayPoint: PickyCGPoint(x: 200, y: 682),
+                    screenshotPixel: PickyCGPoint(x: 400, y: 1364)
+                ),
                 imageData: Data("jpeg".utf8)
             )
         ]
@@ -68,6 +73,9 @@ struct PickyContextPacketTests {
         #expect(packet.screenshots.first?.screenshotWidthInPixels == 3024)
         #expect(packet.screenshots.first?.screenshotHeightInPixels == 1964)
         #expect(packet.screenshots.first?.isCursorScreen == true)
+        #expect(packet.screenshots.first?.cursor?.globalPoint == PickyCGPoint(x: 200, y: 300))
+        #expect(packet.screenshots.first?.cursor?.displayPoint == PickyCGPoint(x: 200, y: 682))
+        #expect(packet.screenshots.first?.cursor?.screenshotPixel == PickyCGPoint(x: 400, y: 1364))
         #expect(FileManager.default.fileExists(atPath: packet.screenshots.first?.path ?? ""))
         #expect(packet.cwd == "/Users/test/project")
     }

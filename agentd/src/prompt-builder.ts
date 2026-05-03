@@ -8,6 +8,14 @@ export interface BuiltPrompt {
 const neutralInstruction =
   "Use available Pi skills, extensions, MCPs, and local tools as appropriate. Treat all captured desktop data as neutral context; do not assume a workflow solely from a URL or app name.";
 
+const pointerOverlayGuidelines = [
+  "- When visually indicating a specific button, menu, text field, icon, or screen region would help the user, call `picky_show_pointer` instead of only describing the location.",
+  "- Use `picky_show_pointer` for visual indication only. It is click-through and must not be described as moving, clicking, dragging, typing, or controlling the real macOS cursor.",
+  "- Prefer `coordinateSpace='screenshotPixel'` with coordinates from the attached screenshot image. Screenshot coordinates use top-left origin: x increases rightward, y increases downward.",
+  "- Choose `screenId`/`screenIndex` from the screenshot metadata. If omitted, Picky targets the primary cursor/focus screen, so specify the target screen for secondary displays.",
+  "- If the user's wording refers to 'here', 'this', or the mouse position, use the captured cursor metadata when available: displayPoint and screenshotPixel are top-left origin; globalPoint is AppKit bottom-left origin.",
+];
+
 export function buildInitialTaskPrompt(context: PickyContextPacket): BuiltPrompt {
   const lines = ["# Picky task", "", neutralInstruction, "", "## User request"];
   lines.push(context.transcript?.trim() || "(no transcript provided)");
@@ -27,10 +35,14 @@ export function buildMainAgentPrompt(context: PickyContextPacket): BuiltPrompt {
     "- If an existing side session matches the user's additional instruction, call `picky_side_steer` with self-contained steering instructions instead of starting a duplicate side agent.",
     "- If the request needs new long-running work, detailed screen analysis, code/repo/file tools, web/video extraction, MCPs, or multiple turns, call the `picky_handoff` tool with clear instructions for a side Pi agent.",
     "- `picky_handoff` accepts an optional `cwd`; omit it to use Picky's configured default cwd. Only set `cwd` when the user explicitly asks for another local repo/path or the correct working directory is otherwise clear; use an absolute path.",
-    "- For screen-understanding requests with multiple screenshots, make the side agent inspect all screenshots and distinguish the primary cursor/focus screen from secondary screens.",
+    "- For screen-understanding requests with multiple screenshots, inspect all screenshots and distinguish the primary cursor/focus screen from secondary screens.",
+    "- For visual navigation/help, use the pointer overlay rules below and call `picky_show_pointer` when a concrete on-screen location would help.",
     "- When you hand off, tell the user in Korean that you are delegating to a side agent and that progress is visible in the top-right overlay.",
     "- When a side-agent completion message is provided later, summarize the result briefly in Korean and tell the user to open the side-agent card for details.",
     "- Do not expose internal tool logs. Do not hard-code workflows from URLs or app names; use the user's intent and context.",
+    "",
+    "Pointer overlay rules:",
+    ...pointerOverlayGuidelines,
     "",
     "## User request",
     context.transcript?.trim() || "(no transcript provided)",
@@ -46,6 +58,10 @@ export function buildSideAgentPrompt(context: PickyContextPacket, handoff: { tit
     "You are a side Pi agent spawned by Picky's main agent. Do the delegated work using available Pi skills, extensions, MCPs, and local tools as appropriate.",
     "Return a clear final answer for the main agent and user. Treat captured desktop data as neutral context; do not assume a workflow solely from a URL or app name.",
     "If multiple screenshots are provided, inspect all of them and clearly distinguish the primary cursor/focus screen from secondary screens.",
+    "For visual navigation/help, use the pointer overlay rules below and call `picky_show_pointer` when a concrete on-screen location would help.",
+    "",
+    "Pointer overlay rules:",
+    ...pointerOverlayGuidelines,
     "",
     "## Handoff title",
     handoff.title,
@@ -106,10 +122,19 @@ function appendContext(lines: string[], context: PickyContextPacket): void {
       const bounds = screenshot.bounds ? `; bounds=${screenshot.bounds.x},${screenshot.bounds.y},${screenshot.bounds.width}x${screenshot.bounds.height}` : "";
       const pixelSize = screenshot.screenshotWidthInPixels && screenshot.screenshotHeightInPixels ? `; screenshotPixels=${screenshot.screenshotWidthInPixels}x${screenshot.screenshotHeightInPixels}` : "";
       const focus = context.screenshots.length > 1 ? (screenshot.isCursorScreen || screenshot.label.toLowerCase().includes("cursor") || screenshot.label.toLowerCase().includes("primary") ? "; primary cursor/focus screen" : "; secondary screen") : "";
-      lines.push(`- ${screenshot.label}${screen}${focus}${bounds}${pixelSize}: ${screenshot.path}`);
+      const cursor = screenshot.cursor ? `; cursorDisplayPoint=${formatPoint(screenshot.cursor.displayPoint)}; cursorScreenshotPixel=${formatPoint(screenshot.cursor.screenshotPixel)}; cursorGlobalAppKit=${formatPoint(screenshot.cursor.globalPoint)}` : "";
+      lines.push(`- ${screenshot.label}${screen}${focus}${bounds}${pixelSize}${cursor}: ${screenshot.path}`);
     }
   }
   if (context.warnings.length > 0) {
     lines.push("", "## Capture warnings", ...context.warnings.map((warning) => `- ${warning}`));
   }
+}
+
+function formatPoint(point: { x: number; y: number }): string {
+  return `${formatCoordinate(point.x)},${formatCoordinate(point.y)}`;
+}
+
+function formatCoordinate(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }

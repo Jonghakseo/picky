@@ -352,10 +352,44 @@ describe("SessionSupervisor", () => {
 
     const restored = supervisor.get("running-with-pi-file");
     expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/pi-session.jsonl", cwd: "/tmp/project", sessionId: "running-with-pi-file" }]);
-    expect(restored?.status).toBe("waiting_for_input");
+    expect(restored?.status).toBe("running");
     expect(restored?.lastSummary).toBe("Runtime reattached from previous Pi session");
+    expect(restored?.pendingExtensionUiRequest).toBeUndefined();
     expect(restored?.logs).toContain("runtime reattached from pi session: /tmp/pi-session.jsonl");
     expect(restored?.logs.some((line) => line.includes("Runtime not attached after daemon restart"))).toBe(false);
+  });
+
+  it("keeps reattached sessions input-needed only when a pending request is available", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "waiting-with-pending-ui",
+      title: "Waiting side agent",
+      status: "waiting_for_input",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "Waiting before restart",
+      logs: ["main-agent handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      pendingExtensionUiRequest: {
+        id: "ui-1",
+        sessionId: "waiting-with-pending-ui",
+        method: "input",
+        createdAt: "2026-05-01T00:00:05.000Z",
+        prompt: "Need input",
+      },
+    });
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+
+    await supervisor.load();
+
+    const restored = supervisor.get("waiting-with-pending-ui");
+    expect(restored?.status).toBe("waiting_for_input");
+    expect(restored?.pendingExtensionUiRequest?.id).toBe("ui-1");
   });
 
   it("does not reattach archived non-terminal sessions during startup", async () => {

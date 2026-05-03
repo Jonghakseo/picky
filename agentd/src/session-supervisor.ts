@@ -578,7 +578,11 @@ export class SessionSupervisor extends EventEmitter {
       this.runtimeHandles.set(session.id, handle);
       handle.subscribe((event) => void this.applyRuntimeEvent(session.id, event));
       await this.appendLog(session.id, `runtime reattached from pi session: ${sessionFilePath}`);
-      await this.patch(session.id, { status: "waiting_for_input", lastSummary: "Runtime reattached from previous Pi session", pendingExtensionUiRequest: undefined });
+      const current = this.mustGet(session.id);
+      await this.patch(session.id, {
+        status: current.pendingExtensionUiRequest ? "waiting_for_input" : "running",
+        lastSummary: "Runtime reattached from previous Pi session",
+      });
       return handle;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -513,7 +513,17 @@ private struct PickySessionCardView: View {
                     .padding(.leading, 3)
                     .padding(.vertical, 7)
             }
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(cardBorderColor, lineWidth: 1))
+            .overlay {
+                if usesAnimatedStatusBorder {
+                    PickyHUDAnimatedStatusBorderView(
+                        baseColor: statusColor,
+                        highlightColor: statusLoadingHighlightColor,
+                        duration: statusBorderAnimationDuration
+                    )
+                } else {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(cardBorderColor, lineWidth: 1)
+                }
+            }
             .shadow(
                 color: Color.black.opacity(PickyHUDExpansion.cardShadowOpacity),
                 radius: PickyHUDExpansion.cardShadowRadius,
@@ -591,11 +601,12 @@ private struct PickySessionCardView: View {
 
     private var cardTintOpacity: Double {
         switch session.status {
-        case .running: 0.04
+        case .running: 0.055
+        case .queued: 0.035
         case .waiting_for_input: 0.08
         case .blocked, .failed: 0.07
         case .completed: 0.03
-        case .queued, .cancelled: 0.02
+        case .cancelled: 0.02
         }
     }
 
@@ -604,6 +615,25 @@ private struct PickySessionCardView: View {
         case .running, .waiting_for_input, .blocked, .failed: 0.92
         case .queued, .completed: 0.78
         case .cancelled: 0.55
+        }
+    }
+
+    private var usesAnimatedStatusBorder: Bool {
+        session.status == .queued || session.status == .running
+    }
+
+    private var statusBorderAnimationDuration: Double {
+        session.status == .running ? 2.4 : 4.2
+    }
+
+    private var statusLoadingHighlightColor: Color {
+        switch session.status {
+        case .running:
+            return DS.Colors.info
+        case .queued:
+            return DS.Colors.floatingGradientPurple
+        default:
+            return statusColor
         }
     }
 
@@ -645,6 +675,46 @@ private struct PickySessionCardView: View {
         case .cancelled:
             return DS.Colors.textTertiary
         }
+    }
+}
+
+private struct PickyHUDAnimatedStatusBorderView: View {
+    let baseColor: Color
+    let highlightColor: Color
+    let duration: Double
+    @State private var isFlowing = false
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(baseColor.opacity(0.24), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(
+                    AngularGradient(
+                        stops: [
+                            .init(color: baseColor.opacity(0.20), location: 0.00),
+                            .init(color: highlightColor.opacity(0.85), location: 0.11),
+                            .init(color: Color.white.opacity(0.64), location: 0.17),
+                            .init(color: baseColor.opacity(0.86), location: 0.24),
+                            .init(color: baseColor.opacity(0.18), location: 0.42),
+                            .init(color: highlightColor.opacity(0.30), location: 0.62),
+                            .init(color: highlightColor.opacity(0.82), location: 0.79),
+                            .init(color: baseColor.opacity(0.24), location: 1.00)
+                        ],
+                        center: .center,
+                        angle: .degrees(isFlowing ? 360 : 0)
+                    ),
+                    lineWidth: 1.45
+                )
+                .shadow(color: highlightColor.opacity(0.26), radius: 3.4, x: 0, y: 0)
+        }
+        .onAppear {
+            guard !isFlowing else { return }
+            withAnimation(.linear(duration: duration).repeatForever(autoreverses: false)) {
+                isFlowing = true
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 

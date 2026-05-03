@@ -89,10 +89,14 @@ final class BuddyDictationManager: NSObject, ObservableObject {
     /// rapid follow-up requests that arrive before macOS updates its cache.
     private var lastPermissionRequestCompletedAt: Date?
 
-    override init() {
-        let transcriptionProvider = BuddyTranscriptionProviderFactory.makeDefaultProvider()
-        self.transcriptionProvider = transcriptionProvider
-        self.transcriptionProviderDisplayName = transcriptionProvider.displayName
+    override convenience init() {
+        self.init(transcriptionProvider: nil)
+    }
+
+    init(transcriptionProvider: (any BuddyTranscriptionProvider)?) {
+        let resolvedTranscriptionProvider = transcriptionProvider ?? BuddyTranscriptionProviderFactory.makeDefaultProvider()
+        self.transcriptionProvider = resolvedTranscriptionProvider
+        self.transcriptionProviderDisplayName = resolvedTranscriptionProvider.displayName
         super.init()
     }
 

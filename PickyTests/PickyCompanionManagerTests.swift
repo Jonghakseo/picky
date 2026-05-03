@@ -34,6 +34,36 @@ private final class FakeVoiceSelectionStore: PickySessionSelectionStoring {
 }
 
 @MainActor
+private final class FakeSpeechPlaybackProvider: PickySpeechPlaybackProvider {
+    let displayName = "Fake Speech"
+    private(set) var spokenUtterances: [String] = []
+    private var onFinish: ((Bool) -> Void)?
+    var shouldStartSpeaking = true
+    var isSpeaking = false
+
+    @discardableResult
+    func speak(_ utterance: String, onFinish: @escaping (Bool) -> Void) -> Bool {
+        spokenUtterances.append(utterance)
+        guard shouldStartSpeaking else { return false }
+        self.onFinish = onFinish
+        isSpeaking = true
+        return true
+    }
+
+    func stopSpeaking() {
+        isSpeaking = false
+        onFinish = nil
+    }
+
+    func finishSpeaking(didFinish: Bool = true) {
+        guard let onFinish else { return }
+        self.onFinish = nil
+        isSpeaking = false
+        onFinish(didFinish)
+    }
+}
+
+@MainActor
 struct PickyCompanionManagerTests {
     @Test func voiceTranscriptCreatesTaskWhenNoSessionIsSelected() async throws {
         let client = FakeVoiceClient()
@@ -107,7 +137,12 @@ struct PickyCompanionManagerTests {
     }
 
     @Test func recognizedVoicePromptStaysVisibleUntilSpokenResponseStarts() async throws {
-        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
 
         manager.beginAwaitingAgentResponse(recognizedTranscript: "  설정 열어줘  ")
 
@@ -124,6 +159,30 @@ struct PickyCompanionManagerTests {
         #expect(manager.voicePromptBubbleState == .hidden)
         #expect(manager.latestAgentSessionSummary == "열어볼게요.")
         #expect(manager.voiceState == .responding)
+        #expect(speechProvider.spokenUtterances == ["열어볼게요."])
+    }
+
+    @Test func injectedSpeechProviderControlsResponseLifecycle() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+        manager.beginAwaitingAgentResponse()
+
+        manager.handleAgentSubmissionAccepted(
+            receipt: PickyAgentSubmissionReceipt(sessionID: "created-session", message: "완료했어요."),
+            source: "voice"
+        )
+
+        #expect(manager.voiceState == .responding)
+        #expect(speechProvider.spokenUtterances == ["완료했어요."])
+
+        speechProvider.finishSpeaking()
+        await Task.yield()
+
+        #expect(manager.voiceState == .idle)
     }
 
     @Test func recognizedVoicePromptDisplayTextIsCappedForOverlayOnly() async throws {

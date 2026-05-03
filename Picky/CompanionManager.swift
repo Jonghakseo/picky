@@ -91,29 +91,6 @@ enum CompanionVoicePresentationReducer {
     }
 }
 
-private final class PickySpeechSynthesizerDelegate: NSObject, NSSpeechSynthesizerDelegate {
-    private let onFinish: (Bool) -> Void
-
-    init(onFinish: @escaping (Bool) -> Void) {
-        self.onFinish = onFinish
-    }
-
-    func speechSynthesizer(_ sender: NSSpeechSynthesizer, didFinishSpeaking finishedSpeaking: Bool) {
-        onFinish(finishedSpeaking)
-    }
-}
-
-enum PickySpeechPlaybackPreparation {
-    /// Short pre-roll for macOS system speech. Some output devices need a tiny
-    /// amount of generated audio time before the first audible phoneme; without
-    /// it, the start of short TTS replies can be clipped.
-    static let prerollSilenceMilliseconds = 500
-
-    static func prepareForPlayback(_ utterance: String) -> String {
-        "[[slnc \(prerollSilenceMilliseconds)]]\(utterance)"
-    }
-}
-
 @MainActor
 final class CompanionManager: ObservableObject {
     private static let minimumVoiceProcessingDisplayDuration: TimeInterval = 1.0
@@ -141,7 +118,7 @@ final class CompanionManager: ObservableObject {
     /// How long the buddy should keep the pointer bubble visible after arriving.
     @Published var detectedElementDisplayDuration: TimeInterval?
 
-    let buddyDictationManager = BuddyDictationManager()
+    let buddyDictationManager: BuddyDictationManager
     let globalPushToTalkShortcutMonitor = GlobalPushToTalkShortcutMonitor()
     let overlayWindowManager = OverlayWindowManager()
     // Response text is now displayed inline on the cursor overlay via
@@ -149,14 +126,19 @@ final class CompanionManager: ObservableObject {
 
     private let agentClient: any PickyAgentClient
     private let selectionStore: PickySessionSelectionStoring
+    private let speechPlaybackProvider: any PickySpeechPlaybackProvider
     private let voiceContextCaptureCoordinator = PickyVoiceContextCaptureCoordinator()
 
     init(
         agentClient: any PickyAgentClient = LocalStubPickyAgentClient(),
-        selectionStore: PickySessionSelectionStoring = PickyUserDefaultsSessionSelectionStore.shared
+        selectionStore: PickySessionSelectionStoring = PickyUserDefaultsSessionSelectionStore.shared,
+        buddyDictationManager: BuddyDictationManager? = nil,
+        speechPlaybackProvider: (any PickySpeechPlaybackProvider)? = nil
     ) {
         self.agentClient = agentClient
         self.selectionStore = selectionStore
+        self.buddyDictationManager = buddyDictationManager ?? BuddyDictationManager()
+        self.speechPlaybackProvider = speechPlaybackProvider ?? PickySpeechPlaybackProviderFactory.makeDefaultProvider()
     }
 
     /// The currently running AI response task, if any. Cancelled when the user
@@ -175,8 +157,6 @@ final class CompanionManager: ObservableObject {
     private var transientHideTask: Task<Void, Never>?
     private var responseStateTask: Task<Void, Never>?
     private var deferredFinishAwaitingAgentResponseTask: Task<Void, Never>?
-    private var speechSynthesizer: NSSpeechSynthesizer?
-    private var speechSynthesizerDelegate: PickySpeechSynthesizerDelegate?
     private var activeSpeechID: UUID?
     /// Tracks the physical push-to-talk hold separately from dictation state so
     /// audio stays suppressed even if recording fails before the key is released.
@@ -263,10 +243,7 @@ final class CompanionManager: ObservableObject {
         deferredFinishAwaitingAgentResponseTask?.cancel()
         deferredFinishAwaitingAgentResponseTask = nil
         activeSpeechID = nil
-        speechSynthesizer?.delegate = nil
-        speechSynthesizer?.stopSpeaking()
-        speechSynthesizer = nil
-        speechSynthesizerDelegate = nil
+        speechPlaybackProvider.stopSpeaking()
         pendingAgentResponseStartedAt = nil
         currentVoicePromptPreview = nil
         voicePromptBubbleState = .hidden
@@ -789,21 +766,16 @@ final class CompanionManager: ObservableObject {
         let speechID = UUID()
         activeSpeechID = speechID
 
-        let delegate = PickySpeechSynthesizerDelegate { [weak self] didFinish in
+        voiceState = .responding
+
+        #if DEBUG
+        print("🔊 Picky TTS start — id: \(speechID), provider: \(speechPlaybackProvider.displayName), chars: \(utterance.count)")
+        #endif
+        guard speechPlaybackProvider.speak(utterance, onFinish: { [weak self] didFinish in
             Task { @MainActor [weak self] in
                 self?.handleSpeechFinished(speechID: speechID, didFinish: didFinish)
             }
-        }
-        let synthesizer = reusableSpeechSynthesizer()
-        synthesizer.delegate = delegate
-        speechSynthesizerDelegate = delegate
-        voiceState = .responding
-
-        let preparedUtterance = PickySpeechPlaybackPreparation.prepareForPlayback(utterance)
-        #if DEBUG
-        print("🔊 Picky TTS start — id: \(speechID), chars: \(utterance.count), prerollMs: \(PickySpeechPlaybackPreparation.prerollSilenceMilliseconds)")
-        #endif
-        guard synthesizer.startSpeaking(preparedUtterance) else {
+        }) else {
             handleSpeechFinished(speechID: speechID, didFinish: false)
             return
         }
@@ -814,11 +786,10 @@ final class CompanionManager: ObservableObject {
                 guard !Task.isCancelled else { return }
                 let shouldFinish = await MainActor.run { [weak self] in
                     guard let self,
-                          self.activeSpeechID == speechID,
-                          let synthesizer = self.speechSynthesizer else {
+                          self.activeSpeechID == speechID else {
                         return false
                     }
-                    return !synthesizer.isSpeaking
+                    return !self.speechPlaybackProvider.isSpeaking
                 }
                 guard shouldFinish else { continue }
                 await MainActor.run { [weak self] in
@@ -829,22 +800,11 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    private func reusableSpeechSynthesizer() -> NSSpeechSynthesizer {
-        if let speechSynthesizer {
-            return speechSynthesizer
-        }
-        let synthesizer = NSSpeechSynthesizer()
-        speechSynthesizer = synthesizer
-        return synthesizer
-    }
-
     private func stopCurrentSpeech() {
         activeSpeechID = nil
         responseStateTask?.cancel()
         responseStateTask = nil
-        speechSynthesizer?.delegate = nil
-        speechSynthesizer?.stopSpeaking()
-        speechSynthesizerDelegate = nil
+        speechPlaybackProvider.stopSpeaking()
     }
 
     private func handleSpeechFinished(speechID: UUID, didFinish _: Bool) {
@@ -852,8 +812,6 @@ final class CompanionManager: ObservableObject {
         activeSpeechID = nil
         responseStateTask?.cancel()
         responseStateTask = nil
-        speechSynthesizer?.delegate = nil
-        speechSynthesizerDelegate = nil
         #if DEBUG
         print("🔊 Picky TTS finish — id: \(speechID)")
         #endif

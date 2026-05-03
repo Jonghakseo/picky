@@ -117,6 +117,7 @@ export const PickyAgentSessionSchema = z.object({
   createdAt: isoTimestamp,
   updatedAt: isoTimestamp,
   lastSummary: z.string().optional(),
+  thinkingPreview: z.string().optional(),
   finalAnswer: z.string().optional(),
   logs: z.array(z.string()).default([]),
   tools: z.array(PickyToolActivitySchema).default([]),

@@ -16,13 +16,18 @@ export interface RuntimeEventHandlerDependencies {
   emitExtensionUiRequest(request: PickyExtensionUiRequest): void;
 }
 
+const THINKING_PREVIEW_CHAR_LIMIT = 240;
+const THINKING_DRAFT_CHAR_LIMIT = THINKING_PREVIEW_CHAR_LIMIT * 4;
+
 export class RuntimeEventHandler {
   private readonly assistantDrafts = new Map<string, string>();
+  private readonly thinkingDrafts = new Map<string, string>();
 
   constructor(private readonly dependencies: RuntimeEventHandlerDependencies) {}
 
   resetAssistantDraft(sessionId: string): void {
     this.assistantDrafts.set(sessionId, "");
+    this.thinkingDrafts.set(sessionId, "");
   }
 
   async handle(sessionId: string, event: RuntimeEvent): Promise<void> {
@@ -31,6 +36,7 @@ export class RuntimeEventHandler {
       this.assistantDrafts.set(sessionId, `${this.assistantDrafts.get(sessionId) ?? ""}${event.delta}`);
       return;
     }
+    if (event.type === "thinking_delta") return this.applyThinkingEvent(sessionId, event);
     if (event.type === "status") return this.applyStatusEvent(sessionId, event);
     if (event.type === "extension_ui") {
       logAgentd("extension ui event", { sessionId, waitsForInput: event.waitsForInput, method: typeof event.request.method === "string" ? event.request.method : undefined });
@@ -44,6 +50,7 @@ export class RuntimeEventHandler {
     const terminal = ["completed", "failed", "cancelled"].includes(event.status);
     const finalAnswer = terminal ? cleanFinalAnswer(this.assistantDrafts.get(sessionId)) : undefined;
     const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
+    if (terminal) patch.thinkingPreview = undefined;
     if (finalAnswer) {
       const session = this.dependencies.getSession(sessionId);
       patch.finalAnswer = finalAnswer;
@@ -54,6 +61,21 @@ export class RuntimeEventHandler {
       await this.dependencies.materializeTerminalArtifacts(sessionId);
       if (this.dependencies.isSideSession(sessionId)) await this.dependencies.notifySideCompletion(sessionId);
     }
+  }
+
+  private async applyThinkingEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "thinking_delta" }>): Promise<void> {
+    if (!event.delta) return;
+
+    const previousDraft = this.thinkingDrafts.get(sessionId) ?? "";
+    if (previousDraft.length >= THINKING_DRAFT_CHAR_LIMIT) return;
+
+    const nextDraft = `${previousDraft}${event.delta}`.slice(0, THINKING_DRAFT_CHAR_LIMIT);
+    this.thinkingDrafts.set(sessionId, nextDraft);
+
+    const thinkingPreview = compactThinkingPreview(nextDraft);
+    if (!thinkingPreview || thinkingPreview === this.dependencies.getSession(sessionId).thinkingPreview) return;
+
+    await this.dependencies.patchSession(sessionId, { thinkingPreview });
   }
 
   private async applyExtensionUiEvent(sessionId: string, rawRequest: Record<string, unknown>, waitsForInput: boolean): Promise<void> {
@@ -74,4 +96,10 @@ export class RuntimeEventHandler {
     logAgentd("tool activity", { sessionId, tool: event.name, status: event.status, previewChars: event.preview?.length });
     await this.dependencies.patchSession(sessionId, { tools });
   }
+}
+
+function compactThinkingPreview(value: string): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (compact.length <= THINKING_PREVIEW_CHAR_LIMIT) return compact;
+  return `${compact.slice(0, THINKING_PREVIEW_CHAR_LIMIT - 1)}…`;
 }

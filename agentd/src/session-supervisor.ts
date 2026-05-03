@@ -297,7 +297,7 @@ export class SessionSupervisor extends EventEmitter {
       this.runtimeHandles.set(id, handle);
       logAgentd("runtime attached", { sessionId: id });
       handle.subscribe((event) => void this.applyRuntimeEvent(id, event));
-      await this.patch(id, { status: "running", lastSummary: "Started" });
+      await this.patch(id, { status: "running", lastSummary: "Started", thinkingPreview: undefined });
       return this.mustGet(id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -545,7 +545,7 @@ export class SessionSupervisor extends EventEmitter {
     const prompt = buildFollowUpPrompt(sessionId, text, context);
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id });
     await this.appendLog(sessionId, `follow-up: ${text}`);
-    await this.patch(sessionId, { status: "running", lastSummary: "Follow-up queued", finalAnswer: undefined });
+    await this.patch(sessionId, { status: "running", lastSummary: "Follow-up queued", finalAnswer: undefined, thinkingPreview: undefined });
     this.queueFollowUpDelivery(sessionId, handle, prompt);
     return this.mustGet(sessionId);
   }
@@ -601,7 +601,7 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("steer requested", { sessionId, textChars: text.length });
     await handle.steer(text);
     await this.appendLog(sessionId, `steer: ${text}`);
-    await this.patch(sessionId, { status: "running", lastSummary: "Steering message sent", finalAnswer: undefined });
+    await this.patch(sessionId, { status: "running", lastSummary: "Steering message sent", finalAnswer: undefined, thinkingPreview: undefined });
     return this.mustGet(sessionId);
   }
 
@@ -620,7 +620,7 @@ export class SessionSupervisor extends EventEmitter {
     await handle.answerExtensionUi(requestId, value);
     const session = this.mustGet(sessionId);
     if (session.pendingExtensionUiRequest?.id === requestId) {
-      await this.patch(sessionId, { pendingExtensionUiRequest: undefined, status: "running", lastSummary: "Extension UI answered" });
+      await this.patch(sessionId, { pendingExtensionUiRequest: undefined, status: "running", lastSummary: "Extension UI answered", thinkingPreview: undefined });
     }
     return this.mustGet(sessionId);
   }

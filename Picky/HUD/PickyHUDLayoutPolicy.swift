@@ -49,3 +49,20 @@ enum PickyHUDExpandedContentPolicy {
         }
     }
 }
+
+enum PickyHUDCurrentWorkPolicy {
+    static func runningDescription(activeTool: PickyToolActivity?, thinkingPreview: String?) -> String? {
+        var lines = [String]()
+
+        if let activeTool {
+            lines.append("Tool: \(activeTool.name)")
+        }
+
+        let trimmedThinkingPreview = thinkingPreview?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmedThinkingPreview.isEmpty {
+            lines.append("Thinking: \(trimmedThinkingPreview)")
+        }
+
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+}

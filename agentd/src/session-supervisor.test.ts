@@ -182,6 +182,25 @@ describe("SessionSupervisor", () => {
     expect(updated.lastSummary).toBe("Steering message sent");
   });
 
+  it("stores only the front of thinking blocks for current work", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("think through the HUD"));
+
+    runtime.handle?.emit({ type: "thinking_delta", delta: "I need to inspect\n" });
+    runtime.handle?.emit({ type: "thinking_delta", delta: "the HUD current work state." });
+    await settle();
+
+    expect(supervisor.get(session.id)?.thinkingPreview).toBe("I need to inspect the HUD current work state.");
+
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(supervisor.get(session.id)?.thinkingPreview).toBeUndefined();
+  });
+
   it("restores persisted side-session markers from handoff logs", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const firstSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));

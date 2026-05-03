@@ -271,6 +271,32 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDExpandedContentPolicy.showsSummary(for: .cancelled))
     }
 
+    @Test func hudCurrentWorkShowsOnlyToolNameAndThinkingPreview() throws {
+        let tool = PickyToolActivity(
+            toolCallId: "tool-1",
+            name: "bash",
+            status: "running",
+            preview: "Agent started",
+            startedAt: nil,
+            endedAt: nil
+        )
+
+        #expect(PickyHUDCurrentWorkPolicy.runningDescription(
+            activeTool: tool,
+            thinkingPreview: "  사용자의 HUD 요청을 확인 중입니다.  "
+        ) == "Tool: bash\nThinking: 사용자의 HUD 요청을 확인 중입니다.")
+
+        #expect(PickyHUDCurrentWorkPolicy.runningDescription(
+            activeTool: nil,
+            thinkingPreview: "thinking only"
+        ) == "Thinking: thinking only")
+
+        #expect(PickyHUDCurrentWorkPolicy.runningDescription(
+            activeTool: nil,
+            thinkingPreview: nil
+        ) == nil)
+    }
+
     @Test func hudPanelCanBecomeKeyForFollowUpTextInput() throws {
         let panel = PickyHUDPanel(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),

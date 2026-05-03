@@ -517,31 +517,11 @@ private struct PickySessionCardView: View {
     }
 
     private var currentWorkDescription: String? {
-        switch session.status {
-        case .running:
-            if let activeTool = session.activeTool {
-                if let preview = activeTool.preview, !preview.isEmpty {
-                    return "\(activeTool.name): \(preview)"
-                }
-                return "Using \(activeTool.name)."
-            }
-            return session.lastSummary.isEmpty ? "Pi is working on this task." : session.lastSummary
-        case .waiting_for_input:
-            if let pending = session.pendingExtensionUiRequest {
-                let prompt = pending.prompt ?? pending.title ?? pending.method
-                return "Waiting for your input: \(prompt)"
-            }
-            return "Waiting for your input."
-        case .blocked:
-            if session.isRuntimeDetached {
-                return "Picky lost the live Pi runtime after daemon restart. The card stays visible; open the Pi terminal overlay or start a new task if automatic reattach is unavailable."
-            }
-            return session.lastSummary.isEmpty ? "This session is blocked." : session.lastSummary
-        case .failed:
-            return session.lastSummary.isEmpty ? "This session failed. Open the report or logs for details." : session.lastSummary
-        default:
-            return nil
-        }
+        guard session.status == .running else { return nil }
+        return PickyHUDCurrentWorkPolicy.runningDescription(
+            activeTool: session.activeTool,
+            thinkingPreview: session.thinkingPreview
+        )
     }
 
     private var cardTintOpacity: Double {

@@ -21,6 +21,13 @@ describe("normalizePiEvent", () => {
     expect(normalizePiEvent(await fixture("message-text-delta.json"))).toEqual({ kind: "assistantDelta", delta: "Hello" });
   });
 
+  it("maps thinking deltas to current-work thinking previews", async () => {
+    expect(normalizePiEvent(await fixture("message-thinking-delta.json"))).toEqual({
+      kind: "thinkingDelta",
+      delta: "I need to inspect the HUD current work state.",
+    });
+  });
+
   it("correlates tool events by toolCallId", async () => {
     expect(normalizePiEvent(await fixture("tool-start.json"))).toMatchObject({ kind: "tool", tool: { toolCallId: "call-1", status: "running" } });
     expect(normalizePiEvent(await fixture("tool-update.json"))).toMatchObject({ kind: "tool", tool: { toolCallId: "call-1", status: "running" } });

@@ -210,12 +210,14 @@ const SNAPSHOT_IMPORTANT_LOG_LIMIT = 8;
 const SNAPSHOT_LOG_CHAR_LIMIT = 1_200;
 const SNAPSHOT_TOOL_LIMIT = 16;
 const SNAPSHOT_TOOL_PREVIEW_CHAR_LIMIT = 500;
+const SNAPSHOT_THINKING_PREVIEW_CHAR_LIMIT = 240;
 const SNAPSHOT_CHANGED_FILE_LIMIT = 30;
 const SNAPSHOT_CHANGED_FILE_SUMMARY_CHAR_LIMIT = 500;
 
 export function compactSessionsForSnapshot(sessions: PickyAgentSession[]): PickyAgentSession[] {
   return sessions.map((session) => ({
     ...session,
+    thinkingPreview: session.thinkingPreview ? truncateText(session.thinkingPreview, SNAPSHOT_THINKING_PREVIEW_CHAR_LIMIT) : session.thinkingPreview,
     logs: compactSnapshotLogs(session.logs),
     tools: compactSnapshotTools(session.tools),
     changedFiles: compactSnapshotChangedFiles(session.changedFiles),

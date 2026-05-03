@@ -72,6 +72,7 @@ final class PickySessionListViewModel: ObservableObject {
         var createdAt: Date
         var updatedAt: Date
         var lastSummary: String
+        var thinkingPreview: String?
         var logPreview: String
         var lastRequestText: String?
         var tools: [PickyToolActivity]
@@ -621,6 +622,7 @@ private extension PickySessionListViewModel.SessionCard {
         self.createdAt = session.createdAt
         self.updatedAt = session.updatedAt
         self.lastSummary = session.lastSummary ?? ""
+        self.thinkingPreview = session.thinkingPreview
         self.logPreview = session.logs.reversed().first(where: Self.isDisplayableLogPreview) ?? session.tools.last?.preview ?? ""
         self.lastRequestText = Self.lastRequestText(from: session.logs)
         self.tools = session.tools
@@ -639,6 +641,7 @@ private extension PickySessionListViewModel.SessionCard {
         }
         if result.logPreview.isEmpty { result.logPreview = logPreview }
         if result.lastSummary.isEmpty { result.lastSummary = lastSummary }
+        if result.thinkingPreview == nil { result.thinkingPreview = thinkingPreview }
         if result.lastRequestText == nil { result.lastRequestText = lastRequestText }
         if result.tools.isEmpty { result.tools = tools }
         if result.artifacts.isEmpty { result.artifacts = artifacts }

@@ -171,6 +171,7 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var archivedSessions: [SessionCard] = []
     @Published private(set) var selectedSessionID: String?
     @Published private(set) var hoveredVoiceFollowUpSessionID: String?
+    @Published private(set) var activeVoiceFollowUpSessionID: String?
     @Published private(set) var lastError: String?
     @Published private(set) var lastOpenedArtifactPath: String?
 
@@ -188,6 +189,7 @@ final class PickySessionListViewModel: ObservableObject {
     private let terminalPresenter: PickyTerminalOverlayPresenting
     private let terminalSessionSyncer: PickyTerminalSessionSyncing
     private var eventTask: Task<Void, Never>?
+    private var voiceFollowUpTargetCancellable: AnyCancellable?
     private var deliveredNotificationKeys = Set<String>()
     private var hasExplicitSelection = false
 
@@ -212,6 +214,11 @@ final class PickySessionListViewModel: ObservableObject {
         self.selectedSessionID = selectionStore.selectedSessionID
         self.hoveredVoiceFollowUpSessionID = selectionStore.hoveredVoiceFollowUpSessionID
         self.hasExplicitSelection = self.selectedSessionID != nil
+        self.voiceFollowUpTargetCancellable = NotificationCenter.default.publisher(for: .pickyVoiceFollowUpTargetChanged)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                self?.setActiveVoiceFollowUpSessionID(notification.userInfo?[PickyVoiceFollowUpTargetNotification.sessionIDKey] as? String)
+            }
     }
 
     func start() {
@@ -445,6 +452,9 @@ final class PickySessionListViewModel: ObservableObject {
             hoveredVoiceFollowUpSessionID = nil
             selectionStore.hoveredVoiceFollowUpSessionID = nil
         }
+        if activeVoiceFollowUpSessionID == sessionID {
+            activeVoiceFollowUpSessionID = nil
+        }
     }
 
     func searchSessions(query: String) -> [SessionCard] {
@@ -491,6 +501,7 @@ final class PickySessionListViewModel: ObservableObject {
             archivedSessions = cards.filter { archivedIDs.contains($0.id) }.sortedForHUD()
             syncSelectionAfterSessionListChange()
             syncVoiceFollowUpAfterSessionListChange()
+            syncActiveVoiceFollowUpAfterSessionListChange()
             for card in sessions {
                 if previousCardsByID[card.id] == nil {
                     markNotificationDeliveredIfNeeded(for: card)
@@ -589,6 +600,7 @@ final class PickySessionListViewModel: ObservableObject {
         archivedSessions = archivedSessions.sortedForHUD()
         syncSelectionAfterSessionListChange()
         syncVoiceFollowUpAfterSessionListChange()
+        syncActiveVoiceFollowUpAfterSessionListChange()
         if !shouldArchive {
             deliverNotificationIfNeeded(for: incoming)
         }
@@ -602,6 +614,7 @@ final class PickySessionListViewModel: ObservableObject {
             sessions = sessions.sortedForHUD()
             syncSelectionAfterSessionListChange()
             syncVoiceFollowUpAfterSessionListChange()
+            syncActiveVoiceFollowUpAfterSessionListChange()
             deliverNotificationIfNeeded(for: card)
             return
         }
@@ -629,6 +642,19 @@ final class PickySessionListViewModel: ObservableObject {
             hoveredVoiceFollowUpSessionID = nil
             selectionStore.hoveredVoiceFollowUpSessionID = nil
         }
+    }
+
+    private func setActiveVoiceFollowUpSessionID(_ sessionID: String?) {
+        let trimmed = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        activeVoiceFollowUpSessionID = trimmed.isEmpty ? nil : trimmed
+        syncActiveVoiceFollowUpAfterSessionListChange()
+    }
+
+    private func syncActiveVoiceFollowUpAfterSessionListChange() {
+        if let activeVoiceFollowUpSessionID, sessions.contains(where: { $0.id == activeVoiceFollowUpSessionID }) {
+            return
+        }
+        activeVoiceFollowUpSessionID = nil
     }
 
     private func defaultSelectionID() -> String? {

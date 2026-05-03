@@ -83,22 +83,36 @@ struct PickyCompanionManagerTests {
         #expect(client.commands.isEmpty)
     }
 
-    @Test func voiceTranscriptFollowsUpToHoveredVoiceTarget() async throws {
+    @Test func voiceTranscriptFollowsUpToPressedVoiceTargetSnapshot() async throws {
         let client = FakeVoiceClient()
         let selection = FakeVoiceSelectionStore()
         selection.selectedSessionID = "stale-selected-session"
-        selection.hoveredVoiceFollowUpSessionID = "session-hovered"
+        selection.hoveredVoiceFollowUpSessionID = "changed-after-press"
         let manager = CompanionManager(agentClient: client, selectionStore: selection)
         let context = context(source: "voice-follow-up")
 
-        let receipt = try await manager.routeVoiceTranscript(transcript: "hover follow-up", contextPacket: context)
+        let receipt = try await manager.routeVoiceTranscript(transcript: "snapshot follow-up", contextPacket: context, voiceFollowUpSessionID: "session-at-press")
 
-        #expect(receipt.sessionID == "session-hovered")
+        #expect(receipt.sessionID == "session-at-press")
         #expect(client.commands.first?.type == .steer)
-        #expect(client.commands.first?.sessionId == "session-hovered")
-        #expect(client.commands.first?.text == "hover follow-up")
+        #expect(client.commands.first?.sessionId == "session-at-press")
+        #expect(client.commands.first?.text == "snapshot follow-up")
         #expect(client.commands.first?.context?.source == "voice-follow-up")
         #expect(client.submissions.isEmpty)
+    }
+
+    @Test func voiceTranscriptDoesNotFallbackToHoverAtRoutingTime() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.hoveredVoiceFollowUpSessionID = "late-hovered-session"
+        let manager = CompanionManager(agentClient: client, selectionStore: selection)
+        let context = context(source: "voice")
+
+        let receipt = try await manager.routeVoiceTranscript(transcript: "new task", contextPacket: context)
+
+        #expect(receipt.sessionID == "created-session")
+        #expect(client.submissions.first?.transcript == "new task")
+        #expect(client.commands.isEmpty)
     }
 
     @Test func staleSelectedSessionDoesNotCaptureVoiceTranscript() async throws {
@@ -328,12 +342,12 @@ struct PickyCompanionManagerTests {
     @Test func voiceInputInterruptSendsMainAgentAbortBeforeNextTranscriptRouting() async throws {
         let client = FakeVoiceClient()
         let selection = FakeVoiceSelectionStore()
-        selection.hoveredVoiceFollowUpSessionID = "session-hovered"
+        selection.hoveredVoiceFollowUpSessionID = "changed-after-press"
         let manager = CompanionManager(agentClient: client, selectionStore: selection)
 
         manager.interruptSpokenResponseForVoiceInput()
         try await settle()
-        _ = try await manager.routeVoiceTranscript(transcript: "새 음성 입력", contextPacket: context(source: "voice-follow-up"))
+        _ = try await manager.routeVoiceTranscript(transcript: "새 음성 입력", contextPacket: context(source: "voice-follow-up"), voiceFollowUpSessionID: "session-hovered")
 
         #expect(client.calls == ["send:abortMainAgent", "send:steer"])
         #expect(client.commands.map(\.type) == [.abortMainAgent, .steer])

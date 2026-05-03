@@ -115,7 +115,10 @@ private struct PickySessionCardView: View {
     @State private var isGitSectionExpanded = true
 
     private var isVoiceFollowUpTarget: Bool {
-        viewModel.hoveredVoiceFollowUpSessionID == session.id
+        if let activeVoiceFollowUpSessionID = viewModel.activeVoiceFollowUpSessionID {
+            return activeVoiceFollowUpSessionID == session.id
+        }
+        return viewModel.hoveredVoiceFollowUpSessionID == session.id
     }
 
     private var gitStatusRefreshKey: String {

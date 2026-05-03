@@ -402,7 +402,7 @@ final class CompanionManager: ObservableObject {
             .filter { !$0.isEmpty }
             .receive(on: DispatchQueue.main)
             .sink { [weak self] message in
-                self?.voiceFollowUpSessionIDForCurrentUtterance = nil
+                self?.setVoiceFollowUpSessionIDForCurrentUtterance(nil)
                 self?.finishAwaitingAgentResponse(visibleText: message, spokenText: message)
             }
     }
@@ -475,6 +475,7 @@ final class CompanionManager: ObservableObject {
         // doesn't get stuck. Only do this when no response is in flight, otherwise
         // the brief idle gap between recording and processing would prematurely hide the overlay.
         if presentation.voiceState == .idle, pendingAgentResponseStartedAt == nil {
+            setVoiceFollowUpSessionIDForCurrentUtterance(nil)
             scheduleTransientHideIfNeeded()
         }
     }
@@ -497,7 +498,7 @@ final class CompanionManager: ObservableObject {
             pendingAgentResponseStartedAt = nil
             currentVoicePromptPreview = nil
             voicePromptBubbleState = .hidden
-            voiceFollowUpSessionIDForCurrentUtterance = selectionStore.hoveredVoiceFollowUpSessionID
+            setVoiceFollowUpSessionIDForCurrentUtterance(selectionStore.hoveredVoiceFollowUpSessionID)
 
             // Cancel any pending transient hide so the overlay stays visible
             transientHideTask?.cancel()
@@ -571,7 +572,10 @@ final class CompanionManager: ObservableObject {
                 guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
                     transcript: transcript,
                     voiceFollowUpSessionID: voiceFollowUpSessionID
-                ) else { return }
+                ) else {
+                    setVoiceFollowUpSessionIDForCurrentUtterance(nil)
+                    return
+                }
                 guard !Task.isCancelled else { return }
                 let receipt = try await routeVoiceTranscript(transcript: transcript, contextPacket: captureResult.contextPacket, voiceFollowUpSessionID: voiceFollowUpSessionID)
 
@@ -586,7 +590,7 @@ final class CompanionManager: ObservableObject {
                 finishAwaitingAgentResponse(visibleText: "I captured that, but the local agent client is not ready yet.", spokenText: "I captured that, but the local agent client is not ready yet.")
             }
 
-            voiceFollowUpSessionIDForCurrentUtterance = nil
+            setVoiceFollowUpSessionIDForCurrentUtterance(nil)
 
             if !Task.isCancelled, pendingAgentResponseStartedAt == nil, voiceState != .responding {
                 voiceState = .idle
@@ -600,11 +604,27 @@ final class CompanionManager: ObservableObject {
         contextPacket: PickyContextPacket,
         voiceFollowUpSessionID: String? = nil
     ) async throws -> PickyAgentSubmissionReceipt {
-        if let targetSessionID = voiceFollowUpSessionID ?? selectionStore.hoveredVoiceFollowUpSessionID {
+        if let targetSessionID = normalizedVoiceFollowUpSessionID(voiceFollowUpSessionID) {
             try await agentClient.send(PickyCommandEnvelope(type: .steer, context: contextPacket, sessionId: targetSessionID, text: transcript))
             return PickyAgentSubmissionReceipt(sessionID: targetSessionID, message: "")
         }
         return try await agentClient.submit(PickyAgentSubmission(transcript: transcript, context: contextPacket))
+    }
+
+    private func setVoiceFollowUpSessionIDForCurrentUtterance(_ sessionID: String?) {
+        let normalized = normalizedVoiceFollowUpSessionID(sessionID)
+        guard voiceFollowUpSessionIDForCurrentUtterance != normalized else { return }
+        voiceFollowUpSessionIDForCurrentUtterance = normalized
+        var userInfo: [String: String] = [:]
+        if let normalized {
+            userInfo[PickyVoiceFollowUpTargetNotification.sessionIDKey] = normalized
+        }
+        NotificationCenter.default.post(name: .pickyVoiceFollowUpTargetChanged, object: nil, userInfo: userInfo)
+    }
+
+    private func normalizedVoiceFollowUpSessionID(_ sessionID: String?) -> String? {
+        let trimmed = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     @discardableResult

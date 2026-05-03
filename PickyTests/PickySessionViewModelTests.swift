@@ -408,6 +408,62 @@ struct PickySessionViewModelTests {
         #expect(selection.selectedSessionID == "older")
     }
 
+    @Test func activeVoiceFollowUpTargetPersistsAfterHoverEndsUntilVoiceInputClears() async throws {
+        let client = FakePickyAgentClient()
+        let selection = FakeSelectionStore()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
+        viewModel.start()
+        defer {
+            NotificationCenter.default.post(name: .pickyVoiceFollowUpTargetChanged, object: nil, userInfo: [:])
+        }
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-voice", status: "running"))))
+        try await settle()
+        viewModel.beginHoveredVoiceFollowUp(sessionID: "side-voice")
+        NotificationCenter.default.post(
+            name: .pickyVoiceFollowUpTargetChanged,
+            object: nil,
+            userInfo: [PickyVoiceFollowUpTargetNotification.sessionIDKey: "side-voice"]
+        )
+        try await settle()
+
+        viewModel.endHoveredVoiceFollowUp(sessionID: "side-voice")
+
+        #expect(viewModel.hoveredVoiceFollowUpSessionID == nil)
+        #expect(viewModel.activeVoiceFollowUpSessionID == "side-voice")
+
+        NotificationCenter.default.post(name: .pickyVoiceFollowUpTargetChanged, object: nil, userInfo: [:])
+        try await settle()
+
+        #expect(viewModel.activeVoiceFollowUpSessionID == nil)
+    }
+
+    @Test func activeVoiceFollowUpTargetClearsWhenSessionDisappears() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        defer {
+            NotificationCenter.default.post(name: .pickyVoiceFollowUpTargetChanged, object: nil, userInfo: [:])
+        }
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-voice", status: "running"))))
+        try await settle()
+        NotificationCenter.default.post(
+            name: .pickyVoiceFollowUpTargetChanged,
+            object: nil,
+            userInfo: [PickyVoiceFollowUpTargetNotification.sessionIDKey: "side-voice"]
+        )
+        try await settle()
+        #expect(viewModel.activeVoiceFollowUpSessionID == "side-voice")
+
+        client.emit(.protocolEvent(.fixture(eventJSON: """
+        {"id":"snapshot-empty","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":[]}
+        """)))
+        try await settle()
+
+        #expect(viewModel.activeVoiceFollowUpSessionID == nil)
+    }
+
     @Test func archivedSessionsStayHiddenAcrossSnapshots() async throws {
         let client = FakePickyAgentClient()
         let archiveStore = FakeArchiveStore()

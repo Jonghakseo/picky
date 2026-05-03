@@ -7,6 +7,14 @@
 
 import Foundation
 
+extension Notification.Name {
+    static let pickyVoiceFollowUpTargetChanged = Notification.Name("pickyVoiceFollowUpTargetChanged")
+}
+
+enum PickyVoiceFollowUpTargetNotification {
+    static let sessionIDKey = "sessionID"
+}
+
 protocol PickySessionSelectionStoring: AnyObject {
     var selectedSessionID: String? { get set }
     var hoveredVoiceFollowUpSessionID: String? { get set }

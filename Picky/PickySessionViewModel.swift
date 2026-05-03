@@ -868,6 +868,25 @@ extension PickySessionStatus {
     }
 }
 
+extension PickyArtifact {
+    var prBadgeTitle: String {
+        if let number = githubPullRequestNumber {
+            return "PR #\(number)"
+        }
+        return title
+    }
+
+    var githubPullRequestNumber: String? {
+        guard let url else { return nil }
+        let components = url.pathComponents
+        guard let pullIndex = components.firstIndex(of: "pull") else { return nil }
+        let numberIndex = components.index(after: pullIndex)
+        guard components.indices.contains(numberIndex) else { return nil }
+        let number = components[numberIndex]
+        return number.allSatisfy(\.isNumber) ? number : nil
+    }
+}
+
 extension PickyToolActivity {
     var isActive: Bool { status == "started" || status == "running" }
 

@@ -254,12 +254,15 @@ private struct PickySessionCardView: View {
             if !session.prArtifacts.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(session.prArtifacts) { artifact in
-                        Text(artifact.title)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(DS.Colors.accentText)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(Capsule().fill(DS.Colors.accentSubtle))
+                        if let url = artifact.url {
+                            Link(destination: url) {
+                                prBadge(artifact)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Open \(artifact.prBadgeTitle)")
+                        } else {
+                            prBadge(artifact)
+                        }
                     }
                 }
             }
@@ -517,6 +520,15 @@ private struct PickySessionCardView: View {
         case .cancelled:
             return "cancelled · \(elapsed)"
         }
+    }
+
+    private func prBadge(_ artifact: PickyArtifact) -> some View {
+        Text(artifact.prBadgeTitle)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundColor(DS.Colors.accentText)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(DS.Colors.accentSubtle))
     }
 
     private var currentWorkDescription: String? {

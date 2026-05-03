@@ -2,7 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ArtifactStore, extractChangedFilesFromExplicitText, extractGithubPullRequestUrls, renderSessionReport } from "./artifact-store.js";
+import { ArtifactStore, extractChangedFilesFromExplicitText, extractGithubPullRequestUrls, githubPullRequestTitle, renderSessionReport } from "./artifact-store.js";
 import { LogStore } from "./log-store.js";
 
 describe("ArtifactStore", () => {
@@ -62,8 +62,9 @@ describe("ArtifactStore", () => {
     expect(markdown).not.toContain("failed");
   });
 
-  it("extracts PR URLs and changed files only from explicit output", () => {
+  it("extracts PR URLs, PR titles, and changed files only from explicit output", () => {
     expect(extractGithubPullRequestUrls("Created https://github.com/acme/repo/pull/42")).toEqual(["https://github.com/acme/repo/pull/42"]);
+    expect(githubPullRequestTitle("https://github.com/acme/repo/pull/42")).toBe("PR #42");
     expect(extractGithubPullRequestUrls("I will open a PR later")).toEqual([]);
     expect(extractChangedFilesFromExplicitText("Changed file: M Picky/App.swift - updated HUD")).toEqual([{ status: "M", path: "Picky/App.swift", summary: "updated HUD" }]);
   });

@@ -522,7 +522,7 @@ describe("SessionSupervisor", () => {
 
     const updated = supervisor.get(session.id)!;
     expect(updated.artifacts.some((artifact) => artifact.kind === "report" && artifact.path?.endsWith("report.md"))).toBe(true);
-    expect(updated.artifacts.some((artifact) => artifact.kind === "pr" && artifact.url === "https://github.com/acme/repo/pull/42")).toBe(true);
+    expect(updated.artifacts.some((artifact) => artifact.kind === "pr" && artifact.title === "PR #42" && artifact.url === "https://github.com/acme/repo/pull/42")).toBe(true);
     expect(updated.changedFiles).toEqual([{ status: "M", path: "Picky/App.swift", summary: "HUD follow-up" }]);
   });
 

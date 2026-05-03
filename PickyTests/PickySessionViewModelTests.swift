@@ -349,6 +349,30 @@ struct PickySessionViewModelTests {
         ) == nil)
     }
 
+    @Test func githubPullRequestArtifactBadgeTitleUsesPrNumber() throws {
+        let pullRequest = PickyArtifact(
+            id: "pr-1",
+            kind: "pr",
+            title: "GitHub PR",
+            path: nil,
+            url: URL(string: "https://github.com/acme/repo/pull/42")!,
+            updatedAt: Date()
+        )
+        let fallback = PickyArtifact(
+            id: "artifact-1",
+            kind: "link",
+            title: "External Link",
+            path: nil,
+            url: URL(string: "https://github.com/acme/repo/issues/42")!,
+            updatedAt: Date()
+        )
+
+        #expect(pullRequest.githubPullRequestNumber == "42")
+        #expect(pullRequest.prBadgeTitle == "PR #42")
+        #expect(fallback.githubPullRequestNumber == nil)
+        #expect(fallback.prBadgeTitle == "External Link")
+    }
+
     @Test func hudPanelCanBecomeKeyForFollowUpTextInput() throws {
         let panel = PickyHUDPanel(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),

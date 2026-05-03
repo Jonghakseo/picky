@@ -112,6 +112,11 @@ export function extractGithubPullRequestUrls(text: string): string[] {
   return [...new Set(text.match(regex) ?? [])];
 }
 
+export function githubPullRequestTitle(url: string): string {
+  const match = url.match(/\/pull\/([0-9]+)(?:$|[?#])/);
+  return match ? `PR #${match[1]}` : "GitHub PR";
+}
+
 export function extractChangedFilesFromExplicitText(text: string): PickyAgentSession["changedFiles"] {
   const files: PickyAgentSession["changedFiles"] = [];
   const regex = /(?:^|\n)(?:follow-up:\s*)?Changed file:\s*([AMDR?]+)\s+([^\s]+)(?:\s+-\s+([^\n]+))?/gim;

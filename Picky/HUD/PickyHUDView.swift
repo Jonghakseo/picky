@@ -173,6 +173,22 @@ private struct PickySessionCardView: View {
                     .help("Voice steering target")
                     .transition(.scale.combined(with: .opacity))
             }
+            if let headerCwdLabel {
+                HStack(spacing: 3.5) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 8.5, weight: .semibold))
+                    Text(headerCwdLabel)
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .foregroundColor(DS.Colors.textTertiary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(DS.Colors.surface2.opacity(0.72)))
+                .overlay(Capsule().stroke(DS.Colors.borderSubtle.opacity(0.45), lineWidth: 0.7))
+                .frame(maxWidth: 92)
+            }
             if let headerStatusLabel {
                 Text(headerStatusLabel)
                     .font(.system(size: 9.5, weight: .semibold))
@@ -490,6 +506,13 @@ private struct PickySessionCardView: View {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
             .fill(DS.Colors.surface1.opacity(session.status == .completed ? 0.88 : 0.95))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(statusColor.opacity(cardTintOpacity)))
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(statusColor.opacity(statusRailOpacity))
+                    .frame(width: 3)
+                    .padding(.leading, 3)
+                    .padding(.vertical, 7)
+            }
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(cardBorderColor, lineWidth: 1))
             .shadow(
                 color: Color.black.opacity(PickyHUDExpansion.cardShadowOpacity),
@@ -522,13 +545,19 @@ private struct PickySessionCardView: View {
         }
     }
 
+    private var headerCwdLabel: String? {
+        session.cwdFolderDescription
+    }
+
     private var headerStatusLabel: String? {
         switch session.status {
+        case .queued: "queued"
+        case .running: "running"
         case .waiting_for_input: "waiting"
         case .blocked: session.isRuntimeDetached ? "detached" : "blocked"
         case .completed: "done"
         case .failed: "failed"
-        case .queued, .running, .cancelled: nil
+        case .cancelled: "cancelled"
         }
     }
 
@@ -570,6 +599,14 @@ private struct PickySessionCardView: View {
         }
     }
 
+    private var statusRailOpacity: Double {
+        switch session.status {
+        case .running, .waiting_for_input, .blocked, .failed: 0.92
+        case .queued, .completed: 0.78
+        case .cancelled: 0.55
+        }
+    }
+
     private var cardBorderColor: Color {
         if isVoiceFollowUpTarget {
             return DS.Colors.accentText.opacity(0.72)
@@ -578,7 +615,9 @@ private struct PickySessionCardView: View {
         switch session.status {
         case .waiting_for_input:
             return DS.Colors.warning.opacity(0.55)
-        case .blocked, .failed:
+        case .blocked:
+            return DS.Colors.warningText.opacity(0.55)
+        case .failed:
             return DS.Colors.destructiveText.opacity(0.55)
         case .completed:
             return DS.Colors.success.opacity(0.42)
@@ -591,16 +630,18 @@ private struct PickySessionCardView: View {
 
     private var statusColor: Color {
         switch session.status {
+        case .queued:
+            return DS.Colors.accentText
         case .running:
             return DS.Colors.overlayCursorBlue
         case .waiting_for_input:
             return DS.Colors.warning
-        case .blocked, .failed:
-            return DS.Colors.destructiveText
+        case .blocked:
+            return DS.Colors.warningText
         case .completed:
             return DS.Colors.success
-        case .queued:
-            return DS.Colors.accentText
+        case .failed:
+            return DS.Colors.destructiveText
         case .cancelled:
             return DS.Colors.textTertiary
         }

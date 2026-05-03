@@ -10,6 +10,9 @@ import AVFoundation
 import Foundation
 
 struct ElevenLabsSpeechConfiguration: Equatable {
+    static let defaultModelID = "eleven_multilingual_v2"
+    private static let legacyPickyDefaultModelIDs: Set<String> = ["eleven_turbo_v2"]
+
     var apiKey: String?
     var voiceID: String?
     var modelID: String
@@ -20,17 +23,29 @@ struct ElevenLabsSpeechConfiguration: Equatable {
     init(
         apiKey: String?,
         voiceID: String?,
-        modelID: String = "eleven_turbo_v2",
+        modelID: String = ElevenLabsSpeechConfiguration.defaultModelID,
         outputFormat: String = "mp3_44100_128",
         baseURL: URL = URL(string: "https://api.elevenlabs.io")!,
         requestTimeout: TimeInterval = 30
     ) {
         self.apiKey = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.voiceID = voiceID?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        self.modelID = modelID.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "eleven_turbo_v2"
+        self.modelID = Self.normalizedModelID(modelID)
         self.outputFormat = outputFormat.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "mp3_44100_128"
         self.baseURL = baseURL
         self.requestTimeout = requestTimeout
+    }
+
+    private static func normalizedModelID(_ rawModelID: String) -> String {
+        guard let modelID = rawModelID.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
+            return defaultModelID
+        }
+
+        if legacyPickyDefaultModelIDs.contains(modelID.lowercased()) {
+            return defaultModelID
+        }
+
+        return modelID
     }
 
     var isConfigured: Bool {
@@ -55,7 +70,7 @@ struct ElevenLabsSpeechConfiguration: Equatable {
         return ElevenLabsSpeechConfiguration(
             apiKey: AzureOpenAIKeychainStore.value(for: "ELEVENLABS_API_KEY", environment: environment),
             voiceID: AzureOpenAIKeychainStore.value(for: "ELEVENLABS_VOICE_ID", environment: environment),
-            modelID: AzureOpenAIKeychainStore.value(for: "ELEVENLABS_MODEL_ID", environment: environment) ?? "eleven_turbo_v2",
+            modelID: AzureOpenAIKeychainStore.value(for: "ELEVENLABS_MODEL_ID", environment: environment) ?? defaultModelID,
             outputFormat: AzureOpenAIKeychainStore.value(for: "ELEVENLABS_OUTPUT_FORMAT", environment: environment) ?? "mp3_44100_128",
             baseURL: baseURL
         )

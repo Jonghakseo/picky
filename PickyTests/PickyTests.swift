@@ -90,4 +90,30 @@ struct PickyTests {
         ) == .released)
     }
 
+    @Test func elevenLabsTTSDefaultsToMultilingualV2Model() throws {
+        let configuration = ElevenLabsSpeechConfiguration(apiKey: "test-key", voiceID: "test-voice")
+
+        #expect(configuration.modelID == "eleven_multilingual_v2")
+    }
+
+    @Test func elevenLabsTTSMigratesPreviousTurboDefaultToMultilingualV2Model() throws {
+        let configuration = ElevenLabsSpeechConfiguration(
+            apiKey: "test-key",
+            voiceID: "test-voice",
+            modelID: " eleven_turbo_v2 "
+        )
+
+        #expect(configuration.modelID == "eleven_multilingual_v2")
+    }
+
+    @Test func elevenLabsTTSKeepsExplicitNonLegacyModelID() throws {
+        let configuration = ElevenLabsSpeechConfiguration(
+            apiKey: "test-key",
+            voiceID: "test-voice",
+            modelID: "eleven_flash_v2_5"
+        )
+
+        #expect(configuration.modelID == "eleven_flash_v2_5")
+    }
+
 }

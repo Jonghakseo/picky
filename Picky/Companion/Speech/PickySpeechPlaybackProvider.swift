@@ -25,7 +25,8 @@ enum PickySpeechPlaybackProviderFactory {
     static func makeDefaultProvider(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> any PickySpeechPlaybackProvider {
-        let requestedProvider = (environment["PICKY_TTS_PROVIDER"] ?? environment["PICKY_SPEECH_PLAYBACK_PROVIDER"])?
+        let requestedProvider = (AzureOpenAIKeychainStore.value(for: "PICKY_TTS_PROVIDER", environment: environment)
+            ?? AzureOpenAIKeychainStore.value(for: "PICKY_SPEECH_PLAYBACK_PROVIDER", environment: environment))?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
 
@@ -36,12 +37,12 @@ enum PickySpeechPlaybackProviderFactory {
                     defaultAPIVersion: AzureOpenAISpeechPlaybackProvider.defaultAPIVersion,
                     environment: environment
                 ),
-                voice: environment["AZURE_OPENAI_TTS_VOICE"]
-                    ?? environment["PICKY_TTS_VOICE"]
+                voice: AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_TTS_VOICE", environment: environment)
+                    ?? AzureOpenAIKeychainStore.value(for: "PICKY_TTS_VOICE", environment: environment)
                     ?? "nova",
-                responseFormat: environment["AZURE_OPENAI_TTS_RESPONSE_FORMAT"] ?? "wav",
-                instructions: environment["AZURE_OPENAI_TTS_INSTRUCTIONS"],
-                modelName: environment["AZURE_OPENAI_TTS_MODEL"]
+                responseFormat: AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_TTS_RESPONSE_FORMAT", environment: environment) ?? "wav",
+                instructions: AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_TTS_INSTRUCTIONS", environment: environment),
+                modelName: AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_TTS_MODEL", environment: environment)
             )
             print("🔊 TTS: using provider \(provider.displayName)")
             return provider

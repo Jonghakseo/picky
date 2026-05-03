@@ -53,17 +53,19 @@ struct AzureOpenAIAudioConfiguration: Equatable {
         defaultAPIVersion: String,
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> AzureOpenAIAudioConfiguration {
-        let endpointString = environment["AZURE_OPENAI_ENDPOINT"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfEmpty
+        let endpointString = AzureOpenAIKeychainStore.value(
+            for: "AZURE_OPENAI_ENDPOINT",
+            environment: environment
+        )
         let endpoint = endpointString.flatMap(URL.init(string:))
 
         return AzureOpenAIAudioConfiguration(
             endpoint: endpoint,
-            apiKey: environment["AZURE_OPENAI_API_KEY"],
-            deploymentName: environment[deploymentEnvironmentKey] ?? environment["AZURE_OPENAI_DEPLOYMENT_NAME"],
-            apiVersion: environment["AZURE_OPENAI_API_VERSION"]
-                ?? environment["OPENAI_API_VERSION"]
+            apiKey: AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_API_KEY", environment: environment),
+            deploymentName: AzureOpenAIKeychainStore.value(for: deploymentEnvironmentKey, environment: environment)
+                ?? AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_DEPLOYMENT_NAME", environment: environment),
+            apiVersion: AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_API_VERSION", environment: environment)
+                ?? AzureOpenAIKeychainStore.value(for: "OPENAI_API_VERSION", environment: environment)
                 ?? defaultAPIVersion
         )
     }

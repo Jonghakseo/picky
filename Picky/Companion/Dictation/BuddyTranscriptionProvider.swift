@@ -33,7 +33,8 @@ enum BuddyTranscriptionProviderFactory {
     static func makeDefaultProvider(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> any BuddyTranscriptionProvider {
-        let requestedProvider = (environment["PICKY_STT_PROVIDER"] ?? environment["PICKY_TRANSCRIPTION_PROVIDER"])?
+        let requestedProvider = (AzureOpenAIKeychainStore.value(for: "PICKY_STT_PROVIDER", environment: environment)
+            ?? AzureOpenAIKeychainStore.value(for: "PICKY_TRANSCRIPTION_PROVIDER", environment: environment))?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
 

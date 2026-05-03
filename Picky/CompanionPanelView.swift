@@ -19,6 +19,7 @@ enum CompanionPanelMetrics {
 
 private enum CompanionPanelTab: String, CaseIterable, Identifiable {
     case status = "Status"
+    case messages = "Messages"
     case settings = "Settings"
 
     var id: String { rawValue }
@@ -26,6 +27,7 @@ private enum CompanionPanelTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .status: "sparkles"
+        case .messages: "bubble.left.and.bubble.right"
         case .settings: "slider.horizontal.3"
         }
     }
@@ -48,11 +50,13 @@ struct CompanionPanelView: View {
                 .background(DS.Colors.borderSubtle.opacity(0.8))
                 .padding(.horizontal, 16)
 
-            ScrollView(.vertical, showsIndicators: selectedTab == .settings) {
+            ScrollView(.vertical, showsIndicators: selectedTab == .messages || selectedTab == .settings) {
                 Group {
                     switch selectedTab {
                     case .status:
                         CompanionPanelStatusView(companionManager: companionManager)
+                    case .messages:
+                        CompanionPanelMessagesView(companionManager: companionManager)
                     case .settings:
                         CompanionPanelSettingsView(viewModel: settingsViewModel)
                     }

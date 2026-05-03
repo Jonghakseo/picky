@@ -94,6 +94,43 @@ struct ProtocolContractTests {
         #expect(event.event == .quickReply(PickyQuickReplyEvent(contextId: "context-1", text: "바로 답변")))
     }
 
+    @Test func decodesMainAgentMessagesEvents() throws {
+        let snapshotJSON = """
+        {
+          "id":"event-main-messages-001",
+          "protocolVersion":"2026-05-01",
+          "timestamp":"2026-05-01T00:00:00.000Z",
+          "type":"mainMessagesSnapshot",
+          "messages":[{"role":"user","text":"안녕","createdAt":"2026-05-01T00:00:00.000Z"}]
+        }
+        """.data(using: .utf8)!
+        let appendedJSON = """
+        {
+          "id":"event-main-message-001",
+          "protocolVersion":"2026-05-01",
+          "timestamp":"2026-05-01T00:00:01.000Z",
+          "type":"mainMessageAppended",
+          "message":{"role":"assistant","text":"바로 답변","createdAt":"2026-05-01T00:00:01.000Z"}
+        }
+        """.data(using: .utf8)!
+
+        let snapshot = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: snapshotJSON)
+        let appended = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: appendedJSON)
+
+        guard case .mainMessagesSnapshot(let messages) = snapshot.event else {
+            Issue.record("Expected main messages snapshot")
+            return
+        }
+        guard case .mainMessageAppended(let message) = appended.event else {
+            Issue.record("Expected appended main message")
+            return
+        }
+        #expect(messages.first?.role == .user)
+        #expect(messages.first?.text == "안녕")
+        #expect(message.role == .assistant)
+        #expect(message.text == "바로 답변")
+    }
+
     @Test func decodesAskUserQuestionFormEvent() throws {
         let fixture = try #require(try fixtureURLs(in: "contracts/protocol").first { $0.lastPathComponent == "extension-ui-form-request.event.json" })
         let event = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: try Data(contentsOf: fixture))

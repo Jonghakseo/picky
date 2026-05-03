@@ -62,6 +62,19 @@ export const PickyContextPacketSchema = z.object({
 
 export type PickyContextPacket = z.infer<typeof PickyContextPacketSchema>;
 
+export const PickyMainAgentMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  text: z.string(),
+  createdAt: isoTimestamp,
+});
+export type PickyMainAgentMessage = z.infer<typeof PickyMainAgentMessageSchema>;
+export const PickyMainAgentStateSchema = z.object({
+  sessionFilePath: z.string().optional(),
+  cwd: z.string().optional(),
+  messages: z.array(PickyMainAgentMessageSchema).default([]),
+});
+export type PickyMainAgentState = z.infer<typeof PickyMainAgentStateSchema>;
+
 export const PickyChangedFileSchema = z.object({ path: z.string(), status: z.string(), summary: z.string().optional() });
 export const PickyArtifactSchema = z.object({ id: z.string(), kind: z.string(), title: z.string(), path: z.string().optional(), url: z.string().url().optional(), updatedAt: isoTimestamp });
 export type PickyArtifact = z.infer<typeof PickyArtifactSchema>;
@@ -148,6 +161,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("steer"), sessionId: z.string(), text: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("abort"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("listSessions") }),
+  CommandBaseSchema.extend({ type: z.literal("listMainMessages") }),
   CommandBaseSchema.extend({ type: z.literal("getSession"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("answerExtensionUi"), sessionId: z.string(), requestId: z.string(), value: z.unknown().optional() }),
   CommandBaseSchema.extend({ type: z.literal("openArtifact"), sessionId: z.string(), artifactId: z.string() }),
@@ -159,6 +173,8 @@ const EventBaseSchema = z.object({ id: z.string(), protocolVersion: z.literal(PR
 export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("hello"), serverName: z.literal("picky-agentd"), supportedProtocolVersions: z.array(z.string()) }),
   EventBaseSchema.extend({ type: z.literal("quickReply"), contextId: z.string(), text: z.string().min(1) }),
+  EventBaseSchema.extend({ type: z.literal("mainMessagesSnapshot"), messages: z.array(PickyMainAgentMessageSchema) }),
+  EventBaseSchema.extend({ type: z.literal("mainMessageAppended"), message: PickyMainAgentMessageSchema }),
   EventBaseSchema.extend({ type: z.literal("sessionSnapshot"), sessions: z.array(PickyAgentSessionSchema) }),
   EventBaseSchema.extend({ type: z.literal("sessionUpdated"), session: PickyAgentSessionSchema }),
   EventBaseSchema.extend({ type: z.literal("sessionLogAppended"), sessionId: z.string(), line: z.string() }),

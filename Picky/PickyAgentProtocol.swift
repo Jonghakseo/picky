@@ -55,6 +55,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case steer
     case abort
     case listSessions
+    case listMainMessages
     case getSession
     case answerExtensionUi
     case openArtifact
@@ -83,6 +84,8 @@ struct PickyEventEnvelope: Decodable, Equatable {
 enum PickyEvent: Equatable {
     case hello(PickyHelloEvent)
     case quickReply(PickyQuickReplyEvent)
+    case mainMessagesSnapshot([PickyMainAgentMessage])
+    case mainMessageAppended(PickyMainAgentMessage)
     case sessionSnapshot([PickyAgentSession])
     case sessionUpdated(PickyAgentSession)
     case sessionLogAppended(sessionId: String, line: String)
@@ -95,7 +98,7 @@ enum PickyEvent: Equatable {
     case unknown(type: String)
 
     private enum CodingKeys: String, CodingKey {
-        case sessions, session, sessionId, line, tool, request, artifact, artifactId, path, contextId, text
+        case sessions, session, sessionId, line, tool, request, artifact, artifactId, path, contextId, text, messages, message
     }
 
     init(type: String, decoder: Decoder) throws {
@@ -104,6 +107,12 @@ enum PickyEvent: Equatable {
         case "quickReply":
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self = .quickReply(PickyQuickReplyEvent(contextId: try c.decode(String.self, forKey: .contextId), text: try c.decode(String.self, forKey: .text)))
+        case "mainMessagesSnapshot":
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self = .mainMessagesSnapshot(try c.decode([PickyMainAgentMessage].self, forKey: .messages))
+        case "mainMessageAppended":
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self = .mainMessageAppended(try c.decode(PickyMainAgentMessage.self, forKey: .message))
         case "sessionSnapshot":
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self = .sessionSnapshot(try c.decode([PickyAgentSession].self, forKey: .sessions))
@@ -148,6 +157,17 @@ struct PickyErrorEvent: Decodable, Equatable {
     let code: String
     let message: String
     let commandId: String?
+}
+
+struct PickyMainAgentMessage: Codable, Equatable, Identifiable {
+    enum Role: String, Codable, Equatable {
+        case user, assistant
+    }
+
+    var id: String { "\(createdAt.timeIntervalSince1970)-\(role.rawValue)-\(text.hashValue)" }
+    let role: Role
+    let text: String
+    let createdAt: Date
 }
 
 struct PickyAgentSession: Codable, Equatable, Identifiable {

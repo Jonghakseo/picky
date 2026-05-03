@@ -5,7 +5,7 @@ import { ArtifactStore, extractChangedFilesFromExplicitText } from "./artifact-s
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
-import type { PickyAgentSession, PickyContextPacket } from "./protocol.js";
+import type { PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentState } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
@@ -30,6 +30,7 @@ export class SessionSupervisor extends EventEmitter {
   private mainHandlePromise?: Promise<RuntimeSessionHandle>;
   private mainDraft = "";
   private mainContext?: PickyContextPacket;
+  private mainState: PickyMainAgentState = { messages: [] };
   private mainReplyContextId = "main";
   private mainIsProcessing = false;
   private suppressNextMainReply = false;
@@ -53,6 +54,7 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async load(): Promise<void> {
+    this.mainState = normalizeMainAgentState(await this.store.loadMainAgentState());
     const persisted = await this.store.loadAll();
     logAgentd("sessions loading", { count: persisted.length });
     for (const persistedSession of persisted) {
@@ -151,14 +153,20 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async prewarmMainAgent(cwd = process.cwd()): Promise<void> {
-    if (!this.options.mainRuntime?.prewarm || this.mainHandle) return;
+    if (!this.options.mainRuntime || this.mainHandle) return;
+    if (!this.options.mainRuntime.prewarm && !this.options.mainRuntime.resume) return;
     logAgentd("main prewarm requested", { cwd });
     await this.ensurePrewarmedMainHandle(cwd);
+  }
+
+  listMainMessages(): PickyMainAgentMessage[] {
+    return [...this.mainState.messages];
   }
 
   announceMainHandoff(contextId: string, text: string): void {
     logAgentd("main handoff announced", { contextId, textChars: text.length });
     this.suppressNextMainReply = true;
+    void this.appendMainMessage("assistant", text);
     this.emit("quickReply", contextId, text);
   }
 
@@ -262,15 +270,15 @@ export class SessionSupervisor extends EventEmitter {
     this.mainContext = context;
     this.mainReplyContextId = context.id;
     this.mainDraft = "";
+    if (context.transcript?.trim()) await this.appendMainMessage("user", context.transcript.trim());
     const prompt = buildMainAgentPrompt(context);
-    if (this.options.mainRuntime!.prewarm) {
-      const handle = await this.ensurePrewarmedMainHandle(context.cwd ?? process.cwd());
-      await this.deliverMainPrompt(handle, prompt);
+    if (this.mainHandlePromise && !this.mainHandle) {
+      await this.deliverMainPrompt(await this.mainHandlePromise, prompt);
       return;
     }
     if (!this.mainHandle) {
-      const handle = await this.options.mainRuntime!.create(prompt, { cwd: context.cwd, sessionId: "picky-main-agent" });
-      this.attachMainHandle(handle);
+      const handle = await this.createInitialMainHandle(prompt, context.cwd);
+      if (!handle.initialPromptAlreadySent) await this.deliverMainPrompt(handle.handle, prompt);
       return;
     }
     await this.deliverMainPrompt(this.mainHandle, prompt);
@@ -294,16 +302,45 @@ export class SessionSupervisor extends EventEmitter {
   private async ensurePrewarmedMainHandle(cwd: string): Promise<RuntimeSessionHandle> {
     if (this.mainHandle) return this.mainHandle;
     if (!this.mainHandlePromise) {
-      this.mainHandlePromise = this.options.mainRuntime!.prewarm!({ cwd, sessionId: "picky-main-agent" })
-        .then((handle) => {
-          logAgentd("main prewarmed", { cwd });
-          return this.attachMainHandle(handle);
-        })
+      this.mainHandlePromise = this.createPrewarmedMainHandle(cwd)
         .finally(() => {
           this.mainHandlePromise = undefined;
         });
     }
     return this.mainHandlePromise;
+  }
+
+  private async createPrewarmedMainHandle(cwd: string): Promise<RuntimeSessionHandle> {
+    const resumed = await this.tryResumeMainHandle(cwd);
+    if (resumed) return resumed;
+    if (!this.options.mainRuntime?.prewarm) throw new Error("Main runtime cannot prewarm");
+    const handle = await this.options.mainRuntime.prewarm({ cwd, sessionId: "picky-main-agent" });
+    logAgentd("main prewarmed", { cwd });
+    await this.patchMainState({ cwd });
+    return this.attachMainHandle(handle);
+  }
+
+  private async createInitialMainHandle(prompt: ReturnType<typeof buildMainAgentPrompt>, cwd?: string): Promise<{ handle: RuntimeSessionHandle; initialPromptAlreadySent: boolean }> {
+    const resumed = await this.tryResumeMainHandle(cwd ?? process.cwd());
+    if (resumed) return { handle: resumed, initialPromptAlreadySent: false };
+    const handle = await this.options.mainRuntime!.create(prompt, { cwd, sessionId: "picky-main-agent" });
+    await this.patchMainState({ cwd });
+    return { handle: this.attachMainHandle(handle), initialPromptAlreadySent: true };
+  }
+
+  private async tryResumeMainHandle(cwd: string): Promise<RuntimeSessionHandle | undefined> {
+    const sessionFilePath = this.mainState.sessionFilePath?.trim();
+    if (!sessionFilePath || !this.options.mainRuntime?.resume) return undefined;
+    try {
+      logAgentd("main resume requested", { sessionFilePath, cwd });
+      const handle = await this.options.mainRuntime.resume(sessionFilePath, { cwd, sessionId: "picky-main-agent" });
+      logAgentd("main resumed", { sessionFilePath, cwd });
+      await this.patchMainState({ cwd });
+      return this.attachMainHandle(handle);
+    } catch (error) {
+      logAgentd("main resume failed", { sessionFilePath, error: error instanceof Error ? error.message : String(error) });
+      return undefined;
+    }
   }
 
   private attachMainHandle(handle: RuntimeSessionHandle): RuntimeSessionHandle {
@@ -312,7 +349,25 @@ export class SessionSupervisor extends EventEmitter {
     return handle;
   }
 
+  private async appendMainMessage(role: PickyMainAgentMessage["role"], text: string): Promise<void> {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const message: PickyMainAgentMessage = { role, text: trimmed, createdAt: new Date().toISOString() };
+    await this.patchMainState({ messages: [...this.mainState.messages, message].slice(-MAIN_AGENT_MESSAGE_LIMIT) });
+    this.emit("mainMessage", message);
+  }
+
+  private async patchMainState(patch: Partial<PickyMainAgentState>): Promise<void> {
+    this.mainState = normalizeMainAgentState({ ...this.mainState, ...patch });
+    await this.store.saveMainAgentState(this.mainState);
+  }
+
   private async applyMainRuntimeEvent(event: RuntimeEvent): Promise<void> {
+    if (event.type === "log") {
+      const sessionFilePath = piSessionFilePathFromLogLine(event.line);
+      if (sessionFilePath) await this.patchMainState({ sessionFilePath });
+      return;
+    }
     if (event.type === "assistant_delta") {
       this.mainDraft += event.delta;
       return;
@@ -334,6 +389,7 @@ export class SessionSupervisor extends EventEmitter {
           this.suppressNextMainReply = false;
         } else if (reply) {
           logAgentd("main quick reply", { contextId: this.mainReplyContextId, textChars: reply.length });
+          await this.appendMainMessage("assistant", reply);
           this.emit("quickReply", this.mainReplyContextId, reply);
         }
         this.mainDraft = "";
@@ -676,10 +732,21 @@ function piSessionFilePathFromHandoffTranscript(transcript: string | undefined):
 
 function piSessionFilePathFromLogs(logs: string[]): string | undefined {
   for (const line of [...logs].reverse()) {
-    const match = line.match(/^pi session:\s*(.+)$/);
-    if (match?.[1]?.trim()) return match[1].trim();
+    const path = piSessionFilePathFromLogLine(line);
+    if (path) return path;
   }
   return undefined;
+}
+
+function piSessionFilePathFromLogLine(line: string): string | undefined {
+  const match = line.match(/^pi session:\s*(.+)$/);
+  return match?.[1]?.trim() || undefined;
+}
+
+const MAIN_AGENT_MESSAGE_LIMIT = 100;
+
+function normalizeMainAgentState(state: PickyMainAgentState): PickyMainAgentState {
+  return { ...state, messages: state.messages.slice(-MAIN_AGENT_MESSAGE_LIMIT) };
 }
 
 function appendUniqueLog(logs: string[], line: string): string[] {

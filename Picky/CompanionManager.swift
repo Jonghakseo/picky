@@ -100,6 +100,7 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var currentVoicePromptPreview: String?
     @Published private(set) var voicePromptBubbleState: CompanionVoicePromptBubbleState = .hidden
     @Published private(set) var latestAgentSessionSummary: String?
+    @Published private(set) var mainAgentMessages: [PickyMainAgentMessage] = []
     @Published private(set) var currentAudioPowerLevel: CGFloat = 0
     @Published private(set) var hasAccessibilityPermission = false
     @Published private(set) var hasScreenRecordingPermission = false
@@ -602,6 +603,7 @@ final class CompanionManager: ObservableObject {
                     await MainActor.run { self.finishAwaitingAgentResponse(visibleText: "picky-agentd disconnected", spokenText: nil) }
                 case .connected:
                     await MainActor.run { self.latestAgentSessionSummary = "picky-agentd connected" }
+                    try? await self.agentClient.send(PickyCommandEnvelope(type: .listMainMessages))
                 }
             }
         }
@@ -620,6 +622,10 @@ final class CompanionManager: ObservableObject {
             latestAgentSessionSummary = request.prompt ?? request.title ?? "Agent is waiting for input"
         case .quickReply(let reply):
             finishAwaitingAgentResponse(visibleText: reply.text, spokenText: reply.text, enforceMinimumProcessingDuration: true)
+        case .mainMessagesSnapshot(let messages):
+            mainAgentMessages = Array(messages.suffix(100))
+        case .mainMessageAppended(let message):
+            mainAgentMessages = Array((mainAgentMessages + [message]).suffix(100))
         case .pointerOverlayRequested(let request):
             applyPointerOverlayRequest(request)
         case .error(let error):

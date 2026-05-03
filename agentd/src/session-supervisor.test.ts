@@ -459,6 +459,43 @@ describe("SessionSupervisor", () => {
     expect(result).toBeUndefined();
     expect(sideRuntime.handle).toBeUndefined();
     expect(replies).toEqual([{ contextId: "context-안녕", text: "안녕하세요. 무엇을 도와드릴까요?" }]);
+    expect(supervisor.listMainMessages().map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: "user", text: "안녕" },
+      { role: "assistant", text: "안녕하세요. 무엇을 도와드릴까요?" },
+    ]);
+  });
+
+  it("keeps only the latest 100 main-agent user and assistant messages", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+
+    for (let index = 0; index < 101; index += 1) {
+      await supervisor.route(context(`메시지 ${index}`));
+      mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+      await settle();
+    }
+
+    const messages = supervisor.listMainMessages();
+    expect(messages).toHaveLength(100);
+    expect(messages[0]).toMatchObject({ role: "user", text: "메시지 1" });
+    expect(messages.at(-1)).toMatchObject({ role: "user", text: "메시지 100" });
+  });
+
+  it("resumes the persisted main-agent Pi session after daemon restart", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const store = new SessionStore(dir);
+    await store.saveMainAgentState({ sessionFilePath: "/tmp/main-pi-session.jsonl", cwd: "/tmp/project", messages: [] });
+    const mainRuntime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store, undefined, { mainRuntime });
+    await supervisor.load();
+
+    await supervisor.route(context("재시작 후 질문"));
+
+    expect(mainRuntime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/main-pi-session.jsonl", cwd: "/tmp/project", sessionId: "picky-main-agent" }]);
+    expect(mainRuntime.handle?.followUps).toHaveLength(1);
+    expect(mainRuntime.handle?.followUps[0].text).toContain("재시작 후 질문");
+    expect(supervisor.listMainMessages().map((message) => message.text)).toEqual(["재시작 후 질문"]);
   });
 
   it("reuses the same main agent handle for later voice turns", async () => {

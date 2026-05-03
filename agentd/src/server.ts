@@ -37,6 +37,7 @@ export class AgentdServer {
     this.options.supervisor.on("log", (sessionId, line) => this.broadcast({ type: "sessionLogAppended", sessionId, line }));
     this.options.supervisor.on("extensionUiRequest", (request) => this.broadcast({ type: "extensionUiRequest", request }));
     this.options.supervisor.on("quickReply", (contextId, text) => this.broadcast({ type: "quickReply", contextId, text }));
+    this.options.supervisor.on("mainMessage", (message) => this.broadcast({ type: "mainMessageAppended", message }));
     this.options.supervisor.on("pointerOverlayRequested", (request) => this.broadcast({ type: "pointerOverlayRequested", request }));
     this.options.supervisor.on("artifact", (sessionId, artifact) => this.broadcast({ type: "artifactUpdated", sessionId, artifact }));
 
@@ -71,6 +72,7 @@ export class AgentdServer {
       const command = parseCommand(parsed);
       logAgentd("command received", commandLogFields(command));
       if (command.type === "listSessions") this.send(ws, { type: "sessionSnapshot", sessions: compactSessionsForSnapshot(this.options.supervisor.list()) });
+      if (command.type === "listMainMessages") this.send(ws, { type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() });
       if (command.type === "getSession") {
         const session = this.options.supervisor.get(command.sessionId);
         if (!session) throw new Error(`Unknown session: ${command.sessionId}`);
@@ -162,6 +164,7 @@ function commandLogFields(command: ReturnType<typeof parseCommand>): Record<stri
     case "openArtifact":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, artifactId: command.artifactId };
     case "listSessions":
+    case "listMainMessages":
       return { commandId: command.id, type: command.type };
   }
 }
@@ -172,6 +175,10 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type };
     case "quickReply":
       return { eventId: event.id, type: event.type, contextId: event.contextId, textChars: event.text.length };
+    case "mainMessagesSnapshot":
+      return { eventId: event.id, type: event.type, messages: event.messages.length };
+    case "mainMessageAppended":
+      return { eventId: event.id, type: event.type, role: event.message.role, textChars: event.message.text.length };
     case "sessionSnapshot":
       return { eventId: event.id, type: event.type, sessions: event.sessions.length };
     case "sessionUpdated":

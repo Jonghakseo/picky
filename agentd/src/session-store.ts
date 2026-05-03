@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { PickyAgentSessionSchema, type PickyAgentSession } from "./protocol.js";
+import { PickyAgentSessionSchema, PickyMainAgentStateSchema, type PickyAgentSession, type PickyMainAgentState } from "./protocol.js";
 
 export class SessionStore {
   private readonly sessionsDir: string;
-  constructor(appSupportDir: string) {
+  private readonly mainAgentPath: string;
+  constructor(private readonly appSupportDir: string) {
     this.sessionsDir = join(appSupportDir, "sessions");
+    this.mainAgentPath = join(appSupportDir, "main-agent.json");
   }
 
   async save(session: PickyAgentSession): Promise<void> {
@@ -15,6 +17,24 @@ export class SessionStore {
     const tempPath = join(this.sessionsDir, `.${safeName(session.id)}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`);
     await writeFile(tempPath, JSON.stringify(session, null, 2));
     await rename(tempPath, targetPath);
+  }
+
+  async saveMainAgentState(state: PickyMainAgentState): Promise<void> {
+    await mkdir(this.appSupportDir, { recursive: true });
+    const tempPath = join(this.appSupportDir, `.main-agent.${process.pid}.${Date.now()}.${randomUUID()}.tmp`);
+    await writeFile(tempPath, JSON.stringify(state, null, 2));
+    await rename(tempPath, this.mainAgentPath);
+  }
+
+  async loadMainAgentState(): Promise<PickyMainAgentState> {
+    try {
+      return PickyMainAgentStateSchema.parse(JSON.parse(await readFile(this.mainAgentPath, "utf8")));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        console.warn(`Skipping unreadable Picky main-agent metadata ${this.mainAgentPath}: ${messageOf(error)}`);
+      }
+      return { messages: [] };
+    }
   }
 
   async loadAll(): Promise<PickyAgentSession[]> {

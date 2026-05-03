@@ -22,7 +22,31 @@ protocol PickySpeechPlaybackProvider: AnyObject {
 
 enum PickySpeechPlaybackProviderFactory {
     @MainActor
-    static func makeDefaultProvider() -> any PickySpeechPlaybackProvider {
+    static func makeDefaultProvider(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> any PickySpeechPlaybackProvider {
+        let requestedProvider = (environment["PICKY_TTS_PROVIDER"] ?? environment["PICKY_SPEECH_PLAYBACK_PROVIDER"])?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        if requestedProvider == "azure" || requestedProvider == "azure-openai" {
+            let provider = AzureOpenAISpeechPlaybackProvider(
+                configuration: .fromEnvironment(
+                    deploymentEnvironmentKey: "AZURE_OPENAI_TTS_DEPLOYMENT_NAME",
+                    defaultAPIVersion: AzureOpenAISpeechPlaybackProvider.defaultAPIVersion,
+                    environment: environment
+                ),
+                voice: environment["AZURE_OPENAI_TTS_VOICE"]
+                    ?? environment["PICKY_TTS_VOICE"]
+                    ?? "nova",
+                responseFormat: environment["AZURE_OPENAI_TTS_RESPONSE_FORMAT"] ?? "wav",
+                instructions: environment["AZURE_OPENAI_TTS_INSTRUCTIONS"],
+                modelName: environment["AZURE_OPENAI_TTS_MODEL"]
+            )
+            print("🔊 TTS: using provider \(provider.displayName)")
+            return provider
+        }
+
         let provider = PickySystemSpeechPlaybackProvider()
         print("🔊 TTS: using local provider \(provider.displayName)")
         return provider

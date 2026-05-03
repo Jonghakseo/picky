@@ -30,7 +30,25 @@ protocol BuddyTranscriptionProvider {
 }
 
 enum BuddyTranscriptionProviderFactory {
-    static func makeDefaultProvider() -> any BuddyTranscriptionProvider {
+    static func makeDefaultProvider(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> any BuddyTranscriptionProvider {
+        let requestedProvider = (environment["PICKY_STT_PROVIDER"] ?? environment["PICKY_TRANSCRIPTION_PROVIDER"])?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        if requestedProvider == "azure" || requestedProvider == "azure-openai" {
+            let provider = AzureOpenAITranscriptionProvider(
+                configuration: .fromEnvironment(
+                    deploymentEnvironmentKey: "AZURE_OPENAI_STT_DEPLOYMENT_NAME",
+                    defaultAPIVersion: AzureOpenAITranscriptionProvider.defaultAPIVersion,
+                    environment: environment
+                )
+            )
+            print("🎙️ Transcription: using provider \(provider.displayName)")
+            return provider
+        }
+
         let provider = AppleSpeechTranscriptionProvider()
         print("🎙️ Transcription: using local provider \(provider.displayName)")
         return provider

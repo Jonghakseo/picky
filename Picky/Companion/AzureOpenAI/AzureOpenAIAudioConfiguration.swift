@@ -2,9 +2,8 @@
 //  AzureOpenAIAudioConfiguration.swift
 //  Picky
 //
-//  Shared configuration for Azure OpenAI audio providers. These providers are
-//  intentionally not wired into the default factories yet; pass them explicitly
-//  when enabling Azure-backed speech.
+//  Shared configuration for Azure OpenAI audio providers. Default factories can
+//  select these providers when PICKY_STT_PROVIDER/PICKY_TTS_PROVIDER is set.
 //
 
 import Foundation

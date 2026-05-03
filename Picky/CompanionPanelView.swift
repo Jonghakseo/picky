@@ -50,21 +50,32 @@ struct CompanionPanelView: View {
                 .background(DS.Colors.borderSubtle.opacity(0.8))
                 .padding(.horizontal, 16)
 
-            ScrollView(.vertical, showsIndicators: selectedTab == .messages || selectedTab == .settings) {
-                Group {
-                    switch selectedTab {
-                    case .status:
-                        CompanionPanelStatusView(companionManager: companionManager)
-                    case .messages:
-                        CompanionPanelMessagesView(companionManager: companionManager)
-                    case .settings:
-                        CompanionPanelSettingsView(viewModel: settingsViewModel)
+            Group {
+                switch selectedTab {
+                case .messages:
+                    CompanionPanelMessagesView(companionManager: companionManager)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+                        .padding(.bottom, 12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                case .status, .settings:
+                    ScrollView(.vertical, showsIndicators: selectedTab == .settings) {
+                        Group {
+                            switch selectedTab {
+                            case .status:
+                                CompanionPanelStatusView(companionManager: companionManager)
+                            case .messages:
+                                EmptyView()
+                            case .settings:
+                                CompanionPanelSettingsView(viewModel: settingsViewModel)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+                        .padding(.bottom, 12)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 12)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 

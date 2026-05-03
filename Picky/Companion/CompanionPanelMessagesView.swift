@@ -12,22 +12,29 @@ struct CompanionPanelMessagesView: View {
     @State private var draftMessage = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
+        VStack(alignment: .leading, spacing: 10) {
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 12) {
+                    header
 
-            if companionManager.mainAgentMessages.isEmpty {
-                emptyState
-            } else {
-                LazyVStack(alignment: .leading, spacing: 9) {
-                    ForEach(companionManager.mainAgentMessages) { message in
-                        CompanionPanelMessageBubble(message: message)
+                    if companionManager.mainAgentMessages.isEmpty {
+                        emptyState
+                    } else {
+                        LazyVStack(alignment: .leading, spacing: 9) {
+                            ForEach(companionManager.mainAgentMessages) { message in
+                                CompanionPanelMessageBubble(message: message)
+                            }
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 2)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             directMessageComposer
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
 
     private var header: some View {

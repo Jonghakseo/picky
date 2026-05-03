@@ -90,10 +90,6 @@ final class PickySessionListViewModel: ObservableObject {
             Self.compactCwd(cwd)
         }
 
-        var cwdFolderDescription: String? {
-            Self.cwdFolder(cwd)
-        }
-
         var toolCount: Int { tools.count }
 
         var isTerminal: Bool { status.isTerminal }
@@ -133,15 +129,6 @@ final class PickySessionListViewModel: ObservableObject {
                 return "~" + String(standardizedPath.dropFirst(homePath.count))
             }
             return trimmed
-        }
-
-        private static func cwdFolder(_ cwd: String?) -> String? {
-            guard let compact = compactCwd(cwd) else { return nil }
-            if compact == "~" { return "~" }
-
-            let trimmed = compact.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            guard !trimmed.isEmpty else { return compact }
-            return NSString(string: trimmed).lastPathComponent
         }
     }
 

@@ -173,32 +173,6 @@ private struct PickySessionCardView: View {
                     .help("Voice steering target")
                     .transition(.scale.combined(with: .opacity))
             }
-            if let headerCwdLabel {
-                HStack(spacing: 3.5) {
-                    Image(systemName: "folder.fill")
-                        .font(.system(size: 8.5, weight: .semibold))
-                    Text(headerCwdLabel)
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                .foregroundColor(DS.Colors.textTertiary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(DS.Colors.surface2.opacity(0.72)))
-                .overlay(Capsule().stroke(DS.Colors.borderSubtle.opacity(0.45), lineWidth: 0.7))
-                .frame(maxWidth: 92)
-            }
-            if let headerStatusLabel {
-                Text(headerStatusLabel)
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundColor(statusColor)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(statusColor.opacity(0.10)))
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-            }
             Image(systemName: "chevron.down")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(DS.Colors.textTertiary)
@@ -500,13 +474,6 @@ private struct PickySessionCardView: View {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
             .fill(DS.Colors.surface1.opacity(session.status == .completed ? 0.88 : 0.95))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(statusColor.opacity(cardTintOpacity)))
-            .overlay(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(statusColor.opacity(statusRailOpacity))
-                    .frame(width: 3)
-                    .padding(.leading, 3)
-                    .padding(.vertical, 7)
-            }
             .overlay {
                 if usesAnimatedStatusBorder {
                     PickyHUDAnimatedStatusBorderView(
@@ -549,22 +516,6 @@ private struct PickySessionCardView: View {
         }
     }
 
-    private var headerCwdLabel: String? {
-        session.cwdFolderDescription
-    }
-
-    private var headerStatusLabel: String? {
-        switch session.status {
-        case .queued: "queued"
-        case .running: "running"
-        case .waiting_for_input: "waiting"
-        case .blocked: session.isRuntimeDetached ? "detached" : "blocked"
-        case .completed: "done"
-        case .failed: "failed"
-        case .cancelled: "cancelled"
-        }
-    }
-
     private var currentWorkDescription: String? {
         switch session.status {
         case .running:
@@ -601,14 +552,6 @@ private struct PickySessionCardView: View {
         case .blocked, .failed: 0.07
         case .completed: 0.03
         case .cancelled: 0.02
-        }
-    }
-
-    private var statusRailOpacity: Double {
-        switch session.status {
-        case .running, .waiting_for_input, .blocked, .failed: 0.92
-        case .queued, .completed: 0.78
-        case .cancelled: 0.55
         }
     }
 

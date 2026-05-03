@@ -257,7 +257,11 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
   private createBridge(): ExtensionUiBridge {
     const bridge = new ExtensionUiBridge(this.id);
-    bridge.on("request", (request, waitsForInput) => this.emit({ type: "extension_ui", request, waitsForInput: Boolean(waitsForInput) }));
+    bridge.on("request", (request, waitsForInput) => {
+      const waits = Boolean(waitsForInput);
+      if (waits) this.pendingExtensionUiRequestIds.add(request.id);
+      this.emit({ type: "extension_ui", request, waitsForInput: waits });
+    });
     return bridge;
   }
 

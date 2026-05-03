@@ -50,7 +50,7 @@ export class RuntimeEventHandler {
     const terminal = ["completed", "failed", "cancelled"].includes(event.status);
     const finalAnswer = terminal ? cleanFinalAnswer(this.assistantDrafts.get(sessionId)) : undefined;
     const currentSession = this.dependencies.getSession(sessionId);
-    if (terminal && ["completed", "failed", "cancelled"].includes(currentSession.status) && !finalAnswer) return;
+    if (terminal && ["completed", "failed", "cancelled"].includes(currentSession.status)) return;
 
     const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
     if (terminal) patch.thinkingPreview = undefined;

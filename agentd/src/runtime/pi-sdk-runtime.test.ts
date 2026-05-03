@@ -207,6 +207,57 @@ describe("PiSdkRuntime", () => {
     await expect(answerPromise).resolves.toEqual({ choice: "B" });
   });
 
+  it("emits completed from final turn_end when no queues or pending UI remain", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-turn" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    fakeSession.emit("event", { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "최종 답변" } });
+    fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "최종 답변" }] }, toolResults: [] });
+
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Completed" });
+  });
+
+  it("keeps final turn_end running while Pi reports queued steering or follow-up", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-queued" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    fakeSession.emit("event", { type: "queue_update", steering: ["revise"], followUp: [] });
+    fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "중간 답변" }] }, toolResults: [] });
+    fakeSession.emit("event", { type: "queue_update", steering: [], followUp: [] });
+    fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "최종 답변" }] }, toolResults: [] });
+
+    expect(statusEvents(events).map((event) => event.status)).toEqual(["running", "completed"]);
+    expect(events).toContainEqual({ type: "log", line: "queue update: steering=1 followUp=0" });
+    expect(events).toContainEqual({ type: "log", line: "queue update: steering=0 followUp=0" });
+  });
+
+  it("keeps final turn_end waiting while bridge extension UI is pending and completes after answer", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-ui" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    const confirm = fakeSession.uiContext?.confirm as ((title: string, message: string) => Promise<boolean>) | undefined;
+    expect(confirm).toBeTypeOf("function");
+    const answerPromise = confirm!("Need confirmation", "Proceed?");
+    const request = events.find((event) => typeof event === "object" && event && (event as { type?: string }).type === "extension_ui") as { request: { id: string } } | undefined;
+    expect(request?.request.id).toBeTruthy();
+
+    fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "입력 대기" }] }, toolResults: [] });
+    await handle.answerExtensionUi?.(request!.request.id, { confirmed: true });
+    await expect(answerPromise).resolves.toBe(true);
+    fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "완료" }] }, toolResults: [] });
+
+    expect(statusEvents(events).map((event) => event.status)).toEqual(["waiting_for_input", "completed"]);
+  });
+
   it("prewarms Pi resources without sending an initial prompt", async () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);
@@ -250,6 +301,12 @@ describe("PiSdkRuntime", () => {
     await handle.abort();
   });
 });
+
+function statusEvents(events: unknown[]): Array<{ type: "status"; status: string; summary?: string }> {
+  return events.filter((event): event is { type: "status"; status: string; summary?: string } => (
+    typeof event === "object" && event !== null && (event as { type?: string }).type === "status"
+  ));
+}
 
 async function delay(milliseconds: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));

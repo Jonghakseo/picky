@@ -201,6 +201,103 @@ describe("SessionSupervisor", () => {
     expect(updated.logs).toContain("steer: 다시 진행해줘");
   });
 
+  it("routes cancelled side-session follow-up calls through steer instead of regular follow-up", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+
+    await supervisor.abort(side.id);
+
+    const updated = await supervisor.followUp(side.id, "follow-up 경로로 다시 진행");
+
+    expect(runtime.handle?.followUps).toEqual([]);
+    expect(runtime.handle?.steers).toEqual(["follow-up 경로로 다시 진행"]);
+    expect(updated.status).toBe("running");
+    expect(updated.logs).toContain("steer: follow-up 경로로 다시 진행");
+  });
+
+  it("clears stale cancelled side-session output when a new steering turn starts", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "취소 전 부분 답변" });
+    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    await settle();
+
+    expect(supervisor.get(side.id)?.status).toBe("cancelled");
+    expect(supervisor.get(side.id)?.finalAnswer).toBe("취소 전 부분 답변");
+
+    const resumed = await supervisor.steerSideSession(side.id, "새로 다시 진행");
+
+    expect(resumed.status).toBe("running");
+    expect(resumed.finalAnswer).toBeUndefined();
+    expect(resumed.thinkingPreview).toBeUndefined();
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "재개 후 답변" });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    const completed = supervisor.get(side.id)!;
+    expect(completed.status).toBe("completed");
+    expect(completed.finalAnswer).toBe("재개 후 답변");
+    expect(completed.finalAnswer).not.toContain("취소 전 부분 답변");
+  });
+
+  it("keeps failed side sessions rejected from steering", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "status", status: "failed", summary: "Failed" });
+    await settle();
+
+    await expect(supervisor.steerSideSession(side.id, "실패 세션 재개 시도")).rejects.toThrow(/Cannot steer failed session/);
+    expect(runtime.handle?.steers).toEqual([]);
+    expect(supervisor.get(side.id)?.status).toBe("failed");
+  });
+
+  it("reattaches cancelled persisted side sessions from Pi session files before steering", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "cancelled-with-pi-file",
+      title: "Cancelled side agent",
+      status: "cancelled",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "Cancelled before restart",
+      logs: ["main-agent handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      finalAnswer: "이전 취소 답변",
+    });
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+
+    expect(supervisor.isSideSession("cancelled-with-pi-file")).toBe(true);
+    expect(supervisor.get("cancelled-with-pi-file")?.status).toBe("cancelled");
+
+    const updated = await supervisor.steerSideSession("cancelled-with-pi-file", "재시작 후 다시 진행");
+
+    expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/pi-session.jsonl", cwd: "/tmp/project", sessionId: "cancelled-with-pi-file" }]);
+    expect(runtime.handle?.steers).toEqual(["재시작 후 다시 진행"]);
+    expect(updated.status).toBe("running");
+    expect(updated.finalAnswer).toBeUndefined();
+    expect(updated.lastSummary).toBe("Steering message sent");
+    expect(updated.logs).toContain("runtime reattached from pi session: /tmp/pi-session.jsonl");
+    expect(updated.logs).toContain("steer: 재시작 후 다시 진행");
+  });
+
   it("stores only the front of thinking blocks for current work", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
@@ -315,6 +412,26 @@ describe("SessionSupervisor", () => {
 
     expect(supervisor.get(session.id)?.status).toBe("cancelled");
     expect(supervisor.get(session.id)?.lastSummary).toBe("Cancelled");
+  });
+
+  it("does not let a late terminal answer overwrite a cancelled session", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("cancel after answer"));
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "취소 전에 보이던 답변" });
+    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    await settle();
+    runtime.handle?.emit({ type: "assistant_delta", delta: "늦게 온 완료 답변" });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    const updated = supervisor.get(session.id);
+    expect(updated?.status).toBe("cancelled");
+    expect(updated?.finalAnswer).toBe("취소 전에 보이던 답변");
+    expect(updated?.lastSummary).toBe("취소 전에 보이던 답변");
   });
 
   it("captures only the latest side-session steering answer when a steered run completes", async () => {

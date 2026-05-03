@@ -27,15 +27,49 @@ describe("normalizePiEvent", () => {
 
     expect(normalizePiEvent({
       type: "turn_end",
+      message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "대기 중" }] },
+      toolResults: [],
+    }, { hasQueuedSteering: true })).toMatchObject({ kind: "status", status: "running" });
+
+    expect(normalizePiEvent({
+      type: "turn_end",
+      message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "입력 필요" }] },
+      toolResults: [],
+    }, { hasPendingExtensionUiRequest: true })).toMatchObject({ kind: "status", status: "waiting_for_input" });
+  });
+
+  it("does not mark intermediate tool turns as completed", () => {
+    expect(normalizePiEvent({
+      type: "turn_end",
       message: { role: "assistant", stopReason: "tool_use", content: [{ type: "toolCall", name: "bash" }] },
       toolResults: [{ role: "toolResult", content: [] }],
     })).toEqual({ kind: "none" });
 
     expect(normalizePiEvent({
       type: "turn_end",
-      message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "대기 중" }] },
+      message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "" }] },
       toolResults: [],
-    }, { hasQueuedSteering: true })).toMatchObject({ kind: "status", status: "running" });
+    })).toEqual({ kind: "none" });
+
+    expect(normalizePiEvent({
+      type: "turn_end",
+      message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "검토 중" }, { type: "toolCall", name: "bash" }] },
+      toolResults: [],
+    })).toEqual({ kind: "none" });
+  });
+
+  it("maps turn stop reasons to terminal failure and cancellation", () => {
+    expect(normalizePiEvent({
+      type: "turn_end",
+      message: { role: "assistant", stopReason: "aborted", content: [{ type: "text", text: "중단됨" }] },
+      toolResults: [],
+    })).toMatchObject({ kind: "status", status: "cancelled" });
+
+    expect(normalizePiEvent({
+      type: "turn_end",
+      message: { role: "assistant", stopReason: "error", content: [{ type: "text", text: "오류" }] },
+      toolResults: [],
+    })).toMatchObject({ kind: "status", status: "failed" });
   });
 
   it("maps message deltas to assistant answer fragments", async () => {

@@ -127,6 +127,19 @@ struct PickySessionViewModelTests {
         #expect(notifications.delivered.map(\.title).contains("분석이 끝났습니다"))
     }
 
+    @Test func cancelledSessionAcceptsRunningUpdateAfterSteeringResume() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "cancelled", summary: "Cancelled"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Steering message sent", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        try await settle()
+
+        #expect(viewModel.sessions.first?.status == .running)
+        #expect(viewModel.sessions.first?.lastSummary == "Steering message sent")
+    }
+
     @Test func sessionsRemainOrderedByCreationTimeAcrossStatusChanges() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
@@ -749,6 +762,22 @@ struct PickySessionViewModelTests {
         await #expect(throws: PickySessionListViewModelError.emptyFollowUp) {
             try await viewModel.followUp(text: "   ")
         }
+    }
+
+    @Test func textSteerCanTargetCancelledSessionByExplicitID() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-cancelled", status: "cancelled", summary: "Cancelled", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        try await settle()
+
+        try await viewModel.followUp(text: "  다시 진행해줘  ", sessionID: "session-cancelled")
+
+        #expect(client.sentCommands.last?.type == .steer)
+        #expect(client.sentCommands.last?.sessionId == "session-cancelled")
+        #expect(client.sentCommands.last?.text == "다시 진행해줘")
+        #expect(viewModel.sessions.first?.status == .cancelled)
+        #expect(viewModel.sessions.first?.lastRequestText == "다시 진행해줘")
     }
 
     @Test func notifyMainToggleSendsCommandAndUpdatesSession() async throws {

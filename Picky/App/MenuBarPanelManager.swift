@@ -71,39 +71,38 @@ final class MenuBarPanelManager: NSObject {
         button.target = self
     }
 
-    /// Draws the picky triangle as a menu bar icon. Uses the same shape
-    /// and rotation as the in-app cursor so the menu bar icon matches.
+    /// Draws the shared Pi symbol SVG asset as a menu bar template icon so it
+    /// matches the in-app cursor buddy shape.
     private func makePickyMenuBarIcon() -> NSImage {
         let iconSize: CGFloat = 18
         let image = NSImage(size: NSSize(width: iconSize, height: iconSize))
         image.lockFocus()
 
-        let triangleSize = iconSize * 0.7
-        let cx = iconSize * 0.50
-        let cy = iconSize * 0.50
-        let height = triangleSize * sqrt(3.0) / 2.0
-
-        let top = CGPoint(x: cx, y: cy + height / 1.5)
-        let bottomLeft = CGPoint(x: cx - triangleSize / 2, y: cy - height / 3)
-        let bottomRight = CGPoint(x: cx + triangleSize / 2, y: cy - height / 3)
-
-        let angle = 35.0 * .pi / 180.0
-        func rotate(_ point: CGPoint) -> CGPoint {
-            let dx = point.x - cx, dy = point.y - cy
-            let cosA = CGFloat(cos(angle)), sinA = CGFloat(sin(angle))
-            return CGPoint(x: cx + cosA * dx - sinA * dy, y: cy + sinA * dx + cosA * dy)
+        if let piSymbol = NSImage(named: "PiSymbol") {
+            let symbolSize = iconSize * 0.82
+            let symbolRect = NSRect(
+                x: (iconSize - symbolSize) / 2,
+                y: (iconSize - symbolSize) / 2,
+                width: symbolSize,
+                height: symbolSize
+            )
+            piSymbol.draw(in: symbolRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+        } else {
+            // Fallback for asset-loading failures; the normal path uses the SVG.
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: iconSize * 0.92, weight: .bold),
+                .foregroundColor: NSColor.black
+            ]
+            let fallback = "π" as NSString
+            let textSize = fallback.size(withAttributes: attributes)
+            fallback.draw(
+                at: CGPoint(x: (iconSize - textSize.width) / 2, y: (iconSize - textSize.height) / 2),
+                withAttributes: attributes
+            )
         }
 
-        let path = NSBezierPath()
-        path.move(to: rotate(top))
-        path.line(to: rotate(bottomLeft))
-        path.line(to: rotate(bottomRight))
-        path.close()
-
-        NSColor.black.setFill()
-        path.fill()
-
         image.unlockFocus()
+        image.isTemplate = true
         return image
     }
 

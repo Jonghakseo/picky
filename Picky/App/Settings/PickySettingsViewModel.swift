@@ -6,6 +6,10 @@
 import Combine
 import Foundation
 
+extension Notification.Name {
+    static let pickySettingsDidSave = Notification.Name("pickySettingsDidSave")
+}
+
 @MainActor
 final class PickySettingsViewModel: ObservableObject {
     @Published var settings: PickySettings
@@ -21,7 +25,9 @@ final class PickySettingsViewModel: ObservableObject {
     func save() -> Bool {
         do {
             try store.save(settings)
+            settings = store.load()
             validationError = nil
+            NotificationCenter.default.post(name: .pickySettingsDidSave, object: nil)
             return true
         } catch {
             validationError = error.localizedDescription

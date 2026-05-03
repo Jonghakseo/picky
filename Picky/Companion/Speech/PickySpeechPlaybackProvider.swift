@@ -23,12 +23,10 @@ protocol PickySpeechPlaybackProvider: AnyObject {
 enum PickySpeechPlaybackProviderFactory {
     @MainActor
     static func makeDefaultProvider(
+        settings: PickySettings = PickySettingsStore().load(),
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> any PickySpeechPlaybackProvider {
-        let requestedProvider = (AzureOpenAIKeychainStore.value(for: "PICKY_TTS_PROVIDER", environment: environment)
-            ?? AzureOpenAIKeychainStore.value(for: "PICKY_SPEECH_PLAYBACK_PROVIDER", environment: environment))?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
+        let requestedProvider = providerName(from: settings.ttsProvider, environment: environment)
 
         if requestedProvider == "azure" || requestedProvider == "azure-openai" {
             let provider = AzureOpenAISpeechPlaybackProvider(
@@ -48,9 +46,36 @@ enum PickySpeechPlaybackProviderFactory {
             return provider
         }
 
+        if requestedProvider == "elevenlabs" || requestedProvider == "eleven-labs" {
+            let provider = ElevenLabsSpeechPlaybackProvider(
+                configuration: .fromEnvironment(environment: environment)
+            )
+            print("🔊 TTS: using provider \(provider.displayName)")
+            return provider
+        }
+
         let provider = PickySystemSpeechPlaybackProvider()
         print("🔊 TTS: using local provider \(provider.displayName)")
         return provider
+    }
+
+    private static func providerName(
+        from selection: PickyVoiceProviderSelection,
+        environment: [String: String]
+    ) -> String? {
+        switch selection {
+        case .automatic:
+            return (AzureOpenAIKeychainStore.value(for: "PICKY_TTS_PROVIDER", environment: environment)
+                ?? AzureOpenAIKeychainStore.value(for: "PICKY_SPEECH_PLAYBACK_PROVIDER", environment: environment))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+        case .local:
+            return "local"
+        case .azure:
+            return "azure"
+        case .elevenLabs:
+            return "elevenlabs"
+        }
     }
 }
 

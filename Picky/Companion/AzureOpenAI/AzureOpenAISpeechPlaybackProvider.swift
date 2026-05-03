@@ -57,8 +57,14 @@ final class AzureOpenAISpeechPlaybackProvider: NSObject, PickySpeechPlaybackProv
 
         let trimmedUtterance = utterance.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedUtterance.isEmpty else { return false }
-        guard configuration.isConfigured else { return false }
-        guard let speechURL = configuration.deploymentURL(forAudioPath: "audio/speech") else { return false }
+        guard configuration.isConfigured else {
+            print("🔊 Azure TTS not configured: \(configuration.missingConfigurationExplanation ?? "unknown missing configuration")")
+            return false
+        }
+        guard let speechURL = configuration.deploymentURL(forAudioPath: "audio/speech") else {
+            print("🔊 Azure TTS invalid endpoint for deployment: \(configuration.deploymentName ?? "<nil>")")
+            return false
+        }
 
         isPlaybackInProgress = true
         self.onFinish = onFinish
@@ -70,6 +76,8 @@ final class AzureOpenAISpeechPlaybackProvider: NSObject, PickySpeechPlaybackProv
             responseFormat: responseFormat,
             instructions: instructions
         )
+
+        print("🔊 Azure TTS request — deployment: \(configuration.deploymentName ?? "<nil>"), model: \(requestPayload.model), voice: \(voice), format: \(responseFormat), chars: \(trimmedUtterance.count)")
 
         speechTask = Task { [configuration, urlSession] in
             do {
@@ -83,6 +91,7 @@ final class AzureOpenAISpeechPlaybackProvider: NSObject, PickySpeechPlaybackProv
                 await self.playAudioData(audioData)
             } catch {
                 guard !Task.isCancelled else { return }
+                print("🔊 Azure TTS failed: \(error.localizedDescription)")
                 await self.finishPlayback(didFinish: false)
             }
         }
@@ -138,11 +147,13 @@ final class AzureOpenAISpeechPlaybackProvider: NSObject, PickySpeechPlaybackProv
             player.delegate = self
             player.prepareToPlay()
             guard player.play() else {
+                print("🔊 Azure TTS playback failed: AVAudioPlayer refused to start")
                 finishPlayback(didFinish: false)
                 return
             }
             audioPlayer = player
         } catch {
+            print("🔊 Azure TTS playback failed: \(error.localizedDescription)")
             finishPlayback(didFinish: false)
         }
     }

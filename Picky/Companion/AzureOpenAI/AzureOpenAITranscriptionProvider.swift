@@ -20,6 +20,7 @@ final class AzureOpenAITranscriptionProvider: BuddyTranscriptionProvider {
     var unavailableExplanation: String? { configuration.missingConfigurationExplanation }
 
     private let configuration: AzureOpenAIAudioConfiguration
+    private let preferredLanguage: String?
     private let urlSession: URLSession
 
     init(
@@ -27,9 +28,11 @@ final class AzureOpenAITranscriptionProvider: BuddyTranscriptionProvider {
             deploymentEnvironmentKey: "AZURE_OPENAI_STT_DEPLOYMENT_NAME",
             defaultAPIVersion: AzureOpenAITranscriptionProvider.defaultAPIVersion
         ),
+        preferredLanguage: String? = nil,
         urlSession: URLSession = .shared
     ) {
         self.configuration = configuration
+        self.preferredLanguage = preferredLanguage?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.urlSession = urlSession
     }
 
@@ -52,6 +55,7 @@ final class AzureOpenAITranscriptionProvider: BuddyTranscriptionProvider {
         return AzureOpenAITranscriptionSession(
             configuration: configuration,
             transcriptionURL: transcriptionURL,
+            preferredLanguage: preferredLanguage,
             urlSession: urlSession,
             targetSampleRate: Self.targetSampleRate,
             onTranscriptUpdate: onTranscriptUpdate,
@@ -66,6 +70,7 @@ private final class AzureOpenAITranscriptionSession: BuddyStreamingTranscription
 
     private let configuration: AzureOpenAIAudioConfiguration
     private let transcriptionURL: URL
+    private let preferredLanguage: String?
     private let urlSession: URLSession
     private let targetSampleRate: Int
     private let onTranscriptUpdate: (String) -> Void
@@ -82,6 +87,7 @@ private final class AzureOpenAITranscriptionSession: BuddyStreamingTranscription
     init(
         configuration: AzureOpenAIAudioConfiguration,
         transcriptionURL: URL,
+        preferredLanguage: String?,
         urlSession: URLSession,
         targetSampleRate: Int,
         onTranscriptUpdate: @escaping (String) -> Void,
@@ -90,6 +96,7 @@ private final class AzureOpenAITranscriptionSession: BuddyStreamingTranscription
     ) {
         self.configuration = configuration
         self.transcriptionURL = transcriptionURL
+        self.preferredLanguage = preferredLanguage
         self.urlSession = urlSession
         self.targetSampleRate = targetSampleRate
         self.onTranscriptUpdate = onTranscriptUpdate
@@ -129,12 +136,13 @@ private final class AzureOpenAITranscriptionSession: BuddyStreamingTranscription
             sampleRate: targetSampleRate
         )
 
-        transcriptionTask = Task { [configuration, transcriptionURL, urlSession, onFinalTranscriptReady] in
+        transcriptionTask = Task { [configuration, transcriptionURL, preferredLanguage, urlSession, onFinalTranscriptReady] in
             do {
                 let transcript = try await Self.transcribe(
                     wavData: wavData,
                     configuration: configuration,
                     transcriptionURL: transcriptionURL,
+                    preferredLanguage: preferredLanguage,
                     urlSession: urlSession
                 )
                 guard !Task.isCancelled else { return }
@@ -155,10 +163,15 @@ private final class AzureOpenAITranscriptionSession: BuddyStreamingTranscription
         wavData: Data,
         configuration: AzureOpenAIAudioConfiguration,
         transcriptionURL: URL,
+        preferredLanguage: String?,
         urlSession: URLSession
     ) async throws -> String {
         let boundary = "PickyAzureOpenAIBoundary-\(UUID().uuidString)"
-        let multipartBody = AzureOpenAIMultipartFormData(boundary: boundary)
+        var multipartBody = AzureOpenAIMultipartFormData(boundary: boundary)
+        if let preferredLanguage = preferredLanguage?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            multipartBody = multipartBody.addingField(name: "language", value: preferredLanguage)
+        }
+        let bodyData = multipartBody
             .addingFile(
                 fieldName: "file",
                 filename: "picky-voice.wav",
@@ -171,7 +184,7 @@ private final class AzureOpenAITranscriptionSession: BuddyStreamingTranscription
         request.httpMethod = "POST"
         request.setValue(try configuration.configuredAPIKey(), forHTTPHeaderField: "api-key")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.httpBody = multipartBody
+        request.httpBody = bodyData
 
         let (data, response) = try await urlSession.data(for: request)
         try validateHTTPResponse(response, data: data)
@@ -228,6 +241,15 @@ private struct AzureOpenAIMultipartFormData {
     let boundary: String
     private(set) var data = Data()
 
+    func addingField(name: String, value: String) -> AzureOpenAIMultipartFormData {
+        var copy = self
+        copy.append("--\(boundary)\r\n")
+        copy.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
+        copy.append(value)
+        copy.append("\r\n")
+        return copy
+    }
+
     func addingFile(fieldName: String, filename: String, contentType: String, data fileData: Data) -> AzureOpenAIMultipartFormData {
         var copy = self
         copy.append("--\(boundary)\r\n")
@@ -241,5 +263,11 @@ private struct AzureOpenAIMultipartFormData {
 
     private mutating func append(_ string: String) {
         data.append(string.data(using: .utf8)!)
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

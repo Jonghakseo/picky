@@ -71,7 +71,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         return AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined
     }
 
-    private let transcriptionProvider: any BuddyTranscriptionProvider
+    private var transcriptionProvider: any BuddyTranscriptionProvider
     private let audioEngine = AVAudioEngine()
     private var activeTranscriptionSession: (any BuddyStreamingTranscriptionSession)?
     private var activeStartSource: BuddyDictationStartSource?
@@ -102,6 +102,17 @@ final class BuddyDictationManager: NSObject, ObservableObject {
 
     func updateContextualKeyterms(_ contextualKeyterms: [String]) {
         self.contextualKeyterms = contextualKeyterms
+    }
+
+    func updateTranscriptionProvider(_ provider: any BuddyTranscriptionProvider) {
+        if isDictationInProgress {
+            cancelCurrentDictation()
+        }
+        transcriptionProvider = provider
+        transcriptionProviderDisplayName = provider.displayName
+        currentPermissionProblem = nil
+        lastErrorMessage = nil
+        print("🎙️ BuddyDictationManager: switched transcription provider to \(provider.displayName)")
     }
 
     func startPersistentDictationFromMicrophoneButton(

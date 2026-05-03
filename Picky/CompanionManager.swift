@@ -28,13 +28,14 @@ enum CompanionVoicePromptBubbleState: Equatable {
     case recognized(String)
 
     var isVisible: Bool {
-        self != .hidden
+        if case .recognized = self { return true }
+        return false
     }
 
     var displayText: String {
         switch self {
         case .hidden, .recognizing:
-            return "음성 인식 중…"
+            return ""
         case .recognized(let prompt):
             return Self.truncatedPreviewText(for: prompt)
         }
@@ -68,9 +69,9 @@ enum CompanionVoicePresentationReducer {
         let trimmedPrompt = recognizedPrompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let promptBubbleState: CompanionVoicePromptBubbleState
         if isFinalizingTranscript {
-            promptBubbleState = .recognizing
+            promptBubbleState = trimmedPrompt.isEmpty ? .hidden : .recognized(trimmedPrompt)
         } else if isAwaitingAgentResponse {
-            promptBubbleState = trimmedPrompt.isEmpty ? .recognizing : .recognized(trimmedPrompt)
+            promptBubbleState = trimmedPrompt.isEmpty ? .hidden : .recognized(trimmedPrompt)
         } else {
             promptBubbleState = .hidden
         }
@@ -127,7 +128,7 @@ final class CompanionManager: ObservableObject {
 
     private let agentClient: any PickyAgentClient
     private let selectionStore: PickySessionSelectionStoring
-    private let speechPlaybackProvider: any PickySpeechPlaybackProvider
+    private var speechPlaybackProvider: any PickySpeechPlaybackProvider
     private let voiceContextCaptureCoordinator = PickyVoiceContextCaptureCoordinator()
 
     init(
@@ -151,6 +152,7 @@ final class CompanionManager: ObservableObject {
     private var voiceStateCancellable: AnyCancellable?
     private var audioPowerCancellable: AnyCancellable?
     private var dictationErrorCancellable: AnyCancellable?
+    private var settingsChangeCancellable: AnyCancellable?
     private var accessibilityCheckTimer: Timer?
     private var pendingKeyboardShortcutStartTask: Task<Void, Never>?
     /// Scheduled hide for transient cursor mode — cancelled if the user
@@ -213,6 +215,7 @@ final class CompanionManager: ObservableObject {
         bindAudioPowerLevel()
         bindDictationErrors()
         bindShortcutTransitions()
+        bindSettingsChanges()
         // Show the cursor as soon as all permissions are available and the
         // cursor preference is enabled.
         if allPermissionsGranted && isPickyCursorEnabled {
@@ -255,6 +258,7 @@ final class CompanionManager: ObservableObject {
         voiceStateCancellable?.cancel()
         audioPowerCancellable?.cancel()
         dictationErrorCancellable?.cancel()
+        settingsChangeCancellable?.cancel()
         accessibilityCheckTimer?.invalidate()
         accessibilityCheckTimer = nil
     }
@@ -395,6 +399,26 @@ final class CompanionManager: ObservableObject {
                 self?.voiceFollowUpSessionIDForCurrentUtterance = nil
                 self?.finishAwaitingAgentResponse(visibleText: message, spokenText: message)
             }
+    }
+
+    private func bindSettingsChanges() {
+        settingsChangeCancellable = NotificationCenter.default.publisher(for: .pickySettingsDidSave)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.reloadVoiceProvidersFromSettings()
+            }
+    }
+
+    private func reloadVoiceProvidersFromSettings() {
+        let settings = PickySettingsStore().load()
+        buddyDictationManager.updateTranscriptionProvider(
+            BuddyTranscriptionProviderFactory.makeDefaultProvider(settings: settings)
+        )
+        if speechPlaybackProvider.isSpeaking {
+            stopCurrentSpeech()
+        }
+        speechPlaybackProvider = PickySpeechPlaybackProviderFactory.makeDefaultProvider(settings: settings)
+        print("🎛️ Voice settings applied — STT: \(settings.sttProvider.rawValue), TTS: \(settings.ttsProvider.rawValue), Azure STT language: \(settings.azureSTTPreferredLanguage.isEmpty ? "auto" : settings.azureSTTPreferredLanguage)")
     }
 
     private func bindVoiceStateObservation() {
@@ -712,7 +736,7 @@ final class CompanionManager: ObservableObject {
         stopCurrentSpeech()
         let trimmedTranscript = recognizedTranscript?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         currentVoicePromptPreview = trimmedTranscript.isEmpty ? nil : trimmedTranscript
-        voicePromptBubbleState = trimmedTranscript.isEmpty ? .recognizing : .recognized(trimmedTranscript)
+        voicePromptBubbleState = trimmedTranscript.isEmpty ? .hidden : .recognized(trimmedTranscript)
         pendingAgentResponseStartedAt = Date()
         latestAgentSessionSummary = "응답 준비 중…"
         voiceState = .processing

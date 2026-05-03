@@ -22,13 +22,33 @@ struct CompanionPanelSettingsView: View {
                 )
             }
 
+            CompanionPanelSettingsSection(title: "Voice", subtitle: "Choose speech providers. Azure secrets stay in Keychain.") {
+                VStack(alignment: .leading, spacing: 10) {
+                    CompanionPanelProviderPicker(
+                        title: "STT provider",
+                        capability: .transcription,
+                        selection: $viewModel.settings.sttProvider
+                    )
+                    CompanionPanelProviderPicker(
+                        title: "TTS provider",
+                        capability: .speechPlayback,
+                        selection: $viewModel.settings.ttsProvider
+                    )
+                    CompanionPanelTextField(
+                        title: "Azure STT preferred language",
+                        placeholder: "Auto detect, or e.g. ko / en",
+                        text: $viewModel.settings.azureSTTPreferredLanguage
+                    )
+                }
+            }
+
             if let error = viewModel.validationError {
                 Text(error)
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundColor(DS.Colors.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)
             } else if didSave {
-                Text("Saved. New voice captures use the updated workspace.")
+                Text("Saved. New voice captures use the updated settings.")
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundColor(DS.Colors.success)
             }
@@ -83,6 +103,54 @@ private struct CompanionPanelSettingsSection<Content: View>: View {
         }
         .padding(12)
         .background(CompanionPanelCardBackground(tint: DS.Colors.accentText))
+    }
+}
+
+
+private struct CompanionPanelProviderPicker: View {
+    let title: String
+    let capability: PickyVoiceProviderCapability
+    @Binding var selection: PickyVoiceProviderSelection
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundColor(DS.Colors.textTertiary)
+            Picker(title, selection: $selection) {
+                ForEach(PickyVoiceProviderSelection.cases(for: capability)) { provider in
+                    Text(provider.displayName(for: capability)).tag(provider)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct CompanionPanelTextField: View {
+    let title: String
+    let placeholder: String
+    @Binding var text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundColor(DS.Colors.textTertiary)
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundColor(DS.Colors.textSecondary)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(DS.Colors.surface2.opacity(0.82))
+                        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.65), lineWidth: 0.8))
+                )
+        }
     }
 }
 

@@ -240,7 +240,7 @@ struct PickyCompanionManagerTests {
         #expect(preparing.voiceState == .processing)
         #expect(preparing.promptBubbleState == .hidden)
         #expect(finalizing.voiceState == .processing)
-        #expect(finalizing.promptBubbleState == .recognizing)
+        #expect(finalizing.promptBubbleState == .hidden)
     }
 
     @Test func voicePresentationUsesPhysicalShortcutHoldImmediately() async throws {

@@ -73,6 +73,10 @@ export class AgentdServer {
       logAgentd("command received", commandLogFields(command));
       if (command.type === "listSessions") this.send(ws, { type: "sessionSnapshot", sessions: compactSessionsForSnapshot(this.options.supervisor.list()) });
       if (command.type === "listMainMessages") this.send(ws, { type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() });
+      if (command.type === "resetMainAgent") {
+        await this.options.supervisor.resetMainAgent();
+        this.broadcast({ type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() });
+      }
       if (command.type === "getSession") {
         const session = this.options.supervisor.get(command.sessionId);
         if (!session) throw new Error(`Unknown session: ${command.sessionId}`);
@@ -165,6 +169,7 @@ function commandLogFields(command: ReturnType<typeof parseCommand>): Record<stri
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, artifactId: command.artifactId };
     case "listSessions":
     case "listMainMessages":
+    case "resetMainAgent":
       return { commandId: command.id, type: command.type };
   }
 }

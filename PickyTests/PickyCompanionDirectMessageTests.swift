@@ -11,6 +11,7 @@ private final class FakeDirectMessageClient: PickyAgentClient {
     private let continuation: AsyncStream<PickyClientEvent>.Continuation
     let events: AsyncStream<PickyClientEvent>
     private(set) var submissions: [PickyAgentSubmission] = []
+    private(set) var sentCommands: [PickyCommandEnvelope] = []
 
     init() {
         var continuation: AsyncStream<PickyClientEvent>.Continuation!
@@ -25,7 +26,9 @@ private final class FakeDirectMessageClient: PickyAgentClient {
         return PickyAgentSubmissionReceipt(sessionID: "typed-session", message: "")
     }
 
-    func send(_ command: PickyCommandEnvelope) async throws {}
+    func send(_ command: PickyCommandEnvelope) async throws {
+        sentCommands.append(command)
+    }
     func disconnect() { continuation.yield(.disconnected) }
 }
 
@@ -46,6 +49,23 @@ private final class FakeDirectMessageSpeechPlaybackProvider: PickySpeechPlayback
 
 @MainActor
 struct PickyCompanionDirectMessageTests {
+    @Test func resetMainAgentSessionClearsMessagesAndSendsResetCommand() async throws {
+        let client = FakeDirectMessageClient()
+        let manager = CompanionManager(
+            agentClient: client,
+            voiceContextCaptureCoordinator: fakeDirectMessageContextCaptureCoordinator()
+        )
+        manager.applyAgentEvent(.mainMessageAppended(PickyMainAgentMessage(role: .user, text: "old prompt", createdAt: Date(timeIntervalSince1970: 1_800_000_000))))
+        manager.applyAgentEvent(.mainMessageAppended(PickyMainAgentMessage(role: .assistant, text: "old reply", createdAt: Date(timeIntervalSince1970: 1_800_000_001))))
+
+        let didReset = await manager.resetMainAgentSession()
+
+        #expect(didReset)
+        #expect(client.sentCommands.map(\.type) == [.resetMainAgent])
+        #expect(manager.mainAgentMessages.isEmpty)
+        #expect(manager.latestAgentSessionSummary == "Started a new Messages session")
+    }
+
     @Test func directMessageRoutesTypedContextAndDoesNotSpeakQuickReply() async throws {
         let client = FakeDirectMessageClient()
         let speechProvider = FakeDirectMessageSpeechPlaybackProvider()
@@ -60,7 +80,7 @@ struct PickyCompanionDirectMessageTests {
         #expect(didSend)
         #expect(client.submissions.count == 1)
         #expect(client.submissions.first?.transcript == "hello from messages")
-        #expect(client.submissions.first?.context.source == "typed-message")
+        #expect(client.submissions.first?.context.source == "text")
         #expect(client.submissions.first?.context.transcript == "hello from messages")
 
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(contextId: "typed-context", text: "typed reply")))

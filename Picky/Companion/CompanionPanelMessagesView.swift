@@ -38,11 +38,45 @@ struct CompanionPanelMessagesView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("Messages")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(DS.Colors.textPrimary)
-            Text("Recent STT prompts and main-agent replies. Keeps the latest 100 messages.")
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .center, spacing: 8) {
+                Text("Messages")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(DS.Colors.textPrimary)
+
+                Spacer(minLength: 8)
+
+                Button(action: resetMainAgentSession) {
+                    HStack(spacing: 5) {
+                        if companionManager.isResettingMainAgentSession {
+                            ProgressView()
+                                .controlSize(.small)
+                                .frame(width: 11, height: 11)
+                        } else {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.system(size: 9.5, weight: .bold))
+                        }
+                        Text("New Session")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundColor(companionManager.isResettingMainAgentSession ? DS.Colors.textTertiary : DS.Colors.textSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(DS.Colors.surface2.opacity(0.86))
+                            .overlay(
+                                Capsule(style: .continuous)
+                                    .stroke(DS.Colors.borderSubtle.opacity(0.75), lineWidth: 0.8)
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(companionManager.isResettingMainAgentSession)
+                .pointerCursor()
+            }
+
+            Text("Recent prompts and main-agent replies. Keeps the latest 100 messages.")
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -130,6 +164,12 @@ struct CompanionPanelMessagesView: View {
             if await companionManager.sendDirectMessage(message) {
                 draftMessage = ""
             }
+        }
+    }
+
+    private func resetMainAgentSession() {
+        Task { @MainActor in
+            _ = await companionManager.resetMainAgentSession()
         }
     }
 }

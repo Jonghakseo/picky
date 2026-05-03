@@ -162,6 +162,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("abort"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("listSessions") }),
   CommandBaseSchema.extend({ type: z.literal("listMainMessages") }),
+  CommandBaseSchema.extend({ type: z.literal("resetMainAgent") }),
   CommandBaseSchema.extend({ type: z.literal("getSession"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("answerExtensionUi"), sessionId: z.string(), requestId: z.string(), value: z.unknown().optional() }),
   CommandBaseSchema.extend({ type: z.literal("openArtifact"), sessionId: z.string(), artifactId: z.string() }),

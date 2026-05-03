@@ -28,6 +28,8 @@ export class SessionSupervisor extends EventEmitter {
   private readonly runtimeEventHandler: RuntimeEventHandler;
   private mainHandle?: RuntimeSessionHandle;
   private mainHandlePromise?: Promise<RuntimeSessionHandle>;
+  private mainHandleUnsubscribe?: () => void;
+  private mainHandleGeneration = 0;
   private mainDraft = "";
   private mainContext?: PickyContextPacket;
   private mainState: PickyMainAgentState = { messages: [] };
@@ -163,6 +165,50 @@ export class SessionSupervisor extends EventEmitter {
     return [...this.mainState.messages];
   }
 
+  async resetMainAgent(): Promise<void> {
+    logAgentd("main reset requested", { messages: this.mainState.messages.length, hadHandle: this.mainHandle ? 1 : 0 });
+    const currentHandle = this.mainHandle;
+    const pendingHandlePromise = this.mainHandlePromise;
+    this.mainHandleGeneration += 1;
+    this.mainHandleUnsubscribe?.();
+    this.mainHandleUnsubscribe = undefined;
+    this.mainHandle = undefined;
+    this.mainHandlePromise = undefined;
+    this.mainDraft = "";
+    this.mainContext = undefined;
+    this.mainReplyContextId = "main";
+    this.mainIsProcessing = false;
+    this.suppressNextMainReply = false;
+    this.suppressInterruptedMainCompletion = false;
+    await this.patchMainState({ messages: [], sessionFilePath: undefined, cwd: undefined });
+
+    if (currentHandle) await this.abortResetMainHandle(currentHandle, "current");
+    if (pendingHandlePromise) {
+      void pendingHandlePromise
+        .then(async (pendingHandle) => {
+          if (pendingHandle !== currentHandle) await this.abortResetMainHandle(pendingHandle, "pending");
+          if (this.mainHandle === pendingHandle) {
+            this.mainHandleGeneration += 1;
+            this.mainHandleUnsubscribe?.();
+            this.mainHandleUnsubscribe = undefined;
+            this.mainHandle = undefined;
+            await this.patchMainState({ sessionFilePath: undefined, cwd: undefined });
+          }
+        })
+        .catch((error) => {
+          logAgentd("main reset pending handle failed", { error: error instanceof Error ? error.message : String(error) });
+        });
+    }
+  }
+
+  private async abortResetMainHandle(handle: RuntimeSessionHandle, label: string): Promise<void> {
+    try {
+      await handle.abort();
+    } catch (error) {
+      logAgentd("main reset abort failed", { label, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
   announceMainHandoff(contextId: string, text: string): void {
     logAgentd("main handoff announced", { contextId, textChars: text.length });
     this.suppressNextMainReply = true;
@@ -267,17 +313,21 @@ export class SessionSupervisor extends EventEmitter {
 
   private async routeThroughMainAgent(context: PickyContextPacket): Promise<void> {
     logAgentd("main route requested", { contextId: context.id, source: context.source, transcriptChars: context.transcript?.length });
+    const generation = this.mainHandleGeneration;
     this.mainContext = context;
     this.mainReplyContextId = context.id;
     this.mainDraft = "";
     if (context.transcript?.trim()) await this.appendMainMessage("user", context.transcript.trim());
     const prompt = buildMainAgentPrompt(context);
     if (this.mainHandlePromise && !this.mainHandle) {
-      await this.deliverMainPrompt(await this.mainHandlePromise, prompt);
+      const handle = await this.mainHandlePromise;
+      if (generation !== this.mainHandleGeneration) return;
+      await this.deliverMainPrompt(handle, prompt);
       return;
     }
     if (!this.mainHandle) {
-      const handle = await this.createInitialMainHandle(prompt, context.cwd);
+      const handle = await this.createInitialMainHandle(prompt, context.cwd, generation);
+      if (generation !== this.mainHandleGeneration) return;
       if (!handle.initialPromptAlreadySent) await this.deliverMainPrompt(handle.handle, prompt);
       return;
     }
@@ -302,50 +352,72 @@ export class SessionSupervisor extends EventEmitter {
   private async ensurePrewarmedMainHandle(cwd: string): Promise<RuntimeSessionHandle> {
     if (this.mainHandle) return this.mainHandle;
     if (!this.mainHandlePromise) {
-      this.mainHandlePromise = this.createPrewarmedMainHandle(cwd)
-        .finally(() => {
-          this.mainHandlePromise = undefined;
-        });
+      const generation = this.mainHandleGeneration;
+      const promise = this.createPrewarmedMainHandle(cwd, generation);
+      const trackedPromise = promise.finally(() => {
+        if (this.mainHandlePromise === trackedPromise) this.mainHandlePromise = undefined;
+      });
+      this.mainHandlePromise = trackedPromise;
     }
     return this.mainHandlePromise;
   }
 
-  private async createPrewarmedMainHandle(cwd: string): Promise<RuntimeSessionHandle> {
-    const resumed = await this.tryResumeMainHandle(cwd);
+  private async createPrewarmedMainHandle(cwd: string, generation = this.mainHandleGeneration): Promise<RuntimeSessionHandle> {
+    const resumed = await this.tryResumeMainHandle(cwd, generation);
     if (resumed) return resumed;
     if (!this.options.mainRuntime?.prewarm) throw new Error("Main runtime cannot prewarm");
     const handle = await this.options.mainRuntime.prewarm({ cwd, sessionId: "picky-main-agent" });
     logAgentd("main prewarmed", { cwd });
+    if (generation !== this.mainHandleGeneration) {
+      await this.abortResetMainHandle(handle, "stale-prewarm");
+      return handle;
+    }
     await this.patchMainState({ cwd });
-    return this.attachMainHandle(handle);
+    return this.attachMainHandle(handle, generation);
   }
 
-  private async createInitialMainHandle(prompt: ReturnType<typeof buildMainAgentPrompt>, cwd?: string): Promise<{ handle: RuntimeSessionHandle; initialPromptAlreadySent: boolean }> {
-    const resumed = await this.tryResumeMainHandle(cwd ?? process.cwd());
+  private async createInitialMainHandle(prompt: ReturnType<typeof buildMainAgentPrompt>, cwd?: string, generation = this.mainHandleGeneration): Promise<{ handle: RuntimeSessionHandle; initialPromptAlreadySent: boolean }> {
+    const resumed = await this.tryResumeMainHandle(cwd ?? process.cwd(), generation);
     if (resumed) return { handle: resumed, initialPromptAlreadySent: false };
     const handle = await this.options.mainRuntime!.create(prompt, { cwd, sessionId: "picky-main-agent" });
+    if (generation !== this.mainHandleGeneration) {
+      await this.abortResetMainHandle(handle, "stale-initial");
+      return { handle, initialPromptAlreadySent: true };
+    }
     await this.patchMainState({ cwd });
-    return { handle: this.attachMainHandle(handle), initialPromptAlreadySent: true };
+    return { handle: this.attachMainHandle(handle, generation), initialPromptAlreadySent: true };
   }
 
-  private async tryResumeMainHandle(cwd: string): Promise<RuntimeSessionHandle | undefined> {
+  private async tryResumeMainHandle(cwd: string, generation = this.mainHandleGeneration): Promise<RuntimeSessionHandle | undefined> {
     const sessionFilePath = this.mainState.sessionFilePath?.trim();
     if (!sessionFilePath || !this.options.mainRuntime?.resume) return undefined;
     try {
       logAgentd("main resume requested", { sessionFilePath, cwd });
       const handle = await this.options.mainRuntime.resume(sessionFilePath, { cwd, sessionId: "picky-main-agent" });
       logAgentd("main resumed", { sessionFilePath, cwd });
+      if (generation !== this.mainHandleGeneration) {
+        await this.abortResetMainHandle(handle, "stale-resume");
+        return handle;
+      }
       await this.patchMainState({ cwd });
-      return this.attachMainHandle(handle);
+      return this.attachMainHandle(handle, generation);
     } catch (error) {
       logAgentd("main resume failed", { sessionFilePath, error: error instanceof Error ? error.message : String(error) });
       return undefined;
     }
   }
 
-  private attachMainHandle(handle: RuntimeSessionHandle): RuntimeSessionHandle {
+  private attachMainHandle(handle: RuntimeSessionHandle, generation = this.mainHandleGeneration): RuntimeSessionHandle {
+    if (generation !== this.mainHandleGeneration) {
+      void this.abortResetMainHandle(handle, "stale-attach");
+      return handle;
+    }
     this.mainHandle = handle;
-    handle.subscribe((event) => void this.applyMainRuntimeEvent(event));
+    this.mainHandleUnsubscribe?.();
+    this.mainHandleUnsubscribe = handle.subscribe((event) => {
+      if (generation !== this.mainHandleGeneration) return;
+      void this.applyMainRuntimeEvent(event);
+    });
     return handle;
   }
 

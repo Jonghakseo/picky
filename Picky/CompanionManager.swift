@@ -103,6 +103,7 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var latestAgentSessionSummary: String?
     @Published private(set) var mainAgentMessages: [PickyMainAgentMessage] = []
     @Published private(set) var isSendingDirectMessage = false
+    @Published private(set) var isResettingMainAgentSession = false
     @Published private(set) var directMessageError: String?
     @Published private(set) var currentAudioPowerLevel: CGFloat = 0
     @Published private(set) var hasAccessibilityPermission = false
@@ -619,7 +620,7 @@ final class CompanionManager: ObservableObject {
         do {
             guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
                 transcript: trimmedText,
-                source: "typed-message"
+                source: "text"
             ) else { return false }
             submittedContextID = captureResult.contextPacket.id
             directMessageContextIDs.insert(captureResult.contextPacket.id)
@@ -632,6 +633,27 @@ final class CompanionManager: ObservableObject {
             }
             let message = error.localizedDescription
             directMessageError = "메시지를 보내지 못했어요: \(message)"
+            latestAgentSessionSummary = directMessageError
+            return false
+        }
+    }
+
+    @discardableResult
+    func resetMainAgentSession() async -> Bool {
+        guard !isResettingMainAgentSession else { return false }
+        isResettingMainAgentSession = true
+        directMessageError = nil
+        defer { isResettingMainAgentSession = false }
+
+        do {
+            try await agentClient.send(PickyCommandEnvelope(type: .resetMainAgent))
+            mainAgentMessages = []
+            directMessageContextIDs.removeAll()
+            latestAgentSessionSummary = "Started a new Messages session"
+            return true
+        } catch {
+            let message = error.localizedDescription
+            directMessageError = "새 메시지 세션을 시작하지 못했어요: \(message)"
             latestAgentSessionSummary = directMessageError
             return false
         }

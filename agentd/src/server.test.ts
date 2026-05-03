@@ -49,6 +49,15 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("broadcasts an empty main-message snapshot after resetting the main agent", async () => {
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-reset-main", protocolVersion: PROTOCOL_VERSION, type: "resetMainAgent" }));
+    const snapshot = await nextEvent(ws);
+    expect(snapshot.type).toBe("mainMessagesSnapshot");
+    if (snapshot.type === "mainMessagesSnapshot") expect(snapshot.messages).toEqual([]);
+    ws.close();
+  });
+
   it("sanitizes unpaired surrogate strings before JSON serialization", () => {
     const sanitized = sanitizeForJson({
       brokenHigh: "tool output: \uD83C",

@@ -465,6 +465,35 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
+  it("resets main-agent messages and starts the next prompt on a new handle", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const store = new SessionStore(dir);
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store, undefined, { mainRuntime });
+
+    await supervisor.route(context("이전 질문"));
+    const previousHandle = mainRuntime.handle;
+    previousHandle?.emit({ type: "log", line: "pi session: /tmp/previous-main.jsonl" });
+    previousHandle?.emit({ type: "assistant_delta", delta: "이전 답변" });
+    previousHandle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    await supervisor.resetMainAgent();
+    previousHandle?.emit({ type: "assistant_delta", delta: "늦은 답변" });
+    previousHandle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(previousHandle?.aborts).toBe(1);
+    expect(supervisor.listMainMessages()).toEqual([]);
+    expect(await store.loadMainAgentState()).toEqual({ messages: [] });
+
+    await supervisor.route(context("새 질문"));
+
+    expect(mainRuntime.createCalls).toBe(2);
+    expect(mainRuntime.handle).not.toBe(previousHandle);
+    expect(supervisor.listMainMessages().map((message) => message.text)).toEqual(["새 질문"]);
+  });
+
   it("keeps only the latest 100 main-agent user and assistant messages", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime();
@@ -725,10 +754,13 @@ class ManualHandle implements RuntimeSessionHandle {
     this.interrupts.push(prompt);
   }
   steers: string[] = [];
+  aborts = 0;
   async steer(text: string): Promise<void> {
     this.steers.push(text);
   }
-  async abort(): Promise<void> {}
+  async abort(): Promise<void> {
+    this.aborts += 1;
+  }
   subscribe(listener: (event: RuntimeEvent) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

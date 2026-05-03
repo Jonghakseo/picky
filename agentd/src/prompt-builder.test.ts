@@ -53,6 +53,21 @@ describe("neutral prompt builder", () => {
     expect(prompt.text).toContain("omit it to use Picky's configured default cwd");
   });
 
+  it("tells the main agent to treat text input as typed text, not STT", () => {
+    const context = PickyContextPacketSchema.parse({
+      ...readJson("context/plain-text.context.json"),
+      source: "text",
+      transcript: "느으 الرحيم",
+    });
+
+    const prompt = buildMainAgentPrompt(context);
+
+    expect(prompt.text).toContain("Input modality: typed text");
+    expect(prompt.text).toContain("treat the request text as deliberate typed input, not speech recognition or STT output");
+    expect(prompt.text).toContain("Do not say the text was misrecognized");
+    expect(prompt.text).toContain("ask them to retype or clarify");
+  });
+
   it("tells the main agent to use the pointer overlay for concrete visual locations", () => {
     const prompt = buildMainAgentPrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")));
     expect(prompt.text).toContain("call `picky_show_pointer`");

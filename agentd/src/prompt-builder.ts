@@ -39,7 +39,10 @@ export function buildMainAgentPrompt(context: PickyContextPacket): BuiltPrompt {
     "- For visual navigation/help, use the pointer overlay rules below and call `picky_show_pointer` when a concrete on-screen location would help.",
     "- When you hand off, tell the user in Korean that you are delegating to a side agent and that progress is visible in the top-right overlay.",
     "- When a side-agent completion message is provided later, summarize the result briefly in Korean and tell the user to open the side-agent card for details.",
+    "- If the captured context Source is `text`, treat the request text as deliberate typed input, not speech recognition or STT output. Do not say the text was misrecognized; if it is unclear, ask them to retype or clarify.",
     "- Do not expose internal tool logs. Do not hard-code workflows from URLs or app names; use the user's intent and context.",
+    "",
+    `Input modality: ${inputModalityLabel(context.source)}`,
     "",
     "Pointer overlay rules:",
     ...pointerOverlayGuidelines,
@@ -103,6 +106,19 @@ export function buildFollowUpPrompt(sessionId: string, text: string, context?: P
   const lines = ["# Picky follow-up", "", `Session: ${sessionId}`, "", neutralInstruction, "", "## User follow-up", text.trim()];
   if (context) appendContext(lines, context);
   return { text: lines.join("\n"), imagePaths: context?.screenshots.map((s) => s.path) ?? [] };
+}
+
+function inputModalityLabel(source: PickyContextPacket["source"]): string {
+  switch (source) {
+    case "text":
+    case "text-follow-up":
+      return "typed text";
+    case "voice":
+    case "voice-follow-up":
+      return "voice transcription";
+    case "system":
+      return "system event";
+  }
 }
 
 function appendContext(lines: string[], context: PickyContextPacket): void {

@@ -594,7 +594,7 @@ export class SessionSupervisor extends EventEmitter {
 
   async steer(sessionId: string, text: string): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
-    if (["failed", "cancelled"].includes(session.status)) throw new Error(`Cannot steer ${session.status} session`);
+    if (session.status === "failed") throw new Error(`Cannot steer ${session.status} session`);
     const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
     if (!handle) {
       const reason = "Runtime session is not attached";

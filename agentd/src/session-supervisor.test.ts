@@ -182,6 +182,25 @@ describe("SessionSupervisor", () => {
     expect(updated.lastSummary).toBe("Steering message sent");
   });
 
+  it("marks cancelled side sessions as running when they are steered", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+
+    await supervisor.abort(side.id);
+
+    expect(supervisor.get(side.id)?.status).toBe("cancelled");
+
+    const updated = await supervisor.steerSideSession(side.id, "다시 진행해줘");
+
+    expect(runtime.handle?.steers).toEqual(["다시 진행해줘"]);
+    expect(updated.status).toBe("running");
+    expect(updated.lastSummary).toBe("Steering message sent");
+    expect(updated.logs).toContain("steer: 다시 진행해줘");
+  });
+
   it("stores only the front of thinking blocks for current work", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

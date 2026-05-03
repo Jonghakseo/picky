@@ -251,17 +251,17 @@ private struct PickySessionCardView: View {
                 }
             }
 
-            if !session.prArtifacts.isEmpty {
+            if !session.linkBadgeArtifacts.isEmpty {
                 HStack(spacing: 6) {
-                    ForEach(session.prArtifacts) { artifact in
+                    ForEach(session.linkBadgeArtifacts) { artifact in
                         if let url = artifact.url {
                             Link(destination: url) {
-                                prBadge(artifact)
+                                linkBadge(artifact, text: session.linkBadgeText(for: artifact))
                             }
                             .buttonStyle(.plain)
-                            .help("Open \(artifact.prBadgeTitle)")
+                            .help("Open \(artifact.title)")
                         } else {
-                            prBadge(artifact)
+                            linkBadge(artifact, text: session.linkBadgeText(for: artifact))
                         }
                     }
                 }
@@ -522,13 +522,45 @@ private struct PickySessionCardView: View {
         }
     }
 
-    private func prBadge(_ artifact: PickyArtifact) -> some View {
-        Text(artifact.prBadgeTitle)
-            .font(.system(size: 10, weight: .medium))
-            .foregroundColor(DS.Colors.accentText)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(Capsule().fill(DS.Colors.accentSubtle))
+    private func linkBadge(_ artifact: PickyArtifact, text: String?) -> some View {
+        HStack(spacing: 4) {
+            linkBadgeIcon(for: artifact.linkBadgeKind)
+            if let text, !text.isEmpty {
+                Text(text)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(DS.Colors.accentText)
+            }
+        }
+        .padding(.horizontal, text == nil ? 6 : 7)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(DS.Colors.accentSubtle))
+    }
+
+    @ViewBuilder
+    private func linkBadgeIcon(for kind: PickyLinkBadgeKind?) -> some View {
+        switch kind {
+        case .github:
+            Image("github-logo")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 11, height: 11)
+                .foregroundColor(DS.Colors.accentText)
+        case .slack:
+            Image("slack-logo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 11, height: 11)
+        case .notion:
+            Image("notion-logo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 11, height: 11)
+        case nil:
+            Image(systemName: "link")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(DS.Colors.accentText)
+        }
     }
 
     private var currentWorkDescription: String? {

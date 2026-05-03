@@ -349,7 +349,7 @@ struct PickySessionViewModelTests {
         ) == nil)
     }
 
-    @Test func githubPullRequestArtifactBadgeTitleUsesPrNumber() throws {
+    @Test func linkBadgeArtifactsClassifyGitHubSlackAndNotionURLs() throws {
         let pullRequest = PickyArtifact(
             id: "pr-1",
             kind: "pr",
@@ -358,19 +358,50 @@ struct PickySessionViewModelTests {
             url: URL(string: "https://github.com/acme/repo/pull/42")!,
             updatedAt: Date()
         )
-        let fallback = PickyArtifact(
-            id: "artifact-1",
-            kind: "link",
-            title: "External Link",
+        let issue = PickyArtifact(
+            id: "github-1",
+            kind: "github",
+            title: "#2777",
             path: nil,
-            url: URL(string: "https://github.com/acme/repo/issues/42")!,
+            url: URL(string: "https://github.com/acme/repo/issues/2777")!,
+            updatedAt: Date()
+        )
+        let slack = PickyArtifact(
+            id: "slack-1",
+            kind: "slack",
+            title: "Slack",
+            path: nil,
+            url: URL(string: "https://creatrip.slack.com/archives/C012ZMHLPDW/p1777763920621249")!,
+            updatedAt: Date()
+        )
+        let notion = PickyArtifact(
+            id: "notion-1",
+            kind: "notion",
+            title: "Notion",
+            path: nil,
+            url: URL(string: "https://www.notion.so/creatrip/355d62c6956180cf8695dcdf5c4ff226")!,
             updatedAt: Date()
         )
 
-        #expect(pullRequest.githubPullRequestNumber == "42")
-        #expect(pullRequest.prBadgeTitle == "PR #42")
-        #expect(fallback.githubPullRequestNumber == nil)
-        #expect(fallback.prBadgeTitle == "External Link")
+        #expect(pullRequest.linkBadgeKind == .github)
+        #expect(pullRequest.githubIssueOrPullRequestNumber == "42")
+        #expect(issue.linkBadgeKind == .github)
+        #expect(issue.githubIssueOrPullRequestNumber == "2777")
+        #expect(slack.linkBadgeKind == .slack)
+        #expect(notion.linkBadgeKind == .notion)
+    }
+
+    @Test func sessionCardOmitsSingleSlackAndNotionLinkIndexes() throws {
+        let github = PickyArtifact(id: "github-1", kind: "github", title: "#42", path: nil, url: URL(string: "https://github.com/acme/repo/pull/42")!, updatedAt: Date())
+        let slack = PickyArtifact(id: "slack-1", kind: "slack", title: "Slack", path: nil, url: URL(string: "https://creatrip.slack.com/archives/C012ZMHLPDW/p1777763920621249")!, updatedAt: Date())
+        let notion1 = PickyArtifact(id: "notion-1", kind: "notion", title: "Notion", path: nil, url: URL(string: "https://www.notion.so/creatrip/355d62c6956180cf8695dcdf5c4ff226")!, updatedAt: Date())
+        let notion2 = PickyArtifact(id: "notion-2", kind: "notion", title: "Notion", path: nil, url: URL(string: "https://app.notion.com/p/351d62c6956180498d13e3494b488192")!, updatedAt: Date())
+        let card = PickySessionListViewModel.SessionCard.fixture(artifacts: [github, slack, notion1, notion2])
+
+        #expect(card.linkBadgeText(for: github) == "#42")
+        #expect(card.linkBadgeText(for: slack) == nil)
+        #expect(card.linkBadgeText(for: notion1) == "#1")
+        #expect(card.linkBadgeText(for: notion2) == "#2")
     }
 
     @Test func hudPanelCanBecomeKeyForFollowUpTextInput() throws {
@@ -1005,6 +1036,30 @@ private enum EventJSON {
         """
         {"id":"event-tool-\(status)","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:03.000Z","type":"toolActivityUpdated","sessionId":"\(sessionId)","tool":{"toolCallId":"\(toolCallId)","name":"\(name)","status":"\(status)","preview":"\(preview)","startedAt":"2026-05-01T00:00:02.000Z","endedAt":null}}
         """
+    }
+}
+
+private extension PickySessionListViewModel.SessionCard {
+    static func fixture(artifacts: [PickyArtifact]) -> PickySessionListViewModel.SessionCard {
+        PickySessionListViewModel.SessionCard(
+            id: "session-links",
+            title: "Link task",
+            status: .completed,
+            cwd: "/tmp/project",
+            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_100),
+            lastSummary: "Done",
+            thinkingPreview: nil,
+            logPreview: "",
+            lastRequestText: nil,
+            tools: [],
+            artifacts: artifacts,
+            changedFiles: [],
+            pendingExtensionUiRequest: nil,
+            piSessionFilePath: nil,
+            notifyMainOnCompletion: nil,
+            hasRuntimeDetachedFollowUpRejection: false
+        )
     }
 }
 

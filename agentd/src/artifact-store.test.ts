@@ -2,7 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ArtifactStore, extractChangedFilesFromExplicitText, extractGithubPullRequestUrls, githubPullRequestTitle, renderSessionReport } from "./artifact-store.js";
+import { ArtifactStore, extractChangedFilesFromExplicitText, extractGithubPullRequestUrls, extractSessionLinkArtifacts, extractSessionLinks, githubPullRequestTitle, renderSessionReport } from "./artifact-store.js";
 import { LogStore } from "./log-store.js";
 
 describe("ArtifactStore", () => {
@@ -62,9 +62,22 @@ describe("ArtifactStore", () => {
     expect(markdown).not.toContain("failed");
   });
 
-  it("extracts PR URLs, PR titles, and changed files only from explicit output", () => {
+  it("extracts GitHub, Slack, Notion links and changed files only from explicit output", () => {
     expect(extractGithubPullRequestUrls("Created https://github.com/acme/repo/pull/42")).toEqual(["https://github.com/acme/repo/pull/42"]);
-    expect(githubPullRequestTitle("https://github.com/acme/repo/pull/42")).toBe("PR #42");
+    expect(githubPullRequestTitle("https://github.com/acme/repo/issues/2777")).toBe("#2777");
+    expect(extractSessionLinks([
+      "GitHub https://github.com/acme/repo/issues/2777",
+      "Slack https://creatrip.slack.com/archives/C012ZMHLPDW/p1777763920621249",
+      "Notion https://www.notion.so/creatrip/355d62c6956180cf8695dcdf5c4ff226?source=copy_link",
+      "Notion duplicate https://www.notion.so/creatrip/355d62c6956180cf8695dcdf5c4ff226",
+      "Notion app https://app.notion.com/p/351d62c6956180498d13e3494b488192",
+    ].join("\n"))).toEqual([
+      { kind: "github", title: "#2777", url: "https://github.com/acme/repo/issues/2777" },
+      { kind: "slack", title: "Slack", url: "https://creatrip.slack.com/archives/C012ZMHLPDW/p1777763920621249" },
+      { kind: "notion", title: "Notion", url: "https://www.notion.so/creatrip/355d62c6956180cf8695dcdf5c4ff226" },
+      { kind: "notion", title: "Notion", url: "https://app.notion.com/p/351d62c6956180498d13e3494b488192" },
+    ]);
+    expect(extractSessionLinkArtifacts("https://github.com/acme/repo/pull/42", "2026-05-01T00:00:00.000Z")[0]).toMatchObject({ kind: "github", title: "#42", url: "https://github.com/acme/repo/pull/42" });
     expect(extractGithubPullRequestUrls("I will open a PR later")).toEqual([]);
     expect(extractChangedFilesFromExplicitText("Changed file: M Picky/App.swift - updated HUD")).toEqual([{ status: "M", path: "Picky/App.swift", summary: "updated HUD" }]);
   });

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
-import { ArtifactStore, extractChangedFilesFromExplicitText } from "./artifact-store.js";
+import { ArtifactStore, extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "./artifact-store.js";
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
@@ -10,6 +10,7 @@ import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShow
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
 import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./runtime/types.js";
+import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { cleanFinalAnswer } from "./domain/session-summary.js";
@@ -278,7 +279,7 @@ export class SessionSupervisor extends EventEmitter {
       logs: buildPinnedSideSessionLogs(context),
       notifyMainOnCompletion: false,
       tools: [],
-      artifacts: [],
+      artifacts: extractSessionLinkArtifacts(context.transcript ?? "", now),
       changedFiles: [],
     };
     this.sideSessionIds.add(id);
@@ -301,7 +302,7 @@ export class SessionSupervisor extends EventEmitter {
       logs: [],
       ...(options.notifyMainOnCompletion === undefined ? {} : { notifyMainOnCompletion: options.notifyMainOnCompletion }),
       tools: [],
-      artifacts: [],
+      artifacts: extractSessionLinkArtifacts(context.transcript ?? "", now),
       changedFiles: [],
     };
     this.sessionContexts.set(id, context);
@@ -669,7 +670,9 @@ export class SessionSupervisor extends EventEmitter {
   private async appendLog(sessionId: string, line: string): Promise<void> {
     const session = this.mustGet(sessionId);
     const changedFiles = mergeChangedFiles(session.changedFiles, extractChangedFilesFromExplicitText(line));
-    await this.patch(sessionId, { logs: [...session.logs, line], changedFiles });
+    const linkArtifacts = extractSessionLinkArtifacts(line).filter((artifact) => !session.artifacts.some((existing) => existing.url === artifact.url));
+    const artifacts = mergeArtifacts(session.artifacts, linkArtifacts);
+    await this.patch(sessionId, { logs: [...session.logs, line], changedFiles, artifacts });
     this.emit("log", sessionId, line);
   }
 

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -108,13 +109,86 @@ function summarizeToolCalls(tools: PickyAgentSession["tools"]): Array<{ name: st
 }
 
 export function extractGithubPullRequestUrls(text: string): string[] {
-  const regex = /https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[0-9]+/g;
-  return [...new Set(text.match(regex) ?? [])];
+  return extractSessionLinks(text).filter((link) => link.kind === "github" && /\/pull\/[0-9]+(?:$|[?#])/.test(link.url)).map((link) => link.url);
 }
 
 export function githubPullRequestTitle(url: string): string {
-  const match = url.match(/\/pull\/([0-9]+)(?:$|[?#])/);
-  return match ? `PR #${match[1]}` : "GitHub PR";
+  const number = githubIssueOrPullRequestNumber(url);
+  return number ? `#${number}` : "GitHub";
+}
+
+export type SessionLinkKind = "github" | "slack" | "notion";
+
+export interface ExtractedSessionLink {
+  kind: SessionLinkKind;
+  title: string;
+  url: string;
+}
+
+export function extractSessionLinks(text: string): ExtractedSessionLink[] {
+  const regex = /https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/(?:pull|issues)\/[0-9]+(?:[?#][^\s<>)\]]*)?|https:\/\/[A-Za-z0-9-]+\.slack\.com\/archives\/[A-Z0-9]+\/p[0-9]+(?:[?#][^\s<>)\]]*)?|https:\/\/(?:(?:www\.)?notion\.so|app\.notion\.com)\/[^\s<>)\]]+/g;
+  const links: ExtractedSessionLink[] = [];
+  const seen = new Set<string>();
+  for (const match of text.matchAll(regex)) {
+    const url = normalizeLinkUrl(match[0]);
+    if (!url || seen.has(url)) continue;
+    const kind = sessionLinkKind(url);
+    if (!kind) continue;
+    seen.add(url);
+    links.push({ kind, title: sessionLinkTitle(kind, url), url });
+  }
+  return links;
+}
+
+export function extractSessionLinkArtifacts(text: string, updatedAt = new Date().toISOString()): PickyArtifact[] {
+  return extractSessionLinks(text).map((link) => ({
+    id: `link-${link.kind}-${hashUrl(link.url)}`,
+    kind: link.kind,
+    title: link.title,
+    url: link.url,
+    updatedAt,
+  }));
+}
+
+function sessionLinkKind(url: string): SessionLinkKind | undefined {
+  const parsed = safeUrl(url);
+  const host = parsed?.hostname.toLowerCase();
+  if (!parsed || !host) return undefined;
+  if (host === "github.com" && /\/[^/]+\/[^/]+\/(?:pull|issues)\/[0-9]+$/.test(parsed.pathname)) return "github";
+  if (host.endsWith(".slack.com") && /\/archives\/[A-Z0-9]+\/p[0-9]+$/.test(parsed.pathname)) return "slack";
+  if (["notion.so", "www.notion.so", "app.notion.com"].includes(host)) return "notion";
+  return undefined;
+}
+
+function sessionLinkTitle(kind: SessionLinkKind, url: string): string {
+  if (kind === "github") return githubPullRequestTitle(url);
+  if (kind === "slack") return "Slack";
+  return "Notion";
+}
+
+function githubIssueOrPullRequestNumber(url: string): string | undefined {
+  return url.match(/\/(?:pull|issues)\/([0-9]+)(?:$|[?#])/)?.[1];
+}
+
+function normalizeLinkUrl(rawUrl: string): string | undefined {
+  const trimmed = rawUrl.replace(/[.,;:!?]+$/g, "");
+  const parsed = safeUrl(trimmed);
+  if (!parsed) return undefined;
+  parsed.search = "";
+  parsed.hash = "";
+  return parsed.toString();
+}
+
+function safeUrl(value: string): URL | undefined {
+  try {
+    return new URL(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function hashUrl(url: string): string {
+  return createHash("sha1").update(url).digest("hex").slice(0, 12);
 }
 
 export function extractChangedFilesFromExplicitText(text: string): PickyAgentSession["changedFiles"] {

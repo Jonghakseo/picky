@@ -522,8 +522,23 @@ describe("SessionSupervisor", () => {
 
     const updated = supervisor.get(session.id)!;
     expect(updated.artifacts.some((artifact) => artifact.kind === "report" && artifact.path?.endsWith("report.md"))).toBe(true);
-    expect(updated.artifacts.some((artifact) => artifact.kind === "pr" && artifact.title === "PR #42" && artifact.url === "https://github.com/acme/repo/pull/42")).toBe(true);
+    expect(updated.artifacts.some((artifact) => artifact.kind === "github" && artifact.title === "#42" && artifact.url === "https://github.com/acme/repo/pull/42")).toBe(true);
     expect(updated.changedFiles).toEqual([{ status: "M", path: "Picky/App.swift", summary: "HUD follow-up" }]);
+  });
+
+  it("creates link artifacts from initial user input and appended logs", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new MockRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+
+    const session = await supervisor.create(context("See https://github.com/acme/repo/issues/2777 and https://creatrip.slack.com/archives/C012ZMHLPDW/p1777763920621249"));
+    await supervisor.followUp(session.id, "Notion https://www.notion.so/creatrip/355d62c6956180cf8695dcdf5c4ff226?source=copy_link");
+
+    const updated = supervisor.get(session.id)!;
+    expect(updated.artifacts.some((artifact) => artifact.kind === "github" && artifact.title === "#2777" && artifact.url === "https://github.com/acme/repo/issues/2777")).toBe(true);
+    expect(updated.artifacts.some((artifact) => artifact.kind === "slack" && artifact.url === "https://creatrip.slack.com/archives/C012ZMHLPDW/p1777763920621249")).toBe(true);
+    expect(updated.artifacts.some((artifact) => artifact.kind === "notion" && artifact.url === "https://www.notion.so/creatrip/355d62c6956180cf8695dcdf5c4ff226")).toBe(true);
   });
 
   it("reloads persisted session metadata as blocked when runtime is not attached", async () => {

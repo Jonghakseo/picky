@@ -133,9 +133,23 @@ final class PickySessionListViewModel: ObservableObject {
             artifacts.first { $0.kind == "report" || $0.kind == "final_answer" }
         }
 
+        var linkBadgeArtifacts: [PickyArtifact] {
+            artifacts.filter(\.isHUDLinkBadge)
+        }
+
         var prArtifacts: [PickyArtifact] {
-            artifacts.filter { artifact in
-                artifact.kind == "pr" || artifact.url?.absoluteString.contains("/pull/") == true
+            linkBadgeArtifacts.filter { $0.linkBadgeKind == .github }
+        }
+
+        func linkBadgeText(for artifact: PickyArtifact) -> String? {
+            guard let kind = artifact.linkBadgeKind else { return artifact.title }
+            switch kind {
+            case .github:
+                return artifact.githubIssueOrPullRequestNumber.map { "#\($0)" } ?? artifact.title
+            case .slack, .notion:
+                let sameKind = linkBadgeArtifacts.filter { $0.linkBadgeKind == kind }
+                guard sameKind.count > 1, let index = sameKind.firstIndex(where: { $0.id == artifact.id }) else { return nil }
+                return "#\(index + 1)"
             }
         }
 
@@ -467,7 +481,7 @@ final class PickySessionListViewModel: ObservableObject {
                 session.cwd,
                 session.status.rawValue,
                 session.lastSummary,
-                session.prArtifacts.compactMap { $0.url?.absoluteString }.joined(separator: " ")
+                session.linkBadgeArtifacts.compactMap { $0.url?.absoluteString }.joined(separator: " ")
             ].compactMap { $0 }.joined(separator: " ").lowercased()
             return haystack.contains(normalized)
         }
@@ -868,19 +882,30 @@ extension PickySessionStatus {
     }
 }
 
+enum PickyLinkBadgeKind: Equatable {
+    case github, slack, notion
+}
+
 extension PickyArtifact {
-    var prBadgeTitle: String {
-        if let number = githubPullRequestNumber {
-            return "PR #\(number)"
-        }
-        return title
+    var isHUDLinkBadge: Bool { linkBadgeKind != nil }
+
+    var linkBadgeKind: PickyLinkBadgeKind? {
+        if kind == "github" || kind == "pr" { return .github }
+        if kind == "slack" { return .slack }
+        if kind == "notion" { return .notion }
+        guard let url else { return nil }
+        let host = url.host?.lowercased() ?? ""
+        if host == "github.com", githubIssueOrPullRequestNumber != nil { return .github }
+        if host.hasSuffix(".slack.com"), url.pathComponents.contains("archives") { return .slack }
+        if ["notion.so", "www.notion.so", "app.notion.com"].contains(host) { return .notion }
+        return nil
     }
 
-    var githubPullRequestNumber: String? {
+    var githubIssueOrPullRequestNumber: String? {
         guard let url else { return nil }
         let components = url.pathComponents
-        guard let pullIndex = components.firstIndex(of: "pull") else { return nil }
-        let numberIndex = components.index(after: pullIndex)
+        guard let markerIndex = components.firstIndex(where: { $0 == "pull" || $0 == "issues" }) else { return nil }
+        let numberIndex = components.index(after: markerIndex)
         guard components.indices.contains(numberIndex) else { return nil }
         let number = components[numberIndex]
         return number.allSatisfy(\.isNumber) ? number : nil

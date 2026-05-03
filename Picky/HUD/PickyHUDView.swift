@@ -427,10 +427,7 @@ private struct PickySessionCardView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(DS.Colors.accentText.opacity(0.9))
                 .frame(width: 14)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("You")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(DS.Colors.textTertiary)
+            VStack(alignment: .leading, spacing: 0) {
                 Text(text)
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundColor(DS.Colors.textSecondary)
@@ -453,10 +450,7 @@ private struct PickySessionCardView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(DS.Colors.success.opacity(0.9))
                 .frame(width: 14)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Picky")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(DS.Colors.textTertiary)
+            VStack(alignment: .leading, spacing: 0) {
                 Text(text)
                     .font(.system(size: 11.5))
                     .foregroundColor(DS.Colors.textSecondary)

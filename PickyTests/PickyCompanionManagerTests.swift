@@ -12,6 +12,7 @@ private final class FakeVoiceClient: PickyAgentClient {
     let events: AsyncStream<PickyClientEvent>
     private(set) var submissions: [PickyAgentSubmission] = []
     private(set) var commands: [PickyCommandEnvelope] = []
+    private(set) var calls: [String] = []
 
     init() {
         var continuation: AsyncStream<PickyClientEvent>.Continuation!
@@ -21,10 +22,14 @@ private final class FakeVoiceClient: PickyAgentClient {
 
     func connect() async { continuation.yield(.connected) }
     func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {
+        calls.append("submit")
         submissions.append(submission)
         return PickyAgentSubmissionReceipt(sessionID: "created-session", message: "")
     }
-    func send(_ command: PickyCommandEnvelope) async throws { commands.append(command) }
+    func send(_ command: PickyCommandEnvelope) async throws {
+        calls.append("send:\(command.type.rawValue)")
+        commands.append(command)
+    }
     func disconnect() { continuation.yield(.disconnected) }
 }
 
@@ -320,6 +325,36 @@ struct PickyCompanionManagerTests {
         #expect(manager.latestAgentSessionSummary == "말하는 중")
     }
 
+    @Test func voiceInputInterruptSendsMainAgentAbortBeforeNextTranscriptRouting() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.hoveredVoiceFollowUpSessionID = "session-hovered"
+        let manager = CompanionManager(agentClient: client, selectionStore: selection)
+
+        manager.interruptSpokenResponseForVoiceInput()
+        try await settle()
+        _ = try await manager.routeVoiceTranscript(transcript: "새 음성 입력", contextPacket: context(source: "voice-follow-up"))
+
+        #expect(client.calls == ["send:abortMainAgent", "send:steer"])
+        #expect(client.commands.map(\.type) == [.abortMainAgent, .steer])
+        #expect(client.commands.first?.sessionId == nil)
+        #expect(client.commands.last?.sessionId == "session-hovered")
+        #expect(client.commands.last?.text == "새 음성 입력")
+    }
+
+    @Test func voiceInputAbortPrecedesNewTaskSubmission() async throws {
+        let client = FakeVoiceClient()
+        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+
+        manager.interruptSpokenResponseForVoiceInput()
+        try await settle()
+        _ = try await manager.routeVoiceTranscript(transcript: "새 작업", contextPacket: context(source: "voice"))
+
+        #expect(client.calls == ["send:abortMainAgent", "submit"])
+        #expect(client.commands.map(\.type) == [.abortMainAgent])
+        #expect(client.submissions.first?.transcript == "새 작업")
+    }
+
     @Test func voiceInputSuppressesQuickReplySpeechWithoutQueueing() async throws {
         let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
 
@@ -358,5 +393,9 @@ struct PickyCompanionManagerTests {
             screenshots: [],
             warnings: []
         )
+    }
+
+    private func settle() async throws {
+        try await Task.sleep(nanoseconds: 50_000_000)
     }
 }

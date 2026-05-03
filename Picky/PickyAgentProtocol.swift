@@ -57,6 +57,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case listSessions
     case listMainMessages
     case resetMainAgent
+    case abortMainAgent
     case getSession
     case answerExtensionUi
     case openArtifact

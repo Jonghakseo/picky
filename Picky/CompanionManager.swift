@@ -787,6 +787,17 @@ final class CompanionManager: ObservableObject {
 
     func interruptSpokenResponseForVoiceInput() {
         updateVoiceInputAudioSuppression(isVoiceInputActive: true)
+        abortMainAgentForVoiceInput()
+    }
+
+    private func abortMainAgentForVoiceInput() {
+        Task { [agentClient] in
+            do {
+                try await agentClient.send(PickyCommandEnvelope(type: .abortMainAgent))
+            } catch {
+                print("⚠️ Failed to abort main agent for voice input: \(error)")
+            }
+        }
     }
 
     func beginAwaitingAgentResponse(recognizedTranscript: String? = nil) {

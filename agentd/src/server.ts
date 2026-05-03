@@ -77,6 +77,7 @@ export class AgentdServer {
         await this.options.supervisor.resetMainAgent();
         this.broadcast({ type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() });
       }
+      if (command.type === "abortMainAgent") await this.options.supervisor.abortMainAgent();
       if (command.type === "getSession") {
         const session = this.options.supervisor.get(command.sessionId);
         if (!session) throw new Error(`Unknown session: ${command.sessionId}`);
@@ -170,6 +171,7 @@ function commandLogFields(command: ReturnType<typeof parseCommand>): Record<stri
     case "listSessions":
     case "listMainMessages":
     case "resetMainAgent":
+    case "abortMainAgent":
       return { commandId: command.id, type: command.type };
   }
 }

@@ -722,6 +722,73 @@ describe("SessionSupervisor", () => {
     expect(supervisor.listMainMessages().map((message) => message.text)).toEqual(["새 질문"]);
   });
 
+  it("aborts the active main-agent turn without clearing visible message history", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const store = new SessionStore(dir);
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store, undefined, { mainRuntime });
+    const replies: Array<{ contextId: string; text: string }> = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+
+    await supervisor.route(context("이전 질문"));
+    const previousHandle = mainRuntime.handle;
+    previousHandle?.emit({ type: "status", status: "running", summary: "Running" });
+    await settle();
+
+    await supervisor.abortMainAgent();
+    previousHandle?.emit({ type: "assistant_delta", delta: "늦은 이전 답변" });
+    previousHandle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(previousHandle?.aborts).toBe(1);
+    expect(replies).toEqual([]);
+    expect(supervisor.listMainMessages().map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: "user", text: "이전 질문" },
+    ]);
+    expect((await store.loadMainAgentState()).messages.map((message) => message.text)).toEqual(["이전 질문"]);
+
+    await supervisor.route(context("새 질문"));
+    const nextHandle = mainRuntime.handle;
+    nextHandle?.emit({ type: "assistant_delta", delta: "새 답변" });
+    nextHandle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(mainRuntime.createCalls).toBe(2);
+    expect(nextHandle).not.toBe(previousHandle);
+    expect(replies).toEqual([{ contextId: "context-새 질문", text: "새 답변" }]);
+    expect(supervisor.listMainMessages().map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: "user", text: "이전 질문" },
+      { role: "user", text: "새 질문" },
+      { role: "assistant", text: "새 답변" },
+    ]);
+  });
+
+  it("aborts a pending prewarmed main-agent handle after voice input cancels it", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const mainRuntime = new DeferredPrewarmRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+
+    const prewarm = supervisor.prewarmMainAgent("/tmp/project");
+    await settle();
+    const pendingHandle = mainRuntime.handle;
+
+    expect(mainRuntime.prewarmCalls).toBe(1);
+    expect(pendingHandle).toBeDefined();
+
+    await supervisor.abortMainAgent();
+    mainRuntime.resolvePendingPrewarm();
+    await prewarm;
+    await settle();
+
+    expect(pendingHandle?.aborts).toBe(1);
+
+    await supervisor.route(context("새 음성 입력"));
+
+    expect(mainRuntime.createCalls).toBe(1);
+    expect(mainRuntime.handle).not.toBe(pendingHandle);
+    expect(supervisor.listMainMessages().map((message) => message.text)).toEqual(["새 음성 입력"]);
+  });
+
   it("keeps only the latest 100 main-agent user and assistant messages", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime();
@@ -944,6 +1011,33 @@ class RecordingRuntime implements AgentRuntime {
   async create(prompt: BuiltPrompt, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
     this.creates.push({ prompt, options });
     return new ManualHandle(options.sessionId ?? "manual");
+  }
+}
+
+class DeferredPrewarmRuntime implements AgentRuntime {
+  handle?: ManualHandle;
+  createCalls = 0;
+  prewarmCalls = 0;
+  private resolvePrewarm?: () => void;
+
+  prewarm = async (options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> => {
+    this.prewarmCalls += 1;
+    const handle = new ManualHandle(options.sessionId ?? "manual");
+    this.handle = handle;
+    return new Promise<RuntimeSessionHandle>((resolve) => {
+      this.resolvePrewarm = () => resolve(handle);
+    });
+  };
+
+  resolvePendingPrewarm(): void {
+    this.resolvePrewarm?.();
+    this.resolvePrewarm = undefined;
+  }
+
+  async create(_prompt: BuiltPrompt, options: { sessionId?: string }): Promise<RuntimeSessionHandle> {
+    this.createCalls += 1;
+    this.handle = new ManualHandle(options.sessionId ?? "manual");
+    return this.handle;
   }
 }
 

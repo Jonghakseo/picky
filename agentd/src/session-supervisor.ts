@@ -169,6 +169,40 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("main reset requested", { messages: this.mainState.messages.length, hadHandle: this.mainHandle ? 1 : 0 });
     const currentHandle = this.mainHandle;
     const pendingHandlePromise = this.mainHandlePromise;
+    this.detachMainHandleForInterruption();
+    await this.patchMainState({ messages: [], sessionFilePath: undefined, cwd: undefined });
+
+    if (currentHandle) await this.abortResetMainHandle(currentHandle, "current");
+    if (pendingHandlePromise) {
+      void pendingHandlePromise
+        .then(async (pendingHandle) => {
+          if (pendingHandle !== currentHandle) await this.abortResetMainHandle(pendingHandle, "pending");
+          if (this.mainHandle === pendingHandle) {
+            this.detachMainHandleForInterruption();
+            await this.patchMainState({ sessionFilePath: undefined, cwd: undefined });
+          }
+        })
+        .catch((error) => {
+          logAgentd("main reset pending handle failed", { error: error instanceof Error ? error.message : String(error) });
+        });
+    }
+  }
+
+  async abortMainAgent(): Promise<void> {
+    logAgentd("main abort requested", { messages: this.mainState.messages.length, hadHandle: this.mainHandle ? 1 : 0, hadPendingHandle: this.mainHandlePromise ? 1 : 0, wasProcessing: this.mainIsProcessing ? 1 : 0 });
+    const currentHandle = this.mainHandle;
+    const pendingHandlePromise = this.mainHandlePromise;
+    this.detachMainHandleForInterruption();
+
+    if (currentHandle) await this.abortResetMainHandle(currentHandle, "voice-input");
+    if (pendingHandlePromise) {
+      void pendingHandlePromise.catch((error) => {
+        logAgentd("main abort pending handle failed", { error: error instanceof Error ? error.message : String(error) });
+      });
+    }
+  }
+
+  private detachMainHandleForInterruption(): void {
     this.mainHandleGeneration += 1;
     this.mainHandleUnsubscribe?.();
     this.mainHandleUnsubscribe = undefined;
@@ -180,25 +214,6 @@ export class SessionSupervisor extends EventEmitter {
     this.mainIsProcessing = false;
     this.suppressNextMainReply = false;
     this.suppressInterruptedMainCompletion = false;
-    await this.patchMainState({ messages: [], sessionFilePath: undefined, cwd: undefined });
-
-    if (currentHandle) await this.abortResetMainHandle(currentHandle, "current");
-    if (pendingHandlePromise) {
-      void pendingHandlePromise
-        .then(async (pendingHandle) => {
-          if (pendingHandle !== currentHandle) await this.abortResetMainHandle(pendingHandle, "pending");
-          if (this.mainHandle === pendingHandle) {
-            this.mainHandleGeneration += 1;
-            this.mainHandleUnsubscribe?.();
-            this.mainHandleUnsubscribe = undefined;
-            this.mainHandle = undefined;
-            await this.patchMainState({ sessionFilePath: undefined, cwd: undefined });
-          }
-        })
-        .catch((error) => {
-          logAgentd("main reset pending handle failed", { error: error instanceof Error ? error.message : String(error) });
-        });
-    }
   }
 
   private async abortResetMainHandle(handle: RuntimeSessionHandle, label: string): Promise<void> {

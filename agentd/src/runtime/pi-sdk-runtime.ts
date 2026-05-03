@@ -130,7 +130,13 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   async steer(text: string): Promise<void> {
-    await this.runtime.session.steer(text);
+    logAgentd("pi steer", { sessionId: this.id, textChars: text.length });
+    try {
+      await this.promptWithOptions({ text, imagePaths: [] }, "steer");
+    } catch (error) {
+      this.emit({ type: "status", status: "failed", summary: messageOf(error) });
+      throw error;
+    }
   }
 
   async abort(): Promise<void> {

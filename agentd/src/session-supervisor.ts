@@ -473,7 +473,7 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("steer requested", { sessionId, textChars: text.length });
     await handle.steer(text);
     await this.appendLog(sessionId, `steer: ${text}`);
-    await this.patch(sessionId, { lastSummary: "Steering message sent" });
+    await this.patch(sessionId, { status: "running", lastSummary: "Steering message sent", finalAnswer: undefined });
     return this.mustGet(sessionId);
   }
 

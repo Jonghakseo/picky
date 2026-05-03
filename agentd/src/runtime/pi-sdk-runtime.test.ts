@@ -128,6 +128,19 @@ describe("PiSdkRuntime", () => {
     expect(fakeSession.promptOptions[1]).toMatchObject({ source: "rpc", streamingBehavior: "followUp" });
   });
 
+  it("starts an idle Pi turn for steering input instead of only queueing it", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+
+    const handle = await runtime.create({ text: "initial", imagePaths: [] }, { cwd: "/tmp/project", sessionId: "session-1" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await handle.steer("focus on the previous result");
+
+    expect(fakeSession.prompts).toEqual(["initial", "focus on the previous result"]);
+    expect(fakeSession.steers).toEqual([]);
+    expect(fakeSession.promptOptions[1]).toMatchObject({ source: "rpc", streamingBehavior: "steer" });
+  });
+
   it("interrupts an active Pi turn before sending replacement input", async () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);

@@ -160,6 +160,28 @@ describe("SessionSupervisor", () => {
     expect(result.logs.some((line) => line === "steer: 추가로 원인도 정리해줘")).toBe(true);
   });
 
+  it("marks completed side sessions as running when they are steered", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "조사 완료입니다." });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(supervisor.get(side.id)?.status).toBe("completed");
+    expect(supervisor.get(side.id)?.finalAnswer).toBe("조사 완료입니다.");
+
+    const updated = await supervisor.steerSideSession(side.id, "추가로 원인도 정리해줘");
+
+    expect(runtime.handle?.steers).toEqual(["추가로 원인도 정리해줘"]);
+    expect(updated.status).toBe("running");
+    expect(updated.finalAnswer).toBeUndefined();
+    expect(updated.lastSummary).toBe("Steering message sent");
+  });
+
   it("restores persisted side-session markers from handoff logs", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const firstSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));

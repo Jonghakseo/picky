@@ -26,6 +26,7 @@ private struct BuddyDictationDraftCallbacks {
 @MainActor
 final class BuddyDictationManager: NSObject, ObservableObject {
     private static let defaultFinalTranscriptFallbackDelaySeconds: TimeInterval = 2.4
+    nonisolated static let minimumSubmittedRecordingDurationSeconds: TimeInterval = 1.0
     private static let recordedAudioPowerHistoryLength = 44
     private static let recordedAudioPowerHistoryBaselineLevel: CGFloat = 0.02
     private static let recordedAudioPowerHistorySampleIntervalSeconds: TimeInterval = 0.07
@@ -82,6 +83,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
     private var hasFinishedCurrentDictationSession = false
     private var finalizeFallbackWorkItem: DispatchWorkItem?
     private var pendingStartRequestIdentifier = UUID()
+    private var activeRecordingStartedAt: Date?
     private var contextualKeyterms: [String] = []
     private var lastRecordedAudioPowerSampleDate = Date.distantPast
     private var activePermissionRequestTask: Task<Bool, Never>?
@@ -263,6 +265,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
             count: Self.recordedAudioPowerHistoryLength
         )
         microphoneButtonRecordingStartedAt = nil
+        activeRecordingStartedAt = nil
         lastRecordedAudioPowerSampleDate = .distantPast
 
         guard !Task.isCancelled else {
@@ -281,8 +284,18 @@ final class BuddyDictationManager: NSObject, ObservableObject {
                 resetSessionState()
                 return
             }
+            guard pendingStartRequestIdentifier == startRequestIdentifier else {
+                print("🎙️ BuddyDictationManager: start cancelled (shortcut released during session start)")
+                audioEngine.stop()
+                audioEngine.inputNode.removeTap(onBus: 0)
+                activeTranscriptionSession?.cancel()
+                resetSessionState()
+                return
+            }
+            let recordingStartedAt = Date()
+            activeRecordingStartedAt = recordingStartedAt
             if startSource == .microphoneButton {
-                microphoneButtonRecordingStartedAt = Date()
+                microphoneButtonRecordingStartedAt = recordingStartedAt
             }
             isPreparingToRecord = false
             print("🎙️ BuddyDictationManager: recognition session started")
@@ -307,6 +320,13 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         guard !isFinalizingTranscript else { return }
 
         print("🎙️ BuddyDictationManager: stop requested (\(expectedStartSource))")
+
+        let stoppedAt = Date()
+        if Self.shouldIgnoreRecording(startedAt: activeRecordingStartedAt, stoppedAt: stoppedAt) {
+            let duration = activeRecordingStartedAt.map { stoppedAt.timeIntervalSince($0) } ?? 0
+            ignoreCurrentShortRecording(duration: duration)
+            return
+        }
 
         isRecordingFromMicrophoneButton = false
         isRecordingFromKeyboardShortcut = false
@@ -333,6 +353,22 @@ final class BuddyDictationManager: NSObject, ObservableObject {
             deadline: .now() + finalTranscriptFallbackDelaySeconds,
             execute: fallbackWorkItem
         )
+    }
+
+    nonisolated static func shouldIgnoreRecording(startedAt: Date?, stoppedAt: Date) -> Bool {
+        guard let startedAt else { return true }
+        return stoppedAt.timeIntervalSince(startedAt) < minimumSubmittedRecordingDurationSeconds
+    }
+
+    private func ignoreCurrentShortRecording(duration: TimeInterval) {
+        print("🎙️ BuddyDictationManager: ignoring short voice input (\(String(format: "%.2f", duration))s)")
+        finalizeFallbackWorkItem?.cancel()
+        finalizeFallbackWorkItem = nil
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+        activeTranscriptionSession?.cancel()
+        lastErrorMessage = nil
+        resetSessionState()
     }
 
     private func startRecognitionSession() async throws {
@@ -473,6 +509,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
             count: Self.recordedAudioPowerHistoryLength
         )
         microphoneButtonRecordingStartedAt = nil
+        activeRecordingStartedAt = nil
         lastRecordedAudioPowerSampleDate = .distantPast
     }
 

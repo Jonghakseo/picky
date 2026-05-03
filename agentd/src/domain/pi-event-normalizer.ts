@@ -87,10 +87,18 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
     return { kind: "extensionUi", request: piEvent, waitsForInput: ["select", "confirm", "input", "editor", "askUserQuestion"].includes(method) };
   }
 
+  if (type === "turn_end") {
+    const message = asRecord(piEvent.message);
+    const stopReasonStatus = terminalStatusFromStopReason(stringValue(message.stopReason));
+    if (stopReasonStatus) return stopReasonStatus;
+    if (!hasAssistantText(message) || hasAssistantToolCalls(message) || hasToolResults(piEvent.toolResults)) return { kind: "none" };
+    return completionStatusFromContext(context);
+  }
+
   if (type === "agent_end") {
-    if (context.hasPendingExtensionUiRequest) return { kind: "status", status: "waiting_for_input", summary: "Waiting for input" };
-    if (context.hasQueuedSteering || context.hasQueuedFollowUp) return { kind: "status", status: "running", summary: "Queued input pending" };
-    return { kind: "status", status: "completed", summary: "Completed" };
+    const stopReasonStatus = terminalStatusFromStopReason(lastAssistantStopReason(piEvent.messages));
+    if (stopReasonStatus) return stopReasonStatus;
+    return completionStatusFromContext(context);
   }
 
   if (type === "extension_error" || type === "auto_retry_end") {
@@ -110,6 +118,44 @@ export function runtimeEventFromPiEvent(event: unknown, context?: PiEventNormali
   if (normalized.kind === "tool") return { type: "tool", toolCallId: normalized.tool.toolCallId, name: normalized.tool.name, status: normalized.tool.status, preview: normalized.tool.preview };
   if (normalized.kind === "extensionUi") return { type: "extension_ui", request: normalized.request, waitsForInput: normalized.waitsForInput };
   return undefined;
+}
+
+function completionStatusFromContext(context: PiEventNormalizationContext): NormalizedPiEvent {
+  if (context.hasPendingExtensionUiRequest) return { kind: "status", status: "waiting_for_input", summary: "Waiting for input" };
+  if (context.hasQueuedSteering || context.hasQueuedFollowUp) return { kind: "status", status: "running", summary: "Queued input pending" };
+  return { kind: "status", status: "completed", summary: "Completed" };
+}
+
+function terminalStatusFromStopReason(stopReason: string | undefined): NormalizedPiEvent | undefined {
+  if (stopReason === "aborted") return { kind: "status", status: "cancelled", summary: "Cancelled" };
+  if (stopReason === "error") return { kind: "status", status: "failed", summary: "Agent error" };
+  return undefined;
+}
+
+function lastAssistantStopReason(messages: unknown): string | undefined {
+  if (!Array.isArray(messages)) return undefined;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = asRecord(messages[index]);
+    if (message.role === "assistant") return stringValue(message.stopReason);
+  }
+  return undefined;
+}
+
+function hasAssistantText(message: Record<string, unknown>): boolean {
+  const content = message.content;
+  return Array.isArray(content) && content.some((item) => {
+    const block = asRecord(item);
+    return block.type === "text" && typeof block.text === "string" && block.text.trim().length > 0;
+  });
+}
+
+function hasAssistantToolCalls(message: Record<string, unknown>): boolean {
+  const content = message.content;
+  return Array.isArray(content) && content.some((item) => asRecord(item).type === "toolCall");
+}
+
+function hasToolResults(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0;
 }
 
 function preview(value: unknown): string | undefined {

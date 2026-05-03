@@ -49,15 +49,19 @@ export class RuntimeEventHandler {
     logAgentd("session status", { sessionId, status: event.status, summaryChars: event.summary?.length });
     const terminal = ["completed", "failed", "cancelled"].includes(event.status);
     const finalAnswer = terminal ? cleanFinalAnswer(this.assistantDrafts.get(sessionId)) : undefined;
+    const currentSession = this.dependencies.getSession(sessionId);
+    if (terminal && ["completed", "failed", "cancelled"].includes(currentSession.status) && !finalAnswer) return;
+
     const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
     if (terminal) patch.thinkingPreview = undefined;
     if (finalAnswer) {
-      const session = this.dependencies.getSession(sessionId);
       patch.finalAnswer = finalAnswer;
-      patch.changedFiles = mergeChangedFiles(session.changedFiles, extractChangedFilesFromExplicitText(finalAnswer));
+      patch.changedFiles = mergeChangedFiles(currentSession.changedFiles, extractChangedFilesFromExplicitText(finalAnswer));
     }
     await this.dependencies.patchSession(sessionId, patch);
     if (terminal) {
+      this.assistantDrafts.set(sessionId, "");
+      this.thinkingDrafts.set(sessionId, "");
       await this.dependencies.materializeTerminalArtifacts(sessionId);
       if (this.dependencies.isSideSession(sessionId)) await this.dependencies.notifySideCompletion(sessionId);
     }

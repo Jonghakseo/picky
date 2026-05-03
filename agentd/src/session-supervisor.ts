@@ -602,6 +602,7 @@ export class SessionSupervisor extends EventEmitter {
       throw new Error(reason);
     }
     if (this.isSideSession(sessionId)) this.sideCompletionNotified.delete(sessionId);
+    this.runtimeEventHandler.resetAssistantDraft(sessionId);
     logAgentd("steer requested", { sessionId, textChars: text.length });
     await handle.steer(text);
     await this.appendLog(sessionId, `steer: ${text}`);

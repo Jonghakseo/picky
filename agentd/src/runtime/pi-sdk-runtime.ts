@@ -91,6 +91,9 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private listeners = new Set<(event: RuntimeEvent) => void>();
   private unsubscribe?: () => void;
   private uiBridge: ExtensionUiBridge;
+  private queuedSteeringCount = 0;
+  private queuedFollowUpCount = 0;
+  private pendingExtensionUiRequestIds = new Set<string>();
 
   constructor(readonly id: string, private readonly runtime: AgentSessionRuntime) {
     this.uiBridge = this.createBridge();
@@ -146,6 +149,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   async answerExtensionUi(requestId: string, value: unknown): Promise<void> {
+    this.pendingExtensionUiRequestIds.delete(requestId);
     this.uiBridge.answer(requestId, normalizeAnswer(value));
   }
 
@@ -156,7 +160,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     const session = this.runtime.session;
     await session.bindExtensions({ uiContext: this.uiBridge.createContext(), onError: (error) => this.emit({ type: "log", line: `extension error: ${messageOf(error)}` }) });
     this.unsubscribe = session.subscribe((event: unknown) => {
-      const runtimeEvent = runtimeEventFromPiEvent(event);
+      const runtimeEvent = this.runtimeEventFromPiEvent(event);
       if (runtimeEvent) this.emit(runtimeEvent);
     });
   }
@@ -175,6 +179,27 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   subscribe(listener: (event: RuntimeEvent) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  private runtimeEventFromPiEvent(event: unknown): RuntimeEvent | undefined {
+    const record = asRecord(event);
+    if (record.type === "queue_update") {
+      this.queuedSteeringCount = Array.isArray(record.steering) ? record.steering.length : 0;
+      this.queuedFollowUpCount = Array.isArray(record.followUp) ? record.followUp.length : 0;
+    }
+
+    const runtimeEvent = runtimeEventFromPiEvent(event, {
+      hasQueuedSteering: this.queuedSteeringCount > 0,
+      hasQueuedFollowUp: this.queuedFollowUpCount > 0,
+      hasPendingExtensionUiRequest: this.pendingExtensionUiRequestIds.size > 0,
+    });
+
+    if (runtimeEvent?.type === "extension_ui" && runtimeEvent.waitsForInput) {
+      const requestId = typeof runtimeEvent.request.id === "string" ? runtimeEvent.request.id : undefined;
+      if (requestId) this.pendingExtensionUiRequestIds.add(requestId);
+    }
+
+    return runtimeEvent;
   }
 
   private async promptWithOptions(prompt: BuiltPrompt, streamingBehavior?: "steer" | "followUp"): Promise<void> {
@@ -257,6 +282,10 @@ function mediaTypeFromPath(path: string): string {
   if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
   if (extension === ".webp") return "image/webp";
   return "image/png";
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
 function normalizeAnswer(value: unknown): { value?: unknown; confirmed?: boolean; cancelled?: boolean } {

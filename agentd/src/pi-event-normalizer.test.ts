@@ -14,7 +14,28 @@ describe("normalizePiEvent", () => {
     expect(normalizePiEvent(await fixture("agent-start.json"))).toMatchObject({ kind: "status", status: "running" });
     expect(normalizePiEvent(await fixture("agent-end.json"))).toMatchObject({ kind: "status", status: "completed" });
     expect(normalizePiEvent(await fixture("agent-end.json"), { hasQueuedFollowUp: true })).toMatchObject({ kind: "status", status: "running" });
+    expect(normalizePiEvent({ type: "agent_end", messages: [{ role: "assistant", stopReason: "aborted", content: [] }] })).toMatchObject({ kind: "status", status: "cancelled" });
     expect(normalizePiEvent(await fixture("abort-error.json"))).toMatchObject({ kind: "status", status: "failed" });
+  });
+
+  it("maps final turn completion before agent_end so completed cards do not stay working", () => {
+    expect(normalizePiEvent({
+      type: "turn_end",
+      message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "완료 답변" }] },
+      toolResults: [],
+    })).toMatchObject({ kind: "status", status: "completed" });
+
+    expect(normalizePiEvent({
+      type: "turn_end",
+      message: { role: "assistant", stopReason: "tool_use", content: [{ type: "toolCall", name: "bash" }] },
+      toolResults: [{ role: "toolResult", content: [] }],
+    })).toEqual({ kind: "none" });
+
+    expect(normalizePiEvent({
+      type: "turn_end",
+      message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "대기 중" }] },
+      toolResults: [],
+    }, { hasQueuedSteering: true })).toMatchObject({ kind: "status", status: "running" });
   });
 
   it("maps message deltas to assistant answer fragments", async () => {

@@ -282,6 +282,45 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.handle?.followUps[0].text).toContain("재조사 완료");
   });
 
+  it("does not let a late empty terminal event overwrite a cancelled session", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("cancel race"));
+
+    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    await settle();
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(supervisor.get(session.id)?.status).toBe("cancelled");
+    expect(supervisor.get(session.id)?.lastSummary).toBe("Cancelled");
+  });
+
+  it("captures only the latest side-session steering answer when a steered run completes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate" });
+
+    sideRuntime.handle?.emit({ type: "assistant_delta", delta: "초기 답변" });
+    sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    await supervisor.steerSideSession(side.id, "후속 질문");
+    sideRuntime.handle?.emit({ type: "assistant_delta", delta: "후속 답변" });
+    sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    const updated = supervisor.get(side.id)!;
+    expect(updated.status).toBe("completed");
+    expect(updated.finalAnswer).toBe("후속 답변");
+    expect(updated.finalAnswer).not.toContain("초기 답변");
+  });
+
   it("restores persisted pinned side sessions", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const firstSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));

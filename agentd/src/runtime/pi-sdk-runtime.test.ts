@@ -12,6 +12,7 @@ class FakeSession extends EventEmitter {
   isStreaming = false;
   bound = false;
   uiContext?: Record<string, unknown>;
+  state = { messages: [] as Array<Record<string, unknown>> };
 
   async prompt(text: string, options?: unknown): Promise<void> {
     this.prompts.push(text);
@@ -256,6 +257,35 @@ describe("PiSdkRuntime", () => {
     fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "완료" }] }, toolResults: [] });
 
     expect(statusEvents(events).map((event) => event.status)).toEqual(["waiting_for_input", "completed"]);
+  });
+
+  it("repairs dangling tool calls from interrupted resumed Pi transcripts", async () => {
+    const fakeSession = new FakeSession();
+    fakeSession.state.messages = [
+      { role: "user", content: [{ type: "text", text: "start" }] },
+      {
+        role: "assistant",
+        stopReason: "toolUse",
+        content: [
+          { type: "thinking", thinking: "wait for setup" },
+          { type: "toolCall", id: "tool-setup", name: "bash", arguments: { command: "sleep 60" } },
+        ],
+      },
+      { role: "user", content: [{ type: "text", text: "continue" }] },
+    ];
+    const runtime = makeRuntime(fakeSession);
+
+    const handle = await runtime.resume!("/tmp/interrupted.jsonl", { cwd: "/tmp/project", sessionId: "session-resume" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const repairedAssistant = fakeSession.state.messages[1];
+    const content = repairedAssistant.content as Array<Record<string, unknown>>;
+    expect(content.some((block) => block.type === "toolCall")).toBe(false);
+    expect(content.some((block) => typeof block.text === "string" && block.text.includes("local Picky runtime restarted"))).toBe(true);
+    expect(repairedAssistant.stopReason).toBe("end_turn");
+    expect(events).toContainEqual({ type: "log", line: "pi transcript repaired: skipped 1 interrupted tool call(s) (bash) from a previous runtime" });
   });
 
   it("prewarms Pi resources without sending an initial prompt", async () => {

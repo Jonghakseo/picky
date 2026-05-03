@@ -13,6 +13,7 @@ import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./runtime
 import { mergeChangedFiles } from "./domain/changed-files.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { cleanFinalAnswer } from "./domain/session-summary.js";
+import { settleActiveTools } from "./domain/tool-activity.js";
 import { titleFromContext } from "./domain/session-title.js";
 import { logAgentd } from "./local-log.js";
 
@@ -594,10 +595,17 @@ export class SessionSupervisor extends EventEmitter {
       handle.subscribe((event) => void this.applyRuntimeEvent(session.id, event));
       await this.appendLog(session.id, `runtime reattached from pi session: ${sessionFilePath}`);
       const current = this.mustGet(session.id);
-      await this.patch(session.id, {
-        status: current.pendingExtensionUiRequest ? "waiting_for_input" : "running",
-        lastSummary: "Runtime reattached from previous Pi session",
-      });
+      const reattachPatch: Partial<PickyAgentSession> = {
+        tools: settleActiveTools(current.tools, "Tool was interrupted by a Picky daemon restart."),
+        thinkingPreview: undefined,
+      };
+      if (!isTerminalStatus(current.status)) {
+        reattachPatch.status = current.pendingExtensionUiRequest ? "waiting_for_input" : "blocked";
+        reattachPatch.lastSummary = current.pendingExtensionUiRequest
+          ? "Runtime reattached from previous Pi session"
+          : "Previous run was interrupted by daemon restart; send a follow-up or steer message to continue.";
+      }
+      await this.patch(session.id, reattachPatch);
       return handle;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -629,7 +637,8 @@ export class SessionSupervisor extends EventEmitter {
     const handle = this.runtimeHandles.get(sessionId);
     logAgentd("abort requested", { sessionId, hasHandle: Boolean(handle) });
     if (handle) await handle.abort();
-    await this.patch(sessionId, { status: "cancelled", lastSummary: "Cancelled" });
+    const current = this.mustGet(sessionId);
+    await this.patch(sessionId, { status: "cancelled", lastSummary: "Cancelled", tools: settleActiveTools(current.tools, "Tool stopped because the session was cancelled."), thinkingPreview: undefined });
     await this.materializeTerminalArtifacts(sessionId);
     return this.mustGet(sessionId);
   }

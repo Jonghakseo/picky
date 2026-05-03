@@ -91,12 +91,14 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private listeners = new Set<(event: RuntimeEvent) => void>();
   private unsubscribe?: () => void;
   private uiBridge: ExtensionUiBridge;
+  private readonly transcriptRepairLogLine?: string;
   private queuedSteeringCount = 0;
   private queuedFollowUpCount = 0;
   private pendingExtensionUiRequestIds = new Set<string>();
 
   constructor(readonly id: string, private readonly runtime: AgentSessionRuntime) {
     this.uiBridge = this.createBridge();
+    this.transcriptRepairLogLine = repairDanglingToolCalls(runtime.session);
     this.runtime.setRebindSession(async () => this.bindCurrentSession());
   }
 
@@ -166,6 +168,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   reportDiagnostics(): void {
+    if (this.transcriptRepairLogLine) this.emit({ type: "log", line: this.transcriptRepairLogLine });
     for (const diagnostic of this.runtime.diagnostics) {
       this.emit({ type: "log", line: `pi diagnostic: ${JSON.stringify(diagnostic)}` });
     }
@@ -290,6 +293,80 @@ function mediaTypeFromPath(path: string): string {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function repairDanglingToolCalls(session: AgentSession): string | undefined {
+  const messages = (session.state.messages ?? []) as unknown[];
+  const repair = repairDanglingToolCallsInMessages(messages);
+  if (repair.count === 0) return undefined;
+  const names = [...new Set(repair.toolNames)].join(", ");
+  return `pi transcript repaired: skipped ${repair.count} interrupted tool call(s)${names ? ` (${names})` : ""} from a previous runtime`;
+}
+
+function repairDanglingToolCallsInMessages(messages: unknown[]): { count: number; toolNames: string[] } {
+  let pending: { message: Record<string, unknown>; calls: Array<{ id: string; name: string }>; matchedIds: Set<string> } | undefined;
+  let count = 0;
+  const toolNames: string[] = [];
+
+  const repairPending = () => {
+    if (!pending) return;
+    const missing = pending.calls.filter((call) => !pending!.matchedIds.has(call.id));
+    if (missing.length === 0) return;
+    repairAssistantMessageWithDanglingToolCalls(pending.message, pending.matchedIds, missing);
+    count += missing.length;
+    toolNames.push(...missing.map((call) => call.name));
+  };
+
+  for (const value of messages) {
+    const message = asRecord(value);
+    if (pending) {
+      const toolCallId = message.role === "toolResult" ? stringValue(message.toolCallId) : undefined;
+      if (toolCallId && pending.calls.some((call) => call.id === toolCallId)) {
+        pending.matchedIds.add(toolCallId);
+        if (pending.calls.every((call) => pending!.matchedIds.has(call.id))) pending = undefined;
+        continue;
+      }
+      repairPending();
+      pending = undefined;
+    }
+
+    if (message.role !== "assistant") continue;
+    const calls = toolCallsFromContent(message.content);
+    if (calls.length > 0) pending = { message, calls, matchedIds: new Set() };
+  }
+
+  if (pending) repairPending();
+  return { count, toolNames };
+}
+
+function repairAssistantMessageWithDanglingToolCalls(message: Record<string, unknown>, matchedIds: Set<string>, missing: Array<{ id: string; name: string }>): void {
+  const content = Array.isArray(message.content) ? message.content : [];
+  const textBlocks = content.filter((block) => asRecord(block).type === "text");
+  const matchedToolCallBlocks = content.filter((block) => {
+    const record = asRecord(block);
+    return record.type === "toolCall" && typeof record.id === "string" && matchedIds.has(record.id);
+  });
+  const names = [...new Set(missing.map((call) => call.name))].join(", ") || "tool";
+  const note = {
+    type: "text",
+    text: `[Picky note: previous ${names} tool call${missing.length === 1 ? "" : "s"} did not finish because the local Picky runtime restarted. Continue from the current filesystem state and rerun any needed checks.]`,
+  };
+  message.content = [...textBlocks, note, ...matchedToolCallBlocks];
+  if (matchedToolCallBlocks.length === 0 && message.stopReason === "toolUse") message.stopReason = "end_turn";
+}
+
+function toolCallsFromContent(content: unknown): Array<{ id: string; name: string }> {
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((block) => {
+    const record = asRecord(block);
+    const id = stringValue(record.id);
+    if (record.type !== "toolCall" || !id) return [];
+    return [{ id, name: stringValue(record.name) ?? "tool" }];
+  });
 }
 
 function normalizeAnswer(value: unknown): { value?: unknown; confirmed?: boolean; cancelled?: boolean } {

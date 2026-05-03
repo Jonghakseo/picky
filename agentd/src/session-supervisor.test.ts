@@ -182,6 +182,24 @@ describe("SessionSupervisor", () => {
     expect(updated.lastSummary).toBe("Steering message sent");
   });
 
+  it("settles active tools when a session is aborted", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("abort active tool"));
+
+    runtime.handle?.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running", preview: "sleep 60" });
+    await settle();
+
+    await supervisor.abort(session.id);
+
+    const aborted = supervisor.get(session.id)!;
+    expect(aborted.status).toBe("cancelled");
+    expect(aborted.thinkingPreview).toBeUndefined();
+    expect(aborted.tools[0]).toMatchObject({ status: "failed", preview: "Tool stopped because the session was cancelled." });
+  });
+
   it("marks cancelled side sessions as running when they are steered", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
@@ -504,7 +522,7 @@ describe("SessionSupervisor", () => {
     expect(restored?.lastSummary).toMatch(/Runtime not attached/);
   });
 
-  it("reattaches non-terminal persisted sessions from Pi session files during startup", async () => {
+  it("reattaches non-terminal persisted sessions from Pi session files without leaving stale work active", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);
     await store.save({
@@ -516,9 +534,10 @@ describe("SessionSupervisor", () => {
       updatedAt: "2026-05-01T00:00:10.000Z",
       lastSummary: "Still working before restart",
       logs: ["main-agent handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
-      tools: [],
+      tools: [{ toolCallId: "tool-1", name: "bash", status: "running", startedAt: "2026-05-01T00:00:05.000Z" }],
       artifacts: [],
       changedFiles: [],
+      thinkingPreview: "checking setup progress",
     });
     const runtime = new ResumableRuntime();
     const supervisor = new SessionSupervisor(runtime, store);
@@ -527,9 +546,11 @@ describe("SessionSupervisor", () => {
 
     const restored = supervisor.get("running-with-pi-file");
     expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/pi-session.jsonl", cwd: "/tmp/project", sessionId: "running-with-pi-file" }]);
-    expect(restored?.status).toBe("running");
-    expect(restored?.lastSummary).toBe("Runtime reattached from previous Pi session");
+    expect(restored?.status).toBe("blocked");
+    expect(restored?.lastSummary).toBe("Previous run was interrupted by daemon restart; send a follow-up or steer message to continue.");
     expect(restored?.pendingExtensionUiRequest).toBeUndefined();
+    expect(restored?.thinkingPreview).toBeUndefined();
+    expect(restored?.tools[0]).toMatchObject({ status: "failed", preview: "Tool was interrupted by a Picky daemon restart." });
     expect(restored?.logs).toContain("runtime reattached from pi session: /tmp/pi-session.jsonl");
     expect(restored?.logs.some((line) => line.includes("Runtime not attached after daemon restart"))).toBe(false);
   });

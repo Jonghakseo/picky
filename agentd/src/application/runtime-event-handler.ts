@@ -1,6 +1,7 @@
 import { extractChangedFilesFromExplicitText } from "../artifact-store.js";
 import { mergeChangedFiles } from "../domain/changed-files.js";
 import { cleanFinalAnswer, summaryFromFinalAnswer } from "../domain/session-summary.js";
+import { settleActiveTools } from "../domain/tool-activity.js";
 import { logAgentd } from "../local-log.js";
 import type { PickyAgentSession, PickyExtensionUiRequest } from "../protocol.js";
 import type { RuntimeEvent } from "../runtime/types.js";
@@ -53,7 +54,10 @@ export class RuntimeEventHandler {
     if (terminal && ["completed", "failed", "cancelled"].includes(currentSession.status)) return;
 
     const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
-    if (terminal) patch.thinkingPreview = undefined;
+    if (terminal) {
+      patch.thinkingPreview = undefined;
+      patch.tools = settleActiveTools(currentSession.tools, terminalToolPreview(event.status));
+    }
     if (finalAnswer) {
       patch.finalAnswer = finalAnswer;
       patch.changedFiles = mergeChangedFiles(currentSession.changedFiles, extractChangedFilesFromExplicitText(finalAnswer));
@@ -106,4 +110,10 @@ function compactThinkingPreview(value: string): string {
   const compact = value.replace(/\s+/g, " ").trim();
   if (compact.length <= THINKING_PREVIEW_CHAR_LIMIT) return compact;
   return `${compact.slice(0, THINKING_PREVIEW_CHAR_LIMIT - 1)}…`;
+}
+
+function terminalToolPreview(status: string): string {
+  if (status === "cancelled") return "Tool stopped because the session was cancelled.";
+  if (status === "failed") return "Tool stopped because the session failed.";
+  return "Tool stopped when the session ended.";
 }

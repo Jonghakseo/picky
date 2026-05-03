@@ -9,6 +9,7 @@ import SwiftUI
 
 struct CompanionPanelMessagesView: View {
     @ObservedObject var companionManager: CompanionManager
+    @State private var draftMessage = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -23,6 +24,8 @@ struct CompanionPanelMessagesView: View {
                     }
                 }
             }
+
+            directMessageComposer
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -47,7 +50,7 @@ struct CompanionPanelMessagesView: View {
             Text("No messages yet")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(DS.Colors.textSecondary)
-            Text("Use push-to-talk and Picky will show your STT message plus the main agent reply here.")
+            Text("Use push-to-talk or type a direct message below. Picky will show your prompt plus the main agent reply here.")
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -55,6 +58,72 @@ struct CompanionPanelMessagesView: View {
         .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(CompanionPanelCardBackground(tint: DS.Colors.accentText))
+    }
+
+    private var directMessageComposer: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField("Message Picky…", text: $draftMessage, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundColor(DS.Colors.textPrimary)
+                    .lineLimit(1...3)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .fill(DS.Colors.surface2.opacity(0.88))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                    .stroke(DS.Colors.borderSubtle.opacity(0.75), lineWidth: 0.8)
+                            )
+                    )
+                    .onSubmit { submitDirectMessage() }
+
+                Button(action: submitDirectMessage) {
+                    Group {
+                        if companionManager.isSendingDirectMessage {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "paperplane.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                    }
+                    .frame(width: 30, height: 30)
+                    .foregroundColor(isSubmitDisabled ? DS.Colors.textTertiary : DS.Colors.textOnAccent)
+                    .background(
+                        Circle()
+                            .fill(isSubmitDisabled ? DS.Colors.surface3.opacity(0.7) : DS.Colors.accent)
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(isSubmitDisabled)
+                .pointerCursor()
+            }
+
+            if let error = companionManager.directMessageError {
+                Text(error)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(DS.Colors.destructiveText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(10)
+        .background(CompanionPanelCardBackground(tint: DS.Colors.accentText))
+    }
+
+    private var isSubmitDisabled: Bool {
+        companionManager.isSendingDirectMessage || draftMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func submitDirectMessage() {
+        let message = draftMessage
+        Task { @MainActor in
+            if await companionManager.sendDirectMessage(message) {
+                draftMessage = ""
+            }
+        }
     }
 }
 

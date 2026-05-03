@@ -30,11 +30,23 @@ struct PickyVoiceContextCaptureCoordinator {
         transcript: String,
         voiceFollowUpSessionID: String?
     ) async throws -> PickyVoiceContextCaptureResult? {
+        let source = voiceFollowUpSessionID == nil ? "voice" : "voice-follow-up"
+        return try await captureContext(
+            transcript: transcript,
+            source: source,
+            selectedSessionID: voiceFollowUpSessionID
+        )
+    }
+
+    func captureContext(
+        transcript: String,
+        source: String,
+        selectedSessionID: String? = nil
+    ) async throws -> PickyVoiceContextCaptureResult? {
         let screenCaptures = try await screenCapture()
         guard !Task.isCancelled else { return nil }
 
-        let source = voiceFollowUpSessionID == nil ? "voice" : "voice-follow-up"
-        let contextPacket = try contextAssembler(screenCaptures, source, transcript, voiceFollowUpSessionID)
+        let contextPacket = try contextAssembler(screenCaptures, source, transcript, selectedSessionID)
         return PickyVoiceContextCaptureResult(contextPacket: contextPacket, source: source)
     }
 

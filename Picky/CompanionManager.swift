@@ -102,6 +102,8 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var voicePromptBubbleState: CompanionVoicePromptBubbleState = .hidden
     @Published private(set) var latestAgentSessionSummary: String?
     @Published private(set) var mainAgentMessages: [PickyMainAgentMessage] = []
+    @Published private(set) var isSendingDirectMessage = false
+    @Published private(set) var directMessageError: String?
     @Published private(set) var currentAudioPowerLevel: CGFloat = 0
     @Published private(set) var hasAccessibilityPermission = false
     @Published private(set) var hasScreenRecordingPermission = false
@@ -129,24 +131,27 @@ final class CompanionManager: ObservableObject {
     private let agentClient: any PickyAgentClient
     private let selectionStore: PickySessionSelectionStoring
     private var speechPlaybackProvider: any PickySpeechPlaybackProvider
-    private let voiceContextCaptureCoordinator = PickyVoiceContextCaptureCoordinator()
+    private let voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator
 
     init(
         agentClient: any PickyAgentClient = LocalStubPickyAgentClient(),
         selectionStore: PickySessionSelectionStoring = PickyUserDefaultsSessionSelectionStore.shared,
         buddyDictationManager: BuddyDictationManager? = nil,
-        speechPlaybackProvider: (any PickySpeechPlaybackProvider)? = nil
+        speechPlaybackProvider: (any PickySpeechPlaybackProvider)? = nil,
+        voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator? = nil
     ) {
         self.agentClient = agentClient
         self.selectionStore = selectionStore
         self.buddyDictationManager = buddyDictationManager ?? BuddyDictationManager()
         self.speechPlaybackProvider = speechPlaybackProvider ?? PickySpeechPlaybackProviderFactory.makeDefaultProvider()
+        self.voiceContextCaptureCoordinator = voiceContextCaptureCoordinator ?? PickyVoiceContextCaptureCoordinator()
     }
 
     /// The currently running AI response task, if any. Cancelled when the user
     /// speaks again so a new response can begin immediately.
     private var currentResponseTask: Task<Void, Never>?
     private var agentEventTask: Task<Void, Never>?
+    private var directMessageContextIDs = Set<String>()
 
     private var shortcutTransitionCancellable: AnyCancellable?
     private var voiceStateCancellable: AnyCancellable?
@@ -601,6 +606,37 @@ final class CompanionManager: ObservableObject {
         return try await agentClient.submit(PickyAgentSubmission(transcript: transcript, context: contextPacket))
     }
 
+    @discardableResult
+    func sendDirectMessage(_ text: String) async -> Bool {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else { return false }
+
+        isSendingDirectMessage = true
+        directMessageError = nil
+        var submittedContextID: String?
+        defer { isSendingDirectMessage = false }
+
+        do {
+            guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
+                transcript: trimmedText,
+                source: "typed-message"
+            ) else { return false }
+            submittedContextID = captureResult.contextPacket.id
+            directMessageContextIDs.insert(captureResult.contextPacket.id)
+            _ = try await agentClient.submit(PickyAgentSubmission(transcript: trimmedText, context: captureResult.contextPacket))
+            PickyAnalytics.trackUserMessageSent(transcript: trimmedText)
+            return true
+        } catch {
+            if let submittedContextID {
+                directMessageContextIDs.remove(submittedContextID)
+            }
+            let message = error.localizedDescription
+            directMessageError = "메시지를 보내지 못했어요: \(message)"
+            latestAgentSessionSummary = directMessageError
+            return false
+        }
+    }
+
     func handleAgentSubmissionAccepted(receipt: PickyAgentSubmissionReceipt, source: String) {
         PickyAnalytics.trackAgentSubmissionAccepted(sessionID: receipt.sessionID)
         print("🧠 Picky local agent submission accepted: \(receipt.sessionID)")
@@ -645,7 +681,11 @@ final class CompanionManager: ObservableObject {
         case .extensionUiRequest(let request):
             latestAgentSessionSummary = request.prompt ?? request.title ?? "Agent is waiting for input"
         case .quickReply(let reply):
-            finishAwaitingAgentResponse(visibleText: reply.text, spokenText: reply.text, enforceMinimumProcessingDuration: true)
+            if directMessageContextIDs.remove(reply.contextId) != nil {
+                latestAgentSessionSummary = reply.text
+            } else {
+                finishAwaitingAgentResponse(visibleText: reply.text, spokenText: reply.text, enforceMinimumProcessingDuration: true)
+            }
         case .mainMessagesSnapshot(let messages):
             mainAgentMessages = Array(messages.suffix(100))
         case .mainMessageAppended(let message):

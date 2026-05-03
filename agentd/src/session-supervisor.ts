@@ -256,7 +256,7 @@ export class SessionSupervisor extends EventEmitter {
     const cwd = normalizeOptionalString(handoff.cwd) ?? context.cwd;
     const handoffContext = cwd ? { ...context, cwd } : context;
     logAgentd("side session create requested", { contextId: context.id, titleChars: handoff.title.length, instructionChars: handoff.instructions.length, cwd: handoffContext.cwd });
-    const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildSideAgentPrompt(handoffContext, handoff), { notifyMainOnCompletion: true });
+    const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildSideAgentPrompt(handoffContext, handoff), { notifyMainOnCompletion: true, includePointerToolSessionHint: false });
     this.sideSessionIds.add(session.id);
     await this.appendLog(session.id, `main-agent handoff: ${handoff.instructions}`);
     if (handoffContext.cwd) await this.appendLog(session.id, `main-agent handoff cwd: ${handoffContext.cwd}`);
@@ -288,7 +288,7 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(id);
   }
 
-  private async createVisibleSession(context: PickyContextPacket, title: string, prompt = buildInitialTaskPrompt(context), options: { notifyMainOnCompletion?: boolean } = {}): Promise<PickyAgentSession> {
+  private async createVisibleSession(context: PickyContextPacket, title: string, prompt = buildInitialTaskPrompt(context), options: { notifyMainOnCompletion?: boolean; includePointerToolSessionHint?: boolean } = {}): Promise<PickyAgentSession> {
     const now = new Date().toISOString();
     const id = `session-${randomUUID()}`;
     const session: PickyAgentSession = {
@@ -309,7 +309,8 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("session queued", { sessionId: id, titleChars: title.length, cwd: context.cwd });
     try {
       this.runtimeEventHandler.resetAssistantDraft(id);
-      const handle = await this.runtime.create(withPointerToolSessionHint(prompt, id), { cwd: context.cwd, sessionId: id });
+      const runtimePrompt = options.includePointerToolSessionHint === false ? prompt : withPointerToolSessionHint(prompt, id);
+      const handle = await this.runtime.create(runtimePrompt, { cwd: context.cwd, sessionId: id });
       this.runtimeHandles.set(id, handle);
       logAgentd("runtime attached", { sessionId: id });
       handle.subscribe((event) => void this.applyRuntimeEvent(id, event));
@@ -802,7 +803,7 @@ function withPointerToolSessionHint(prompt: ReturnType<typeof buildInitialTaskPr
       "",
       "## Picky visual pointer overlay",
       "- Tool available: `picky_show_pointer` shows a click-through visual overlay only; it never moves/clicks/drags/types with the real OS cursor.",
-      `- If you call it from this side/visible session, pass sourceSessionId: ${sessionId} so Picky validates coordinates against this session's captured screenshots.`,
+      `- If you call it from this visible session, pass sourceSessionId: ${sessionId} so Picky validates coordinates against this session's captured screenshots.`,
     ].join("\n"),
   };
 }

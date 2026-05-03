@@ -136,6 +136,23 @@ describe("SessionSupervisor", () => {
     expect(result.request).toMatchObject({ coordinateSpace: "displayPoint", dryRun: true, x: 50, y: 60 });
   });
 
+  it("does not append pointer sourceSessionId hints to side-agent handoff prompts", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new RecordingRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+
+    const direct = await supervisor.create(context("direct visual task"));
+    await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate" });
+
+    expect(runtime.creates[0].prompt.text).toContain("## Picky visual pointer overlay");
+    expect(runtime.creates[0].prompt.text).toContain(`sourceSessionId: ${direct.id}`);
+    expect(runtime.creates[1].prompt.text).toContain("# Picky side-agent task");
+    expect(runtime.creates[1].prompt.text).not.toContain("## Picky visual pointer overlay");
+    expect(runtime.creates[1].prompt.text).not.toContain("picky_show_pointer");
+    expect(runtime.creates[1].prompt.text).not.toContain("sourceSessionId");
+  });
+
   it("uses the handoff cwd override for side session metadata, prompt context, and runtime cwd", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new RecordingRuntime();

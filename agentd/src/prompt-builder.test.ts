@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentPrompt } from "./prompt-builder.js";
+import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
 import { PickyContextPacketSchema } from "./protocol.js";
 
 const root = join(process.cwd(), "..", "contracts");
@@ -74,6 +74,18 @@ describe("neutral prompt builder", () => {
     expect(prompt.text).toContain("coordinateSpace='screenshotPixel'");
     expect(prompt.text).toContain("Screenshot coordinates use top-left origin");
     expect(prompt.text).not.toContain("[POINT:");
+  });
+
+  it("does not include pointer overlay instructions in side-agent handoff prompts", () => {
+    const prompt = buildSideAgentPrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")), {
+      title: "Side work",
+      instructions: "Investigate without showing overlays",
+    });
+
+    expect(prompt.text).toContain("# Picky side-agent task");
+    expect(prompt.text).toContain("Investigate without showing overlays");
+    expect(prompt.text).not.toContain("picky_show_pointer");
+    expect(prompt.text).not.toContain("Pointer overlay rules");
   });
 
   it("includes captured cursor coordinates when available", () => {

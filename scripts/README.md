@@ -1,5 +1,30 @@
 # Picky Release / Package Scripts
 
+## `run-dev-signed-app.sh` — stable permission-friendly dev relaunch
+
+Builds a Debug `Picky.app` into a stable path, signs it with a real local Apple code-signing identity, quits any running Picky, then launches the packaged app:
+
+```bash
+./scripts/run-dev-signed-app.sh
+```
+
+This is the preferred way to relaunch Picky while debugging voice/screen permissions. Avoid launching the ad-hoc DerivedData app directly because macOS may treat each rebuild as a different app and ask for Microphone / Accessibility / Screen Recording permissions again.
+
+The script auto-selects an `Apple Development` identity when available. If needed, pass one explicitly:
+
+```bash
+PICKY_CODE_SIGN_IDENTITY="Apple Development: Example (TEAMID)" \
+PICKY_DEVELOPMENT_TEAM="TEAMID" \
+./scripts/run-dev-signed-app.sh
+```
+
+Defaults:
+
+- configuration: `Debug`
+- output app: `build/dev-signed/export/Picky.app`
+- zip creation: disabled
+- clean build: disabled, for faster repeated relaunches
+
 ## `package-signed-app.sh` — local signed package smoke
 
 Builds `Picky.app` with command-line signing overrides and verifies the result with:

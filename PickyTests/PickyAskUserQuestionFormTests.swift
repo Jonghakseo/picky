@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import Foundation
 import Testing
 @testable import Picky
 
@@ -110,5 +111,112 @@ struct PickyAskUserQuestionFormTests {
             "q1": .string("one"),
             "q2": .array([.string("x")])
         ])
+    }
+
+    @Test func summarizeAnswerReturnsNilForCancelledRequests() throws {
+        let request = PickyExtensionUiRequest(
+            id: "ui-1",
+            sessionId: "session-1",
+            method: "askUserQuestion",
+            title: nil,
+            prompt: nil,
+            description: nil,
+            options: nil,
+            questions: [],
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+        #expect(PickyAskUserQuestionFormState.summarizeAnswer(request: request, value: .object(["cancelled": .bool(true)])) == nil)
+    }
+
+    @Test func summarizeAnswerHandlesConfirmSelectAndInputMethods() throws {
+        let confirmRequest = PickyExtensionUiRequest(
+            id: "ui-confirm", sessionId: "session-1", method: "confirm",
+            title: nil, prompt: nil, description: nil, options: nil, questions: nil,
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+        #expect(PickyAskUserQuestionFormState.summarizeAnswer(request: confirmRequest, value: .bool(true)) == "Allowed")
+        #expect(PickyAskUserQuestionFormState.summarizeAnswer(request: confirmRequest, value: .bool(false)) == nil)
+
+        let selectRequest = PickyExtensionUiRequest(
+            id: "ui-select", sessionId: "session-1", method: "select",
+            title: nil, prompt: nil, description: nil, options: ["alpha", "beta"], questions: nil,
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+        #expect(PickyAskUserQuestionFormState.summarizeAnswer(request: selectRequest, value: .string("  alpha  ")) == "alpha")
+
+        let inputRequest = PickyExtensionUiRequest(
+            id: "ui-input", sessionId: "session-1", method: "input",
+            title: nil, prompt: nil, description: nil, options: nil, questions: nil,
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+        #expect(PickyAskUserQuestionFormState.summarizeAnswer(request: inputRequest, value: .string("  hello world  ")) == "hello world")
+        #expect(PickyAskUserQuestionFormState.summarizeAnswer(request: inputRequest, value: .string("   ")) == nil)
+    }
+
+    @Test func summarizeAnswerForSingleAskUserQuestionUsesOptionLabel() throws {
+        let request = PickyExtensionUiRequest(
+            id: "ui-form",
+            sessionId: "session-1",
+            method: "askUserQuestion",
+            title: nil,
+            prompt: nil,
+            description: nil,
+            options: nil,
+            questions: [
+                PickyExtensionUiQuestion(
+                    id: "commit-confirm",
+                    type: .radio,
+                    prompt: "Continue?",
+                    label: nil,
+                    options: [
+                        PickyExtensionUiQuestionOption(value: "commit", label: "Commit"),
+                        PickyExtensionUiQuestionOption(value: "stop", label: "Stop and review")
+                    ],
+                    allowOther: false,
+                    required: true,
+                    placeholder: nil,
+                    defaultValue: nil
+                )
+            ],
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+        let answer: JSONValue = .object(["value": .object(["commit-confirm": .string("stop")])])
+        #expect(PickyAskUserQuestionFormState.summarizeAnswer(request: request, value: answer) == "Stop and review")
+    }
+
+    @Test func summarizeAnswerForMultipleAskUserQuestionPrefixesPromptsAndJoinsWithMiddleDot() throws {
+        let request = PickyExtensionUiRequest(
+            id: "ui-multi",
+            sessionId: "session-1",
+            method: "askUserQuestion",
+            title: nil,
+            prompt: nil,
+            description: nil,
+            options: nil,
+            questions: [
+                PickyExtensionUiQuestion(
+                    id: "scope", type: .radio, prompt: "Scope", label: nil,
+                    options: [PickyExtensionUiQuestionOption(value: "user", label: "User"), PickyExtensionUiQuestionOption(value: "project", label: "Project")],
+                    allowOther: false, required: true, placeholder: nil, defaultValue: nil
+                ),
+                PickyExtensionUiQuestion(
+                    id: "items", type: .checkbox, prompt: "Items", label: nil,
+                    options: [PickyExtensionUiQuestionOption(value: "rule", label: "Rule"), PickyExtensionUiQuestionOption(value: "gotcha", label: "Gotcha")],
+                    allowOther: true, required: true, placeholder: nil, defaultValue: nil
+                ),
+                PickyExtensionUiQuestion(
+                    id: "note", type: .text, prompt: "Note", label: nil,
+                    options: nil, allowOther: nil, required: false, placeholder: nil, defaultValue: nil
+                )
+            ],
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+        let answer: JSONValue = .object(["value": .object([
+            "scope": .string("project"),
+            "items": .array([.string("rule"), .string("gotcha")]),
+            "note": .string(" keep this ")
+        ])])
+
+        #expect(PickyAskUserQuestionFormState.summarizeAnswer(request: request, value: answer) == "Scope: Project \u{00B7} Items: Rule, Gotcha \u{00B7} Note: keep this")
     }
 }

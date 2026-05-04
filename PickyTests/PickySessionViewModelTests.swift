@@ -240,6 +240,42 @@ struct PickySessionViewModelTests {
         #expect(answer.type == .answerExtensionUi)
         #expect(answer.requestId == "ui-form")
         #expect(answer.value == value)
+
+        let card = try #require(viewModel.sessions.first)
+        #expect(card.pendingExtensionUiRequest == nil)
+        #expect(card.lastRequestText == "Scope?: Project \u{00B7} Items?: Rule \u{00B7} Note: ok")
+    }
+
+    @Test func extensionUiAnswerLogLineUpdatesLastRequestText() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "session-1", line: "steer: 계속 진행해줘."))))
+        try await settle()
+        #expect(viewModel.sessions.first?.lastRequestText == "계속 진행해줘.")
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "session-1", line: "extension ui answer: Stop and review"))))
+        try await settle()
+
+        let card = try #require(viewModel.sessions.first)
+        #expect(card.lastRequestText == "Stop and review")
+    }
+
+    @Test func answerExtensionUiKeepsPriorRequestTextWhenUserCancels() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "waiting_for_input"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "session-1", line: "steer: 계속 진행해줘."))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.askUserQuestionRequest())))
+        try await settle()
+
+        try await viewModel.cancelExtensionUi(sessionID: "session-1", requestID: "ui-form")
+
+        let card = try #require(viewModel.sessions.first)
+        #expect(card.pendingExtensionUiRequest == nil)
+        #expect(card.lastRequestText == "계속 진행해줘.")
     }
 
     @Test func terminalNotificationsAreDeduplicated() async throws {

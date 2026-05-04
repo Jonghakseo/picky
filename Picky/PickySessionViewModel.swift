@@ -338,7 +338,10 @@ final class PickySessionListViewModel: ObservableObject {
         pickySessionLog("answer extension-ui session=\(sessionID) request=\(requestID)")
         try await client.send(PickyCommandEnvelope(type: .answerExtensionUi, sessionId: sessionID, requestId: requestID, value: value))
         update(sessionID: sessionID) { card in
-            if card.pendingExtensionUiRequest?.id == requestID {
+            if let pending = card.pendingExtensionUiRequest, pending.id == requestID {
+                if let summary = PickyAskUserQuestionFormState.summarizeAnswer(request: pending, value: value) {
+                    card.lastRequestText = summary
+                }
                 card.pendingExtensionUiRequest = nil
                 card.status = .running
                 card.lastSummary = "Extension UI answered"
@@ -796,7 +799,8 @@ private extension PickySessionListViewModel.SessionCard {
     }
 
     static func isDisplayableLogPreview(_ line: String) -> Bool {
-        !line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("extension ui:")
+        let normalized = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return !normalized.hasPrefix("extension ui:") && !normalized.hasPrefix("extension ui answer:")
     }
 
     static func lastRequestText(from logs: [String]) -> String? {
@@ -805,7 +809,7 @@ private extension PickySessionListViewModel.SessionCard {
 
     static func requestText(fromLogLine line: String) -> String? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        for prefix in ["steer: ", "follow-up: ", "main-agent handoff: "] {
+        for prefix in ["steer: ", "follow-up: ", "main-agent handoff: ", "extension ui answer: "] {
             if trimmed.hasPrefix(prefix) {
                 return normalizedRequestText(String(trimmed.dropFirst(prefix.count)))
             }

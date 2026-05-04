@@ -764,7 +764,11 @@ private extension PickySessionListViewModel.SessionCard {
         }
         if result.logPreview.isEmpty { result.logPreview = logPreview }
         if result.lastSummary.isEmpty { result.lastSummary = lastSummary }
-        if result.thinkingPreview == nil { result.thinkingPreview = thinkingPreview }
+        // thinkingPreview is daemon-authoritative just like pendingExtensionUiRequest: the daemon
+        // explicitly drops it (`patch.thinkingPreview = undefined`) on terminal status transitions
+        // and on extension UI answer, so an incoming `nil` means "thinking is over". Falling back
+        // to the existing value would pin the previous "Thinking: ..." text to the card and let
+        // it briefly flash again the next time the session re-enters `.running` after a follow-up.
         if result.lastRequestText == nil { result.lastRequestText = lastRequestText }
         if result.tools.isEmpty { result.tools = tools }
         if result.artifacts.isEmpty { result.artifacts = artifacts }

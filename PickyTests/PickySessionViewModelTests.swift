@@ -284,6 +284,28 @@ struct PickySessionViewModelTests {
         #expect(card.status == .running)
     }
 
+    @Test func sessionUpdateClearsThinkingPreviewWhenIncomingHasNone() async throws {
+        // Daemon explicitly drops `thinkingPreview` on terminal status and on extension UI answer
+        // (runtime-event-handler.applyStatusEvent + supervisor.answerExtensionUi). The merge used
+        // to fall back to the existing value whenever the incoming snapshot carried `nil`, so the
+        // previous "Thinking: ..." stayed pinned to the card and would briefly resurface the next
+        // time the session re-entered `.running` (e.g. after a follow-up).
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithThinking(status: "running", thinkingPreview: "deciding next step"))))
+        try await settle()
+        #expect(viewModel.sessions.first?.thinkingPreview == "deciding next step")
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        try await settle()
+
+        let card = try #require(viewModel.sessions.first)
+        #expect(card.thinkingPreview == nil)
+        #expect(card.status == .completed)
+    }
+
     @Test func answerExtensionUiKeepsPriorRequestTextWhenUserCancels() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
@@ -366,20 +388,89 @@ struct PickySessionViewModelTests {
         #expect(!notifications.delivered.map(\.title).contains("분석이 끝났습니다"))
     }
 
-    @Test func legacyPinnedSideSessionWithoutPinnedFlagDoesNotDeliverCompletedNotification() async throws {
-        // Sessions persisted before the `pinned` flag was introduced reload without that key,
-        // so Swift sees `pinned == false`. The completion notification must still stay quiet.
+    @Test func notifyOnCompletedToggleSuppressesCompletedBanner() async throws {
         let client = FakePickyAgentClient()
         let notifications = PickyNoopNotificationCenter()
-        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications)
+        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
+            notifyOnCompleted: false,
+            notifyOnFailed: true,
+            notifyOnWaitingForInput: true
+        ))
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: notifications,
+            notificationPreferencesProvider: preferences
+        )
         viewModel.start()
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Pinned completed Pi session"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done"))))
         try await settle()
 
-        #expect(viewModel.sessions.first?.status == .completed)
-        #expect(viewModel.sessions.first?.pinned == false)
         #expect(!notifications.delivered.map(\.title).contains("분석이 끝났습니다"))
+    }
+
+    @Test func notifyOnFailedToggleSuppressesFailureBanner() async throws {
+        let client = FakePickyAgentClient()
+        let notifications = PickyNoopNotificationCenter()
+        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
+            notifyOnCompleted: true,
+            notifyOnFailed: false,
+            notifyOnWaitingForInput: true
+        ))
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: notifications,
+            notificationPreferencesProvider: preferences
+        )
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "failed", summary: "Boom"))))
+        try await settle()
+
+        #expect(!notifications.delivered.map(\.title).contains("Picky 작업이 실패했습니다"))
+    }
+
+    @Test func notifyOnWaitingForInputToggleSuppressesPendingBanner() async throws {
+        let client = FakePickyAgentClient()
+        let notifications = PickyNoopNotificationCenter()
+        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
+            notifyOnCompleted: true,
+            notifyOnFailed: true,
+            notifyOnWaitingForInput: false
+        ))
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: notifications,
+            notificationPreferencesProvider: preferences
+        )
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithPending(status: "waiting_for_input", summary: "Waiting"))))
+        try await settle()
+
+        #expect(!notifications.delivered.map(\.title).contains("Picky가 입력을 기다립니다"))
+    }
+
+    @Test func defaultNotificationPreferencesPreserveExistingDeliveryBehavior() async throws {
+        let client = FakePickyAgentClient()
+        let notifications = PickyNoopNotificationCenter()
+        let preferences = PickyStubNotificationPreferences()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: notifications,
+            notificationPreferencesProvider: preferences
+        )
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "failure", status: "failed", summary: "Boom", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithPending(id: "pending", status: "waiting_for_input", summary: "Waiting", updatedAt: "2026-05-01T00:00:20.000Z"))))
+        try await settle()
+
+        let titles = notifications.delivered.map(\.title)
+        #expect(titles.contains("분석이 끝났습니다"))
+        #expect(titles.contains("Picky 작업이 실패했습니다"))
+        #expect(titles.contains("Picky가 입력을 기다립니다"))
     }
 
     @Test func unpinnedAfterFollowUpDeliversCompletedNotification() async throws {
@@ -769,7 +860,9 @@ struct PickySessionViewModelTests {
         viewModel.copyTerminalResumeCommand(sessionID: "side-1")
 
         #expect(clipboard.copied == ["cd '/Users/creatrip/Documents/picky' && pi --session '/tmp/pi-session.jsonl'"])
-        #expect(notifications.delivered.last?.title == "Pi resume command copied")
+        // Resume command intentionally no longer fires a macOS banner; clipboard write is the
+        // only visible feedback so users do not get a redundant notification on every copy.
+        #expect(!notifications.delivered.contains(where: { $0.title == "Pi resume command copied" }))
         #expect(viewModel.lastError == nil)
     }
 
@@ -1336,6 +1429,19 @@ private enum EventJSON {
     ) -> String {
         """
         {"id":"event-\(id)-pending","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"Investigate current screen","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"pendingExtensionUiRequest":{"id":"ui-form","sessionId":"\(id)","method":"askUserQuestion","title":"Continue?","prompt":"Pick one","options":null,"questions":[{"id":"choice","type":"radio","prompt":"Choice","options":[{"value":"a","label":"A"}],"required":true}],"createdAt":"\(updatedAt)"}}}
+        """
+    }
+
+    static func sessionUpdatedWithThinking(
+        id: String = "session-1",
+        status: String = "running",
+        summary: String = "Started",
+        thinkingPreview: String,
+        updatedAt: String = "2026-05-01T00:00:01.000Z"
+    ) -> String {
+        let encodedThinking = String(decoding: try! JSONEncoder().encode(thinkingPreview), as: UTF8.self)
+        return """
+        {"id":"event-\(id)-thinking","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"Investigate current screen","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","thinkingPreview":\(encodedThinking),"logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
         """
     }
 

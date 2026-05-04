@@ -281,7 +281,8 @@ private struct PickyHUDDockIconView: View {
         .onHover { isHovering in
             if isHovering { onHover() }
         }
-        .help("Preview \(session.title). Click to pin.")
+        .accessibilityLabel("Preview \(session.title)")
+        .accessibilityHint("Click to pin this side agent")
     }
 
     private var dockIconBackground: some View {

@@ -623,7 +623,7 @@ describe("SessionSupervisor", () => {
     expect(restored?.logs.some((line) => line.includes("Runtime not attached after daemon restart"))).toBe(false);
   });
 
-  it("keeps reattached sessions input-needed only when a pending request is available", async () => {
+  it("clears stale extension UI requests on reattach because the previous bridge promise is gone", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);
     await store.save({
@@ -652,8 +652,9 @@ describe("SessionSupervisor", () => {
     await supervisor.load();
 
     const restored = supervisor.get("waiting-with-pending-ui");
-    expect(restored?.status).toBe("waiting_for_input");
-    expect(restored?.pendingExtensionUiRequest?.id).toBe("ui-1");
+    expect(restored?.status).toBe("blocked");
+    expect(restored?.pendingExtensionUiRequest).toBeUndefined();
+    expect(restored?.lastSummary).toMatch(/previous question can no longer be answered/);
   });
 
   it("does not reattach archived non-terminal sessions during startup", async () => {

@@ -604,10 +604,17 @@ export class SessionSupervisor extends EventEmitter {
         thinkingPreview: undefined,
       };
       if (!isTerminalStatus(current.status)) {
-        reattachPatch.status = current.pendingExtensionUiRequest ? "waiting_for_input" : "blocked";
+        // The previous extension UI dialog promise lived only inside the old daemon process,
+        // so its requestId is no longer answerable. Drop the stale pending request so the HUD
+        // does not re-show a form that the new ExtensionUiBridge cannot resolve, and ask the
+        // user to continue via follow-up/steer instead.
+        reattachPatch.status = "blocked";
         reattachPatch.lastSummary = current.pendingExtensionUiRequest
-          ? "Runtime reattached from previous Pi session"
+          ? "Picky daemon restarted; the previous question can no longer be answered. Send a follow-up or steer message to continue."
           : "Previous run was interrupted by daemon restart; send a follow-up or steer message to continue.";
+        if (current.pendingExtensionUiRequest) {
+          reattachPatch.pendingExtensionUiRequest = undefined;
+        }
       }
       await this.patch(session.id, reattachPatch);
       return handle;

@@ -275,16 +275,18 @@ private struct PickyHUDDockRailView: View {
         Button(action: onCreateSideAgent) {
             ZStack {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(DS.Colors.surface2.opacity(0.55))
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(
-                        DS.Colors.textTertiary.opacity(0.55),
+                        DS.Colors.textTertiary.opacity(0.7),
                         style: StrokeStyle(lineWidth: 1, dash: [3.5, 3])
                     )
                 Image(systemName: "plus")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(DS.Colors.textTertiary)
+                    .foregroundColor(DS.Colors.textSecondary)
             }
             .frame(width: 36, height: 36)
-            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .pointerCursor()

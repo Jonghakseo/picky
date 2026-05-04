@@ -263,7 +263,7 @@ private struct PickyHUDDockIconView: View {
             }
             .frame(width: 36, height: 36)
             .overlay(alignment: .topTrailing) {
-                statusDot.offset(x: 4, y: -4)
+                statusDot.offset(x: -1.3, y: 1.3)
             }
             .overlay(alignment: .bottomTrailing) {
                 if isPinned {

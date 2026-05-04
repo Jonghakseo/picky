@@ -488,7 +488,7 @@ export class SessionSupervisor extends EventEmitter {
         if (this.suppressInterruptedMainCompletion) {
           this.suppressInterruptedMainCompletion = false;
           this.mainDraft = "";
-          void this.drainPendingSideCompletions();
+          this.scheduleSideCompletionDrain();
           return;
         }
         logAgentd("main status", { status: event.status, contextId: this.mainReplyContextId, draftChars: this.mainDraft.length });
@@ -501,7 +501,7 @@ export class SessionSupervisor extends EventEmitter {
           this.emit("quickReply", this.mainReplyContextId, reply);
         }
         this.mainDraft = "";
-        void this.drainPendingSideCompletions();
+        this.scheduleSideCompletionDrain();
       }
     }
   }
@@ -549,6 +549,12 @@ export class SessionSupervisor extends EventEmitter {
     this.mainIsProcessing = true;
     logAgentd("side completion notifying main", { sessionId, status: session.status });
     if (delivery.sendAsFollowUp) await delivery.handle.followUp(prompt);
+  }
+
+  private scheduleSideCompletionDrain(): void {
+    void this.drainPendingSideCompletions().catch((error) => {
+      logAgentd("side completion drain failed", { error: error instanceof Error ? error.message : String(error) });
+    });
   }
 
   private async drainPendingSideCompletions(): Promise<void> {

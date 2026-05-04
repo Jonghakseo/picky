@@ -204,6 +204,7 @@ final class PickySessionListViewModel: ObservableObject {
 
     private let client: any PickyAgentClient
     private let notificationCenter: PickyNotificationDelivering
+    private let notificationPreferencesProvider: PickyNotificationPreferencesProviding
     private let selectionStore: PickySessionSelectionStoring
     private let archiveStore: PickySessionArchiveStoring
     private let artifactPathValidator: PickyArtifactPathValidator
@@ -219,6 +220,7 @@ final class PickySessionListViewModel: ObservableObject {
     init(
         client: any PickyAgentClient,
         notificationCenter: PickyNotificationDelivering = PickySystemNotificationCenter(),
+        notificationPreferencesProvider: PickyNotificationPreferencesProviding = PickyNotificationPreferencesStore(),
         selectionStore: PickySessionSelectionStoring = PickyUserDefaultsSessionSelectionStore.shared,
         archiveStore: PickySessionArchiveStoring = PickyUserDefaultsSessionArchiveStore.shared,
         artifactPathValidator: PickyArtifactPathValidator = PickyArtifactPathValidator(appSupportRoot: PickyAppSupport.defaultRoot()),
@@ -229,6 +231,7 @@ final class PickySessionListViewModel: ObservableObject {
     ) {
         self.client = client
         self.notificationCenter = notificationCenter
+        self.notificationPreferencesProvider = notificationPreferencesProvider
         self.selectionStore = selectionStore
         self.archiveStore = archiveStore
         self.artifactPathValidator = artifactPathValidator
@@ -389,11 +392,6 @@ final class PickySessionListViewModel: ObservableObject {
         }
         let command = PickyPiTerminalCommand.makeCliResumeCommand(sessionFilePath: piSessionFilePath, cwd: session.cwd)
         clipboardWriter.copy(command)
-        notificationCenter.deliver(
-            title: "Pi resume command copied",
-            body: "Paste it in a terminal to resume this session.",
-            identifier: "picky-resume-command-\(sessionID)"
-        )
         lastError = nil
     }
 
@@ -709,20 +707,19 @@ final class PickySessionListViewModel: ObservableObject {
         notificationCenter.deliver(title: notification.title, body: notification.body, identifier: notification.key)
     }
 
-    /// Mirror of `pinSideSession`'s seed `lastSummary` in agentd; used to suppress completion
-    /// notifications for legacy pinned sessions persisted before the `pinned` flag was introduced.
-    private static let legacyPinnedSideSessionLastSummary = "Pinned completed Pi session"
-
     private func notification(for session: SessionCard) -> (key: String, title: String, body: String)? {
+        let preferences = notificationPreferencesProvider.notificationPreferences
         let notification: (key: String, title: String, body: String)?
         switch session.status {
         case .completed:
             if session.pinned { return nil }
-            if session.lastSummary == Self.legacyPinnedSideSessionLastSummary { return nil }
+            guard preferences.notifyOnCompleted else { return nil }
             notification = ("\(session.id):completed", "분석이 끝났습니다", session.lastSummary.isEmpty ? session.title : session.lastSummary)
         case .failed:
+            guard preferences.notifyOnFailed else { return nil }
             notification = ("\(session.id):failed", "Picky 작업이 실패했습니다", session.lastSummary.isEmpty ? "Open logs for details." : session.lastSummary)
         case .waiting_for_input:
+            guard preferences.notifyOnWaitingForInput else { return nil }
             notification = ("\(session.id):waiting:\(session.pendingExtensionUiRequest?.id ?? "unknown")", "Picky가 입력을 기다립니다", session.pendingExtensionUiRequest?.prompt ?? session.pendingExtensionUiRequest?.title ?? session.title)
         case .queued, .running, .blocked, .cancelled:
             notification = nil

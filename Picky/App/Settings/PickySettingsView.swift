@@ -21,6 +21,12 @@ struct PickySettingsView: View {
                 Toggle("Follow cursor across monitors", isOn: $viewModel.settings.followsFocusedScreen)
             }
 
+            Section("Notifications") {
+                Toggle("On success", isOn: $viewModel.settings.notifications.notifyOnCompleted)
+                Toggle("On failure", isOn: $viewModel.settings.notifications.notifyOnFailed)
+                Toggle("On input request", isOn: $viewModel.settings.notifications.notifyOnWaitingForInput)
+            }
+
             Section("Voice") {
                 Picker("STT provider", selection: $viewModel.settings.sttProvider) {
                     ForEach(PickyVoiceProviderSelection.cases(for: .transcription)) { provider in

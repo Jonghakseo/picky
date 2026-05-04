@@ -55,6 +55,42 @@ enum PickyVoiceProviderCapability {
     case speechPlayback
 }
 
+/// User zoom level for the markdown report viewer and the Pi terminal overlay.
+/// Each surface keeps its own multiplier so increasing terminal cell density does not
+/// also blow up the markdown body. Bounded by `PickyFontScales.minimum`/`.maximum`
+/// before persisting so a corrupted settings file can't push the UI into an unusable
+/// scale on next launch.
+struct PickyFontScales: Codable, Equatable {
+    var markdownReport: Double
+    var terminal: Double
+
+    static let minimum: Double = 0.7
+    static let maximum: Double = 2.5
+    static let step: Double = 0.1
+    static let defaults = PickyFontScales(markdownReport: 1.0, terminal: 1.0)
+
+    static func clamped(_ value: Double) -> Double {
+        // Round to one decimal to avoid floating-point drift accumulating across `+0.1` taps.
+        let rounded = (value * 10).rounded() / 10
+        return min(max(rounded, minimum), maximum)
+    }
+}
+
+/// User-configurable toggles deciding which session status transitions emit a macOS
+/// banner via `PickySystemNotificationCenter`. All default to `true` so existing users
+/// keep seeing the same notifications they had before this struct shipped.
+struct PickyNotificationPreferences: Codable, Equatable {
+    var notifyOnCompleted: Bool
+    var notifyOnFailed: Bool
+    var notifyOnWaitingForInput: Bool
+
+    static let defaults = PickyNotificationPreferences(
+        notifyOnCompleted: true,
+        notifyOnFailed: true,
+        notifyOnWaitingForInput: true
+    )
+}
+
 struct PickySettings: Codable, Equatable {
     var defaultCwd: String
     var worktreeParent: String
@@ -67,6 +103,8 @@ struct PickySettings: Codable, Equatable {
     var azureSTTPreferredLanguage: String
     var followsFocusedScreen: Bool
     var appearance: PickyAppearanceMode
+    var notifications: PickyNotificationPreferences
+    var fontScales: PickyFontScales
 
     init(
         defaultCwd: String,
@@ -79,7 +117,9 @@ struct PickySettings: Codable, Equatable {
         ttsProvider: PickyVoiceProviderSelection = .automatic,
         azureSTTPreferredLanguage: String = "",
         followsFocusedScreen: Bool = true,
-        appearance: PickyAppearanceMode = .dark
+        appearance: PickyAppearanceMode = .dark,
+        notifications: PickyNotificationPreferences = .defaults,
+        fontScales: PickyFontScales = .defaults
     ) {
         self.defaultCwd = defaultCwd
         self.worktreeParent = worktreeParent
@@ -92,6 +132,8 @@ struct PickySettings: Codable, Equatable {
         self.azureSTTPreferredLanguage = azureSTTPreferredLanguage
         self.followsFocusedScreen = followsFocusedScreen
         self.appearance = appearance
+        self.notifications = notifications
+        self.fontScales = fontScales
     }
 
     static func defaults(appSupportRoot: URL = PickyAppSupport.defaultRoot()) -> PickySettings {
@@ -107,7 +149,9 @@ struct PickySettings: Codable, Equatable {
             ttsProvider: .automatic,
             azureSTTPreferredLanguage: "",
             followsFocusedScreen: true,
-            appearance: .dark
+            appearance: .dark,
+            notifications: .defaults,
+            fontScales: .defaults
         )
     }
 
@@ -133,6 +177,8 @@ struct PickySettings: Codable, Equatable {
         case azureSTTPreferredLanguage
         case followsFocusedScreen
         case appearance
+        case notifications
+        case fontScales
     }
 
     init(from decoder: Decoder) throws {
@@ -150,6 +196,15 @@ struct PickySettings: Codable, Equatable {
         azureSTTPreferredLanguage = try container.decodeIfPresent(String.self, forKey: .azureSTTPreferredLanguage) ?? defaults.azureSTTPreferredLanguage
         followsFocusedScreen = try container.decodeIfPresent(Bool.self, forKey: .followsFocusedScreen) ?? defaults.followsFocusedScreen
         appearance = try container.decodeIfPresent(PickyAppearanceMode.self, forKey: .appearance) ?? defaults.appearance
+        notifications = try container.decodeIfPresent(PickyNotificationPreferences.self, forKey: .notifications) ?? defaults.notifications
+        if let storedScales = try container.decodeIfPresent(PickyFontScales.self, forKey: .fontScales) {
+            fontScales = PickyFontScales(
+                markdownReport: PickyFontScales.clamped(storedScales.markdownReport),
+                terminal: PickyFontScales.clamped(storedScales.terminal)
+            )
+        } else {
+            fontScales = defaults.fontScales
+        }
     }
 }
 

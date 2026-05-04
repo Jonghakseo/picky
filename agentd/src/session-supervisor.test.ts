@@ -380,6 +380,7 @@ describe("SessionSupervisor", () => {
     expect(pinned.lastSummary).toBe("Pinned completed Pi session");
     expect(pinned.finalAnswer).toMatch(/No Picky side-agent run/);
     expect(pinned.notifyMainOnCompletion).toBe(false);
+    expect(pinned.pinned).toBe(true);
     expect(pinned.logs).toContain("pi session: /tmp/source-pi-session.jsonl");
     expect(pinned.logs.some((line) => line.startsWith("pi-extension handoff pin:"))).toBe(true);
     expect(supervisor.isSideSession(pinned.id)).toBe(true);
@@ -501,7 +502,23 @@ describe("SessionSupervisor", () => {
     await secondSupervisor.load();
 
     expect(secondSupervisor.get(pinned.id)?.status).toBe("completed");
+    expect(secondSupervisor.get(pinned.id)?.pinned).toBe(true);
     expect(secondSupervisor.isSideSession(pinned.id)).toBe(true);
+  });
+
+  it("clears pinned flag when a pinned side session is steered", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+    await supervisor.load();
+    const pinned = await supervisor.pinSideSession(context("pin then steer"), "Pinned source");
+    expect(pinned.pinned).toBe(true);
+
+    // Steering currently fails because pinned sessions have no runtime handle yet,
+    // but the pinned flag must be cleared before the runtime call so that any
+    // subsequent successful run delivers the normal completion notification.
+    await expect(supervisor.steerSideSession(pinned.id, "continue this work")).rejects.toThrow();
+
+    expect(supervisor.get(pinned.id)?.pinned).toBe(false);
   });
 
   it("aborts a session", async () => {

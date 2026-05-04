@@ -115,6 +115,7 @@ final class PickySessionListViewModel: ObservableObject {
         var pendingExtensionUiRequest: PickyExtensionUiRequest?
         var piSessionFilePath: String?
         var notifyMainOnCompletion: Bool?
+        var pinned: Bool
         var hasRuntimeDetachedFollowUpRejection: Bool
 
         var activeTool: PickyToolActivity? {
@@ -702,6 +703,7 @@ final class PickySessionListViewModel: ObservableObject {
         let notification: (key: String, title: String, body: String)?
         switch session.status {
         case .completed:
+            if session.pinned { return nil }
             notification = ("\(session.id):completed", "분석이 끝났습니다", session.lastSummary.isEmpty ? session.title : session.lastSummary)
         case .failed:
             notification = ("\(session.id):failed", "Picky 작업이 실패했습니다", session.lastSummary.isEmpty ? "Open logs for details." : session.lastSummary)
@@ -739,6 +741,7 @@ private extension PickySessionListViewModel.SessionCard {
         self.pendingExtensionUiRequest = session.pendingExtensionUiRequest
         self.piSessionFilePath = session.logs.compactMap(Self.piSessionFilePath(fromLogLine:)).last
         self.notifyMainOnCompletion = session.notifyMainOnCompletion
+        self.pinned = session.pinned ?? false
         self.hasRuntimeDetachedFollowUpRejection = session.logs.contains(where: Self.isRuntimeDetachedFollowUpRejection)
     }
 

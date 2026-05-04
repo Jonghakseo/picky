@@ -189,6 +189,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     var pendingExtensionUiRequest: PickyExtensionUiRequest?
     var notifyMainOnCompletion: Bool? = nil
     var archived: Bool? = nil
+    var pinned: Bool? = nil
 }
 
 enum PickySessionStatus: String, Codable, Equatable {

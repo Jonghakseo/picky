@@ -278,6 +278,7 @@ export class SessionSupervisor extends EventEmitter {
       finalAnswer: "Pinned from an idle Pi session. No Picky side-agent run has been started yet.",
       logs: buildPinnedSideSessionLogs(context),
       notifyMainOnCompletion: false,
+      pinned: true,
       tools: [],
       artifacts: extractSessionLinkArtifacts(context.transcript ?? "", now),
       changedFiles: [],
@@ -536,6 +537,7 @@ export class SessionSupervisor extends EventEmitter {
   async steerSideSession(sessionId: string, text: string): Promise<PickyAgentSession> {
     if (!this.isSideSession(sessionId)) throw new Error(`Session is not a Picky side agent: ${sessionId}`);
     this.sideCompletionNotified.delete(sessionId);
+    if (this.mustGet(sessionId).pinned) await this.patch(sessionId, { pinned: false });
     return this.steer(sessionId, text);
   }
 

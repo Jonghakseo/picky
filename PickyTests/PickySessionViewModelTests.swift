@@ -294,6 +294,35 @@ struct PickySessionViewModelTests {
         #expect(notifications.delivered.map(\.title).contains("분석이 끝났습니다"))
     }
 
+    @Test func pinnedSideSessionDoesNotDeliverCompletedNotification() async throws {
+        let client = FakePickyAgentClient()
+        let notifications = PickyNoopNotificationCenter()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications)
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Pinned completed Pi session", pinned: true))))
+        try await settle()
+
+        #expect(viewModel.sessions.first?.status == .completed)
+        #expect(viewModel.sessions.first?.pinned == true)
+        #expect(!notifications.delivered.map(\.title).contains("분석이 끝났습니다"))
+    }
+
+    @Test func unpinnedAfterFollowUpDeliversCompletedNotification() async throws {
+        let client = FakePickyAgentClient()
+        let notifications = PickyNoopNotificationCenter()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications)
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Pinned completed Pi session", pinned: true))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Steering message sent", updatedAt: "2026-05-01T00:00:10.000Z", pinned: false))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:20.000Z", pinned: false))))
+        try await settle()
+
+        #expect(viewModel.sessions.first?.pinned == false)
+        #expect(notifications.delivered.map(\.title).contains("분석이 끝났습니다"))
+    }
+
     @Test func hudStatusToneMatchesSideAgentColorRules() throws {
         #expect(PickySessionStatus.running.hudTone == .inProgress)
         #expect(PickySessionStatus.blocked.hudTone == .error)
@@ -1137,12 +1166,14 @@ private enum EventJSON {
         createdAt: String = "2026-05-01T00:00:00.000Z",
         updatedAt: String = "2026-05-01T00:00:00.000Z",
         logs: [String] = [],
-        notifyMainOnCompletion: Bool? = nil
+        notifyMainOnCompletion: Bool? = nil,
+        pinned: Bool? = nil
     ) -> String {
         let encodedLogs = String(decoding: try! JSONEncoder().encode(logs), as: UTF8.self)
         let encodedNotify = notifyMainOnCompletion.map { ",\"notifyMainOnCompletion\":\($0)" } ?? ""
+        let encodedPinned = pinned.map { ",\"pinned\":\($0)" } ?? ""
         return """
-        {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedNotify)}}
+        {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedNotify)\(encodedPinned)}}
         """
     }
 
@@ -1211,6 +1242,7 @@ private extension PickySessionListViewModel.SessionCard {
             pendingExtensionUiRequest: nil,
             piSessionFilePath: nil,
             notifyMainOnCompletion: nil,
+            pinned: false,
             hasRuntimeDetachedFollowUpRejection: false
         )
     }

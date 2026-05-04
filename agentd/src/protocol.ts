@@ -126,6 +126,7 @@ export const PickyAgentSessionSchema = z.object({
   pendingExtensionUiRequest: PickyExtensionUiRequestSchema.optional(),
   notifyMainOnCompletion: z.boolean().optional(),
   archived: z.boolean().optional(),
+  pinned: z.boolean().optional(),
 });
 
 export type PickyAgentSession = z.infer<typeof PickyAgentSessionSchema>;

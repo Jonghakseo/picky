@@ -14,17 +14,56 @@ import AppKit
 import Combine
 import SwiftUI
 
+enum CompanionPanelSettingsSection: CaseIterable, Hashable {
+    case workspace
+    case notifications
+    case voice
+}
+
+enum CompanionPanelSettingsSaveStatus: Equatable {
+    case idle
+    case saved
+    case dirty
+}
+
+struct CompanionPanelSettingsSaveStatuses: Equatable {
+    private var statuses: [CompanionPanelSettingsSection: CompanionPanelSettingsSaveStatus] = [:]
+
+    subscript(_ section: CompanionPanelSettingsSection) -> CompanionPanelSettingsSaveStatus {
+        statuses[section] ?? .idle
+    }
+
+    mutating func markSaved(_ section: CompanionPanelSettingsSection) {
+        set(.saved, for: section)
+    }
+
+    mutating func markDirty(_ section: CompanionPanelSettingsSection) {
+        set(.dirty, for: section)
+    }
+
+    mutating func clear(_ section: CompanionPanelSettingsSection) {
+        set(.idle, for: section)
+    }
+
+    mutating func clearSaved(_ section: CompanionPanelSettingsSection) {
+        if self[section] == .saved { clear(section) }
+    }
+
+    private mutating func set(_ status: CompanionPanelSettingsSaveStatus, for section: CompanionPanelSettingsSection) {
+        if status == .idle {
+            statuses.removeValue(forKey: section)
+        } else {
+            statuses[section] = status
+        }
+    }
+}
+
 struct CompanionPanelSettingsView: View {
     @ObservedObject var viewModel: PickySettingsViewModel
     @State private var pathDraft: String = ""
     @State private var azureDraft: String = ""
-    @State private var saveStatus: SaveStatus = .idle
-    @State private var saveStatusReset: AnyCancellable?
-
-    /// Tristate banner used for autosave feedback. `.idle` hides the indicator,
-    /// `.saved` flashes briefly after a successful write, `.dirty` stays visible
-    /// until the user submits a text field that still differs from disk state.
-    enum SaveStatus: Equatable { case idle, saved, dirty }
+    @State private var saveStatuses = CompanionPanelSettingsSaveStatuses()
+    @State private var saveStatusResets: [CompanionPanelSettingsSection: AnyCancellable] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -48,16 +87,14 @@ struct CompanionPanelSettingsView: View {
         }
         .onChange(of: viewModel.settings.notifications) { _, _ in
             // Toggles only flip booleans, so they cannot fail directory validation.
-            // Persist immediately and flash the saved indicator next to the section
-            // header. If the user has unsaved text edits queued in `pathDraft` /
-            // `azureDraft`, those still need an explicit save (Return), so leave
-            // the dirty banner alone.
-            saveImmediately()
+            // Persist immediately and flash the saved indicator next to the changed
+            // section only. Draft text in other sections remains untouched.
+            saveImmediately(for: .notifications)
         }
     }
 
     private var workspaceSection: some View {
-        sectionHeader(title: "Workspace") {
+        sectionHeader(section: .workspace, title: "Workspace") {
             VStack(alignment: .leading, spacing: 6) {
                 fieldLabel("Default folder")
                 HStack(spacing: 7) {
@@ -72,10 +109,10 @@ struct CompanionPanelSettingsView: View {
                                 .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
                         )
                         .onChange(of: pathDraft) { _, newValue in
-                            // The user is mid-type; mark dirty until they either submit
-                            // (Return) or pick a folder via the panel. Submitting routes
-                            // through onSubmit below.
-                            if newValue != viewModel.settings.defaultCwd { markDirty() }
+                            // The user is mid-type; mark this section dirty until they
+                            // either submit (Return), pick a folder, or revert to the
+                            // persisted value. Submitting routes through onSubmit below.
+                            updateDraftStatus(for: .workspace, isDirty: newValue != viewModel.settings.defaultCwd)
                         }
                         .onSubmit { commitPathField() }
                     Button("Choose") { chooseDirectory() }
@@ -89,7 +126,7 @@ struct CompanionPanelSettingsView: View {
     }
 
     private var notificationsSection: some View {
-        sectionHeader(title: "Notifications", subtitle: "Pick which session events raise a banner.") {
+        sectionHeader(section: .notifications, title: "Notifications", subtitle: "Pick which session events raise a banner.") {
             VStack(alignment: .leading, spacing: 0) {
                 toggleRow("On success", isOn: $viewModel.settings.notifications.notifyOnCompleted, divider: true)
                 toggleRow("On failure", isOn: $viewModel.settings.notifications.notifyOnFailed, divider: true)
@@ -99,7 +136,7 @@ struct CompanionPanelSettingsView: View {
     }
 
     private var voiceSection: some View {
-        sectionHeader(title: "Voice", subtitle: "Speech providers. Azure secrets stay in Keychain.") {
+        sectionHeader(section: .voice, title: "Voice", subtitle: "Speech providers. Azure secrets stay in Keychain.") {
             VStack(alignment: .leading, spacing: 10) {
                 providerPicker(title: "STT provider", capability: .transcription, selection: $viewModel.settings.sttProvider)
                 providerPicker(title: "TTS provider", capability: .speechPlayback, selection: $viewModel.settings.ttsProvider)
@@ -116,7 +153,7 @@ struct CompanionPanelSettingsView: View {
                                 .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
                         )
                         .onChange(of: azureDraft) { _, newValue in
-                            if newValue != viewModel.settings.azureSTTPreferredLanguage { markDirty() }
+                            updateDraftStatus(for: .voice, isDirty: newValue != viewModel.settings.azureSTTPreferredLanguage)
                         }
                         .onSubmit { commitAzureField() }
                 }
@@ -132,6 +169,7 @@ struct CompanionPanelSettingsView: View {
 
     @ViewBuilder
     private func sectionHeader<Content: View>(
+        section: CompanionPanelSettingsSection,
         title: String,
         subtitle: String? = nil,
         @ViewBuilder content: () -> Content
@@ -146,7 +184,7 @@ struct CompanionPanelSettingsView: View {
 
                 Spacer(minLength: 8)
 
-                statusIndicator
+                statusIndicator(for: section)
             }
             if let subtitle {
                 Text(subtitle)
@@ -162,8 +200,8 @@ struct CompanionPanelSettingsView: View {
     /// section headers stay quiet when nothing has changed. The `.dirty` state nudges
     /// the user to hit Return on a text field; toggles never enter `.dirty`.
     @ViewBuilder
-    private var statusIndicator: some View {
-        switch saveStatus {
+    private func statusIndicator(for section: CompanionPanelSettingsSection) -> some View {
+        switch saveStatuses[section] {
         case .idle:
             EmptyView()
         case .saved:
@@ -174,7 +212,7 @@ struct CompanionPanelSettingsView: View {
                     .foregroundColor(DS.Colors.success)
             }
         case .dirty:
-            Button(action: commitTextEdits) {
+            Button(action: { commitEdits(in: section) }) {
                 Text("Save")
                     .font(.system(size: 10.5, weight: .semibold))
                     .foregroundColor(DS.Colors.accentText)
@@ -222,27 +260,32 @@ struct CompanionPanelSettingsView: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .onChange(of: selection.wrappedValue) { _, _ in saveImmediately() }
+            .onChange(of: selection.wrappedValue) { _, _ in saveImmediately(for: .voice) }
         }
     }
 
-    /// Submit handler shared by the Workspace path field's Return key and the global
-    /// "Save" button shown in `.dirty` mode. Folds both pending text drafts back into
-    /// the view-model in one shot so `viewModel.save()` validates everything together.
-    private func commitTextEdits() {
-        viewModel.settings.defaultCwd = pathDraft
-        viewModel.settings.azureSTTPreferredLanguage = azureDraft
-        saveImmediately()
+    /// Submit handler shared by text field Return keys and the section-local "Save"
+    /// button shown in `.dirty` mode. Only folds the edited section draft back into
+    /// the view-model so unrelated dirty sections keep their unsaved text intact.
+    private func commitEdits(in section: CompanionPanelSettingsSection) {
+        switch section {
+        case .workspace:
+            commitPathField()
+        case .notifications:
+            saveImmediately(for: .notifications)
+        case .voice:
+            commitAzureField()
+        }
     }
 
     private func commitPathField() {
         viewModel.settings.defaultCwd = pathDraft
-        saveImmediately()
+        saveImmediately(for: .workspace)
     }
 
     private func commitAzureField() {
         viewModel.settings.azureSTTPreferredLanguage = azureDraft
-        saveImmediately()
+        saveImmediately(for: .voice)
     }
 
     private func chooseDirectory() {
@@ -257,36 +300,50 @@ struct CompanionPanelSettingsView: View {
     }
 
     /// Persist whatever is currently in `viewModel.settings`, then briefly flash the
-    /// saved indicator. On validation failure the status falls back to dirty so the
-    /// user has a visible affordance to retry; the validation message itself renders
-    /// at the bottom of the form.
-    private func saveImmediately() {
+    /// saved indicator for the section that changed. On validation failure only that
+    /// section falls back to dirty; the validation message itself renders at the
+    /// bottom of the form.
+    private func saveImmediately(for section: CompanionPanelSettingsSection) {
         let succeeded = viewModel.save()
         if succeeded {
-            // Sync drafts back to the persisted snapshot so subsequent typing is compared
-            // against the up-to-date baseline (otherwise the dirty heuristic stays stuck).
-            pathDraft = viewModel.settings.defaultCwd
-            azureDraft = viewModel.settings.azureSTTPreferredLanguage
-            saveStatus = .saved
-            scheduleSaveStatusReset()
+            syncDraft(for: section)
+            saveStatuses.markSaved(section)
+            scheduleSaveStatusReset(for: section)
         } else {
-            saveStatus = .dirty
-            saveStatusReset?.cancel()
+            saveStatuses.markDirty(section)
+            saveStatusResets[section]?.cancel()
+            saveStatusResets[section] = nil
         }
     }
 
-    private func markDirty() {
-        guard saveStatus != .dirty else { return }
-        saveStatus = .dirty
-        saveStatusReset?.cancel()
+    private func syncDraft(for section: CompanionPanelSettingsSection) {
+        switch section {
+        case .workspace:
+            pathDraft = viewModel.settings.defaultCwd
+        case .notifications:
+            break
+        case .voice:
+            azureDraft = viewModel.settings.azureSTTPreferredLanguage
+        }
     }
 
-    private func scheduleSaveStatusReset() {
-        saveStatusReset?.cancel()
-        saveStatusReset = Just(())
+    private func updateDraftStatus(for section: CompanionPanelSettingsSection, isDirty: Bool) {
+        if isDirty {
+            saveStatuses.markDirty(section)
+            saveStatusResets[section]?.cancel()
+            saveStatusResets[section] = nil
+        } else if saveStatuses[section] == .dirty {
+            saveStatuses.clear(section)
+        }
+    }
+
+    private func scheduleSaveStatusReset(for section: CompanionPanelSettingsSection) {
+        saveStatusResets[section]?.cancel()
+        saveStatusResets[section] = Just(())
             .delay(for: .seconds(1.6), scheduler: RunLoop.main)
             .sink { _ in
-                if saveStatus == .saved { saveStatus = .idle }
+                saveStatuses.clearSaved(section)
+                saveStatusResets[section] = nil
             }
     }
 }

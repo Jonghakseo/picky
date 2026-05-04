@@ -8,6 +8,27 @@ import Testing
 @testable import Picky
 
 struct PickySettingsPolishTests {
+    @Test func companionSettingsSaveStatusIsSectionScoped() {
+        var statuses = CompanionPanelSettingsSaveStatuses()
+
+        statuses.markSaved(.notifications)
+
+        #expect(statuses[.notifications] == .saved)
+        #expect(statuses[.workspace] == .idle)
+        #expect(statuses[.voice] == .idle)
+    }
+
+    @Test func companionSettingsSaveStatusResetDoesNotTouchOtherSections() {
+        var statuses = CompanionPanelSettingsSaveStatuses()
+        statuses.markDirty(.workspace)
+        statuses.markSaved(.voice)
+
+        statuses.clearSaved(.voice)
+
+        #expect(statuses[.workspace] == .dirty)
+        #expect(statuses[.voice] == .idle)
+    }
+
     @Test func settingsLoadDefaultsAppearanceToDarkWhenLegacyFileLacksField() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root.appendingPathComponent("Settings", isDirectory: true), withIntermediateDirectories: true)

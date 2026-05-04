@@ -314,7 +314,7 @@ struct PickySessionViewModelTests {
     }
 
     @Test func hudDockPreviewOpensImmediatelyAndClosesAfterTimeout() throws {
-        #expect(PickyHUDDockLayout.closeDelay == 1.0)
+        #expect(PickyHUDDockLayout.closeDelay == 0.4)
         #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: nil, sessionID: "a", pinnedID: nil) == "a")
         #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: "a", sessionID: "b", pinnedID: "a") == "a")
         #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", pinnedID: nil, isHUDHovered: false) == nil)

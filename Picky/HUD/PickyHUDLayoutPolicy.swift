@@ -43,8 +43,8 @@ enum PickyHUDDockLayout {
     static let railWidth: CGFloat = 56
     static let panelGap: CGFloat = 10
     static let screenMargin: CGFloat = 8
-    static let closeDelay: TimeInterval = 1.0
-    static let closeDelayNanoseconds: UInt64 = 1_000_000_000
+    static let closeDelay: TimeInterval = 0.4
+    static let closeDelayNanoseconds: UInt64 = 400_000_000
 
     static func activeSessionID(visibleIDs: [String], pinnedID: String?, previewID: String?) -> String? {
         if let pinnedID, visibleIDs.contains(pinnedID) { return pinnedID }

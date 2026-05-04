@@ -389,6 +389,25 @@ struct PickySessionViewModelTests {
         #expect(!PickyHUDDockLayout.gitSectionExpansion(sessionID: "agent-a", storedValues: storedValues))
     }
 
+    @Test func hudSummaryEventLabelReflectsStatusAndReportArtifact() throws {
+        #expect(PickyHUDSummaryEventPolicy.label(for: .completed, hasReportArtifact: true) == "Report ready")
+        #expect(PickyHUDSummaryEventPolicy.label(for: .completed, hasReportArtifact: false) == "Result")
+        #expect(PickyHUDSummaryEventPolicy.label(for: .failed, hasReportArtifact: false) == "Failed")
+        #expect(PickyHUDSummaryEventPolicy.label(for: .cancelled, hasReportArtifact: false) == "Cancelled")
+        #expect(PickyHUDSummaryEventPolicy.label(for: .blocked, hasReportArtifact: false) == "Blocked")
+        #expect(PickyHUDSummaryEventPolicy.label(for: .waiting_for_input, hasReportArtifact: false) == "Awaiting input")
+        #expect(PickyHUDSummaryEventPolicy.label(for: .running, hasReportArtifact: false) == "Update")
+        #expect(PickyHUDSummaryEventPolicy.label(for: .queued, hasReportArtifact: false) == "Update")
+    }
+
+    @Test func hudSummaryEventTimeReportsNowWhileActive() throws {
+        #expect(PickyHUDSummaryEventPolicy.time(for: .running, sessionElapsed: "2h 25m") == "now")
+        #expect(PickyHUDSummaryEventPolicy.time(for: .queued, sessionElapsed: "5m") == "now")
+        #expect(PickyHUDSummaryEventPolicy.time(for: .completed, sessionElapsed: "2h 25m") == "2h 25m")
+        #expect(PickyHUDSummaryEventPolicy.time(for: .failed, sessionElapsed: "3m") == "3m")
+        #expect(PickyHUDSummaryEventPolicy.time(for: .waiting_for_input, sessionElapsed: "<1m") == "<1m")
+    }
+
     @Test func hudDockPanelCentersVerticallyWithinVisibleFrame() throws {
         let visibleFrame = CGRect(x: 0, y: 100, width: 1200, height: 800)
         #expect(PickyHUDDockLayout.centeredPanelY(visibleFrame: visibleFrame, targetHeight: 400) == 300)

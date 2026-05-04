@@ -97,6 +97,26 @@ enum PickyHUDExpandedContentPolicy {
     }
 }
 
+enum PickyHUDSummaryEventPolicy {
+    static func label(for status: PickySessionStatus, hasReportArtifact: Bool) -> String {
+        switch status {
+        case .completed: return hasReportArtifact ? "Report ready" : "Result"
+        case .failed: return "Failed"
+        case .cancelled: return "Cancelled"
+        case .blocked: return "Blocked"
+        case .waiting_for_input: return "Awaiting input"
+        case .running, .queued: return "Update"
+        }
+    }
+
+    static func time(for status: PickySessionStatus, sessionElapsed: String) -> String {
+        switch status {
+        case .running, .queued: return "now"
+        default: return sessionElapsed
+        }
+    }
+}
+
 enum PickyHUDCurrentWorkPolicy {
     static func runningDescription(activeTool: PickyToolActivity?, thinkingPreview: String?) -> String? {
         var lines = [String]()

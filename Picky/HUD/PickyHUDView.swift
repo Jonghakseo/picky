@@ -680,22 +680,11 @@ private struct PickySessionCardView: View {
     }
 
     private var summaryEventLabel: String {
-        switch session.status {
-        case .completed:
-            return session.reportArtifact == nil ? "Result" : "Report ready"
-        case .failed: return "Failed"
-        case .cancelled: return "Cancelled"
-        case .blocked: return "Blocked"
-        case .waiting_for_input: return "Awaiting input"
-        case .running, .queued: return "Update"
-        }
+        PickyHUDSummaryEventPolicy.label(for: session.status, hasReportArtifact: session.reportArtifact != nil)
     }
 
     private var summaryEventTime: String {
-        switch session.status {
-        case .running, .queued: return "now"
-        default: return session.elapsedDescription()
-        }
+        PickyHUDSummaryEventPolicy.time(for: session.status, sessionElapsed: session.elapsedDescription())
     }
 
     private var summaryEventAccent: Color {

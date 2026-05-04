@@ -18,7 +18,7 @@ struct PickyHUDView: View {
     @State private var gitSectionExpansionBySessionID: [String: Bool] = [:]
 
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {
-        Array(viewModel.sessions.prefix(PickyHUDDockLayout.visibleSessionLimit))
+        Array(viewModel.sessions.prefix(PickyHUDDockLayout.visibleSessionLimit).reversed())
     }
 
     private var activeSessionID: String? {
@@ -240,11 +240,9 @@ private struct PickyHUDDockRailView: View {
     @ViewBuilder
     var body: some View {
         if sessions.isEmpty {
-            emptyCreateSideAgentButton
+            addAgentSlotButton
         } else {
-            VStack(spacing: 0) {
-                createSideAgentButton
-
+            VStack(spacing: 6) {
                 VStack(spacing: 9) {
                     ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
                         PickyHUDDockIconView(
@@ -257,7 +255,8 @@ private struct PickyHUDDockRailView: View {
                         )
                     }
                 }
-                .padding(.top, 6)
+
+                addAgentSlotButton
             }
             .padding(.horizontal, 6)
             .padding(.top, 8)
@@ -270,31 +269,20 @@ private struct PickyHUDDockRailView: View {
         }
     }
 
-    private var createSideAgentButton: some View {
+    private var addAgentSlotButton: some View {
         Button(action: onCreateSideAgent) {
-            Image(systemName: "plus")
-                .font(.system(size: 9.5, weight: .semibold))
-                .foregroundColor(DS.Colors.textTertiary)
-                .frame(width: 18, height: 18)
-                .background(Circle().fill(DS.Colors.surface2.opacity(0.45)))
-                .overlay(Circle().stroke(DS.Colors.borderSubtle.opacity(0.35), lineWidth: 0.5))
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .pointerCursor()
-        .accessibilityLabel("Start side agent")
-        .accessibilityHint("Choose a working folder and start an empty side agent")
-    }
-
-    private var emptyCreateSideAgentButton: some View {
-        Button(action: onCreateSideAgent) {
-            Image(systemName: "plus")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(DS.Colors.textSecondary)
-                .frame(width: 28, height: 28)
-                .background(Circle().fill(DS.Colors.surface1.opacity(0.92)))
-                .overlay(Circle().stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8))
-                .contentShape(Circle())
+            ZStack {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(
+                        DS.Colors.textTertiary.opacity(0.55),
+                        style: StrokeStyle(lineWidth: 1, dash: [3.5, 3])
+                    )
+                Image(systemName: "plus")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(DS.Colors.textTertiary)
+            }
+            .frame(width: 36, height: 36)
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
         .pointerCursor()

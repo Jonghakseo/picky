@@ -37,7 +37,7 @@ enum PickyHUDExpansion {
 }
 
 enum PickyHUDDockLayout {
-    static let visibleSessionLimit = 6
+    static let visibleSessionLimit = 12
     static let panelWidth: CGFloat = 540
     static let detailWidth: CGFloat = 446
     static let railWidth: CGFloat = 56

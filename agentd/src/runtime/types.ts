@@ -6,7 +6,7 @@ export type RuntimeEvent =
   | { type: "log"; line: string }
   | { type: "assistant_delta"; delta: string }
   | { type: "thinking_delta"; delta: string }
-  | { type: "status"; status: RuntimeSessionStatus; summary?: string; finalAnswer?: string }
+  | { type: "status"; status: RuntimeSessionStatus; summary?: string; finalAnswer?: string; noTurnRan?: boolean }
   | { type: "tool"; toolCallId: string; name: string; status: "running" | "succeeded" | "failed"; preview?: string }
   | { type: "extension_ui"; request: Record<string, unknown>; waitsForInput: boolean };
 

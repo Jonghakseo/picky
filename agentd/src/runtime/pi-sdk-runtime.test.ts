@@ -259,7 +259,7 @@ describe("PiSdkRuntime", () => {
     await handle.followUp({ text: "/diff-review", imagePaths: [] });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(statusEvents(events)).toEqual([{ type: "status", status: "completed", summary: "Handled without agent turn" }]);
+    expect(statusEvents(events)).toEqual([{ type: "status", status: "completed", summary: "Handled without agent turn", noTurnRan: true }]);
   });
 
   it("synthesizes completed status and reports handledSynchronously even when Pi suspends prompt() before preflight (real-Pi shape)", async () => {
@@ -273,7 +273,7 @@ describe("PiSdkRuntime", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(outcome).toEqual({ handledSynchronously: true });
-    expect(statusEvents(events)).toEqual([{ type: "status", status: "completed", summary: "Handled without agent turn" }]);
+    expect(statusEvents(events)).toEqual([{ type: "status", status: "completed", summary: "Handled without agent turn", noTurnRan: true }]);
   });
 
   it("does not synthesize completed when the prompt was queued during an active stream", async () => {

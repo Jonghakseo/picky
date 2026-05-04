@@ -343,10 +343,13 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   // be stuck in a permanent "running" state on the Picky side. Synthesize a completed status when we
   // detect that no agent turn was actually started, and report whether we did so to the caller so
   // higher layers (e.g. session-supervisor.steer) can avoid resurrecting the session as `running`.
+  // The `noTurnRan: true` marker tells RuntimeEventHandler to release the loading state without
+  // running terminal side effects (notifying the main agent, re-materializing artifacts), since
+  // no real agent turn produced any new state to report.
   private maybeEmitImmediateCompletion(wasStreaming: boolean): boolean {
     if (wasStreaming) return false;
     if (this.runtime.session.isStreaming) return false;
-    this.emit({ type: "status", status: "completed", summary: "Handled without agent turn" });
+    this.emit({ type: "status", status: "completed", summary: "Handled without agent turn", noTurnRan: true });
     return true;
   }
 

@@ -1090,6 +1090,31 @@ describe("SessionSupervisor", () => {
     expect(replies).toContainEqual({ contextId: sideSession.id, text: "사이드 작업 마쳤어요" });
   });
 
+  // Regression for the `/diff-review` follow-up: the previous fix synthesized a `completed`
+  // runtime status with `noTurnRan: true` so the HUD spinner clears, but the side session must
+  // NOT also notify the main agent (no real turn produced any progress). RuntimeEventHandler
+  // skips notifySideCompletion + materializeTerminalArtifacts when `noTurnRan` is set.
+  it("does not notify the main agent when a side session synthesizes a completion without running a turn", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+
+    const userCtx = context("사이드 시작");
+    await supervisor.route(userCtx);
+    supervisor.announceMainHandoff(userCtx.id, "사이드 위임");
+    const sideSession = await supervisor.createSideFromHandoff(userCtx, { title: "task", instructions: "do it" });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    // PiSdkRuntimeSession marks synthetic slash-command completions with `noTurnRan: true`.
+    sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Handled without agent turn", noTurnRan: true });
+    await settle();
+
+    expect(supervisor.get(sideSession.id)?.status).toBe("completed");
+    expect(mainRuntime.handle?.followUps ?? []).toHaveLength(0);
+  });
+
   it("delivers a side completion notification immediately when the main agent is idle", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();

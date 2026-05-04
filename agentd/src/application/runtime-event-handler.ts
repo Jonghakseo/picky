@@ -69,6 +69,12 @@ export class RuntimeEventHandler {
     if (terminal) {
       this.assistantDrafts.set(sessionId, "");
       this.thinkingDrafts.set(sessionId, "");
+      // Synthetic completions (Pi `/slash` handlers, `input` handlers returning `handled`) flip
+      // the session out of the loading state but did not run any agent turn. Re-materializing
+      // terminal artifacts would overwrite the previous session report with empty content, and
+      // notifying the main agent would deliver a bogus "side session finished" message even
+      // though nothing actually completed. Skip both for `noTurnRan` events.
+      if (event.noTurnRan) return;
       await this.dependencies.materializeTerminalArtifacts(sessionId);
       if (this.dependencies.isSideSession(sessionId)) await this.dependencies.notifySideCompletion(sessionId);
     }

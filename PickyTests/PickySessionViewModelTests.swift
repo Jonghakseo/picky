@@ -313,6 +313,28 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDExpansion.contentFrameHeight(isExpanded: true, measuredHeight: 0) == nil)
     }
 
+    @Test func hudDockPreviewFollowsHoveredSessionAfterDelay() throws {
+        #expect(PickyHUDExpansion.hoverExpansionDelay == 0.5)
+        #expect(PickyHUDExpansion.previewSessionIDAfterHover(current: nil, sessionID: "a", isHovering: true, delayElapsed: false) == nil)
+        #expect(PickyHUDExpansion.previewSessionIDAfterHover(current: nil, sessionID: "a", isHovering: true, delayElapsed: true) == "a")
+        #expect(PickyHUDExpansion.previewSessionIDAfterHover(current: "a", sessionID: "a", isHovering: false, delayElapsed: false) == nil)
+        #expect(PickyHUDExpansion.previewSessionIDAfterHover(current: "b", sessionID: "a", isHovering: false, delayElapsed: false) == "b")
+    }
+
+    @Test func hudDockUsesPreviewThenPinnedThenFirstSession() throws {
+        let visibleIDs = ["first", "pinned", "preview"]
+        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, pinnedID: "pinned", previewID: "preview") == "preview")
+        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, pinnedID: "pinned", previewID: nil) == "pinned")
+        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, pinnedID: "missing", previewID: nil) == "first")
+        #expect(PickyHUDDockLayout.pinnedSessionIDAfterClick(current: "first", clicked: "preview") == "preview")
+    }
+
+    @Test func hudDockPanelCentersVerticallyWithinVisibleFrame() throws {
+        let visibleFrame = CGRect(x: 0, y: 100, width: 1200, height: 800)
+        #expect(PickyHUDDockLayout.centeredPanelY(visibleFrame: visibleFrame, targetHeight: 400) == 300)
+        #expect(PickyHUDDockLayout.centeredPanelY(visibleFrame: visibleFrame, targetHeight: 900) == 116)
+    }
+
     @Test func hudExpansionDefersOuterPanelShrinkUntilCollapseFinishes() throws {
         #expect(PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 320, targetHeight: 80, deferShrink: true))
         #expect(!PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 80, targetHeight: 320, deferShrink: true))

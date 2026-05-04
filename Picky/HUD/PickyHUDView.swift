@@ -10,33 +10,107 @@ import SwiftUI
 struct PickyHUDView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     var onSizeChange: (CGSize) -> Void = { _ in }
-    @State private var expandedSessionID: String?
+    @State private var pinnedSessionID: String?
+    @State private var previewSessionID: String?
+    @State private var hoverExpansionTask: Task<Void, Never>?
 
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {
-        Array(viewModel.sessions.prefix(6))
+        Array(viewModel.sessions.prefix(PickyHUDDockLayout.visibleSessionLimit))
+    }
+
+    private var activeSessionID: String? {
+        PickyHUDDockLayout.activeSessionID(
+            visibleIDs: visibleSessions.map(\.id),
+            pinnedID: pinnedSessionID,
+            previewID: previewSessionID
+        )
+    }
+
+    private var activeSession: PickySessionListViewModel.SessionCard? {
+        guard let activeSessionID else { return nil }
+        return visibleSessions.first { $0.id == activeSessionID }
     }
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 6) {
-            if visibleSessions.isEmpty {
-                EmptyView()
-            } else {
-                ForEach(visibleSessions) { session in
-                    PickySessionCardView(
-                        session: session,
-                        isExpanded: expandedSessionID == session.id,
-                        viewModel: viewModel,
-                        onToggle: {
-                            expandedSessionID = expandedSessionID == session.id ? nil : session.id
-                        }
-                    )
-                }
+        HStack(alignment: .center, spacing: PickyHUDDockLayout.panelGap) {
+            if let activeSession {
+                PickySessionCardView(
+                    session: activeSession,
+                    isExpanded: true,
+                    viewModel: viewModel,
+                    showsDisclosure: false,
+                    onToggle: { pinSession(activeSession.id) },
+                    onHoverChanged: { _ in }
+                )
+                .id(activeSession.id)
+                .frame(width: PickyHUDDockLayout.detailWidth)
+                .transition(.opacity.combined(with: .move(edge: .trailing)))
+            }
+
+            if !visibleSessions.isEmpty {
+                PickyHUDDockRailView(
+                    sessions: visibleSessions,
+                    activeSessionID: activeSession?.id,
+                    pinnedSessionID: pinnedSessionID,
+                    onHoverSession: scheduleDockPreview,
+                    onPinSession: pinSession
+                )
+                .frame(width: PickyHUDDockLayout.railWidth)
             }
         }
         .padding(PickyHUDExpansion.outerPadding)
         .background(PickyHUDSizeReader())
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+        .animation(PickyHUDExpansion.animation, value: activeSession?.id)
+        .onHover { isHovering in
+            if !isHovering { clearTransientPreview() }
+        }
         .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: onSizeChange)
+        .onDisappear {
+            hoverExpansionTask?.cancel()
+            hoverExpansionTask = nil
+        }
+    }
+
+    private func scheduleDockPreview(sessionID: String) {
+        hoverExpansionTask?.cancel()
+        hoverExpansionTask = Task {
+            do {
+                try await Task.sleep(nanoseconds: PickyHUDExpansion.hoverExpansionDelayNanoseconds)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                previewSessionID = PickyHUDExpansion.previewSessionIDAfterHover(
+                    current: previewSessionID,
+                    sessionID: sessionID,
+                    isHovering: true,
+                    delayElapsed: true
+                )
+                hoverExpansionTask = nil
+            }
+        }
+    }
+
+    private func pinSession(_ sessionID: String) {
+        hoverExpansionTask?.cancel()
+        hoverExpansionTask = nil
+        pinnedSessionID = PickyHUDDockLayout.pinnedSessionIDAfterClick(current: pinnedSessionID, clicked: sessionID)
+        previewSessionID = nil
+    }
+
+    private func clearTransientPreview() {
+        hoverExpansionTask?.cancel()
+        hoverExpansionTask = nil
+        if let previewSessionID {
+            self.previewSessionID = PickyHUDExpansion.previewSessionIDAfterHover(
+                current: previewSessionID,
+                sessionID: previewSessionID,
+                isHovering: false,
+                delayElapsed: false
+            )
+        }
     }
 }
 
@@ -105,11 +179,148 @@ private struct PickyHUDCollapsibleContent<Content: View>: View {
     }
 }
 
+private struct PickyHUDDockRailView: View {
+    let sessions: [PickySessionListViewModel.SessionCard]
+    let activeSessionID: String?
+    let pinnedSessionID: String?
+    let onHoverSession: (String) -> Void
+    let onPinSession: (String) -> Void
+
+    var body: some View {
+        VStack(spacing: 9) {
+            ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
+                PickyHUDDockIconView(
+                    session: session,
+                    index: index,
+                    isActive: activeSessionID == session.id,
+                    isPinned: pinnedSessionID == session.id,
+                    onHover: { onHoverSession(session.id) },
+                    onPin: { onPinSession(session.id) }
+                )
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 10)
+        .background(
+            Capsule(style: .continuous)
+                .fill(DS.Colors.surface1.opacity(0.92))
+                .overlay(Capsule(style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8))
+        )
+    }
+}
+
+private struct PickyHUDDockIconView: View {
+    let session: PickySessionListViewModel.SessionCard
+    let index: Int
+    let isActive: Bool
+    let isPinned: Bool
+    let onHover: () -> Void
+    let onPin: () -> Void
+
+    var body: some View {
+        Button(action: onPin) {
+            ZStack {
+                dockIconBackground
+                Text("\(index + 1)")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundColor(isActive ? DS.Colors.textPrimary : DS.Colors.textSecondary)
+            }
+            .frame(width: 36, height: 36)
+            .overlay(alignment: .topTrailing) {
+                statusDot.offset(x: 4, y: -4)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 6.5, weight: .bold))
+                        .foregroundColor(DS.Colors.accentText)
+                        .frame(width: 12, height: 12)
+                        .background(Circle().fill(DS.Colors.surface1.opacity(0.96)))
+                        .offset(x: 5, y: 5)
+                }
+            }
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering in
+            if isHovering { onHover() }
+        }
+        .help("Preview \(session.title). Click to pin.")
+    }
+
+    private var dockIconBackground: some View {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .fill(DS.Colors.surface2.opacity(isActive ? 0.78 : 0.58))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(statusColor.opacity(isActive ? 0.12 : 0.06)))
+            .overlay {
+                if usesAnimatedStatusBorder {
+                    PickyHUDAnimatedStatusBorderView(
+                        baseColor: statusColor,
+                        highlightColor: statusLoadingHighlightColor,
+                        duration: statusBorderAnimationDuration,
+                        cornerRadius: 18
+                    )
+                } else {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(isActive ? statusColor.opacity(0.70) : statusColor.opacity(0.40), lineWidth: isActive ? 1.15 : 0.8)
+                }
+            }
+    }
+
+    private var statusDot: some View {
+        Circle()
+            .fill(statusColor)
+            .frame(width: 8, height: 8)
+            .overlay(Circle().stroke(DS.Colors.surface1.opacity(0.94), lineWidth: 2))
+            .accessibilityHidden(true)
+    }
+
+    private var usesAnimatedStatusBorder: Bool {
+        session.status == .queued || session.status == .running
+    }
+
+    private var statusBorderAnimationDuration: Double {
+        session.status == .running ? 2.4 : 4.2
+    }
+
+    private var statusLoadingHighlightColor: Color {
+        switch session.status {
+        case .running:
+            return DS.Colors.info
+        case .queued:
+            return DS.Colors.floatingGradientPurple
+        default:
+            return statusColor
+        }
+    }
+
+    private var statusColor: Color {
+        switch session.status {
+        case .queued:
+            return DS.Colors.accentText
+        case .running:
+            return DS.Colors.overlayCursorBlue
+        case .waiting_for_input:
+            return DS.Colors.warning
+        case .blocked:
+            return DS.Colors.warningText
+        case .completed:
+            return DS.Colors.success
+        case .failed:
+            return DS.Colors.destructiveText
+        case .cancelled:
+            return DS.Colors.textTertiary
+        }
+    }
+}
+
 private struct PickySessionCardView: View {
     let session: PickySessionListViewModel.SessionCard
     let isExpanded: Bool
     @ObservedObject var viewModel: PickySessionListViewModel
+    let showsDisclosure: Bool
     let onToggle: () -> Void
+    let onHoverChanged: (Bool) -> Void
     @State private var followUpText = ""
     @State private var gitStatus: PickyGitRepositoryStatus?
     @State private var isGitSectionExpanded = true
@@ -136,6 +347,7 @@ private struct PickySessionCardView: View {
         .padding(.vertical, PickyHUDExpansion.cardVerticalPadding(isExpanded: isExpanded))
         .background(cardBackground)
         .onHover { isHovering in
+            onHoverChanged(isHovering)
             if isHovering {
                 viewModel.beginHoveredVoiceFollowUp(sessionID: session.id)
             } else {
@@ -143,6 +355,7 @@ private struct PickySessionCardView: View {
             }
         }
         .onDisappear {
+            onHoverChanged(false)
             viewModel.endHoveredVoiceFollowUp(sessionID: session.id)
         }
         .task(id: gitStatusRefreshKey) {
@@ -176,11 +389,13 @@ private struct PickySessionCardView: View {
                     .help("Voice steering target")
                     .transition(.scale.combined(with: .opacity))
             }
-            Image(systemName: "chevron.down")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(DS.Colors.textTertiary)
-                .rotationEffect(.degrees(isExpanded ? 180 : 0))
-                .animation(PickyHUDExpansion.animation, value: isExpanded)
+            if showsDisclosure {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                    .animation(PickyHUDExpansion.animation, value: isExpanded)
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture(perform: onToggle)
@@ -646,13 +861,14 @@ private struct PickyHUDAnimatedStatusBorderView: View {
     let baseColor: Color
     let highlightColor: Color
     let duration: Double
+    var cornerRadius: CGFloat = 14
     @State private var isFlowing = false
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .stroke(baseColor.opacity(0.24), lineWidth: 1)
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .stroke(
                     AngularGradient(
                         stops: [

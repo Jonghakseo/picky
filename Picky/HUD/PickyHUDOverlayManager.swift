@@ -2,7 +2,7 @@
 //  PickyHUDOverlayManager.swift
 //  Picky
 //
-//  Top-right HUD panel lifecycle, placement, and resizing.
+//  Right-side HUD panel lifecycle, placement, and resizing.
 //
 
 import AppKit
@@ -32,7 +32,7 @@ final class PickyHUDOverlayManager {
     private let viewModel: PickySessionListViewModel
     private var panel: NSPanel?
     private var pendingPanelShrinkTask: Task<Void, Never>?
-    private let width: CGFloat = 304
+    private let width: CGFloat = PickyHUDDockLayout.panelWidth
     private let collapsedHeight: CGFloat = 180
     private let minimumHeight: CGFloat = 48
 
@@ -43,7 +43,7 @@ final class PickyHUDOverlayManager {
     func start() {
         viewModel.start()
         createPanelIfNeeded()
-        positionTopRight()
+        positionRightMiddle()
         panel?.orderFrontRegardless()
     }
 
@@ -82,7 +82,7 @@ final class PickyHUDOverlayManager {
         panel = hudPanel
     }
 
-    private func positionTopRight() {
+    private func positionRightMiddle() {
         resizePanel(toContentSize: panel?.contentView?.fittingSize ?? CGSize(width: width, height: collapsedHeight), deferShrink: false)
     }
 
@@ -114,10 +114,10 @@ final class PickyHUDOverlayManager {
     private func targetFrame(forContentSize contentSize: CGSize) -> NSRect? {
         let screen = NSScreen.main ?? NSScreen.screens.first
         guard let visibleFrame = screen?.visibleFrame else { return nil }
-        let targetHeight = min(max(contentSize.height, minimumHeight), visibleFrame.height - 32)
+        let targetHeight = min(max(contentSize.height, minimumHeight), visibleFrame.height - (PickyHUDDockLayout.screenMargin * 2))
         return NSRect(
-            x: visibleFrame.maxX - width - 16,
-            y: visibleFrame.maxY - targetHeight - 16,
+            x: visibleFrame.maxX - width - PickyHUDDockLayout.screenMargin,
+            y: PickyHUDDockLayout.centeredPanelY(visibleFrame: visibleFrame, targetHeight: targetHeight),
             width: width,
             height: targetHeight
         )

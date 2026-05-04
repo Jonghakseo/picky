@@ -508,7 +508,7 @@ private struct PickySessionCardView: View {
 
             if let lastRequestText = session.lastRequestText {
                 eventRow(
-                    time: session.elapsedDescription(),
+                    time: session.elapsedSinceLastRequest(),
                     label: "Request",
                     content: lastRequestText,
                     accent: DS.Colors.textTertiary

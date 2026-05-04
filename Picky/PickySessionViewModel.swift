@@ -109,6 +109,10 @@ final class PickySessionListViewModel: ObservableObject {
         var thinkingPreview: String?
         var logPreview: String
         var lastRequestText: String?
+        // When the latest REQUEST row content was observed/sent locally. Used to render the
+        // "X ago" stamp on that row independent of session.createdAt or session.updatedAt;
+        // updatedAt is bumped by every tool/log event so it cannot stand in.
+        var lastRequestAt: Date?
         var tools: [PickyToolActivity]
         var artifacts: [PickyArtifact]
         var changedFiles: [PickyChangedFile]
@@ -166,6 +170,14 @@ final class PickySessionListViewModel: ObservableObject {
 
         func elapsedSinceUpdate(now: Date = Date()) -> String {
             Self.formatElapsed(seconds: max(0, Int(now.timeIntervalSince(updatedAt))))
+        }
+
+        func elapsedSinceLastRequest(now: Date = Date()) -> String {
+            // Fall back to updatedAt when we never observed an explicit request timestamp
+            // (resumed sessions reconstructed purely from logs); never to createdAt, which
+            // would mis-stamp follow-ups on long-running sessions as hours-old.
+            let reference = lastRequestAt ?? updatedAt
+            return Self.formatElapsed(seconds: max(0, Int(now.timeIntervalSince(reference))))
         }
 
         private static func formatElapsed(seconds: Int) -> String {
@@ -337,9 +349,11 @@ final class PickySessionListViewModel: ObservableObject {
         }
         pickySessionLog("steer session=\(target) textChars=\(trimmed.count)")
         try await client.send(PickyCommandEnvelope(type: .steer, sessionId: target, text: trimmed))
+        let now = Date()
         update(sessionID: target) { card in
             card.lastRequestText = trimmed
-            card.updatedAt = Date()
+            card.lastRequestAt = now
+            card.updatedAt = now
         }
         select(sessionID: target)
     }
@@ -366,15 +380,17 @@ final class PickySessionListViewModel: ObservableObject {
         pickySessionLog("answer extension-ui session=\(sessionID) request=\(requestID)")
         try await client.send(PickyCommandEnvelope(type: .answerExtensionUi, sessionId: sessionID, requestId: requestID, value: value))
         update(sessionID: sessionID) { card in
+            let now = Date()
             if let pending = card.pendingExtensionUiRequest, pending.id == requestID {
                 if let summary = PickyAskUserQuestionFormState.summarizeAnswer(request: pending, value: value) {
                     card.lastRequestText = summary
+                    card.lastRequestAt = now
                 }
                 card.pendingExtensionUiRequest = nil
                 card.status = .running
                 card.lastSummary = "Extension UI answered"
             }
-            card.updatedAt = Date()
+            card.updatedAt = now
         }
     }
 
@@ -580,6 +596,10 @@ final class PickySessionListViewModel: ObservableObject {
                 }
                 if let requestText = SessionCard.requestText(fromLogLine: line) {
                     card.lastRequestText = requestText
+                    // Log lines arrive when the daemon broadcasts them, which is essentially
+                    // when the request was issued — Date() here is close enough to the real
+                    // wall-clock time of the request to drive the REQUEST row's stamp.
+                    card.lastRequestAt = Date()
                 }
                 if SessionCard.isRuntimeDetachedFollowUpRejection(line) {
                     card.hasRuntimeDetachedFollowUpRejection = true
@@ -772,6 +792,9 @@ private extension PickySessionListViewModel.SessionCard {
         self.thinkingPreview = session.thinkingPreview
         self.logPreview = session.logs.reversed().first(where: Self.isDisplayableLogPreview) ?? session.tools.last?.preview ?? ""
         self.lastRequestText = Self.lastRequestText(from: session.logs)
+        // Logs do not carry per-line wall-clock timestamps, so leave nil for resumed sessions
+        // and let elapsedSinceLastRequest() fall back to updatedAt.
+        self.lastRequestAt = nil
         self.tools = session.tools
         self.artifacts = session.artifacts
         self.changedFiles = session.changedFiles
@@ -795,6 +818,7 @@ private extension PickySessionListViewModel.SessionCard {
         // to the existing value would pin the previous "Thinking: ..." text to the card and let
         // it briefly flash again the next time the session re-enters `.running` after a follow-up.
         if result.lastRequestText == nil { result.lastRequestText = lastRequestText }
+        if result.lastRequestAt == nil { result.lastRequestAt = lastRequestAt }
         if result.tools.isEmpty { result.tools = tools }
         if result.artifacts.isEmpty { result.artifacts = artifacts }
         if result.changedFiles.isEmpty { result.changedFiles = changedFiles }

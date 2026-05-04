@@ -308,6 +308,22 @@ struct PickySessionViewModelTests {
         #expect(!notifications.delivered.map(\.title).contains("분석이 끝났습니다"))
     }
 
+    @Test func legacyPinnedSideSessionWithoutPinnedFlagDoesNotDeliverCompletedNotification() async throws {
+        // Sessions persisted before the `pinned` flag was introduced reload without that key,
+        // so Swift sees `pinned == false`. The completion notification must still stay quiet.
+        let client = FakePickyAgentClient()
+        let notifications = PickyNoopNotificationCenter()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications)
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Pinned completed Pi session"))))
+        try await settle()
+
+        #expect(viewModel.sessions.first?.status == .completed)
+        #expect(viewModel.sessions.first?.pinned == false)
+        #expect(!notifications.delivered.map(\.title).contains("분석이 끝났습니다"))
+    }
+
     @Test func unpinnedAfterFollowUpDeliversCompletedNotification() async throws {
         let client = FakePickyAgentClient()
         let notifications = PickyNoopNotificationCenter()

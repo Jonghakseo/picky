@@ -699,11 +699,16 @@ final class PickySessionListViewModel: ObservableObject {
         notificationCenter.deliver(title: notification.title, body: notification.body, identifier: notification.key)
     }
 
+    /// Mirror of `pinSideSession`'s seed `lastSummary` in agentd; used to suppress completion
+    /// notifications for legacy pinned sessions persisted before the `pinned` flag was introduced.
+    private static let legacyPinnedSideSessionLastSummary = "Pinned completed Pi session"
+
     private func notification(for session: SessionCard) -> (key: String, title: String, body: String)? {
         let notification: (key: String, title: String, body: String)?
         switch session.status {
         case .completed:
             if session.pinned { return nil }
+            if session.lastSummary == Self.legacyPinnedSideSessionLastSummary { return nil }
             notification = ("\(session.id):completed", "분석이 끝났습니다", session.lastSummary.isEmpty ? session.title : session.lastSummary)
         case .failed:
             notification = ("\(session.id):failed", "Picky 작업이 실패했습니다", session.lastSummary.isEmpty ? "Open logs for details." : session.lastSummary)

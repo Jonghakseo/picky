@@ -1,5 +1,6 @@
 import type { PickyToolActivity, SessionStatus } from "../protocol.js";
 import type { RuntimeEvent, RuntimeSessionStatus } from "../runtime/types.js";
+import { sliceUtf16Safe } from "./safe-truncate.js";
 
 export interface PiEventNormalizationContext {
   hasQueuedSteering?: boolean;
@@ -180,7 +181,7 @@ function hasToolResults(value: unknown): boolean {
 function preview(value: unknown): string | undefined {
   if (value === undefined) return undefined;
   const text = typeof value === "string" ? value : JSON.stringify(value);
-  return text.length > 500 ? `${text.slice(0, 497)}...` : text;
+  return text.length > 500 ? `${sliceUtf16Safe(text, 497)}...` : text;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createServer, type Server as HttpServer } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import { isAuthorized } from "./auth.js";
+import { sliceUtf16Safe } from "./domain/safe-truncate.js";
 import { PROTOCOL_VERSION, parseCommand, type EventEnvelope, type PickyAgentSession } from "./protocol.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
@@ -229,12 +230,23 @@ export function compactSessionsForSnapshot(sessions: PickyAgentSession[]): Picky
 function compactSnapshotLogs(logs: string[]): string[] {
   if (logs.length <= SNAPSHOT_LOG_LIMIT && logs.every((line) => line.length <= SNAPSHOT_LOG_CHAR_LIMIT)) return logs;
 
-  const important = logs.filter(isImportantSnapshotLog).slice(-SNAPSHOT_IMPORTANT_LOG_LIMIT);
-  const recentSlots = Math.max(SNAPSHOT_LOG_LIMIT - important.length, 0);
-  const recent = logs.slice(-recentSlots);
-  return uniqueInOrder([...important, ...recent])
-    .slice(-SNAPSHOT_LOG_LIMIT)
-    .map(truncateSnapshotLogLine);
+  // Pick up to N most-recent important indices, scanning newest-first so the latest
+  // important entries win when capped.
+  const importantIndices = new Set<number>();
+  for (let index = logs.length - 1; index >= 0 && importantIndices.size < SNAPSHOT_IMPORTANT_LOG_LIMIT; index -= 1) {
+    if (isImportantSnapshotLog(logs[index]!)) importantIndices.add(index);
+  }
+
+  const recentSlots = Math.max(SNAPSHOT_LOG_LIMIT - importantIndices.size, 0);
+  const recentStart = logs.length - recentSlots;
+
+  // Walk the original array in order so important entries that fall outside the recent
+  // window stay at their original chronological position rather than being prepended.
+  const kept: string[] = [];
+  for (let index = 0; index < logs.length; index += 1) {
+    if (index >= recentStart || importantIndices.has(index)) kept.push(logs[index]!);
+  }
+  return kept.slice(-SNAPSHOT_LOG_LIMIT).map(truncateSnapshotLogLine);
 }
 
 function compactSnapshotTools(tools: PickyAgentSession["tools"]): PickyAgentSession["tools"] {
@@ -264,24 +276,13 @@ function isImportantSnapshotLog(line: string): boolean {
     || trimmed.includes("Runtime not attached after daemon restart");
 }
 
-function uniqueInOrder(lines: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const line of lines) {
-    if (seen.has(line)) continue;
-    seen.add(line);
-    result.push(line);
-  }
-  return result;
-}
-
 function truncateSnapshotLogLine(line: string): string {
   return truncateText(line, SNAPSHOT_LOG_CHAR_LIMIT);
 }
 
 function truncateText(text: string, limit: number): string {
   if (text.length <= limit) return text;
-  return `${text.slice(0, limit)}…`;
+  return `${sliceUtf16Safe(text, limit)}…`;
 }
 
 type RemoveEnvelope<T> = T extends unknown ? Omit<T, "id" | "protocolVersion" | "timestamp"> : never;

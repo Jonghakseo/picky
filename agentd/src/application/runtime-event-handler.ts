@@ -1,5 +1,7 @@
 import { extractChangedFilesFromExplicitText } from "../artifact-store.js";
 import { mergeChangedFiles } from "../domain/changed-files.js";
+import { sliceUtf16Safe } from "../domain/safe-truncate.js";
+import { isTerminalStatus } from "../domain/session-status.js";
 import { cleanFinalAnswer, summaryFromFinalAnswer } from "../domain/session-summary.js";
 import { settleActiveTools } from "../domain/tool-activity.js";
 import { logAgentd } from "../local-log.js";
@@ -59,7 +61,13 @@ export class RuntimeEventHandler {
       ? (explicitFinalAnswer ?? (event.status === "failed" ? undefined : cleanFinalAnswer(this.assistantDrafts.get(sessionId))))
       : undefined;
     const currentSession = this.dependencies.getSession(sessionId);
-    if (terminal && ["completed", "failed", "cancelled"].includes(currentSession.status)) return;
+    // Once a session has reached a terminal status, ignore any subsequent runtime status
+    // events. Stragglers (delayed agent_start emitting `running` after abort, late
+    // `waiting_for_input` from a now-cancelled extension dialog, etc.) would otherwise
+    // resurrect the session out of `cancelled`/`failed`/`completed` and re-open the HUD
+    // loading state. The supervisor's steer/followUp paths intentionally bypass this
+    // handler when they want to revive a terminal session.
+    if (isTerminalStatus(currentSession.status)) return;
 
     const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
     if (terminal) {
@@ -91,7 +99,7 @@ export class RuntimeEventHandler {
     const previousDraft = this.thinkingDrafts.get(sessionId) ?? "";
     if (previousDraft.length >= THINKING_DRAFT_CHAR_LIMIT) return;
 
-    const nextDraft = `${previousDraft}${event.delta}`.slice(0, THINKING_DRAFT_CHAR_LIMIT);
+    const nextDraft = sliceUtf16Safe(`${previousDraft}${event.delta}`, THINKING_DRAFT_CHAR_LIMIT);
     this.thinkingDrafts.set(sessionId, nextDraft);
 
     const thinkingPreview = compactThinkingPreview(nextDraft);
@@ -123,7 +131,7 @@ export class RuntimeEventHandler {
 function compactThinkingPreview(value: string): string {
   const compact = value.replace(/\s+/g, " ").trim();
   if (compact.length <= THINKING_PREVIEW_CHAR_LIMIT) return compact;
-  return `${compact.slice(0, THINKING_PREVIEW_CHAR_LIMIT - 1)}…`;
+  return `${sliceUtf16Safe(compact, THINKING_PREVIEW_CHAR_LIMIT - 1)}…`;
 }
 
 function terminalToolPreview(status: string): string {

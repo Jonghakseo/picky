@@ -1,5 +1,6 @@
 import { defineTool, type ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
+import { sliceUtf16Safe } from "../domain/safe-truncate.js";
 import type { PickyAgentSession } from "../protocol.js";
 
 export interface PickyHandoffRequest {
@@ -190,5 +191,5 @@ function normalizeOptionalString(value: string | undefined): string | undefined 
 }
 
 function truncate(value: string, maxChars: number): string {
-  return value.length <= maxChars ? value : `${value.slice(0, Math.max(0, maxChars - 1))}…`;
+  return value.length <= maxChars ? value : `${sliceUtf16Safe(value, Math.max(0, maxChars - 1))}…`;
 }

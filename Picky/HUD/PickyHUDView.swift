@@ -341,6 +341,23 @@ private struct PickySessionCardView: View {
     @State private var gitStatus: PickyGitRepositoryStatus?
     @State private var isGitSectionExpanded = true
 
+    init(
+        session: PickySessionListViewModel.SessionCard,
+        isExpanded: Bool,
+        viewModel: PickySessionListViewModel,
+        showsDisclosure: Bool,
+        onToggle: @escaping () -> Void,
+        onHoverChanged: @escaping (Bool) -> Void
+    ) {
+        self.session = session
+        self.isExpanded = isExpanded
+        self.viewModel = viewModel
+        self.showsDisclosure = showsDisclosure
+        self.onToggle = onToggle
+        self.onHoverChanged = onHoverChanged
+        _gitStatus = State(initialValue: PickyGitRepositoryStatus.cached(cwd: session.cwd))
+    }
+
     private var isVoiceFollowUpTarget: Bool {
         if let activeVoiceFollowUpSessionID = viewModel.activeVoiceFollowUpSessionID {
             return activeVoiceFollowUpSessionID == session.id
@@ -375,6 +392,9 @@ private struct PickySessionCardView: View {
             viewModel.endHoveredVoiceFollowUp(sessionID: session.id)
         }
         .task(id: gitStatusRefreshKey) {
+            if let cachedStatus = PickyGitRepositoryStatus.cached(cwd: session.cwd) {
+                gitStatus = cachedStatus
+            }
             let loadedStatus = await PickyGitRepositoryStatus.load(cwd: session.cwd)
             guard !Task.isCancelled else { return }
             gitStatus = loadedStatus

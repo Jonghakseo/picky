@@ -8,6 +8,9 @@
 import Foundation
 
 struct PickyGitRepositoryStatus: Equatable {
+    private static let statusCacheLock = NSLock()
+    private static var statusCache: [String: PickyGitRepositoryStatus] = [:]
+
     let repositoryName: String
     let branchName: String
     let hasUncommittedChanges: Bool
@@ -28,10 +31,20 @@ struct PickyGitRepositoryStatus: Equatable {
         insertions > 0 || deletions > 0 || aheadCount > 0 || behindCount > 0
     }
 
+    static func cached(cwd: String?) -> PickyGitRepositoryStatus? {
+        guard let cacheKey = cacheKey(cwd: cwd) else { return nil }
+        statusCacheLock.lock()
+        defer { statusCacheLock.unlock() }
+        return statusCache[cacheKey]
+    }
+
     static func load(cwd: String?) async -> PickyGitRepositoryStatus? {
-        await Task.detached(priority: .utility) {
+        let cacheKey = cacheKey(cwd: cwd)
+        let status = await Task.detached(priority: .utility) {
             loadSynchronously(cwd: cwd)
         }.value
+        updateCache(status, for: cacheKey)
+        return status
     }
 
     static func loadSynchronously(cwd: String?) -> PickyGitRepositoryStatus? {
@@ -85,6 +98,23 @@ struct PickyGitRepositoryStatus: Equatable {
             return (ahead: 0, behind: 0)
         }
         return (ahead: ahead, behind: behind)
+    }
+
+    private static func updateCache(_ status: PickyGitRepositoryStatus?, for cacheKey: String?) {
+        guard let cacheKey else { return }
+        statusCacheLock.lock()
+        defer { statusCacheLock.unlock() }
+        if let status {
+            statusCache[cacheKey] = status
+        } else {
+            statusCache.removeValue(forKey: cacheKey)
+        }
+    }
+
+    private static func cacheKey(cwd: String?) -> String? {
+        let trimmedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmedCwd.isEmpty else { return nil }
+        return URL(fileURLWithPath: trimmedCwd).standardizedFileURL.path
     }
 
     private static func currentBranchName(cwd: String) -> String {

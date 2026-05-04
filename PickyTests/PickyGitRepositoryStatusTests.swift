@@ -52,6 +52,31 @@ struct PickyGitRepositoryStatusTests {
         #expect(status?.deletions == 1)
         #expect(status?.aheadCount == 0)
         #expect(status?.behindCount == 0)
+        #expect(PickyGitRepositoryStatus.cached(cwd: directory.path) == status)
+    }
+
+    @Test func loadKeepsCachedStatusAvailableBetweenRefreshes() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try runGit(["init", "-b", "main"], cwd: directory)
+        try runGit(["config", "user.email", "picky@example.com"], cwd: directory)
+        try runGit(["config", "user.name", "Picky Tests"], cwd: directory)
+        try runGit(["config", "commit.gpgsign", "false"], cwd: directory)
+        let fileURL = directory.appendingPathComponent("notes.txt")
+        try "one\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        try runGit(["add", "notes.txt"], cwd: directory)
+        try runGit(["commit", "-m", "initial"], cwd: directory)
+
+        #expect(PickyGitRepositoryStatus.cached(cwd: directory.path) == nil)
+        let cleanStatus = await PickyGitRepositoryStatus.load(cwd: directory.path)
+        #expect(PickyGitRepositoryStatus.cached(cwd: directory.path) == cleanStatus)
+
+        try "one\ntwo\n".write(to: fileURL, atomically: true, encoding: .utf8)
+        #expect(PickyGitRepositoryStatus.cached(cwd: directory.path)?.hasUncommittedChanges == false)
+        let dirtyStatus = await PickyGitRepositoryStatus.load(cwd: directory.path)
+        #expect(dirtyStatus?.hasUncommittedChanges == true)
+        #expect(PickyGitRepositoryStatus.cached(cwd: directory.path) == dirtyStatus)
     }
 
     private func makeTemporaryDirectory() throws -> URL {

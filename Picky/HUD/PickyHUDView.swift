@@ -411,6 +411,7 @@ private struct PickySessionCardView: View {
             }
         }
         .onDisappear {
+            print("🎙️ Picky HUD card onDisappear — session=\(session.id)")
             onHoverChanged(false)
             viewModel.endHoveredVoiceFollowUp(sessionID: session.id)
         }
@@ -684,7 +685,7 @@ private struct PickySessionCardView: View {
     }
 
     private var summaryEventTime: String {
-        PickyHUDSummaryEventPolicy.time(for: session.status, sessionElapsed: session.elapsedDescription())
+        PickyHUDSummaryEventPolicy.time(for: session.status, summaryElapsed: session.elapsedSinceUpdate())
     }
 
     private var summaryEventAccent: Color {

@@ -109,10 +109,10 @@ enum PickyHUDSummaryEventPolicy {
         }
     }
 
-    static func time(for status: PickySessionStatus, sessionElapsed: String) -> String {
+    static func time(for status: PickySessionStatus, summaryElapsed: String) -> String {
         switch status {
         case .running, .queued: return "now"
-        default: return sessionElapsed
+        default: return summaryElapsed
         }
     }
 }

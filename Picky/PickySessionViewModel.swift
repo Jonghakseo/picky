@@ -161,7 +161,14 @@ final class PickySessionListViewModel: ObservableObject {
         }
 
         func elapsedDescription(now: Date = Date()) -> String {
-            let seconds = max(0, Int(now.timeIntervalSince(createdAt)))
+            Self.formatElapsed(seconds: max(0, Int(now.timeIntervalSince(createdAt))))
+        }
+
+        func elapsedSinceUpdate(now: Date = Date()) -> String {
+            Self.formatElapsed(seconds: max(0, Int(now.timeIntervalSince(updatedAt))))
+        }
+
+        private static func formatElapsed(seconds: Int) -> String {
             if seconds < 60 { return "<1m" }
             let minutes = seconds / 60
             if minutes < 60 { return "\(minutes)m" }
@@ -661,6 +668,9 @@ final class PickySessionListViewModel: ObservableObject {
         if let hoveredVoiceFollowUpSessionID, sessions.contains(where: { $0.id == hoveredVoiceFollowUpSessionID }) {
             selectionStore.hoveredVoiceFollowUpSessionID = hoveredVoiceFollowUpSessionID
         } else {
+            if hoveredVoiceFollowUpSessionID != nil || selectionStore.hoveredVoiceFollowUpSessionID != nil {
+                pickySessionLog("voice follow-up RESET via sync (hover=\(hoveredVoiceFollowUpSessionID ?? "<nil>"), sessions=\(sessions.count))")
+            }
             hoveredVoiceFollowUpSessionID = nil
             selectionStore.hoveredVoiceFollowUpSessionID = nil
         }

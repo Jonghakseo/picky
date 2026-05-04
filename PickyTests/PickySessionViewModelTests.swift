@@ -401,11 +401,37 @@ struct PickySessionViewModelTests {
     }
 
     @Test func hudSummaryEventTimeReportsNowWhileActive() throws {
-        #expect(PickyHUDSummaryEventPolicy.time(for: .running, sessionElapsed: "2h 25m") == "now")
-        #expect(PickyHUDSummaryEventPolicy.time(for: .queued, sessionElapsed: "5m") == "now")
-        #expect(PickyHUDSummaryEventPolicy.time(for: .completed, sessionElapsed: "2h 25m") == "2h 25m")
-        #expect(PickyHUDSummaryEventPolicy.time(for: .failed, sessionElapsed: "3m") == "3m")
-        #expect(PickyHUDSummaryEventPolicy.time(for: .waiting_for_input, sessionElapsed: "<1m") == "<1m")
+        #expect(PickyHUDSummaryEventPolicy.time(for: .running, summaryElapsed: "2h 25m") == "now")
+        #expect(PickyHUDSummaryEventPolicy.time(for: .queued, summaryElapsed: "5m") == "now")
+        #expect(PickyHUDSummaryEventPolicy.time(for: .completed, summaryElapsed: "2h 25m") == "2h 25m")
+        #expect(PickyHUDSummaryEventPolicy.time(for: .failed, summaryElapsed: "3m") == "3m")
+        #expect(PickyHUDSummaryEventPolicy.time(for: .waiting_for_input, summaryElapsed: "<1m") == "<1m")
+    }
+
+    @Test func sessionCardElapsedSinceUpdateUsesUpdatedAt() throws {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let card = PickySessionListViewModel.SessionCard(
+            id: "s",
+            title: "T",
+            status: .completed,
+            cwd: nil,
+            createdAt: now.addingTimeInterval(-3 * 60 * 60),
+            updatedAt: now.addingTimeInterval(-30),
+            lastSummary: "",
+            thinkingPreview: nil,
+            logPreview: "",
+            lastRequestText: nil,
+            tools: [],
+            artifacts: [],
+            changedFiles: [],
+            pendingExtensionUiRequest: nil,
+            piSessionFilePath: nil,
+            notifyMainOnCompletion: nil,
+            pinned: false,
+            hasRuntimeDetachedFollowUpRejection: false
+        )
+        #expect(card.elapsedDescription(now: now) == "3h 0m")
+        #expect(card.elapsedSinceUpdate(now: now) == "<1m")
     }
 
     @Test func hudDockPanelCentersVerticallyWithinVisibleFrame() throws {

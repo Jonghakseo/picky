@@ -12,7 +12,8 @@ struct PickyHUDView: View {
     var onSizeChange: (CGSize) -> Void = { _ in }
     @State private var pinnedSessionID: String?
     @State private var previewSessionID: String?
-    @State private var hoverExpansionTask: Task<Void, Never>?
+    @State private var isHUDHovered = false
+    @State private var closeExpansionTask: Task<Void, Never>?
 
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {
         Array(viewModel.sessions.prefix(PickyHUDDockLayout.visibleSessionLimit))
@@ -32,6 +33,18 @@ struct PickyHUDView: View {
     }
 
     var body: some View {
+        hudContent
+            .background(PickyHUDSizeReader())
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            .animation(PickyHUDExpansion.animation, value: activeSession?.id)
+            .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: onSizeChange)
+            .onDisappear {
+                closeExpansionTask?.cancel()
+                closeExpansionTask = nil
+            }
+    }
+
+    private var hudContent: some View {
         HStack(alignment: .center, spacing: PickyHUDDockLayout.panelGap) {
             if let activeSession {
                 PickySessionCardView(
@@ -52,65 +65,68 @@ struct PickyHUDView: View {
                     sessions: visibleSessions,
                     activeSessionID: activeSession?.id,
                     pinnedSessionID: pinnedSessionID,
-                    onHoverSession: scheduleDockPreview,
+                    onHoverSession: previewDockSession,
                     onPinSession: pinSession
                 )
                 .frame(width: PickyHUDDockLayout.railWidth)
             }
         }
         .padding(PickyHUDExpansion.outerPadding)
-        .background(PickyHUDSizeReader())
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-        .animation(PickyHUDExpansion.animation, value: activeSession?.id)
-        .onHover { isHovering in
-            if !isHovering { clearTransientPreview() }
-        }
-        .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: onSizeChange)
-        .onDisappear {
-            hoverExpansionTask?.cancel()
-            hoverExpansionTask = nil
+        .onHover(perform: handleHUDHover)
+    }
+
+    private func handleHUDHover(_ isHovering: Bool) {
+        isHUDHovered = isHovering
+        if isHovering {
+            cancelPendingClose()
+        } else {
+            scheduleCloseIfNeeded()
         }
     }
 
-    private func scheduleDockPreview(sessionID: String) {
-        hoverExpansionTask?.cancel()
-        hoverExpansionTask = Task {
+    private func previewDockSession(_ sessionID: String) {
+        isHUDHovered = true
+        cancelPendingClose()
+        previewSessionID = PickyHUDDockLayout.previewSessionIDAfterDockHover(
+            current: previewSessionID,
+            sessionID: sessionID,
+            pinnedID: pinnedSessionID
+        )
+    }
+
+    private func pinSession(_ sessionID: String) {
+        cancelPendingClose()
+        pinnedSessionID = PickyHUDDockLayout.pinnedSessionIDAfterClick(current: pinnedSessionID, clicked: sessionID)
+        previewSessionID = pinnedSessionID == nil && isHUDHovered ? sessionID : nil
+        if pinnedSessionID == nil && !isHUDHovered {
+            scheduleCloseIfNeeded()
+        }
+    }
+
+    private func scheduleCloseIfNeeded() {
+        guard pinnedSessionID == nil else { return }
+        closeExpansionTask?.cancel()
+        closeExpansionTask = Task {
             do {
-                try await Task.sleep(nanoseconds: PickyHUDExpansion.hoverExpansionDelayNanoseconds)
+                try await Task.sleep(nanoseconds: PickyHUDDockLayout.closeDelayNanoseconds)
             } catch {
                 return
             }
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                previewSessionID = PickyHUDExpansion.previewSessionIDAfterHover(
+                previewSessionID = PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(
                     current: previewSessionID,
-                    sessionID: sessionID,
-                    isHovering: true,
-                    delayElapsed: true
+                    pinnedID: pinnedSessionID,
+                    isHUDHovered: isHUDHovered
                 )
-                hoverExpansionTask = nil
+                closeExpansionTask = nil
             }
         }
     }
 
-    private func pinSession(_ sessionID: String) {
-        hoverExpansionTask?.cancel()
-        hoverExpansionTask = nil
-        pinnedSessionID = PickyHUDDockLayout.pinnedSessionIDAfterClick(current: pinnedSessionID, clicked: sessionID)
-        previewSessionID = nil
-    }
-
-    private func clearTransientPreview() {
-        hoverExpansionTask?.cancel()
-        hoverExpansionTask = nil
-        if let previewSessionID {
-            self.previewSessionID = PickyHUDExpansion.previewSessionIDAfterHover(
-                current: previewSessionID,
-                sessionID: previewSessionID,
-                isHovering: false,
-                delayElapsed: false
-            )
-        }
+    private func cancelPendingClose() {
+        closeExpansionTask?.cancel()
+        closeExpansionTask = nil
     }
 }
 

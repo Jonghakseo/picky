@@ -200,11 +200,20 @@ private struct CompanionPanelMessageBubble: View {
             }
             .foregroundColor(message.role == .user ? DS.Colors.accentText : DS.Colors.textSecondary)
 
-            Text(message.text)
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundColor(DS.Colors.textPrimary)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            // Main-agent replies arrive as Markdown (bold, inline code, bullets, fenced
+            // blocks). User prompts are plain text—rendering them through the renderer
+            // would silently change formatting if the user ever typed `*` or `_`, so keep
+            // user bubbles as-is and only parse markdown for assistant turns.
+            if message.role == .assistant {
+                CompanionPanelMarkdownText(markdown: message.text)
+                    .textSelection(.enabled)
+            } else {
+                Text(message.text)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundColor(DS.Colors.textPrimary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
@@ -224,4 +233,70 @@ private struct CompanionPanelMessageBubble: View {
         formatter.timeStyle = .short
         return formatter
     }()
+}
+
+/// Compact markdown renderer for the companion message bubble. Reuses
+/// `PickyReportMarkdownRenderer` for parsing so heading / paragraph / bullet /
+/// fenced-code blocks all render without raw `**`, backticks, or leading dashes
+/// leaking through the way they did in plain `Text`. Fonts are sized for the
+/// 11.5pt chat surface, not the larger report viewer.
+private struct CompanionPanelMarkdownText: View {
+    let markdown: String
+    private let renderer = PickyReportMarkdownRenderer()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(Array(renderer.blocks(from: markdown).enumerated()), id: \.offset) { _, block in
+                blockView(block)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: PickyReportMarkdownRenderer.Block) -> some View {
+        switch block {
+        case .heading(let level, let text):
+            Text(renderer.inlineAttributedString(for: text))
+                .font(font(forHeadingLevel: level))
+                .foregroundStyle(DS.Colors.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+        case .paragraph(let text):
+            Text(renderer.inlineAttributedString(for: text))
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(DS.Colors.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+        case .bullet(let text):
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("•")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(DS.Colors.textSecondary)
+                Text(renderer.inlineAttributedString(for: text))
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(DS.Colors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        case .codeBlock(let text):
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(text.isEmpty ? " " : text)
+                    .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                    .foregroundStyle(DS.Colors.codeText)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(DS.Colors.borderSubtle, lineWidth: 0.8)
+            )
+        }
+    }
+
+    private func font(forHeadingLevel level: Int) -> Font {
+        switch level {
+        case 1: return .system(size: 13.5, weight: .semibold)
+        case 2: return .system(size: 12.5, weight: .semibold)
+        default: return .system(size: 12, weight: .semibold)
+        }
+    }
 }

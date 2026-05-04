@@ -237,6 +237,8 @@ private struct PickyHUDDockRailView: View {
     let onPinSession: (String) -> Void
     let onCreateSideAgent: () -> Void
 
+    @State private var isAddSlotExpanded = false
+
     @ViewBuilder
     var body: some View {
         if sessions.isEmpty {
@@ -256,7 +258,7 @@ private struct PickyHUDDockRailView: View {
                     }
                 }
 
-                addAgentSlotButton
+                collapsibleAddAgentSlot
             }
             .padding(.horizontal, 6)
             .padding(.top, 8)
@@ -286,6 +288,43 @@ private struct PickyHUDDockRailView: View {
         }
         .buttonStyle(.plain)
         .pointerCursor()
+        .accessibilityLabel("Start side agent")
+        .accessibilityHint("Choose a working folder and start an empty side agent")
+    }
+
+    private var collapsibleAddAgentSlot: some View {
+        Button(action: onCreateSideAgent) {
+            ZStack {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(DS.Colors.surface2.opacity(0.55))
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(
+                            DS.Colors.textTertiary.opacity(0.7),
+                            style: StrokeStyle(lineWidth: 1, dash: [3.5, 3])
+                        )
+                    Image(systemName: "plus")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(DS.Colors.textSecondary)
+                }
+                .frame(width: 36, height: 36)
+                .opacity(isAddSlotExpanded ? 1 : 0)
+
+                Capsule(style: .continuous)
+                    .fill(DS.Colors.textTertiary.opacity(0.45))
+                    .frame(width: 18, height: 1)
+                    .opacity(isAddSlotExpanded ? 0 : 1)
+            }
+            .frame(width: 36, height: isAddSlotExpanded ? 36 : 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
+        .onHover { hovering in
+            withAnimation(PickyHUDExpansion.animation) {
+                isAddSlotExpanded = hovering
+            }
+        }
         .accessibilityLabel("Start side agent")
         .accessibilityHint("Choose a working folder and start an empty side agent")
     }

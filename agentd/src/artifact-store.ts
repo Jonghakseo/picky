@@ -55,7 +55,7 @@ export class ArtifactStore {
       id: "report",
       kind: "report",
       title: "Session report",
-      fileName: "report.md",
+      fileName: timestampedReportFileName(session.updatedAt),
       content: renderSessionReport(session),
     });
   }
@@ -79,6 +79,12 @@ export function safeRelativeName(name: string): string {
 function safeSegment(value: string): string {
   if (!value || value.includes("..") || value.includes("/") || value.includes("\\")) throw new Error(`Unsafe path segment: ${value}`);
   return value.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+export function timestampedReportFileName(timestamp: string): string {
+  const parsed = new Date(timestamp);
+  const iso = Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+  return `report-${iso.replace(/[:.]/g, "-")}.md`;
 }
 
 export function renderSessionReport(session: PickyAgentSession): string {

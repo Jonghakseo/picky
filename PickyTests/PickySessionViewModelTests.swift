@@ -77,6 +77,23 @@ private final class FakeTerminalOverlayPresenter: PickyTerminalOverlayPresenting
     }
 }
 
+private final class FakeReportPresenter: PickyReportPresenting {
+    struct Call: Equatable {
+        let sessionID: String
+        let title: String
+        let fileURL: URL
+        let markdown: String
+    }
+
+    private(set) var calls: [Call] = []
+    var error: Error?
+
+    func openReport(sessionID: String, title: String, fileURL: URL, markdown: String) throws {
+        if let error { throw error }
+        calls.append(Call(sessionID: sessionID, title: title, fileURL: fileURL, markdown: markdown))
+    }
+}
+
 private final class FakeTerminalSessionSyncer: PickyTerminalSessionSyncing {
     var snapshots: [String: PickyTerminalSessionSnapshot] = [:]
     var snapshotSequences: [String: [PickyTerminalSessionSnapshot]] = [:]
@@ -919,6 +936,53 @@ struct PickySessionViewModelTests {
         #expect(PickyArtifactReportBuilder.githubPullRequestURLs(in: "will make a PR later").isEmpty)
     }
 
+    @Test func markdownReportRendererParsesReportBlocks() throws {
+        let markdown = """
+        # Report
+
+        Intro **done**
+        - `bash`: 2
+        ```
+        line 1
+        line 2
+        ```
+        """
+        let renderer = PickyReportMarkdownRenderer()
+
+        #expect(renderer.blocks(from: markdown) == [
+            .heading(level: 1, text: "Report"),
+            .paragraph("Intro **done**"),
+            .bullet("`bash`: 2"),
+            .codeBlock("line 1\nline 2"),
+        ])
+        #expect(String(renderer.inlineAttributedString(for: "**Done**").characters) == "Done")
+    }
+
+    @Test func openReportShowsMarkdownInInternalViewer() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-report-viewer-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let reportURL = root.appendingPathComponent("report-2026-05-01T00-00-01-000Z.md")
+        let markdown = "# Session report\n\n## Final answer\nDone"
+        try markdown.write(to: reportURL, atomically: true, encoding: .utf8)
+        let presenter = FakeReportPresenter()
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            artifactPathValidator: PickyArtifactPathValidator(appSupportRoot: root),
+            reportPresenter: presenter
+        )
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithReport(path: reportURL.path, title: "Report task"))))
+        try await settle()
+
+        try await viewModel.openReport(sessionID: "session-1")
+
+        #expect(presenter.calls == [FakeReportPresenter.Call(sessionID: "session-1", title: "Report task", fileURL: reportURL.standardizedFileURL, markdown: markdown)])
+        #expect(viewModel.lastOpenedArtifactPath == reportURL.standardizedFileURL.path)
+        #expect(!client.sentCommands.contains { $0.type == .openArtifact })
+    }
+
     @Test func reportBuilderToolSummaryUsesOnlyToolCallCounts() async throws {
         let session = PickyAgentSession.fixture(
             lastSummary: "Done",
@@ -997,6 +1061,13 @@ private enum EventJSON {
         let encodedNotify = notifyMainOnCompletion.map { ",\"notifyMainOnCompletion\":\($0)" } ?? ""
         return """
         {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedNotify)}}
+        """
+    }
+
+    static func sessionUpdatedWithReport(path: String, title: String = "Investigate current screen") -> String {
+        let encodedPath = String(decoding: try! JSONEncoder().encode(path), as: UTF8.self)
+        return """
+        {"id":"event-session-report","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionUpdated","session":{"id":"session-1","title":"\(title)","status":"completed","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[{"id":"report","kind":"report","title":"Session report","path":\(encodedPath),"url":null,"updatedAt":"2026-05-01T00:00:01.000Z"}],"changedFiles":[]}}
         """
     }
 

@@ -2,7 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ArtifactStore, extractChangedFilesFromExplicitText, extractGithubPullRequestUrls, extractSessionLinkArtifacts, extractSessionLinks, githubPullRequestTitle, renderSessionReport } from "./artifact-store.js";
+import { ArtifactStore, extractChangedFilesFromExplicitText, extractGithubPullRequestUrls, extractSessionLinkArtifacts, extractSessionLinks, githubPullRequestTitle, renderSessionReport, timestampedReportFileName } from "./artifact-store.js";
 import { LogStore } from "./log-store.js";
 
 describe("ArtifactStore", () => {
@@ -14,6 +14,41 @@ describe("ArtifactStore", () => {
     expect(artifact.path).toContain(root);
     await expect(store.read("session-1", "report.md")).resolves.toEqual(Buffer.from("# Done"));
     await expect(store.list("session-1")).resolves.toEqual(["report.md"]);
+  });
+
+  it("writes timestamped report versions while keeping the HUD artifact id stable", async () => {
+    const root = await mkdtemp(join(tmpdir(), "picky-artifacts-"));
+    const store = new ArtifactStore(root);
+    const baseSession = {
+      id: "session-versions",
+      title: "Versioned report",
+      status: "completed" as const,
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      logs: [],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    };
+
+    const first = await store.writeSessionReport({ ...baseSession, updatedAt: "2026-05-01T00:00:01.123Z", finalAnswer: "first answer" });
+    const second = await store.writeSessionReport({ ...baseSession, updatedAt: "2026-05-01T00:00:02.456Z", finalAnswer: "second answer" });
+
+    expect(first).toMatchObject({ id: "report", kind: "report", title: "Session report" });
+    expect(second).toMatchObject({ id: "report", kind: "report", title: "Session report" });
+    expect(first.path).toContain("report-2026-05-01T00-00-01-123Z.md");
+    expect(second.path).toContain("report-2026-05-01T00-00-02-456Z.md");
+    expect(first.path).not.toBe(second.path);
+    expect((await store.list("session-versions")).sort()).toEqual([
+      "report-2026-05-01T00-00-01-123Z.md",
+      "report-2026-05-01T00-00-02-456Z.md",
+    ]);
+    expect((await store.read("session-versions", "report-2026-05-01T00-00-01-123Z.md")).toString("utf8")).toContain("first answer");
+    expect((await store.read("session-versions", "report-2026-05-01T00-00-02-456Z.md")).toString("utf8")).toContain("second answer");
+  });
+
+  it("sanitizes report timestamps for safe artifact filenames", () => {
+    expect(timestampedReportFileName("2026-05-01T00:00:01.123Z")).toBe("report-2026-05-01T00-00-01-123Z.md");
   });
 
   it("generates neutral terminal reports for completed, failed, and cancelled sessions", async () => {

@@ -202,6 +202,7 @@ final class PickySessionListViewModel: ObservableObject {
     private let clipboardWriter: PickyClipboardWriting
     private let terminalPresenter: PickyTerminalOverlayPresenting
     private let terminalSessionSyncer: PickyTerminalSessionSyncing
+    private let reportPresenter: PickyReportPresenting
     private var eventTask: Task<Void, Never>?
     private var voiceFollowUpTargetCancellable: AnyCancellable?
     private var deliveredNotificationKeys = Set<String>()
@@ -215,7 +216,8 @@ final class PickySessionListViewModel: ObservableObject {
         artifactPathValidator: PickyArtifactPathValidator = PickyArtifactPathValidator(appSupportRoot: PickyAppSupport.defaultRoot()),
         clipboardWriter: PickyClipboardWriting = PickyPasteboardClipboardWriter(),
         terminalPresenter: PickyTerminalOverlayPresenting? = nil,
-        terminalSessionSyncer: PickyTerminalSessionSyncing = PickyPiSessionFileSyncer()
+        terminalSessionSyncer: PickyTerminalSessionSyncing = PickyPiSessionFileSyncer(),
+        reportPresenter: PickyReportPresenting? = nil
     ) {
         self.client = client
         self.notificationCenter = notificationCenter
@@ -225,6 +227,7 @@ final class PickySessionListViewModel: ObservableObject {
         self.clipboardWriter = clipboardWriter
         self.terminalPresenter = terminalPresenter ?? PickyTerminalOverlayPresenter.shared
         self.terminalSessionSyncer = terminalSessionSyncer
+        self.reportPresenter = reportPresenter ?? PickyReportViewerPresenter.shared
         self.selectedSessionID = selectionStore.selectedSessionID
         self.hoveredVoiceFollowUpSessionID = selectionStore.hoveredVoiceFollowUpSessionID
         self.hasExplicitSelection = self.selectedSessionID != nil
@@ -340,7 +343,7 @@ final class PickySessionListViewModel: ObservableObject {
         try await answerExtensionUi(sessionID: sessionID, requestID: requestID, value: .object(["cancelled": .bool(true)]))
     }
 
-    func openReport(sessionID: String, workspace: NSWorkspace = .shared) async throws {
+    func openReport(sessionID: String, workspace _: NSWorkspace = .shared) async throws {
         pickySessionLog("open report session=\(sessionID)")
         guard let artifact = sessions.first(where: { $0.id == sessionID })?.reportArtifact else {
             lastError = "Report is not available yet"
@@ -348,9 +351,7 @@ final class PickySessionListViewModel: ObservableObject {
         }
         if let path = artifact.path {
             do {
-                let url = try artifactPathValidator.validateReadableFile(path: path)
-                lastOpenedArtifactPath = url.path
-                workspace.open(url)
+                try openReportFile(sessionID: sessionID, path: path)
             } catch {
                 lastError = error.localizedDescription
                 throw error
@@ -358,6 +359,14 @@ final class PickySessionListViewModel: ObservableObject {
         } else {
             try await client.send(PickyCommandEnvelope(type: .openArtifact, sessionId: sessionID, artifactId: artifact.id))
         }
+    }
+
+    private func openReportFile(sessionID: String, path: String) throws {
+        let url = try artifactPathValidator.validateReadableFile(path: path)
+        let markdown = try String(contentsOf: url, encoding: .utf8)
+        let title = (sessions + archivedSessions).first(where: { $0.id == sessionID })?.title ?? "Session report"
+        lastOpenedArtifactPath = url.path
+        try reportPresenter.openReport(sessionID: sessionID, title: title, fileURL: url, markdown: markdown)
     }
 
     func copyTerminalResumeCommand(sessionID: String) {
@@ -571,11 +580,9 @@ final class PickySessionListViewModel: ObservableObject {
                 }
                 card.updatedAt = artifact.updatedAt
             }
-        case .artifactOpened(_, _, let path):
+        case .artifactOpened(let sessionId, _, let path):
             do {
-                let url = try artifactPathValidator.validateReadableFile(path: path)
-                lastOpenedArtifactPath = url.path
-                NSWorkspace.shared.open(url)
+                try openReportFile(sessionID: sessionId, path: path)
             } catch {
                 lastError = error.localizedDescription
             }

@@ -46,6 +46,16 @@ class FakeSession extends EventEmitter {
   }
 }
 
+class SilentSlashCommandSession extends FakeSession {
+  override async prompt(text: string, options?: unknown): Promise<void> {
+    this.prompts.push(text);
+    this.promptOptions.push(options);
+    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    // No events emitted - simulates Pi handling /slash extension commands or input handlers
+    // that return action: "handled" without starting an agent turn.
+  }
+}
+
 class BlockingPromptSession extends FakeSession {
   private promptFinished: Promise<void>;
   private finishPrompt!: () => void;
@@ -206,6 +216,33 @@ describe("PiSdkRuntime", () => {
     expect(event?.request.questions).toHaveLength(1);
     await handle.answerExtensionUi?.(event!.request.id, { choice: "B" });
     await expect(answerPromise).resolves.toEqual({ choice: "B" });
+  });
+
+  it("synthesizes completed status when Pi handles a slash extension command without emitting any events", async () => {
+    const fakeSession = new SilentSlashCommandSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-slash" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    await handle.followUp({ text: "/diff-review", imagePaths: [] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(statusEvents(events)).toEqual([{ type: "status", status: "completed", summary: "Handled without agent turn" }]);
+  });
+
+  it("does not synthesize completed when the prompt was queued during an active stream", async () => {
+    const fakeSession = new SilentSlashCommandSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-queued-slash" });
+    fakeSession.isStreaming = true;
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    await handle.followUp({ text: "queued slash command", imagePaths: [] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(statusEvents(events)).toEqual([]);
   });
 
   it("emits completed from final turn_end when no queues or pending UI remain", async () => {

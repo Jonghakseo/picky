@@ -104,11 +104,14 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
   async prompt(prompt: BuiltPrompt): Promise<void> {
     logAgentd("pi prompt", { sessionId: this.id, promptChars: prompt.text.length, images: prompt.imagePaths?.length ?? 0 });
+    const wasStreaming = this.runtime.session.isStreaming;
     try {
       await this.runtime.session.prompt(prompt.text, { images: await imageOptions(prompt.imagePaths), source: "rpc" });
     } catch (error) {
       this.emit({ type: "status", status: "failed", summary: messageOf(error) });
+      return;
     }
+    this.maybeEmitImmediateCompletion(wasStreaming);
   }
 
   async followUp(prompt: BuiltPrompt): Promise<void> {
@@ -217,7 +220,9 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     text: string,
     options: { images?: Awaited<ReturnType<typeof imageOptions>>; source: "rpc"; streamingBehavior?: "steer" | "followUp" },
   ): Promise<void> {
+    const wasStreaming = this.runtime.session.isStreaming;
     let accepted = false;
+    let promptResolved = false;
     let settled = false;
     let resolveAccepted!: () => void;
     let rejectAccepted!: (error: unknown) => void;
@@ -246,8 +251,12 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     });
 
     void promptPromise
-      .then(resolveOnce)
+      .then(() => {
+        promptResolved = true;
+        resolveOnce();
+      })
       .catch((error) => {
+        promptResolved = true;
         if (accepted) {
           this.emit({ type: "status", status: "failed", summary: messageOf(error) });
           return;
@@ -256,6 +265,19 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       });
 
     await acceptedPromise;
+
+    if (promptResolved) this.maybeEmitImmediateCompletion(wasStreaming);
+  }
+
+  // Pi handles `/slash` extension commands and input handlers that return `handled` synchronously
+  // inside `session.prompt()` without emitting any agent_start / turn_end / agent_end events. The
+  // prompt promise resolves immediately and `isStreaming` stays false, so the caller would otherwise
+  // be stuck in a permanent "running" state on the Picky side. Synthesize a completed status when we
+  // detect that no agent turn was actually started.
+  private maybeEmitImmediateCompletion(wasStreaming: boolean): void {
+    if (wasStreaming) return;
+    if (this.runtime.session.isStreaming) return;
+    this.emit({ type: "status", status: "completed", summary: "Handled without agent turn" });
   }
 
   private createBridge(): ExtensionUiBridge {

@@ -27,14 +27,17 @@ logAgentd("startup", { port, runtime: useMockRuntime ? "mock" : "pi", appSupport
 let supervisor: SessionSupervisor;
 const pointerTool = createPickyShowPointerTool(async (request) => supervisor.requestPointerOverlay(request));
 const askUserQuestionTool = createPickyAskUserQuestionTool();
-const runtime = useMockRuntime ? new MockRuntime() : new PiSdkRuntime({ customTools: [pointerTool, askUserQuestionTool] });
+// Side Pi agents only get `ask_user_question` so they can request structured user input;
+// pointer/handoff/side-session tools are reserved for the always-on main agent.
+const runtime = useMockRuntime ? new MockRuntime() : new PiSdkRuntime({ customTools: [askUserQuestionTool] });
 const mainRuntime = useMockRuntime
   ? undefined
   : new PiSdkRuntime({
       thinkingLevel: "medium",
+      // Main agent never opens an `ask_user_question` dialog itself; deeper questions belong
+      // to the side agent it hands off to.
       customTools: [
         pointerTool,
-        askUserQuestionTool,
         createPickyHandoffTool(async (request) => {
           const context = supervisor.currentMainContext();
           if (!context) throw new Error("No active Picky main-agent context to hand off.");

@@ -157,7 +157,17 @@ private enum PickyReportTab: String, CaseIterable, Identifiable {
 
 struct PickyMarkdownReportView: View {
     let markdown: String
+    /// Multiplier applied to every font size in this view. 1.0 maps to the report's
+    /// readable defaults; ⌘+ / ⌘- on the report panel update the model and re-render
+    /// this view at the new scale.
+    var fontScale: Double = 1.0
     private let renderer = PickyReportMarkdownRenderer()
+
+    /// Body copy size at scale 1.0. Bumped from the original 13.5pt because users
+    /// reported the dense report column was hard to read at default macOS Retina
+    /// scaling. Heading sizes derive from this so the type ladder stays balanced.
+    private static let bodyBaseSize: CGFloat = 15
+    private static let codeBaseSize: CGFloat = 14
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -180,23 +190,23 @@ struct PickyMarkdownReportView: View {
                 .padding(.top, level == 1 ? 2 : 8)
         case .paragraph(let text):
             Text(renderer.inlineAttributedString(for: text))
-                .font(.system(size: 13.5, weight: .regular, design: .default))
+                .font(.system(size: scaled(Self.bodyBaseSize), weight: .regular, design: .default))
                 .foregroundStyle(DS.Colors.textPrimary.opacity(0.92))
                 .lineSpacing(3)
         case .bullet(let text):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("•")
-                    .font(.system(size: 13.5, weight: .semibold))
+                    .font(.system(size: scaled(Self.bodyBaseSize), weight: .semibold))
                     .foregroundStyle(DS.Colors.textSecondary)
                 Text(renderer.inlineAttributedString(for: text))
-                    .font(.system(size: 13.5, weight: .regular, design: .default))
+                    .font(.system(size: scaled(Self.bodyBaseSize), weight: .regular, design: .default))
                     .foregroundStyle(DS.Colors.textPrimary.opacity(0.92))
                     .lineSpacing(3)
             }
         case .codeBlock(let text):
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(text.isEmpty ? " " : text)
-                    .font(.system(size: 12.5, weight: .regular, design: .monospaced))
+                    .font(.system(size: scaled(Self.codeBaseSize), weight: .regular, design: .monospaced))
                     .foregroundStyle(DS.Colors.codeText)
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -211,17 +221,31 @@ struct PickyMarkdownReportView: View {
 
     private func font(forHeadingLevel level: Int) -> Font {
         switch level {
-        case 1: .system(size: 24, weight: .semibold, design: .rounded)
-        case 2: .system(size: 18, weight: .semibold, design: .rounded)
-        case 3: .system(size: 16, weight: .semibold, design: .rounded)
-        default: .system(size: 14.5, weight: .semibold, design: .rounded)
+        case 1: .system(size: scaled(26), weight: .semibold, design: .rounded)
+        case 2: .system(size: scaled(20), weight: .semibold, design: .rounded)
+        case 3: .system(size: scaled(17), weight: .semibold, design: .rounded)
+        default: .system(size: scaled(15.5), weight: .semibold, design: .rounded)
         }
+    }
+
+    private func scaled(_ size: CGFloat) -> CGFloat {
+        size * CGFloat(fontScale)
     }
 }
 
 @MainActor
 protocol PickyReportPresenting: AnyObject {
     func openReport(sessionID: String, title: String, fileURL: URL, markdown: String) throws
+}
+
+/// Window-scoped persistence hook so each open report panel can write its zoom
+/// level back to the shared settings file the moment the user taps ⌘+ / ⌘-.
+/// The presenter wires this to a real `PickySettingsStore`; tests can substitute
+/// a no-op closure.
+@MainActor
+struct PickyMarkdownReportFontScalePersister {
+    let load: () -> Double
+    let save: (Double) -> Void
 }
 
 @MainActor
@@ -239,13 +263,17 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
     /// runs from `CompanionAppDelegate`. The fallback default keeps unit tests and
     /// previews working without crashing if `configure` was never called.
     private var appearanceStore = PickyAppearanceStore()
+    /// Shared settings store used to load/persist the markdown report zoom level.
+    /// Falls back to the default settings location for tests and previews.
+    private var settingsStore = PickySettingsStore()
 
     private init() {}
 
     /// Wires the live appearance store so the report panel flips with the rest of
     /// the app. Called once from `CompanionAppDelegate` at startup.
-    func configure(appearanceStore: PickyAppearanceStore) {
+    func configure(appearanceStore: PickyAppearanceStore, settingsStore: PickySettingsStore = PickySettingsStore()) {
         self.appearanceStore = appearanceStore
+        self.settingsStore = settingsStore
     }
 
     func openReport(sessionID: String, title: String, fileURL: URL, markdown: String) throws {
@@ -258,7 +286,12 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
             return
         }
 
-        let model = PickyReportViewerModel(title: title, fileURL: fileURL, markdown: markdown)
+        let model = PickyReportViewerModel(
+            title: title,
+            fileURL: fileURL,
+            markdown: markdown,
+            fontScalePersister: makeFontScalePersister()
+        )
         let panel = PickyReportPanel(
             contentRect: targetFrame(),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
@@ -297,6 +330,18 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
         records = records.filter { $0.value.panel !== panel }
     }
 
+    private func makeFontScalePersister() -> PickyMarkdownReportFontScalePersister {
+        let store = settingsStore
+        return PickyMarkdownReportFontScalePersister(
+            load: { store.load().fontScales.markdownReport },
+            save: { newScale in
+                var current = store.load()
+                current.fontScales.markdownReport = PickyFontScales.clamped(newScale)
+                try? store.save(current)
+            }
+        )
+    }
+
     private func targetFrame() -> NSRect {
         let screen = NSScreen.main ?? NSScreen.screens.first
         let visibleFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
@@ -318,12 +363,24 @@ final class PickyReportViewerModel: ObservableObject {
     @Published private(set) var markdown: String
     @Published private(set) var document: PickyReportDocument
     @Published private(set) var revision = UUID()
+    /// Live zoom multiplier for the markdown body. Bound to `PickyFontScales.minimum/maximum`
+    /// and rounded to one decimal so ⌘+ taps don't drift due to floating-point.
+    @Published private(set) var fontScale: Double
 
-    init(title: String, fileURL: URL, markdown: String) {
+    private let fontScalePersister: PickyMarkdownReportFontScalePersister?
+
+    init(
+        title: String,
+        fileURL: URL,
+        markdown: String,
+        fontScalePersister: PickyMarkdownReportFontScalePersister? = nil
+    ) {
         self.title = title
         self.fileURL = fileURL
         self.markdown = markdown
         self.document = PickyReportDocument(markdown: markdown)
+        self.fontScalePersister = fontScalePersister
+        self.fontScale = PickyFontScales.clamped(fontScalePersister?.load() ?? PickyFontScales.defaults.markdownReport)
     }
 
     func update(title: String, fileURL: URL, markdown: String) {
@@ -332,6 +389,17 @@ final class PickyReportViewerModel: ObservableObject {
         self.markdown = markdown
         self.document = PickyReportDocument(markdown: markdown)
         self.revision = UUID()
+    }
+
+    func zoomIn() { setFontScale(fontScale + PickyFontScales.step) }
+    func zoomOut() { setFontScale(fontScale - PickyFontScales.step) }
+    func resetZoom() { setFontScale(PickyFontScales.defaults.markdownReport) }
+
+    private func setFontScale(_ newValue: Double) {
+        let clamped = PickyFontScales.clamped(newValue)
+        guard clamped != fontScale else { return }
+        fontScale = clamped
+        fontScalePersister?.save(clamped)
     }
 }
 
@@ -350,6 +418,24 @@ struct PickyReportViewerWindowView: View {
         }
         .onChange(of: model.revision) { _, _ in selectedTab = .answer }
         .background(DS.Colors.background)
+        .background(zoomKeyboardShortcuts)
+    }
+
+    /// Hidden buttons that bind ⌘+ / ⌘- / ⌘0 to the model's zoom controls.
+    /// Placed in a `.background(...)` of zero size so they exist in the responder chain
+    /// without taking layout space or showing focus rings.
+    private var zoomKeyboardShortcuts: some View {
+        ZStack {
+            Button("Zoom In") { model.zoomIn() }
+                .keyboardShortcut("=", modifiers: .command)
+            Button("Zoom Out") { model.zoomOut() }
+                .keyboardShortcut("-", modifiers: .command)
+            Button("Reset Zoom") { model.resetZoom() }
+                .keyboardShortcut("0", modifiers: .command)
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -359,13 +445,13 @@ struct PickyReportViewerWindowView: View {
             if model.document.answerMarkdown.isEmpty {
                 emptyState("No final answer captured for this report.")
             } else {
-                PickyMarkdownReportView(markdown: model.document.answerMarkdown)
+                PickyMarkdownReportView(markdown: model.document.answerMarkdown, fontScale: model.fontScale)
             }
         case .metadata:
             if model.document.metadataMarkdown.isEmpty {
                 emptyState("No metadata is available for this report.")
             } else {
-                PickyMarkdownReportView(markdown: model.document.metadataMarkdown)
+                PickyMarkdownReportView(markdown: model.document.metadataMarkdown, fontScale: model.fontScale)
             }
         }
     }

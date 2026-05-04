@@ -84,6 +84,16 @@ enum PickyPiTerminalCommand {
     ].joined(separator: ":")
 }
 
+/// Window-scoped persistence hook so each open terminal panel can write its zoom
+/// level back to the shared settings file the moment the user taps ⌘+ / ⌘-.
+/// Mirrors `PickyMarkdownReportFontScalePersister` so the two overlays follow the
+/// same pattern.
+@MainActor
+struct PickyTerminalFontScalePersister {
+    let load: () -> Double
+    let save: (Double) -> Void
+}
+
 @MainActor
 final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
     static let shared = PickyTerminalOverlayPresenter()
@@ -99,13 +109,17 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
     /// runs from `CompanionAppDelegate`. The fallback default keeps unit tests and
     /// previews working without crashing if `configure` was never called.
     private var appearanceStore = PickyAppearanceStore()
+    /// Shared settings store used to load/persist the terminal zoom level.
+    /// Falls back to the default settings location for tests and previews.
+    private var settingsStore = PickySettingsStore()
 
     private init() {}
 
     /// Wires the live appearance store so the terminal panel flips with the rest of
     /// the app. Called once from `CompanionAppDelegate` at startup.
-    func configure(appearanceStore: PickyAppearanceStore) {
+    func configure(appearanceStore: PickyAppearanceStore, settingsStore: PickySettingsStore = PickySettingsStore()) {
         self.appearanceStore = appearanceStore
+        self.settingsStore = settingsStore
     }
 
     func openTerminal(
@@ -125,7 +139,8 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
         let model = PickyTerminalModel(
             title: title,
             sessionFilePath: sessionFilePath,
-            cwd: cwd
+            cwd: cwd,
+            fontScalePersister: makeFontScalePersister()
         )
         try model.prepare()
 
@@ -171,6 +186,18 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
         records = records.filter { $0.value.panel !== panel }
     }
 
+    private func makeFontScalePersister() -> PickyTerminalFontScalePersister {
+        let store = settingsStore
+        return PickyTerminalFontScalePersister(
+            load: { store.load().fontScales.terminal },
+            save: { newScale in
+                var current = store.load()
+                current.fontScales.terminal = PickyFontScales.clamped(newScale)
+                try? store.save(current)
+            }
+        )
+    }
+
     private func targetFrame() -> NSRect {
         let screen = NSScreen.main ?? NSScreen.screens.first
         let visibleFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
@@ -210,6 +237,10 @@ final class PickyTerminalPanelDelegate: NSObject, NSWindowDelegate {
 @MainActor
 final class PickyTerminalModel: ObservableObject {
     @Published private(set) var statusText = "Starting pi --session…"
+    /// Live zoom multiplier for the SwiftTerm grid font. Bound to
+    /// `PickyFontScales.minimum/maximum` and rounded to one decimal so ⌘+ taps
+    /// don't drift. Persisted via `fontScalePersister` whenever the user changes it.
+    @Published private(set) var fontScale: Double
 
     let title: String
     let sessionFilePath: String
@@ -217,11 +248,30 @@ final class PickyTerminalModel: ObservableObject {
 
     private weak var terminalView: LocalProcessTerminalView?
     private var didStartProcess = false
+    private let fontScalePersister: PickyTerminalFontScalePersister?
 
-    init(title: String, sessionFilePath: String, cwd: String?) {
+    init(
+        title: String,
+        sessionFilePath: String,
+        cwd: String?,
+        fontScalePersister: PickyTerminalFontScalePersister? = nil
+    ) {
         self.title = title
         self.sessionFilePath = sessionFilePath
         self.cwd = cwd
+        self.fontScalePersister = fontScalePersister
+        self.fontScale = PickyFontScales.clamped(fontScalePersister?.load() ?? PickyFontScales.defaults.terminal)
+    }
+
+    func zoomIn() { setFontScale(fontScale + PickyFontScales.step) }
+    func zoomOut() { setFontScale(fontScale - PickyFontScales.step) }
+    func resetZoom() { setFontScale(PickyFontScales.defaults.terminal) }
+
+    private func setFontScale(_ newValue: Double) {
+        let clamped = PickyFontScales.clamped(newValue)
+        guard clamped != fontScale else { return }
+        fontScale = clamped
+        fontScalePersister?.save(clamped)
     }
 
     func prepare() throws {
@@ -317,6 +367,24 @@ struct PickyTerminalOverlayView: View {
                 .padding(.bottom, 12)
         }
         .background(DS.Colors.background)
+        .background(zoomKeyboardShortcuts)
+    }
+
+    /// Hidden buttons that bind ⌘+ / ⌘- / ⌘0 to the model's zoom controls.
+    /// Placed in a `.background(...)` of zero size so they exist in the responder chain
+    /// without taking layout space or showing focus rings.
+    private var zoomKeyboardShortcuts: some View {
+        ZStack {
+            Button("Zoom In") { model.zoomIn() }
+                .keyboardShortcut("=", modifiers: .command)
+            Button("Zoom Out") { model.zoomOut() }
+                .keyboardShortcut("-", modifiers: .command)
+            Button("Reset Zoom") { model.resetZoom() }
+                .keyboardShortcut("0", modifiers: .command)
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
     }
 }
 
@@ -331,7 +399,7 @@ struct PickySwiftTermViewRepresentable: NSViewRepresentable {
         let terminalView = PickySwiftTermView(frame: .zero)
         terminalView.processDelegate = context.coordinator
         terminalView.autoresizingMask = [.width, .height]
-        terminalView.configurePickyAppearance()
+        terminalView.configurePickyAppearance(fontScale: model.fontScale)
         DispatchQueue.main.async {
             terminalView.window?.makeFirstResponder(terminalView)
         }
@@ -341,6 +409,10 @@ struct PickySwiftTermViewRepresentable: NSViewRepresentable {
 
     func updateNSView(_ terminalView: PickySwiftTermView, context: Context) {
         terminalView.processDelegate = context.coordinator
+        // Re-applies font sizing whenever the model's `fontScale` changes (⌘+ / ⌘- / ⌘0).
+        // Idempotent when the scale hasn't changed because `applyFontScale` re-uses the
+        // same NSFont instance.
+        terminalView.applyFontScale(model.fontScale)
         if terminalView.window?.firstResponder == nil {
             DispatchQueue.main.async {
                 terminalView.window?.makeFirstResponder(terminalView)
@@ -374,13 +446,25 @@ struct PickySwiftTermViewRepresentable: NSViewRepresentable {
 }
 
 final class PickySwiftTermView: LocalProcessTerminalView {
-    func configurePickyAppearance() {
-        font = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
+    /// Cell size at scale 1.0. Bumped from the original 11.5pt because users reported
+    /// the in-app terminal felt cramped on Retina displays compared to Ghostty.
+    static let baseFontSize: CGFloat = 13
+
+    func configurePickyAppearance(fontScale: Double = 1.0) {
+        applyFontScale(fontScale)
         applyAppearanceColors()
         backspaceSendsControlH = false
         caretViewTracksFocus = false
         antiAliasCustomBlockGlyphs = false
         postsFrameChangedNotifications = true
+    }
+
+    /// Re-renders the SwiftTerm grid at `Self.baseFontSize * fontScale`. SwiftTerm
+    /// reflows the cell grid the next time it draws, so callers don't need to
+    /// invalidate the view manually.
+    func applyFontScale(_ scale: Double) {
+        let size = Self.baseFontSize * CGFloat(scale)
+        font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
     }
 
     /// Re-resolves SwiftTerm's native colors from `effectiveAppearance` so the

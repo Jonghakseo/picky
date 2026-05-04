@@ -77,11 +77,12 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             daemonLauncher.start()
             hudOverlayManager.start()
         }
-        // Wire the appearance store into singletons that live outside the SwiftUI tree
-        // (markdown report viewer / terminal overlay) so every secondary NSPanel flips
-        // with the rest of the app.
-        PickyReportViewerPresenter.shared.configure(appearanceStore: appearanceStore)
-        PickyTerminalOverlayPresenter.shared.configure(appearanceStore: appearanceStore)
+        // Wire the appearance store and shared settings store into singletons that live
+        // outside the SwiftUI tree (markdown report viewer / terminal overlay) so every
+        // secondary NSPanel flips with the rest of the app and the user's per-panel zoom
+        // level (⌘+ / ⌘- / ⌘0) round-trips through the same settings file.
+        PickyReportViewerPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
+        PickyTerminalOverlayPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
         menuBarPanelManager = MenuBarPanelManager(companionManager: companionManager, appearanceStore: appearanceStore)
         companionManager.start()
         // Auto-open the panel only when the user still needs to grant permissions.

@@ -28,6 +28,64 @@ struct PickySettingsPolishTests {
         #expect(store.load().appearance == .dark)
     }
 
+    @Test func fontScalesClampingRoundsAndBoundsValuesIntoTheSupportedRange() throws {
+        #expect(PickyFontScales.clamped(1.0) == 1.0)
+        #expect(PickyFontScales.clamped(0.0) == PickyFontScales.minimum)
+        #expect(PickyFontScales.clamped(99) == PickyFontScales.maximum)
+        // 0.1 step taps should accumulate exactly because clamped() rounds to one decimal.
+        var value = 1.0
+        for _ in 0..<3 { value = PickyFontScales.clamped(value + 0.1) }
+        #expect(value == 1.3)
+    }
+
+    @Test func settingsLoadDefaultsFontScalesToOneWhenLegacyFileLacksField() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Settings", isDirectory: true), withIntermediateDirectories: true)
+        let url = root.appendingPathComponent("Settings", isDirectory: true).appendingPathComponent("settings.json")
+        let legacyJSON = """
+        {
+          "defaultCwd": "/tmp",
+          "worktreeParent": "",
+          "preferredToolVisibility": "visible in context only",
+          "readOnlyInvestigationPreference": true,
+          "daemonPath": "/tmp/agentd",
+          "logPath": "/tmp/logs"
+        }
+        """
+        try legacyJSON.data(using: .utf8)!.write(to: url)
+        let store = PickySettingsStore(url: url)
+
+        let loaded = store.load().fontScales
+        #expect(loaded.markdownReport == 1.0)
+        #expect(loaded.terminal == 1.0)
+    }
+
+    @Test func settingsRoundTripPreservesAndClampsFontScales() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.defaultCwd = project.path
+        settings.worktreeParent = project.path
+        settings.fontScales = PickyFontScales(markdownReport: 1.4, terminal: 1.8)
+        try store.save(settings)
+
+        let reloaded = store.load().fontScales
+        #expect(reloaded.markdownReport == 1.4)
+        #expect(reloaded.terminal == 1.8)
+
+        // Out-of-range values stored by an older or corrupted client get clamped on load
+        // so the UI never starts in a 0.1× or 10× broken state.
+        let url = root.appendingPathComponent("Settings", isDirectory: true).appendingPathComponent("settings.json")
+        let raw = try String(contentsOf: url)
+        let mutated = raw.replacingOccurrences(of: "\"markdownReport\" : 1.4", with: "\"markdownReport\" : 99")
+        try mutated.data(using: .utf8)!.write(to: url)
+        let clamped = store.load().fontScales
+        #expect(clamped.markdownReport == PickyFontScales.maximum)
+        #expect(clamped.terminal == 1.8)
+    }
+
     @Test func settingsRoundTripPreservesAppearanceMode() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         let project = root.appendingPathComponent("project", isDirectory: true)

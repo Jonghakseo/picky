@@ -59,8 +59,46 @@ describe("ExtensionUiBridge", () => {
     expect(request.method).toBe("notify");
     expect(request.prompt).toBe("Saved");
   });
+
+  it("cancels a dialog immediately when its AbortSignal is already aborted", async () => {
+    const bridge = new ExtensionUiBridge("session-1");
+    const controller = new AbortController();
+    controller.abort();
+
+    const input = bridge.createContext().input("Name", "placeholder", { signal: controller.signal });
+
+    await expect(Promise.race([input, delay(20).then(() => "timed-out")])).resolves.toBeUndefined();
+  });
+
+  it("does not throw later when an answered dialog AbortSignal is aborted", async () => {
+    const bridge = new ExtensionUiBridge("session-1");
+    const controller = new AbortController();
+    const requestPromise = nextRequest(bridge);
+    const input = bridge.createContext().input("Name", "placeholder", { signal: controller.signal });
+    const request = await requestPromise;
+
+    bridge.answer(request.id, { value: "Alice" });
+    await expect(input).resolves.toBe("Alice");
+    await expectNoUncaughtException(() => controller.abort());
+  });
 });
 
 function nextRequest(bridge: ExtensionUiBridge): Promise<{ id: string; sessionId: string; method: string; prompt?: string; questions?: Array<{ id?: string; options?: Array<{ value: string; label: string }> }> }> {
   return new Promise((resolve) => bridge.once("request", (request) => resolve(request)));
+}
+
+async function expectNoUncaughtException(action: () => void): Promise<void> {
+  let handler: ((error: Error) => void) | undefined;
+  const uncaught = new Promise<string>((resolve) => {
+    handler = (error) => resolve(error.message);
+    process.once("uncaughtException", handler);
+  });
+  action();
+  const result = await Promise.race([uncaught, delay(20).then(() => undefined)]);
+  if (handler) process.off("uncaughtException", handler);
+  expect(result).toBeUndefined();
+}
+
+async function delay(milliseconds: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

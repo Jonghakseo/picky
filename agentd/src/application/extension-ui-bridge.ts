@@ -42,6 +42,7 @@ interface PendingDialog {
   method: DialogMethod;
   resolve: (value: unknown) => void;
   timer?: NodeJS.Timeout;
+  cleanup?: () => void;
 }
 
 export class ExtensionUiBridge extends EventEmitter {
@@ -88,26 +89,38 @@ export class ExtensionUiBridge extends EventEmitter {
   }
 
   answer(requestId: string, answer: ExtensionUiAnswer): void {
-    const pending = this.pending.get(requestId);
-    if (!pending) throw new Error(`Unknown extension UI request: ${requestId}`);
-    this.pending.delete(requestId);
-    if (pending.timer) clearTimeout(pending.timer);
-    pending.resolve(this.mapAnswer(pending.method, answer));
+    if (!this.resolveDialog(requestId, answer)) throw new Error(`Unknown extension UI request: ${requestId}`);
   }
 
   private dialog(method: DialogMethod, payload: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+    if (signal?.aborted) return Promise.resolve(this.mapAnswer(method, { cancelled: true }));
+
     const id = `ext-ui-${randomUUID()}`;
     const request = this.request(id, method, payload);
     return new Promise((resolve) => {
       const pending: PendingDialog = { method, resolve };
       const timeout = typeof payload.timeout === "number" ? payload.timeout : undefined;
       if (timeout && timeout > 0) {
-        pending.timer = setTimeout(() => this.answer(id, { cancelled: true }), timeout);
+        pending.timer = setTimeout(() => this.resolveDialog(id, { cancelled: true }), timeout);
       }
-      if (signal) signal.addEventListener("abort", () => this.answer(id, { cancelled: true }), { once: true });
+      if (signal) {
+        const abortListener = () => this.resolveDialog(id, { cancelled: true });
+        pending.cleanup = () => signal.removeEventListener("abort", abortListener);
+        signal.addEventListener("abort", abortListener, { once: true });
+      }
       this.pending.set(id, pending);
       this.emit("request", request, true);
     });
+  }
+
+  private resolveDialog(requestId: string, answer: ExtensionUiAnswer): boolean {
+    const pending = this.pending.get(requestId);
+    if (!pending) return false;
+    this.pending.delete(requestId);
+    if (pending.timer) clearTimeout(pending.timer);
+    pending.cleanup?.();
+    pending.resolve(this.mapAnswer(pending.method, answer));
+    return true;
   }
 
   private fireAndForget(method: ExtensionUiMethod, payload: Record<string, unknown>): void {

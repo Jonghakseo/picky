@@ -51,8 +51,13 @@ export class RuntimeEventHandler {
     const terminal = ["completed", "failed", "cancelled"].includes(event.status);
     // Prefer the final assistant message carried by the runtime event (Pi turn_end/agent_end)
     // over the streamed assistant_delta accumulator, which would otherwise concatenate every
-    // intermediate message in a multi-turn ReAct loop.
-    const finalAnswer = terminal ? (cleanFinalAnswer(event.finalAnswer) ?? cleanFinalAnswer(this.assistantDrafts.get(sessionId))) : undefined;
+    // intermediate message in a multi-turn ReAct loop. Failed runtime events often carry only a
+    // diagnostic summary while the draft is merely partial output, so do not promote the draft to
+    // finalAnswer for failures unless Pi explicitly provides event.finalAnswer.
+    const explicitFinalAnswer = cleanFinalAnswer(event.finalAnswer);
+    const finalAnswer = terminal
+      ? (explicitFinalAnswer ?? (event.status === "failed" ? undefined : cleanFinalAnswer(this.assistantDrafts.get(sessionId))))
+      : undefined;
     const currentSession = this.dependencies.getSession(sessionId);
     if (terminal && ["completed", "failed", "cancelled"].includes(currentSession.status)) return;
 

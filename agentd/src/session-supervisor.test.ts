@@ -347,6 +347,22 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(side.id)?.status).toBe("failed");
   });
 
+  it("keeps the runtime failure summary instead of replacing it with partial streamed text", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("failure after partial output"));
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "부분 출력만 스트리밍됨" });
+    runtime.handle?.emit({ type: "status", status: "failed", summary: "Tool crashed before completion" });
+    await settle();
+
+    const failed = supervisor.get(session.id)!;
+    expect(failed.status).toBe("failed");
+    expect(failed.lastSummary).toBe("Tool crashed before completion");
+  });
+
   it("reattaches cancelled persisted side sessions from Pi session files before steering", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);

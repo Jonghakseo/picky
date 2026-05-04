@@ -22,4 +22,12 @@ describe("immediateQuickReply", () => {
     expect(immediateQuickReply(context("이 화면 분석해줘", 3))).toBeUndefined();
     expect(immediateQuickReply(context("이 화면에 있는 이슈 정리해줘", 3))).toBeUndefined();
   });
+
+  it("does not route test-like utterances through deterministic quick-reply regexes", () => {
+    expect(immediateQuickReply(context("테스트"))).toBeUndefined();
+    expect(immediateQuickReply(context("마이크 테스트"))).toBeUndefined();
+    expect(immediateQuickReply(context("테스트 코드 작성해줘"))).toBeUndefined();
+    expect(immediateQuickReply(context("test the codebase for obvious bugs"))).toBeUndefined();
+    expect(immediateQuickReply(context("마이크 설정 코드 수정해줘"))).toBeUndefined();
+  });
 });

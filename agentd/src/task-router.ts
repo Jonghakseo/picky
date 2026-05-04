@@ -85,8 +85,8 @@ function buildRouterPrompt(context: PickyContextPacket): string {
     '{"route":"handoff","reason":"why this needs a long-running agent"}',
     "",
     "Use quick_reply only when you can answer in 1-2 short sentences without tools, files, codebase access, browser/web lookup, screenshot analysis, MCPs, shell commands, or multi-step work.",
-    "A pure capability/check question like '이 화면 보여?', '내 화면 보여?', or '마이크 테스트' is quick_reply: acknowledge whether captured screenshots/audio are present; do not open a long-running agent just to say yes.",
-    "Use handoff for debugging, coding, investigation, modifications, file/repo tasks, web/Sentry/Slack/Notion/DB context, requests to describe/analyze/summarize what is on screen, ambiguous tasks needing context, or anything that may take longer than a short answer.",
+    "A pure screen visibility check like '이 화면 보여?' or '내 화면 보여?' is quick_reply: acknowledge whether captured screenshots are present; do not open a long-running agent just to say yes.",
+    "Use handoff for debugging, coding, investigation, modifications, file/repo tasks, tests, web/Sentry/Slack/Notion/DB context, requests to describe/analyze/summarize what is on screen, ambiguous tasks needing context, or anything that may take longer than a short answer.",
     "Do not route based on URL patterns. Judge only the user's intent and whether tools/long-running work are needed.",
     "",
     "User request:",
@@ -104,9 +104,6 @@ function buildRouterPrompt(context: PickyContextPacket): string {
 
 export function immediateQuickReply(context: PickyContextPacket): string | undefined {
   const text = context.transcript?.trim() ?? "";
-  if (/^(아+\s*)?(마이크|mic|테스트|test)/i.test(text) || /마이크\s*테스트/i.test(text)) {
-    return "잘 들립니다. 마이크 테스트 확인됐어요.";
-  }
   if (isScreenVisibilityCheck(text)) {
     const count = context.screenshots.length;
     if (count > 0) return `네, 현재 화면 캡처 ${count}장을 받고 있어요.`;

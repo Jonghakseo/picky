@@ -22,6 +22,14 @@ struct CompanionPanelSettingsView: View {
                 )
             }
 
+            CompanionPanelSettingsSection(title: "Notifications", subtitle: "Pick which session status changes raise a macOS banner.") {
+                VStack(alignment: .leading, spacing: 6) {
+                    CompanionPanelToggleRow(title: "On success", isOn: $viewModel.settings.notifications.notifyOnCompleted)
+                    CompanionPanelToggleRow(title: "On failure", isOn: $viewModel.settings.notifications.notifyOnFailed)
+                    CompanionPanelToggleRow(title: "On input request", isOn: $viewModel.settings.notifications.notifyOnWaitingForInput)
+                }
+            }
+
             CompanionPanelSettingsSection(title: "Voice", subtitle: "Choose speech providers. Azure secrets stay in Keychain.") {
                 VStack(alignment: .leading, spacing: 10) {
                     CompanionPanelProviderPicker(
@@ -106,6 +114,22 @@ private struct CompanionPanelSettingsSection<Content: View>: View {
     }
 }
 
+
+private struct CompanionPanelToggleRow: View {
+    let title: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(DS.Colors.textSecondary)
+        }
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
 
 private struct CompanionPanelProviderPicker: View {
     let title: String

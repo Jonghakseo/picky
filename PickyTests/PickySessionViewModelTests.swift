@@ -1236,6 +1236,32 @@ struct PickySessionViewModelTests {
         #expect(String(renderer.inlineAttributedString(for: "**Done**").characters) == "Done")
     }
 
+    @Test func markdownReportRendererParsesGithubStyleTables() throws {
+        let markdown = """
+        Before
+
+        | # | Category | Concern | Response |
+        |---|---|---|---|
+        | 1 | 동작 동일성 | `admin`과 web 값이 다를 수 있음 | 추가 검토 |
+        | 2 | 회귀 안전성 | fallback ID 테스트 부족 | `Date.now()` 고정 |
+
+        After
+        """
+        let renderer = PickyReportMarkdownRenderer()
+
+        #expect(renderer.blocks(from: markdown) == [
+            .paragraph("Before"),
+            .table(
+                headers: ["#", "Category", "Concern", "Response"],
+                rows: [
+                    ["1", "동작 동일성", "`admin`과 web 값이 다를 수 있음", "추가 검토"],
+                    ["2", "회귀 안전성", "fallback ID 테스트 부족", "`Date.now()` 고정"],
+                ]
+            ),
+            .paragraph("After"),
+        ])
+    }
+
     @Test func reportDocumentSplitsFinalAnswerFromMetadata() throws {
         let markdown = """
         # Report task

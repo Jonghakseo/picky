@@ -15,6 +15,7 @@ struct PickyReportMarkdownRenderer {
         case heading(level: Int, text: String)
         case paragraph(String)
         case bullet(String)
+        case table(headers: [String], rows: [[String]])
         case codeBlock(String)
     }
 
@@ -23,6 +24,8 @@ struct PickyReportMarkdownRenderer {
         var paragraphLines: [String] = []
         var codeLines: [String] = []
         var inCodeBlock = false
+        let lines = markdown.components(separatedBy: .newlines)
+        var index = 0
 
         func flushParagraph() {
             let text = paragraphLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -30,7 +33,8 @@ struct PickyReportMarkdownRenderer {
             paragraphLines.removeAll()
         }
 
-        for rawLine in markdown.components(separatedBy: .newlines) {
+        while index < lines.count {
+            let rawLine = lines[index]
             let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
             if line.hasPrefix("```") {
                 if inCodeBlock {
@@ -41,32 +45,45 @@ struct PickyReportMarkdownRenderer {
                     flushParagraph()
                     inCodeBlock = true
                 }
+                index += 1
                 continue
             }
 
             if inCodeBlock {
                 codeLines.append(rawLine)
+                index += 1
+                continue
+            }
+
+            if let table = parseTable(lines: lines, startingAt: index) {
+                flushParagraph()
+                blocks.append(table.block)
+                index = table.nextIndex
                 continue
             }
 
             if line.isEmpty {
                 flushParagraph()
+                index += 1
                 continue
             }
 
             if let heading = parseHeading(line) {
                 flushParagraph()
                 blocks.append(heading)
+                index += 1
                 continue
             }
 
             if line.hasPrefix("- ") {
                 flushParagraph()
                 blocks.append(.bullet(String(line.dropFirst(2))))
+                index += 1
                 continue
             }
 
             paragraphLines.append(rawLine)
+            index += 1
         }
 
         if inCodeBlock {
@@ -82,6 +99,53 @@ struct PickyReportMarkdownRenderer {
             return attributed
         }
         return AttributedString(markdown)
+    }
+
+    private func parseTable(lines: [String], startingAt index: Int) -> (block: Block, nextIndex: Int)? {
+        guard index + 1 < lines.count,
+              let headerCells = parsePipeRow(lines[index]),
+              let separatorCells = parsePipeRow(lines[index + 1]),
+              isTableSeparator(cells: separatorCells) else { return nil }
+        let columnCount = max(headerCells.count, separatorCells.count)
+        guard columnCount >= 2 else { return nil }
+
+        var rows: [[String]] = []
+        var nextIndex = index + 2
+        while nextIndex < lines.count {
+            let line = lines[nextIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty, let cells = parsePipeRow(lines[nextIndex]) else { break }
+            if isTableSeparator(cells: cells) { break }
+            rows.append(normalizedCells(cells, count: columnCount))
+            nextIndex += 1
+        }
+
+        return (.table(headers: normalizedCells(headerCells, count: columnCount), rows: rows), nextIndex)
+    }
+
+    private func parsePipeRow(_ line: String) -> [String]? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.contains("|") else { return nil }
+        var body = trimmed
+        if body.first == "|" { body.removeFirst() }
+        if body.last == "|" { body.removeLast() }
+        let cells = body.split(separator: "|", omittingEmptySubsequences: false)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+        return cells.count >= 2 ? cells : nil
+    }
+
+    private func isTableSeparator(cells: [String]) -> Bool {
+        cells.count >= 2 && cells.allSatisfy { cell in
+            let stripped = cell.replacingOccurrences(of: " ", with: "")
+            guard stripped.count >= 3 else { return false }
+            let core = stripped.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+            return core.count >= 3 && core.allSatisfy { $0 == "-" }
+        }
+    }
+
+    private func normalizedCells(_ cells: [String], count: Int) -> [String] {
+        if cells.count == count { return cells }
+        if cells.count < count { return cells + Array(repeating: "", count: count - cells.count) }
+        return Array(cells.prefix(count - 1)) + [cells.dropFirst(count - 1).joined(separator: " | ")]
     }
 
     private func parseHeading(_ line: String) -> Block? {
@@ -203,6 +267,8 @@ struct PickyMarkdownReportView: View {
                     .foregroundStyle(DS.Colors.textPrimary.opacity(0.92))
                     .lineSpacing(3)
             }
+        case .table(let headers, let rows):
+            tableView(headers: headers, rows: rows)
         case .codeBlock(let text):
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(text.isEmpty ? " " : text)
@@ -217,6 +283,51 @@ struct PickyMarkdownReportView: View {
                     .stroke(DS.Colors.borderSubtle, lineWidth: 1)
             )
         }
+    }
+
+    private func tableView(headers: [String], rows: [[String]]) -> some View {
+        ScrollView(.horizontal, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 0) {
+                tableRow(headers, isHeader: true)
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    tableRow(row, isHeader: false)
+                }
+            }
+            .background(DS.Colors.surface1, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(DS.Colors.borderSubtle, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+
+    private func tableRow(_ cells: [String], isHeader: Bool) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
+                Text(renderer.inlineAttributedString(for: cell.isEmpty ? " " : cell))
+                    .font(.system(size: scaled(Self.bodyBaseSize - 1), weight: isHeader ? .semibold : .regular, design: .default))
+                    .foregroundStyle(isHeader ? DS.Colors.textPrimary : DS.Colors.textPrimary.opacity(0.92))
+                    .lineSpacing(2)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .frame(width: tableColumnWidth(index: index, columnCount: cells.count), alignment: .topLeading)
+                    .background(isHeader ? DS.Colors.surface3.opacity(0.72) : DS.Colors.surface2.opacity(0.38))
+                    .overlay(alignment: .trailing) { Rectangle().fill(DS.Colors.borderSubtle).frame(width: 0.5) }
+                    .overlay(alignment: .bottom) { Rectangle().fill(DS.Colors.borderSubtle).frame(height: 0.5) }
+            }
+        }
+    }
+
+    private func tableColumnWidth(index: Int, columnCount: Int) -> CGFloat {
+        if index == 0 && columnCount > 2 { return scaled(52) }
+        if columnCount >= 5 {
+            if index == 1 { return scaled(120) }
+            if index == columnCount - 1 { return scaled(300) }
+            return scaled(340)
+        }
+        if columnCount == 4 { return scaled(260) }
+        return scaled(220)
     }
 
     private func font(forHeadingLevel level: Int) -> Font {

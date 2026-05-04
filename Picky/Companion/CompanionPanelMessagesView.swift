@@ -239,6 +239,19 @@ private struct CompanionPanelMarkdownText: View {
                     .foregroundStyle(DS.Colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        case .table(let headers, let rows):
+            VStack(alignment: .leading, spacing: 4) {
+                Text(headers.joined(separator: " · "))
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(DS.Colors.textPrimary)
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    Text(row.joined(separator: " · "))
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(DS.Colors.textPrimary.opacity(0.92))
+                }
+            }
+            .padding(8)
+            .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         case .codeBlock(let text):
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(text.isEmpty ? " " : text)

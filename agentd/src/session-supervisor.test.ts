@@ -1002,6 +1002,188 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.handle?.bootstrapInjections).toHaveLength(1);
   });
 
+  it("defers a side completion notification while the handoff turn is still in flight, then drains it without losing the reply", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const replies: Array<{ contextId: string; text: string }> = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+
+    // 1) Voice command routed to the main agent — main turn starts running.
+    const userCtx = context("사이드 띄워서 작업 해줘");
+    await supervisor.route(userCtx);
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
+    await settle();
+
+    // 2) Main decides to hand off: it announces the handoff text (which sets
+    //    suppressNextMainReply=true) and spawns the side session. The handoff
+    //    turn has NOT yet emitted status:completed.
+    supervisor.announceMainHandoff(userCtx.id, "사이드에 위임할게요");
+    const sideSession = await supervisor.createSideFromHandoff(userCtx, { title: "task", instructions: "do it" });
+    await settle();
+
+    expect(replies).toContainEqual({ contextId: userCtx.id, text: "사이드에 위임할게요" });
+
+    // 3) Side session finishes BEFORE the main handoff turn ends. The
+    //    notification must be deferred — sending it now would clobber
+    //    mainReplyContextId/mainDraft and let the handoff turn's
+    //    suppressNextMainReply swallow this side completion's reply.
+    sideRuntime.handle?.emit({ type: "assistant_delta", delta: "사이드 결과 X" });
+    sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(mainRuntime.handle?.followUps ?? []).toHaveLength(0);
+
+    // 4) Handoff turn finally ends. suppressNextMainReply is consumed here, the
+    //    handoff turn's draft is discarded, and the deferred side completion is
+    //    drained from the queue and delivered as a fresh main turn.
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "핸드오프 잔여 텍스트" });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(mainRuntime.handle?.followUps).toHaveLength(1);
+    expect(mainRuntime.handle?.followUps[0]?.text).toContain(`Side session: ${sideSession.id}`);
+    // Handoff-turn draft must NOT have been emitted as a quickReply (suppress
+    // consumed it correctly), and no spurious side-completion reply was emitted.
+    expect(replies.filter((entry) => entry.contextId === sideSession.id)).toHaveLength(0);
+    expect(replies.filter((entry) => entry.contextId === userCtx.id)).toEqual([
+      { contextId: userCtx.id, text: "사이드에 위임할게요" },
+    ]);
+
+    // 5) Main processes the side-completion follow-up. Its reply must arrive
+    //    against the side session's id, not the original user context.
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "사이드 작업 마쳤어요" });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(replies).toContainEqual({ contextId: sideSession.id, text: "사이드 작업 마쳤어요" });
+  });
+
+  it("delivers a side completion notification immediately when the main agent is idle", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const replies: Array<{ contextId: string; text: string }> = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+
+    const userCtx = context("사이드 시작");
+    await supervisor.route(userCtx);
+    supervisor.announceMainHandoff(userCtx.id, "사이드 위임");
+    const sideSession = await supervisor.createSideFromHandoff(userCtx, { title: "task", instructions: "do it" });
+
+    // Handoff turn ends BEFORE the side session emits its terminal status.
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    // Now main is idle; side completion must be delivered immediately.
+    sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(mainRuntime.handle?.followUps).toHaveLength(1);
+    expect(mainRuntime.handle?.followUps[0]?.text).toContain(`Side session: ${sideSession.id}`);
+
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "바로 끝났어요" });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(replies).toContainEqual({ contextId: sideSession.id, text: "바로 끝났어요" });
+  });
+
+  it("never queues a deferred notification when notifyMainOnCompletion is disabled", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+
+    const userCtx = context("조용히 진행");
+    await supervisor.route(userCtx);
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
+    await settle();
+    supervisor.announceMainHandoff(userCtx.id, "위임");
+    const sideSession = await supervisor.createSideFromHandoff(userCtx, { title: "task", instructions: "do it" });
+    await supervisor.setNotifyMainOnCompletion(sideSession.id, false);
+
+    // Side terminal status arrives while main is still busy on the handoff turn.
+    sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    // Main turn ends. Drain runs but the disabled flag must keep the queue empty.
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(mainRuntime.handle?.followUps ?? []).toHaveLength(0);
+  });
+
+  it("clears deferred side completion notifications when the main agent is aborted", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+
+    const userCtx = context("긴 작업");
+    await supervisor.route(userCtx);
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
+    await settle();
+    supervisor.announceMainHandoff(userCtx.id, "위임");
+    await supervisor.createSideFromHandoff(userCtx, { title: "task", instructions: "do it" });
+
+    // Side completes while main is still running the handoff turn → deferred.
+    sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    const handleBeforeAbort = mainRuntime.handle;
+    expect(handleBeforeAbort?.followUps ?? []).toHaveLength(0);
+
+    // User aborts the main agent before the handoff turn finishes. The pending
+    // queue must be cleared so a stale terminal event from the orphaned handle
+    // can never re-trigger delivery against a fresh main session.
+    await supervisor.abortMainAgent();
+    handleBeforeAbort?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(handleBeforeAbort?.followUps ?? []).toHaveLength(0);
+
+    // A new main turn must not see the dropped notification either.
+    await supervisor.route(context("다음 질문"));
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(mainRuntime.handle?.followUps ?? []).toHaveLength(0);
+  });
+
+  it("drops a queued side completion when the user steers the side session before the main agent drains it", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const replies: Array<{ contextId: string; text: string }> = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+
+    const userCtx = context("이어서 진행");
+    await supervisor.route(userCtx);
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
+    await settle();
+    supervisor.announceMainHandoff(userCtx.id, "위임");
+    const sideSession = await supervisor.createSideFromHandoff(userCtx, { title: "task", instructions: "do it" });
+
+    // Side completes while main is mid-turn → deferred.
+    sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    // User immediately steers the side session, which also drops the deferred
+    // notification because the side run is no longer terminal.
+    await supervisor.steerSideSession(sideSession.id, "한 번 더 다듬어줘");
+
+    // Main handoff turn ends; the drain must find an empty queue.
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(mainRuntime.handle?.followUps ?? []).toHaveLength(0);
+    expect(replies.filter((entry) => entry.contextId === sideSession.id)).toEqual([]);
+  });
+
   it("routes complex requests to the long-running runtime", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir), undefined, { taskRouter: new StaticTaskRouter({ route: "handoff", reason: "needs tools" }) });

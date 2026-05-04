@@ -41,6 +41,7 @@ export class SessionSupervisor extends EventEmitter {
   private suppressInterruptedMainCompletion = false;
   private sideSessionIds = new Set<string>();
   private sideCompletionNotified = new Set<string>();
+  private pendingSideCompletions: string[] = [];
   private sessionContexts = new Map<string, PickyContextPacket>();
 
   constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, artifactStore?: ArtifactStore, private readonly options: SessionSupervisorOptions = {}) {
@@ -216,6 +217,8 @@ export class SessionSupervisor extends EventEmitter {
     this.mainIsProcessing = false;
     this.suppressNextMainReply = false;
     this.suppressInterruptedMainCompletion = false;
+    if (this.pendingSideCompletions.length > 0) logAgentd("main pending side completions cleared", { count: this.pendingSideCompletions.length });
+    this.pendingSideCompletions = [];
   }
 
   private async abortResetMainHandle(handle: RuntimeSessionHandle, label: string): Promise<void> {
@@ -485,6 +488,7 @@ export class SessionSupervisor extends EventEmitter {
         if (this.suppressInterruptedMainCompletion) {
           this.suppressInterruptedMainCompletion = false;
           this.mainDraft = "";
+          void this.drainPendingSideCompletions();
           return;
         }
         logAgentd("main status", { status: event.status, contextId: this.mainReplyContextId, draftChars: this.mainDraft.length });
@@ -497,6 +501,7 @@ export class SessionSupervisor extends EventEmitter {
           this.emit("quickReply", this.mainReplyContextId, reply);
         }
         this.mainDraft = "";
+        void this.drainPendingSideCompletions();
       }
     }
   }
@@ -504,6 +509,31 @@ export class SessionSupervisor extends EventEmitter {
   private async notifyMainOfSideCompletion(sessionId: string): Promise<void> {
     const session = this.mustGet(sessionId);
     if (this.sideCompletionNotified.has(sessionId)) return;
+    if (session.notifyMainOnCompletion === false) {
+      this.sideCompletionNotified.add(sessionId);
+      logAgentd("side completion notify skipped", { sessionId, status: session.status });
+      return;
+    }
+    // Defer when the main agent is mid-turn (e.g. the handoff turn that spawned this
+    // side session has not emitted status:completed yet). Sending the followUp now
+    // would clobber mainReplyContextId / mainDraft, and the in-flight turn's
+    // suppressNextMainReply would later swallow this side completion's reply when its
+    // delayed status:completed finally arrives. Park the sessionId and let
+    // applyMainRuntimeEvent drain it once the active turn ends.
+    if (this.mainIsProcessing) {
+      if (!this.pendingSideCompletions.includes(sessionId) && !this.sideCompletionNotified.has(sessionId)) {
+        this.pendingSideCompletions.push(sessionId);
+        logAgentd("side completion deferred", { sessionId, status: session.status, queueLength: this.pendingSideCompletions.length });
+      }
+      return;
+    }
+    await this.deliverSideCompletionToMain(sessionId);
+  }
+
+  private async deliverSideCompletionToMain(sessionId: string): Promise<void> {
+    if (this.sideCompletionNotified.has(sessionId)) return;
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
     if (session.notifyMainOnCompletion === false) {
       this.sideCompletionNotified.add(sessionId);
       logAgentd("side completion notify skipped", { sessionId, status: session.status });
@@ -519,6 +549,14 @@ export class SessionSupervisor extends EventEmitter {
     this.mainIsProcessing = true;
     logAgentd("side completion notifying main", { sessionId, status: session.status });
     if (delivery.sendAsFollowUp) await delivery.handle.followUp(prompt);
+  }
+
+  private async drainPendingSideCompletions(): Promise<void> {
+    if (this.mainIsProcessing) return;
+    const sessionId = this.pendingSideCompletions.shift();
+    if (!sessionId) return;
+    logAgentd("side completion draining", { sessionId, queueLength: this.pendingSideCompletions.length });
+    await this.deliverSideCompletionToMain(sessionId);
   }
 
   private async prepareMainCompletionDelivery(prompt: ReturnType<typeof buildMainAgentSideCompletionPrompt>, cwd?: string): Promise<{ handle: RuntimeSessionHandle; sendAsFollowUp: boolean } | undefined> {
@@ -549,9 +587,18 @@ export class SessionSupervisor extends EventEmitter {
 
   async steerSideSession(sessionId: string, text: string): Promise<PickyAgentSession> {
     if (!this.isSideSession(sessionId)) throw new Error(`Session is not a Picky side agent: ${sessionId}`);
-    this.sideCompletionNotified.delete(sessionId);
+    this.clearSideCompletionTracking(sessionId);
     if (this.mustGet(sessionId).pinned) await this.patch(sessionId, { pinned: false });
     return this.steer(sessionId, text);
+  }
+
+  private clearSideCompletionTracking(sessionId: string): void {
+    this.sideCompletionNotified.delete(sessionId);
+    const queueIndex = this.pendingSideCompletions.indexOf(sessionId);
+    if (queueIndex >= 0) {
+      this.pendingSideCompletions.splice(queueIndex, 1);
+      logAgentd("side completion dequeued", { sessionId, queueLength: this.pendingSideCompletions.length });
+    }
   }
 
   async followUp(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
@@ -573,7 +620,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.appendLog(sessionId, `follow-up rejected: ${reason}`);
       throw new Error(reason);
     }
-    if (this.isSideSession(sessionId)) this.sideCompletionNotified.delete(sessionId);
+    if (this.isSideSession(sessionId)) this.clearSideCompletionTracking(sessionId);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     const prompt = buildFollowUpPrompt(sessionId, text, context);
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id });
@@ -648,7 +695,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.appendLog(sessionId, `steer rejected: ${reason}`);
       throw new Error(reason);
     }
-    if (this.isSideSession(sessionId)) this.sideCompletionNotified.delete(sessionId);
+    if (this.isSideSession(sessionId)) this.clearSideCompletionTracking(sessionId);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     logAgentd("steer requested", { sessionId, textChars: text.length });
     await handle.steer(text);

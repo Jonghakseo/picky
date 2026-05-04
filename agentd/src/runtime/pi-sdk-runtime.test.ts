@@ -12,7 +12,20 @@ class FakeSession extends EventEmitter {
   isStreaming = false;
   bound = false;
   uiContext?: Record<string, unknown>;
-  state = { messages: [] as Array<Record<string, unknown>> };
+  state: {
+    messages: Array<Record<string, unknown>>;
+    model?: { api: string; provider: string; id: string };
+  } = {
+    messages: [],
+    model: { api: "anthropic-messages", provider: "anthropic", id: "claude-fake" },
+  };
+  appendedMessages: Array<Record<string, unknown>> = [];
+  sessionManager = {
+    appendMessage: (message: Record<string, unknown>): string => {
+      this.appendedMessages.push(message);
+      return `entry-${this.appendedMessages.length}`;
+    },
+  };
 
   async prompt(text: string, options?: unknown): Promise<void> {
     this.prompts.push(text);
@@ -335,6 +348,51 @@ describe("PiSdkRuntime", () => {
     expect(handle.id).toBe("picky-main-agent");
     expect(fakeSession.bound).toBe(true);
     expect(fakeSession.prompts).toEqual([]);
+  });
+
+  it("injects a synthetic user/assistant pair into a fresh session and persists both messages", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+
+    await handle.injectInitialBootstrap?.({ user: "답변 규칙", assistant: "OK" });
+
+    expect(fakeSession.state.messages).toHaveLength(2);
+    expect(fakeSession.state.messages[0]).toMatchObject({ role: "user", content: "답변 규칙" });
+    expect(fakeSession.state.messages[1]).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "OK" }],
+      provider: "anthropic",
+      model: "claude-fake",
+      stopReason: "stop",
+    });
+    expect(fakeSession.appendedMessages).toHaveLength(2);
+    expect(fakeSession.appendedMessages[0]).toMatchObject({ role: "user" });
+    expect(fakeSession.appendedMessages[1]).toMatchObject({ role: "assistant" });
+  });
+
+  it("skips bootstrap injection when the session already has messages", async () => {
+    const fakeSession = new FakeSession();
+    fakeSession.state.messages = [{ role: "user", content: "prior turn" }];
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+
+    await handle.injectInitialBootstrap?.({ user: "답변 규칙", assistant: "OK" });
+
+    expect(fakeSession.state.messages).toHaveLength(1);
+    expect(fakeSession.appendedMessages).toHaveLength(0);
+  });
+
+  it("skips bootstrap injection when the session has no resolved model", async () => {
+    const fakeSession = new FakeSession();
+    fakeSession.state.model = undefined;
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+
+    await handle.injectInitialBootstrap?.({ user: "답변 규칙", assistant: "OK" });
+
+    expect(fakeSession.state.messages).toHaveLength(0);
+    expect(fakeSession.appendedMessages).toHaveLength(0);
   });
 
   it("passes an explicit thinking level override to Pi session creation", async () => {

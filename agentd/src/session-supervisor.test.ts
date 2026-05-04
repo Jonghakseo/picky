@@ -966,6 +966,42 @@ describe("SessionSupervisor", () => {
     expect(supervisor.list()).toEqual([]);
   });
 
+  it("injects the main-agent bootstrap pair on a fresh prewarm so the rules ride the first turn", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+
+    await supervisor.prewarmMainAgent("/tmp/project");
+    expect(mainRuntime.handle?.bootstrapInjections).toHaveLength(1);
+    const injection = mainRuntime.handle!.bootstrapInjections[0]!;
+    expect(injection.user).toContain("마크다운");
+    expect(injection.assistant).toBe("OK");
+  });
+
+  it("skips bootstrap injection when the main agent resumes from a persisted Pi session", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const store = new SessionStore(dir);
+    await store.saveMainAgentState({ sessionFilePath: "/tmp/main-pi-session.jsonl", cwd: "/tmp/project", messages: [] });
+    const mainRuntime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store, undefined, { mainRuntime });
+    await supervisor.load();
+
+    await supervisor.route(context("재시작 후 질문"));
+
+    expect(mainRuntime.handle?.bootstrapInjections).toEqual([]);
+  });
+
+  it("injects the bootstrap pair when the main runtime cannot prewarm and goes straight to create", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+
+    await supervisor.route(context("첫 창을연 텍스트"));
+
+    expect(mainRuntime.createCalls).toBe(1);
+    expect(mainRuntime.handle?.bootstrapInjections).toHaveLength(1);
+  });
+
   it("routes complex requests to the long-running runtime", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir), undefined, { taskRouter: new StaticTaskRouter({ route: "handoff", reason: "needs tools" }) });
@@ -1158,6 +1194,7 @@ class ManualHandle implements RuntimeSessionHandle {
   private listeners = new Set<(event: RuntimeEvent) => void>();
   followUps: BuiltPrompt[] = [];
   interrupts: BuiltPrompt[] = [];
+  bootstrapInjections: Array<{ user: string; assistant: string }> = [];
   constructor(readonly id: string) {}
   async followUp(prompt: BuiltPrompt): Promise<void> {
     this.followUps.push(prompt);
@@ -1172,6 +1209,9 @@ class ManualHandle implements RuntimeSessionHandle {
   }
   async abort(): Promise<void> {
     this.aborts += 1;
+  }
+  async injectInitialBootstrap(messages: { user: string; assistant: string }): Promise<void> {
+    this.bootstrapInjections.push(messages);
   }
   subscribe(listener: (event: RuntimeEvent) => void): () => void {
     this.listeners.add(listener);

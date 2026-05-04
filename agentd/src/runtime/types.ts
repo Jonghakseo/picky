@@ -20,6 +20,13 @@ export interface RuntimeSessionHandle {
   abort(): Promise<void>;
   answerExtensionUi?(requestId: string, value: unknown): Promise<void>;
   openArtifact?(artifactId: string): Promise<string>;
+  /**
+   * Append a synthetic user/assistant pair to the start of a fresh session
+   * transcript without invoking the model. No-op when the session already has
+   * messages (resumed sessions). Implementations should also persist the pair
+   * via their session manager so the messages survive a daemon restart.
+   */
+  injectInitialBootstrap?(messages: { user: string; assistant: string }): Promise<void>;
   subscribe(listener: (event: RuntimeEvent) => void): () => void;
 }
 

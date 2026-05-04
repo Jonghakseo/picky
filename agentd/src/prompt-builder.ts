@@ -98,6 +98,35 @@ export function buildMainAgentSideCompletionPrompt(session: { id: string; title:
   };
 }
 
+export interface MainAgentBootstrapPair {
+  user: string;
+  assistant: string;
+}
+
+/**
+ * Returns the synthetic first turn injected into a fresh main-agent transcript.
+ * The user message instructs the agent how Picky reads its replies aloud; the
+ * assistant message is a short acknowledgement so the LLM never sees two
+ * consecutive user turns. Picky's TTS layer strips parenthesised content from
+ * spoken playback, so detail like URLs or paths can be safely placed inside
+ * `(...)` for the visible transcript without being read aloud.
+ */
+export function buildMainAgentBootstrapPair(): MainAgentBootstrapPair {
+  const user = [
+    "이 메시지는 사용자가 보낸 것이 아니라 Picky agentd가 메인 에이전트 세션 시작 시 한 번 주입하는 부트스트랩 안내입니다.",
+    "앞으로 사용자에게 직접 답변할 때는 다음 규칙을 지켜주세요.",
+    "",
+    "1. 답변은 마크다운, 코드블록, 글머리 기호, 표 없이 자연스러운 한국어 문장으로만 작성합니다. Picky가 텍스트를 그대로 음성으로 읽기 때문입니다.",
+    "2. URL, 파일 경로, 세션 ID, 코드 식별자처럼 음성으로 들으면 어색한 세부 정보가 꼭 필요하면 문장 끝에 괄호 `( ... )` 안에 넣어주세요. Picky의 TTS 레이어는 괄호 안 내용을 음성에서는 자동으로 제외하고, 화면에는 그대로 표시합니다.",
+    "3. 한 번에 1~3 문장으로 짧게 답하고, 사용자가 더 묻지 않는 한 추가 설명을 길게 늘어뜨리지 않습니다.",
+    "4. 사이드 에이전트로 위임하거나 도구를 호출해야 하는 상황에서는 기존 시스템 프롬프트의 도구 사용 규칙을 그대로 따르고, 위 규칙은 사용자에게 직접 말하는 텍스트 답변에만 적용합니다.",
+    "",
+    "이해했으면 짧게 'OK' 한 마디로만 답하세요. 이 OK는 사용자에게 노출되지 않습니다.",
+  ].join("\n");
+  const assistant = "OK";
+  return { user, assistant };
+}
+
 export function buildFollowUpPrompt(sessionId: string, text: string, context?: PickyContextPacket): BuiltPrompt {
   const lines = ["# Picky follow-up", "", `Session: ${sessionId}`, "", neutralInstruction, "", "## User follow-up", text.trim()];
   if (context) appendContext(lines, context);

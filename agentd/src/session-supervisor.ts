@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { ArtifactStore, extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "./artifact-store.js";
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
-import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
+import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
 import type { PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentState } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { SessionStore } from "./session-store.js";
@@ -392,7 +392,9 @@ export class SessionSupervisor extends EventEmitter {
       return handle;
     }
     await this.patchMainState({ cwd });
-    return this.attachMainHandle(handle, generation);
+    const attached = this.attachMainHandle(handle, generation);
+    await this.injectMainBootstrap(attached);
+    return attached;
   }
 
   private async createInitialMainHandle(prompt: ReturnType<typeof buildMainAgentPrompt>, cwd?: string, generation = this.mainHandleGeneration): Promise<{ handle: RuntimeSessionHandle; initialPromptAlreadySent: boolean }> {
@@ -404,7 +406,18 @@ export class SessionSupervisor extends EventEmitter {
       return { handle, initialPromptAlreadySent: true };
     }
     await this.patchMainState({ cwd });
-    return { handle: this.attachMainHandle(handle, generation), initialPromptAlreadySent: true };
+    const attached = this.attachMainHandle(handle, generation);
+    await this.injectMainBootstrap(attached);
+    return { handle: attached, initialPromptAlreadySent: true };
+  }
+
+  private async injectMainBootstrap(handle: RuntimeSessionHandle): Promise<void> {
+    if (!handle.injectInitialBootstrap) return;
+    try {
+      await handle.injectInitialBootstrap(buildMainAgentBootstrapPair());
+    } catch (error) {
+      logAgentd("main bootstrap inject failed", { error: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   private async tryResumeMainHandle(cwd: string, generation = this.mainHandleGeneration): Promise<RuntimeSessionHandle | undefined> {

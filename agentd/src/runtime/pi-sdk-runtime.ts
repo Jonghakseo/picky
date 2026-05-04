@@ -158,6 +158,64 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     this.uiBridge.answer(requestId, normalizeAnswer(value));
   }
 
+  async injectInitialBootstrap(messages: { user: string; assistant: string }): Promise<void> {
+    const session = this.runtime.session;
+    const existing = (session.state.messages ?? []) as unknown[];
+    if (existing.length > 0) {
+      logAgentd("pi inject bootstrap skipped", { sessionId: this.id, reason: "non-empty session", existingCount: existing.length });
+      return;
+    }
+
+    const model = asRecord((session.state as unknown as Record<string, unknown>).model);
+    const api = stringValue(model.api);
+    const provider = stringValue(model.provider);
+    const modelId = stringValue(model.id);
+    if (!api || !provider || !modelId) {
+      logAgentd("pi inject bootstrap skipped", { sessionId: this.id, reason: "model metadata missing" });
+      return;
+    }
+
+    const now = Date.now();
+    const userMessage = {
+      role: "user" as const,
+      content: messages.user,
+      timestamp: now,
+    };
+    const assistantMessage = {
+      role: "assistant" as const,
+      content: [{ type: "text" as const, text: messages.assistant }],
+      api,
+      provider,
+      model: modelId,
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop" as const,
+      timestamp: now,
+    };
+
+    try {
+      session.sessionManager.appendMessage(userMessage as never);
+      session.sessionManager.appendMessage(assistantMessage as never);
+      session.state.messages = [...existing, userMessage, assistantMessage] as never;
+      logAgentd("pi inject bootstrap", {
+        sessionId: this.id,
+        userChars: messages.user.length,
+        assistantChars: messages.assistant.length,
+        provider,
+        model: modelId,
+      });
+    } catch (error) {
+      logAgentd("pi inject bootstrap failed", { sessionId: this.id, error: messageOf(error) });
+      throw error;
+    }
+  }
+
   async bindCurrentSession(): Promise<void> {
     logAgentd("pi bind session", { sessionId: this.id });
     this.unsubscribe?.();

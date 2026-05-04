@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
+import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
 import { PickyContextPacketSchema } from "./protocol.js";
 
 const root = join(process.cwd(), "..", "contracts");
@@ -115,5 +115,15 @@ describe("neutral prompt builder", () => {
     expect(prompt.text).toContain("cursorDisplayPoint=100,782");
     expect(prompt.text).toContain("cursorScreenshotPixel=200,1564");
     expect(prompt.text).toContain("cursorGlobalAppKit=100,200");
+  });
+
+  it("builds the main-agent bootstrap pair with TTS-friendly Korean rules and a short OK ack", () => {
+    const pair = buildMainAgentBootstrapPair();
+    expect(pair.user).toContain("마크다운");
+    expect(pair.user).toContain("코드블록");
+    expect(pair.user).toContain("괄호");
+    expect(pair.user).toContain("`( ... )`");
+    expect(pair.user).toContain("이 메시지는 사용자가 보낸 것이 아니");
+    expect(pair.assistant).toBe("OK");
   });
 });

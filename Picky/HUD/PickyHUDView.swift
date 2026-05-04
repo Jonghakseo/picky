@@ -59,7 +59,7 @@ struct PickyHUDView: View {
                 )
                 .id(activeSession.id)
                 .frame(width: PickyHUDDockLayout.detailWidth)
-                .transition(.opacity.combined(with: .move(edge: .trailing)))
+                .transition(.opacity)
             }
 
             if !visibleSessions.isEmpty {

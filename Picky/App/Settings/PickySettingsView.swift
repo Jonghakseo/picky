@@ -17,6 +17,10 @@ struct PickySettingsView: View {
                 Toggle("Prefer read-only investigation context", isOn: $viewModel.settings.readOnlyInvestigationPreference)
             }
 
+            Section("HUD") {
+                Toggle("Follow cursor across monitors", isOn: $viewModel.settings.followsFocusedScreen)
+            }
+
             Section("Voice") {
                 Picker("STT provider", selection: $viewModel.settings.sttProvider) {
                     ForEach(PickyVoiceProviderSelection.cases(for: .transcription)) { provider in

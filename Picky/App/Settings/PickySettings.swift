@@ -65,6 +65,7 @@ struct PickySettings: Codable, Equatable {
     var sttProvider: PickyVoiceProviderSelection
     var ttsProvider: PickyVoiceProviderSelection
     var azureSTTPreferredLanguage: String
+    var followsFocusedScreen: Bool
 
     init(
         defaultCwd: String,
@@ -75,7 +76,8 @@ struct PickySettings: Codable, Equatable {
         logPath: String,
         sttProvider: PickyVoiceProviderSelection = .automatic,
         ttsProvider: PickyVoiceProviderSelection = .automatic,
-        azureSTTPreferredLanguage: String = ""
+        azureSTTPreferredLanguage: String = "",
+        followsFocusedScreen: Bool = true
     ) {
         self.defaultCwd = defaultCwd
         self.worktreeParent = worktreeParent
@@ -86,6 +88,7 @@ struct PickySettings: Codable, Equatable {
         self.sttProvider = sttProvider
         self.ttsProvider = ttsProvider
         self.azureSTTPreferredLanguage = azureSTTPreferredLanguage
+        self.followsFocusedScreen = followsFocusedScreen
     }
 
     static func defaults(appSupportRoot: URL = PickyAppSupport.defaultRoot()) -> PickySettings {
@@ -99,7 +102,8 @@ struct PickySettings: Codable, Equatable {
             logPath: appSupportRoot.appendingPathComponent("Logs", isDirectory: true).path,
             sttProvider: .automatic,
             ttsProvider: .automatic,
-            azureSTTPreferredLanguage: ""
+            azureSTTPreferredLanguage: "",
+            followsFocusedScreen: true
         )
     }
 
@@ -123,6 +127,7 @@ struct PickySettings: Codable, Equatable {
         case sttProvider
         case ttsProvider
         case azureSTTPreferredLanguage
+        case followsFocusedScreen
     }
 
     init(from decoder: Decoder) throws {
@@ -138,6 +143,7 @@ struct PickySettings: Codable, Equatable {
         sttProvider = try container.decodeIfPresent(PickyVoiceProviderSelection.self, forKey: .sttProvider) ?? defaults.sttProvider
         ttsProvider = try container.decodeIfPresent(PickyVoiceProviderSelection.self, forKey: .ttsProvider) ?? defaults.ttsProvider
         azureSTTPreferredLanguage = try container.decodeIfPresent(String.self, forKey: .azureSTTPreferredLanguage) ?? defaults.azureSTTPreferredLanguage
+        followsFocusedScreen = try container.decodeIfPresent(Bool.self, forKey: .followsFocusedScreen) ?? defaults.followsFocusedScreen
     }
 }
 

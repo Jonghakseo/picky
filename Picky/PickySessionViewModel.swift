@@ -772,7 +772,14 @@ private extension PickySessionListViewModel.SessionCard {
         if result.tools.isEmpty { result.tools = tools }
         if result.artifacts.isEmpty { result.artifacts = artifacts }
         if result.changedFiles.isEmpty { result.changedFiles = changedFiles }
-        if result.pendingExtensionUiRequest == nil { result.pendingExtensionUiRequest = pendingExtensionUiRequest }
+        // pendingExtensionUiRequest is authoritative on the daemon side: every sessionUpdated
+        // carries the full session, so an incoming `nil` means the daemon has explicitly cleared
+        // the request (answered, cancelled, timed out, dropped on reattach). Falling back to the
+        // existing value would resurrect the form after the user submits — a sessionUpdated that
+        // was queued before the answer was processed (e.g. emitted by a concurrent tool/thinking
+        // patch) lands after the local clear and re-attaches REQUEST_A; the post-answer snapshot
+        // then carries `nil`, and the fallback would restore REQUEST_A, leaving the askUserQuestion
+        // form stuck on screen. Trust the incoming value instead.
         if result.piSessionFilePath == nil { result.piSessionFilePath = piSessionFilePath }
         if result.notifyMainOnCompletion == nil { result.notifyMainOnCompletion = notifyMainOnCompletion }
         result.hasRuntimeDetachedFollowUpRejection = result.hasRuntimeDetachedFollowUpRejection || hasRuntimeDetachedFollowUpRejection

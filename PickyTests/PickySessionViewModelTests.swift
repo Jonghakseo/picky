@@ -262,6 +262,28 @@ struct PickySessionViewModelTests {
         #expect(card.lastRequestText == "Stop and review")
     }
 
+    @Test func sessionUpdateClearsPendingExtensionUiRequestWhenIncomingHasNone() async throws {
+        // Reproduces the askUserQuestion form sticking around after Submit: a stale sessionUpdated
+        // that was queued by the daemon before it processed the answer arrives after Picky's local
+        // clear and re-attaches the pending request. The daemon's subsequent post-answer
+        // sessionUpdated carries an explicit `nil`, so the merge must trust it instead of falling
+        // back to the just-resurrected existing value.
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithPending(status: "waiting_for_input"))))
+        try await settle()
+        #expect(viewModel.sessions.first?.pendingExtensionUiRequest != nil)
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Extension UI answered", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        try await settle()
+
+        let card = try #require(viewModel.sessions.first)
+        #expect(card.pendingExtensionUiRequest == nil)
+        #expect(card.status == .running)
+    }
+
     @Test func answerExtensionUiKeepsPriorRequestTextWhenUserCancels() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
@@ -1303,6 +1325,17 @@ private enum EventJSON {
     static func askUserQuestionRequest() -> String {
         """
         {"id":"event-ui-form","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-form","sessionId":"session-1","method":"askUserQuestion","title":"Confirm memory","description":"Pick what to save","questions":[{"id":"scope","type":"radio","prompt":"Scope?","options":[{"value":"user","label":"User"},{"value":"project","label":"Project"}],"default":"project"},{"id":"items","type":"checkbox","prompt":"Items?","options":[{"value":"rule","label":"Rule"}],"default":["rule"],"allowOther":true},{"id":"note","type":"text","prompt":"Note","required":false}],"createdAt":"2026-05-01T00:00:02.000Z"}}
+        """
+    }
+
+    static func sessionUpdatedWithPending(
+        id: String = "session-1",
+        status: String = "waiting_for_input",
+        summary: String = "Waiting for input",
+        updatedAt: String = "2026-05-01T00:00:02.000Z"
+    ) -> String {
+        """
+        {"id":"event-\(id)-pending","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"Investigate current screen","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"pendingExtensionUiRequest":{"id":"ui-form","sessionId":"\(id)","method":"askUserQuestion","title":"Continue?","prompt":"Pick one","options":null,"questions":[{"id":"choice","type":"radio","prompt":"Choice","options":[{"value":"a","label":"A"}],"required":true}],"createdAt":"\(updatedAt)"}}}
         """
     }
 

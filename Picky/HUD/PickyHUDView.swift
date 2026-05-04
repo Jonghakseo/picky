@@ -237,32 +237,37 @@ private struct PickyHUDDockRailView: View {
     let onPinSession: (String) -> Void
     let onCreateSideAgent: () -> Void
 
+    @ViewBuilder
     var body: some View {
-        VStack(spacing: 0) {
-            createSideAgentButton
+        if sessions.isEmpty {
+            emptyCreateSideAgentButton
+        } else {
+            VStack(spacing: 0) {
+                createSideAgentButton
 
-            VStack(spacing: 9) {
-                ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
-                    PickyHUDDockIconView(
-                        session: session,
-                        index: index,
-                        isActive: activeSessionID == session.id,
-                        isPinned: pinnedSessionID == session.id,
-                        onHover: { onHoverSession(session.id) },
-                        onPin: { onPinSession(session.id) }
-                    )
+                VStack(spacing: 9) {
+                    ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
+                        PickyHUDDockIconView(
+                            session: session,
+                            index: index,
+                            isActive: activeSessionID == session.id,
+                            isPinned: pinnedSessionID == session.id,
+                            onHover: { onHoverSession(session.id) },
+                            onPin: { onPinSession(session.id) }
+                        )
+                    }
                 }
+                .padding(.top, 6)
             }
-            .padding(.top, 6)
+            .padding(.horizontal, 6)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(DS.Colors.surface1.opacity(0.92))
+                    .overlay(Capsule(style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8))
+            )
         }
-        .padding(.horizontal, 6)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .background(
-            Capsule(style: .continuous)
-                .fill(DS.Colors.surface1.opacity(0.92))
-                .overlay(Capsule(style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8))
-        )
     }
 
     private var createSideAgentButton: some View {
@@ -273,6 +278,22 @@ private struct PickyHUDDockRailView: View {
                 .frame(width: 18, height: 18)
                 .background(Circle().fill(DS.Colors.surface2.opacity(0.45)))
                 .overlay(Circle().stroke(DS.Colors.borderSubtle.opacity(0.35), lineWidth: 0.5))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
+        .accessibilityLabel("Start side agent")
+        .accessibilityHint("Choose a working folder and start an empty side agent")
+    }
+
+    private var emptyCreateSideAgentButton: some View {
+        Button(action: onCreateSideAgent) {
+            Image(systemName: "plus")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(DS.Colors.textSecondary)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(DS.Colors.surface1.opacity(0.92)))
+                .overlay(Circle().stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)

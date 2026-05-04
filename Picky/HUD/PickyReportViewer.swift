@@ -95,6 +95,66 @@ struct PickyReportMarkdownRenderer {
     }
 }
 
+struct PickyReportDocument: Equatable {
+    let answerMarkdown: String
+    let metadataMarkdown: String
+
+    init(markdown: String) {
+        let lines = markdown.components(separatedBy: .newlines)
+        guard let answerHeadingIndex = lines.firstIndex(where: { normalizedHeading($0) == "final answer" }) else {
+            answerMarkdown = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+            metadataMarkdown = ""
+            return
+        }
+
+        let metadataStartIndex = lines[(answerHeadingIndex + 1)...].firstIndex { line in
+            guard line.trimmingCharacters(in: .whitespaces).hasPrefix("## ") else { return false }
+            return Self.metadataHeadingTitles.contains(normalizedHeading(line))
+        } ?? lines.endIndex
+
+        answerMarkdown = lines[(answerHeadingIndex + 1)..<metadataStartIndex]
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let leadingMetadata = lines[..<answerHeadingIndex]
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let trailingMetadata = metadataStartIndex < lines.endIndex
+            ? lines[metadataStartIndex...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            : ""
+        metadataMarkdown = [leadingMetadata, trailingMetadata]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
+    }
+
+    var hasMetadata: Bool {
+        !metadataMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private static let metadataHeadingTitles = Set(["tool summary", "changed files", "pull requests", "artifacts"])
+}
+
+private func normalizedHeading(_ line: String) -> String {
+    line.trimmingCharacters(in: .whitespacesAndNewlines)
+        .drop(while: { $0 == "#" })
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased()
+}
+
+private enum PickyReportTab: String, CaseIterable, Identifiable {
+    case answer
+    case metadata
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .answer: "Answer"
+        case .metadata: "Metadata"
+        }
+    }
+}
+
 struct PickyMarkdownReportView: View {
     let markdown: String
     private let renderer = PickyReportMarkdownRenderer()
@@ -243,32 +303,39 @@ final class PickyReportViewerModel: ObservableObject {
     @Published private(set) var title: String
     @Published private(set) var fileURL: URL
     @Published private(set) var markdown: String
+    @Published private(set) var document: PickyReportDocument
+    @Published private(set) var revision = UUID()
 
     init(title: String, fileURL: URL, markdown: String) {
         self.title = title
         self.fileURL = fileURL
         self.markdown = markdown
+        self.document = PickyReportDocument(markdown: markdown)
     }
 
     func update(title: String, fileURL: URL, markdown: String) {
         self.title = title
         self.fileURL = fileURL
         self.markdown = markdown
+        self.document = PickyReportDocument(markdown: markdown)
+        self.revision = UUID()
     }
 }
 
 struct PickyReportViewerWindowView: View {
     @ObservedObject var model: PickyReportViewerModel
+    @State private var selectedTab: PickyReportTab = .answer
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().overlay(Color.white.opacity(0.08))
             ScrollView {
-                PickyMarkdownReportView(markdown: model.markdown)
+                reportContent
                     .padding(EdgeInsets(top: 22, leading: 24, bottom: 28, trailing: 24))
             }
         }
+        .onChange(of: model.revision) { _, _ in selectedTab = .answer }
         .background(
             LinearGradient(
                 colors: [Color.black.opacity(0.96), Color(red: 0.08, green: 0.09, blue: 0.12).opacity(0.98)],
@@ -276,6 +343,24 @@ struct PickyReportViewerWindowView: View {
                 endPoint: .bottomTrailing
             )
         )
+    }
+
+    @ViewBuilder
+    private var reportContent: some View {
+        switch selectedTab {
+        case .answer:
+            if model.document.answerMarkdown.isEmpty {
+                emptyState("No final answer captured for this report.")
+            } else {
+                PickyMarkdownReportView(markdown: model.document.answerMarkdown)
+            }
+        case .metadata:
+            if model.document.metadataMarkdown.isEmpty {
+                emptyState("No metadata is available for this report.")
+            } else {
+                PickyMarkdownReportView(markdown: model.document.metadataMarkdown)
+            }
+        }
     }
 
     private var header: some View {
@@ -295,10 +380,25 @@ struct PickyReportViewerWindowView: View {
                     .truncationMode(.middle)
             }
             Spacer()
+            Picker("Report section", selection: $selectedTab) {
+                ForEach(PickyReportTab.allCases) { tab in
+                    Text(tab.label).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 210)
         }
         .padding(.horizontal, 18)
         .padding(.top, 14)
         .padding(.bottom, 12)
+    }
+
+    private func emptyState(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 13.5, weight: .regular, design: .default))
+            .foregroundStyle(Color.white.opacity(0.55))
+            .frame(maxWidth: .infinity, minHeight: 240, alignment: .center)
     }
 }
 

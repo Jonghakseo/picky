@@ -958,6 +958,51 @@ struct PickySessionViewModelTests {
         #expect(String(renderer.inlineAttributedString(for: "**Done**").characters) == "Done")
     }
 
+    @Test func reportDocumentSplitsFinalAnswerFromMetadata() throws {
+        let markdown = """
+        # Report task
+
+        Status: `completed`
+
+        CWD: `/tmp/project`
+
+        ## Final answer
+        Done.
+
+        ### Notes inside answer
+        Keep this with the answer.
+
+        ## Tool summary
+        - `bash`: 2
+
+        ## Pull requests
+        - https://github.com/acme/repo/pull/42
+        """
+
+        let document = PickyReportDocument(markdown: markdown)
+
+        #expect(document.answerMarkdown == """
+        Done.
+
+        ### Notes inside answer
+        Keep this with the answer.
+        """)
+        #expect(document.metadataMarkdown.contains("# Report task"))
+        #expect(document.metadataMarkdown.contains("Status: `completed`"))
+        #expect(document.metadataMarkdown.contains("## Tool summary"))
+        #expect(document.metadataMarkdown.contains("https://github.com/acme/repo/pull/42"))
+        #expect(!document.metadataMarkdown.contains("Done."))
+        #expect(!document.metadataMarkdown.contains("## Final answer"))
+    }
+
+    @Test func reportDocumentFallsBackToWholeMarkdownWhenFinalAnswerHeadingIsMissing() throws {
+        let markdown = "# Legacy report\n\nNo structured final answer."
+        let document = PickyReportDocument(markdown: markdown)
+
+        #expect(document.answerMarkdown == markdown)
+        #expect(document.metadataMarkdown.isEmpty)
+    }
+
     @Test func openReportShowsMarkdownInInternalViewer() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-report-viewer-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

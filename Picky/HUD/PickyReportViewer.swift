@@ -303,7 +303,8 @@ struct PickyMarkdownReportView: View {
     }
 
     private func tableRow(_ cells: [String], isHeader: Bool) -> some View {
-        HStack(alignment: .top, spacing: 0) {
+        let widths = tableColumnWidths(columnCount: cells.count)
+        return HStack(alignment: .top, spacing: 0) {
             ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
                 Text(renderer.inlineAttributedString(for: cell.isEmpty ? " " : cell))
                     .font(.system(size: scaled(Self.bodyBaseSize - 1), weight: isHeader ? .semibold : .regular, design: .default))
@@ -311,12 +312,36 @@ struct PickyMarkdownReportView: View {
                     .lineSpacing(2)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
-                    .frame(width: tableColumnWidth(index: index, columnCount: cells.count), alignment: .topLeading)
-                    .background(isHeader ? DS.Colors.surface3.opacity(0.72) : DS.Colors.surface2.opacity(0.38))
-                    .overlay(alignment: .trailing) { Rectangle().fill(DS.Colors.borderSubtle).frame(width: 0.5) }
-                    .overlay(alignment: .bottom) { Rectangle().fill(DS.Colors.borderSubtle).frame(height: 0.5) }
+                    .frame(width: widths[index], alignment: .topLeading)
             }
         }
+        .background(isHeader ? DS.Colors.surface3.opacity(0.72) : DS.Colors.surface2.opacity(0.38))
+        .overlay(alignment: .bottom) { Rectangle().fill(DS.Colors.borderSubtle).frame(height: 0.5) }
+        .overlay(alignment: .topLeading) {
+            GeometryReader { _ in
+                ForEach(Array(tableSeparatorOffsets(widths: widths).enumerated()), id: \.offset) { _, offset in
+                    Rectangle()
+                        .fill(DS.Colors.borderSubtle)
+                        .frame(width: 0.5)
+                        .offset(x: offset)
+                }
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
+    private func tableColumnWidths(columnCount: Int) -> [CGFloat] {
+        (0..<columnCount).map { tableColumnWidth(index: $0, columnCount: columnCount) }
+    }
+
+    private func tableSeparatorOffsets(widths: [CGFloat]) -> [CGFloat] {
+        var offsets: [CGFloat] = []
+        var runningWidth: CGFloat = 0
+        for width in widths.dropLast() {
+            runningWidth += width
+            offsets.append(runningWidth)
+        }
+        return offsets
     }
 
     private func tableColumnWidth(index: Int, columnCount: Int) -> CGFloat {

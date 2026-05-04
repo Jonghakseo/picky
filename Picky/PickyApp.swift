@@ -20,6 +20,8 @@ struct PickyApp: App {
         // A compact Settings scene is kept for local paths and diagnostics.
         Settings {
             PickySettingsView(viewModel: PickySettingsViewModel())
+                .environmentObject(appDelegate.appearanceStore)
+                .preferredColorScheme(appDelegate.appearanceStore.mode.colorScheme)
         }
     }
 }
@@ -30,6 +32,10 @@ struct PickyApp: App {
 final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarPanelManager: MenuBarPanelManager?
     private let settingsStore = PickySettingsStore()
+    /// Single source of truth for the user-selected light/dark mode. Both the menu bar
+    /// companion panel and the HUD overlay observe this object so flipping the toggle
+    /// in the companion footer flips the entire UI surface (Settings scene included).
+    let appearanceStore: PickyAppearanceStore
     private lazy var daemonConfiguration = PickyAgentDaemonConfiguration.development(defaultCwd: settingsStore.load().normalizedPaths().defaultCwd)
     private lazy var daemonLauncher = PickyAgentDaemonLauncher(configuration: daemonConfiguration)
     private lazy var companionManager = CompanionManager(
@@ -48,8 +54,14 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                     token: daemonConfiguration.token
                 )
             )
-        )
+        ),
+        appearanceStore: appearanceStore
     )
+
+    override init() {
+        self.appearanceStore = PickyAppearanceStore(settingsStore: settingsStore)
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("🎯 Picky: Starting...")
@@ -65,7 +77,12 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             daemonLauncher.start()
             hudOverlayManager.start()
         }
-        menuBarPanelManager = MenuBarPanelManager(companionManager: companionManager)
+        // Wire the appearance store into singletons that live outside the SwiftUI tree
+        // (markdown report viewer / terminal overlay) so every secondary NSPanel flips
+        // with the rest of the app.
+        PickyReportViewerPresenter.shared.configure(appearanceStore: appearanceStore)
+        PickyTerminalOverlayPresenter.shared.configure(appearanceStore: appearanceStore)
+        menuBarPanelManager = MenuBarPanelManager(companionManager: companionManager, appearanceStore: appearanceStore)
         companionManager.start()
         // Auto-open the panel only when the user still needs to grant permissions.
         if !companionManager.allPermissionsGranted {

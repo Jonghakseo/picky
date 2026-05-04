@@ -31,6 +31,7 @@ final class PickyHUDPanel: NSPanel {
 final class PickyHUDOverlayManager {
     private let viewModel: PickySessionListViewModel
     private let settingsStore: PickySettingsStore
+    private let appearanceStore: PickyAppearanceStore
     private var panel: NSPanel?
     private var pendingPanelShrinkTask: Task<Void, Never>?
     private var pendingScreenSwitchTask: Task<Void, Never>?
@@ -43,9 +44,10 @@ final class PickyHUDOverlayManager {
     private let minimumHeight: CGFloat = 48
     private let screenSwitchDebounce: TimeInterval = 0.2
 
-    init(viewModel: PickySessionListViewModel, settingsStore: PickySettingsStore = PickySettingsStore()) {
+    init(viewModel: PickySessionListViewModel, appearanceStore: PickyAppearanceStore, settingsStore: PickySettingsStore = PickySettingsStore()) {
         self.viewModel = viewModel
         self.settingsStore = settingsStore
+        self.appearanceStore = appearanceStore
     }
 
     func start() {
@@ -83,12 +85,16 @@ final class PickyHUDOverlayManager {
         hudPanel.isExcludedFromWindowsMenu = true
         hudPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
-        let hostingView = NSHostingView(rootView: PickyHUDView(viewModel: viewModel) { [weak self] size in
+        let hudRoot = PickyHUDView(viewModel: viewModel) { [weak self] size in
             // SwiftUI animates the card reveal itself. Grow the transparent NSPanel
             // immediately, but defer shrinking it until the collapse animation has
             // finished so shadows/content aren't clipped by the outer container.
             self?.resizePanel(toContentSize: size, deferShrink: true)
-        }.frame(width: width))
+        }
+            .frame(width: width)
+            .environmentObject(appearanceStore)
+            .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
+        let hostingView = NSHostingView(rootView: hudRoot)
         hostingView.frame = NSRect(x: 0, y: 0, width: width, height: collapsedHeight)
         hostingView.autoresizingMask = [.width, .height]
         hudPanel.contentView = hostingView

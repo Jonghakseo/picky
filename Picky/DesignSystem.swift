@@ -24,39 +24,43 @@ enum DS {
         // Layered surfaces from deepest to most elevated.
         // Higher surfaces are lighter, creating a sense of depth.
 
+        // Light variants follow a neutral white→gray ladder so depth still reads
+        // with shadow + 1px borders on a bright canvas. Adjust together with the
+        // dark values to keep the elevation story consistent.
+
         /// The deepest background — used for the main app window fill.
-        static let background = Color(hex: "#101211")
+        static let background = Color(light: Color(hex: "#F7F8F8"), dark: Color(hex: "#101211"))
 
         /// First elevation layer — used for cards, sidebar, top bar backgrounds.
-        static let surface1 = Color(hex: "#171918")
+        static let surface1 = Color(light: Color(hex: "#FFFFFF"), dark: Color(hex: "#171918"))
 
         /// Second elevation layer — used for input fields, elevated cards, chat bubbles.
-        static let surface2 = Color(hex: "#202221")
+        static let surface2 = Color(light: Color(hex: "#F0F1F1"), dark: Color(hex: "#202221"))
 
         /// Third elevation layer — used for hover backgrounds on interactive elements.
-        static let surface3 = Color(hex: "#272A29")
+        static let surface3 = Color(light: Color(hex: "#E5E7E6"), dark: Color(hex: "#272A29"))
 
         /// Fourth elevation layer — used for active/pressed states on interactive elements.
-        static let surface4 = Color(hex: "#2E3130")
+        static let surface4 = Color(light: Color(hex: "#D9DBDA"), dark: Color(hex: "#2E3130"))
 
         // ── Borders ──────────────────────────────────────────────────
 
         /// Subtle border — used for card outlines, dividers, input field borders.
-        static let borderSubtle = Color(hex: "#373B39")
+        static let borderSubtle = Color(light: Color(hex: "#E1E3E2"), dark: Color(hex: "#373B39"))
 
         /// Strong border — used for focused inputs, hovered card outlines.
-        static let borderStrong = Color(hex: "#444947")
+        static let borderStrong = Color(light: Color(hex: "#C4C7C6"), dark: Color(hex: "#444947"))
 
         // ── Text ─────────────────────────────────────────────────────
 
         /// Primary text — main body text, titles, headings.
-        static let textPrimary = Color(hex: "#ECEEED")
+        static let textPrimary = Color(light: Color(hex: "#1A1C1B"), dark: Color(hex: "#ECEEED"))
 
         /// Secondary text — descriptions, hints, muted labels.
-        static let textSecondary = Color(hex: "#ADB5B2")
+        static let textSecondary = Color(light: Color(hex: "#525956"), dark: Color(hex: "#ADB5B2"))
 
         /// Tertiary text — very muted, used for section labels, timestamps, disabled text.
-        static let textTertiary = Color(hex: "#6B736F")
+        static let textTertiary = Color(light: Color(hex: "#8B928F"), dark: Color(hex: "#6B736F"))
 
         /// Text used on top of the accent fill (#2563eb blue), like the primary button label.
         /// White on #2563eb achieves ~5.1:1 contrast — WCAG AA compliant.
@@ -99,13 +103,13 @@ enum DS {
         /// #1d4ed8 → ~6.5:1 contrast with white text (WCAG AA+).
         static let accentHover = blue700
 
-        /// Accent text — bright blue used for accent-colored text and icons
-        /// on dark backgrounds (links, active nav items, highlighted labels).
-        static let accentText = blue400
+        /// Accent text — bright blue used for accent-colored text and icons.
+        /// Light: blue700 keeps ~7:1 contrast on white. Dark: blue400 keeps the previous bright tone.
+        static let accentText = Color(light: blue700, dark: blue400)
 
         /// Very subtle accent tint — used for selected item backgrounds (e.g. current step
-        /// in the sidebar). Low opacity so it doesn't overpower.
-        static let accentSubtle = blue500.opacity(0.10)
+        /// in the sidebar). Light bumps opacity slightly so the tint stays readable on white.
+        static let accentSubtle = Color(light: blue500.opacity(0.18), dark: blue500.opacity(0.10))
 
         // ── Semantic Colors ──────────────────────────────────────────
 
@@ -115,8 +119,8 @@ enum DS {
         /// Destructive hover state.
         static let destructiveHover = Color(hex: "#F2555A")   // Radix Red 10
 
-        /// Destructive used for text on dark backgrounds (brighter for readability).
-        static let destructiveText = Color(hex: "#FF6369")    // Radix Red 11
+        /// Destructive used for text — darker on light surfaces, brighter on dark.
+        static let destructiveText = Color(light: Color(hex: "#CC2329"), dark: Color(hex: "#FF6369"))    // Radix Red 11
 
         /// Success — checkmarks, granted status, completion indicators.
         /// Independent green so success states are visually distinct from the blue accent.
@@ -125,16 +129,16 @@ enum DS {
         /// Warning — caution messages, manual verification failure explanations.
         static let warning = Color(hex: "#FFB224")            // Radix Amber 9
 
-        /// Warning text — brighter variant for text on dark backgrounds.
-        static let warningText = Color(hex: "#F1A10D")        // Radix Amber 11
+        /// Warning text — darker on light surfaces, brighter on dark for contrast.
+        static let warningText = Color(light: Color(hex: "#B45309"), dark: Color(hex: "#F1A10D"))        // Radix Amber 11
 
         /// Info/feature highlight — used for prompt card headers, code highlights.
         /// Lighter than accentText so informational elements are visually distinct
         /// from interactive accent-colored elements.
-        static let info = Color(hex: "#70B8FF")               // Radix Blue 9
+        static let info = Color(light: blue600, dark: Color(hex: "#70B8FF"))               // Radix Blue 9
 
         /// Inline code text color — slightly brighter blue for monospace code snippets.
-        static let codeText = Color(hex: "#9DC2FF")           // Radix Blue 11 variant
+        static let codeText = Color(light: blue700, dark: Color(hex: "#9DC2FF"))           // Radix Blue 11 variant
 
         // ── Overlay Cursor ───────────────────────────────────────────
 
@@ -165,7 +169,7 @@ enum DS {
         /// Footer/backdrop behind the floating help chat.
         /// Slightly lighter than the main window background so the chat zone reads
         /// as a distinct docked surface even before the pill input is visible.
-        static let helpChatBackdrop = Color(hex: "#212121")
+        static let helpChatBackdrop = Color(light: Color(hex: "#F2F3F3"), dark: Color(hex: "#212121"))
 
         // ── Disabled State ───────────────────────────────────────────
         // Following Material Design 3's disabled pattern:
@@ -850,6 +854,19 @@ extension View {
 // MARK: - Color Utilities
 
 extension Color {
+    /// Create a Color that resolves to the `light` value under Aqua appearance and
+    /// the `dark` value under DarkAqua. Picky drives effective appearance with
+    /// `.preferredColorScheme(...)` from the app-wide `PickyAppearanceStore`, so this
+    /// initializer is the canonical way to declare a token that flips with the user's
+    /// light/dark switch in the companion footer.
+    init(light: Color, dark: Color) {
+        let dynamicNSColor = NSColor(name: nil) { appearance in
+            let match = appearance.bestMatch(from: [.darkAqua, .aqua])
+            return match == .darkAqua ? NSColor(dark) : NSColor(light)
+        }
+        self.init(nsColor: dynamicNSColor)
+    }
+
     /// Create a Color from a hex string like "#FF5733" or "FF5733".
     init(hex: String) {
         let hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)

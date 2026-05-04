@@ -32,11 +32,13 @@ final class MenuBarPanelManager: NSObject {
     private var dismissPanelObserver: NSObjectProtocol?
 
     private let companionManager: CompanionManager
+    private let appearanceStore: PickyAppearanceStore
     private let panelWidth: CGFloat = CompanionPanelMetrics.panelWidth
     private let panelHeight: CGFloat = CompanionPanelMetrics.panelHeight
 
-    init(companionManager: CompanionManager) {
+    init(companionManager: CompanionManager, appearanceStore: PickyAppearanceStore) {
         self.companionManager = companionManager
+        self.appearanceStore = appearanceStore
         super.init()
         createStatusItem()
 
@@ -145,6 +147,8 @@ final class MenuBarPanelManager: NSObject {
     private func createPanel() {
         let companionPanelView = CompanionPanelView(companionManager: companionManager)
             .frame(width: panelWidth, height: panelHeight)
+            .environmentObject(appearanceStore)
+            .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
 
         let hostingView = NSHostingView(rootView: companionPanelView)
         hostingView.frame = NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight)

@@ -176,35 +176,35 @@ struct PickyMarkdownReportView: View {
             Text(renderer.inlineAttributedString(for: text))
                 .font(font(forHeadingLevel: level))
                 .fontWeight(level == 1 ? .semibold : .medium)
-                .foregroundStyle(Color.white)
+                .foregroundStyle(DS.Colors.textPrimary)
                 .padding(.top, level == 1 ? 2 : 8)
         case .paragraph(let text):
             Text(renderer.inlineAttributedString(for: text))
                 .font(.system(size: 13.5, weight: .regular, design: .default))
-                .foregroundStyle(Color.white.opacity(0.88))
+                .foregroundStyle(DS.Colors.textPrimary.opacity(0.92))
                 .lineSpacing(3)
         case .bullet(let text):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("•")
                     .font(.system(size: 13.5, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.62))
+                    .foregroundStyle(DS.Colors.textSecondary)
                 Text(renderer.inlineAttributedString(for: text))
                     .font(.system(size: 13.5, weight: .regular, design: .default))
-                    .foregroundStyle(Color.white.opacity(0.88))
+                    .foregroundStyle(DS.Colors.textPrimary.opacity(0.92))
                     .lineSpacing(3)
             }
         case .codeBlock(let text):
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(text.isEmpty ? " " : text)
                     .font(.system(size: 12.5, weight: .regular, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(0.9))
+                    .foregroundStyle(DS.Colors.codeText)
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    .stroke(DS.Colors.borderSubtle, lineWidth: 1)
             )
         }
     }
@@ -235,8 +235,18 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
     }
 
     private var records: [String: ReportRecord] = [:]
+    /// Held by the presenter for the lifetime of the app once `configure(appearanceStore:)`
+    /// runs from `CompanionAppDelegate`. The fallback default keeps unit tests and
+    /// previews working without crashing if `configure` was never called.
+    private var appearanceStore = PickyAppearanceStore()
 
     private init() {}
+
+    /// Wires the live appearance store so the report panel flips with the rest of
+    /// the app. Called once from `CompanionAppDelegate` at startup.
+    func configure(appearanceStore: PickyAppearanceStore) {
+        self.appearanceStore = appearanceStore
+    }
 
     func openReport(sessionID: String, title: String, fileURL: URL, markdown: String) throws {
         if let existing = records[sessionID] {
@@ -262,10 +272,13 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
         panel.isExcludedFromWindowsMenu = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.titlebarAppearsTransparent = true
-        panel.backgroundColor = NSColor(calibratedWhite: 0.04, alpha: 0.98)
+        panel.backgroundColor = PickyAppearancePanelChrome.windowBackground()
         panel.minSize = NSSize(width: 620, height: 420)
 
-        let hostingView = NSHostingView(rootView: PickyReportViewerWindowView(model: model))
+        let rootView = PickyReportViewerWindowView(model: model)
+            .environmentObject(appearanceStore)
+            .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
+        let hostingView = NSHostingView(rootView: rootView)
         hostingView.frame = NSRect(origin: .zero, size: panel.frame.size)
         hostingView.autoresizingMask = [.width, .height]
         panel.contentView = hostingView
@@ -329,20 +342,14 @@ struct PickyReportViewerWindowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider().overlay(Color.white.opacity(0.08))
+            Divider().overlay(DS.Colors.borderSubtle)
             ScrollView {
                 reportContent
                     .padding(EdgeInsets(top: 22, leading: 24, bottom: 28, trailing: 24))
             }
         }
         .onChange(of: model.revision) { _, _ in selectedTab = .answer }
-        .background(
-            LinearGradient(
-                colors: [Color.black.opacity(0.96), Color(red: 0.08, green: 0.09, blue: 0.12).opacity(0.98)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .background(DS.Colors.background)
     }
 
     @ViewBuilder
@@ -367,15 +374,15 @@ struct PickyReportViewerWindowView: View {
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Color.cyan.opacity(0.9))
+                .foregroundStyle(DS.Colors.accentText)
             VStack(alignment: .leading, spacing: 3) {
                 Text(model.title)
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(DS.Colors.textPrimary)
                     .lineLimit(1)
                 Text(model.fileURL.lastPathComponent)
                     .font(.system(size: 11.5, weight: .regular, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(0.55))
+                    .foregroundStyle(DS.Colors.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -397,7 +404,7 @@ struct PickyReportViewerWindowView: View {
     private func emptyState(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 13.5, weight: .regular, design: .default))
-            .foregroundStyle(Color.white.opacity(0.55))
+            .foregroundStyle(DS.Colors.textTertiary)
             .frame(maxWidth: .infinity, minHeight: 240, alignment: .center)
     }
 }

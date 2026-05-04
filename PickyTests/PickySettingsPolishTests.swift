@@ -8,6 +8,63 @@ import Testing
 @testable import Picky
 
 struct PickySettingsPolishTests {
+    @Test func settingsLoadDefaultsAppearanceToDarkWhenLegacyFileLacksField() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Settings", isDirectory: true), withIntermediateDirectories: true)
+        let url = root.appendingPathComponent("Settings", isDirectory: true).appendingPathComponent("settings.json")
+        let legacyJSON = """
+        {
+          "defaultCwd": "/tmp",
+          "worktreeParent": "",
+          "preferredToolVisibility": "visible in context only",
+          "readOnlyInvestigationPreference": true,
+          "daemonPath": "/tmp/agentd",
+          "logPath": "/tmp/logs"
+        }
+        """
+        try legacyJSON.data(using: .utf8)!.write(to: url)
+        let store = PickySettingsStore(url: url)
+
+        #expect(store.load().appearance == .dark)
+    }
+
+    @Test func settingsRoundTripPreservesAppearanceMode() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.defaultCwd = project.path
+        settings.worktreeParent = project.path
+        settings.appearance = .light
+
+        try store.save(settings)
+        #expect(store.load().appearance == .light)
+    }
+
+    @Test func appearanceStoreToggleAndPersistsThroughSettingsFile() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let settingsStore = PickySettingsStore(appSupportRoot: root)
+        var seed = PickySettings.defaults(appSupportRoot: root)
+        seed.defaultCwd = project.path
+        seed.worktreeParent = project.path
+        try settingsStore.save(seed)
+
+        let appearance = await PickyAppearanceStore(settingsStore: settingsStore)
+        await #expect(appearance.mode == .dark)
+
+        await appearance.toggle()
+        await #expect(appearance.mode == .light)
+
+        let reloaded = settingsStore.load()
+        #expect(reloaded.appearance == .light)
+
+        let rehydrated = await PickyAppearanceStore(settingsStore: settingsStore)
+        await #expect(rehydrated.mode == .light)
+    }
+
     @Test func settingsPersistReloadAndRejectInvalidCwd() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         let project = root.appendingPathComponent("project", isDirectory: true)

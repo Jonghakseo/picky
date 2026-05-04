@@ -66,6 +66,7 @@ struct PickySettings: Codable, Equatable {
     var ttsProvider: PickyVoiceProviderSelection
     var azureSTTPreferredLanguage: String
     var followsFocusedScreen: Bool
+    var appearance: PickyAppearanceMode
 
     init(
         defaultCwd: String,
@@ -77,7 +78,8 @@ struct PickySettings: Codable, Equatable {
         sttProvider: PickyVoiceProviderSelection = .automatic,
         ttsProvider: PickyVoiceProviderSelection = .automatic,
         azureSTTPreferredLanguage: String = "",
-        followsFocusedScreen: Bool = true
+        followsFocusedScreen: Bool = true,
+        appearance: PickyAppearanceMode = .dark
     ) {
         self.defaultCwd = defaultCwd
         self.worktreeParent = worktreeParent
@@ -89,6 +91,7 @@ struct PickySettings: Codable, Equatable {
         self.ttsProvider = ttsProvider
         self.azureSTTPreferredLanguage = azureSTTPreferredLanguage
         self.followsFocusedScreen = followsFocusedScreen
+        self.appearance = appearance
     }
 
     static func defaults(appSupportRoot: URL = PickyAppSupport.defaultRoot()) -> PickySettings {
@@ -103,7 +106,8 @@ struct PickySettings: Codable, Equatable {
             sttProvider: .automatic,
             ttsProvider: .automatic,
             azureSTTPreferredLanguage: "",
-            followsFocusedScreen: true
+            followsFocusedScreen: true,
+            appearance: .dark
         )
     }
 
@@ -128,6 +132,7 @@ struct PickySettings: Codable, Equatable {
         case ttsProvider
         case azureSTTPreferredLanguage
         case followsFocusedScreen
+        case appearance
     }
 
     init(from decoder: Decoder) throws {
@@ -144,6 +149,7 @@ struct PickySettings: Codable, Equatable {
         ttsProvider = try container.decodeIfPresent(PickyVoiceProviderSelection.self, forKey: .ttsProvider) ?? defaults.ttsProvider
         azureSTTPreferredLanguage = try container.decodeIfPresent(String.self, forKey: .azureSTTPreferredLanguage) ?? defaults.azureSTTPreferredLanguage
         followsFocusedScreen = try container.decodeIfPresent(Bool.self, forKey: .followsFocusedScreen) ?? defaults.followsFocusedScreen
+        appearance = try container.decodeIfPresent(PickyAppearanceMode.self, forKey: .appearance) ?? defaults.appearance
     }
 }
 

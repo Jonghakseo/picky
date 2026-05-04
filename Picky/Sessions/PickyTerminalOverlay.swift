@@ -95,8 +95,18 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
     }
 
     private var records: [String: TerminalRecord] = [:]
+    /// Held by the presenter for the lifetime of the app once `configure(appearanceStore:)`
+    /// runs from `CompanionAppDelegate`. The fallback default keeps unit tests and
+    /// previews working without crashing if `configure` was never called.
+    private var appearanceStore = PickyAppearanceStore()
 
     private init() {}
+
+    /// Wires the live appearance store so the terminal panel flips with the rest of
+    /// the app. Called once from `CompanionAppDelegate` at startup.
+    func configure(appearanceStore: PickyAppearanceStore) {
+        self.appearanceStore = appearanceStore
+    }
 
     func openTerminal(
         sessionID: String,
@@ -132,10 +142,13 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
         panel.isExcludedFromWindowsMenu = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.titlebarAppearsTransparent = true
-        panel.backgroundColor = NSColor(calibratedWhite: 0.04, alpha: 0.98)
+        panel.backgroundColor = PickyAppearancePanelChrome.windowBackground()
         panel.minSize = NSSize(width: 680, height: 420)
 
-        let hostingView = NSHostingView(rootView: PickyTerminalOverlayView(model: model))
+        let rootView = PickyTerminalOverlayView(model: model)
+            .environmentObject(appearanceStore)
+            .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
+        let hostingView = NSHostingView(rootView: rootView)
         hostingView.frame = NSRect(origin: .zero, size: panel.frame.size)
         hostingView.autoresizingMask = [.width, .height]
         panel.contentView = hostingView
@@ -274,22 +287,22 @@ struct PickyTerminalOverlayView: View {
             HStack(spacing: 8) {
                 Image(systemName: "terminal.fill")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(Color.green.opacity(0.92))
+                    .foregroundColor(DS.Colors.success)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(model.title)
                         .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.94))
+                        .foregroundColor(DS.Colors.textPrimary)
                         .lineLimit(1)
                     Text(model.statusText)
                         .font(.system(size: 10.5, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.54))
+                        .foregroundColor(DS.Colors.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
                 Spacer()
                 Text("⌘W / close syncs once")
                     .font(.system(size: 10.5, weight: .medium))
-                    .foregroundColor(.white.opacity(0.42))
+                    .foregroundColor(DS.Colors.textTertiary)
             }
             .padding(.horizontal, 14)
             .padding(.top, 14)
@@ -298,12 +311,12 @@ struct PickyTerminalOverlayView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        .stroke(DS.Colors.borderSubtle, lineWidth: 1)
                 )
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
         }
-        .background(Color(red: 0.035, green: 0.038, blue: 0.045).opacity(0.98))
+        .background(DS.Colors.background)
     }
 }
 
@@ -363,13 +376,35 @@ struct PickySwiftTermViewRepresentable: NSViewRepresentable {
 final class PickySwiftTermView: LocalProcessTerminalView {
     func configurePickyAppearance() {
         font = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
-        nativeForegroundColor = NSColor(calibratedWhite: 0.90, alpha: 1)
-        nativeBackgroundColor = NSColor(calibratedRed: 0.02, green: 0.024, blue: 0.03, alpha: 1)
-        layer?.backgroundColor = nativeBackgroundColor.cgColor
+        applyAppearanceColors()
         backspaceSendsControlH = false
         caretViewTracksFocus = false
         antiAliasCustomBlockGlyphs = false
         postsFrameChangedNotifications = true
+    }
+
+    /// Re-resolves SwiftTerm's native colors from `effectiveAppearance` so the
+    /// terminal repaints into a light palette when the user flips the companion
+    /// footer toggle. AppKit calls this whenever the host's `.preferredColorScheme`
+    /// changes, so no explicit notification wiring is needed.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyAppearanceColors()
+    }
+
+    private func applyAppearanceColors() {
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        // SwiftTerm caches NSColor components at assignment time, so we resolve up front
+        // instead of handing it a dynamic NSColor that would only flip on next reassignment.
+        let foreground = isDark
+            ? NSColor(calibratedWhite: 0.90, alpha: 1)
+            : NSColor(calibratedWhite: 0.10, alpha: 1)
+        let background = isDark
+            ? NSColor(calibratedRed: 0.02, green: 0.024, blue: 0.03, alpha: 1)
+            : NSColor(calibratedRed: 0.97, green: 0.97, blue: 0.97, alpha: 1)
+        nativeForegroundColor = foreground
+        nativeBackgroundColor = background
+        layer?.backgroundColor = background.cgColor
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {

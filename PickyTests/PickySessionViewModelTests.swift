@@ -331,6 +331,19 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDDockLayout.pinnedSessionIDAfterClick(current: "preview", clicked: "preview") == nil)
     }
 
+    @Test func hudDockKeepsGitSectionExpansionBySessionAcrossHoverClose() throws {
+        var storedValues: [String: Bool] = [:]
+        #expect(PickyHUDDockLayout.gitSectionExpansion(sessionID: "agent-a", storedValues: storedValues))
+
+        storedValues = PickyHUDDockLayout.gitSectionExpansionValues(storedValues, setting: false, for: "agent-a")
+        #expect(!PickyHUDDockLayout.gitSectionExpansion(sessionID: "agent-a", storedValues: storedValues))
+        #expect(PickyHUDDockLayout.gitSectionExpansion(sessionID: "agent-b", storedValues: storedValues))
+
+        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "agent-a", pinnedID: nil, isHUDHovered: false) == nil)
+        #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: nil, sessionID: "agent-a", pinnedID: nil) == "agent-a")
+        #expect(!PickyHUDDockLayout.gitSectionExpansion(sessionID: "agent-a", storedValues: storedValues))
+    }
+
     @Test func hudDockPanelCentersVerticallyWithinVisibleFrame() throws {
         let visibleFrame = CGRect(x: 0, y: 100, width: 1200, height: 800)
         #expect(PickyHUDDockLayout.centeredPanelY(visibleFrame: visibleFrame, targetHeight: 400) == 300)

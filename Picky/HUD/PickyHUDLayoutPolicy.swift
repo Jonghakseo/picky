@@ -45,6 +45,7 @@ enum PickyHUDDockLayout {
     static let screenMargin: CGFloat = 8
     static let closeDelay: TimeInterval = 0.4
     static let closeDelayNanoseconds: UInt64 = 400_000_000
+    static let defaultGitSectionExpanded = true
 
     static func activeSessionID(visibleIDs: [String], pinnedID: String?, previewID: String?) -> String? {
         if let pinnedID, visibleIDs.contains(pinnedID) { return pinnedID }
@@ -62,6 +63,16 @@ enum PickyHUDDockLayout {
 
     static func pinnedSessionIDAfterClick(current: String?, clicked: String) -> String? {
         current == clicked ? nil : clicked
+    }
+
+    static func gitSectionExpansion(sessionID: String, storedValues: [String: Bool]) -> Bool {
+        storedValues[sessionID] ?? defaultGitSectionExpanded
+    }
+
+    static func gitSectionExpansionValues(_ storedValues: [String: Bool], setting isExpanded: Bool, for sessionID: String) -> [String: Bool] {
+        var updatedValues = storedValues
+        updatedValues[sessionID] = isExpanded
+        return updatedValues
     }
 
     static func centeredPanelY(visibleFrame: CGRect, targetHeight: CGFloat) -> CGFloat {

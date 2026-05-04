@@ -14,6 +14,7 @@ struct PickyHUDView: View {
     @State private var previewSessionID: String?
     @State private var isHUDHovered = false
     @State private var closeExpansionTask: Task<Void, Never>?
+    @State private var gitSectionExpansionBySessionID: [String: Bool] = [:]
 
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {
         Array(viewModel.sessions.prefix(PickyHUDDockLayout.visibleSessionLimit))
@@ -50,6 +51,7 @@ struct PickyHUDView: View {
                 PickySessionCardView(
                     session: activeSession,
                     isExpanded: true,
+                    isGitSectionExpanded: gitSectionExpandedBinding(for: activeSession.id),
                     viewModel: viewModel,
                     showsDisclosure: false,
                     onToggle: { pinSession(activeSession.id) },
@@ -91,6 +93,24 @@ struct PickyHUDView: View {
             current: previewSessionID,
             sessionID: sessionID,
             pinnedID: pinnedSessionID
+        )
+    }
+
+    private func gitSectionExpandedBinding(for sessionID: String) -> Binding<Bool> {
+        Binding(
+            get: {
+                PickyHUDDockLayout.gitSectionExpansion(
+                    sessionID: sessionID,
+                    storedValues: gitSectionExpansionBySessionID
+                )
+            },
+            set: { isExpanded in
+                gitSectionExpansionBySessionID = PickyHUDDockLayout.gitSectionExpansionValues(
+                    gitSectionExpansionBySessionID,
+                    setting: isExpanded,
+                    for: sessionID
+                )
+            }
         )
     }
 
@@ -339,11 +359,12 @@ private struct PickySessionCardView: View {
     let onHoverChanged: (Bool) -> Void
     @State private var followUpText = ""
     @State private var gitStatus: PickyGitRepositoryStatus?
-    @State private var isGitSectionExpanded = true
+    @Binding private var isGitSectionExpanded: Bool
 
     init(
         session: PickySessionListViewModel.SessionCard,
         isExpanded: Bool,
+        isGitSectionExpanded: Binding<Bool>,
         viewModel: PickySessionListViewModel,
         showsDisclosure: Bool,
         onToggle: @escaping () -> Void,
@@ -351,6 +372,7 @@ private struct PickySessionCardView: View {
     ) {
         self.session = session
         self.isExpanded = isExpanded
+        _isGitSectionExpanded = isGitSectionExpanded
         self.viewModel = viewModel
         self.showsDisclosure = showsDisclosure
         self.onToggle = onToggle

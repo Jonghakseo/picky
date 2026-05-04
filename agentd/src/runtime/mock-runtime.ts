@@ -1,5 +1,5 @@
 import type { BuiltPrompt } from "../prompt-builder.js";
-import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./types.js";
+import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSteerResult } from "./types.js";
 
 export class MockRuntime implements AgentRuntime {
   private sequence = 0;
@@ -22,8 +22,9 @@ class MockRuntimeSession implements RuntimeSessionHandle {
     this.emit({ type: "status", status: "running", summary: "Follow-up received" });
   }
 
-  async steer(text: string): Promise<void> {
+  async steer(text: string): Promise<RuntimeSteerResult> {
     this.emit({ type: "log", line: `steer: ${text}` });
+    return { handledSynchronously: false };
   }
 
   async abort(): Promise<void> {

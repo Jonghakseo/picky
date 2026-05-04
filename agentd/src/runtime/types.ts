@@ -10,13 +10,23 @@ export type RuntimeEvent =
   | { type: "tool"; toolCallId: string; name: string; status: "running" | "succeeded" | "failed"; preview?: string }
   | { type: "extension_ui"; request: Record<string, unknown>; waitsForInput: boolean };
 
+export interface RuntimeSteerResult {
+  /**
+   * True when Pi handled the prompt synchronously inside `session.prompt()` without starting an
+   * agent turn (e.g. a `/slash` extension command or an `input` handler returning `handled`).
+   * The runtime synthesizes a terminal `completed` status for those, and callers should NOT
+   * resurrect the session into `running` afterwards.
+   */
+  handledSynchronously: boolean;
+}
+
 export interface RuntimeSessionHandle {
   id: string;
   /** Resolves when the follow-up is accepted/queued, not when the agent finishes the turn. */
   followUp(prompt: BuiltPrompt): Promise<void>;
   /** Resolves when replacement input is accepted/queued after interruption, not when the agent finishes the turn. */
   interrupt?(prompt: BuiltPrompt): Promise<void>;
-  steer(text: string): Promise<void>;
+  steer(text: string): Promise<RuntimeSteerResult>;
   abort(): Promise<void>;
   answerExtensionUi?(requestId: string, value: unknown): Promise<void>;
   openArtifact?(artifactId: string): Promise<string>;

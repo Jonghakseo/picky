@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { ArtifactStore, extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "./artifact-store.js";
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
+import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
 import type { PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentState } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
@@ -704,9 +705,17 @@ export class SessionSupervisor extends EventEmitter {
     if (this.isSideSession(sessionId)) this.clearSideCompletionTracking(sessionId);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     logAgentd("steer requested", { sessionId, textChars: text.length });
-    await handle.steer(text);
+    const outcome = await handle.steer(text);
     await this.appendLog(sessionId, `steer: ${text}`);
-    await this.patch(sessionId, { status: "running", lastSummary: "Steering message sent", finalAnswer: undefined, thinkingPreview: undefined });
+    // Pi handles `/slash` extension commands and `input` handlers that return `handled` synchronously
+    // inside `session.prompt()` without starting an agent turn. PiSdkRuntimeSession synthesizes a
+    // `completed` runtime status for those and surfaces `handledSynchronously: true` here. Skipping
+    // the `running` patch in that case keeps the HUD card from getting stuck on a loading spinner
+    // (e.g. `/diff-review` reported by the user). Normal text steers still flip to `running`
+    // immediately so the existing UX contract is preserved.
+    if (!outcome?.handledSynchronously) {
+      await this.patch(sessionId, { status: "running", lastSummary: "Steering message sent", finalAnswer: undefined, thinkingPreview: undefined });
+    }
     return this.mustGet(sessionId);
   }
 
@@ -723,9 +732,13 @@ export class SessionSupervisor extends EventEmitter {
   async answerExtensionUi(sessionId: string, requestId: string, value: unknown): Promise<PickyAgentSession> {
     const handle = this.runtimeHandles.get(sessionId);
     if (!handle?.answerExtensionUi) throw new Error("Runtime session cannot answer extension UI requests");
+    const pendingBeforeAnswer = this.mustGet(sessionId).pendingExtensionUiRequest;
     await handle.answerExtensionUi(requestId, value);
     const session = this.mustGet(sessionId);
     if (session.pendingExtensionUiRequest?.id === requestId) {
+      const pending = pendingBeforeAnswer?.id === requestId ? pendingBeforeAnswer : session.pendingExtensionUiRequest;
+      const summary = pending ? summarizeExtensionUiAnswer(pending, value) : undefined;
+      if (summary) await this.appendLog(sessionId, `extension ui answer: ${summary}`);
       await this.patch(sessionId, { pendingExtensionUiRequest: undefined, status: "running", lastSummary: "Extension UI answered", thinkingPreview: undefined });
     }
     return this.mustGet(sessionId);

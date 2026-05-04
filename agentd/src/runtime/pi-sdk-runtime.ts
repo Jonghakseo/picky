@@ -15,7 +15,7 @@ import {
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
-import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./types.js";
+import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSteerResult } from "./types.js";
 import { logAgentd } from "../local-log.js";
 
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -137,10 +137,11 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
   }
 
-  async steer(text: string): Promise<void> {
+  async steer(text: string): Promise<RuntimeSteerResult> {
     logAgentd("pi steer", { sessionId: this.id, textChars: text.length });
     try {
-      await this.promptWithOptions({ text, imagePaths: [] }, "steer");
+      const handledSynchronously = await this.promptWithOptions({ text, imagePaths: [] }, "steer");
+      return { handledSynchronously };
     } catch (error) {
       this.emit({ type: "status", status: "failed", summary: messageOf(error) });
       throw error;
@@ -266,8 +267,8 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     return runtimeEvent;
   }
 
-  private async promptWithOptions(prompt: BuiltPrompt, streamingBehavior?: "steer" | "followUp"): Promise<void> {
-    await this.promptUntilAccepted(prompt.text, {
+  private async promptWithOptions(prompt: BuiltPrompt, streamingBehavior?: "steer" | "followUp"): Promise<boolean> {
+    return this.promptUntilAccepted(prompt.text, {
       images: await imageOptions(prompt.imagePaths),
       source: "rpc",
       streamingBehavior,
@@ -277,7 +278,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private async promptUntilAccepted(
     text: string,
     options: { images?: Awaited<ReturnType<typeof imageOptions>>; source: "rpc"; streamingBehavior?: "steer" | "followUp" },
-  ): Promise<void> {
+  ): Promise<boolean> {
     const wasStreaming = this.runtime.session.isStreaming;
     let accepted = false;
     let promptResolved = false;
@@ -324,18 +325,20 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
     await acceptedPromise;
 
-    if (promptResolved) this.maybeEmitImmediateCompletion(wasStreaming);
+    return promptResolved ? this.maybeEmitImmediateCompletion(wasStreaming) : false;
   }
 
   // Pi handles `/slash` extension commands and input handlers that return `handled` synchronously
   // inside `session.prompt()` without emitting any agent_start / turn_end / agent_end events. The
   // prompt promise resolves immediately and `isStreaming` stays false, so the caller would otherwise
   // be stuck in a permanent "running" state on the Picky side. Synthesize a completed status when we
-  // detect that no agent turn was actually started.
-  private maybeEmitImmediateCompletion(wasStreaming: boolean): void {
-    if (wasStreaming) return;
-    if (this.runtime.session.isStreaming) return;
+  // detect that no agent turn was actually started, and report whether we did so to the caller so
+  // higher layers (e.g. session-supervisor.steer) can avoid resurrecting the session as `running`.
+  private maybeEmitImmediateCompletion(wasStreaming: boolean): boolean {
+    if (wasStreaming) return false;
+    if (this.runtime.session.isStreaming) return false;
     this.emit({ type: "status", status: "completed", summary: "Handled without agent turn" });
+    return true;
   }
 
   private createBridge(): ExtensionUiBridge {

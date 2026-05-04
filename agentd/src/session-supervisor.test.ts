@@ -218,6 +218,36 @@ describe("SessionSupervisor", () => {
     expect(updated.lastSummary).toBe("Steering message sent");
   });
 
+  // Regression for the `/diff-review` (and any other Pi `pi.registerCommand` slash command) HUD
+  // spinner: PiSdkRuntimeSession.maybeEmitImmediateCompletion synthesizes a `completed` runtime
+  // status when Pi handles a slash command synchronously inside `session.prompt()`, and reports
+  // back via `RuntimeSteerResult.handledSynchronously`. Previously `steer()` then unconditionally
+  // re-patched to `running`, leaving the HUD card stuck on the loading state forever.
+  it("keeps a side session terminal when steer reports handledSynchronously (slash command)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "조사 완료입니다." });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+    expect(supervisor.get(side.id)?.status).toBe("completed");
+
+    // Replay PiSdkRuntimeSession's behaviour for slash commands: signal `handledSynchronously` and
+    // (optionally) the synthetic `completed` status emit. The supervisor must NOT then resurrect
+    // the session into `running`.
+    runtime.handle!.steerOutcome = { handledSynchronously: true };
+
+    const updated = await supervisor.steerSideSession(side.id, "/diff-review");
+
+    expect(runtime.handle?.steers).toEqual(["/diff-review"]);
+    expect(updated.status).toBe("completed");
+    expect(updated.lastSummary).not.toBe("Steering message sent");
+    expect(updated.logs).toContain("steer: /diff-review");
+  });
+
   it("settles active tools when a session is aborted", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
@@ -1254,6 +1284,64 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.status).toBe("completed");
   });
 
+  it("appends an `extension ui answer:` log entry summarizing the user's askUserQuestion answer", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const session = await supervisor.create(context("answer log"));
+
+    runtime.handle?.emit({
+      type: "extension_ui",
+      waitsForInput: true,
+      request: {
+        id: "ui-form",
+        sessionId: session.id,
+        method: "askUserQuestion",
+        title: "Confirm",
+        questions: [
+          {
+            id: "commit-confirm",
+            type: "radio",
+            prompt: "Continue?",
+            options: [
+              { value: "commit", label: "Commit" },
+              { value: "stop", label: "Stop and review" },
+            ],
+          },
+        ],
+        createdAt: "2026-05-01T00:00:00.000Z",
+      },
+    });
+    await settle();
+
+    await supervisor.answerExtensionUi(session.id, "ui-form", { value: { "commit-confirm": "stop" } });
+
+    const updated = supervisor.get(session.id)!;
+    expect(runtime.handle?.extensionUiAnswers).toEqual([{ requestId: "ui-form", value: { value: { "commit-confirm": "stop" } } }]);
+    expect(updated.pendingExtensionUiRequest).toBeUndefined();
+    expect(updated.logs.includes("extension ui answer: Stop and review")).toBe(true);
+  });
+
+  it("does not append an answer log when the user cancels an extension UI request", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const session = await supervisor.create(context("cancel answer"));
+
+    runtime.handle?.emit({
+      type: "extension_ui",
+      waitsForInput: true,
+      request: { id: "ui-cancel", sessionId: session.id, method: "input", prompt: "Need input", createdAt: "2026-05-01T00:00:00.000Z" },
+    });
+    await settle();
+
+    await supervisor.answerExtensionUi(session.id, "ui-cancel", { cancelled: true });
+
+    const updated = supervisor.get(session.id)!;
+    expect(updated.pendingExtensionUiRequest).toBeUndefined();
+    expect(updated.logs.some((line) => line.startsWith("extension ui answer:"))).toBe(false);
+  });
+
   it("emits waiting_for_input session update before extension UI request", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
@@ -1377,6 +1465,7 @@ class ManualHandle implements RuntimeSessionHandle {
   followUps: BuiltPrompt[] = [];
   interrupts: BuiltPrompt[] = [];
   bootstrapInjections: Array<{ user: string; assistant: string }> = [];
+  extensionUiAnswers: Array<{ requestId: string; value: unknown }> = [];
   constructor(readonly id: string) {}
   async followUp(prompt: BuiltPrompt): Promise<void> {
     this.followUps.push(prompt);
@@ -1385,12 +1474,17 @@ class ManualHandle implements RuntimeSessionHandle {
     this.interrupts.push(prompt);
   }
   steers: string[] = [];
+  steerOutcome: { handledSynchronously: boolean } = { handledSynchronously: false };
   aborts = 0;
-  async steer(text: string): Promise<void> {
+  async steer(text: string): Promise<{ handledSynchronously: boolean }> {
     this.steers.push(text);
+    return this.steerOutcome;
   }
   async abort(): Promise<void> {
     this.aborts += 1;
+  }
+  async answerExtensionUi(requestId: string, value: unknown): Promise<void> {
+    this.extensionUiAnswers.push({ requestId, value });
   }
   async injectInitialBootstrap(messages: { user: string; assistant: string }): Promise<void> {
     this.bootstrapInjections.push(messages);

@@ -238,22 +238,25 @@ private struct PickyHUDDockRailView: View {
     let onCreateSideAgent: () -> Void
 
     var body: some View {
-        VStack(spacing: 9) {
+        VStack(spacing: 0) {
             createSideAgentButton
 
-            ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
-                PickyHUDDockIconView(
-                    session: session,
-                    index: index,
-                    isActive: activeSessionID == session.id,
-                    isPinned: pinnedSessionID == session.id,
-                    onHover: { onHoverSession(session.id) },
-                    onPin: { onPinSession(session.id) }
-                )
+            VStack(spacing: 9) {
+                ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
+                    PickyHUDDockIconView(
+                        session: session,
+                        index: index,
+                        isActive: activeSessionID == session.id,
+                        isPinned: pinnedSessionID == session.id,
+                        onHover: { onHoverSession(session.id) },
+                        onPin: { onPinSession(session.id) }
+                    )
+                }
             }
+            .padding(.top, 6)
         }
         .padding(.horizontal, 6)
-        .padding(.top, 14)
+        .padding(.top, 8)
         .padding(.bottom, 10)
         .background(
             Capsule(style: .continuous)
@@ -265,10 +268,12 @@ private struct PickyHUDDockRailView: View {
     private var createSideAgentButton: some View {
         Button(action: onCreateSideAgent) {
             Image(systemName: "plus")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(DS.Colors.textSecondary)
-                .frame(width: 36, height: 28)
-                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .font(.system(size: 9.5, weight: .semibold))
+                .foregroundColor(DS.Colors.textTertiary)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(DS.Colors.surface2.opacity(0.45)))
+                .overlay(Circle().stroke(DS.Colors.borderSubtle.opacity(0.35), lineWidth: 0.5))
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .pointerCursor()

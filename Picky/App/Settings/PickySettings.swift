@@ -55,6 +55,28 @@ enum PickyVoiceProviderCapability {
     case speechPlayback
 }
 
+enum PickyMainAgentThinkingLevel: String, Codable, CaseIterable, Identifiable {
+    case off
+    case minimal
+    case low
+    case medium
+    case high
+    case xhigh
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .off: "Off"
+        case .minimal: "Minimal"
+        case .low: "Low"
+        case .medium: "Medium"
+        case .high: "High"
+        case .xhigh: "Extra High"
+        }
+    }
+}
+
 /// User zoom level for the markdown report viewer and the Pi terminal overlay.
 /// Each surface keeps its own multiplier so increasing terminal cell density does not
 /// also blow up the markdown body. Bounded by `PickyFontScales.minimum`/`.maximum`
@@ -105,6 +127,7 @@ struct PickySettings: Codable, Equatable {
     var appearance: PickyAppearanceMode
     var notifications: PickyNotificationPreferences
     var fontScales: PickyFontScales
+    var mainAgentThinkingLevel: PickyMainAgentThinkingLevel
 
     init(
         defaultCwd: String,
@@ -119,7 +142,8 @@ struct PickySettings: Codable, Equatable {
         followsFocusedScreen: Bool = true,
         appearance: PickyAppearanceMode = .dark,
         notifications: PickyNotificationPreferences = .defaults,
-        fontScales: PickyFontScales = .defaults
+        fontScales: PickyFontScales = .defaults,
+        mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .medium
     ) {
         self.defaultCwd = defaultCwd
         self.worktreeParent = worktreeParent
@@ -134,6 +158,7 @@ struct PickySettings: Codable, Equatable {
         self.appearance = appearance
         self.notifications = notifications
         self.fontScales = fontScales
+        self.mainAgentThinkingLevel = mainAgentThinkingLevel
     }
 
     static func defaults(appSupportRoot: URL = PickyAppSupport.defaultRoot()) -> PickySettings {
@@ -151,7 +176,8 @@ struct PickySettings: Codable, Equatable {
             followsFocusedScreen: true,
             appearance: .dark,
             notifications: .defaults,
-            fontScales: .defaults
+            fontScales: .defaults,
+            mainAgentThinkingLevel: .medium
         )
     }
 
@@ -179,6 +205,7 @@ struct PickySettings: Codable, Equatable {
         case appearance
         case notifications
         case fontScales
+        case mainAgentThinkingLevel
     }
 
     init(from decoder: Decoder) throws {
@@ -197,6 +224,7 @@ struct PickySettings: Codable, Equatable {
         followsFocusedScreen = try container.decodeIfPresent(Bool.self, forKey: .followsFocusedScreen) ?? defaults.followsFocusedScreen
         appearance = try container.decodeIfPresent(PickyAppearanceMode.self, forKey: .appearance) ?? defaults.appearance
         notifications = try container.decodeIfPresent(PickyNotificationPreferences.self, forKey: .notifications) ?? defaults.notifications
+        mainAgentThinkingLevel = try container.decodeIfPresent(PickyMainAgentThinkingLevel.self, forKey: .mainAgentThinkingLevel) ?? defaults.mainAgentThinkingLevel
         if let storedScales = try container.decodeIfPresent(PickyFontScales.self, forKey: .fontScales) {
             fontScales = PickyFontScales(
                 markdownReport: PickyFontScales.clamped(storedScales.markdownReport),

@@ -62,6 +62,7 @@ struct PickyAgentDaemonLauncherTests {
         #expect(launcher.state == .running)
         #expect(runner.launchedConfiguration?.environment["PICKY_AGENTD_PORT"] == "19002")
         #expect(runner.launchedConfiguration?.environment["PICKY_AGENTD_TOKEN"] == "token-123")
+        #expect(runner.launchedConfiguration?.environment["PICKY_MAIN_AGENT_THINKING_LEVEL"] == "medium")
         #expect(runner.launchedConfiguration?.environment["PICKY_AGENTD_RUNTIME"] == "mock")
         #expect(try String(contentsOf: temp.appendingPathComponent("Logs/agentd.stdout.log")).contains("ready"))
         #expect(try String(contentsOf: temp.appendingPathComponent("Logs/agentd.stderr.log")).contains("warn"))

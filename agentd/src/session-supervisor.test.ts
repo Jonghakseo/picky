@@ -6,7 +6,7 @@ import { ArtifactStore } from "./artifact-store.js";
 import type { PickyContextPacket } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { BuiltPrompt } from "./prompt-builder.js";
-import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./runtime/types.js";
+import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, ThinkingLevel } from "./runtime/types.js";
 import type { TaskRouteDecision, TaskRouter } from "./task-router.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
@@ -1036,6 +1036,31 @@ describe("SessionSupervisor", () => {
     expect(supervisor.list()).toEqual([]);
   });
 
+  it("applies configured thinking level to a future prewarmed main runtime", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+
+    await supervisor.setMainAgentThinkingLevel("high");
+    await supervisor.prewarmMainAgent("/tmp/project");
+
+    expect(mainRuntime.thinkingLevels).toEqual(["high"]);
+    expect(mainRuntime.handle?.thinkingLevels).toEqual(["high"]);
+  });
+
+  it("applies configured thinking level to the active main runtime", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+
+    await supervisor.prewarmMainAgent("/tmp/project");
+    const handle = mainRuntime.handle!;
+    await supervisor.setMainAgentThinkingLevel("xhigh");
+
+    expect(mainRuntime.thinkingLevels).toEqual(["xhigh"]);
+    expect(handle.thinkingLevels).toEqual(["xhigh"]);
+  });
+
   it("injects the main-agent bootstrap pair on a fresh prewarm so the rules ride the first turn", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
@@ -1505,6 +1530,7 @@ class DeferredPrewarmRuntime implements AgentRuntime {
 class ManualRuntime implements AgentRuntime {
   handle?: ManualHandle;
   createCalls = 0;
+  thinkingLevels: string[] = [];
   prewarmCalls = 0;
   prewarmOptions: Array<{ cwd?: string; sessionId?: string }> = [];
   prewarm?: (options: { cwd?: string; sessionId?: string }) => Promise<RuntimeSessionHandle>;
@@ -1525,6 +1551,10 @@ class ManualRuntime implements AgentRuntime {
     this.handle = new ManualHandle(options.sessionId ?? "manual");
     return this.handle;
   }
+
+  setThinkingLevel(level: ThinkingLevel): void {
+    this.thinkingLevels.push(level);
+  }
 }
 
 class ManualHandle implements RuntimeSessionHandle {
@@ -1533,6 +1563,7 @@ class ManualHandle implements RuntimeSessionHandle {
   interrupts: BuiltPrompt[] = [];
   bootstrapInjections: Array<{ user: string; assistant: string }> = [];
   extensionUiAnswers: Array<{ requestId: string; value: unknown }> = [];
+  thinkingLevels: string[] = [];
   constructor(readonly id: string) {}
   async followUp(prompt: BuiltPrompt): Promise<void> {
     this.followUps.push(prompt);
@@ -1555,6 +1586,9 @@ class ManualHandle implements RuntimeSessionHandle {
   }
   async injectInitialBootstrap(messages: { user: string; assistant: string }): Promise<void> {
     this.bootstrapInjections.push(messages);
+  }
+  setThinkingLevel(level: ThinkingLevel): void {
+    this.thinkingLevels.push(level);
   }
   subscribe(listener: (event: RuntimeEvent) => void): () => void {
     this.listeners.add(listener);

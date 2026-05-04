@@ -15,10 +15,8 @@ import {
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
-import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSteerResult } from "./types.js";
+import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSteerResult, ThinkingLevel } from "./types.js";
 import { logAgentd } from "../local-log.js";
-
-type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export interface PiSdkRuntimeOptions {
   agentDir?: string;
@@ -32,7 +30,15 @@ export interface PiSdkRuntimeOptions {
 }
 
 export class PiSdkRuntime implements AgentRuntime {
-  constructor(private readonly options: PiSdkRuntimeOptions = {}) {}
+  private thinkingLevel?: ThinkingLevel;
+
+  constructor(private readonly options: PiSdkRuntimeOptions = {}) {
+    this.thinkingLevel = options.thinkingLevel;
+  }
+
+  setThinkingLevel(level: ThinkingLevel): void {
+    this.thinkingLevel = level;
+  }
 
   async create(prompt: BuiltPrompt, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
     logAgentd("pi runtime create", { sessionId: options.sessionId, cwd: options.cwd, promptChars: prompt.text.length, images: prompt.imagePaths?.length ?? 0 });
@@ -69,7 +75,7 @@ export class PiSdkRuntime implements AgentRuntime {
     const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd: runtimeCwd, sessionManager, sessionStartEvent }) => {
       const services = await createServices({ cwd: runtimeCwd, agentDir, resourceLoaderOptions: this.options.resourceLoaderOptions });
       return {
-        ...(await createSessionFromServices({ services, sessionManager, sessionStartEvent, customTools: this.options.customTools, thinkingLevel: this.options.thinkingLevel })),
+        ...(await createSessionFromServices({ services, sessionManager, sessionStartEvent, customTools: this.options.customTools, thinkingLevel: this.thinkingLevel })),
         services,
         diagnostics: services.diagnostics,
       };
@@ -157,6 +163,16 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   async answerExtensionUi(requestId: string, value: unknown): Promise<void> {
     this.pendingExtensionUiRequestIds.delete(requestId);
     this.uiBridge.answer(requestId, normalizeAnswer(value));
+  }
+
+  setThinkingLevel(level: ThinkingLevel): void {
+    const session = this.runtime.session as unknown as { setThinkingLevel?: (level: ThinkingLevel) => void };
+    if (!session.setThinkingLevel) {
+      this.emit({ type: "log", line: "pi thinking level change skipped: active session does not support setThinkingLevel" });
+      return;
+    }
+    session.setThinkingLevel(level);
+    logAgentd("pi thinking level set", { sessionId: this.id, level });
   }
 
   async injectInitialBootstrap(messages: { user: string; assistant: string }): Promise<void> {

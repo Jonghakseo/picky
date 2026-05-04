@@ -9,6 +9,7 @@ class FakeSession extends EventEmitter {
   followUps: string[] = [];
   steers: string[] = [];
   aborts = 0;
+  thinkingLevels: string[] = [];
   isStreaming = false;
   bound = false;
   uiContext?: Record<string, unknown>;
@@ -46,6 +47,10 @@ class FakeSession extends EventEmitter {
   async abort(): Promise<void> {
     this.aborts += 1;
     this.isStreaming = false;
+  }
+
+  setThinkingLevel(level: string): void {
+    this.thinkingLevels.push(level);
   }
 
   async bindExtensions(options?: { uiContext?: Record<string, unknown> }): Promise<void> {
@@ -425,6 +430,40 @@ describe("PiSdkRuntime", () => {
 
     expect(fakeSession.state.messages).toHaveLength(0);
     expect(fakeSession.appendedMessages).toHaveLength(0);
+  });
+
+  it("updates the active Pi session thinking level", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+
+    handle.setThinkingLevel?.("high");
+
+    expect(fakeSession.thinkingLevels).toEqual(["high"]);
+  });
+
+  it("uses updated thinking level for future Pi session creation", async () => {
+    const fakeSession = new FakeSession();
+    const createSessionFromServices = vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } }));
+    const runtime = new PiSdkRuntime({
+      getAgentDir: () => "/tmp/.pi/agent",
+      thinkingLevel: "medium",
+      createServices: vi.fn(async () => ({ diagnostics: [] })) as never,
+      createSessionFromServices: createSessionFromServices as never,
+      createRuntime: vi.fn(async (factory, options) => {
+        const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
+        return {
+          session: result.session,
+          diagnostics: result.diagnostics,
+          setRebindSession: vi.fn(),
+        };
+      }) as never,
+    });
+
+    runtime.setThinkingLevel("xhigh");
+    await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+
+    expect(createSessionFromServices).toHaveBeenCalledWith(expect.objectContaining({ thinkingLevel: "xhigh" }));
   });
 
   it("passes an explicit thinking level override to Pi session creation", async () => {

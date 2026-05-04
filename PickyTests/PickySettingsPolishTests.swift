@@ -29,6 +29,38 @@ struct PickySettingsPolishTests {
         #expect(statuses[.voice] == .idle)
     }
 
+    @Test func settingsLoadDefaultsMainAgentThinkingLevelToMediumWhenLegacyFileLacksField() throws {
+        let legacyJSON = """
+        {
+          "defaultCwd": "/tmp",
+          "worktreeParent": "",
+          "preferredToolVisibility": "visible in context only",
+          "readOnlyInvestigationPreference": true,
+          "daemonPath": "/tmp/agentd",
+          "logPath": "/tmp/logs"
+        }
+        """.data(using: .utf8)!
+
+        let settings = try JSONDecoder().decode(PickySettings.self, from: legacyJSON)
+
+        #expect(settings.mainAgentThinkingLevel == .medium)
+    }
+
+    @Test func settingsRoundTripPreservesMainAgentThinkingLevel() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.defaultCwd = project.path
+        settings.worktreeParent = project.path
+        settings.mainAgentThinkingLevel = .high
+
+        try store.save(settings)
+
+        #expect(store.load().mainAgentThinkingLevel == .high)
+    }
+
     @Test func settingsLoadDefaultsAppearanceToDarkWhenLegacyFileLacksField() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root.appendingPathComponent("Settings", isDirectory: true), withIntermediateDirectories: true)

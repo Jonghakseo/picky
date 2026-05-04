@@ -27,6 +27,14 @@ struct PickySettingsView: View {
                 Toggle("On input request", isOn: $viewModel.settings.notifications.notifyOnWaitingForInput)
             }
 
+            Section("Main Agent") {
+                Picker("Reasoning level", selection: $viewModel.settings.mainAgentThinkingLevel) {
+                    ForEach(PickyMainAgentThinkingLevel.allCases) { level in
+                        Text(level.displayName).tag(level)
+                    }
+                }
+            }
+
             Section("Voice") {
                 Picker("STT provider", selection: $viewModel.settings.sttProvider) {
                     ForEach(PickyVoiceProviderSelection.cases(for: .transcription)) { provider in

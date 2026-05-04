@@ -9,13 +9,14 @@ import { createPickyHandoffTool, createPickySideSessionsTool, createPickySideSte
 import { createPickyAskUserQuestionTool } from "./application/ask-user-question-tool.js";
 import { createPickyShowPointerTool } from "./application/pointer-tool.js";
 import { removeConnectionInfo, writeConnectionInfo } from "./connection-info-store.js";
-import { PROTOCOL_VERSION } from "./protocol.js";
+import { PROTOCOL_VERSION, ThinkingLevelSchema } from "./protocol.js";
 import { logAgentd } from "./local-log.js";
 
 const port = Number(process.env.PICKY_AGENTD_PORT ?? 17631);
 const token = process.env.PICKY_AGENTD_TOKEN;
 const appSupportDir = process.env.PICKY_APP_SUPPORT_DIR ?? defaultAppSupportRoot();
 const defaultCwd = process.env.PICKY_DEFAULT_CWD ?? process.cwd();
+const mainAgentThinkingLevel = parseMainAgentThinkingLevel(process.env.PICKY_MAIN_AGENT_THINKING_LEVEL);
 
 if (!token) {
   console.error("PICKY_AGENTD_TOKEN is required");
@@ -23,7 +24,7 @@ if (!token) {
 }
 
 const useMockRuntime = process.env.PICKY_AGENTD_RUNTIME === "mock";
-logAgentd("startup", { port, runtime: useMockRuntime ? "mock" : "pi", appSupportDir, defaultCwd });
+logAgentd("startup", { port, runtime: useMockRuntime ? "mock" : "pi", appSupportDir, defaultCwd, mainAgentThinkingLevel });
 let supervisor: SessionSupervisor;
 const pointerTool = createPickyShowPointerTool(async (request) => supervisor.requestPointerOverlay(request));
 const askUserQuestionTool = createPickyAskUserQuestionTool();
@@ -33,7 +34,7 @@ const runtime = useMockRuntime ? new MockRuntime() : new PiSdkRuntime({ customTo
 const mainRuntime = useMockRuntime
   ? undefined
   : new PiSdkRuntime({
-      thinkingLevel: "medium",
+      thinkingLevel: mainAgentThinkingLevel,
       // Main agent never opens an `ask_user_question` dialog itself; deeper questions belong
       // to the side agent it hands off to.
       customTools: [
@@ -84,6 +85,14 @@ if (mainRuntime) {
   void supervisor.prewarmMainAgent(defaultCwd)
     .then(() => console.log(`picky main agent prewarmed for ${defaultCwd}`))
     .catch((error) => console.error(`picky main agent prewarm failed: ${error instanceof Error ? error.message : String(error)}`));
+}
+
+function parseMainAgentThinkingLevel(value: string | undefined) {
+  if (!value) return "medium" as const;
+  const parsed = ThinkingLevelSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  logAgentd("invalid main thinking level", { value, fallback: "medium" });
+  return "medium" as const;
 }
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

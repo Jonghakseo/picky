@@ -416,12 +416,13 @@ final class CompanionManager: ObservableObject {
         settingsChangeCancellable = NotificationCenter.default.publisher(for: .pickySettingsDidSave)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.reloadVoiceProvidersFromSettings()
+                let settings = PickySettingsStore().load()
+                self?.reloadVoiceProvidersFromSettings(settings)
+                self?.syncDaemonSettings(settings)
             }
     }
 
-    private func reloadVoiceProvidersFromSettings() {
-        let settings = PickySettingsStore().load()
+    private func reloadVoiceProvidersFromSettings(_ settings: PickySettings = PickySettingsStore().load()) {
         buddyDictationManager.updateTranscriptionProvider(
             BuddyTranscriptionProviderFactory.makeDefaultProvider(settings: settings)
         )
@@ -430,6 +431,20 @@ final class CompanionManager: ObservableObject {
         }
         speechPlaybackProvider = PickySpeechPlaybackProviderFactory.makeDefaultProvider(settings: settings)
         print("🎛️ Voice settings applied — STT: \(settings.sttProvider.rawValue), TTS: \(settings.ttsProvider.rawValue), Azure STT language: \(settings.azureSTTPreferredLanguage.isEmpty ? "auto" : settings.azureSTTPreferredLanguage)")
+    }
+
+    private func syncDaemonSettings(_ settings: PickySettings = PickySettingsStore().load()) {
+        Task {
+            do {
+                try await agentClient.send(PickyCommandEnvelope(
+                    type: .setMainAgentThinkingLevel,
+                    mainAgentThinkingLevel: settings.mainAgentThinkingLevel
+                ))
+                print("🎛️ Main agent thinking level applied — \(settings.mainAgentThinkingLevel.rawValue)")
+            } catch {
+                print("⚠️ Failed to apply main agent thinking level: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func bindVoiceStateObservation() {
@@ -721,7 +736,10 @@ final class CompanionManager: ObservableObject {
                 case .disconnected:
                     await MainActor.run { self.finishAwaitingAgentResponse(visibleText: "picky-agentd disconnected", spokenText: nil) }
                 case .connected:
-                    await MainActor.run { self.latestAgentSessionSummary = "picky-agentd connected" }
+                    await MainActor.run {
+                        self.latestAgentSessionSummary = "picky-agentd connected"
+                        self.syncDaemonSettings()
+                    }
                     try? await self.agentClient.send(PickyCommandEnvelope(type: .listMainMessages))
                 }
             }

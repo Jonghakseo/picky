@@ -75,6 +75,9 @@ export const PickyMainAgentStateSchema = z.object({
 });
 export type PickyMainAgentState = z.infer<typeof PickyMainAgentStateSchema>;
 
+export const ThinkingLevelSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]);
+export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>;
+
 export const PickyChangedFileSchema = z.object({ path: z.string(), status: z.string(), summary: z.string().optional() });
 export const PickyArtifactSchema = z.object({ id: z.string(), kind: z.string(), title: z.string(), path: z.string().optional(), url: z.string().url().optional(), updatedAt: isoTimestamp });
 export type PickyArtifact = z.infer<typeof PickyArtifactSchema>;
@@ -167,6 +170,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("listMainMessages") }),
   CommandBaseSchema.extend({ type: z.literal("resetMainAgent") }),
   CommandBaseSchema.extend({ type: z.literal("abortMainAgent") }),
+  CommandBaseSchema.extend({ type: z.literal("setMainAgentThinkingLevel"), mainAgentThinkingLevel: ThinkingLevelSchema }),
   CommandBaseSchema.extend({ type: z.literal("getSession"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("answerExtensionUi"), sessionId: z.string(), requestId: z.string(), value: z.unknown().optional() }),
   CommandBaseSchema.extend({ type: z.literal("openArtifact"), sessionId: z.string(), artifactId: z.string() }),

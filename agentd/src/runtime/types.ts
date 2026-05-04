@@ -1,5 +1,6 @@
 import type { BuiltPrompt } from "../prompt-builder.js";
 
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 export type RuntimeSessionStatus = "running" | "waiting_for_input" | "blocked" | "completed" | "failed" | "cancelled";
 
 export type RuntimeEvent =
@@ -37,6 +38,7 @@ export interface RuntimeSessionHandle {
    * via their session manager so the messages survive a daemon restart.
    */
   injectInitialBootstrap?(messages: { user: string; assistant: string }): Promise<void>;
+  setThinkingLevel?(level: ThinkingLevel): void;
   subscribe(listener: (event: RuntimeEvent) => void): () => void;
 }
 
@@ -44,4 +46,5 @@ export interface AgentRuntime {
   create(prompt: BuiltPrompt, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle>;
   prewarm?(options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle>;
   resume?(sessionFilePath: string, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle>;
+  setThinkingLevel?(level: ThinkingLevel): void;
 }

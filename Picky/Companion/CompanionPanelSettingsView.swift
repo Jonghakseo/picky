@@ -17,6 +17,7 @@ import SwiftUI
 enum CompanionPanelSettingsSection: CaseIterable, Hashable {
     case workspace
     case notifications
+    case mainAgent
     case voice
 }
 
@@ -70,6 +71,8 @@ struct CompanionPanelSettingsView: View {
             workspaceSection
             sectionDivider
             notificationsSection
+            sectionDivider
+            mainAgentSection
             sectionDivider
             voiceSection
 
@@ -131,6 +134,23 @@ struct CompanionPanelSettingsView: View {
                 toggleRow("On success", isOn: $viewModel.settings.notifications.notifyOnCompleted, divider: true)
                 toggleRow("On failure", isOn: $viewModel.settings.notifications.notifyOnFailed, divider: true)
                 toggleRow("On input request", isOn: $viewModel.settings.notifications.notifyOnWaitingForInput, divider: false)
+            }
+        }
+    }
+
+    private var mainAgentSection: some View {
+        sectionHeader(section: .mainAgent, title: "Main Agent", subtitle: "Reasoning level for the always-on command agent.") {
+            VStack(alignment: .leading, spacing: 5) {
+                fieldLabel("Reasoning level")
+                Picker("Reasoning level", selection: $viewModel.settings.mainAgentThinkingLevel) {
+                    ForEach(PickyMainAgentThinkingLevel.allCases) { level in
+                        Text(level.displayName).tag(level)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .onChange(of: viewModel.settings.mainAgentThinkingLevel) { _, _ in saveImmediately(for: .mainAgent) }
             }
         }
     }
@@ -273,6 +293,8 @@ struct CompanionPanelSettingsView: View {
             commitPathField()
         case .notifications:
             saveImmediately(for: .notifications)
+        case .mainAgent:
+            saveImmediately(for: .mainAgent)
         case .voice:
             commitAzureField()
         }
@@ -320,7 +342,7 @@ struct CompanionPanelSettingsView: View {
         switch section {
         case .workspace:
             pathDraft = viewModel.settings.defaultCwd
-        case .notifications:
+        case .notifications, .mainAgent:
             break
         case .voice:
             azureDraft = viewModel.settings.azureSTTPreferredLanguage

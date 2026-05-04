@@ -10,7 +10,7 @@ import type { PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, Pick
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
-import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle } from "./runtime/types.js";
+import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, ThinkingLevel } from "./runtime/types.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
 import { isTerminalStatus } from "./domain/session-status.js";
@@ -33,6 +33,7 @@ export class SessionSupervisor extends EventEmitter {
   private mainHandlePromise?: Promise<RuntimeSessionHandle>;
   private mainHandleUnsubscribe?: () => void;
   private mainHandleGeneration = 0;
+  private mainThinkingLevel?: ThinkingLevel;
   private mainDraft = "";
   private mainContext?: PickyContextPacket;
   private mainState: PickyMainAgentState = { messages: [] };
@@ -204,6 +205,13 @@ export class SessionSupervisor extends EventEmitter {
         logAgentd("main abort pending handle failed", { error: error instanceof Error ? error.message : String(error) });
       });
     }
+  }
+
+  async setMainAgentThinkingLevel(level: ThinkingLevel): Promise<void> {
+    this.mainThinkingLevel = level;
+    this.options.mainRuntime?.setThinkingLevel?.(level);
+    logAgentd("main thinking level configured", { level, hadHandle: this.mainHandle ? 1 : 0, hadPendingHandle: this.mainHandlePromise ? 1 : 0 });
+    this.applyMainThinkingLevel(this.mainHandle, level);
   }
 
   private detachMainHandleForInterruption(): void {
@@ -492,12 +500,22 @@ export class SessionSupervisor extends EventEmitter {
       return handle;
     }
     this.mainHandle = handle;
+    this.applyMainThinkingLevel(handle);
     this.mainHandleUnsubscribe?.();
     this.mainHandleUnsubscribe = handle.subscribe((event) => {
       if (generation !== this.mainHandleGeneration) return;
       void this.applyMainRuntimeEvent(event);
     });
     return handle;
+  }
+
+  private applyMainThinkingLevel(handle: RuntimeSessionHandle | undefined, level = this.mainThinkingLevel): void {
+    if (!handle || !level) return;
+    if (!handle.setThinkingLevel) {
+      logAgentd("main thinking level skipped", { level, reason: "runtime handle does not support setThinkingLevel" });
+      return;
+    }
+    handle.setThinkingLevel(level);
   }
 
   private async appendMainMessage(role: PickyMainAgentMessage["role"], text: string): Promise<void> {

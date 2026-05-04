@@ -21,6 +21,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var artifactId: String?
     var enabled: Bool?
     var archived: Bool?
+    var mainAgentThinkingLevel: PickyMainAgentThinkingLevel?
 
     init(
         id: String = "cmd-\(UUID().uuidString)",
@@ -32,7 +33,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
         value: JSONValue? = nil,
         artifactId: String? = nil,
         enabled: Bool? = nil,
-        archived: Bool? = nil
+        archived: Bool? = nil,
+        mainAgentThinkingLevel: PickyMainAgentThinkingLevel? = nil
     ) {
         self.id = id
         self.protocolVersion = pickyAgentProtocolVersion
@@ -45,6 +47,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.artifactId = artifactId
         self.enabled = enabled
         self.archived = archived
+        self.mainAgentThinkingLevel = mainAgentThinkingLevel
     }
 }
 
@@ -59,6 +62,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case listMainMessages
     case resetMainAgent
     case abortMainAgent
+    case setMainAgentThinkingLevel
     case getSession
     case answerExtensionUi
     case openArtifact

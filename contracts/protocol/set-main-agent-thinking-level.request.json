@@ -1,0 +1,6 @@
+{
+  "id": "cmd-main-thinking-001",
+  "protocolVersion": "2026-05-01",
+  "type": "setMainAgentThinkingLevel",
+  "mainAgentThinkingLevel": "high"
+}

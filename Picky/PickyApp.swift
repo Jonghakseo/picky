@@ -36,7 +36,13 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     /// companion panel and the HUD overlay observe this object so flipping the toggle
     /// in the companion footer flips the entire UI surface (Settings scene included).
     let appearanceStore: PickyAppearanceStore
-    private lazy var daemonConfiguration = PickyAgentDaemonConfiguration.development(defaultCwd: settingsStore.load().normalizedPaths().defaultCwd)
+    private lazy var daemonConfiguration: PickyAgentDaemonConfiguration = {
+        let settings = settingsStore.load().normalizedPaths()
+        return PickyAgentDaemonConfiguration.development(
+            defaultCwd: settings.defaultCwd,
+            mainAgentThinkingLevel: settings.mainAgentThinkingLevel
+        )
+    }()
     private lazy var daemonLauncher = PickyAgentDaemonLauncher(configuration: daemonConfiguration)
     private lazy var companionManager = CompanionManager(
         agentClient: WebSocketPickyAgentClient(

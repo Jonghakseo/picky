@@ -11,42 +11,41 @@ struct CompanionPanelHeaderView: View {
     @ObservedObject var companionManager: CompanionManager
 
     var body: some View {
-        HStack {
-            HStack(spacing: 8) {
-                // Animated status dot
-                Circle()
-                    .fill(statusDotColor)
-                    .frame(width: 8, height: 8)
-                    .shadow(color: statusDotColor.opacity(0.6), radius: 4)
+        HStack(spacing: 8) {
+            // Animated status dot. With the minimal aesthetic, the dot itself is the
+            // "Active / Listening / Setup" signal; we no longer print the matching label
+            // beside it because the green = idle / blue = active mapping is enough at this
+            // size and the redundant text added visual noise without adding information.
+            Circle()
+                .fill(statusDotColor)
+                .frame(width: 8, height: 8)
+                .shadow(color: statusDotColor.opacity(0.6), radius: 3)
+                .accessibilityLabel(statusAccessibilityLabel)
 
-                Text("Picky")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(DS.Colors.textPrimary)
-            }
+            Text("Picky")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(DS.Colors.textPrimary)
 
             Spacer()
 
-            Text(statusText)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(DS.Colors.textTertiary)
-
+            // Plain glyph close button. The pre-minimal design wrapped this in a tinted
+            // circle which read as a chip; here the icon stands alone and the hover/press
+            // states come from the surrounding `.buttonStyle(.plain)` + opacity feedback.
             Button(action: {
                 NotificationCenter.default.post(name: .pickyDismissPanel, object: nil)
             }) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(DS.Colors.textTertiary)
-                    .frame(width: 20, height: 20)
-                    .background(
-                        Circle()
-                            .fill(Color.white.opacity(0.08))
-                    )
+                    .frame(width: 20, height: 20, alignment: .center)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .pointerCursor()
+            .accessibilityLabel("Dismiss panel")
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.vertical, 12)
     }
 
     private var statusDotColor: Color {
@@ -63,22 +62,22 @@ struct CompanionPanelHeaderView: View {
         }
     }
 
-    private var statusText: String {
+    private var statusAccessibilityLabel: String {
         if !companionManager.allPermissionsGranted {
-            return "Setup"
+            return "Picky setup required"
         }
         if !companionManager.isOverlayVisible {
-            return "Ready"
+            return "Picky ready"
         }
         switch companionManager.voiceState {
         case .idle:
-            return "Active"
+            return "Picky active"
         case .listening:
-            return "Listening"
+            return "Picky listening"
         case .processing:
-            return "Processing"
+            return "Picky processing"
         case .responding:
-            return "Responding"
+            return "Picky responding"
         }
     }
 

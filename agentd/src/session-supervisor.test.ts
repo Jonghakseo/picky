@@ -177,6 +177,25 @@ describe("SessionSupervisor", () => {
     expect(result.logs.some((line) => line === "steer: 추가로 원인도 정리해줘")).toBe(true);
   });
 
+  it("prefers the runtime status finalAnswer over the streamed accumulator so reports do not include intermediate ReAct turns", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("multi-turn"), { title: "멀티턴 조사", instructions: "Investigate" });
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "조사 중입니다." });
+    runtime.handle?.emit({ type: "assistant_delta", delta: "계속 조사 중입니다." });
+    runtime.handle?.emit({ type: "assistant_delta", delta: "최종 답변입니다." });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed", finalAnswer: "최종 답변입니다." });
+    await settle();
+
+    const completed = supervisor.get(side.id)!;
+    expect(completed.status).toBe("completed");
+    expect(completed.finalAnswer).toBe("최종 답변입니다.");
+    expect(completed.finalAnswer).not.toContain("조사 중입니다.");
+  });
+
   it("marks completed side sessions as running when they are steered", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

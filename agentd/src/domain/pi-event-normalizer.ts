@@ -11,7 +11,7 @@ export type NormalizedPiEvent =
   | { kind: "log"; line: string }
   | { kind: "assistantDelta"; delta: string }
   | { kind: "thinkingDelta"; delta: string }
-  | { kind: "status"; status: SessionStatus; summary?: string }
+  | { kind: "status"; status: SessionStatus; summary?: string; finalAnswer?: string }
   | { kind: "tool"; tool: PickyToolActivity }
   | { kind: "extensionUi"; request: Record<string, unknown>; waitsForInput: boolean }
   | { kind: "none" };
@@ -90,15 +90,16 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
   if (type === "turn_end") {
     const message = asRecord(piEvent.message);
     const stopReasonStatus = terminalStatusFromStopReason(stringValue(message.stopReason));
-    if (stopReasonStatus) return stopReasonStatus;
+    if (stopReasonStatus) return withFinalAnswer(stopReasonStatus, assistantTextFromMessage(message));
     if (!hasAssistantText(message) || hasAssistantToolCalls(message) || hasToolResults(piEvent.toolResults)) return { kind: "none" };
-    return completionStatusFromContext(context);
+    return withFinalAnswer(completionStatusFromContext(context), assistantTextFromMessage(message));
   }
 
   if (type === "agent_end") {
-    const stopReasonStatus = terminalStatusFromStopReason(lastAssistantStopReason(piEvent.messages));
-    if (stopReasonStatus) return stopReasonStatus;
-    return completionStatusFromContext(context);
+    const lastMessage = lastAssistantMessage(piEvent.messages);
+    const stopReasonStatus = terminalStatusFromStopReason(lastMessage ? stringValue(lastMessage.stopReason) : undefined);
+    if (stopReasonStatus) return withFinalAnswer(stopReasonStatus, lastMessage ? assistantTextFromMessage(lastMessage) : undefined);
+    return withFinalAnswer(completionStatusFromContext(context), lastMessage ? assistantTextFromMessage(lastMessage) : undefined);
   }
 
   if (type === "extension_error" || type === "auto_retry_end") {
@@ -114,7 +115,7 @@ export function runtimeEventFromPiEvent(event: unknown, context?: PiEventNormali
   if (normalized.kind === "log") return { type: "log", line: normalized.line };
   if (normalized.kind === "assistantDelta") return { type: "assistant_delta", delta: normalized.delta };
   if (normalized.kind === "thinkingDelta") return { type: "thinking_delta", delta: normalized.delta };
-  if (normalized.kind === "status") return { type: "status", status: normalized.status as RuntimeSessionStatus, summary: normalized.summary };
+  if (normalized.kind === "status") return { type: "status", status: normalized.status as RuntimeSessionStatus, summary: normalized.summary, finalAnswer: normalized.finalAnswer };
   if (normalized.kind === "tool") return { type: "tool", toolCallId: normalized.tool.toolCallId, name: normalized.tool.name, status: normalized.tool.status, preview: normalized.tool.preview };
   if (normalized.kind === "extensionUi") return { type: "extension_ui", request: normalized.request, waitsForInput: normalized.waitsForInput };
   return undefined;
@@ -132,13 +133,31 @@ function terminalStatusFromStopReason(stopReason: string | undefined): Normalize
   return undefined;
 }
 
-function lastAssistantStopReason(messages: unknown): string | undefined {
+function lastAssistantMessage(messages: unknown): Record<string, unknown> | undefined {
   if (!Array.isArray(messages)) return undefined;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = asRecord(messages[index]);
-    if (message.role === "assistant") return stringValue(message.stopReason);
+    if (message.role === "assistant") return message;
   }
   return undefined;
+}
+
+function assistantTextFromMessage(message: Record<string, unknown>): string | undefined {
+  const content = message.content;
+  if (!Array.isArray(content)) return undefined;
+  const text = content
+    .map((item) => {
+      const block = asRecord(item);
+      return block.type === "text" && typeof block.text === "string" ? block.text : "";
+    })
+    .join("")
+    .trim();
+  return text.length > 0 ? text : undefined;
+}
+
+function withFinalAnswer(status: NormalizedPiEvent, finalAnswer: string | undefined): NormalizedPiEvent {
+  if (status.kind !== "status" || !finalAnswer) return status;
+  return { ...status, finalAnswer };
 }
 
 function hasAssistantText(message: Record<string, unknown>): boolean {

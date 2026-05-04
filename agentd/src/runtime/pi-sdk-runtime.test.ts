@@ -218,7 +218,7 @@ describe("PiSdkRuntime", () => {
     fakeSession.emit("event", { type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "최종 답변" } });
     fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "최종 답변" }] }, toolResults: [] });
 
-    expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Completed" });
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Completed", finalAnswer: "최종 답변" });
   });
 
   it("keeps final turn_end running while Pi reports queued steering or follow-up", async () => {

@@ -49,7 +49,10 @@ export class RuntimeEventHandler {
   private async applyStatusEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "status" }>): Promise<void> {
     logAgentd("session status", { sessionId, status: event.status, summaryChars: event.summary?.length });
     const terminal = ["completed", "failed", "cancelled"].includes(event.status);
-    const finalAnswer = terminal ? cleanFinalAnswer(this.assistantDrafts.get(sessionId)) : undefined;
+    // Prefer the final assistant message carried by the runtime event (Pi turn_end/agent_end)
+    // over the streamed assistant_delta accumulator, which would otherwise concatenate every
+    // intermediate message in a multi-turn ReAct loop.
+    const finalAnswer = terminal ? (cleanFinalAnswer(event.finalAnswer) ?? cleanFinalAnswer(this.assistantDrafts.get(sessionId))) : undefined;
     const currentSession = this.dependencies.getSession(sessionId);
     if (terminal && ["completed", "failed", "cancelled"].includes(currentSession.status)) return;
 

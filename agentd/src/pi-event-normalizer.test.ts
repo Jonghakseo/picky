@@ -23,7 +23,7 @@ describe("normalizePiEvent", () => {
       type: "turn_end",
       message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "완료 답변" }] },
       toolResults: [],
-    })).toMatchObject({ kind: "status", status: "completed" });
+    })).toMatchObject({ kind: "status", status: "completed", finalAnswer: "완료 답변" });
 
     expect(normalizePiEvent({
       type: "turn_end",
@@ -63,13 +63,25 @@ describe("normalizePiEvent", () => {
       type: "turn_end",
       message: { role: "assistant", stopReason: "aborted", content: [{ type: "text", text: "중단됨" }] },
       toolResults: [],
-    })).toMatchObject({ kind: "status", status: "cancelled" });
+    })).toMatchObject({ kind: "status", status: "cancelled", finalAnswer: "중단됨" });
 
     expect(normalizePiEvent({
       type: "turn_end",
       message: { role: "assistant", stopReason: "error", content: [{ type: "text", text: "오류" }] },
       toolResults: [],
-    })).toMatchObject({ kind: "status", status: "failed" });
+    })).toMatchObject({ kind: "status", status: "failed", finalAnswer: "오류" });
+  });
+
+  it("carries only the last assistant message text on agent_end so reports do not include intermediate turns", () => {
+    expect(normalizePiEvent({
+      type: "agent_end",
+      messages: [
+        { role: "user", content: [{ type: "text", text: "부탁" }] },
+        { role: "assistant", stopReason: "tool_use", content: [{ type: "text", text: "조사 중입니다" }, { type: "toolCall", name: "bash", id: "call-1" }] },
+        { role: "toolResult", toolCallId: "call-1", content: [] },
+        { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "최종 답변입니다" }] },
+      ],
+    })).toMatchObject({ kind: "status", status: "completed", finalAnswer: "최종 답변입니다" });
   });
 
   it("maps message deltas to assistant answer fragments", async () => {

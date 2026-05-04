@@ -235,7 +235,7 @@ private struct PickyHUDDockRailView: View {
                 )
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 6)
         .padding(.vertical, 10)
         .background(
             Capsule(style: .continuous)

@@ -462,22 +462,35 @@ private struct PickySessionCardView: View {
 
     private var expandedContent: some View {
         VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: 5) {
+                if let compactCwd = session.compactCwdDescription {
+                    metaRow(icon: "folder", text: compactCwd)
+                }
+
+                if let gitStatus {
+                    gitStatusLine(gitStatus)
+                }
+            }
+
             Divider().opacity(0.35)
 
-            if let compactCwd = session.compactCwdDescription {
-                metaRow(icon: "folder", text: compactCwd)
-            }
-
-            if let gitStatus {
-                gitStatusSection(gitStatus)
-            }
-
             if let lastRequestText = session.lastRequestText {
-                lastRequestBubble(text: lastRequestText)
+                eventRow(
+                    time: session.elapsedDescription(),
+                    label: "Request",
+                    content: lastRequestText,
+                    accent: DS.Colors.textTertiary
+                )
             }
 
             if let currentWorkDescription {
-                detailSection(title: "Current work", text: currentWorkDescription, lineLimit: 2)
+                eventRow(
+                    time: "now",
+                    label: "Working",
+                    content: currentWorkDescription,
+                    accent: DS.Colors.info,
+                    contentLineLimit: 2
+                )
             }
 
             if let pending = session.pendingExtensionUiRequest {
@@ -485,7 +498,13 @@ private struct PickySessionCardView: View {
             }
 
             if PickyHUDExpandedContentPolicy.showsSummary(for: session.status), !session.lastSummary.isEmpty {
-                assistantSummaryBubble(text: session.lastSummary)
+                eventRow(
+                    time: summaryEventTime,
+                    label: summaryEventLabel,
+                    content: session.lastSummary,
+                    accent: summaryEventAccent,
+                    contentLineLimit: PickyHUDExpandedContentPolicy.summaryLineLimit
+                )
             }
 
             if PickyHUDExpandedContentPolicy.showsRecentLog, !session.logPreview.isEmpty {
@@ -541,20 +560,9 @@ private struct PickySessionCardView: View {
                 }
             }
 
-            HStack(spacing: 6) {
-                TextField("Steer this agent…", text: $followUpText)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11))
-                    .onSubmit { submitFollowUp() }
-                iconButton(
-                    systemName: "paperplane.fill",
-                    help: "Send steering message",
-                    disabled: followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                    action: submitFollowUp
-                )
-            }
+            replyField
 
-            HStack(spacing: 10) {
+            HStack(spacing: 4) {
                 iconButton(systemName: "doc.text.magnifyingglass", help: "Open report", disabled: session.reportArtifact == nil) {
                     Task { try? await viewModel.openReport(sessionID: session.id) }
                 }
@@ -572,14 +580,15 @@ private struct PickySessionCardView: View {
                         Task { try? await viewModel.setNotifyMainOnCompletion(sessionID: session.id, enabled: !notifyMainOnCompletion) }
                     }
                 }
+                Spacer(minLength: 0)
                 iconButton(systemName: "stop.circle", help: "Stop session", disabled: session.status.isTerminal) {
                     Task { try? await viewModel.abort(sessionID: session.id) }
                 }
                 iconButton(systemName: "archivebox", help: "Archive session") {
                     viewModel.archive(sessionID: session.id)
                 }
-                Spacer(minLength: 0)
             }
+            .padding(.top, 2)
         }
     }
 
@@ -602,123 +611,144 @@ private struct PickySessionCardView: View {
         .foregroundColor(DS.Colors.textTertiary)
     }
 
-    private func gitStatusSection(_ status: PickyGitRepositoryStatus) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button {
-                withAnimation(PickyHUDExpansion.animation) {
-                    isGitSectionExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .rotationEffect(.degrees(isGitSectionExpanded ? 90 : 0))
-                    Image(systemName: "point.3.connected.trianglepath.dotted")
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundColor(DS.Colors.success.opacity(0.92))
-                    Text(status.repositoryDisplayName)
-                        .font(.system(size: 10.8, weight: .semibold, design: .monospaced))
-                        .foregroundColor(DS.Colors.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            if isGitSectionExpanded {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(status.branchDisplayName)
-                        .font(.system(size: 10.4, weight: .medium, design: .monospaced))
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-
-                    if status.hasVisibleMetrics {
-                        HStack(spacing: 6) {
-                            if status.insertions > 0 {
-                                gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
-                            }
-                            if status.deletions > 0 {
-                                gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
-                            }
-                            if status.aheadCount > 0 {
-                                gitMetricPill("↑\(status.aheadCount)", color: DS.Colors.accentText)
-                            }
-                            if status.behindCount > 0 {
-                                gitMetricPill("↓\(status.behindCount)", color: DS.Colors.warningText)
-                            }
-                            Spacer(minLength: 0)
-                        }
+    private func gitStatusLine(_ status: PickyGitRepositoryStatus) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "point.3.connected.trianglepath.dotted")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(DS.Colors.textTertiary)
+                .frame(width: 12)
+            Text(status.branchDisplayName)
+                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                .foregroundColor(DS.Colors.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if status.hasVisibleMetrics {
+                Spacer(minLength: 4)
+                HStack(spacing: 4) {
+                    if status.insertions > 0 {
+                        gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
+                    }
+                    if status.deletions > 0 {
+                        gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
+                    }
+                    if status.aheadCount > 0 {
+                        gitMetricPill("↑\(status.aheadCount)", color: DS.Colors.accentText)
+                    }
+                    if status.behindCount > 0 {
+                        gitMetricPill("↓\(status.behindCount)", color: DS.Colors.warningText)
                     }
                 }
-                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 7)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(DS.Colors.surface2.opacity(0.45))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.45), lineWidth: 0.8))
-        )
     }
 
     private func gitMetricPill(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(.system(size: 10.2, weight: .semibold, design: .monospaced))
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
             .foregroundColor(color.opacity(0.92))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
             .background(Capsule().fill(color.opacity(0.10)))
     }
 
-    private func lastRequestBubble(text: String) -> some View {
-        HStack(alignment: .top, spacing: 6) {
-            Image(systemName: "person.crop.circle.fill")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(DS.Colors.accentText.opacity(0.9))
-                .frame(width: 14)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(text)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundColor(DS.Colors.textSecondary)
-                    .lineLimit(3)
+    private func eventRow(
+        time: String,
+        label: String,
+        content: String,
+        accent: Color,
+        contentLineLimit: Int? = 3
+    ) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(time)
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundColor(accent.opacity(0.85))
+                .lineLimit(1)
+                .frame(width: 44, alignment: .leading)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label.uppercased())
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(accent.opacity(0.9))
+                    .tracking(0.4)
+                Text(content)
+                    .font(.system(size: 11.5))
+                    .foregroundColor(DS.Colors.textPrimary)
+                    .lineLimit(contentLineLimit)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(DS.Colors.surface2.opacity(0.62))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8))
-            )
         }
     }
 
-    private func assistantSummaryBubble(text: String) -> some View {
-        HStack(alignment: .top, spacing: 6) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(DS.Colors.success.opacity(0.9))
-                .frame(width: 14)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(text)
-                    .font(.system(size: 11.5))
-                    .foregroundColor(DS.Colors.textSecondary)
-                    .lineLimit(PickyHUDExpandedContentPolicy.summaryLineLimit)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(DS.Colors.success.opacity(0.07))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DS.Colors.success.opacity(0.18), lineWidth: 0.8))
-            )
+    private var summaryEventLabel: String {
+        switch session.status {
+        case .completed:
+            return session.reportArtifact == nil ? "Result" : "Report ready"
+        case .failed: return "Failed"
+        case .cancelled: return "Cancelled"
+        case .blocked: return "Blocked"
+        case .waiting_for_input: return "Awaiting input"
+        case .running, .queued: return "Update"
         }
+    }
+
+    private var summaryEventTime: String {
+        switch session.status {
+        case .running, .queued: return "now"
+        default: return session.elapsedDescription()
+        }
+    }
+
+    private var summaryEventAccent: Color {
+        switch session.status {
+        case .completed: return DS.Colors.success
+        case .failed: return DS.Colors.destructiveText
+        case .blocked: return DS.Colors.warningText
+        case .waiting_for_input: return DS.Colors.warning
+        case .running, .queued, .cancelled: return DS.Colors.textTertiary
+        }
+    }
+
+    private var replyField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "text.bubble")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundColor(DS.Colors.textTertiary)
+            TextField("Steer this agent…", text: $followUpText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11.5))
+                .foregroundColor(DS.Colors.textPrimary)
+                .onSubmit { submitFollowUp() }
+            if followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("↵")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
+                    )
+            } else {
+                Button(action: submitFollowUp) {
+                    Image(systemName: "paperplane.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(DS.Colors.accentText)
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.plain)
+                .help("Send steering message")
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(DS.Colors.surface2.opacity(0.55))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
+                )
+        )
     }
 
     private func detailSection(title: String, text: String, lineLimit: Int? = 3) -> some View {
@@ -741,9 +771,9 @@ private struct PickySessionCardView: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 12, weight: .semibold))
-                .frame(width: 18, height: 18)
+                .frame(width: 24, height: 22)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PickyHUDIconButtonStyle())
         .foregroundColor(DS.Colors.textSecondary)
         .opacity(disabled ? 0.35 : 1)
         .disabled(disabled)
@@ -913,6 +943,30 @@ private struct PickySessionCardView: View {
         case .cancelled:
             return DS.Colors.textTertiary
         }
+    }
+}
+
+private struct PickyHUDIconButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(configuration.isPressed ? DS.Colors.surface3 : Color.clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .modifier(PickyHUDIconButtonHoverModifier())
+    }
+}
+
+private struct PickyHUDIconButtonHoverModifier: ViewModifier {
+    @State private var isHovered = false
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isHovered ? DS.Colors.surface2.opacity(0.85) : Color.clear)
+            )
+            .onHover { isHovered = $0 }
     }
 }
 

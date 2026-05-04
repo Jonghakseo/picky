@@ -175,7 +175,12 @@ final class CompanionManager: ObservableObject {
     /// visible UI only and are not queued for delayed playback.
     private var isVoiceInputAudioSuppressionActive = false
     private var pendingAgentResponseStartedAt: Date?
-    private var voiceFollowUpSessionIDForCurrentUtterance: String?
+    /// Voice follow-up target captured at PTT press time and used by the response
+    /// task to route the utterance. Exposed read-only at module scope so tests can
+    /// guard the race-condition fix in `updateVoicePresentation` (see also the
+    /// regression test in PickyCompanionManagerTests). Mutate only via
+    /// `setVoiceFollowUpSessionIDForCurrentUtterance(_:)`.
+    private(set) var voiceFollowUpSessionIDForCurrentUtterance: String?
 
     /// True when all three required permissions (accessibility, screen recording,
     /// microphone) are granted. Used by the panel to show a single "all good" state.
@@ -445,7 +450,9 @@ final class CompanionManager: ObservableObject {
             }
     }
 
-    private func updateVoicePresentation(
+    // Internal (instead of private) so PickyCompanionManagerTests can replay the
+    // PTT-released idle window where the hover ID race used to clear the target.
+    func updateVoicePresentation(
         isKeyboardRecording: Bool? = nil,
         isMicrophoneRecording: Bool? = nil,
         isFinalizing: Bool? = nil,
@@ -475,7 +482,15 @@ final class CompanionManager: ObservableObject {
         // doesn't get stuck. Only do this when no response is in flight, otherwise
         // the brief idle gap between recording and processing would prematurely hide the overlay.
         if presentation.voiceState == .idle, pendingAgentResponseStartedAt == nil {
-            setVoiceFollowUpSessionIDForCurrentUtterance(nil)
+            // Note: hover ID reset is intentionally NOT done here. The reducer can
+            // briefly report idle right after PTT release (between
+            // `stopPushToTalkFromKeyboardShortcut` and the subsequent finalize +
+            // `submitDraftText` -> `submitTranscriptToPickyAgent` chain), and clearing
+            // `voiceFollowUpSessionIDForCurrentUtterance` here would race the response
+            // task into routing voice input to the main agent instead of the hovered
+            // side session. Hover-ID cleanup is handled explicitly on dictation error,
+            // capture failure, and at the end of the response task. See the regression
+            // test `idleVoicePresentationDoesNotClearPressedHoverIDBeforeSubmit`.
             scheduleTransientHideIfNeeded()
         }
     }
@@ -611,7 +626,9 @@ final class CompanionManager: ObservableObject {
         return try await agentClient.submit(PickyAgentSubmission(transcript: transcript, context: contextPacket))
     }
 
-    private func setVoiceFollowUpSessionIDForCurrentUtterance(_ sessionID: String?) {
+    // Internal (instead of private) so PickyCompanionManagerTests can seed the
+    // utterance-scoped hover ID exactly the way the PTT pressed handler does.
+    func setVoiceFollowUpSessionIDForCurrentUtterance(_ sessionID: String?) {
         let normalized = normalizedVoiceFollowUpSessionID(sessionID)
         guard voiceFollowUpSessionIDForCurrentUtterance != normalized else { return }
         voiceFollowUpSessionIDForCurrentUtterance = normalized
@@ -726,7 +743,8 @@ final class CompanionManager: ObservableObject {
             if directMessageContextIDs.remove(reply.contextId) != nil {
                 latestAgentSessionSummary = reply.text
             } else {
-                finishAwaitingAgentResponse(visibleText: reply.text, spokenText: reply.text, enforceMinimumProcessingDuration: true)
+                let spoken = stripParentheticalsForSpeech(reply.text)
+                finishAwaitingAgentResponse(visibleText: reply.text, spokenText: spoken, enforceMinimumProcessingDuration: true)
             }
         case .mainMessagesSnapshot(let messages):
             mainAgentMessages = Array(messages.suffix(100))
@@ -1001,4 +1019,20 @@ final class CompanionManager: ObservableObject {
         )
     }
 
+}
+
+/// Removes parenthesised passages so the TTS layer skips supplementary detail
+/// (URLs, paths, identifiers) that the main agent placed in `(...)`. Handles
+/// both ASCII parentheses and the full-width Korean variants. Visible text
+/// keeps the parentheses intact.
+func stripParentheticalsForSpeech(_ text: String) -> String {
+    let pattern = #"[\(\uFF08][^\(\)\uFF08\uFF09]*[\)\uFF09]"#
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return text }
+    let range = NSRange(text.startIndex..., in: text)
+    let stripped = regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "")
+    let collapsed = stripped
+        .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        .replacingOccurrences(of: " ([,.!?。，！？])", with: "$1", options: .regularExpression)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    return collapsed.isEmpty ? text : collapsed
 }

@@ -101,6 +101,29 @@ struct PickyCompanionManagerTests {
         #expect(client.submissions.isEmpty)
     }
 
+    // Regression: between `stopPushToTalkFromKeyboardShortcut` and the eventual
+    // `submitDraftText` -> `submitTranscriptToPickyAgent` callback, the dictation
+    // publishers (isKeyboardRecording / isFinalizingTranscript / isPreparingToRecord)
+    // can briefly all be false while `pendingAgentResponseStartedAt` is still nil.
+    // The reducer reports idle in that window, and the previous implementation
+    // cleared `voiceFollowUpSessionIDForCurrentUtterance` from inside
+    // `updateVoicePresentation`, racing the response task into routing the voice
+    // utterance to the main agent instead of the hovered side session.
+    @Test @MainActor func idleVoicePresentationDoesNotClearPressedHoverIDBeforeSubmit() async {
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("session-hovered")
+        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == "session-hovered")
+
+        manager.updateVoicePresentation(
+            isKeyboardRecording: false,
+            isMicrophoneRecording: false,
+            isFinalizing: false,
+            isPreparing: false
+        )
+
+        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == "session-hovered")
+    }
+
     @Test func voiceTranscriptDoesNotFallbackToHoverAtRoutingTime() async throws {
         let client = FakeVoiceClient()
         let selection = FakeVoiceSelectionStore()
@@ -391,6 +414,27 @@ struct PickyCompanionManagerTests {
 
         #expect(manager.latestAgentSessionSummary == "새 답변")
         #expect(manager.voiceState == .responding)
+    }
+
+    @Test func stripParentheticalsRemovesAsciiAndFullWidthBracketsForSpeech() async throws {
+        let asciiInput = "배포는 완료됐어요 (https://example.com/run/123)."
+        #expect(stripParentheticalsForSpeech(asciiInput) == "배포는 완료됐어요.")
+
+        let fullWidthInput = "세션 아이디는 잘 저장됐습니다（session-abc-123）."
+        #expect(stripParentheticalsForSpeech(fullWidthInput) == "세션 아이디는 잘 저장됐습니다.")
+
+        let multipleInput = "PR (#123) 을 머지했고 (development 브랜치) 로 돌아갔어요."
+        #expect(stripParentheticalsForSpeech(multipleInput) == "PR 을 머지했고 로 돌아갔어요.")
+    }
+
+    @Test func stripParentheticalsKeepsTextWhenNoParenthesesPresent() async throws {
+        let plain = "프로덕션으로 올린 명령을 몇 분 안에 모니터링해볼게요."
+        #expect(stripParentheticalsForSpeech(plain) == plain)
+    }
+
+    @Test func stripParentheticalsFallsBackWhenWholeMessageIsParenthesised() async throws {
+        let allParens = "(seed bootstrap rules)"
+        #expect(stripParentheticalsForSpeech(allParens) == allParens)
     }
 
     private func context(source: String) -> PickyContextPacket {

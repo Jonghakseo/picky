@@ -411,7 +411,6 @@ private struct PickySessionCardView: View {
             }
         }
         .onDisappear {
-            print("🎙️ Picky HUD card onDisappear — session=\(session.id)")
             onHoverChanged(false)
             viewModel.endHoveredVoiceFollowUp(sessionID: session.id)
         }

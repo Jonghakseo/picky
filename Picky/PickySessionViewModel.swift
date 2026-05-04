@@ -668,9 +668,6 @@ final class PickySessionListViewModel: ObservableObject {
         if let hoveredVoiceFollowUpSessionID, sessions.contains(where: { $0.id == hoveredVoiceFollowUpSessionID }) {
             selectionStore.hoveredVoiceFollowUpSessionID = hoveredVoiceFollowUpSessionID
         } else {
-            if hoveredVoiceFollowUpSessionID != nil || selectionStore.hoveredVoiceFollowUpSessionID != nil {
-                pickySessionLog("voice follow-up RESET via sync (hover=\(hoveredVoiceFollowUpSessionID ?? "<nil>"), sessions=\(sessions.count))")
-            }
             hoveredVoiceFollowUpSessionID = nil
             selectionStore.hoveredVoiceFollowUpSessionID = nil
         }

@@ -324,7 +324,16 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       });
 
     await acceptedPromise;
-
+    // Microtask ordering race: when Pi handles `/slash` extension commands, `session.prompt()`
+    // suspends at its internal `await _tryExecuteExtensionCommand` and then synchronously runs
+    // `preflightResult(true)` -> `return` upon resume. That order schedules our awaiting
+    // `acceptedPromise` continuation BEFORE the `.then` handler that sets `promptResolved`, so
+    // a naive check here would always observe `promptResolved === false` for synchronously
+    // handled prompts under the real Pi runtime (the silent-slash test happens to pass because
+    // its FakeSession.prompt has no internal awaits and queues the .then handler first).
+    // Yield once to let any already-scheduled `promptPromise.then` microtask run so we can
+    // tell synchronous-handle paths apart from agent-turn paths.
+    await Promise.resolve();
     return promptResolved ? this.maybeEmitImmediateCompletion(wasStreaming) : false;
   }
 

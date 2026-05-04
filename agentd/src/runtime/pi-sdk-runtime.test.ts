@@ -69,6 +69,24 @@ class SilentSlashCommandSession extends FakeSession {
   }
 }
 
+// Mirrors the real Pi runtime more closely than `SilentSlashCommandSession`: `session.prompt()`
+// suspends at an internal `await` (Pi awaits `_tryExecuteExtensionCommand`) before resuming and
+// running `preflightResult(true)` -> `return` synchronously. That microtask ordering reverses
+// the queue-up order of the awaiting-acceptance continuation vs the prompt-resolution `.then`
+// handler in PiSdkRuntimeSession.promptUntilAccepted, which used to leak through as a missing
+// `Handled without agent turn` synthetic completion (`/diff-review` HUD spinner regression).
+class AsyncSilentSlashCommandSession extends FakeSession {
+  override async prompt(text: string, options?: unknown): Promise<void> {
+    this.prompts.push(text);
+    this.promptOptions.push(options);
+    // Yield once before calling preflightResult so the call site has time to register its
+    // `promptPromise.then` handler. This reproduces the real Pi flow where `_tryExecuteExtensionCommand`
+    // suspends `prompt()` until the slash handler resolves.
+    await Promise.resolve();
+    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+  }
+}
+
 class BlockingPromptSession extends FakeSession {
   private promptFinished: Promise<void>;
   private finishPrompt!: () => void;
@@ -241,6 +259,20 @@ describe("PiSdkRuntime", () => {
     await handle.followUp({ text: "/diff-review", imagePaths: [] });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
+    expect(statusEvents(events)).toEqual([{ type: "status", status: "completed", summary: "Handled without agent turn" }]);
+  });
+
+  it("synthesizes completed status and reports handledSynchronously even when Pi suspends prompt() before preflight (real-Pi shape)", async () => {
+    const fakeSession = new AsyncSilentSlashCommandSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-slash-async" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    const outcome = await handle.steer("/diff-review");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(outcome).toEqual({ handledSynchronously: true });
     expect(statusEvents(events)).toEqual([{ type: "status", status: "completed", summary: "Handled without agent turn" }]);
   });
 

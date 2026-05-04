@@ -11,7 +11,7 @@ enum PickyHUDExpansion {
     static let duration: TimeInterval = 0.22
     static let panelShrinkDelay: TimeInterval = duration + 0.03
     static let animation = Animation.easeInOut(duration: duration)
-    static let outerPadding: CGFloat = 14
+    static let outerPadding: CGFloat = 8
     static let cardShadowOpacity = 0.12
     static let cardShadowRadius: CGFloat = 8
     static let cardShadowYOffset: CGFloat = 4

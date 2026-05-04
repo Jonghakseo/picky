@@ -5,6 +5,7 @@
 //  SwiftUI composition for the long-running session HUD.
 //
 
+import AppKit
 import SwiftUI
 
 struct PickyHUDView: View {
@@ -62,16 +63,15 @@ struct PickyHUDView: View {
                 .transition(.opacity)
             }
 
-            if !visibleSessions.isEmpty {
-                PickyHUDDockRailView(
-                    sessions: visibleSessions,
-                    activeSessionID: activeSession?.id,
-                    pinnedSessionID: pinnedSessionID,
-                    onHoverSession: previewDockSession,
-                    onPinSession: pinSession
-                )
-                .frame(width: PickyHUDDockLayout.railWidth)
-            }
+            PickyHUDDockRailView(
+                sessions: visibleSessions,
+                activeSessionID: activeSession?.id,
+                pinnedSessionID: pinnedSessionID,
+                onHoverSession: previewDockSession,
+                onPinSession: pinSession,
+                onCreateSideAgent: chooseFolderForEmptySideAgent
+            )
+            .frame(width: PickyHUDDockLayout.railWidth)
         }
         .padding(PickyHUDExpansion.outerPadding)
         .onHover(perform: handleHUDHover)
@@ -83,6 +83,20 @@ struct PickyHUDView: View {
             cancelPendingClose()
         } else {
             scheduleCloseIfNeeded()
+        }
+    }
+
+    private func chooseFolderForEmptySideAgent() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a working folder"
+        panel.prompt = "Start"
+        panel.message = "Choose the folder where the new side agent should run."
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        if panel.runModal() == .OK, let url = panel.url {
+            Task { try? await viewModel.createEmptySideSession(cwd: url.path) }
         }
     }
 
@@ -221,9 +235,12 @@ private struct PickyHUDDockRailView: View {
     let pinnedSessionID: String?
     let onHoverSession: (String) -> Void
     let onPinSession: (String) -> Void
+    let onCreateSideAgent: () -> Void
 
     var body: some View {
         VStack(spacing: 9) {
+            createSideAgentButton
+
             ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
                 PickyHUDDockIconView(
                     session: session,
@@ -236,12 +253,27 @@ private struct PickyHUDDockRailView: View {
             }
         }
         .padding(.horizontal, 6)
-        .padding(.vertical, 10)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
         .background(
             Capsule(style: .continuous)
                 .fill(DS.Colors.surface1.opacity(0.92))
                 .overlay(Capsule(style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8))
         )
+    }
+
+    private var createSideAgentButton: some View {
+        Button(action: onCreateSideAgent) {
+            Image(systemName: "plus")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(DS.Colors.textSecondary)
+                .frame(width: 36, height: 28)
+                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
+        .accessibilityLabel("Start side agent")
+        .accessibilityHint("Choose a working folder and start an empty side agent")
     }
 }
 

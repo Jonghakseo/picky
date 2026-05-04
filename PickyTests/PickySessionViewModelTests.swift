@@ -126,6 +126,22 @@ struct PickySessionViewModelTests {
         #expect(client.sentCommands.contains { $0.type == .listSessions })
     }
 
+    @Test func createEmptySideSessionSendsSystemContextWithSelectedCwd() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+
+        try await viewModel.createEmptySideSession(cwd: "  /tmp/manual-project  ")
+
+        #expect(client.sentCommands.count == 1)
+        let command = try #require(client.sentCommands.first)
+        #expect(command.type == .createEmptySideSession)
+        #expect(command.context?.source == "system")
+        #expect(command.context?.cwd == "/tmp/manual-project")
+        #expect(command.context?.transcript == nil)
+        #expect(command.context?.screenshots.isEmpty == true)
+        #expect(command.context?.warnings == ["manualSideAgent=true"])
+    }
+
     @Test func eventSequenceDrivesExpectedStatusChanges() async throws {
         let client = FakePickyAgentClient()
         let notifications = PickyNoopNotificationCenter()
@@ -597,8 +613,8 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDExpansion.anchorsContentToPanelTopDuringDeferredShrink)
     }
 
-    @Test func hudChromeUsesSoftShadowWithExtraTransparentPadding() throws {
-        #expect(PickyHUDExpansion.outerPadding > 8)
+    @Test func hudChromeUsesSoftShadowWithCompactTransparentPadding() throws {
+        #expect(PickyHUDExpansion.outerPadding == 8)
         #expect(PickyHUDExpansion.cardShadowOpacity < 0.2)
         #expect(PickyHUDExpansion.cardShadowRadius <= 8)
         #expect(PickyHUDExpansion.cardShadowYOffset <= 4)

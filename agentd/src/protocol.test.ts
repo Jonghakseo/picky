@@ -47,6 +47,24 @@ describe("protocol contract fixtures", () => {
     ).not.toThrow();
   });
 
+  it("parses manual empty side-session commands", () => {
+    expect(() =>
+      CommandEnvelopeSchema.parse({
+        id: "cmd-empty-side",
+        protocolVersion: "2026-05-01",
+        type: "createEmptySideSession",
+        context: {
+          id: "context-empty-side",
+          source: "system",
+          capturedAt: "2026-05-05T00:00:00.000Z",
+          cwd: "/tmp/project",
+          screenshots: [],
+          warnings: ["manualSideAgent=true"],
+        },
+      }),
+    ).not.toThrow();
+  });
+
   it("rejects invalid protocol versions", () => {
     expect(() => CommandEnvelopeSchema.parse({ id: "bad", protocolVersion: "old", type: "listSessions" })).toThrow(/Invalid literal value/);
   });

@@ -286,6 +286,31 @@ final class PickySessionListViewModel: ObservableObject {
         _ = try await client.submit(PickyAgentSubmission(transcript: transcript, context: context))
     }
 
+    func createEmptySideSession(cwd: String) async throws {
+        let trimmedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        let context = PickyContextPacket(
+            id: "context-\(UUID().uuidString)",
+            source: "system",
+            capturedAt: Date(),
+            transcript: nil,
+            selectedText: nil,
+            cwd: trimmedCwd.isEmpty ? nil : trimmedCwd,
+            activeApp: nil,
+            activeWindow: nil,
+            browser: nil,
+            screenshots: [],
+            warnings: ["manualSideAgent=true"]
+        )
+        pickySessionLog("create empty side session context=\(context.id) cwd=\(context.cwd ?? "none")")
+        do {
+            try await client.send(PickyCommandEnvelope(type: .createEmptySideSession, context: context))
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
+    }
+
     func beginHoveredVoiceFollowUp(sessionID: String) {
         guard sessions.contains(where: { $0.id == sessionID }) else { return }
         hoveredVoiceFollowUpSessionID = sessionID

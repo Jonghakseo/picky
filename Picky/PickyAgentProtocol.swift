@@ -51,6 +51,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
 enum PickyCommandType: String, Codable, Equatable {
     case routeTask
     case createTask
+    case createEmptySideSession
     case followUp
     case steer
     case abort

@@ -51,6 +51,30 @@ describe("SessionSupervisor", () => {
     await expect(supervisor.steerSideSession(regular.id, "wrong target")).rejects.toThrow(/not a Picky side agent/);
   });
 
+  it("prewarms an empty manual side session and waits for the first instruction", async () => {
+    const runtime = new ManualRuntime({ supportsPrewarm: true });
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-empty-side-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+
+    const session = await supervisor.createEmptySideSession({ ...context("manual"), source: "system", transcript: undefined, cwd: "  /tmp/manual-project  " });
+
+    expect(runtime.createCalls).toBe(0);
+    expect(runtime.prewarmCalls).toBe(1);
+    expect(runtime.prewarmOptions).toEqual([{ cwd: "/tmp/manual-project", sessionId: session.id }]);
+    expect(session.status).toBe("waiting_for_input");
+    expect(session.cwd).toBe("/tmp/manual-project");
+    expect(session.title).toBe("New side agent · manual-project");
+    expect(session.notifyMainOnCompletion).toBe(false);
+    expect(supervisor.isSideSession(session.id)).toBe(true);
+    expect(supervisor.listSideSessions().map((side) => side.id)).toEqual([session.id]);
+    expect(session.logs).toContain("manual side agent: waiting for first instruction");
+
+    const steered = await supervisor.steerSideSession(session.id, "첫 작업 시작해줘");
+    expect(steered.status).toBe("running");
+    expect(runtime.handle?.steers).toEqual(["첫 작업 시작해줘"]);
+  });
+
   it("validates and emits visual-only pointer overlays against captured screenshots", async () => {
     const supervisor = await makeSupervisor();
     const pointerContext: PickyContextPacket = {
@@ -1482,12 +1506,14 @@ class ManualRuntime implements AgentRuntime {
   handle?: ManualHandle;
   createCalls = 0;
   prewarmCalls = 0;
+  prewarmOptions: Array<{ cwd?: string; sessionId?: string }> = [];
   prewarm?: (options: { cwd?: string; sessionId?: string }) => Promise<RuntimeSessionHandle>;
 
   constructor(options: { supportsPrewarm?: boolean } = {}) {
     if (options.supportsPrewarm) {
       this.prewarm = async (prewarmOptions) => {
         this.prewarmCalls += 1;
+        this.prewarmOptions.push(prewarmOptions);
         this.handle = new ManualHandle(prewarmOptions.sessionId ?? "manual");
         return this.handle;
       };

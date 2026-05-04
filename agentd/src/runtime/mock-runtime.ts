@@ -11,6 +11,14 @@ export class MockRuntime implements AgentRuntime {
     });
     return handle;
   }
+
+  async prewarm(): Promise<RuntimeSessionHandle> {
+    const handle = new MockRuntimeSession(`mock-${++this.sequence}`);
+    queueMicrotask(() => {
+      handle.emit({ type: "log", line: "mock runtime prewarmed" });
+    });
+    return handle;
+  }
 }
 
 class MockRuntimeSession implements RuntimeSessionHandle {

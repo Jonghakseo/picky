@@ -268,6 +268,49 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(session.id);
   }
 
+  async createEmptySideSession(context: PickyContextPacket): Promise<PickyAgentSession> {
+    if (!this.runtime.prewarm) throw new Error("Runtime cannot prewarm empty side sessions");
+    const now = new Date().toISOString();
+    const id = `session-${randomUUID()}`;
+    const cwd = normalizeOptionalString(context.cwd);
+    const sideContext: PickyContextPacket = { ...context, cwd, transcript: undefined, screenshots: [] };
+    const session: PickyAgentSession = {
+      id,
+      title: titleForEmptySideSession(sideContext),
+      status: "waiting_for_input",
+      cwd: sideContext.cwd,
+      createdAt: now,
+      updatedAt: now,
+      lastSummary: "Ready for instructions",
+      logs: [],
+      notifyMainOnCompletion: false,
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    };
+    this.sideSessionIds.add(id);
+    this.sessionContexts.set(id, sideContext);
+    await this.upsert(session);
+    logAgentd("empty side session queued", { sessionId: id, cwd: sideContext.cwd, contextId: context.id });
+    try {
+      const handle = await this.runtime.prewarm({ cwd: sideContext.cwd, sessionId: id });
+      this.runtimeHandles.set(id, handle);
+      handle.subscribe((event) => void this.applyRuntimeEvent(id, event));
+      await this.appendLog(id, "manual side agent: waiting for first instruction");
+      if (sideContext.cwd) await this.appendLog(id, `manual side agent cwd: ${sideContext.cwd}`);
+      return this.mustGet(id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logAgentd("empty side session prewarm failed", { sessionId: id, error: message });
+      await this.patch(id, {
+        status: "failed",
+        lastSummary: `Failed to start runtime: ${message}`,
+        logs: [...this.mustGet(id).logs, `Failed to start runtime: ${message}`],
+      });
+      throw error;
+    }
+  }
+
   async pinSideSession(context: PickyContextPacket, title?: string): Promise<PickyAgentSession> {
     const now = new Date().toISOString();
     const id = `session-${randomUUID()}`;
@@ -947,5 +990,12 @@ function appendUniqueLog(logs: string[], line: string): string[] {
 }
 
 function hasSideSessionMarkerLog(session: PickyAgentSession): boolean {
-  return session.logs.some((line) => line.startsWith("main-agent handoff:") || line.startsWith("pi-extension handoff pin:"));
+  return session.logs.some((line) => line.startsWith("main-agent handoff:") || line.startsWith("pi-extension handoff pin:") || line.startsWith("manual side agent:"));
+}
+
+function titleForEmptySideSession(context: PickyContextPacket): string {
+  const cwd = normalizeOptionalString(context.cwd);
+  if (!cwd) return "New side agent";
+  const basename = cwd.split(/[\\/]/).filter(Boolean).at(-1);
+  return basename ? `New side agent · ${basename}` : "New side agent";
 }

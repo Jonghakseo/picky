@@ -1,0 +1,13 @@
+{
+  "id": "cmd-create-empty-side-session-001",
+  "protocolVersion": "2026-05-01",
+  "type": "createEmptySideSession",
+  "context": {
+    "id": "context-manual-side-agent-001",
+    "source": "system",
+    "capturedAt": "2026-05-05T00:00:00.000Z",
+    "cwd": "/tmp/project",
+    "screenshots": [],
+    "warnings": ["manualSideAgent=true"]
+  }
+}

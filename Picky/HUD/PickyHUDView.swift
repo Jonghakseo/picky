@@ -563,28 +563,29 @@ private struct PickySessionCardView: View {
             replyField
 
             HStack(spacing: 4) {
-                iconButton(systemName: "doc.text.magnifyingglass", help: "Open report", disabled: session.reportArtifact == nil) {
+                iconButton(systemName: "doc.text.magnifyingglass", label: "Report", help: "Open report", disabled: session.reportArtifact == nil) {
                     Task { try? await viewModel.openReport(sessionID: session.id) }
                 }
-                iconButton(systemName: "doc.on.doc", help: "Copy Pi resume command", disabled: session.piSessionFilePath == nil) {
+                iconButton(systemName: "doc.on.doc", label: "Copy", help: "Copy Pi resume command", disabled: session.piSessionFilePath == nil) {
                     viewModel.copyTerminalResumeCommand(sessionID: session.id)
                 }
-                iconButton(systemName: "terminal", help: "Open Pi terminal", disabled: session.piSessionFilePath == nil || session.status.blocksTerminalOverlay) {
+                iconButton(systemName: "terminal", label: "Terminal", help: "Open Pi terminal", disabled: session.piSessionFilePath == nil || session.status.blocksTerminalOverlay) {
                     viewModel.openTerminalOverlay(sessionID: session.id)
                 }
                 if let notifyMainOnCompletion = session.notifyMainOnCompletion {
                     iconButton(
                         systemName: notifyMainOnCompletion ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right",
+                        label: notifyMainOnCompletion ? "Notify" : "Quiet",
                         help: notifyMainOnCompletion ? "Tell main agent when this side task finishes" : "Keep completion on this side card only"
                     ) {
                         Task { try? await viewModel.setNotifyMainOnCompletion(sessionID: session.id, enabled: !notifyMainOnCompletion) }
                     }
                 }
                 Spacer(minLength: 0)
-                iconButton(systemName: "stop.circle", help: "Stop session", disabled: session.status.isTerminal) {
+                iconButton(systemName: "stop.circle", label: "Stop", help: "Stop session", disabled: session.status.isTerminal) {
                     Task { try? await viewModel.abort(sessionID: session.id) }
                 }
-                iconButton(systemName: "archivebox", help: "Archive session") {
+                iconButton(systemName: "archivebox", label: "Archive", help: "Archive session") {
                     viewModel.archive(sessionID: session.id)
                 }
             }
@@ -756,11 +757,18 @@ private struct PickySessionCardView: View {
             .foregroundColor(DS.Colors.textTertiary)
     }
 
-    private func iconButton(systemName: String, help: String, disabled: Bool = false, action: @escaping () -> Void) -> some View {
+    private func iconButton(systemName: String, label: String, help: String, disabled: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 24, height: 22)
+            VStack(spacing: 1) {
+                Image(systemName: systemName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(height: 16)
+                Text(label)
+                    .font(.system(size: 9, weight: .medium))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .frame(minWidth: 38, minHeight: 32)
         }
         .buttonStyle(PickyHUDIconButtonStyle())
         .foregroundColor(DS.Colors.textSecondary)

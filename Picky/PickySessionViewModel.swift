@@ -120,7 +120,6 @@ final class PickySessionListViewModel: ObservableObject {
         var steeringMode: PickyQueueMode
         var followUpMode: PickyQueueMode
         var activitySummary: PickyActivitySummary
-        var finalReport: PickyFinalReport?
         var pendingExtensionUiRequest: PickyExtensionUiRequest?
         var piSessionFilePath: String?
         var notifyMainOnCompletion: Bool?
@@ -149,7 +148,7 @@ final class PickySessionListViewModel: ObservableObject {
         }
 
         var canOpenMarkdownReport: Bool {
-            reportArtifact != nil || finalReport != nil || latestOpenAsReportMessage != nil
+            reportArtifact != nil || latestOpenAsReportMessage != nil
         }
 
         var linkBadgeArtifacts: [PickyArtifact] {
@@ -509,15 +508,6 @@ final class PickySessionListViewModel: ObservableObject {
             }
             return
         }
-        if let finalReport = session.finalReport {
-            try openGeneratedReport(
-                windowKey: sessionID,
-                title: session.title,
-                fileName: "final-report-\(sanitizedReportFileComponent(session.id)).md",
-                markdown: finalReport.markdownReport
-            )
-            return
-        }
         if let message = session.latestOpenAsReportMessage, let markdown = message.openAsReportMarkdown {
             try openGeneratedReport(
                 windowKey: "\(sessionID):message:\(message.id)",
@@ -595,25 +585,20 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func syncTerminalSessionOnce(sessionID: String, baselineSnapshot: PickyTerminalSessionSnapshot? = nil) {
-        guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
-              let piSessionFilePath = session.piSessionFilePath else { return }
-        do {
-            let snapshot = try terminalSessionSyncer.snapshot(sessionFilePath: piSessionFilePath)
-            guard !snapshot.isEmpty else { return }
-            guard baselineSnapshot != snapshot else { return }
-            update(sessionID: sessionID) { card in
-                if let lastUserText = snapshot.lastUserText {
-                    card.lastRequestText = lastUserText
-                }
-                if let lastAssistantText = snapshot.lastAssistantText {
-                    card.lastSummary = lastAssistantText.terminalCardSummary
-                    card.logPreview = "Synced from Pi terminal session"
-                }
-                card.updatedAt = Date()
+        guard (sessions + archivedSessions).contains(where: { $0.id == sessionID }) else { return }
+        let command = PickyCommandEnvelope(
+            type: .syncTerminalSession,
+            sessionId: sessionID,
+            baselinePiMessageId: baselineSnapshot?.lastMessageId
+        )
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await client.send(command)
+                lastError = nil
+            } catch {
+                lastError = error.localizedDescription
             }
-            lastError = nil
-        } catch {
-            lastError = error.localizedDescription
         }
     }
 
@@ -1010,7 +995,6 @@ extension PickySessionListViewModel.SessionCard {
         self.steeringMode = session.steeringMode
         self.followUpMode = session.followUpMode
         self.activitySummary = session.activitySummary
-        self.finalReport = session.finalReport
         self.pendingExtensionUiRequest = session.pendingExtensionUiRequest
         self.piSessionFilePath = session.logs.compactMap(Self.piSessionFilePath(fromLogLine:)).last
         self.notifyMainOnCompletion = session.notifyMainOnCompletion
@@ -1037,7 +1021,7 @@ extension PickySessionListViewModel.SessionCard {
         if result.artifacts.isEmpty { result.artifacts = artifacts }
         if result.changedFiles.isEmpty { result.changedFiles = changedFiles }
         // Conversation fields are daemon-authoritative in full sessionUpdated/sessionSnapshot
-        // payloads; an incoming empty queue/messages array or nil finalReport means cleared.
+        // payloads; an incoming empty queue/messages array means cleared.
         // pendingExtensionUiRequest is authoritative on the daemon side: every sessionUpdated
         // carries the full session, so an incoming `nil` means the daemon has explicitly cleared
         // the request (answered, cancelled, timed out, dropped on reattach). Falling back to the

@@ -26,6 +26,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
     /// daemon-side override; nil omits the field for unrelated command types.
     var mainAgentExtraInstructions: String?
     var kind: PickyQueueClearKind?
+    /// Pi message id observed when a Picky terminal overlay was opened. The daemon imports only
+    /// active Pi transcript messages after this id when syncing the terminal session back.
+    var baselinePiMessageId: String?
 
     init(
         id: String = "cmd-\(UUID().uuidString)",
@@ -40,7 +43,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
         archived: Bool? = nil,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel? = nil,
         mainAgentExtraInstructions: String? = nil,
-        kind: PickyQueueClearKind? = nil
+        kind: PickyQueueClearKind? = nil,
+        baselinePiMessageId: String? = nil
     ) {
         self.id = id
         self.protocolVersion = pickyAgentProtocolVersion
@@ -56,6 +60,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
         self.mainAgentExtraInstructions = mainAgentExtraInstructions
         self.kind = kind
+        self.baselinePiMessageId = baselinePiMessageId
     }
 }
 
@@ -68,6 +73,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case createTask
     case createEmptySideSession
     case clearQueue
+    case syncTerminalSession
     case followUp
     case steer
     case abort
@@ -304,37 +310,6 @@ struct PickyActivitySummary: Codable, Equatable {
     static let zero = PickyActivitySummary(edit: 0, bash: 0, thinking: 0, other: 0)
 }
 
-struct PickyFinalReport: Codable, Equatable {
-    let summary: String
-    let body: String
-    let status: Status
-    let artifacts: [Artifact]
-
-    enum Status: String, Codable, Equatable { case success, partial, blocked }
-    struct Artifact: Codable, Equatable {
-        let kind: String
-        let title: String
-        let url: URL?
-    }
-
-    init(summary: String, body: String, status: Status, artifacts: [Artifact] = []) {
-        self.summary = summary
-        self.body = body
-        self.status = status
-        self.artifacts = artifacts
-    }
-
-    enum CodingKeys: String, CodingKey { case summary, body, status, artifacts }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        summary = try container.decode(String.self, forKey: .summary)
-        body = try container.decode(String.self, forKey: .body)
-        status = try container.decode(Status.self, forKey: .status)
-        artifacts = try container.decodeIfPresent([Artifact].self, forKey: .artifacts) ?? []
-    }
-}
-
 enum PickyMessageOrigin: String, Codable, Equatable {
     case user
     case mainAgent = "main_agent"
@@ -346,7 +321,6 @@ enum PickySessionMessageKind: String, Codable, Equatable {
     case agentText = "agent_text"
     case agentThinking = "agent_thinking"
     case agentQuestion = "agent_question"
-    case agentReport = "agent_report"
     case agentError = "agent_error"
     case agentActivity = "agent_activity"
     case system
@@ -360,40 +334,9 @@ struct PickySessionMessage: Codable, Equatable, Identifiable {
     let text: String?
     let question: PickyExtensionUiRequest?
     let cancelledAt: Date?
-    let report: PickyFinalReport?
     let activitySnapshot: PickyActivitySummary?
     let errorContext: String?
     let errorMessage: String?
-}
-
-extension PickyFinalReport {
-    var markdownReport: String {
-        var lines: [String] = ["# Final report", "", "Status: `\(status.rawValue)`", ""]
-        let trimmedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedSummary.isEmpty {
-            lines.append("## Summary")
-            lines.append(trimmedSummary)
-            lines.append("")
-        }
-        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedBody.isEmpty {
-            lines.append("## Details")
-            lines.append(trimmedBody)
-            lines.append("")
-        }
-        if !artifacts.isEmpty {
-            lines.append("## Artifacts")
-            for artifact in artifacts {
-                if let url = artifact.url {
-                    lines.append("- [\(artifact.title)](\(url.absoluteString))")
-                } else {
-                    lines.append("- \(artifact.title)")
-                }
-            }
-            lines.append("")
-        }
-        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-    }
 }
 
 extension PickySessionMessage {
@@ -402,8 +345,6 @@ extension PickySessionMessage {
         case .agentText:
             let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return trimmed.isEmpty ? nil : trimmed
-        case .agentReport:
-            return report?.markdownReport
         default:
             return nil
         }
@@ -430,7 +371,6 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     var steeringMode: PickyQueueMode = .oneAtATime
     var followUpMode: PickyQueueMode = .oneAtATime
     var activitySummary: PickyActivitySummary = .zero
-    var finalReport: PickyFinalReport? = nil
     var pendingExtensionUiRequest: PickyExtensionUiRequest?
     var notifyMainOnCompletion: Bool? = nil
     var archived: Bool? = nil
@@ -438,7 +378,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id, title, status, cwd, createdAt, updatedAt, lastSummary, thinkingPreview, finalAnswer, logs, tools, artifacts, changedFiles
-        case messages, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary, finalReport
+        case messages, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary
         case pendingExtensionUiRequest, notifyMainOnCompletion, archived, pinned
     }
 
@@ -462,7 +402,6 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         steeringMode: PickyQueueMode = .oneAtATime,
         followUpMode: PickyQueueMode = .oneAtATime,
         activitySummary: PickyActivitySummary = .zero,
-        finalReport: PickyFinalReport? = nil,
         pendingExtensionUiRequest: PickyExtensionUiRequest? = nil,
         notifyMainOnCompletion: Bool? = nil,
         archived: Bool? = nil,
@@ -487,7 +426,6 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         self.steeringMode = steeringMode
         self.followUpMode = followUpMode
         self.activitySummary = activitySummary
-        self.finalReport = finalReport
         self.pendingExtensionUiRequest = pendingExtensionUiRequest
         self.notifyMainOnCompletion = notifyMainOnCompletion
         self.archived = archived
@@ -515,7 +453,6 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         steeringMode = try container.decodeIfPresent(PickyQueueMode.self, forKey: .steeringMode) ?? .oneAtATime
         followUpMode = try container.decodeIfPresent(PickyQueueMode.self, forKey: .followUpMode) ?? .oneAtATime
         activitySummary = try container.decodeIfPresent(PickyActivitySummary.self, forKey: .activitySummary) ?? .zero
-        finalReport = try container.decodeIfPresent(PickyFinalReport.self, forKey: .finalReport)
         pendingExtensionUiRequest = try container.decodeIfPresent(PickyExtensionUiRequest.self, forKey: .pendingExtensionUiRequest)
         notifyMainOnCompletion = try container.decodeIfPresent(Bool.self, forKey: .notifyMainOnCompletion)
         archived = try container.decodeIfPresent(Bool.self, forKey: .archived)

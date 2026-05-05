@@ -1,0 +1,7 @@
+{
+  "id": "cmd-sync-terminal-001",
+  "protocolVersion": "2026-05-05",
+  "type": "syncTerminalSession",
+  "sessionId": "session-001",
+  "baselinePiMessageId": "a1"
+}

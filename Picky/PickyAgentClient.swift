@@ -244,6 +244,7 @@ private extension PickyCommandEnvelope {
         if let requestId { parts.append("request=\(requestId)") }
         if let artifactId { parts.append("artifact=\(artifactId)") }
         if let enabled { parts.append("enabled=\(enabled)") }
+        if let baselinePiMessageId { parts.append("baselinePiMessage=\(baselinePiMessageId)") }
         return parts.joined(separator: " ")
     }
 }

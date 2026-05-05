@@ -552,9 +552,10 @@ final class PickySwiftTermView: LocalProcessTerminalView {
 struct PickyTerminalSessionSnapshot: Equatable {
     var lastUserText: String?
     var lastAssistantText: String?
+    var lastMessageId: String?
 
     var isEmpty: Bool {
-        lastUserText == nil && lastAssistantText == nil
+        lastUserText == nil && lastAssistantText == nil && lastMessageId == nil
     }
 }
 
@@ -577,7 +578,7 @@ struct PickyPiSessionFileSyncer: PickyTerminalSessionSyncing {
         let activePath = activeMessagePath(from: entries)
         let lastUserText = activePath.reversed().first { $0.message?.role == "user" }?.message?.plainText.nonEmptyTrimmed
         let lastAssistantText = activePath.reversed().first { $0.message?.role == "assistant" }?.message?.plainText.nonEmptyTrimmed
-        return PickyTerminalSessionSnapshot(lastUserText: lastUserText, lastAssistantText: lastAssistantText)
+        return PickyTerminalSessionSnapshot(lastUserText: lastUserText, lastAssistantText: lastAssistantText, lastMessageId: activePath.last?.id)
     }
 
     private func activeMessagePath(from entries: [PiSessionMessageEntry]) -> [PiSessionMessageEntry] {

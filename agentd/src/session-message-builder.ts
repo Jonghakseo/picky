@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { PickyActivitySummary, PickyExtensionUiRequest, PickyFinalReport, PickySessionMessage } from "./protocol.js";
+import type { PickyActivitySummary, PickyExtensionUiRequest, PickySessionMessage } from "./protocol.js";
 
 type MessageOrigin = "user" | "main_agent" | "pi_extension";
 
@@ -84,17 +84,6 @@ export class SessionMessageBuilder {
     const entry = state?.journal.find((candidate) => candidate.message.id === requestId);
     if (!state || !entry || state.removedIds.has(requestId) || entry.message.cancelledAt) return;
     await this.replaceInternal(sessionId, requestId, { ...entry.message, cancelledAt: this.deps.now() });
-  }
-
-  async recordFinalReport(sessionId: string, report: PickyFinalReport): Promise<string> {
-    const id = `msg-report-${randomUUID()}`;
-    await this.appendInternal(sessionId, {
-      id,
-      kind: "agent_report",
-      createdAt: this.deps.now(),
-      report,
-    });
-    return id;
   }
 
   async recordError(sessionId: string, errorMessage: string, errorContext?: string): Promise<void> {

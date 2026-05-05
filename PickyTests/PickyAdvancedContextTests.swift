@@ -218,3 +218,123 @@ private final class ScriptCallCounter: @unchecked Sendable {
     private(set) var count = 0
     func increment() { count += 1 }
 }
+
+struct PickyChainedBrowserContextProviderTests {
+    private struct Stub: PickyAdvancedBrowserContextProviding {
+        let result: PickyContextCaptureResult<PickyBrowserContext>
+        func browserContextResult() -> PickyContextCaptureResult<PickyBrowserContext> { result }
+    }
+
+    @Test func chainReturnsFirstValueAndCarriesEarlierWarnings() throws {
+        let chain = ChainedBrowserContextProvider(providers: [
+            Stub(result: .unavailable(warnings: ["first failed"])),
+            Stub(result: .value(PickyBrowserContext(url: URL(string: "https://example.com"), title: "T", selectedText: nil), warnings: ["AX used"])),
+            Stub(result: .value(PickyBrowserContext(url: URL(string: "https://other.com"), title: "X", selectedText: nil)))
+        ])
+
+        let result = chain.browserContextResult()
+        let context = try #require(result.value)
+
+        #expect(context.url?.absoluteString == "https://example.com")
+        #expect(context.title == "T")
+        #expect(result.warnings == ["first failed", "AX used"])
+    }
+
+    @Test func chainReturnsUnavailableWithAllWarningsWhenEveryProviderFails() {
+        let chain = ChainedBrowserContextProvider(providers: [
+            Stub(result: .unavailable(warnings: ["a"])),
+            Stub(result: .unavailable(warnings: ["b", "c"]))
+        ])
+
+        let result = chain.browserContextResult()
+
+        #expect(result.value == nil)
+        #expect(result.warnings == ["a", "b", "c"])
+    }
+}
+
+struct PickyAccessibilityBrowserContextProviderTests {
+    @Test func accessibilityProviderReturnsTitleOnlyWhenURLLookupFails() throws {
+        var provider = AccessibilityBrowserContextProvider()
+        provider.frontmostApplicationProvider = { NSRunningApplication.current }
+        provider.axTrustChecker = { true }
+        provider.supportedBundleIds = [NSRunningApplication.current.bundleIdentifier ?? ""]
+        provider.titleExtractor = { _ in "  Personal Access Tokens (Classic)  " }
+        provider.urlExtractor = { _, _ in nil }
+
+        let result = provider.browserContextResult()
+        let context = try #require(result.value)
+
+        #expect(context.title == "Personal Access Tokens (Classic)")
+        #expect(context.url == nil)
+    }
+
+    @Test func accessibilityProviderReturnsURLAndTitleWhenBothPresent() throws {
+        var provider = AccessibilityBrowserContextProvider()
+        provider.frontmostApplicationProvider = { NSRunningApplication.current }
+        provider.axTrustChecker = { true }
+        provider.supportedBundleIds = [NSRunningApplication.current.bundleIdentifier ?? ""]
+        provider.titleExtractor = { _ in "GitHub" }
+        provider.urlExtractor = { _, _ in "https://github.com/settings/tokens" }
+
+        let result = provider.browserContextResult()
+        let context = try #require(result.value)
+
+        #expect(context.title == "GitHub")
+        #expect(context.url?.absoluteString == "https://github.com/settings/tokens")
+    }
+
+    @Test func accessibilityProviderPrependsHTTPSWhenURLLacksScheme() throws {
+        var provider = AccessibilityBrowserContextProvider()
+        provider.frontmostApplicationProvider = { NSRunningApplication.current }
+        provider.axTrustChecker = { true }
+        provider.supportedBundleIds = [NSRunningApplication.current.bundleIdentifier ?? ""]
+        provider.titleExtractor = { _ in nil }
+        provider.urlExtractor = { _, _ in "github.com/settings/tokens" }
+
+        let result = provider.browserContextResult()
+        let context = try #require(result.value)
+
+        #expect(context.url?.absoluteString == "https://github.com/settings/tokens")
+    }
+
+    @Test func accessibilityProviderReturnsUnavailableForUnsupportedBundle() {
+        var provider = AccessibilityBrowserContextProvider()
+        provider.frontmostApplicationProvider = { NSRunningApplication.current }
+        provider.axTrustChecker = { true }
+        provider.supportedBundleIds = ["com.example.NotABrowser"]
+        provider.titleExtractor = { _ in "X" }
+
+        let result = provider.browserContextResult()
+
+        #expect(result.value == nil)
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test func accessibilityProviderReturnsUnavailableWithWarningWhenAXNotTrusted() {
+        var provider = AccessibilityBrowserContextProvider()
+        provider.frontmostApplicationProvider = { NSRunningApplication.current }
+        provider.axTrustChecker = { false }
+        provider.supportedBundleIds = [NSRunningApplication.current.bundleIdentifier ?? ""]
+        provider.titleExtractor = { _ in "X" }
+
+        let result = provider.browserContextResult()
+
+        #expect(result.value == nil)
+        #expect(result.warnings.contains(where: { $0.contains("Accessibility permission") }))
+    }
+
+    @Test func accessibilityProviderReturnsUnavailableWhenNoTitleAndNoURL() {
+        var provider = AccessibilityBrowserContextProvider()
+        provider.frontmostApplicationProvider = { NSRunningApplication.current }
+        provider.axTrustChecker = { true }
+        provider.supportedBundleIds = [NSRunningApplication.current.bundleIdentifier ?? ""]
+        provider.titleExtractor = { _ in nil }
+        provider.urlExtractor = { _, _ in nil }
+
+        let result = provider.browserContextResult()
+
+        #expect(result.value == nil)
+        #expect(result.warnings.contains(where: { $0.contains("no AX title/URL") }))
+    }
+}

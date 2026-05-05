@@ -59,7 +59,10 @@ struct PickyVoiceContextCaptureCoordinator {
         let assembler = PickyContextPacketAssembler(
             appProvider: WorkspacePickyApplicationContextProvider(),
             windowProvider: CGWindowPickyWindowContextProvider(),
-            advancedBrowserProvider: AppleScriptBrowserContextProvider(),
+            advancedBrowserProvider: ChainedBrowserContextProvider(providers: [
+                AppleScriptBrowserContextProvider(),
+                AccessibilityBrowserContextProvider()
+            ]),
             selectedTextProvider: ClipboardSelectedTextProvider(),
             screenProvider: StaticPickyScreenContextProvider(captures: screenCaptures),
             defaultCwd: PickySettingsStore().load().defaultCwd

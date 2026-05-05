@@ -284,3 +284,28 @@ extension PickyScreenContext {
         "picky_show_pointer(x, y, label: \(label), coordinateSpace: screenshotPixel)"
     }
 }
+
+/// Tries each provider in order, returning the first .value. Warnings from
+/// every step are accumulated so callers can see why earlier providers gave
+/// up (e.g. "multiple Chrome instances" + "AX returned title only").
+struct ChainedBrowserContextProvider: PickyAdvancedBrowserContextProviding {
+    let providers: [PickyAdvancedBrowserContextProviding]
+
+    init(providers: [PickyAdvancedBrowserContextProviding]) {
+        self.providers = providers
+    }
+
+    func browserContextResult() -> PickyContextCaptureResult<PickyBrowserContext> {
+        var accumulated: [String] = []
+        for provider in providers {
+            let result = provider.browserContextResult()
+            switch result {
+            case .value(let value, let warnings):
+                return .value(value, warnings: accumulated + warnings)
+            case .unavailable(let warnings):
+                accumulated.append(contentsOf: warnings)
+            }
+        }
+        return .unavailable(warnings: accumulated)
+    }
+}

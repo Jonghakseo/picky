@@ -117,6 +117,38 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
         }
     }
 
+    /// Pure decision for whether the monitor should synthesize a `.released`
+    /// transition after the tap was disabled (timeout or user-input). When the
+    /// tap is briefly disabled we may have missed the real keyUp/flagsChanged
+    /// release; without recovery `isShortcutCurrentlyPressed` stays stuck and
+    /// every subsequent PTT press decodes as `.none`, leaving the user with a
+    /// dead shortcut and a cursor stuck in `.listening` until they relaunch.
+    ///
+    /// Guarded by the actual modifier state so we never cut off a recording the
+    /// user is still actively holding: only synthesize release when the spec's
+    /// required modifiers are no longer held in the live `NSEvent.modifierFlags`.
+    /// For combos with a keyCode we cannot probe the key itself, so we trust the
+    /// modifier check — if modifiers were dropped, the spec is definitely not
+    /// satisfied and a release is correct.
+    static func reconcileStuckPressedState(
+        spec: PickyShortcutSpec,
+        isShortcutCurrentlyPressed: Bool,
+        currentModifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        guard isShortcutCurrentlyPressed else { return false }
+        let requiredModifiers: NSEvent.ModifierFlags
+        switch spec {
+        case .modifierCombo(let modifiers, _):
+            requiredModifiers = modifiers
+        case .doubleTapModifier(let modifier):
+            requiredModifiers = modifier
+        }
+        guard !requiredModifiers.isEmpty else { return true }
+        let cleanedFlags = currentModifierFlags.intersection(.deviceIndependentFlagsMask)
+        let modifiersStillHeld = cleanedFlags.isSuperset(of: requiredModifiers)
+        return !modifiersStillHeld
+    }
+
     private func handleGlobalEventTap(
         eventType: CGEventType,
         event: CGEvent
@@ -124,6 +156,17 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
         if eventType == .tapDisabledByTimeout || eventType == .tapDisabledByUserInput {
             if let globalEventTap {
                 CGEvent.tapEnable(tap: globalEventTap, enable: true)
+            }
+            let reasonLabel = eventType == .tapDisabledByTimeout ? "timeout" : "user-input"
+            let shouldSynthesizeRelease = Self.reconcileStuckPressedState(
+                spec: currentShortcutSpec,
+                isShortcutCurrentlyPressed: isShortcutCurrentlyPressed,
+                currentModifierFlags: NSEvent.modifierFlags
+            )
+            print("⚠️ Global push-to-talk: tap re-enabled (\(reasonLabel)); pressed=\(isShortcutCurrentlyPressed) synthesizedRelease=\(shouldSynthesizeRelease)")
+            if shouldSynthesizeRelease {
+                isShortcutCurrentlyPressed = false
+                shortcutTransitionPublisher.send(.released)
             }
             return Unmanaged.passUnretained(event)
         }

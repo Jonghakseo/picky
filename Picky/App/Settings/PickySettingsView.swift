@@ -33,6 +33,11 @@ struct PickySettingsView: View {
                         Text(level.displayName).tag(level)
                     }
                 }
+                Picker("Screen context", selection: $viewModel.settings.screenContextScope) {
+                    ForEach(PickyScreenContextScope.allCases) { scope in
+                        Text(scope.displayName).tag(scope)
+                    }
+                }
             }
 
             Section("Voice") {

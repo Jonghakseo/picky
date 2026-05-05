@@ -12,7 +12,7 @@ struct PickyVoiceContextCaptureCoordinatorTests {
     @Test func cancellationAfterScreenCaptureSkipsContextAssembly() async throws {
         var didAssemble = false
         let coordinator = PickyVoiceContextCaptureCoordinator(
-            screenCapture: {
+            screenCapture: { _ in
                 withUnsafeCurrentTask { task in
                     task?.cancel()
                 }
@@ -42,5 +42,37 @@ struct PickyVoiceContextCaptureCoordinatorTests {
             Issue.record("Expected cancelled capture to return nil before assembly, got context \(result.contextPacket.id)")
         }
         #expect(!didAssemble)
+    }
+
+    @Test func usesConfiguredScreenContextScopeWhenCapturing() async throws {
+        var capturedScope: PickyScreenContextScope?
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        settings.screenContextScope = .focusedScreen
+        let coordinator = PickyVoiceContextCaptureCoordinator(
+            screenCapture: { scope in
+                capturedScope = scope
+                return []
+            },
+            settingsProvider: { settings },
+            contextAssembler: { _, source, transcript, _ in
+                PickyContextPacket(
+                    id: "context-focused-screen",
+                    source: source,
+                    capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
+                    transcript: transcript,
+                    selectedText: nil,
+                    cwd: nil,
+                    activeApp: nil,
+                    activeWindow: nil,
+                    browser: nil,
+                    screenshots: [],
+                    warnings: []
+                )
+            }
+        )
+
+        _ = try await coordinator.captureContext(transcript: "look here", voiceFollowUpSessionID: nil)
+
+        #expect(capturedScope == .focusedScreen)
     }
 }

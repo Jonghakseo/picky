@@ -29,6 +29,12 @@ enum CompanionScreenCaptureUtility {
     /// whether the user's cursor is on that screen. This gives the AI
     /// full context across multiple monitors.
     static func captureAllScreensAsJPEG() async throws -> [CompanionScreenCapture] {
+        try await captureScreensAsJPEG(scope: .allScreens)
+    }
+
+    /// Captures the user-configured screen context scope as JPEG data.
+    /// The focused screen is the display containing the physical cursor at capture time.
+    static func captureScreensAsJPEG(scope: PickyScreenContextScope) async throws -> [CompanionScreenCapture] {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
 
         guard !content.displays.isEmpty else {
@@ -68,9 +74,21 @@ enum CompanionScreenCaptureUtility {
             return false
         }
 
+        let displaysToCapture: [SCDisplay]
+        switch scope {
+        case .allScreens:
+            displaysToCapture = sortedDisplays
+        case .focusedScreen:
+            let focusedDisplays = sortedDisplays.filter { display in
+                let frame = nsScreenByDisplayID[display.displayID]?.frame ?? display.frame
+                return frame.contains(mouseLocation)
+            }
+            displaysToCapture = focusedDisplays.isEmpty ? Array(sortedDisplays.prefix(1)) : focusedDisplays
+        }
+
         var capturedScreens: [CompanionScreenCapture] = []
 
-        for (displayIndex, display) in sortedDisplays.enumerated() {
+        for (displayIndex, display) in displaysToCapture.enumerated() {
             // Use NSScreen.frame (AppKit coordinates, bottom-left origin) so
             // displayFrame is in the same coordinate system as NSEvent.mouseLocation
             // and the overlay window's screenFrame in BlueCursorView.
@@ -124,12 +142,16 @@ enum CompanionScreenCaptureUtility {
             }
 
             let screenLabel: String
-            if sortedDisplays.count == 1 {
+            if scope == .focusedScreen {
+                screenLabel = isCursorScreen
+                    ? "focused screen — cursor is on this screen (primary focus)"
+                    : "focused screen — fallback display"
+            } else if displaysToCapture.count == 1 {
                 screenLabel = "user's screen (cursor is here)"
             } else if isCursorScreen {
-                screenLabel = "screen \(displayIndex + 1) of \(sortedDisplays.count) — cursor is on this screen (primary focus)"
+                screenLabel = "screen \(displayIndex + 1) of \(displaysToCapture.count) — cursor is on this screen (primary focus)"
             } else {
-                screenLabel = "screen \(displayIndex + 1) of \(sortedDisplays.count) — secondary screen"
+                screenLabel = "screen \(displayIndex + 1) of \(displaysToCapture.count) — secondary screen"
             }
 
             capturedScreens.append(CompanionScreenCapture(

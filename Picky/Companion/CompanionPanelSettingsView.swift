@@ -61,7 +61,7 @@ enum CompanionPanelSettingsRoute: Hashable {
         case .index: nil
         case .workspace: "Default folder for new sessions."
         case .notifications: "Banners for session events."
-        case .mainAgent: "Reasoning level for the always-on agent."
+        case .mainAgent: "Reasoning and captured screen context."
         case .voice: "Speech providers and language."
         case .shortcuts: "Push to Talk and Quick Input bindings."
         }
@@ -266,18 +266,33 @@ struct CompanionPanelSettingsView: View {
     }
 
     private var mainAgentSection: some View {
-        sectionHeader(section: .mainAgent, title: "Main Agent", subtitle: "Reasoning level for the always-on command agent.") {
-            VStack(alignment: .leading, spacing: 5) {
-                fieldLabel("Reasoning level")
-                Picker("Reasoning level", selection: $viewModel.settings.mainAgentThinkingLevel) {
-                    ForEach(PickyMainAgentThinkingLevel.allCases) { level in
-                        Text(level.displayName).tag(level)
+        sectionHeader(section: .mainAgent, title: "Main Agent", subtitle: "Reasoning level and which screens are captured for context.") {
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    fieldLabel("Reasoning level")
+                    Picker("Reasoning level", selection: $viewModel.settings.mainAgentThinkingLevel) {
+                        ForEach(PickyMainAgentThinkingLevel.allCases) { level in
+                            Text(level.displayName).tag(level)
+                        }
                     }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onChange(of: viewModel.settings.mainAgentThinkingLevel) { _, _ in saveImmediately(for: .mainAgent) }
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .onChange(of: viewModel.settings.mainAgentThinkingLevel) { _, _ in saveImmediately(for: .mainAgent) }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    fieldLabel("Screen context")
+                    Picker("Screen context", selection: $viewModel.settings.screenContextScope) {
+                        ForEach(PickyScreenContextScope.allCases) { scope in
+                            Text(scope.displayName).tag(scope)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onChange(of: viewModel.settings.screenContextScope) { _, _ in saveImmediately(for: .mainAgent) }
+                }
             }
         }
     }

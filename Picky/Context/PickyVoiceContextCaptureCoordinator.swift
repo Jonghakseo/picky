@@ -12,17 +12,21 @@ struct PickyVoiceContextCaptureResult {
 
 @MainActor
 struct PickyVoiceContextCaptureCoordinator {
-    typealias ScreenCapture = @MainActor () async throws -> [CompanionScreenCapture]
+    typealias ScreenCapture = @MainActor (_ scope: PickyScreenContextScope) async throws -> [CompanionScreenCapture]
+    typealias SettingsProvider = @MainActor () -> PickySettings
     typealias ContextAssembler = @MainActor (_ screenCaptures: [CompanionScreenCapture], _ source: String, _ transcript: String, _ voiceFollowUpSessionID: String?) throws -> PickyContextPacket
 
     private let screenCapture: ScreenCapture
+    private let settingsProvider: SettingsProvider
     private let contextAssembler: ContextAssembler
 
     init(
-        screenCapture: @escaping ScreenCapture = { try await CompanionScreenCaptureUtility.captureAllScreensAsJPEG() },
+        screenCapture: @escaping ScreenCapture = { scope in try await CompanionScreenCaptureUtility.captureScreensAsJPEG(scope: scope) },
+        settingsProvider: @escaping SettingsProvider = { PickySettingsStore().load() },
         contextAssembler: @escaping ContextAssembler = PickyVoiceContextCaptureCoordinator.assembleContextPacket
     ) {
         self.screenCapture = screenCapture
+        self.settingsProvider = settingsProvider
         self.contextAssembler = contextAssembler
     }
 
@@ -43,7 +47,8 @@ struct PickyVoiceContextCaptureCoordinator {
         source: String,
         selectedSessionID: String? = nil
     ) async throws -> PickyVoiceContextCaptureResult? {
-        let screenCaptures = try await screenCapture()
+        let settings = settingsProvider()
+        let screenCaptures = try await screenCapture(settings.screenContextScope)
         guard !Task.isCancelled else { return nil }
 
         let contextPacket = try contextAssembler(screenCaptures, source, transcript, selectedSessionID)

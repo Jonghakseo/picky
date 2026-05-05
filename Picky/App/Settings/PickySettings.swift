@@ -77,6 +77,20 @@ enum PickyMainAgentThinkingLevel: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum PickyScreenContextScope: String, Codable, CaseIterable, Identifiable {
+    case allScreens
+    case focusedScreen
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .allScreens: "All screens"
+        case .focusedScreen: "Focused screen only"
+        }
+    }
+}
+
 /// User zoom level for the markdown report viewer and the Pi terminal overlay.
 /// Each surface keeps its own multiplier so increasing terminal cell density does not
 /// also blow up the markdown body. Bounded by `PickyFontScales.minimum`/`.maximum`
@@ -128,6 +142,7 @@ struct PickySettings: Codable, Equatable {
     var notifications: PickyNotificationPreferences
     var fontScales: PickyFontScales
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel
+    var screenContextScope: PickyScreenContextScope
     var useConversationCard: Bool
     var pushToTalkShortcut: PickyShortcutSpec
     var quickInputShortcut: PickyShortcutSpec
@@ -147,6 +162,7 @@ struct PickySettings: Codable, Equatable {
         notifications: PickyNotificationPreferences = .defaults,
         fontScales: PickyFontScales = .defaults,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .medium,
+        screenContextScope: PickyScreenContextScope = .allScreens,
         useConversationCard: Bool = true,
         pushToTalkShortcut: PickyShortcutSpec = .defaultPushToTalk,
         quickInputShortcut: PickyShortcutSpec = .defaultQuickInput
@@ -165,6 +181,7 @@ struct PickySettings: Codable, Equatable {
         self.notifications = notifications
         self.fontScales = fontScales
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
+        self.screenContextScope = screenContextScope
         self.useConversationCard = useConversationCard
         self.pushToTalkShortcut = pushToTalkShortcut
         self.quickInputShortcut = quickInputShortcut
@@ -187,6 +204,7 @@ struct PickySettings: Codable, Equatable {
             notifications: .defaults,
             fontScales: .defaults,
             mainAgentThinkingLevel: .medium,
+            screenContextScope: .allScreens,
             useConversationCard: true,
             pushToTalkShortcut: .defaultPushToTalk,
             quickInputShortcut: .defaultQuickInput
@@ -218,6 +236,7 @@ struct PickySettings: Codable, Equatable {
         case notifications
         case fontScales
         case mainAgentThinkingLevel
+        case screenContextScope
         case useConversationCard
         case pushToTalkShortcut
         case quickInputShortcut
@@ -240,6 +259,7 @@ struct PickySettings: Codable, Equatable {
         appearance = try container.decodeIfPresent(PickyAppearanceMode.self, forKey: .appearance) ?? defaults.appearance
         notifications = try container.decodeIfPresent(PickyNotificationPreferences.self, forKey: .notifications) ?? defaults.notifications
         mainAgentThinkingLevel = try container.decodeIfPresent(PickyMainAgentThinkingLevel.self, forKey: .mainAgentThinkingLevel) ?? defaults.mainAgentThinkingLevel
+        screenContextScope = try container.decodeIfPresent(PickyScreenContextScope.self, forKey: .screenContextScope) ?? defaults.screenContextScope
         useConversationCard = try container.decodeIfPresent(Bool.self, forKey: .useConversationCard) ?? defaults.useConversationCard
         if let storedScales = try container.decodeIfPresent(PickyFontScales.self, forKey: .fontScales) {
             fontScales = PickyFontScales(

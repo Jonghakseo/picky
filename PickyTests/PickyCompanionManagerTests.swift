@@ -241,6 +241,44 @@ struct PickyCompanionManagerTests {
         #expect(prepared == "[[slnc 500]]안녕하세요")
     }
 
+    @Test func speechFallbackProviderUsesFallbackWhenPrimaryFailsAsynchronously() async throws {
+        let primary = FakeSpeechPlaybackProvider()
+        let fallback = FakeSpeechPlaybackProvider()
+        let provider = PickyFallbackSpeechPlaybackProvider(primary: primary, fallback: fallback)
+        var finishes: [Bool] = []
+
+        let started = provider.speak("안녕하세요") { finishes.append($0) }
+        #expect(started)
+        #expect(primary.spokenUtterances == ["안녕하세요"])
+        #expect(fallback.spokenUtterances.isEmpty)
+
+        primary.finishSpeaking(didFinish: false)
+        try await settle()
+
+        #expect(fallback.spokenUtterances == ["안녕하세요"])
+        #expect(finishes.isEmpty)
+
+        fallback.finishSpeaking(didFinish: true)
+        try await settle()
+
+        #expect(finishes == [true])
+    }
+
+    @Test func speechFallbackProviderUsesFallbackWhenPrimaryRefusesToStart() async throws {
+        let primary = FakeSpeechPlaybackProvider()
+        primary.shouldStartSpeaking = false
+        let fallback = FakeSpeechPlaybackProvider()
+        let provider = PickyFallbackSpeechPlaybackProvider(primary: primary, fallback: fallback)
+        var finishes: [Bool] = []
+
+        let started = provider.speak("안녕하세요") { finishes.append($0) }
+
+        #expect(started)
+        #expect(primary.spokenUtterances == ["안녕하세요"])
+        #expect(fallback.spokenUtterances == ["안녕하세요"])
+        #expect(finishes.isEmpty)
+    }
+
     @Test func voicePresentationKeepsAwaitingAgentStateAfterDictationResetsToIdle() async throws {
         let presentation = CompanionVoicePresentationReducer.reduce(
             currentVoiceState: .processing,

@@ -42,16 +42,24 @@ enum PickySpeechPlaybackProviderFactory {
                 instructions: AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_TTS_INSTRUCTIONS", environment: environment),
                 modelName: AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_TTS_MODEL", environment: environment)
             )
-            print("🔊 TTS: using provider \(provider.displayName)")
-            return provider
+            let fallback = PickyFallbackSpeechPlaybackProvider(
+                primary: provider,
+                fallback: PickySystemSpeechPlaybackProvider()
+            )
+            print("🔊 TTS: using provider \(fallback.displayName)")
+            return fallback
         }
 
         if requestedProvider == "elevenlabs" || requestedProvider == "eleven-labs" {
             let provider = ElevenLabsSpeechPlaybackProvider(
                 configuration: .fromEnvironment(environment: environment)
             )
-            print("🔊 TTS: using provider \(provider.displayName)")
-            return provider
+            let fallback = PickyFallbackSpeechPlaybackProvider(
+                primary: provider,
+                fallback: PickySystemSpeechPlaybackProvider()
+            )
+            print("🔊 TTS: using provider \(fallback.displayName)")
+            return fallback
         }
 
         let provider = PickySystemSpeechPlaybackProvider()
@@ -76,6 +84,97 @@ enum PickySpeechPlaybackProviderFactory {
         case .elevenLabs:
             return "elevenlabs"
         }
+    }
+}
+
+@MainActor
+final class PickyFallbackSpeechPlaybackProvider: PickySpeechPlaybackProvider {
+    let displayName: String
+
+    var isSpeaking: Bool {
+        primary.isSpeaking || fallback.isSpeaking || activeSpeechID != nil
+    }
+
+    private let primary: any PickySpeechPlaybackProvider
+    private let fallback: any PickySpeechPlaybackProvider
+    private var activeSpeechID: UUID?
+
+    init(primary: any PickySpeechPlaybackProvider, fallback: any PickySpeechPlaybackProvider) {
+        self.primary = primary
+        self.fallback = fallback
+        self.displayName = "\(primary.displayName) + \(fallback.displayName) fallback"
+    }
+
+    @discardableResult
+    func speak(_ utterance: String, onFinish: @escaping (Bool) -> Void) -> Bool {
+        stopSpeaking()
+
+        let speechID = UUID()
+        activeSpeechID = speechID
+
+        let startedPrimary = primary.speak(utterance) { [weak self] didFinish in
+            Task { @MainActor [weak self] in
+                self?.handlePrimaryFinished(
+                    speechID: speechID,
+                    utterance: utterance,
+                    didFinish: didFinish,
+                    onFinish: onFinish
+                )
+            }
+        }
+
+        guard startedPrimary else {
+            return startFallback(speechID: speechID, utterance: utterance, onFinish: onFinish)
+        }
+        return true
+    }
+
+    func stopSpeaking() {
+        activeSpeechID = nil
+        primary.stopSpeaking()
+        fallback.stopSpeaking()
+    }
+
+    private func handlePrimaryFinished(
+        speechID: UUID,
+        utterance: String,
+        didFinish: Bool,
+        onFinish: @escaping (Bool) -> Void
+    ) {
+        guard activeSpeechID == speechID else { return }
+        guard !didFinish else {
+            activeSpeechID = nil
+            onFinish(true)
+            return
+        }
+
+        print("🔊 TTS primary failed — falling back to \(fallback.displayName)")
+        _ = startFallback(speechID: speechID, utterance: utterance, onFinish: onFinish)
+    }
+
+    @discardableResult
+    private func startFallback(
+        speechID: UUID,
+        utterance: String,
+        onFinish: @escaping (Bool) -> Void
+    ) -> Bool {
+        guard activeSpeechID == speechID else { return false }
+        primary.stopSpeaking()
+
+        let startedFallback = fallback.speak(utterance) { [weak self] didFinish in
+            Task { @MainActor [weak self] in
+                guard self?.activeSpeechID == speechID else { return }
+                self?.activeSpeechID = nil
+                onFinish(didFinish)
+            }
+        }
+
+        guard startedFallback else {
+            activeSpeechID = nil
+            onFinish(false)
+            return false
+        }
+        return true
     }
 }
 

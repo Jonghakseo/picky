@@ -467,6 +467,23 @@ struct PickySessionViewModelTests {
         #expect(!notifications.delivered.map(\.title).contains("Picky가 입력을 기다립니다"))
     }
 
+    @Test func waitingForInputWithoutPendingRequestDoesNotDeliverBanner() async throws {
+        let client = FakePickyAgentClient()
+        let notifications = PickyNoopNotificationCenter()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications, notificationPreferencesProvider: PickyStubNotificationPreferences(notificationPreferences: .defaults))
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            title: "New side agent · manual-project",
+            status: "waiting_for_input",
+            summary: "Ready for instructions"
+        ))))
+        try await settle()
+
+        #expect(viewModel.sessions.first?.status == .waiting_for_input)
+        #expect(!notifications.delivered.map(\.title).contains("Picky가 입력을 기다립니다"))
+    }
+
     @Test func defaultNotificationPreferencesPreserveExistingDeliveryBehavior() async throws {
         let client = FakePickyAgentClient()
         let notifications = PickyNoopNotificationCenter()

@@ -952,7 +952,8 @@ final class PickySessionListViewModel: ObservableObject {
             notification = ("\(session.id):failed", "Picky 작업이 실패했습니다", session.lastSummary.isEmpty ? "Open logs for details." : session.lastSummary)
         case .waiting_for_input:
             guard preferences.notifyOnWaitingForInput else { return nil }
-            notification = ("\(session.id):waiting:\(session.pendingExtensionUiRequest?.id ?? "unknown")", "Picky가 입력을 기다립니다", session.pendingExtensionUiRequest?.prompt ?? session.pendingExtensionUiRequest?.title ?? session.title)
+            guard let pendingRequest = session.pendingExtensionUiRequest else { return nil }
+            notification = ("\(session.id):waiting:\(pendingRequest.id)", "Picky가 입력을 기다립니다", pendingRequest.prompt ?? pendingRequest.title ?? session.title)
         case .queued, .running, .blocked, .cancelled:
             notification = nil
         }

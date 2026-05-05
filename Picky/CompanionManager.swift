@@ -144,6 +144,9 @@ final class CompanionManager: ObservableObject {
     /// Whether the highlight is over an in-screen element (dim the surroundings)
     /// or over Picky's own HUD chrome like the dock (no dim).
     @Published var detectedElementHighlightKind: PickyDetectedHighlightKind?
+    /// Stable id for the active pointer animation. Every delayed BlueCursorView
+    /// callback validates this id before mutating or clearing pointer state.
+    @Published var detectedElementPointerID: String?
 
     let buddyDictationManager: BuddyDictationManager
     let globalPushToTalkShortcutMonitor = GlobalPushToTalkShortcutMonitor()
@@ -176,7 +179,17 @@ final class CompanionManager: ObservableObject {
     /// speaks again so a new response can begin immediately.
     private var currentResponseTask: Task<Void, Never>?
     private var agentEventTask: Task<Void, Never>?
-    private var directMessageContextIDs = Set<String>()
+    private var directMessageContinuations: [UUID: CheckedContinuation<Bool, Never>] = [:]
+    private lazy var interactionCoordinator: PickyInteractionCoordinator = {
+        let coordinator = PickyInteractionCoordinator(
+            envelopeMaker: PickyInteractionStaticEnvelopeMaker(),
+            effectRunner: CompanionInteractionEffectRunner(manager: self)
+        )
+        coordinator.onProjectionPublished = { [weak self] _, projection in
+            self?.applyInteractionProjection(projection)
+        }
+        return coordinator
+    }()
 
     private var shortcutTransitionCancellable: AnyCancellable?
     private var quickInputDoubleTapCancellable: AnyCancellable?
@@ -202,6 +215,9 @@ final class CompanionManager: ObservableObject {
     /// Caps how long the recognized-transcript bubble lingers after STT.
     private var voicePromptBubbleAutoHideTask: Task<Void, Never>?
     private var activeSpeechID: UUID?
+    private var interactionSpeechID: UUID?
+    private var interactionVoiceInputID: UUID?
+    private var lastInteractionOutput: PickyOutputPhase = .idle
     /// Tracks the physical push-to-talk hold separately from dictation state so
     /// audio stays suppressed even if recording fails before the key is released.
     private var isPushToTalkShortcutHeld = false
@@ -226,6 +242,10 @@ final class CompanionManager: ObservableObject {
     /// Whether the blue cursor overlay is currently visible on screen.
     /// Used by the panel to show accurate status text ("Active" vs "Ready").
     @Published private(set) var isOverlayVisible: Bool = false
+    @Published private(set) var overlayVisibilityReasons: Set<PickyOverlayReason> = []
+
+    private var localOverlayVisibilityReasons: Set<PickyOverlayReason> = []
+    private var interactionOverlayVisibilityReasons: Set<PickyOverlayReason> = []
 
     /// User preference for whether the Picky cursor should be shown.
     /// When toggled off, the overlay is hidden and push-to-talk is disabled.
@@ -241,11 +261,11 @@ final class CompanionManager: ObservableObject {
         transientHideTask = nil
 
         if enabled {
-            overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
-            isOverlayVisible = true
+            setLocalOverlayReason(.cursorPreferenceEnabled, visible: true)
         } else {
-            overlayWindowManager.hideOverlay()
-            isOverlayVisible = false
+            localOverlayVisibilityReasons.removeAll()
+            interactionOverlayVisibilityReasons.removeAll()
+            syncOverlayVisibility(animatedHide: false)
         }
     }
 
@@ -270,20 +290,29 @@ final class CompanionManager: ObservableObject {
         // Show the cursor as soon as all permissions are available and the
         // cursor preference is enabled.
         if allPermissionsGranted && isPickyCursorEnabled {
-            overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
-            isOverlayVisible = true
+            setLocalOverlayReason(.cursorPreferenceEnabled, visible: true)
         }
     }
 
     /// Called by BlueCursorView after the buddy finishes its pointing
     /// animation and returns to cursor-following mode.
-    func clearDetectedElementLocation() {
+    func clearDetectedElementLocation(pointerID: String? = nil) {
+        if let pointerID, detectedElementPointerID != pointerID { return }
+        let clearedPointerID = detectedElementPointerID
         detectedElementScreenLocation = nil
         detectedElementDisplayFrame = nil
         detectedElementBubbleText = nil
         detectedElementDisplayDuration = nil
         detectedElementTargetFrame = nil
         detectedElementHighlightKind = nil
+        detectedElementPointerID = nil
+        if let clearedPointerID {
+            interactionCoordinator.accept(
+                .pointerAnimationFinished(pointerID: clearedPointerID),
+                correlation: PickyInteractionCorrelation(pointerID: clearedPointerID, source: .pointer)
+            )
+        }
+        setLocalOverlayReason(.activePointerAnimation, visible: false)
         scheduleTransientHideIfNeeded()
     }
 
@@ -375,9 +404,8 @@ final class CompanionManager: ObservableObject {
 
         if !previouslyHadAll && allPermissionsGranted {
             PickyAnalytics.trackAllPermissionsGranted()
-            if isPickyCursorEnabled && !isOverlayVisible {
-                overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
-                isOverlayVisible = true
+            if isPickyCursorEnabled {
+                setLocalOverlayReason(.cursorPreferenceEnabled, visible: true)
             }
         }
     }
@@ -413,9 +441,8 @@ final class CompanionManager: ObservableObject {
                     UserDefaults.standard.set(true, forKey: "hasScreenContentPermission")
                     PickyAnalytics.trackPermissionGranted(permission: "screen_content")
 
-                    if allPermissionsGranted && !isOverlayVisible && isPickyCursorEnabled {
-                        overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
-                        isOverlayVisible = true
+                    if allPermissionsGranted && isPickyCursorEnabled {
+                        setLocalOverlayReason(.cursorPreferenceEnabled, visible: true)
                     }
                 }
             } catch {
@@ -426,6 +453,57 @@ final class CompanionManager: ObservableObject {
     }
 
     // MARK: - Private
+
+    private func setLocalOverlayReason(_ reason: PickyOverlayReason, visible: Bool) {
+        if visible {
+            localOverlayVisibilityReasons.insert(reason)
+        } else {
+            localOverlayVisibilityReasons.remove(reason)
+        }
+        syncOverlayVisibility()
+    }
+
+    private func setInteractionOverlayReasons(from phase: PickyOverlayPhase) {
+        switch phase {
+        case .hidden:
+            interactionOverlayVisibilityReasons = []
+        case .visible(let reasons):
+            interactionOverlayVisibilityReasons = reasons
+        case .hiding(_, let reason):
+            interactionOverlayVisibilityReasons = [reason]
+        }
+        syncOverlayVisibility()
+    }
+
+    private func syncOverlayVisibility(animatedHide: Bool = true) {
+        let reasons = localOverlayVisibilityReasons.union(interactionOverlayVisibilityReasons)
+        overlayVisibilityReasons = reasons
+        transientHideTask?.cancel()
+        transientHideTask = nil
+
+        guard !reasons.isEmpty else {
+            if isOverlayVisible {
+                if animatedHide {
+                    overlayWindowManager.fadeOutAndHideOverlay()
+                } else {
+                    overlayWindowManager.hideOverlay()
+                }
+            }
+            isOverlayVisible = false
+            return
+        }
+
+        guard !isOverlayVisible else { return }
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+            overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
+        }
+        isOverlayVisible = true
+    }
+
+    private var hasActiveTransientOverlayBlocker: Bool {
+        let blockers: Set<PickyOverlayReason> = [.activeVoiceInput, .waitingForVoiceResponse, .speakingResponse, .activePointerAnimation]
+        return !overlayVisibilityReasons.intersection(blockers).isEmpty
+    }
 
     /// Triggers the system microphone prompt if the user has never been asked.
     /// Once granted/denied the status sticks and polling picks it up.
@@ -690,17 +768,23 @@ final class CompanionManager: ObservableObject {
             pendingAgentResponseStartedAt = nil
             currentVoicePromptPreview = nil
             voicePromptBubbleState = .hidden
+            let targetSessionID = normalizedVoiceFollowUpSessionID(selectionStore.hoveredVoiceFollowUpSessionID)
+            let inputID = UUID()
+            interactionVoiceInputID = inputID
             print("🎙️ Picky voice route — PTT pressed; storeHover=\(selectionStore.hoveredVoiceFollowUpSessionID ?? "<nil>") prevTask=\(currentResponseTask != nil)")
-            setVoiceFollowUpSessionIDForCurrentUtterance(selectionStore.hoveredVoiceFollowUpSessionID, caller: "PTT-pressed")
+            setVoiceFollowUpSessionIDForCurrentUtterance(targetSessionID, caller: "PTT-pressed")
+            interactionCoordinator.accept(
+                .voicePressed(targetSessionID: targetSessionID),
+                correlation: PickyInteractionCorrelation(inputID: inputID, sessionID: targetSessionID, source: .voice)
+            )
 
             // Cancel any pending transient hide so the overlay stays visible
             transientHideTask?.cancel()
             transientHideTask = nil
 
             // If the cursor is hidden, bring it back transiently for this interaction
-            if !isPickyCursorEnabled && !isOverlayVisible {
-                overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
-                isOverlayVisible = true
+            if !isPickyCursorEnabled {
+                setLocalOverlayReason(.activeVoiceInput, visible: true)
             }
 
             // Dismiss the menu bar panel so it doesn't cover the screen
@@ -732,6 +816,7 @@ final class CompanionManager: ObservableObject {
             }
         case .released:
             isPushToTalkShortcutHeld = false
+            setLocalOverlayReason(.activeVoiceInput, visible: false)
             // Cancel the pending start task in case the user released the shortcut
             // before the async startPushToTalk had a chance to begin recording.
             // Without this, a quick press-and-release drops the release event and
@@ -739,6 +824,12 @@ final class CompanionManager: ObservableObject {
             PickyAnalytics.trackPushToTalkReleased()
             pendingKeyboardShortcutStartTask?.cancel()
             pendingKeyboardShortcutStartTask = nil
+            if let interactionVoiceInputID {
+                interactionCoordinator.accept(
+                    .voiceReleased(inputID: interactionVoiceInputID),
+                    correlation: PickyInteractionCorrelation(inputID: interactionVoiceInputID, source: .voice)
+                )
+            }
             buddyDictationManager.stopPushToTalkFromKeyboardShortcut()
             if !buddyDictationManager.isDictationInProgress {
                 updateVoiceInputAudioSuppression(isVoiceInputActive: false)
@@ -759,39 +850,27 @@ final class CompanionManager: ObservableObject {
         currentResponseTask?.cancel()
         beginAwaitingAgentResponse(recognizedTranscript: transcript)
 
-        currentResponseTask = Task {
-            do {
-                let voiceFollowUpSessionID = voiceFollowUpSessionIDForCurrentUtterance
-                print("🎙️ Picky voice route — responseTask start; captured=\(voiceFollowUpSessionID ?? "<nil>")")
-                guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
-                    transcript: transcript,
-                    voiceFollowUpSessionID: voiceFollowUpSessionID
-                ) else {
-                    setVoiceFollowUpSessionIDForCurrentUtterance(nil)
-                    return
-                }
-                guard !Task.isCancelled else { return }
-                let receipt = try await routeVoiceTranscript(transcript: transcript, contextPacket: captureResult.contextPacket, voiceFollowUpSessionID: voiceFollowUpSessionID)
-
-                guard !Task.isCancelled else { return }
-
-                handleAgentSubmissionAccepted(receipt: receipt, source: captureResult.source)
-            } catch is CancellationError {
-                // User spoke again — response was interrupted.
-            } catch {
-                PickyAnalytics.trackResponseError(error: error.localizedDescription)
-                print("⚠️ Picky agent submission error: \(error)")
-                finishAwaitingAgentResponse(visibleText: "I captured that, but the local agent client is not ready yet.", spokenText: "I captured that, but the local agent client is not ready yet.")
-            }
-
-            print("🎙️ Picky voice route — responseTask end; cancelled=\(Task.isCancelled) selfBeforeReset=\(voiceFollowUpSessionIDForCurrentUtterance ?? "<nil>")")
-            setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "responseTask-end")
-
-            if !Task.isCancelled, pendingAgentResponseStartedAt == nil, voiceState != .responding {
-                voiceState = .idle
-                scheduleTransientHideIfNeeded()
-            }
+        let voiceFollowUpSessionID = voiceFollowUpSessionIDForCurrentUtterance
+        let inputID: UUID
+        if let interactionVoiceInputID {
+            inputID = interactionVoiceInputID
+        } else {
+            inputID = UUID()
+            interactionVoiceInputID = inputID
+            interactionCoordinator.accept(
+                .voicePressed(targetSessionID: voiceFollowUpSessionID),
+                correlation: PickyInteractionCorrelation(inputID: inputID, sessionID: voiceFollowUpSessionID, source: .voice)
+            )
+            interactionCoordinator.accept(
+                .voiceReleased(inputID: inputID),
+                correlation: PickyInteractionCorrelation(inputID: inputID, source: .voice)
+            )
         }
+        print("🎙️ Picky voice route — transcript finalized; captured=\(voiceFollowUpSessionID ?? "<nil>")")
+        interactionCoordinator.accept(
+            .transcriptFinal(text: transcript, inputID: inputID),
+            correlation: PickyInteractionCorrelation(inputID: inputID, sessionID: voiceFollowUpSessionID, source: .voice)
+        )
     }
 
     func routeVoiceTranscript(
@@ -832,30 +911,314 @@ final class CompanionManager: ObservableObject {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return false }
 
-        isSendingDirectMessage = true
         directMessageError = nil
-        var submittedContextID: String?
-        defer { isSendingDirectMessage = false }
-
-        do {
-            guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
-                transcript: trimmedText,
-                source: "text"
-            ) else { return false }
-            submittedContextID = captureResult.contextPacket.id
-            directMessageContextIDs.insert(captureResult.contextPacket.id)
-            _ = try await agentClient.submit(PickyAgentSubmission(transcript: trimmedText, context: captureResult.contextPacket))
-            PickyAnalytics.trackUserMessageSent(transcript: trimmedText)
-            return true
-        } catch {
-            if let submittedContextID {
-                directMessageContextIDs.remove(submittedContextID)
-            }
-            let message = error.localizedDescription
-            directMessageError = "메시지를 보내지 못했어요: \(message)"
-            latestAgentSessionSummary = directMessageError
-            return false
+        let inputID = UUID()
+        return await withCheckedContinuation { continuation in
+            directMessageContinuations[inputID] = continuation
+            interactionCoordinator.accept(
+                .textSubmitted(text: trimmedText, inputID: inputID),
+                correlation: PickyInteractionCorrelation(inputID: inputID, source: .text)
+            )
         }
+    }
+
+    private func applyInteractionProjection(_ projection: PickyInteractionProjection) {
+        isSendingDirectMessage = projection.hasPendingTextSubmission
+        setInteractionOverlayReasons(from: projection.state.overlay)
+        let previousOutput = lastInteractionOutput
+        lastInteractionOutput = projection.state.output
+
+        switch projection.state.output {
+        case .showingTextReply:
+            clearPendingAgentResponseTiming()
+            if let latestDisplayText = projection.latestDisplayText {
+                latestAgentSessionSummary = latestDisplayText
+            }
+        case .speaking(_, let speechID, _, _, _, _):
+            clearPendingAgentResponseTiming()
+            interactionSpeechID = speechID
+            if let latestDisplayText = projection.latestDisplayText {
+                latestAgentSessionSummary = latestDisplayText
+            }
+            currentVoicePromptPreview = nil
+            voicePromptBubbleState = .hidden
+            voiceState = .responding
+        case .idle:
+            if case .speaking = previousOutput, voiceState == .responding {
+                voiceState = .idle
+                interactionSpeechID = nil
+                scheduleTransientHideIfNeeded()
+            }
+        case .suppressedReply:
+            clearPendingAgentResponseTiming()
+        case .waitingForAgent:
+            break
+        }
+    }
+
+    private func clearPendingAgentResponseTiming() {
+        deferredFinishAwaitingAgentResponseTask?.cancel()
+        deferredFinishAwaitingAgentResponseTask = nil
+        pendingAgentResponseStartedAt = nil
+    }
+
+    private func isInteractionTextReply(_ output: PickyOutputPhase) -> Bool {
+        switch output {
+        case .showingTextReply:
+            true
+        case .idle, .waitingForAgent, .speaking, .suppressedReply:
+            false
+        }
+    }
+
+    private func interactionOwner(for contextID: String) -> PickyContextOwner? {
+        interactionCoordinator.projection.state.contextOwnership[contextID]
+    }
+
+    private func completeDirectMessage(inputID: UUID, success: Bool) {
+        directMessageContinuations.removeValue(forKey: inputID)?.resume(returning: success)
+    }
+
+    private func failDirectMessage(inputID: UUID, message: String) {
+        directMessageError = "메시지를 보내지 못했어요: \(message)"
+        latestAgentSessionSummary = directMessageError
+        completeDirectMessage(inputID: inputID, success: false)
+    }
+
+    fileprivate func runCaptureTextContextEffect(inputID: UUID, text: String) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(transcript: text, source: "text") else {
+                    interactionCoordinator.effectCompleted(
+                        .textSubmissionFailed(message: "Context capture returned no packet.", inputID: inputID),
+                        correlation: PickyInteractionCorrelation(inputID: inputID, source: .text)
+                    )
+                    failDirectMessage(inputID: inputID, message: "Context capture returned no packet.")
+                    return
+                }
+                interactionCoordinator.effectCompleted(
+                    .textContextCaptured(inputID: inputID, context: captureResult.contextPacket),
+                    correlation: PickyInteractionCorrelation(inputID: inputID, contextID: captureResult.contextPacket.id, source: .text)
+                )
+            } catch {
+                let message = error.localizedDescription
+                interactionCoordinator.effectCompleted(
+                    .textSubmissionFailed(message: message, inputID: inputID),
+                    correlation: PickyInteractionCorrelation(inputID: inputID, source: .text)
+                )
+                failDirectMessage(inputID: inputID, message: message)
+            }
+        }
+    }
+
+    fileprivate func runSubmitTextEffect(inputID: UUID, context: PickyContextPacket, text: String) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await agentClient.submit(PickyAgentSubmission(transcript: text, context: context))
+                PickyAnalytics.trackUserMessageSent(transcript: text)
+                interactionCoordinator.effectCompleted(
+                    .textSubmissionAccepted(contextID: context.id, inputID: inputID),
+                    correlation: PickyInteractionCorrelation(inputID: inputID, contextID: context.id, source: .agent)
+                )
+                completeDirectMessage(inputID: inputID, success: true)
+            } catch {
+                let message = error.localizedDescription
+                interactionCoordinator.effectCompleted(
+                    .textSubmissionFailed(message: message, inputID: inputID),
+                    correlation: PickyInteractionCorrelation(inputID: inputID, contextID: context.id, source: .agent)
+                )
+                failDirectMessage(inputID: inputID, message: message)
+            }
+        }
+    }
+
+    fileprivate func runCaptureVoiceContextEffect(inputID: UUID, transcript: String, targetSessionID: String?) {
+        currentResponseTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
+                    transcript: transcript,
+                    voiceFollowUpSessionID: targetSessionID
+                ) else {
+                    guard !Task.isCancelled else { return }
+                    interactionCoordinator.effectCompleted(
+                        .transcriptFailed(message: "Context capture returned no packet.", inputID: inputID),
+                        correlation: PickyInteractionCorrelation(inputID: inputID, source: .voice)
+                    )
+                    if completeVoiceInteractionIfCurrent(inputID: inputID) {
+                        setVoiceFollowUpSessionIDForCurrentUtterance(nil)
+                    }
+                    return
+                }
+                guard !Task.isCancelled else { return }
+                interactionCoordinator.effectCompleted(
+                    .voiceContextCaptured(
+                        inputID: inputID,
+                        transcript: transcript,
+                        context: captureResult.contextPacket,
+                        targetSessionID: targetSessionID
+                    ),
+                    correlation: PickyInteractionCorrelation(inputID: inputID, contextID: captureResult.contextPacket.id, source: .voice)
+                )
+            } catch is CancellationError {
+                // User spoke again — response was interrupted.
+            } catch {
+                let message = error.localizedDescription
+                PickyAnalytics.trackResponseError(error: message)
+                print("⚠️ Picky context capture error: \(error)")
+                interactionCoordinator.effectCompleted(
+                    .transcriptFailed(message: message, inputID: inputID),
+                    correlation: PickyInteractionCorrelation(inputID: inputID, source: .voice)
+                )
+                finishAwaitingAgentResponse(visibleText: "I captured that, but the local agent client is not ready yet.", spokenText: "I captured that, but the local agent client is not ready yet.")
+                completeVoiceInteractionIfCurrent(inputID: inputID)
+            }
+        }
+    }
+
+    fileprivate func runSubmitMainEffect(inputID: UUID, transcript: String, context: PickyContextPacket) {
+        currentResponseTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let receipt = try await agentClient.submit(PickyAgentSubmission(transcript: transcript, context: context))
+                guard !Task.isCancelled else { return }
+                PickyAnalytics.trackUserMessageSent(transcript: transcript)
+                interactionCoordinator.effectCompleted(
+                    .agentSubmissionAccepted(contextID: context.id, sessionID: receipt.sessionID, inputID: inputID),
+                    correlation: PickyInteractionCorrelation(inputID: inputID, contextID: context.id, sessionID: receipt.sessionID, source: .agent)
+                )
+                handleAgentSubmissionAccepted(receipt: receipt, source: "voice")
+                finishVoiceSubmissionIfIdle(inputID: inputID)
+            } catch is CancellationError {
+                // User spoke again — response was interrupted.
+            } catch {
+                handleVoiceSubmissionFailure(error, inputID: inputID, contextID: context.id)
+            }
+        }
+    }
+
+    fileprivate func runSteerSideEffect(inputID: UUID, sessionID: String, transcript: String, context: PickyContextPacket) {
+        currentResponseTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await agentClient.send(PickyCommandEnvelope(type: .steer, context: context, sessionId: sessionID, text: transcript))
+                guard !Task.isCancelled else { return }
+                let receipt = PickyAgentSubmissionReceipt(sessionID: sessionID, message: "")
+                interactionCoordinator.effectCompleted(
+                    .agentSubmissionAccepted(contextID: context.id, sessionID: sessionID, inputID: inputID),
+                    correlation: PickyInteractionCorrelation(inputID: inputID, contextID: context.id, sessionID: sessionID, source: .agent)
+                )
+                handleAgentSubmissionAccepted(receipt: receipt, source: "voice-follow-up")
+                finishVoiceSubmissionIfIdle(inputID: inputID)
+            } catch is CancellationError {
+                // User spoke again — response was interrupted.
+            } catch {
+                handleVoiceSubmissionFailure(error, inputID: inputID, contextID: context.id)
+            }
+        }
+    }
+
+    private func handleVoiceSubmissionFailure(_ error: Error, inputID: UUID, contextID: String?) {
+        let message = error.localizedDescription
+        PickyAnalytics.trackResponseError(error: message)
+        print("⚠️ Picky agent submission error: \(error)")
+        interactionCoordinator.effectCompleted(
+            .transcriptFailed(message: message, inputID: inputID),
+            correlation: PickyInteractionCorrelation(inputID: inputID, contextID: contextID, source: .agent)
+        )
+        finishAwaitingAgentResponse(visibleText: "I captured that, but the local agent client is not ready yet.", spokenText: "I captured that, but the local agent client is not ready yet.")
+        if completeVoiceInteractionIfCurrent(inputID: inputID) {
+            setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "voice-submission-failure")
+        }
+    }
+
+    private func finishVoiceSubmissionIfIdle(inputID: UUID) {
+        let completedCurrentInput = completeVoiceInteractionIfCurrent(inputID: inputID)
+        print("🎙️ Picky voice route — responseTask end; cancelled=\(Task.isCancelled) selfBeforeReset=\(voiceFollowUpSessionIDForCurrentUtterance ?? "<nil>")")
+        if completedCurrentInput {
+            setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "responseTask-end")
+        }
+        if !Task.isCancelled, pendingAgentResponseStartedAt == nil, voiceState != .responding {
+            voiceState = .idle
+            scheduleTransientHideIfNeeded()
+        }
+    }
+
+    @discardableResult
+    private func completeVoiceInteractionIfCurrent(inputID: UUID) -> Bool {
+        guard interactionVoiceInputID == inputID else { return false }
+        interactionVoiceInputID = nil
+        return true
+    }
+
+    fileprivate func runMinimumDisplayTimerEffect(timerID: UUID, speechID: UUID?, inputID: UUID?, delay: TimeInterval) {
+        Task { @MainActor [weak self] in
+            let nanoseconds = UInt64(max(0, delay) * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            self?.interactionCoordinator.effectCompleted(
+                .minimumDisplayTimerFired(timerID: timerID, speechID: speechID, inputID: inputID),
+                correlation: PickyInteractionCorrelation(inputID: inputID, speechID: speechID, source: .system)
+            )
+        }
+    }
+
+    fileprivate func runSpeakEffect(speechID: UUID, text: String, contextID: String?) {
+        guard !shouldSuppressSpokenAudioForVoiceInput else {
+            stopCurrentSpeech()
+            interactionCoordinator.effectCompleted(
+                .speechFailed(speechID: speechID),
+                correlation: PickyInteractionCorrelation(contextID: contextID, speechID: speechID, source: .system)
+            )
+            return
+        }
+        stopCurrentSpeech()
+        activeSpeechID = speechID
+        interactionSpeechID = speechID
+        voiceState = .responding
+
+        #if DEBUG
+        print("🔊 Picky TTS start — id: \(speechID), provider: \(speechPlaybackProvider.displayName), chars: \(text.count)")
+        #endif
+        guard speechPlaybackProvider.speak(text, onFinish: { [weak self] didFinish in
+            Task { @MainActor [weak self] in
+                self?.handleInteractionSpeechFinished(speechID: speechID, didFinish: didFinish, contextID: contextID)
+            }
+        }) else {
+            handleInteractionSpeechFinished(speechID: speechID, didFinish: false, contextID: contextID)
+            return
+        }
+
+        responseStateTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled else { return }
+                let shouldFinish = await MainActor.run { [weak self] in
+                    guard let self, self.activeSpeechID == speechID else { return false }
+                    return !self.speechPlaybackProvider.isSpeaking
+                }
+                guard shouldFinish else { continue }
+                await MainActor.run { [weak self] in
+                    self?.handleInteractionSpeechFinished(speechID: speechID, didFinish: true, contextID: contextID)
+                }
+                return
+            }
+        }
+    }
+
+    private func handleInteractionSpeechFinished(speechID: UUID, didFinish: Bool, contextID: String?) {
+        guard activeSpeechID == speechID else { return }
+        activeSpeechID = nil
+        responseStateTask?.cancel()
+        responseStateTask = nil
+        #if DEBUG
+        print("🔊 Picky TTS finish — id: \(speechID)")
+        #endif
+        interactionCoordinator.effectCompleted(
+            didFinish ? .speechFinished(speechID: speechID) : .speechFailed(speechID: speechID),
+            correlation: PickyInteractionCorrelation(contextID: contextID, speechID: speechID, source: .system)
+        )
     }
 
     @discardableResult
@@ -868,7 +1231,6 @@ final class CompanionManager: ObservableObject {
         do {
             try await agentClient.send(PickyCommandEnvelope(type: .resetMainAgent))
             mainAgentMessages = []
-            directMessageContextIDs.removeAll()
             latestAgentSessionSummary = "Started a new Messages session"
             return true
         } catch {
@@ -926,8 +1288,21 @@ final class CompanionManager: ObservableObject {
         case .extensionUiRequest(let request):
             latestAgentSessionSummary = request.prompt ?? request.title ?? "Agent is waiting for input"
         case .quickReply(let reply):
-            if directMessageContextIDs.remove(reply.contextId) != nil {
-                latestAgentSessionSummary = reply.text
+            let owner = interactionOwner(for: reply.contextId)
+            let originSource = reply.originSource ?? owner.map { $0.isVoiceOwned ? .voice : .text }
+            let replyKind = reply.replyKind ?? .main
+            if owner != nil || originSource != nil || reply.replyKind != nil {
+                interactionCoordinator.accept(
+                    .quickReply(
+                        contextID: reply.contextId,
+                        text: reply.text,
+                        originSource: originSource,
+                        replyKind: replyKind,
+                        sessionID: reply.sessionId,
+                        inputID: reply.inputId
+                    ),
+                    correlation: PickyInteractionCorrelation(contextID: reply.contextId, sessionID: reply.sessionId, source: .agent)
+                )
             } else {
                 let spoken = stripParentheticalsForSpeech(reply.text)
                 finishAwaitingAgentResponse(visibleText: reply.text, spokenText: spoken, enforceMinimumProcessingDuration: true)
@@ -949,18 +1324,30 @@ final class CompanionManager: ObservableObject {
     private func applyPointerOverlayRequest(_ request: PickyPointerOverlayRequest) {
         do {
             let target = try PickyPointerOverlayResolver.resolve(request)
+            detectedElementPointerID = nil
             detectedElementDisplayFrame = target.displayFrame
             detectedElementBubbleText = target.bubbleText
             detectedElementDisplayDuration = target.duration
             detectedElementTargetFrame = nil
             detectedElementHighlightKind = .screenElement
             detectedElementScreenLocation = target.screenLocation
+            detectedElementPointerID = request.id
+            interactionCoordinator.accept(
+                .pointerRequested(PickyPointerTarget(
+                    id: request.id,
+                    source: .agent,
+                    screenLocation: target.screenLocation,
+                    displayFrame: target.displayFrame,
+                    bubbleText: target.bubbleText,
+                    duration: target.duration,
+                    targetFrame: nil,
+                    highlightKind: .screenElement
+                )),
+                correlation: PickyInteractionCorrelation(pointerID: request.id, source: .pointer)
+            )
             latestAgentSessionSummary = target.bubbleText.map { "가리키는 중: \($0)" } ?? "화면 위치를 가리키는 중…"
 
-            if !overlayWindowManager.isShowingOverlay(), ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
-                overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
-                isOverlayVisible = true
-            }
+            setLocalOverlayReason(.activePointerAnimation, visible: true)
         } catch {
             latestAgentSessionSummary = "Pointer overlay ignored: \(error.localizedDescription)"
         }
@@ -971,18 +1358,31 @@ final class CompanionManager: ObservableObject {
         let displayFrame = NSScreen.screens.first { $0.frame.insetBy(dx: -1, dy: -1).contains(screenLocation) }?.frame
             ?? NSScreen.main?.frame
             ?? target.screenFrame
+        let pointerID = "hud-\(UUID().uuidString)"
+        detectedElementPointerID = nil
         detectedElementDisplayFrame = displayFrame
         detectedElementBubbleText = target.label
         detectedElementDisplayDuration = target.duration
         detectedElementTargetFrame = target.screenFrame
         detectedElementHighlightKind = .hudDockIcon
         detectedElementScreenLocation = screenLocation
+        detectedElementPointerID = pointerID
+        interactionCoordinator.accept(
+            .pointerRequested(PickyPointerTarget(
+                id: pointerID,
+                source: .hudDock,
+                screenLocation: screenLocation,
+                displayFrame: displayFrame,
+                bubbleText: target.label,
+                duration: target.duration,
+                targetFrame: target.screenFrame,
+                highlightKind: .hudDockIcon
+            )),
+            correlation: PickyInteractionCorrelation(pointerID: pointerID, source: .pointer)
+        )
         latestAgentSessionSummary = "새 사이드 에이전트를 가리키는 중…"
 
-        if !overlayWindowManager.isShowingOverlay(), ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
-            overlayWindowManager.showOverlay(onScreens: NSScreen.screens, companionManager: self)
-            isOverlayVisible = true
-        }
+        setLocalOverlayReason(.activePointerAnimation, visible: true)
     }
 
     private func updatePassiveAgentSummary(_ summary: String) {
@@ -996,21 +1396,23 @@ final class CompanionManager: ObservableObject {
     /// if the user starts another push-to-talk interaction.
     private func scheduleTransientHideIfNeeded() {
         guard !isPickyCursorEnabled && isOverlayVisible else { return }
+        guard !hasActiveTransientOverlayBlocker else { return }
 
         transientHideTask?.cancel()
         transientHideTask = Task {
             // Wait for pointing animation to finish (location is cleared
             // when the buddy flies back to the cursor)
-            while detectedElementScreenLocation != nil {
+            while detectedElementScreenLocation != nil || hasActiveTransientOverlayBlocker {
                 try? await Task.sleep(nanoseconds: 200_000_000)
                 guard !Task.isCancelled else { return }
             }
 
             // Pause 1s after everything finishes, then fade out
             try? await Task.sleep(nanoseconds: 1_000_000_000)
-            guard !Task.isCancelled else { return }
-            overlayWindowManager.fadeOutAndHideOverlay()
-            isOverlayVisible = false
+            guard !Task.isCancelled, !hasActiveTransientOverlayBlocker else { return }
+            localOverlayVisibilityReasons.removeAll()
+            interactionOverlayVisibilityReasons.removeAll()
+            syncOverlayVisibility(animatedHide: true)
         }
     }
 
@@ -1172,11 +1574,21 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    private func stopCurrentSpeech() {
+    fileprivate func stopCurrentSpeech() {
         activeSpeechID = nil
         responseStateTask?.cancel()
         responseStateTask = nil
         speechPlaybackProvider.stopSpeaking()
+    }
+
+    fileprivate func stopCurrentInteractionSpeech() {
+        let speechID = interactionSpeechID ?? activeSpeechID
+        stopCurrentSpeech()
+        guard let speechID else { return }
+        interactionCoordinator.effectCompleted(
+            .speechFailed(speechID: speechID),
+            correlation: PickyInteractionCorrelation(speechID: speechID, source: .system)
+        )
     }
 
     private func handleSpeechFinished(speechID: UUID, didFinish _: Bool) {
@@ -1250,6 +1662,43 @@ final class CompanionManager: ObservableObject {
         )
     }
 
+}
+
+@MainActor
+private final class CompanionInteractionEffectRunner: PickyInteractionEffectRunning {
+    private weak var manager: CompanionManager?
+
+    init(manager: CompanionManager) {
+        self.manager = manager
+    }
+
+    func run(_ effects: [PickyInteractionEffect]) {
+        for effect in effects {
+            switch effect {
+            case .captureTextContext(let inputID, let text):
+                manager?.runCaptureTextContextEffect(inputID: inputID, text: text)
+            case .submitText(let inputID, let context, let text):
+                manager?.runSubmitTextEffect(inputID: inputID, context: context, text: text)
+            case .captureVoiceContext(let inputID, let transcript, let targetSessionID):
+                manager?.runCaptureVoiceContextEffect(inputID: inputID, transcript: transcript, targetSessionID: targetSessionID)
+            case .submitMain(let inputID, let transcript, let context):
+                manager?.runSubmitMainEffect(inputID: inputID, transcript: transcript, context: context)
+            case .steerSide(let inputID, let sessionID, let transcript, let context):
+                manager?.runSteerSideEffect(inputID: inputID, sessionID: sessionID, transcript: transcript, context: context)
+            case .scheduleMinimumDisplay(let timerID, let speechID, let inputID, let delay):
+                manager?.runMinimumDisplayTimerEffect(timerID: timerID, speechID: speechID, inputID: inputID, delay: delay)
+            case .speak(let speechID, let text, let contextID):
+                manager?.runSpeakEffect(speechID: speechID, text: text, contextID: contextID)
+            case .stopSpeech:
+                manager?.stopCurrentInteractionSpeech()
+            case .recordContextOwnership, .startDictation, .stopDictation:
+                break
+            case .showOverlay, .scheduleTransientHide, .cancelTransientHide,
+                 .startPointerAnimation, .cancelPointerAnimation:
+                break
+            }
+        }
+    }
 }
 
 /// Removes parenthesised passages so the TTS layer skips supplementary detail

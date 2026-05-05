@@ -223,9 +223,20 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
 export type CommandEnvelope = z.infer<typeof CommandEnvelopeSchema>;
 
 const EventBaseSchema = z.object({ id: z.string(), protocolVersion: z.literal(PROTOCOL_VERSION), timestamp: isoTimestamp });
+const QuickReplyOriginSourceSchema = z.enum(["voice", "text", "voiceFollowUp", "textFollowUp", "system", "unknown"]);
+const QuickReplyKindSchema = z.enum(["main", "sideCompletion", "router", "handoffAck", "error", "unknown"]);
+
 export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("hello"), serverName: z.literal("picky-agentd"), supportedProtocolVersions: z.array(z.string()) }),
-  EventBaseSchema.extend({ type: z.literal("quickReply"), contextId: z.string(), text: z.string().min(1) }),
+  EventBaseSchema.extend({
+    type: z.literal("quickReply"),
+    contextId: z.string(),
+    text: z.string().min(1),
+    originSource: QuickReplyOriginSourceSchema.optional(),
+    replyKind: QuickReplyKindSchema.optional(),
+    sessionId: z.string().optional(),
+    inputId: z.string().optional(),
+  }),
   EventBaseSchema.extend({ type: z.literal("mainMessagesSnapshot"), messages: z.array(PickyMainAgentMessageSchema) }),
   EventBaseSchema.extend({ type: z.literal("mainMessageAppended"), message: PickyMainAgentMessageSchema }),
   EventBaseSchema.extend({ type: z.literal("sessionSnapshot"), sessions: z.array(PickyAgentSessionSchema) }),

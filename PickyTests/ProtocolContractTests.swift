@@ -94,6 +94,56 @@ struct ProtocolContractTests {
         #expect(event.event == .quickReply(PickyQuickReplyEvent(contextId: "context-1", text: "바로 답변")))
     }
 
+    @Test func decodesQuickReplyMetadataEvent() throws {
+        let json = """
+        {
+          "id":"event-quick-002",
+          "protocolVersion":"2026-05-05",
+          "timestamp":"2026-05-01T00:00:00.000Z",
+          "type":"quickReply",
+          "contextId":"session-1",
+          "text":"완료했어요",
+          "originSource":"voiceFollowUp",
+          "replyKind":"sideCompletion",
+          "sessionId":"session-1"
+        }
+        """.data(using: .utf8)!
+
+        let event = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
+        #expect(event.event == .quickReply(PickyQuickReplyEvent(
+            contextId: "session-1",
+            text: "완료했어요",
+            originSource: .voiceFollowUp,
+            replyKind: .sideCompletion,
+            sessionId: "session-1"
+        )))
+    }
+
+    @Test func decodesInvalidQuickReplyMetadataSafely() throws {
+        let json = """
+        {
+          "id":"event-quick-003",
+          "protocolVersion":"2026-05-05",
+          "timestamp":"2026-05-01T00:00:00.000Z",
+          "type":"quickReply",
+          "contextId":"context-1",
+          "text":"바로 답변",
+          "originSource":"voice-follow-up",
+          "replyKind":"side-completion",
+          "inputId":"not-a-uuid"
+        }
+        """.data(using: .utf8)!
+
+        let event = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
+        #expect(event.event == .quickReply(PickyQuickReplyEvent(
+            contextId: "context-1",
+            text: "바로 답변",
+            originSource: .voiceFollowUp,
+            replyKind: .sideCompletion,
+            inputId: nil
+        )))
+    }
+
     @Test func decodesMainAgentMessagesEvents() throws {
         let snapshotJSON = """
         {

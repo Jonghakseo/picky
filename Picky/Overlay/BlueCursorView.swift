@@ -208,6 +208,9 @@ struct BlueCursorView: View {
     /// Only during the return flight can cursor movement cancel the animation.
     @State private var isReturningToCursor: Bool = false
 
+    /// Stable pointer id for every delayed callback in the current navigation.
+    @State private var activePointerID: String?
+
     private let navigationPointerPhrases = [
         "right here!",
         "this one!",
@@ -402,22 +405,14 @@ struct BlueCursorView: View {
             navigationAnimationTimer?.invalidate()
         }
         .onChange(of: companionManager.detectedElementScreenLocation) { newLocation in
-            // When a UI element location is detected, navigate the buddy to
-            // that position so it points at the element.
-            guard let screenLocation = newLocation,
-                  let displayFrame = companionManager.detectedElementDisplayFrame else {
+            startNavigatingToPointerTargetIfPresent(screenLocation: newLocation)
+        }
+        .onChange(of: companionManager.detectedElementPointerID) { pointerID in
+            guard pointerID != nil else {
+                cancelNavigationIfPointerCleared()
                 return
             }
-
-            // Only navigate if the target is on THIS screen. Use the resolved
-            // point as the primary signal because adjacent displays can have
-            // negative/non-zero origins and whole-screen frames may differ by a
-            // fraction across ScreenCaptureKit/AppKit boundaries.
-            guard pointerTargetBelongsToThisScreen(screenLocation: screenLocation, displayFrame: displayFrame) else {
-                return
-            }
-
-            startNavigatingToElement(screenLocation: screenLocation)
+            startNavigatingToPointerTargetIfPresent(screenLocation: companionManager.detectedElementScreenLocation)
         }
     }
 
@@ -541,11 +536,53 @@ struct BlueCursorView: View {
             return
         }
 
-        startNavigatingToElement(screenLocation: screenLocation)
+        guard let pointerID = companionManager.detectedElementPointerID else { return }
+        startNavigatingToElement(screenLocation: screenLocation, pointerID: pointerID)
+    }
+
+    private func pointerIsStillActive(_ pointerID: String) -> Bool {
+        activePointerID == pointerID && companionManager.detectedElementPointerID == pointerID
+    }
+
+    private func startNavigatingToPointerTargetIfPresent(screenLocation newLocation: CGPoint?) {
+        guard let screenLocation = newLocation,
+              let displayFrame = companionManager.detectedElementDisplayFrame,
+              let pointerID = companionManager.detectedElementPointerID else {
+            cancelNavigationIfPointerCleared()
+            return
+        }
+
+        // Only navigate if the target is on THIS screen. Use the resolved
+        // point as the primary signal because adjacent displays can have
+        // negative/non-zero origins and whole-screen frames may differ by a
+        // fraction across ScreenCaptureKit/AppKit boundaries.
+        guard pointerTargetBelongsToThisScreen(screenLocation: screenLocation, displayFrame: displayFrame) else {
+            return
+        }
+
+        startNavigatingToElement(screenLocation: screenLocation, pointerID: pointerID)
+    }
+
+    private func cancelNavigationIfPointerCleared(stalePointerID: String? = nil) {
+        if let stalePointerID,
+           let currentPointerID = companionManager.detectedElementPointerID,
+           currentPointerID != stalePointerID {
+            return
+        }
+        guard activePointerID != nil || buddyNavigationMode != .followingCursor else { return }
+        navigationAnimationTimer?.invalidate()
+        navigationAnimationTimer = nil
+        activePointerID = nil
+        buddyNavigationMode = .followingCursor
+        isReturningToCursor = false
+        buddyFlightScale = 1.0
+        navigationBubbleText = ""
+        navigationBubbleOpacity = 0.0
+        navigationBubbleScale = 1.0
     }
 
     /// Starts animating the buddy toward a detected UI element location.
-    private func startNavigatingToElement(screenLocation: CGPoint) {
+    private func startNavigatingToElement(screenLocation: CGPoint, pointerID: String) {
         // Convert the AppKit screen location to SwiftUI coordinates for this screen
         let targetInSwiftUI = convertScreenPointToSwiftUICoordinates(screenLocation)
 
@@ -563,12 +600,14 @@ struct BlueCursorView: View {
         )
 
         // Enter navigation mode — stop cursor following.
+        activePointerID = pointerID
         buddyNavigationMode = .navigatingToTarget
         isReturningToCursor = false
 
-        animateBezierFlightArc(to: clampedTarget) {
-            guard self.buddyNavigationMode == .navigatingToTarget else { return }
-            self.startPointingAtElement()
+        animateBezierFlightArc(to: clampedTarget, pointerID: pointerID) {
+            guard self.buddyNavigationMode == .navigatingToTarget,
+                  self.pointerIsStillActive(pointerID) else { return }
+            self.startPointingAtElement(pointerID: pointerID)
         }
     }
 
@@ -577,6 +616,7 @@ struct BlueCursorView: View {
     /// a "swooping" feel, and the glow intensifies during flight.
     private func animateBezierFlightArc(
         to destination: CGPoint,
+        pointerID: String,
         onComplete: @escaping () -> Void
     ) {
         navigationAnimationTimer?.invalidate()
@@ -606,6 +646,10 @@ struct BlueCursorView: View {
         let controlPoint = CGPoint(x: midPoint.x, y: midPoint.y - arcHeight)
 
         navigationAnimationTimer = Timer.scheduledTimer(withTimeInterval: frameInterval, repeats: true) { _ in
+            guard self.pointerIsStillActive(pointerID) else {
+                self.cancelNavigationIfPointerCleared(stalePointerID: pointerID)
+                return
+            }
             currentFrame += 1
 
             if currentFrame > totalFrames {
@@ -646,7 +690,8 @@ struct BlueCursorView: View {
 
     /// Transitions to pointing mode — shows a speech bubble with a bouncy
     /// scale-in entrance and variable-speed character streaming.
-    private func startPointingAtElement() {
+    private func startPointingAtElement(pointerID: String) {
+        guard pointerIsStillActive(pointerID) else { return }
         buddyNavigationMode = .pointingAtTarget
 
         // Reset navigation bubble state — start small for the scale-bounce entrance
@@ -661,15 +706,23 @@ struct BlueCursorView: View {
             ?? navigationPointerPhrases.randomElement()
             ?? "right here!"
 
-        streamNavigationBubbleCharacter(phrase: pointerPhrase, characterIndex: 0) {
+        streamNavigationBubbleCharacter(phrase: pointerPhrase, characterIndex: 0, pointerID: pointerID) {
             // All characters streamed — hold for the request duration, then fly back.
             let holdDuration = self.companionManager.detectedElementDisplayDuration ?? PickyPointerOverlayResolver.defaultDuration
             DispatchQueue.main.asyncAfter(deadline: .now() + holdDuration) {
-                guard self.buddyNavigationMode == .pointingAtTarget else { return }
+                guard self.buddyNavigationMode == .pointingAtTarget,
+                      self.pointerIsStillActive(pointerID) else {
+                    self.cancelNavigationIfPointerCleared(stalePointerID: pointerID)
+                    return
+                }
                 self.navigationBubbleOpacity = 0.0
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    guard self.buddyNavigationMode == .pointingAtTarget else { return }
-                    self.startFlyingBackToCursor()
+                    guard self.buddyNavigationMode == .pointingAtTarget,
+                          self.pointerIsStillActive(pointerID) else {
+                        self.cancelNavigationIfPointerCleared(stalePointerID: pointerID)
+                        return
+                    }
+                    self.startFlyingBackToCursor(pointerID: pointerID)
                 }
             }
         }
@@ -680,9 +733,11 @@ struct BlueCursorView: View {
     private func streamNavigationBubbleCharacter(
         phrase: String,
         characterIndex: Int,
+        pointerID: String,
         onComplete: @escaping () -> Void
     ) {
-        guard buddyNavigationMode == .pointingAtTarget else { return }
+        guard buddyNavigationMode == .pointingAtTarget,
+              pointerIsStillActive(pointerID) else { return }
         guard characterIndex < phrase.count else {
             onComplete()
             return
@@ -698,9 +753,14 @@ struct BlueCursorView: View {
 
         let characterDelay = Double.random(in: 0.03...0.06)
         DispatchQueue.main.asyncAfter(deadline: .now() + characterDelay) {
+            guard self.pointerIsStillActive(pointerID) else {
+                self.cancelNavigationIfPointerCleared(stalePointerID: pointerID)
+                return
+            }
             self.streamNavigationBubbleCharacter(
                 phrase: phrase,
                 characterIndex: characterIndex + 1,
+                pointerID: pointerID,
                 onComplete: onComplete
             )
         }
@@ -709,12 +769,13 @@ struct BlueCursorView: View {
     /// Flies the buddy back to the cursor after pointing is done. Uses a
     /// damped spring that chases the LIVE mouse position each frame, so the
     /// landing stays in sync even if the user moves the cursor mid-flight.
-    private func startFlyingBackToCursor() {
+    private func startFlyingBackToCursor(pointerID: String) {
+        guard pointerIsStillActive(pointerID) else { return }
         buddyNavigationMode = .navigatingToTarget
         isReturningToCursor = true
 
-        animateSpringChaseToLiveCursor {
-            self.finishNavigationAndResumeFollowing()
+        animateSpringChaseToLiveCursor(pointerID: pointerID) {
+            self.finishNavigationAndResumeFollowing(pointerID: pointerID)
         }
     }
 
@@ -722,7 +783,7 @@ struct BlueCursorView: View {
     /// live macOS mouse cursor. Used for fly-back so the landing point keeps
     /// up with cursor movement and the deceleration feels natural instead of
     /// snapping at the end of a static bezier arc.
-    private func animateSpringChaseToLiveCursor(onComplete: @escaping () -> Void) {
+    private func animateSpringChaseToLiveCursor(pointerID: String, onComplete: @escaping () -> Void) {
         navigationAnimationTimer?.invalidate()
 
         let frameInterval: Double = 1.0 / 60.0
@@ -738,6 +799,10 @@ struct BlueCursorView: View {
         var velocity = CGPoint.zero
 
         navigationAnimationTimer = Timer.scheduledTimer(withTimeInterval: frameInterval, repeats: true) { _ in
+            guard self.pointerIsStillActive(pointerID) else {
+                self.cancelNavigationIfPointerCleared(stalePointerID: pointerID)
+                return
+            }
             elapsed += frameInterval
 
             let mouseLocation = NSEvent.mouseLocation
@@ -773,7 +838,7 @@ struct BlueCursorView: View {
     }
 
     /// Returns the buddy to normal cursor-following mode after navigation completes.
-    private func finishNavigationAndResumeFollowing() {
+    private func finishNavigationAndResumeFollowing(pointerID: String) {
         navigationAnimationTimer?.invalidate()
         navigationAnimationTimer = nil
         buddyNavigationMode = .followingCursor
@@ -782,7 +847,8 @@ struct BlueCursorView: View {
         navigationBubbleText = ""
         navigationBubbleOpacity = 0.0
         navigationBubbleScale = 1.0
-        companionManager.clearDetectedElementLocation()
+        activePointerID = nil
+        companionManager.clearDetectedElementLocation(pointerID: pointerID)
     }
 
 }

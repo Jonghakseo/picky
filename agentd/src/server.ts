@@ -43,7 +43,7 @@ export class AgentdServer {
     this.options.supervisor.on("messageAppended", (sessionId, message, seq) => this.broadcast({ type: "sessionMessageAppended", sessionId, message, seq }));
     this.options.supervisor.on("messageReplaced", (sessionId, messageId, message, seq) => this.broadcast({ type: "sessionMessageReplaced", sessionId, messageId, message, seq }));
     this.options.supervisor.on("messageRemoved", (sessionId, messageId, seq) => this.broadcast({ type: "sessionMessageRemoved", sessionId, messageId, seq }));
-    this.options.supervisor.on("quickReply", (contextId, text) => this.broadcast({ type: "quickReply", contextId, text }));
+    this.options.supervisor.on("quickReply", (contextId, text, metadata = {}) => this.broadcast({ type: "quickReply", contextId, text, ...metadata }));
     this.options.supervisor.on("mainMessage", (message) => this.broadcast({ type: "mainMessageAppended", message }));
     this.options.supervisor.on("pointerOverlayRequested", (request) => this.broadcast({ type: "pointerOverlayRequested", request }));
     this.options.supervisor.on("artifact", (sessionId, artifact) => this.broadcast({ type: "artifactUpdated", sessionId, artifact }));
@@ -201,7 +201,7 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
     case "hello":
       return { eventId: event.id, type: event.type };
     case "quickReply":
-      return { eventId: event.id, type: event.type, contextId: event.contextId, textChars: event.text.length };
+      return { eventId: event.id, type: event.type, contextId: event.contextId, textChars: event.text.length, originSource: event.originSource, replyKind: event.replyKind, sessionId: event.sessionId };
     case "mainMessagesSnapshot":
       return { eventId: event.id, type: event.type, messages: event.messages.length };
     case "mainMessageAppended":

@@ -84,10 +84,19 @@ struct PickyCompanionDirectMessageTests {
         #expect(client.submissions.first?.context.transcript == "hello from messages")
 
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(contextId: "typed-context", text: "typed reply")))
+        try await waitUntil { manager.latestAgentSessionSummary == "typed reply" }
 
         #expect(manager.latestAgentSessionSummary == "typed reply")
         #expect(manager.voiceState != .responding)
         #expect(speechProvider.spokenUtterances.isEmpty)
+    }
+
+    private func waitUntil(_ predicate: @escaping @MainActor () -> Bool) async throws {
+        for _ in 0..<50 {
+            if predicate() { return }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        #expect(predicate())
     }
 
     private func fakeDirectMessageContextCaptureCoordinator() -> PickyVoiceContextCaptureCoordinator {

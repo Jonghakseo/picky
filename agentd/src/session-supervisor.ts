@@ -5,7 +5,7 @@ import { ArtifactStore, extractChangedFilesFromExplicitText, extractSessionLinkA
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
-import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
+import { buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt, type BuiltPrompt } from "./prompt-builder.js";
 import type { EventEnvelope, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyFinalReport, PickyMainAgentMessage, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { SessionStore } from "./session-store.js";
@@ -794,7 +794,7 @@ export class SessionSupervisor extends EventEmitter {
       throw new Error(reason);
     }
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
-    const prompt = buildFollowUpPrompt(sessionId, text, context);
+    const prompt: BuiltPrompt = { text, imagePaths: [] };
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id });
     await this.appendLog(sessionId, `${FOLLOWUP_PREFIX}${text}`);
     await this.patch(sessionId, { status: "running", lastSummary: "Follow-up queued", finalAnswer: undefined, thinkingPreview: undefined });
@@ -802,7 +802,7 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(sessionId);
   }
 
-  private queueFollowUpDelivery(sessionId: string, handle: RuntimeSessionHandle, prompt: ReturnType<typeof buildFollowUpPrompt>): void {
+  private queueFollowUpDelivery(sessionId: string, handle: RuntimeSessionHandle, prompt: BuiltPrompt): void {
     // Pi SDK followUp may resolve only after an idle session finishes its whole next turn.
     // Picky follow-ups are enqueue semantics, so do not hold the caller/main-agent tool open.
     void handle.followUp(prompt)

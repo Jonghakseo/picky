@@ -127,12 +127,6 @@ export function buildMainAgentBootstrapPair(): MainAgentBootstrapPair {
   return { user, assistant };
 }
 
-export function buildFollowUpPrompt(sessionId: string, text: string, context?: PickyContextPacket): BuiltPrompt {
-  const lines = ["# Picky follow-up", "", `Session: ${sessionId}`, "", neutralInstruction, "", "## User follow-up", text.trim()];
-  if (context) appendContext(lines, context);
-  return { text: lines.join("\n"), imagePaths: context?.screenshots.map((s) => s.path) ?? [] };
-}
-
 function inputModalityLabel(source: PickyContextPacket["source"]): string {
   switch (source) {
     case "text":

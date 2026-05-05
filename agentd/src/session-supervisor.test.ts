@@ -440,7 +440,7 @@ describe("SessionSupervisor", () => {
     const updated = supervisor.get(side.id)!;
     expect(result.lastSummary).toBe("Follow-up queued");
     expect(updated.logs.some((line: string) => line === "follow-up: 추가로 원인도 정리해줘")).toBe(true);
-    expect((updated.queuedFollowUps ?? []).map((item) => item.text)).toEqual([expect.stringContaining("추가로 원인도 정리해줘")]);
+    expect((updated.queuedFollowUps ?? []).map((item) => item.text)).toEqual(["추가로 원인도 정리해줘"]);
     expect(updated.queuedSteers ?? []).toEqual([]);
   });
 

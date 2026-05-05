@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
+import { buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
 import { PickyContextPacketSchema } from "./protocol.js";
 
 const root = join(process.cwd(), "..", "contracts");
@@ -32,12 +32,6 @@ describe("neutral prompt builder", () => {
     expect(prompt.text).toContain("left-display (screen1)");
     expect(prompt.text).toContain("right-display (screen2)");
     expect(prompt.imagePaths).toHaveLength(2);
-  });
-
-  it("builds follow-up prompts for an existing session", () => {
-    const prompt = buildFollowUpPrompt("session-001", "Please continue", PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")));
-    expect(prompt.text).toContain("Session: session-001");
-    expect(prompt.text).toContain("Please continue");
   });
 
   it("tells the main agent to inspect and steer existing side sessions before duplicating handoff", () => {

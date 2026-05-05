@@ -7,6 +7,11 @@
 
 import SwiftUI
 
+enum PickyConversationComposerSubmitKind: Equatable {
+    case steer
+    case followUp
+}
+
 struct PickyConversationComposerView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
@@ -23,10 +28,10 @@ struct PickyConversationComposerView: View {
                 .font(.system(size: 11.5))
                 .foregroundColor(DS.Colors.textPrimary)
                 .focused($isFocused)
-                .onSubmit { submitSteer() }
+                .onSubmit { submitDefault() }
                 .onKeyPress(keys: [.return], phases: .down) { keyPress in
                     if keyPress.modifiers.contains(EventModifiers.option) {
-                        submitFollowUp()
+                        submitOptionReturn()
                         return .handled
                     }
                     return .ignored
@@ -53,7 +58,7 @@ struct PickyConversationComposerView: View {
     // the active voice target with a mic.fill indicator.
 
     private var sendButton: some View {
-        Button(action: submitSteer) {
+        Button(action: submitDefault) {
             if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text("↵")
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
@@ -72,7 +77,8 @@ struct PickyConversationComposerView: View {
             }
         }
         .buttonStyle(.plain)
-        .help("Send steering message")
+        .disabled(defaultSubmitKind == nil)
+        .help(sendHelpText)
     }
 
     private var composerBackground: some View {
@@ -85,41 +91,84 @@ struct PickyConversationComposerView: View {
     }
 
     var placeholderText: String { placeholder }
+    var defaultSubmitKind: PickyConversationComposerSubmitKind? {
+        switch session.status {
+        case .running, .queued, .waiting_for_input, .cancelled:
+            return .steer
+        case .completed, .blocked:
+            return .followUp
+        case .failed:
+            return nil
+        }
+    }
+
+    var optionReturnSubmitKind: PickyConversationComposerSubmitKind? {
+        switch session.status {
+        case .running, .queued, .waiting_for_input, .completed, .blocked:
+            return .followUp
+        case .cancelled, .failed:
+            return nil
+        }
+    }
 
     private var placeholder: String {
         switch session.status {
         case .running, .queued, .waiting_for_input:
             return "Steer this agent · ⌥↵ Follow-up · esc Stop"
-        case .completed, .blocked, .cancelled:
-            return "Send a follow-up… · ⌥↵ Follow-up"
+        case .completed, .blocked:
+            return "Send a follow-up…"
+        case .cancelled:
+            return "Resume this agent with a steer…"
         case .failed:
-            return "원인 알려주거나 다른 방법 제안… · ⌥↵ Follow-up"
+            return "Open terminal/logs or start a new task"
+        }
+    }
+
+    private var sendHelpText: String {
+        switch defaultSubmitKind {
+        case .steer:
+            return "Send steering message"
+        case .followUp:
+            return "Send follow-up message"
+        case nil:
+            return "This session cannot accept composer input"
         }
     }
 
     private var sendColor: Color {
-        switch session.status {
-        case .completed, .cancelled:
+        switch defaultSubmitKind {
+        case .followUp:
             return DS.Colors.success
-        case .running, .queued, .waiting_for_input, .failed, .blocked:
+        case .steer, nil:
             return DS.Colors.overlayCursorBlue
         }
     }
 
-    private func submitSteer() {
-        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let text = trimmed
-        draft = ""
-        Task { try? await viewModel.steer(text: text, sessionID: session.id) }
+    private func submitDefault() {
+        submit(defaultSubmitKind)
     }
 
-    private func submitFollowUp() {
+    private func submitOptionReturn() {
+        submit(optionReturnSubmitKind)
+    }
+
+    private func submit(_ kind: PickyConversationComposerSubmitKind?) {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty, let kind else { return }
         let text = trimmed
-        draft = ""
-        Task { try? await viewModel.followUp(text: text, sessionID: session.id) }
+        Task {
+            do {
+                switch kind {
+                case .steer:
+                    try await viewModel.steer(text: text, sessionID: session.id)
+                case .followUp:
+                    try await viewModel.followUp(text: text, sessionID: session.id)
+                }
+                draft = ""
+            } catch {
+                // PickySessionListViewModel surfaces command failures through lastError.
+            }
+        }
     }
 
     private func stopIfPossible() {

@@ -26,7 +26,10 @@ private final class ConversationCardFakeClient: PickyAgentClient {
         return PickyAgentSubmissionReceipt(sessionID: "session-1", message: "sent")
     }
 
+    var sendError: Error?
+
     func send(_ command: PickyCommandEnvelope) async throws {
+        if let sendError { throw sendError }
         sentCommands.append(command)
     }
 
@@ -168,6 +171,53 @@ struct PickyConversationCardViewTests {
         #expect(!errorBubble.recoveryChipLabels.contains("↻ 다시 시도"))
         #expect(errorBubble.recoveryChipLabels == ["⌨ Terminal 열기", "📄 전체 로그"])
         #expect(header.statusColorName == "red")
+    }
+
+    @Test func composerDefaultSubmitKindAndPlaceholderMatchSessionStatus() {
+        let viewModel = makeViewModel()
+
+        for status in [PickySessionStatus.running, .queued, .waiting_for_input] {
+            let composer = PickyConversationComposerView(session: makeConversationSession(status: status), viewModel: viewModel)
+            #expect(composer.defaultSubmitKind == .steer)
+            #expect(composer.optionReturnSubmitKind == .followUp)
+            #expect(composer.placeholderText.contains("Steer this agent"))
+            #expect(composer.placeholderText.contains("⌥↵ Follow-up"))
+        }
+
+        for status in [PickySessionStatus.completed, .blocked] {
+            let composer = PickyConversationComposerView(session: makeConversationSession(status: status), viewModel: viewModel)
+            #expect(composer.defaultSubmitKind == .followUp)
+            #expect(composer.optionReturnSubmitKind == .followUp)
+            #expect(composer.placeholderText.contains("Send a follow-up"))
+        }
+
+        let cancelledComposer = PickyConversationComposerView(session: makeConversationSession(status: .cancelled), viewModel: viewModel)
+        #expect(cancelledComposer.defaultSubmitKind == .steer)
+        #expect(cancelledComposer.optionReturnSubmitKind == nil)
+        #expect(cancelledComposer.placeholderText.contains("Resume this agent with a steer"))
+        #expect(!cancelledComposer.placeholderText.contains("follow-up"))
+
+        let failedComposer = PickyConversationComposerView(session: makeConversationSession(status: .failed), viewModel: viewModel)
+        #expect(failedComposer.defaultSubmitKind == nil)
+        #expect(failedComposer.optionReturnSubmitKind == nil)
+        #expect(failedComposer.placeholderText.contains("Open terminal/logs"))
+        #expect(!failedComposer.placeholderText.contains("Follow-up"))
+    }
+
+    @Test func composerSubmitFailureUpdatesLastError() async throws {
+        struct SendFailure: LocalizedError {
+            var errorDescription: String? { "command failed" }
+        }
+        let client = ConversationCardFakeClient()
+        client.sendError = SendFailure()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+
+        await #expect(throws: SendFailure.self) {
+            try await viewModel.steer(text: "test", sessionID: "x")
+        }
+
+        #expect(viewModel.lastError == "command failed")
+        #expect(client.sentCommands.isEmpty)
     }
 
     @Test func composerSubmitSteerSendsSteerEnvelope() async throws {

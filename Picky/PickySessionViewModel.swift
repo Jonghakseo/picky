@@ -393,7 +393,13 @@ final class PickySessionListViewModel: ObservableObject {
             throw PickySessionListViewModelError.noSessionSelected
         }
         pickySessionLog("follow-up session=\(target) textChars=\(trimmed.count)")
-        try await client.send(PickyCommandEnvelope(type: .followUp, sessionId: target, text: trimmed))
+        do {
+            try await client.send(PickyCommandEnvelope(type: .followUp, sessionId: target, text: trimmed))
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
         let now = Date()
         update(sessionID: target) { card in
             card.lastRequestText = trimmed
@@ -414,7 +420,13 @@ final class PickySessionListViewModel: ObservableObject {
             throw PickySessionListViewModelError.noSessionSelected
         }
         pickySessionLog("steer session=\(target) textChars=\(trimmed.count)")
-        try await client.send(PickyCommandEnvelope(type: .steer, sessionId: target, text: trimmed))
+        do {
+            try await client.send(PickyCommandEnvelope(type: .steer, sessionId: target, text: trimmed))
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
         let now = Date()
         update(sessionID: target) { card in
             card.lastRequestText = trimmed

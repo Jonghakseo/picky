@@ -18,6 +18,11 @@ enum PickyConversationComposerReturnKeyAction: Equatable {
     case submitOptionReturn
 }
 
+enum PickyConversationComposerUpArrowKeyAction: Equatable {
+    case clearQueue
+    case navigateAutocomplete
+}
+
 struct PickyConversationComposerView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
@@ -39,13 +44,13 @@ struct PickyConversationComposerView: View {
             Image(systemName: "text.bubble")
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundColor(DS.Colors.textTertiary)
-                .padding(.top, 4)
+                .padding(.top, 3)
             composerEditor
             sendButton
-                .padding(.top, 2)
+                .padding(.top, 1)
         }
         .padding(.horizontal, 9)
-        .padding(.vertical, 7)
+        .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
         .background(composerBackground)
     }
@@ -56,7 +61,7 @@ struct PickyConversationComposerView: View {
                 Text(placeholder)
                     .font(.system(size: 11.5))
                     .foregroundColor(DS.Colors.textTertiary)
-                    .padding(.top, 1)
+                    .padding(.top, 2)
                     .allowsHitTesting(false)
             }
             TextEditor(text: $draft)
@@ -65,7 +70,7 @@ struct PickyConversationComposerView: View {
                 .scrollContentBackground(.hidden)
                 .background(Color.clear)
                 .focused($isFocused)
-                .frame(minHeight: 18, maxHeight: 72)
+                .frame(height: editorHeight)
                 .onChange(of: draft) { _, _ in
                     selectedSlashCommandIndex = 0
                     isSlashCommandAutocompleteDismissed = false
@@ -82,8 +87,13 @@ struct PickyConversationComposerView: View {
                         return .handled
                     }
                 }
-                .onKeyPress(keys: [.upArrow], phases: .down) { _ in
-                    moveSlashCommandSelection(.up) ? .handled : .ignored
+                .onKeyPress(keys: [.upArrow], phases: .down) { keyPress in
+                    switch upArrowKeyAction(for: keyPress.modifiers) {
+                    case .clearQueue:
+                        return clearQueuedMessages() ? .handled : .ignored
+                    case .navigateAutocomplete:
+                        return moveSlashCommandSelection(.up) ? .handled : .ignored
+                    }
                 }
                 .onKeyPress(keys: [.downArrow], phases: .down) { _ in
                     moveSlashCommandSelection(.down) ? .handled : .ignored
@@ -241,6 +251,15 @@ struct PickyConversationComposerView: View {
     // selectionStore.hoveredVoiceFollowUpSessionID). The header already shows
     // the active voice target with a mic.fill indicator.
 
+    private var editorHeight: CGFloat {
+        Self.editorHeight(for: draft)
+    }
+
+    static func editorHeight(for text: String) -> CGFloat {
+        let lineCount = text.split(separator: "\n", omittingEmptySubsequences: false).count
+        return min(48, max(20, CGFloat(lineCount) * 16 + 4))
+    }
+
     private var sendButton: some View {
         Button(action: submitDefault) {
             Image(systemName: "paperplane.fill")
@@ -299,6 +318,14 @@ struct PickyConversationComposerView: View {
         if modifiers.contains(.shift) { return .insertNewline }
         if modifiers.contains(.option) { return .submitOptionReturn }
         return .submitDefault
+    }
+
+    func upArrowKeyAction(for modifiers: EventModifiers) -> PickyConversationComposerUpArrowKeyAction {
+        Self.upArrowKeyAction(for: modifiers)
+    }
+
+    static func upArrowKeyAction(for modifiers: EventModifiers) -> PickyConversationComposerUpArrowKeyAction {
+        modifiers.contains(.option) ? .clearQueue : .navigateAutocomplete
     }
 
     private var placeholder: String {
@@ -366,6 +393,13 @@ struct PickyConversationComposerView: View {
                 // PickySessionListViewModel surfaces command failures through lastError.
             }
         }
+    }
+
+    @discardableResult
+    private func clearQueuedMessages() -> Bool {
+        guard !session.queuedSteers.isEmpty || !session.queuedFollowUps.isEmpty else { return false }
+        Task { try? await viewModel.clearQueue(sessionID: session.id, kind: .all) }
+        return true
     }
 
     private func stopIfPossible() {

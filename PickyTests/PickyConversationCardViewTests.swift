@@ -168,6 +168,20 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationComposerView.returnKeyAction(for: [.shift, .option]) == .insertNewline)
     }
 
+    @Test func composerUpArrowMappingClearsQueueWithOptionModifier() {
+        #expect(PickyConversationComposerView.upArrowKeyAction(for: []) == .navigateAutocomplete)
+        #expect(PickyConversationComposerView.upArrowKeyAction(for: [.shift]) == .navigateAutocomplete)
+        #expect(PickyConversationComposerView.upArrowKeyAction(for: [.option]) == .clearQueue)
+        #expect(PickyConversationComposerView.upArrowKeyAction(for: [.option, .shift]) == .clearQueue)
+    }
+
+    @Test func composerEditorHeightStartsCompactAndCapsGrowth() {
+        #expect(PickyConversationComposerView.editorHeight(for: "") == 20)
+        #expect(PickyConversationComposerView.editorHeight(for: "one line") == 20)
+        #expect(PickyConversationComposerView.editorHeight(for: "one\ntwo") == 36)
+        #expect(PickyConversationComposerView.editorHeight(for: "one\ntwo\nthree\nfour") == 48)
+    }
+
     @Test func composerDefaultSubmitKindAndPlaceholderMatchSessionStatus() {
         let viewModel = makeViewModel()
 

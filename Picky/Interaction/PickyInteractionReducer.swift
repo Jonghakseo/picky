@@ -113,7 +113,7 @@ enum PickyInteractionReducer {
                 record(.staleEvent, "Ignored text submission receipt for unknown input")
                 break
             }
-            state.pendingTextInputs[inputID]?.contextID = contextID
+            state.pendingTextInputs[inputID] = nil
             if case .textSubmitting(inputID, _) = state.input {
                 state.input = .idle
             }

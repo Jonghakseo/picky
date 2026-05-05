@@ -176,7 +176,17 @@ final class CompanionManager: ObservableObject {
     /// speaks again so a new response can begin immediately.
     private var currentResponseTask: Task<Void, Never>?
     private var agentEventTask: Task<Void, Never>?
-    private var directMessageContextIDs = Set<String>()
+    private var directMessageContinuations: [UUID: CheckedContinuation<Bool, Never>] = [:]
+    private lazy var interactionCoordinator: PickyInteractionCoordinator = {
+        let coordinator = PickyInteractionCoordinator(
+            envelopeMaker: PickyInteractionStaticEnvelopeMaker(),
+            effectRunner: CompanionInteractionEffectRunner(manager: self)
+        )
+        coordinator.onProjectionPublished = { [weak self] _, projection in
+            self?.applyInteractionProjection(projection)
+        }
+        return coordinator
+    }()
 
     private var shortcutTransitionCancellable: AnyCancellable?
     private var quickInputDoubleTapCancellable: AnyCancellable?
@@ -832,29 +842,104 @@ final class CompanionManager: ObservableObject {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return false }
 
-        isSendingDirectMessage = true
         directMessageError = nil
-        var submittedContextID: String?
-        defer { isSendingDirectMessage = false }
+        let inputID = UUID()
+        return await withCheckedContinuation { continuation in
+            directMessageContinuations[inputID] = continuation
+            interactionCoordinator.accept(
+                .textSubmitted(text: trimmedText, inputID: inputID),
+                correlation: PickyInteractionCorrelation(inputID: inputID, source: .text)
+            )
+        }
+    }
 
-        do {
-            guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
-                transcript: trimmedText,
-                source: "text"
-            ) else { return false }
-            submittedContextID = captureResult.contextPacket.id
-            directMessageContextIDs.insert(captureResult.contextPacket.id)
-            _ = try await agentClient.submit(PickyAgentSubmission(transcript: trimmedText, context: captureResult.contextPacket))
-            PickyAnalytics.trackUserMessageSent(transcript: trimmedText)
-            return true
-        } catch {
-            if let submittedContextID {
-                directMessageContextIDs.remove(submittedContextID)
+    private func applyInteractionProjection(_ projection: PickyInteractionProjection) {
+        isSendingDirectMessage = projection.hasPendingTextSubmission
+        if isInteractionTextReply(projection.state.output), let latestDisplayText = projection.latestDisplayText {
+            latestAgentSessionSummary = latestDisplayText
+        }
+    }
+
+    private func isInteractionTextReply(_ output: PickyOutputPhase) -> Bool {
+        switch output {
+        case .showingTextReply:
+            true
+        case .idle, .waitingForAgent, .speaking, .suppressedReply:
+            false
+        }
+    }
+
+    private func isInteractionTextOwnedContext(_ contextID: String) -> Bool {
+        interactionCoordinator.projection.state.contextOwnership[contextID]?.isTextOwned == true
+    }
+
+    private func completeDirectMessage(inputID: UUID, success: Bool) {
+        directMessageContinuations.removeValue(forKey: inputID)?.resume(returning: success)
+    }
+
+    private func failDirectMessage(inputID: UUID, message: String) {
+        directMessageError = "메시지를 보내지 못했어요: \(message)"
+        latestAgentSessionSummary = directMessageError
+        completeDirectMessage(inputID: inputID, success: false)
+    }
+
+    fileprivate func runCaptureTextContextEffect(inputID: UUID, text: String) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(transcript: text, source: "text") else {
+                    interactionCoordinator.effectCompleted(
+                        .textSubmissionFailed(message: "Context capture returned no packet.", inputID: inputID),
+                        correlation: PickyInteractionCorrelation(inputID: inputID, source: .text)
+                    )
+                    failDirectMessage(inputID: inputID, message: "Context capture returned no packet.")
+                    return
+                }
+                interactionCoordinator.effectCompleted(
+                    .textContextCaptured(inputID: inputID, context: captureResult.contextPacket),
+                    correlation: PickyInteractionCorrelation(inputID: inputID, contextID: captureResult.contextPacket.id, source: .text)
+                )
+            } catch {
+                let message = error.localizedDescription
+                interactionCoordinator.effectCompleted(
+                    .textSubmissionFailed(message: message, inputID: inputID),
+                    correlation: PickyInteractionCorrelation(inputID: inputID, source: .text)
+                )
+                failDirectMessage(inputID: inputID, message: message)
             }
-            let message = error.localizedDescription
-            directMessageError = "메시지를 보내지 못했어요: \(message)"
-            latestAgentSessionSummary = directMessageError
-            return false
+        }
+    }
+
+    fileprivate func runSubmitTextEffect(inputID: UUID, context: PickyContextPacket, text: String) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await agentClient.submit(PickyAgentSubmission(transcript: text, context: context))
+                PickyAnalytics.trackUserMessageSent(transcript: text)
+                interactionCoordinator.effectCompleted(
+                    .textSubmissionAccepted(contextID: context.id, inputID: inputID),
+                    correlation: PickyInteractionCorrelation(inputID: inputID, contextID: context.id, source: .agent)
+                )
+                completeDirectMessage(inputID: inputID, success: true)
+            } catch {
+                let message = error.localizedDescription
+                interactionCoordinator.effectCompleted(
+                    .textSubmissionFailed(message: message, inputID: inputID),
+                    correlation: PickyInteractionCorrelation(inputID: inputID, contextID: context.id, source: .agent)
+                )
+                failDirectMessage(inputID: inputID, message: message)
+            }
+        }
+    }
+
+    fileprivate func runMinimumDisplayTimerEffect(timerID: UUID, speechID: UUID?, inputID: UUID?, delay: TimeInterval) {
+        Task { @MainActor [weak self] in
+            let nanoseconds = UInt64(max(0, delay) * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            self?.interactionCoordinator.effectCompleted(
+                .minimumDisplayTimerFired(timerID: timerID, speechID: speechID, inputID: inputID),
+                correlation: PickyInteractionCorrelation(inputID: inputID, speechID: speechID, source: .system)
+            )
         }
     }
 
@@ -868,7 +953,6 @@ final class CompanionManager: ObservableObject {
         do {
             try await agentClient.send(PickyCommandEnvelope(type: .resetMainAgent))
             mainAgentMessages = []
-            directMessageContextIDs.removeAll()
             latestAgentSessionSummary = "Started a new Messages session"
             return true
         } catch {
@@ -926,8 +1010,18 @@ final class CompanionManager: ObservableObject {
         case .extensionUiRequest(let request):
             latestAgentSessionSummary = request.prompt ?? request.title ?? "Agent is waiting for input"
         case .quickReply(let reply):
-            if directMessageContextIDs.remove(reply.contextId) != nil {
-                latestAgentSessionSummary = reply.text
+            if isInteractionTextOwnedContext(reply.contextId) {
+                interactionCoordinator.accept(
+                    .quickReply(
+                        contextID: reply.contextId,
+                        text: reply.text,
+                        originSource: .text,
+                        replyKind: .main,
+                        sessionID: nil,
+                        inputID: nil
+                    ),
+                    correlation: PickyInteractionCorrelation(contextID: reply.contextId, source: .agent)
+                )
             } else {
                 let spoken = stripParentheticalsForSpeech(reply.text)
                 finishAwaitingAgentResponse(visibleText: reply.text, spokenText: spoken, enforceMinimumProcessingDuration: true)
@@ -1250,6 +1344,34 @@ final class CompanionManager: ObservableObject {
         )
     }
 
+}
+
+@MainActor
+private final class CompanionInteractionEffectRunner: PickyInteractionEffectRunning {
+    private weak var manager: CompanionManager?
+
+    init(manager: CompanionManager) {
+        self.manager = manager
+    }
+
+    func run(_ effects: [PickyInteractionEffect]) {
+        for effect in effects {
+            switch effect {
+            case .captureTextContext(let inputID, let text):
+                manager?.runCaptureTextContextEffect(inputID: inputID, text: text)
+            case .submitText(let inputID, let context, let text):
+                manager?.runSubmitTextEffect(inputID: inputID, context: context, text: text)
+            case .scheduleMinimumDisplay(let timerID, let speechID, let inputID, let delay):
+                manager?.runMinimumDisplayTimerEffect(timerID: timerID, speechID: speechID, inputID: inputID, delay: delay)
+            case .recordContextOwnership:
+                break
+            case .startDictation, .stopDictation, .captureVoiceContext, .submitMain, .steerSide,
+                 .speak, .stopSpeech, .showOverlay, .scheduleTransientHide, .cancelTransientHide,
+                 .startPointerAnimation, .cancelPointerAnimation:
+                break
+            }
+        }
+    }
 }
 
 /// Removes parenthesised passages so the TTS layer skips supplementary detail

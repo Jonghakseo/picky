@@ -107,6 +107,15 @@ enum PickyContextOwner: Equatable, Codable {
             false
         }
     }
+
+    var isTextOwned: Bool {
+        switch self {
+        case .text, .metadataText:
+            true
+        case .voice, .metadataVoice, .system, .unknown:
+            false
+        }
+    }
 }
 
 struct PickyDisplayMessage: Equatable, Codable, Identifiable {

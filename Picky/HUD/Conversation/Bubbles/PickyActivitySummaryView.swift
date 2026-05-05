@@ -15,7 +15,7 @@ struct PickyActivitySummaryView: View {
             activityChip("✏", label: "edit", count: summary.edit, color: DS.Colors.accentText)
             activityChip("⌨", label: "bash", count: summary.bash, color: DS.Colors.warning)
             activityChip("⌁", label: "thinking", count: summary.thinking, color: DS.Colors.textTertiary)
-            activityChip("⊞", label: "기타", count: summary.other, color: DS.Colors.floatingGradientPurple)
+            activityChip("⊞", label: "etc", count: summary.other, color: DS.Colors.floatingGradientPurple)
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 4)

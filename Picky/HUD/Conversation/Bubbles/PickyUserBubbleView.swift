@@ -13,11 +13,12 @@ struct PickyUserBubbleView: View {
     var body: some View {
         HStack {
             Spacer(minLength: 48)
-            VStack(alignment: .trailing, spacing: 4) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(message.text ?? "")
                     .font(.system(size: 12))
                     .foregroundColor(DS.Colors.textPrimary)
-                    .multilineTextAlignment(.trailing)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                 if let originLabel {
                     Text(originLabel)

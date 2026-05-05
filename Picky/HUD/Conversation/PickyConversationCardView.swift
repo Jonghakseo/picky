@@ -18,6 +18,7 @@ struct PickyConversationCardView: View {
             PickyConversationListView(session: session, viewModel: viewModel)
             PickyConversationComposerView(session: session, viewModel: viewModel)
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
         .frame(width: PickyHUDDockLayout.detailWidth)

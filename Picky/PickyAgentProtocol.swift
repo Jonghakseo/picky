@@ -121,15 +121,14 @@ enum PickyEvent: Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case sessions, session, sessionId, line, tool, request, artifact, artifactId, path, contextId, text, messages, message, commands
-        case messageId, seq, steering, followUp, steeringMode, followUpMode, activitySummary
+        case messageId, seq, steering, followUp, steeringMode, followUpMode, activitySummary, originSource, replyKind, inputId
     }
 
     init(type: String, decoder: Decoder) throws {
         switch type {
         case "hello": self = .hello(try PickyHelloEvent(from: decoder))
         case "quickReply":
-            let c = try decoder.container(keyedBy: CodingKeys.self)
-            self = .quickReply(PickyQuickReplyEvent(contextId: try c.decode(String.self, forKey: .contextId), text: try c.decode(String.self, forKey: .text)))
+            self = .quickReply(try PickyQuickReplyEvent(from: decoder))
         case "mainMessagesSnapshot":
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self = .mainMessagesSnapshot(try c.decode([PickyMainAgentMessage].self, forKey: .messages))
@@ -202,6 +201,44 @@ struct PickyHelloEvent: Decodable, Equatable {
 struct PickyQuickReplyEvent: Decodable, Equatable {
     let contextId: String
     let text: String
+    let originSource: PickyQuickReplyOriginSource?
+    let replyKind: PickyQuickReplyKind?
+    let sessionId: String?
+    let inputId: UUID?
+
+    private enum CodingKeys: String, CodingKey {
+        case contextId, text, originSource, replyKind, sessionId, inputId
+    }
+
+    init(
+        contextId: String,
+        text: String,
+        originSource: PickyQuickReplyOriginSource? = nil,
+        replyKind: PickyQuickReplyKind? = nil,
+        sessionId: String? = nil,
+        inputId: UUID? = nil
+    ) {
+        self.contextId = contextId
+        self.text = text
+        self.originSource = originSource
+        self.replyKind = replyKind
+        self.sessionId = sessionId
+        self.inputId = inputId
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        contextId = try c.decode(String.self, forKey: .contextId)
+        text = try c.decode(String.self, forKey: .text)
+        originSource = try c.decodeIfPresent(PickyQuickReplyOriginSource.self, forKey: .originSource)
+        replyKind = try c.decodeIfPresent(PickyQuickReplyKind.self, forKey: .replyKind)
+        sessionId = try c.decodeIfPresent(String.self, forKey: .sessionId)
+        if let rawInputId = try c.decodeIfPresent(String.self, forKey: .inputId) {
+            inputId = UUID(uuidString: rawInputId)
+        } else {
+            inputId = nil
+        }
+    }
 }
 
 struct PickyErrorEvent: Decodable, Equatable {

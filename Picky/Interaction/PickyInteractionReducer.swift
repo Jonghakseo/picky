@@ -39,6 +39,10 @@ enum PickyInteractionReducer {
 
         case .voicePressed(let targetSessionID):
             let inputID = envelope.correlation.inputID ?? envelope.id
+            if case .speaking = state.output {
+                state.output = .idle
+                state = state.removingOverlayReason(.speakingResponse)
+            }
             state.input = .voiceListening(inputID: inputID, targetSessionID: targetSessionID)
             state.pendingVoiceInputs[inputID] = PickyVoiceInputState(targetSessionID: targetSessionID)
             state = state.addingOverlayReason(.activeVoiceInput)
@@ -76,6 +80,7 @@ enum PickyInteractionReducer {
             state.pendingVoiceInputs[inputID] = voice
             state.input = .voiceSubmitting(inputID: inputID, targetSessionID: voice.targetSessionID, transcript: text)
             state.output = .waitingForAgent(inputID: inputID, contextID: nil, promptPreview: text)
+            state = state.addingOverlayReason(.waitingForVoiceResponse)
             effects.append(.captureVoiceContext(inputID: inputID, transcript: text, targetSessionID: voice.targetSessionID))
             record(.stateChanged, "Voice transcript finalized")
 
@@ -86,7 +91,9 @@ enum PickyInteractionReducer {
             }
             state.pendingVoiceInputs[inputID] = nil
             state.input = .idle
+            state.output = .idle
             state = state.removingOverlayReason(.activeVoiceInput)
+            state = state.removingOverlayReason(.waitingForVoiceResponse)
             record(.stateChanged, "Voice transcript failed")
 
         case .textSubmitted(let text, let inputID):
@@ -154,6 +161,16 @@ enum PickyInteractionReducer {
                     state.contextOwnership[contextID] = .text(inputID: inputID)
                 }
             }
+            if let inputID, let pendingVoice = state.pendingVoiceInputs[inputID] {
+                state.pendingVoiceInputs[inputID] = nil
+                if case .voiceSubmitting(inputID, _, _) = state.input {
+                    state.input = .idle
+                }
+                state = state.removingOverlayReason(.activeVoiceInput)
+                if pendingVoice.targetSessionID != nil {
+                    state = state.removingOverlayReason(.waitingForVoiceResponse)
+                }
+            }
             record(.accepted, "Agent submission accepted for \(sessionID)")
 
         case .quickReply(let contextID, let text, let originSource, let replyKind, let sessionID, let inputID):
@@ -182,12 +199,14 @@ enum PickyInteractionReducer {
                     minimumDisplayUntil: deadline,
                     finishPending: false
                 )
+                state = state.removingOverlayReason(.waitingForVoiceResponse)
                 state = state.addingOverlayReason(.speakingResponse)
                 state.lastDisplayMessage = PickyDisplayMessage(id: contextID, contextID: contextID, text: text, source: .voiceReply, updatedAt: envelope.occurredAt)
                 effects.append(.scheduleMinimumDisplay(timerID: timerID, speechID: speechID, inputID: inputID, delay: minimumDisplayDuration))
                 effects.append(.speak(speechID: speechID, text: text, contextID: contextID))
                 record(.stateChanged, "Voice quick reply is speaking")
             } else {
+                state = state.removingOverlayReason(.waitingForVoiceResponse)
                 state.output = .showingTextReply(
                     contextID: contextID,
                     text: text,

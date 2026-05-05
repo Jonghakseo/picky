@@ -6,7 +6,7 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
-import type { PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyFinalReport, PickyMainAgentMessage, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
+import type { EventEnvelope, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyFinalReport, PickyMainAgentMessage, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
@@ -26,6 +26,9 @@ export interface SessionSupervisorOptions {
   taskRouter?: TaskRouter;
   mainRuntime?: AgentRuntime;
 }
+
+type QuickReplyEvent = Extract<EventEnvelope, { type: "quickReply" }>;
+type QuickReplyMetadata = Pick<QuickReplyEvent, "originSource" | "replyKind" | "sessionId" | "inputId">;
 
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
@@ -311,7 +314,7 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("main handoff announced", { contextId, textChars: text.length });
     this.suppressNextMainReply = true;
     void this.appendMainMessage("assistant", text);
-    this.emit("quickReply", contextId, text);
+    this.emitQuickReply(contextId, text, { replyKind: "handoffAck" });
   }
 
   async route(context: PickyContextPacket): Promise<PickyAgentSession | undefined> {
@@ -324,7 +327,7 @@ export class SessionSupervisor extends EventEmitter {
     const decision = await this.options.taskRouter.route(context);
     if (decision.route === "quick_reply") {
       logAgentd("quick reply routed", { contextId: context.id, textChars: decision.reply.length });
-      this.emit("quickReply", context.id, decision.reply);
+      this.emitQuickReply(context.id, decision.reply, { originSource: quickReplyOriginFromContextSource(context.source), replyKind: "router" });
       return undefined;
     }
     return this.create(context);
@@ -332,6 +335,10 @@ export class SessionSupervisor extends EventEmitter {
 
   async create(context: PickyContextPacket): Promise<PickyAgentSession> {
     return this.createVisibleSession(context, titleFromContext(context), buildInitialTaskPrompt(context));
+  }
+
+  private emitQuickReply(contextId: string, text: string, metadata: Partial<QuickReplyMetadata> = {}): void {
+    this.emit("quickReply", contextId, text, metadata);
   }
 
   async createSideFromHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string }): Promise<PickyAgentSession> {
@@ -647,7 +654,11 @@ export class SessionSupervisor extends EventEmitter {
         } else if (reply) {
           logAgentd("main quick reply", { contextId: this.mainReplyContextId, textChars: reply.length });
           await this.appendMainMessage("assistant", reply);
-          this.emit("quickReply", this.mainReplyContextId, reply);
+          this.emitQuickReply(this.mainReplyContextId, reply, {
+            originSource: this.mainReplyContextId === this.mainContext?.id ? quickReplyOriginFromContextSource(this.mainContext.source) : "system",
+            replyKind: this.sideSessionIds.has(this.mainReplyContextId) ? "sideCompletion" : "main",
+            sessionId: this.sideSessionIds.has(this.mainReplyContextId) ? this.mainReplyContextId : undefined,
+          });
         }
         this.scheduleSideCompletionDrain();
       }
@@ -1227,6 +1238,25 @@ function piSessionFilePathFromLogs(logs: string[]): string | undefined {
 function piSessionFilePathFromLogLine(line: string): string | undefined {
   const match = line.match(/^pi session:\s*(.+)$/);
   return match?.[1]?.trim() || undefined;
+}
+
+function quickReplyOriginFromContextSource(source: string | undefined): QuickReplyMetadata["originSource"] {
+  switch (source) {
+    case "voice":
+      return "voice";
+    case "voice-follow-up":
+    case "voiceFollowUp":
+    case "voice_follow_up":
+      return "voiceFollowUp";
+    case "text":
+      return "text";
+    case "text-follow-up":
+    case "textFollowUp":
+    case "text_follow_up":
+      return "textFollowUp";
+    default:
+      return "unknown";
+  }
 }
 
 function normalizeSlashCommands(commands: RuntimeSlashCommand[]): RuntimeSlashCommand[] {

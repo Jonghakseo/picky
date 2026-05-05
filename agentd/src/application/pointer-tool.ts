@@ -13,13 +13,11 @@ export interface PickyShowPointerRequest {
   screenIndex?: number;
   label?: string;
   durationMs?: number;
-  dryRun?: boolean;
   sourceSessionId?: string;
 }
 
 export interface PickyShowPointerResult {
   request: PickyPointerOverlayRequest;
-  emitted: boolean;
 }
 
 export function createPickyShowPointerTool(onShowPointer: (request: PickyShowPointerRequest) => Promise<PickyShowPointerResult>): ToolDefinition {
@@ -33,7 +31,6 @@ export function createPickyShowPointerTool(onShowPointer: (request: PickyShowPoi
       "Prefer coordinateSpace='screenshotPixel' when using captured screenshot image pixels (top-left origin). Use coordinateSpace='displayPoint' for display points relative to the target screen's top-left.",
       "Specify screenId like 'screen1' or a 1-based screenIndex. If omitted, Picky uses the primary cursor/focus screen from the latest captured context.",
       "For side agents, pass your Picky sourceSessionId when it is available in the prompt so validation uses that session's captured screenshots.",
-      "Set dryRun=true when you only want coordinate validation without showing the overlay.",
     ],
     parameters: Type.Object({
       x: Type.Number({ description: "X coordinate in the chosen coordinateSpace; top-left origin." }),
@@ -46,19 +43,17 @@ export function createPickyShowPointerTool(onShowPointer: (request: PickyShowPoi
       screenIndex: Type.Optional(Type.Number({ description: "1-based target screen index from captured context." })),
       label: Type.Optional(Type.String({ description: "Optional short label shown next to the pointer." })),
       durationMs: Type.Optional(Type.Number({ description: "Optional highlight hold duration in milliseconds. Picky clamps to 1000-10000ms." })),
-      dryRun: Type.Optional(Type.Boolean({ description: "Validate and return the resolved target without showing the overlay." })),
       sourceSessionId: Type.Optional(Type.String({ description: "Optional Picky session id whose captured screenshots should be used for validation." })),
     }),
     execute: async (_toolCallId, params) => {
       const result = await onShowPointer(normalizeRequest(params as PickyShowPointerRequest));
       const screen = result.request.screenId ?? (result.request.screenIndex ? `screen${result.request.screenIndex}` : "primary");
-      const emittedText = result.emitted ? "Picky visual-only pointer overlay requested" : "Picky visual-only pointer overlay dry run validated";
       const clampedText = result.request.clamped ? " Coordinates were clamped to the target screen bounds." : "";
       return {
         content: [
           {
             type: "text",
-            text: `${emittedText}: ${screen} (${result.request.x}, ${result.request.y}) in ${result.request.coordinateSpace}.${clampedText} No real cursor/input action was performed.`,
+            text: `Picky visual-only pointer overlay requested: ${screen} (${result.request.x}, ${result.request.y}) in ${result.request.coordinateSpace}.${clampedText} No real cursor/input action was performed.`,
           },
         ],
         details: result,
@@ -81,7 +76,6 @@ export function makePointerOverlayRequest(input: PickyShowPointerRequest, defaul
     coordinateSpace,
     label: normalizeOptionalString(input.label),
     ...(durationMs === undefined ? {} : { durationMs }),
-    dryRun: input.dryRun === true,
     screenBounds: defaults.screenBounds,
     ...(defaults.screenshotSize ? { screenshotSize: defaults.screenshotSize } : {}),
   };
@@ -99,7 +93,6 @@ function normalizeRequest(input: PickyShowPointerRequest): PickyShowPointerReque
     label: normalizeOptionalString(input.label),
     screenIndex: normalizeOptionalInteger(input.screenIndex),
     durationMs: clampOptionalInteger(input.durationMs, 1_000, 10_000),
-    dryRun: input.dryRun === true,
   };
 }
 

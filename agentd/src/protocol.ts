@@ -190,7 +190,6 @@ export const PickyPointerOverlayRequestSchema = z.object({
   coordinateSpace: PointerCoordinateSpaceSchema,
   label: z.string().optional(),
   durationMs: z.number().int().min(1_000).max(10_000).optional(),
-  dryRun: z.boolean().optional(),
   clamped: z.boolean().optional(),
   screenBounds: BoundsSchema,
   screenshotSize: z.object({ width: z.number().positive(), height: z.number().positive() }).optional(),

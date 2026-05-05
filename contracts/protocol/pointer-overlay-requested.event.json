@@ -14,7 +14,6 @@
     "coordinateSpace": "screenshotPixel",
     "label": "Start here",
     "durationMs": 2500,
-    "dryRun": false,
     "screenBounds": { "x": 0, "y": 0, "width": 1728, "height": 1117 },
     "screenshotSize": { "width": 1280, "height": 827 }
   }

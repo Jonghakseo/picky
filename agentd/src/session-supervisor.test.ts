@@ -382,7 +382,6 @@ describe("SessionSupervisor", () => {
 
     const result = await supervisor.requestPointerOverlay({ sourceSessionId: session.id, screenIndex: 1, x: -20, y: 900, label: "target", durationMs: 99_999 });
 
-    expect(result.emitted).toBe(true);
     expect(emitted).toHaveLength(1);
     expect(result.request).toMatchObject({
       contextId: pointerContext.id,
@@ -416,7 +415,7 @@ describe("SessionSupervisor", () => {
       screenshots: [{ id: "shot-3", label: "screen 3", path: imagePath, screenId: "screen3", bounds: { x: 0, y: 0, width: 1728, height: 1117 } }],
     });
 
-    const result = await supervisor.requestPointerOverlay({ sourceSessionId: session.id, screenId: "screen3", x: 405, y: 180, dryRun: true });
+    const result = await supervisor.requestPointerOverlay({ sourceSessionId: session.id, screenId: "screen3", x: 405, y: 180 });
 
     expect(result.request).toMatchObject({
       coordinateSpace: "screenshotPixel",
@@ -425,22 +424,6 @@ describe("SessionSupervisor", () => {
       screenshotSize: { width: 1280, height: 827 },
       screenBounds: { x: 0, y: 0, width: 1728, height: 1117 },
     });
-  });
-
-  it("supports pointer overlay dry runs without broadcasting", async () => {
-    const supervisor = await makeSupervisor();
-    await supervisor.create({
-      ...context("point here"),
-      screenshots: [{ id: "shot-1", label: "screen 1", path: "/tmp/shot-1.jpg", screenId: "screen1", bounds: { x: 0, y: 0, width: 100, height: 100 } }],
-    });
-    const emitted: unknown[] = [];
-    supervisor.on("pointerOverlayRequested", (request) => emitted.push(request));
-
-    const result = await supervisor.requestPointerOverlay({ coordinateSpace: "displayPoint", x: 50, y: 60, dryRun: true });
-
-    expect(result.emitted).toBe(false);
-    expect(emitted).toHaveLength(0);
-    expect(result.request).toMatchObject({ coordinateSpace: "displayPoint", dryRun: true, x: 50, y: 60 });
   });
 
   it("does not append pointer sourceSessionId hints to side-agent handoff prompts", async () => {

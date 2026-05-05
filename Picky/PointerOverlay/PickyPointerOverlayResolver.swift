@@ -36,7 +36,6 @@ struct PickyPointerOverlayRequest: Codable, Equatable, Identifiable {
     let coordinateSpace: PickyPointerCoordinateSpace
     let label: String?
     let durationMs: Int?
-    let dryRun: Bool?
     let clamped: Bool?
     let screenBounds: PickyCGRect
     let screenshotSize: PickyPointerScreenshotSize?

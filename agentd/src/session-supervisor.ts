@@ -222,9 +222,8 @@ export class SessionSupervisor extends EventEmitter {
       }),
       ...(bounded.clamped ? { clamped: true } : {}),
     };
-    const emitted = overlayRequest.dryRun !== true;
-    if (emitted) this.emit("pointerOverlayRequested", overlayRequest);
-    return { request: overlayRequest, emitted };
+    this.emit("pointerOverlayRequested", overlayRequest);
+    return { request: overlayRequest };
   }
 
   private contextForPointerRequest(request: PickyShowPointerRequest): PickyContextPacket | undefined {

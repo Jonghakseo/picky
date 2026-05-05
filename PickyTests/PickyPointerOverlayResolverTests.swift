@@ -153,7 +153,6 @@ struct PickyPointerOverlayResolverTests {
             coordinateSpace: coordinateSpace,
             label: label,
             durationMs: durationMs,
-            dryRun: false,
             clamped: nil,
             screenBounds: screenBounds,
             screenshotSize: screenshotSize

@@ -71,7 +71,6 @@ enum PickySessionListViewModelError: LocalizedError, Equatable {
     case noSessionSelected
     case missingReport
     case missingPiSessionFile
-    case sessionActiveForTerminal
 
     var errorDescription: String? {
         switch self {
@@ -79,7 +78,6 @@ enum PickySessionListViewModelError: LocalizedError, Equatable {
         case .noSessionSelected: "No session selected for steering"
         case .missingReport: "Report is not available yet"
         case .missingPiSessionFile: "Pi session file is not available yet"
-        case .sessionActiveForTerminal: "Pi terminal is unavailable while this session is active"
         }
     }
 }
@@ -574,10 +572,9 @@ final class PickySessionListViewModel: ObservableObject {
             lastError = PickySessionListViewModelError.missingPiSessionFile.localizedDescription
             return
         }
-        guard !session.status.blocksTerminalOverlay else {
-            lastError = PickySessionListViewModelError.sessionActiveForTerminal.localizedDescription
-            return
-        }
+        // Earlier history pill stays clickable while the side-agent is still working: the overlay
+        // launches its own `pi --session` process against the on-disk session file, so the user
+        // gets a read view of the running transcript even though the daemon is still writing.
 
         let baselineSnapshot = terminalSessionSnapshotIfAvailable(sessionFilePath: piSessionFilePath)
 
@@ -1230,13 +1227,6 @@ extension PickySessionStatus {
         switch self {
         case .completed, .failed, .cancelled: true
         case .queued, .running, .waiting_for_input, .blocked: false
-        }
-    }
-
-    var blocksTerminalOverlay: Bool {
-        switch self {
-        case .queued, .running, .waiting_for_input: true
-        case .blocked, .completed, .failed, .cancelled: false
         }
     }
 

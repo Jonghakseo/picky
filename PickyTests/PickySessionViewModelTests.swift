@@ -921,7 +921,11 @@ struct PickySessionViewModelTests {
         #expect(viewModel.lastError == nil)
     }
 
-    @Test func openTerminalOverlayRejectsActiveSessions() async throws {
+    @Test func openTerminalOverlayWorksWhileSessionIsActive() async throws {
+        // Earlier history pill should stay clickable even while the side-agent is still working
+        // (running, queued, waiting_for_input). The overlay launches its own `pi --session` process
+        // pointed at the on-disk session file, so the user gets a transcript view of the live run
+        // even though the daemon is still writing to it.
         let client = FakePickyAgentClient()
         let presenter = FakeTerminalOverlayPresenter()
         let viewModel = PickySessionListViewModel(
@@ -932,6 +936,7 @@ struct PickySessionViewModelTests {
         viewModel.start()
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
             id: "side-1",
+            title: "Side",
             status: "running",
             logs: ["pi session: /tmp/pi-session.jsonl"]
         ))))
@@ -939,8 +944,13 @@ struct PickySessionViewModelTests {
 
         viewModel.openTerminalOverlay(sessionID: "side-1")
 
-        #expect(presenter.calls.isEmpty)
-        #expect(viewModel.lastError == PickySessionListViewModelError.sessionActiveForTerminal.localizedDescription)
+        #expect(presenter.calls == [FakeTerminalOverlayPresenter.Call(
+            sessionID: "side-1",
+            title: "Side",
+            sessionFilePath: "/tmp/pi-session.jsonl",
+            cwd: "/Users/creatrip/Documents/picky"
+        )])
+        #expect(viewModel.lastError == nil)
     }
 
     @Test func sessionCardExtractsPiSessionFileFromHandoffTranscript() async throws {

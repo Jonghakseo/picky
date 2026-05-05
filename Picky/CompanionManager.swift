@@ -158,6 +158,13 @@ final class CompanionManager: ObservableObject {
 
     private var shortcutTransitionCancellable: AnyCancellable?
     private var quickInputDoubleTapCancellable: AnyCancellable?
+    private var shortcutCaptureObserver: NSObjectProtocol?
+    /// Tracks how many `ShortcutCaptureRecorder` instances are currently in
+    /// capture mode. While > 0 the global PTT monitor and Quick Input
+    /// detector are paused so the user can press their existing shortcut to
+    /// rebind it without dismissing the Settings panel or triggering a voice
+    /// session.
+    private var activeShortcutCaptureCount: Int = 0
     private var voiceStateCancellable: AnyCancellable?
     private var audioPowerCancellable: AnyCancellable?
     private var dictationErrorCancellable: AnyCancellable?
@@ -224,6 +231,7 @@ final class CompanionManager: ObservableObject {
         }
         wireQuickInputPanel()
         applyShortcutSpecsFromSettings()
+        bindShortcutCaptureLifecycle()
         refreshAllPermissions()
         print("🔑 Picky start — accessibility: \(hasAccessibilityPermission), screen: \(hasScreenRecordingPermission), mic: \(hasMicrophonePermission), screenContent: \(hasScreenContentPermission)")
         startPermissionPolling()
@@ -276,6 +284,12 @@ final class CompanionManager: ObservableObject {
         agentClient.disconnect()
         shortcutTransitionCancellable?.cancel()
         quickInputDoubleTapCancellable?.cancel()
+        if let shortcutCaptureObserver {
+            NotificationCenter.default.removeObserver(shortcutCaptureObserver)
+            self.shortcutCaptureObserver = nil
+        }
+        activeShortcutCaptureCount = 0
+        globalPushToTalkShortcutMonitor.isCapturePaused = false
         voiceStateCancellable?.cancel()
         audioPowerCancellable?.cancel()
         dictationErrorCancellable?.cancel()
@@ -567,9 +581,43 @@ final class CompanionManager: ObservableObject {
         // PTT-in-progress and the input panel are mutually exclusive: voice and
         // typed quick input share the same submission lane and we don't want a
         // floating focus stealer mid-utterance.
-        guard !isPushToTalkShortcutHeld,
+        guard activeShortcutCaptureCount == 0,
+              !isPushToTalkShortcutHeld,
               !buddyDictationManager.isDictationInProgress else { return }
         quickInputPanelManager.presentPanel(near: event.mouseLocation)
+    }
+
+    /// Wires the global "is anyone currently rebinding a shortcut?" signal so
+    /// the PTT monitor and Quick Input detector pause while the Settings
+    /// capture UI is open.
+    private func bindShortcutCaptureLifecycle() {
+        if let shortcutCaptureObserver {
+            NotificationCenter.default.removeObserver(shortcutCaptureObserver)
+        }
+        shortcutCaptureObserver = NotificationCenter.default.addObserver(
+            forName: .pickyShortcutCaptureDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self else { return }
+            let isCapturing = (note.userInfo?[PickyShortcutCaptureNotificationKeys.isCapturing] as? Bool) ?? false
+            Task { @MainActor [weak self] in
+                self?.applyShortcutCaptureLifecycleChange(isCapturing: isCapturing)
+            }
+        }
+    }
+
+    private func applyShortcutCaptureLifecycleChange(isCapturing: Bool) {
+        if isCapturing {
+            activeShortcutCaptureCount += 1
+        } else {
+            activeShortcutCaptureCount = max(0, activeShortcutCaptureCount - 1)
+        }
+        let shouldPause = activeShortcutCaptureCount > 0
+        globalPushToTalkShortcutMonitor.isCapturePaused = shouldPause
+        if shouldPause {
+            quickInputDoubleTapDetector.reset()
+        }
     }
 
     private func handleQuickInputSubmit(text: String) {
@@ -584,6 +632,10 @@ final class CompanionManager: ObservableObject {
     }
 
     private func handleShortcutTransition(_ transition: BuddyPushToTalkShortcut.ShortcutTransition) {
+        // Defensive: even though GlobalPushToTalkShortcutMonitor short-circuits
+        // its callback while paused, swallowing transitions here too keeps any
+        // already-queued event from slipping through and dismissing the panel.
+        if activeShortcutCaptureCount > 0 { return }
         switch transition {
         case .pressed:
             isPushToTalkShortcutHeld = true

@@ -112,7 +112,7 @@ struct ShortcutSettingsRow: View {
         let displayedSpec = recorder.isCapturing ? (recorder.draftSpec ?? currentSpec) : currentSpec
         let caps = displayedSpec.keyCaps
         if caps.isEmpty {
-            Text("미설정")
+            Text("Not set")
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundColor(DS.Colors.textTertiary)
         } else {

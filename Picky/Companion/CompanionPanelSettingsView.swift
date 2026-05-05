@@ -159,7 +159,7 @@ struct CompanionPanelSettingsView: View {
     }
 
     private var shortcutsSection: some View {
-        sectionHeader(section: .shortcuts, title: "Shortcuts", subtitle: "단축키를 자유롭게 설정하세요.") {
+        sectionHeader(section: .shortcuts, title: "Shortcuts", subtitle: "Customize the global shortcuts for voice and quick text input.") {
             VStack(alignment: .leading, spacing: 14) {
                 ShortcutSettingsRow(
                     title: "Push to Talk",

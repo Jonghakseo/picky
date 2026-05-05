@@ -26,6 +26,15 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
         didSet { isShortcutCurrentlyPressed = false }
     }
 
+    /// Set to true while the user is recording a new shortcut in Settings.
+    /// While paused the tap stays installed (so we don't lose accessibility
+    /// permission state) but neither raw events nor PTT transitions are
+    /// forwarded — otherwise pressing the existing shortcut during capture
+    /// would close the Settings panel and start a voice session.
+    var isCapturePaused: Bool = false {
+        didSet { if isCapturePaused { isShortcutCurrentlyPressed = false } }
+    }
+
     private var globalEventTap: CFMachPort?
     private var globalEventTapRunLoopSource: CFRunLoopSource?
     /// Mutated exclusively from the CGEvent tap callback, which runs on
@@ -116,6 +125,10 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
             if let globalEventTap {
                 CGEvent.tapEnable(tap: globalEventTap, enable: true)
             }
+            return Unmanaged.passUnretained(event)
+        }
+
+        if isCapturePaused {
             return Unmanaged.passUnretained(event)
         }
 

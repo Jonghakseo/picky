@@ -117,6 +117,27 @@ struct ShortcutCaptureRecorderTests {
         #expect(spec != nil)
         #expect(recorder.isCapturing == false)
     }
+
+    @Test
+    func startAndCancelEmitCaptureLifecycleNotifications() async {
+        let recorder = ShortcutCaptureRecorder(allowance: .pushToTalk)
+        var observed: [Bool] = []
+        let token = NotificationCenter.default.addObserver(
+            forName: .pickyShortcutCaptureDidChange,
+            object: recorder,
+            queue: nil
+        ) { note in
+            if let value = note.userInfo?[PickyShortcutCaptureNotificationKeys.isCapturing] as? Bool {
+                observed.append(value)
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        recorder.start()
+        recorder.cancel()
+
+        #expect(observed == [true, false])
+    }
 }
 
 @MainActor

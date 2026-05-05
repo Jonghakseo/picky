@@ -16,6 +16,19 @@ import AppKit
 import Combine
 import Foundation
 
+extension Notification.Name {
+    /// Posted whenever a `ShortcutCaptureRecorder` toggles its `isCapturing`
+    /// flag. The CompanionManager listens so the global PTT monitor and the
+    /// Quick Input detector can pause while the user is recording a new
+    /// shortcut — otherwise pressing the existing shortcut during capture
+    /// would dismiss the panel and start a real voice/text session.
+    static let pickyShortcutCaptureDidChange = Notification.Name("pickyShortcutCaptureDidChange")
+}
+
+enum PickyShortcutCaptureNotificationKeys {
+    static let isCapturing = "isCapturing"
+}
+
 @MainActor
 final class ShortcutCaptureRecorder: ObservableObject {
     enum Allowance {
@@ -25,9 +38,9 @@ final class ShortcutCaptureRecorder: ObservableObject {
         var hint: String {
             switch self {
             case .pushToTalk:
-                return "단축키를 누르세요. 예: ⌃⌥, 또는 ⌃⌥+space"
+                return "Press a shortcut. e.g. ⌃⌥, or ⌃⌥+space."
             case .quickInput:
-                return "단축키를 누르세요. 같은 키를 두 번 누르면 더블탭, 모디파이어와 키를 함께 누르면 콤보입니다."
+                return "Press a shortcut. Tap the same modifier twice for a double-tap, or hold modifiers + key for a combo."
             }
         }
     }
@@ -36,7 +49,16 @@ final class ShortcutCaptureRecorder: ObservableObject {
     /// agrees with the runtime behavior on what counts as a double-tap.
     static let doubleTapWindow: TimeInterval = QuickInputDoubleTapDetector.doubleTapWindow
 
-    @Published private(set) var isCapturing: Bool = false
+    @Published private(set) var isCapturing: Bool = false {
+        didSet {
+            guard oldValue != isCapturing else { return }
+            NotificationCenter.default.post(
+                name: .pickyShortcutCaptureDidChange,
+                object: self,
+                userInfo: [PickyShortcutCaptureNotificationKeys.isCapturing: isCapturing]
+            )
+        }
+    }
     @Published private(set) var draftSpec: PickyShortcutSpec?
     @Published private(set) var statusMessage: String?
 
@@ -166,7 +188,7 @@ final class ShortcutCaptureRecorder: ObservableObject {
            let previous = lastModifierPressAt,
            now.timeIntervalSince(previous) <= Self.doubleTapWindow {
             draftSpec = .doubleTapModifier(newlyPressed)
-            statusMessage = "더블탭으로 저장됩니다."
+            statusMessage = "Captured as a double-tap."
             lastModifierPressKey = []
             lastModifierPressAt = nil
             return
@@ -184,7 +206,7 @@ final class ShortcutCaptureRecorder: ObservableObject {
             // For Quick Input we don't allow modifier-only single press; show a
             // hint that they need to either add a non-modifier key or tap again.
             draftSpec = nil
-            statusMessage = "키를 추가하거나 같은 모디파이어를 한 번 더 누르세요."
+            statusMessage = "Add a key, or tap the same modifier once more."
         }
     }
 
@@ -201,7 +223,7 @@ final class ShortcutCaptureRecorder: ObservableObject {
         let normalized = modifierFlags.intersection([.shift, .control, .option, .command, .function])
 
         guard PickyShortcutKeyCodeMap.label(for: keyCode) != nil else {
-            statusMessage = "이 키는 단축키로 사용할 수 없습니다. 다른 키를 눌러주세요."
+            statusMessage = "This key can’t be used as a shortcut. Try another one."
             return
         }
 

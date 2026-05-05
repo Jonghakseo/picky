@@ -43,11 +43,11 @@ final class PickySettingsViewModel: ObservableObject {
         conflictsWith other: PickyShortcutSpec
     ) -> Bool {
         guard newSpec.isValid else {
-            validationError = "단축키 조합이 올바르지 않습니다."
+            validationError = "That shortcut combination isn’t valid."
             return false
         }
         if newSpec.conflicts(with: other) {
-            validationError = "다른 단축키와 중복됩니다."
+            validationError = "That shortcut conflicts with the other one."
             return false
         }
         validationError = nil

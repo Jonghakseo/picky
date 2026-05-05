@@ -18,7 +18,6 @@ struct PickyUserBubbleView: View {
                     .font(.system(size: 12))
                     .foregroundColor(DS.Colors.textPrimary)
                     .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                 if let originLabel {
                     Text(originLabel)

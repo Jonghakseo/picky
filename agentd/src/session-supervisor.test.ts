@@ -37,6 +37,70 @@ describe("SessionSupervisor", () => {
     expect(updated.logs.some((line) => line.includes("next step"))).toBe(true);
   });
 
+  it("projects queue updates with monotonic sequence numbers", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-queue-test-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("initial"));
+    const events: Array<{ sessionId: string; steering: unknown[]; followUp: unknown[]; seq: number }> = [];
+    supervisor.on("queueUpdated", (sessionId, steering, followUp, _steeringMode, _followUpMode, seq) => events.push({ sessionId, steering, followUp, seq }));
+
+    runtime.handle!.emit({ type: "queue_update", steering: ["first"], followUp: [] });
+    runtime.handle!.emit({ type: "queue_update", steering: ["first"], followUp: ["second"] });
+    runtime.handle!.emit({ type: "queue_update", steering: [], followUp: ["second"] });
+    await settle();
+
+    expect(events.map((event) => event.seq)).toEqual([1, 2, 3]);
+    expect(events.at(0)).toMatchObject({ sessionId: session.id, steering: [{ text: "first" }], followUp: [] });
+    expect(supervisor.get(session.id)?.queuedSteers ?? []).toEqual([]);
+    expect((supervisor.get(session.id)?.queuedFollowUps ?? []).map((item) => item.text)).toEqual(["second"]);
+  });
+
+  it("emits queue modes only when they change", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-mode-test-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("initial"));
+    const events: Array<{ steeringMode?: string; followUpMode?: string }> = [];
+    supervisor.on("queueUpdated", (_sessionId, _steering, _followUp, steeringMode, followUpMode) => events.push({ steeringMode, followUpMode }));
+
+    runtime.handle!.emit({ type: "queue_update", steering: ["first"], followUp: [] });
+    runtime.handle!.steeringMode = "all";
+    runtime.handle!.emit({ type: "queue_update", steering: ["first", "second"], followUp: [] });
+    runtime.handle!.emit({ type: "queue_update", steering: ["first", "second", "third"], followUp: [] });
+    await settle();
+
+    expect(events).toEqual([{}, { steeringMode: "all" }, {}]);
+    expect(supervisor.get(session.id)?.steeringMode).toBe("all");
+  });
+
+  it("clears queues by kind while preserving the other queue", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-clear-test-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("initial"));
+    await runtime.handle!.steer("steer a");
+    await runtime.handle!.steer("steer b");
+    await runtime.handle!.followUp({ text: "follow a", imagePaths: [] });
+    await runtime.handle!.followUp({ text: "follow b", imagePaths: [] });
+
+    await supervisor.clearQueue(session.id, "steering");
+    expect(runtime.handle!.getSteeringMessages()).toEqual([]);
+    expect(runtime.handle!.getFollowUpMessages()).toEqual(["follow a", "follow b"]);
+
+    await runtime.handle!.steer("steer c");
+    await supervisor.clearQueue(session.id, "followUp");
+    expect(runtime.handle!.getSteeringMessages()).toEqual(["steer c"]);
+    expect(runtime.handle!.getFollowUpMessages()).toEqual([]);
+
+    await supervisor.clearQueue(session.id, "all");
+    expect(runtime.handle!.getSteeringMessages()).toEqual([]);
+    expect(runtime.handle!.getFollowUpMessages()).toEqual([]);
+  });
+
   it("lists and resumes side sessions created from main-agent handoff", async () => {
     const supervisor = await makeSupervisor();
     const regular = await supervisor.create(context("regular"));
@@ -199,7 +263,7 @@ describe("SessionSupervisor", () => {
     await settle();
 
     const updated = supervisor.get(side.id)!;
-    expect(["Follow-up queued", "Follow-up received"]).toContain(result.lastSummary);
+    expect(result.lastSummary).toBe("Follow-up queued");
     expect(updated.logs.some((line: string) => line === "follow-up: 추가로 원인도 정리해줘")).toBe(true);
     expect((updated.queuedFollowUps ?? []).map((item) => item.text)).toEqual([expect.stringContaining("추가로 원인도 정리해줘")]);
     expect(updated.queuedSteers ?? []).toEqual([]);
@@ -609,6 +673,17 @@ describe("SessionSupervisor", () => {
     await expect(supervisor.steerSideSession(pinned.id, "continue this work")).rejects.toThrow();
 
     expect(supervisor.get(pinned.id)?.pinned).toBe(false);
+  });
+
+  it("rejects pinned side-session follow-up until reattach lands", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+    await supervisor.load();
+    const pinned = await supervisor.pinSideSession(context("pin then follow up"), "Pinned source");
+
+    await expect(supervisor.followUp(pinned.id, "continue this work")).rejects.toThrow(/Pinned sessions cannot accept follow-ups yet/);
+
+    expect(supervisor.get(pinned.id)?.pinned).toBe(true);
   });
 
   it("aborts a session", async () => {
@@ -1702,8 +1777,8 @@ class ManualHandle implements RuntimeSessionHandle {
   getFollowUpMessages(): readonly string[] {
     return this.followUps.map((prompt) => prompt.text);
   }
-  readonly steeringMode = "one-at-a-time" as const;
-  readonly followUpMode = "one-at-a-time" as const;
+  steeringMode: "one-at-a-time" | "all" = "one-at-a-time";
+  followUpMode: "one-at-a-time" | "all" = "one-at-a-time";
   listSlashCommands(): RuntimeSlashCommand[] {
     return this.slashCommands;
   }

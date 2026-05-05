@@ -38,6 +38,7 @@ export class AgentdServer {
     this.options.supervisor.on("session", (session) => this.broadcast({ type: "sessionUpdated", session: protocolSession(session) }));
     this.options.supervisor.on("log", (sessionId, line) => this.broadcast({ type: "sessionLogAppended", sessionId, line }));
     this.options.supervisor.on("extensionUiRequest", (request) => this.broadcast({ type: "extensionUiRequest", request }));
+    this.options.supervisor.on("queueUpdated", (sessionId, steering, followUp, steeringMode, followUpMode, seq) => this.broadcast({ type: "sessionQueueUpdated", sessionId, steering, followUp, steeringMode, followUpMode, seq }));
     this.options.supervisor.on("quickReply", (contextId, text) => this.broadcast({ type: "quickReply", contextId, text }));
     this.options.supervisor.on("mainMessage", (message) => this.broadcast({ type: "mainMessageAppended", message }));
     this.options.supervisor.on("pointerOverlayRequested", (request) => this.broadcast({ type: "pointerOverlayRequested", request }));
@@ -96,7 +97,7 @@ export class AgentdServer {
       if (command.type === "pinSideSession") await this.options.supervisor.pinSideSession(command.context, command.title);
       if (command.type === "setNotifyMainOnCompletion") await this.options.supervisor.setNotifyMainOnCompletion(command.sessionId, command.enabled);
       if (command.type === "setSessionArchived") await this.options.supervisor.setSessionArchived(command.sessionId, command.archived);
-      if (command.type === "clearQueue") this.send(ws, { type: "error", code: "notImplemented", message: "clearQueue handled in PR2", commandId: command.id });
+      if (command.type === "clearQueue") await this.options.supervisor.clearQueue(command.sessionId, command.kind);
       if (command.type === "followUp") await this.options.supervisor.followUp(command.sessionId, command.text, command.context);
       if (command.type === "steer") await this.options.supervisor.steer(command.sessionId, command.text);
       if (command.type === "abort") await this.options.supervisor.abort(command.sessionId);

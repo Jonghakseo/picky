@@ -690,7 +690,8 @@ final class CompanionManager: ObservableObject {
             pendingAgentResponseStartedAt = nil
             currentVoicePromptPreview = nil
             voicePromptBubbleState = .hidden
-            setVoiceFollowUpSessionIDForCurrentUtterance(selectionStore.hoveredVoiceFollowUpSessionID)
+            print("🎙️ Picky voice route — PTT pressed; storeHover=\(selectionStore.hoveredVoiceFollowUpSessionID ?? "<nil>") prevTask=\(currentResponseTask != nil)")
+            setVoiceFollowUpSessionIDForCurrentUtterance(selectionStore.hoveredVoiceFollowUpSessionID, caller: "PTT-pressed")
 
             // Cancel any pending transient hide so the overlay stays visible
             transientHideTask?.cancel()
@@ -761,6 +762,7 @@ final class CompanionManager: ObservableObject {
         currentResponseTask = Task {
             do {
                 let voiceFollowUpSessionID = voiceFollowUpSessionIDForCurrentUtterance
+                print("🎙️ Picky voice route — responseTask start; captured=\(voiceFollowUpSessionID ?? "<nil>")")
                 guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
                     transcript: transcript,
                     voiceFollowUpSessionID: voiceFollowUpSessionID
@@ -782,7 +784,8 @@ final class CompanionManager: ObservableObject {
                 finishAwaitingAgentResponse(visibleText: "I captured that, but the local agent client is not ready yet.", spokenText: "I captured that, but the local agent client is not ready yet.")
             }
 
-            setVoiceFollowUpSessionIDForCurrentUtterance(nil)
+            print("🎙️ Picky voice route — responseTask end; cancelled=\(Task.isCancelled) selfBeforeReset=\(voiceFollowUpSessionIDForCurrentUtterance ?? "<nil>")")
+            setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "responseTask-end")
 
             if !Task.isCancelled, pendingAgentResponseStartedAt == nil, voiceState != .responding {
                 voiceState = .idle
@@ -797,17 +800,20 @@ final class CompanionManager: ObservableObject {
         voiceFollowUpSessionID: String? = nil
     ) async throws -> PickyAgentSubmissionReceipt {
         if let targetSessionID = normalizedVoiceFollowUpSessionID(voiceFollowUpSessionID) {
+            print("🎙️ Picky voice route — STEER side=\(targetSessionID)")
             try await agentClient.send(PickyCommandEnvelope(type: .steer, context: contextPacket, sessionId: targetSessionID, text: transcript))
             return PickyAgentSubmissionReceipt(sessionID: targetSessionID, message: "")
         }
+        print("🎙️ Picky voice route — SUBMIT main (arg=\(voiceFollowUpSessionID ?? "<nil>") self=\(voiceFollowUpSessionIDForCurrentUtterance ?? "<nil>"))")
         return try await agentClient.submit(PickyAgentSubmission(transcript: transcript, context: contextPacket))
     }
 
     // Internal (instead of private) so PickyCompanionManagerTests can seed the
     // utterance-scoped hover ID exactly the way the PTT pressed handler does.
-    func setVoiceFollowUpSessionIDForCurrentUtterance(_ sessionID: String?) {
+    func setVoiceFollowUpSessionIDForCurrentUtterance(_ sessionID: String?, caller: String = #function) {
         let normalized = normalizedVoiceFollowUpSessionID(sessionID)
         guard voiceFollowUpSessionIDForCurrentUtterance != normalized else { return }
+        print("🎙️ Picky voice route — hoverID \(voiceFollowUpSessionIDForCurrentUtterance ?? "<nil>") -> \(normalized ?? "<nil>") (from \(caller))")
         voiceFollowUpSessionIDForCurrentUtterance = normalized
         var userInfo: [String: String] = [:]
         if let normalized {

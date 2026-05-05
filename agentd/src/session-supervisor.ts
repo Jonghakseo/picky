@@ -6,7 +6,7 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
-import type { PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentState } from "./protocol.js";
+import type { PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentState, PickyQueueItem, PickyQueueMode } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
@@ -55,6 +55,9 @@ export class SessionSupervisor extends EventEmitter {
   private sideCompletionNotified = new Set<string>();
   private pendingSideCompletions: string[] = [];
   private sessionContexts = new Map<string, PickyContextPacket>();
+  private sessionSeq = new Map<string, number>();
+  private lastEmittedSteeringMode = new Map<string, PickyQueueMode>();
+  private lastEmittedFollowUpMode = new Map<string, PickyQueueMode>();
 
   constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, artifactStore?: ArtifactStore, private readonly options: SessionSupervisorOptions = {}) {
     super();
@@ -64,6 +67,7 @@ export class SessionSupervisor extends EventEmitter {
       patchSession: (sessionId, patch) => this.patch(sessionId, patch),
       appendLog: (sessionId, line) => this.appendLog(sessionId, line),
       materializeTerminalArtifacts: (sessionId) => this.materializeTerminalArtifacts(sessionId),
+      applyQueueUpdate: (sessionId, steering, followUp) => this.applyQueueUpdate(sessionId, steering, followUp),
       notifySideCompletion: (sessionId) => this.notifyMainOfSideCompletion(sessionId),
       isSideSession: (sessionId) => this.sideSessionIds.has(sessionId),
       emitExtensionUiRequest: (request) => this.emit("extensionUiRequest", request),
@@ -710,15 +714,15 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(sessionId);
   }
 
-  async followUpSideSession(sessionId: string, text: string, _context?: PickyContextPacket): Promise<PickyAgentSession> {
-    return this.steerSideSession(sessionId, text);
-  }
-
   async steerSideSession(sessionId: string, text: string): Promise<PickyAgentSession> {
     if (!this.isSideSession(sessionId)) throw new Error(`Session is not a Picky side agent: ${sessionId}`);
+    return this.steer(sessionId, text);
+  }
+
+  private async prepareSideSessionForUserInput(sessionId: string): Promise<void> {
+    if (!this.isSideSession(sessionId)) return;
     this.clearSideCompletionTracking(sessionId);
     if (this.mustGet(sessionId).pinned) await this.patch(sessionId, { pinned: false });
-    return this.steer(sessionId, text);
   }
 
   private clearSideCompletionTracking(sessionId: string): void {
@@ -732,8 +736,10 @@ export class SessionSupervisor extends EventEmitter {
 
   async followUp(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
-    if (this.isSideSession(sessionId)) return this.steerSideSession(sessionId, text);
     if (["failed", "cancelled"].includes(session.status)) throw new Error(`Cannot follow up ${session.status} session`);
+    // TODO(PR6): replace this temporary guard with pinned side-session reattach.
+    if (session.pinned) throw new Error("Pinned sessions cannot accept follow-ups yet (PR6 reattach)");
+    await this.prepareSideSessionForUserInput(sessionId);
     const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
     if (!handle) {
       const hasPiSessionFile = Boolean(piSessionFilePathFromLogs(session.logs));
@@ -749,7 +755,6 @@ export class SessionSupervisor extends EventEmitter {
       await this.appendLog(sessionId, `follow-up rejected: ${reason}`);
       throw new Error(reason);
     }
-    if (this.isSideSession(sessionId)) this.clearSideCompletionTracking(sessionId);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     const prompt = buildFollowUpPrompt(sessionId, text, context);
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id });
@@ -774,6 +779,37 @@ export class SessionSupervisor extends EventEmitter {
     const current = this.sessions.get(sessionId);
     if (!current || ["completed", "cancelled"].includes(current.status)) return;
     await this.patch(sessionId, { status: "failed", lastSummary: `Follow-up failed: ${message}` });
+  }
+
+  async clearQueue(sessionId: string, kind: "steering" | "followUp" | "all"): Promise<void> {
+    const handle = this.runtimeHandles.get(sessionId);
+    if (!handle) throw new Error(`Session has no attached runtime: ${sessionId}`);
+    const drained = handle.clearQueue();
+    if (kind === "steering") {
+      for (const text of drained.followUp) await handle.followUp({ text, imagePaths: [] });
+    } else if (kind === "followUp") {
+      for (const text of drained.steering) await handle.steer(text);
+    }
+  }
+
+  async applyQueueUpdate(sessionId: string, steering: readonly string[], followUp: readonly string[]): Promise<void> {
+    const handle = this.runtimeHandles.get(sessionId);
+    if (!handle || !this.sessions.has(sessionId)) return;
+    const enqueuedAt = new Date().toISOString();
+    const queuedSteers = queueItems(steering, enqueuedAt);
+    const queuedFollowUps = queueItems(followUp, enqueuedAt);
+    const current = this.mustGet(sessionId);
+    const previousSteeringMode = this.lastEmittedSteeringMode.get(sessionId) ?? current.steeringMode ?? "one-at-a-time";
+    const previousFollowUpMode = this.lastEmittedFollowUpMode.get(sessionId) ?? current.followUpMode ?? "one-at-a-time";
+    const steeringMode = handle.steeringMode;
+    const followUpMode = handle.followUpMode;
+    await this.patch(sessionId, { queuedSteers, queuedFollowUps, steeringMode, followUpMode });
+
+    const emittedSteeringMode = steeringMode === previousSteeringMode ? undefined : steeringMode;
+    const emittedFollowUpMode = followUpMode === previousFollowUpMode ? undefined : followUpMode;
+    if (emittedSteeringMode) this.lastEmittedSteeringMode.set(sessionId, emittedSteeringMode);
+    if (emittedFollowUpMode) this.lastEmittedFollowUpMode.set(sessionId, emittedFollowUpMode);
+    this.emit("queueUpdated", sessionId, queuedSteers, queuedFollowUps, emittedSteeringMode, emittedFollowUpMode, this.nextSeq(sessionId));
   }
 
   private async tryResumeRuntimeHandle(session: PickyAgentSession): Promise<RuntimeSessionHandle | undefined> {
@@ -818,13 +854,13 @@ export class SessionSupervisor extends EventEmitter {
   async steer(sessionId: string, text: string): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
     if (session.status === "failed") throw new Error(`Cannot steer ${session.status} session`);
+    await this.prepareSideSessionForUserInput(sessionId);
     const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
     if (!handle) {
       const reason = "Runtime session is not attached";
       await this.appendLog(sessionId, `steer rejected: ${reason}`);
       throw new Error(reason);
     }
-    if (this.isSideSession(sessionId)) this.clearSideCompletionTracking(sessionId);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     logAgentd("steer requested", { sessionId, textChars: text.length });
     const outcome = await handle.steer(text);
@@ -896,6 +932,12 @@ export class SessionSupervisor extends EventEmitter {
   private async patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void> {
     const session = { ...this.mustGet(sessionId), ...patch, updatedAt: new Date().toISOString() };
     await this.upsert(session);
+  }
+
+  private nextSeq(sessionId: string): number {
+    const next = (this.sessionSeq.get(sessionId) ?? 0) + 1;
+    this.sessionSeq.set(sessionId, next);
+    return next;
   }
 
   private async upsert(session: PickyAgentSession): Promise<void> {
@@ -1024,6 +1066,10 @@ function withPointerToolSessionHint(prompt: ReturnType<typeof buildInitialTaskPr
 function normalizeOptionalString(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function queueItems(items: readonly string[], enqueuedAt: string): PickyQueueItem[] {
+  return items.map((text) => ({ text, enqueuedAt }));
 }
 
 function buildPinnedSideSessionLogs(context: PickyContextPacket): string[] {

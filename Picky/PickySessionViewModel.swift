@@ -937,6 +937,11 @@ private extension Array where Element == PickySessionListViewModel.SessionCard {
     }
 }
 
+enum PickySlashCommandNavigationDirection {
+    case up
+    case down
+}
+
 enum PickySlashCommandAutocompletePolicy {
     static let maxSuggestions = 6
 
@@ -964,6 +969,22 @@ enum PickySlashCommandAutocompletePolicy {
 
     static func completionText(for command: PickySlashCommand) -> String {
         "/\(command.name) "
+    }
+
+    static func clampedSelectionIndex(_ index: Int, suggestionCount: Int) -> Int {
+        guard suggestionCount > 0 else { return 0 }
+        return min(max(index, 0), suggestionCount - 1)
+    }
+
+    static func movedSelectionIndex(current index: Int, suggestionCount: Int, direction: PickySlashCommandNavigationDirection) -> Int {
+        guard suggestionCount > 0 else { return 0 }
+        let current = clampedSelectionIndex(index, suggestionCount: suggestionCount)
+        switch direction {
+        case .up:
+            return current == 0 ? suggestionCount - 1 : current - 1
+        case .down:
+            return current == suggestionCount - 1 ? 0 : current + 1
+        }
     }
 
     private static func score(commandName: String, query: String) -> Int? {

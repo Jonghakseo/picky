@@ -446,6 +446,8 @@ private struct PickySessionCardView: View {
     let onToggle: () -> Void
     let onHoverChanged: (Bool) -> Void
     @State private var followUpText = ""
+    @State private var selectedSlashCommandIndex = 0
+    @State private var isSlashCommandAutocompleteDismissed = false
     @State private var gitStatus: PickyGitRepositoryStatus?
     @Binding private var isGitSectionExpanded: Bool
 
@@ -791,6 +793,8 @@ private struct PickySessionCardView: View {
             slashCommandAutocomplete
         }
         .onChange(of: followUpText) { _, text in
+            selectedSlashCommandIndex = 0
+            isSlashCommandAutocompleteDismissed = false
             if PickySlashCommandAutocompletePolicy.query(in: text) != nil {
                 viewModel.ensureSlashCommandsLoaded(sessionID: session.id)
             }
@@ -802,11 +806,16 @@ private struct PickySessionCardView: View {
             Image(systemName: "text.bubble")
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundColor(DS.Colors.textTertiary)
-            TextField("Steer this agent…", text: $followUpText)
-                .textFieldStyle(.plain)
-                .font(.system(size: 11.5))
-                .foregroundColor(DS.Colors.textPrimary)
-                .onSubmit { submitFollowUp() }
+            PickyHUDSlashCommandTextField(
+                placeholder: "Steer this agent…",
+                text: $followUpText,
+                onMoveUp: { moveSlashCommandSelection(.up) },
+                onMoveDown: { moveSlashCommandSelection(.down) },
+                onAutocomplete: { acceptSelectedSlashCommand() },
+                onDismissAutocomplete: { dismissSlashCommandAutocomplete() },
+                onSubmit: { handleReplySubmitKey() }
+            )
+            .frame(minHeight: 16)
             if followUpText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text("↵")
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
@@ -842,15 +851,16 @@ private struct PickySessionCardView: View {
 
     @ViewBuilder
     private var slashCommandAutocomplete: some View {
-        if PickySlashCommandAutocompletePolicy.query(in: followUpText) != nil {
-            let suggestions = viewModel.slashCommandSuggestions(for: followUpText, sessionID: session.id)
+        if slashCommandAutocompleteIsVisible {
+            let suggestions = slashCommandSuggestions
             if !suggestions.isEmpty {
+                let selectedIndex = selectedSlashCommandIndex(for: suggestions)
                 VStack(alignment: .leading, spacing: 1) {
-                    ForEach(suggestions) { command in
+                    ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, command in
                         Button {
-                            followUpText = PickySlashCommandAutocompletePolicy.completionText(for: command)
+                            acceptSlashCommand(command)
                         } label: {
-                            slashCommandRow(command)
+                            slashCommandRow(command, isSelected: index == selectedIndex)
                         }
                         .buttonStyle(.plain)
                     }
@@ -872,7 +882,7 @@ private struct PickySessionCardView: View {
         }
     }
 
-    private func slashCommandRow(_ command: PickySlashCommand) -> some View {
+    private func slashCommandRow(_ command: PickySlashCommand, isSelected: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text("/\(command.name)")
                 .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
@@ -894,7 +904,59 @@ private struct PickySessionCardView: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isSelected ? DS.Colors.accentSubtle.opacity(0.55) : Color.clear)
+        )
         .contentShape(Rectangle())
+    }
+
+    private var slashCommandAutocompleteIsVisible: Bool {
+        PickySlashCommandAutocompletePolicy.query(in: followUpText) != nil && !isSlashCommandAutocompleteDismissed
+    }
+
+    private var slashCommandSuggestions: [PickySlashCommand] {
+        guard PickySlashCommandAutocompletePolicy.query(in: followUpText) != nil else { return [] }
+        return viewModel.slashCommandSuggestions(for: followUpText, sessionID: session.id)
+    }
+
+    private func selectedSlashCommandIndex(for suggestions: [PickySlashCommand]) -> Int {
+        PickySlashCommandAutocompletePolicy.clampedSelectionIndex(selectedSlashCommandIndex, suggestionCount: suggestions.count)
+    }
+
+    private func moveSlashCommandSelection(_ direction: PickySlashCommandNavigationDirection) -> Bool {
+        let suggestions = slashCommandSuggestions
+        guard slashCommandAutocompleteIsVisible, !suggestions.isEmpty else { return false }
+        selectedSlashCommandIndex = PickySlashCommandAutocompletePolicy.movedSelectionIndex(
+            current: selectedSlashCommandIndex,
+            suggestionCount: suggestions.count,
+            direction: direction
+        )
+        return true
+    }
+
+    private func acceptSelectedSlashCommand() -> Bool {
+        let suggestions = slashCommandSuggestions
+        guard slashCommandAutocompleteIsVisible, !suggestions.isEmpty else { return false }
+        acceptSlashCommand(suggestions[selectedSlashCommandIndex(for: suggestions)])
+        return true
+    }
+
+    private func acceptSlashCommand(_ command: PickySlashCommand) {
+        followUpText = PickySlashCommandAutocompletePolicy.completionText(for: command)
+        selectedSlashCommandIndex = 0
+        isSlashCommandAutocompleteDismissed = true
+    }
+
+    private func dismissSlashCommandAutocomplete() -> Bool {
+        guard slashCommandAutocompleteIsVisible else { return false }
+        isSlashCommandAutocompleteDismissed = true
+        return true
+    }
+
+    private func handleReplySubmitKey() {
+        if acceptSelectedSlashCommand() { return }
+        submitFollowUp()
     }
 
     private func slashCommandStatus(_ text: String) -> some View {
@@ -1112,6 +1174,104 @@ private struct PickySessionCardView: View {
             return DS.Colors.destructiveText
         case .cancelled:
             return DS.Colors.textTertiary
+        }
+    }
+}
+
+private struct PickyHUDSlashCommandTextField: NSViewRepresentable {
+    var placeholder: String
+    @Binding var text: String
+    var onMoveUp: () -> Bool
+    var onMoveDown: () -> Bool
+    var onAutocomplete: () -> Bool
+    var onDismissAutocomplete: () -> Bool
+    var onSubmit: () -> Void
+
+    func makeNSView(context: Context) -> NSTextField {
+        let textField = NSTextField(string: text)
+        textField.delegate = context.coordinator
+        textField.isBezeled = false
+        textField.isBordered = false
+        textField.drawsBackground = false
+        textField.focusRingType = .none
+        textField.isEditable = true
+        textField.isSelectable = true
+        textField.font = Self.font
+        textField.textColor = NSColor(DS.Colors.textPrimary)
+        textField.backgroundColor = .clear
+        textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        configureCell(textField.cell)
+        updatePlaceholder(on: textField)
+        return textField
+    }
+
+    func updateNSView(_ textField: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        if textField.stringValue != text {
+            textField.stringValue = text
+        }
+        textField.font = Self.font
+        textField.textColor = NSColor(DS.Colors.textPrimary)
+        textField.backgroundColor = .clear
+        configureCell(textField.cell)
+        updatePlaceholder(on: textField)
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    private static let font = NSFont.systemFont(ofSize: 11.5)
+
+    private func updatePlaceholder(on textField: NSTextField) {
+        textField.placeholderAttributedString = NSAttributedString(
+            string: placeholder,
+            attributes: [
+                .font: Self.font,
+                .foregroundColor: NSColor.placeholderTextColor,
+            ]
+        )
+    }
+
+    private func configureCell(_ cell: NSCell?) {
+        guard let cell = cell as? NSTextFieldCell else { return }
+        cell.usesSingleLineMode = true
+        cell.isScrollable = true
+        cell.wraps = false
+        cell.lineBreakMode = .byTruncatingTail
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: PickyHUDSlashCommandTextField
+
+        init(parent: PickyHUDSlashCommandTextField) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let textField = notification.object as? NSTextField else { return }
+            if parent.text != textField.stringValue {
+                parent.text = textField.stringValue
+            }
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            switch commandSelector {
+            case #selector(NSResponder.moveUp(_:)):
+                return parent.onMoveUp()
+            case #selector(NSResponder.moveDown(_:)):
+                return parent.onMoveDown()
+            case #selector(NSResponder.insertTab(_:)):
+                return parent.onAutocomplete()
+            case #selector(NSResponder.insertNewline(_:)):
+                parent.onSubmit()
+                return true
+            case #selector(NSResponder.cancelOperation(_:)):
+                return parent.onDismissAutocomplete()
+            default:
+                return false
+            }
         }
     }
 }

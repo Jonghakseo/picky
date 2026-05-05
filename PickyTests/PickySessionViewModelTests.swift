@@ -1213,6 +1213,15 @@ struct PickySessionViewModelTests {
         #expect(PickySlashCommandAutocompletePolicy.completionText(for: viewModel.slashCommandsBySessionID["session-commands"]![0]) == "/deploy ")
     }
 
+    @Test func slashCommandAutocompleteSelectionWrapsWithArrowNavigation() {
+        #expect(PickySlashCommandAutocompletePolicy.clampedSelectionIndex(10, suggestionCount: 3) == 2)
+        #expect(PickySlashCommandAutocompletePolicy.clampedSelectionIndex(-2, suggestionCount: 3) == 0)
+        #expect(PickySlashCommandAutocompletePolicy.movedSelectionIndex(current: 0, suggestionCount: 3, direction: .down) == 1)
+        #expect(PickySlashCommandAutocompletePolicy.movedSelectionIndex(current: 2, suggestionCount: 3, direction: .down) == 0)
+        #expect(PickySlashCommandAutocompletePolicy.movedSelectionIndex(current: 0, suggestionCount: 3, direction: .up) == 2)
+        #expect(PickySlashCommandAutocompletePolicy.movedSelectionIndex(current: 2, suggestionCount: 0, direction: .up) == 0)
+    }
+
     @Test func textSteerCanTargetCancelledSessionByExplicitID() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())

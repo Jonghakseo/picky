@@ -1,0 +1,24 @@
+{
+  "id": "event-slash-commands-001",
+  "protocolVersion": "2026-05-01",
+  "timestamp": "2026-05-01T00:00:00.000Z",
+  "type": "slashCommandsSnapshot",
+  "sessionId": "session-001",
+  "commands": [
+    {
+      "name": "deploy",
+      "description": "Deploy an environment",
+      "source": "extension"
+    },
+    {
+      "name": "fix-tests",
+      "description": "Fix failing tests",
+      "source": "prompt"
+    },
+    {
+      "name": "skill:context7-cli",
+      "description": "Look up library docs",
+      "source": "skill"
+    }
+  ]
+}

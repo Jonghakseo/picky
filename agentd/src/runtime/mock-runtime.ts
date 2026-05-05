@@ -1,5 +1,5 @@
 import type { BuiltPrompt } from "../prompt-builder.js";
-import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSteerResult } from "./types.js";
+import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult } from "./types.js";
 
 export class MockRuntime implements AgentRuntime {
   private sequence = 0;
@@ -37,6 +37,13 @@ class MockRuntimeSession implements RuntimeSessionHandle {
 
   async abort(): Promise<void> {
     this.emit({ type: "status", status: "cancelled", summary: "Cancelled by app" });
+  }
+
+  listSlashCommands(): RuntimeSlashCommand[] {
+    return [
+      { name: "mock", description: "Mock runtime command", source: "extension" },
+      { name: "skill:mock-skill", description: "Mock skill command", source: "skill" },
+    ];
   }
 
   subscribe(listener: (event: RuntimeEvent) => void): () => void {

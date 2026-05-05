@@ -772,7 +772,7 @@ final class CompanionManager: ObservableObject {
             applyPointerOverlayRequest(request)
         case .error(let error):
             finishAwaitingAgentResponse(visibleText: error.message, spokenText: nil)
-        case .hello, .sessionSnapshot, .artifactUpdated, .artifactOpened, .unknown:
+        case .hello, .sessionSnapshot, .artifactUpdated, .artifactOpened, .slashCommandsSnapshot, .unknown:
             break
         }
     }

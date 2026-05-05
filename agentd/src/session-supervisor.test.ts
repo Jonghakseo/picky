@@ -6,7 +6,7 @@ import { ArtifactStore } from "./artifact-store.js";
 import type { PickyContextPacket } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { BuiltPrompt } from "./prompt-builder.js";
-import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, ThinkingLevel } from "./runtime/types.js";
+import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, ThinkingLevel } from "./runtime/types.js";
 import type { TaskRouteDecision, TaskRouter } from "./task-router.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
@@ -1454,6 +1454,35 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.pendingExtensionUiRequest?.id).toBe("question-1");
   });
 
+  it("lists slash commands from the attached runtime handle", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("slash commands"));
+    runtime.handle!.slashCommands = [
+      { name: "deploy", description: "Deploy", source: "extension" },
+      { name: "deploy", description: "Duplicate", source: "extension" },
+      { name: "  skill:context7-cli  ", description: "  Docs  ", source: "skill" },
+    ];
+
+    await expect(supervisor.listSlashCommands(session.id)).resolves.toEqual([
+      { name: "deploy", description: "Deploy", source: "extension" },
+      { name: "skill:context7-cli", description: "Docs", source: "skill" },
+    ]);
+  });
+
+  it("returns an empty slash command list when the runtime handle is missing", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("slash commands"));
+    runtime.handle = undefined;
+
+    await expect(supervisor.listSlashCommands(session.id)).resolves.toEqual([]);
+  });
+
   it("rejects invalid follow-up transitions", async () => {
     const supervisor = await makeSupervisor();
     const session = await supervisor.create(context("cancel then follow"));
@@ -1564,6 +1593,7 @@ class ManualHandle implements RuntimeSessionHandle {
   bootstrapInjections: Array<{ user: string; assistant: string }> = [];
   extensionUiAnswers: Array<{ requestId: string; value: unknown }> = [];
   thinkingLevels: string[] = [];
+  slashCommands: RuntimeSlashCommand[] = [];
   constructor(readonly id: string) {}
   async followUp(prompt: BuiltPrompt): Promise<void> {
     this.followUps.push(prompt);
@@ -1589,6 +1619,9 @@ class ManualHandle implements RuntimeSessionHandle {
   }
   setThinkingLevel(level: ThinkingLevel): void {
     this.thinkingLevels.push(level);
+  }
+  listSlashCommands(): RuntimeSlashCommand[] {
+    return this.slashCommands;
   }
   subscribe(listener: (event: RuntimeEvent) => void): () => void {
     this.listeners.add(listener);

@@ -1,6 +1,12 @@
 import type { BuiltPrompt } from "../prompt-builder.js";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type RuntimeSlashCommandSource = "extension" | "prompt" | "skill";
+export interface RuntimeSlashCommand {
+  name: string;
+  description?: string;
+  source: RuntimeSlashCommandSource;
+}
 export type RuntimeSessionStatus = "running" | "waiting_for_input" | "blocked" | "completed" | "failed" | "cancelled";
 
 export type RuntimeEvent =
@@ -39,6 +45,7 @@ export interface RuntimeSessionHandle {
    */
   injectInitialBootstrap?(messages: { user: string; assistant: string }): Promise<void>;
   setThinkingLevel?(level: ThinkingLevel): void;
+  listSlashCommands?(): RuntimeSlashCommand[] | Promise<RuntimeSlashCommand[]>;
   subscribe(listener: (event: RuntimeEvent) => void): () => void;
 }
 

@@ -10,7 +10,7 @@ import type { PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, Pick
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
-import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, ThinkingLevel } from "./runtime/types.js";
+import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, ThinkingLevel } from "./runtime/types.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
 import { isTerminalStatus } from "./domain/session-status.js";
@@ -122,6 +122,21 @@ export class SessionSupervisor extends EventEmitter {
 
   currentMainContext(): PickyContextPacket | undefined {
     return this.mainContext;
+  }
+
+  async listSlashCommands(sessionId: string): Promise<RuntimeSlashCommand[]> {
+    this.mustGet(sessionId);
+    const handle = this.runtimeHandles.get(sessionId);
+    if (!handle?.listSlashCommands) {
+      logAgentd("slash commands unavailable", { sessionId, reason: handle ? "runtime handle unsupported" : "runtime handle missing" });
+      return [];
+    }
+    try {
+      return normalizeSlashCommands(await handle.listSlashCommands());
+    } catch (error) {
+      logAgentd("slash commands failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
+      return [];
+    }
   }
 
   async requestPointerOverlay(request: PickyShowPointerRequest): Promise<PickyShowPointerResult> {
@@ -995,6 +1010,23 @@ function piSessionFilePathFromLogs(logs: string[]): string | undefined {
 function piSessionFilePathFromLogLine(line: string): string | undefined {
   const match = line.match(/^pi session:\s*(.+)$/);
   return match?.[1]?.trim() || undefined;
+}
+
+function normalizeSlashCommands(commands: RuntimeSlashCommand[]): RuntimeSlashCommand[] {
+  const normalized: RuntimeSlashCommand[] = [];
+  const seen = new Set<string>();
+  for (const command of commands) {
+    const name = command.name.trim();
+    if (!name) continue;
+    const source = command.source;
+    if (source !== "extension" && source !== "prompt" && source !== "skill") continue;
+    const key = `${source}:${name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const description = command.description?.trim();
+    normalized.push({ name, source, ...(description ? { description } : {}) });
+  }
+  return normalized;
 }
 
 const MAIN_AGENT_MESSAGE_LIMIT = 100;

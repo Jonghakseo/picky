@@ -63,6 +63,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case resetMainAgent
     case abortMainAgent
     case setMainAgentThinkingLevel
+    case listSlashCommands
     case getSession
     case answerExtensionUi
     case openArtifact
@@ -101,11 +102,12 @@ enum PickyEvent: Equatable {
     case artifactUpdated(sessionId: String, artifact: PickyArtifact)
     case artifactOpened(sessionId: String, artifactId: String, path: String)
     case pointerOverlayRequested(PickyPointerOverlayRequest)
+    case slashCommandsSnapshot(sessionId: String, commands: [PickySlashCommand])
     case error(PickyErrorEvent)
     case unknown(type: String)
 
     private enum CodingKeys: String, CodingKey {
-        case sessions, session, sessionId, line, tool, request, artifact, artifactId, path, contextId, text, messages, message
+        case sessions, session, sessionId, line, tool, request, artifact, artifactId, path, contextId, text, messages, message, commands
     }
 
     init(type: String, decoder: Decoder) throws {
@@ -144,6 +146,12 @@ enum PickyEvent: Equatable {
         case "pointerOverlayRequested":
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self = .pointerOverlayRequested(try c.decode(PickyPointerOverlayRequest.self, forKey: .request))
+        case "slashCommandsSnapshot":
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self = .slashCommandsSnapshot(
+                sessionId: try c.decode(String.self, forKey: .sessionId),
+                commands: try c.decode([PickySlashCommand].self, forKey: .commands)
+            )
         case "error": self = .error(try PickyErrorEvent(from: decoder))
         default: self = .unknown(type: type)
         }
@@ -164,6 +172,27 @@ struct PickyErrorEvent: Decodable, Equatable {
     let code: String
     let message: String
     let commandId: String?
+}
+
+enum PickySlashCommandSource: String, Codable, Equatable {
+    case `extension`
+    case prompt
+    case skill
+
+    var displayName: String {
+        switch self {
+        case .extension: "Extension"
+        case .prompt: "Prompt"
+        case .skill: "Skill"
+        }
+    }
+}
+
+struct PickySlashCommand: Codable, Equatable, Identifiable {
+    var id: String { "\(source.rawValue):\(name)" }
+    let name: String
+    let description: String?
+    let source: PickySlashCommandSource
 }
 
 struct PickyMainAgentMessage: Codable, Equatable, Identifiable {

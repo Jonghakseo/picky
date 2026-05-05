@@ -1187,6 +1187,32 @@ struct PickySessionViewModelTests {
         }
     }
 
+    @Test func slashCommandAutocompleteRequestsCachesAndFiltersCommands() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+
+        viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
+        try await settle()
+        var slashRequests = client.sentCommands.filter { $0.type == .listSlashCommands }
+        #expect(slashRequests.count == 1)
+        #expect(slashRequests.last?.sessionId == "session-commands")
+
+        viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
+        try await settle()
+        slashRequests = client.sentCommands.filter { $0.type == .listSlashCommands }
+        #expect(slashRequests.count == 1)
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot())))
+        try await settle()
+
+        #expect(viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
+        #expect(viewModel.slashCommandSuggestions(for: "/dep", sessionID: "session-commands").map(\.name) == ["deploy"])
+        #expect(viewModel.slashCommandSuggestions(for: "/skill:cont", sessionID: "session-commands").map(\.name) == ["skill:context7-cli"])
+        #expect(viewModel.slashCommandSuggestions(for: "/deploy now", sessionID: "session-commands").isEmpty)
+        #expect(PickySlashCommandAutocompletePolicy.completionText(for: viewModel.slashCommandsBySessionID["session-commands"]![0]) == "/deploy ")
+    }
+
     @Test func textSteerCanTargetCancelledSessionByExplicitID() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
@@ -1449,6 +1475,12 @@ private enum EventJSON {
     ) -> String {
         """
         {"id":"snapshot-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionSnapshot","sessions":[{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
+        """
+    }
+
+    static func slashCommandsSnapshot() -> String {
+        """
+        {"id":"event-slash-commands","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:00.000Z","type":"slashCommandsSnapshot","sessionId":"session-commands","commands":[{"name":"deploy","description":"Deploy an environment","source":"extension"},{"name":"fix-tests","description":"Fix failing tests","source":"prompt"},{"name":"skill:context7-cli","description":"Look up library docs","source":"skill"}]}
         """
     }
 

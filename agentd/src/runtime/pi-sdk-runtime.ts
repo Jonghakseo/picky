@@ -15,7 +15,7 @@ import {
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
-import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSteerResult, ThinkingLevel } from "./types.js";
+import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
 import { logAgentd } from "../local-log.js";
 
 export interface PiSdkRuntimeOptions {
@@ -173,6 +173,20 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
     session.setThinkingLevel(level);
     logAgentd("pi thinking level set", { sessionId: this.id, level });
+  }
+
+  listSlashCommands(): RuntimeSlashCommand[] {
+    const commands: RuntimeSlashCommand[] = [];
+    for (const command of this.runtime.session.extensionRunner.getRegisteredCommands()) {
+      commands.push({ name: command.invocationName, description: command.description, source: "extension" });
+    }
+    for (const template of this.runtime.session.promptTemplates) {
+      commands.push({ name: template.name, description: template.description, source: "prompt" });
+    }
+    for (const skill of this.runtime.session.resourceLoader.getSkills().skills) {
+      commands.push({ name: `skill:${skill.name}`, description: skill.description, source: "skill" });
+    }
+    return commands;
   }
 
   async injectInitialBootstrap(messages: { user: string; assistant: string }): Promise<void> {

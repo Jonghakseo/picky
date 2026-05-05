@@ -80,6 +80,10 @@ export class AgentdServer {
       }
       if (command.type === "abortMainAgent") await this.options.supervisor.abortMainAgent();
       if (command.type === "setMainAgentThinkingLevel") await this.options.supervisor.setMainAgentThinkingLevel(command.mainAgentThinkingLevel);
+      if (command.type === "listSlashCommands") {
+        const commands = await this.options.supervisor.listSlashCommands(command.sessionId);
+        this.send(ws, { type: "slashCommandsSnapshot", sessionId: command.sessionId, commands });
+      }
       if (command.type === "getSession") {
         const session = this.options.supervisor.get(command.sessionId);
         if (!session) throw new Error(`Unknown session: ${command.sessionId}`);
@@ -167,6 +171,7 @@ function commandLogFields(command: ReturnType<typeof parseCommand>): Record<stri
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, archived: command.archived ? 1 : 0 };
     case "abort":
     case "getSession":
+    case "listSlashCommands":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId };
     case "answerExtensionUi":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, requestId: command.requestId };
@@ -208,6 +213,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, artifactId: event.artifactId };
     case "pointerOverlayRequested":
       return { eventId: event.id, type: event.type, requestId: event.request.id, screenId: event.request.screenId, screenIndex: event.request.screenIndex };
+    case "slashCommandsSnapshot":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, commands: event.commands.length };
     case "error":
       return { eventId: event.id, type: event.type, commandId: event.commandId, code: event.code };
   }

@@ -21,6 +21,15 @@ class FakeSession extends EventEmitter {
     model: { api: "anthropic-messages", provider: "anthropic", id: "claude-fake" },
   };
   appendedMessages: Array<Record<string, unknown>> = [];
+  extensionCommands: Array<{ invocationName: string; description?: string }> = [];
+  promptTemplates: Array<{ name: string; description: string }> = [];
+  skills: Array<{ name: string; description: string }> = [];
+  extensionRunner = {
+    getRegisteredCommands: () => this.extensionCommands,
+  };
+  resourceLoader = {
+    getSkills: () => ({ skills: this.skills }),
+  };
   sessionManager = {
     appendMessage: (message: Record<string, unknown>): string => {
       this.appendedMessages.push(message);
@@ -430,6 +439,21 @@ describe("PiSdkRuntime", () => {
 
     expect(fakeSession.state.messages).toHaveLength(0);
     expect(fakeSession.appendedMessages).toHaveLength(0);
+  });
+
+  it("lists slash commands from extension, prompt template, and skill resources", async () => {
+    const fakeSession = new FakeSession();
+    fakeSession.extensionCommands = [{ invocationName: "deploy", description: "Deploy an environment" }];
+    fakeSession.promptTemplates = [{ name: "fix-tests", description: "Fix failing tests" }];
+    fakeSession.skills = [{ name: "context7-cli", description: "Look up library docs" }];
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-commands" });
+
+    expect(handle.listSlashCommands).toBeDefined();
+    expect(await handle.listSlashCommands!()).toEqual([
+      { name: "deploy", description: "Deploy an environment", source: "extension" },
+      { name: "fix-tests", description: "Fix failing tests", source: "prompt" },
+      { name: "skill:context7-cli", description: "Look up library docs", source: "skill" },
+    ]);
   });
 
   it("updates the active Pi session thinking level", async () => {

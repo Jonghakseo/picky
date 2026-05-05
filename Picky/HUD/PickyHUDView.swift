@@ -786,6 +786,18 @@ private struct PickySessionCardView: View {
     }
 
     private var replyField: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            replyInputRow
+            slashCommandAutocomplete
+        }
+        .onChange(of: followUpText) { _, text in
+            if PickySlashCommandAutocompletePolicy.query(in: text) != nil {
+                viewModel.ensureSlashCommandsLoaded(sessionID: session.id)
+            }
+        }
+    }
+
+    private var replyInputRow: some View {
         HStack(spacing: 8) {
             Image(systemName: "text.bubble")
                 .font(.system(size: 10.5, weight: .medium))
@@ -826,6 +838,80 @@ private struct PickySessionCardView: View {
                         .stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
                 )
         )
+    }
+
+    @ViewBuilder
+    private var slashCommandAutocomplete: some View {
+        if PickySlashCommandAutocompletePolicy.query(in: followUpText) != nil {
+            let suggestions = viewModel.slashCommandSuggestions(for: followUpText, sessionID: session.id)
+            if !suggestions.isEmpty {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(suggestions) { command in
+                        Button {
+                            followUpText = PickySlashCommandAutocompletePolicy.completionText(for: command)
+                        } label: {
+                            slashCommandRow(command)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(4)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(DS.Colors.surface1.opacity(0.96))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
+                        )
+                )
+            } else if !viewModel.hasLoadedSlashCommands(sessionID: session.id) {
+                slashCommandStatus("Loading commands…")
+            } else {
+                slashCommandStatus("No matching commands")
+            }
+        }
+    }
+
+    private func slashCommandRow(_ command: PickySlashCommand) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("/\(command.name)")
+                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .foregroundColor(DS.Colors.accentText)
+                .lineLimit(1)
+            Text(command.source.displayName)
+                .font(.system(size: 8.5, weight: .semibold))
+                .foregroundColor(DS.Colors.textTertiary)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(Capsule().fill(DS.Colors.surface2.opacity(0.75)))
+            if let description = command.description, !description.isEmpty {
+                Text(description)
+                    .font(.system(size: 10))
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+
+    private func slashCommandStatus(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10))
+            .foregroundColor(DS.Colors.textTertiary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(DS.Colors.surface1.opacity(0.90))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(DS.Colors.borderSubtle.opacity(0.45), lineWidth: 0.8)
+                    )
+            )
     }
 
     private func detailSection(title: String, text: String, lineLimit: Int? = 3) -> some View {

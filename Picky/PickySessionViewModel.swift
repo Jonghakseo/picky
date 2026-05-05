@@ -208,6 +208,7 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var activeVoiceFollowUpSessionID: String?
     @Published private(set) var lastError: String?
     @Published private(set) var lastOpenedArtifactPath: String?
+    @Published private(set) var slashCommandsBySessionID: [String: [PickySlashCommand]] = [:]
 
     var selectedSession: SessionCard? {
         guard let selectedSessionID else { return sessions.first }
@@ -227,6 +228,7 @@ final class PickySessionListViewModel: ObservableObject {
     private var eventTask: Task<Void, Never>?
     private var voiceFollowUpTargetCancellable: AnyCancellable?
     private var deliveredNotificationKeys = Set<String>()
+    private var slashCommandRequestedSessionIDs = Set<String>()
     private var hasExplicitSelection = false
 
     init(
@@ -335,6 +337,30 @@ final class PickySessionListViewModel: ObservableObject {
         hoveredVoiceFollowUpSessionID = nil
         selectionStore.hoveredVoiceFollowUpSessionID = nil
         pickySessionLog("voice follow-up hover cleared session=\(sessionID)")
+    }
+
+    func ensureSlashCommandsLoaded(sessionID: String) {
+        guard slashCommandsBySessionID[sessionID] == nil else { return }
+        guard !slashCommandRequestedSessionIDs.contains(sessionID) else { return }
+        slashCommandRequestedSessionIDs.insert(sessionID)
+        pickySessionLog("slash commands requested session=\(sessionID)")
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await client.send(PickyCommandEnvelope(type: .listSlashCommands, sessionId: sessionID))
+            } catch {
+                slashCommandRequestedSessionIDs.remove(sessionID)
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
+    func slashCommandSuggestions(for text: String, sessionID: String, limit: Int = PickySlashCommandAutocompletePolicy.maxSuggestions) -> [PickySlashCommand] {
+        PickySlashCommandAutocompletePolicy.suggestions(for: text, commands: slashCommandsBySessionID[sessionID] ?? [], limit: limit)
+    }
+
+    func hasLoadedSlashCommands(sessionID: String) -> Bool {
+        slashCommandsBySessionID[sessionID] != nil
     }
 
     func followUp(text: String, sessionID: String? = nil) async throws {
@@ -572,6 +598,7 @@ final class PickySessionListViewModel: ObservableObject {
             let archivedIDs = effectiveArchivedSessionIDs(for: cards)
             sessions = cards.filter { !archivedIDs.contains($0.id) }.sortedForHUD()
             archivedSessions = cards.filter { archivedIDs.contains($0.id) }.sortedForHUD()
+            pruneSlashCommandCache(knownSessionIDs: Set(cards.map(\.id)))
             syncSelectionAfterSessionListChange()
             syncVoiceFollowUpAfterSessionListChange()
             syncActiveVoiceFollowUpAfterSessionListChange()
@@ -640,12 +667,21 @@ final class PickySessionListViewModel: ObservableObject {
             } catch {
                 lastError = error.localizedDescription
             }
+        case .slashCommandsSnapshot(let sessionId, let commands):
+            pickySessionLog("slash commands snapshot session=\(sessionId) commands=\(commands.count)")
+            slashCommandsBySessionID[sessionId] = commands
+            slashCommandRequestedSessionIDs.insert(sessionId)
         case .error(let error):
             pickySessionLog("protocol error code=\(error.code) command=\(error.commandId ?? "none")")
             lastError = error.message
         case .quickReply, .mainMessagesSnapshot, .mainMessageAppended, .pointerOverlayRequested, .hello, .unknown:
             break
         }
+    }
+
+    private func pruneSlashCommandCache(knownSessionIDs: Set<String>) {
+        slashCommandsBySessionID = slashCommandsBySessionID.filter { knownSessionIDs.contains($0.key) }
+        slashCommandRequestedSessionIDs = slashCommandRequestedSessionIDs.filter { knownSessionIDs.contains($0) }
     }
 
     private func effectiveArchivedSessionIDs(for _: [SessionCard]) -> Set<String> {
@@ -898,6 +934,63 @@ private extension Array where Element == PickySessionListViewModel.SessionCard {
             }
             return lhs.id < rhs.id
         }
+    }
+}
+
+enum PickySlashCommandAutocompletePolicy {
+    static let maxSuggestions = 6
+
+    static func query(in text: String) -> String? {
+        guard text.hasPrefix("/") else { return nil }
+        let query = String(text.dropFirst())
+        guard !query.contains(where: \.isWhitespace) else { return nil }
+        return query
+    }
+
+    static func suggestions(for text: String, commands: [PickySlashCommand], limit: Int = maxSuggestions) -> [PickySlashCommand] {
+        guard let query = query(in: text) else { return [] }
+        let scored = commands.enumerated().compactMap { index, command -> (score: Int, index: Int, command: PickySlashCommand)? in
+            guard let score = score(commandName: command.name, query: query) else { return nil }
+            return (score, index, command)
+        }
+        return scored
+            .sorted { lhs, rhs in
+                if lhs.score != rhs.score { return lhs.score < rhs.score }
+                return lhs.index < rhs.index
+            }
+            .prefix(limit)
+            .map(\.command)
+    }
+
+    static func completionText(for command: PickySlashCommand) -> String {
+        "/\(command.name) "
+    }
+
+    private static func score(commandName: String, query: String) -> Int? {
+        guard !query.isEmpty else { return 0 }
+        let name = commandName.lowercased()
+        let needle = query.lowercased()
+        if name == needle { return 0 }
+        if name.hasPrefix(needle) { return 10 + max(0, name.count - needle.count) }
+        if let range = name.range(of: needle) {
+            let distance = name.distance(from: name.startIndex, to: range.lowerBound)
+            return 100 + distance + max(0, name.count - needle.count)
+        }
+        return fuzzySubsequenceScore(name: name, query: needle)
+    }
+
+    private static func fuzzySubsequenceScore(name: String, query: String) -> Int? {
+        let haystack = Array(name)
+        let needle = Array(query)
+        guard !needle.isEmpty else { return 0 }
+        var searchStart = haystack.startIndex
+        var gapPenalty = 0
+        for character in needle {
+            guard let match = haystack[searchStart...].firstIndex(of: character) else { return nil }
+            gapPenalty += haystack.distance(from: searchStart, to: match)
+            searchStart = haystack.index(after: match)
+        }
+        return 200 + gapPenalty + max(0, haystack.count - needle.count)
     }
 }
 

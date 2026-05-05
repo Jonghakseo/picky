@@ -68,14 +68,28 @@ struct PickyAgentBubbleView: View {
 }
 
 enum PickyAgentResponsePreview {
-    static let maxCharacters = 200
+    static let maxLines = 8
+    static let maxCharacters = 500
 
-    static func truncatedMarkdown(_ text: String, maxCharacters: Int = maxCharacters) -> String {
-        guard maxCharacters > 0 else { return "..." }
-        guard text.count > maxCharacters else { return text }
+    static func truncatedMarkdown(_ text: String, maxLines: Int = maxLines, maxCharacters: Int = maxCharacters) -> String {
+        guard maxLines > 0, maxCharacters > 0 else { return "..." }
+        var candidate = text
+        var didTruncate = false
 
-        let endIndex = text.index(text.startIndex, offsetBy: maxCharacters)
-        return String(text[..<endIndex]).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        if lines.count > maxLines {
+            candidate = lines.prefix(maxLines).joined(separator: "\n")
+            didTruncate = true
+        }
+
+        if candidate.count > maxCharacters {
+            let endIndex = candidate.index(candidate.startIndex, offsetBy: maxCharacters)
+            candidate = String(candidate[..<endIndex])
+            didTruncate = true
+        }
+
+        guard didTruncate else { return text }
+        return candidate.trimmingCharacters(in: .whitespacesAndNewlines) + "..."
     }
 }
 

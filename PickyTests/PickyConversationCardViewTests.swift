@@ -77,14 +77,18 @@ struct PickyConversationCardViewTests {
         #expect(PickyAssistantRunMetadata(model: "anthropic/claude-opus-4-7", thinkingLevel: .xhigh).displayText == "opus-4-7 xhigh")
     }
 
-    @Test func agentResponsePreviewTruncatesAfterTwoHundredCharacters() {
-        let exact = String(repeating: "가", count: 200)
-        let long = exact + "나다라"
-        let truncated = PickyAgentResponsePreview.truncatedMarkdown(long)
+    @Test func agentResponsePreviewTruncatesAfterEightLinesOrFiveHundredCharacters() {
+        let exactCharacters = String(repeating: "가", count: 500)
+        let longCharacters = exactCharacters + "나다라"
+        let characterTruncated = PickyAgentResponsePreview.truncatedMarkdown(longCharacters)
+        let eightLines = (1...8).map { "line \($0)" }.joined(separator: "\n")
+        let nineLines = eightLines + "\nline 9"
 
-        #expect(PickyAgentResponsePreview.truncatedMarkdown(exact) == exact)
-        #expect(truncated == exact + "...")
-        #expect(truncated.count == 203)
+        #expect(PickyAgentResponsePreview.truncatedMarkdown(exactCharacters) == exactCharacters)
+        #expect(characterTruncated == exactCharacters + "...")
+        #expect(characterTruncated.count == 503)
+        #expect(PickyAgentResponsePreview.truncatedMarkdown(eightLines) == eightLines)
+        #expect(PickyAgentResponsePreview.truncatedMarkdown(nineLines) == eightLines + "...")
     }
 
     @Test func finderOpenRequestOnlyResolvesExistingCwdDirectories() throws {

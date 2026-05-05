@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import SwiftUI
 import Testing
 @testable import Picky
 
@@ -158,6 +159,13 @@ struct PickyConversationCardViewTests {
         #expect(!errorBubble.recoveryChipLabels.contains("↻ 다시 시도"))
         #expect(errorBubble.recoveryChipLabels == ["⌨ Terminal 열기", "📄 전체 로그"])
         #expect(header.statusColorName == "red")
+    }
+
+    @Test func composerReturnKeyMappingKeepsShiftReturnForNewlines() {
+        #expect(PickyConversationComposerView.returnKeyAction(for: []) == .submitDefault)
+        #expect(PickyConversationComposerView.returnKeyAction(for: [.option]) == .submitOptionReturn)
+        #expect(PickyConversationComposerView.returnKeyAction(for: [.shift]) == .insertNewline)
+        #expect(PickyConversationComposerView.returnKeyAction(for: [.shift, .option]) == .insertNewline)
     }
 
     @Test func composerDefaultSubmitKindAndPlaceholderMatchSessionStatus() {

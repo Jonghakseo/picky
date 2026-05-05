@@ -12,6 +12,12 @@ enum PickyConversationComposerSubmitKind: Equatable {
     case followUp
 }
 
+enum PickyConversationComposerReturnKeyAction: Equatable {
+    case insertNewline
+    case submitDefault
+    case submitOptionReturn
+}
+
 struct PickyConversationComposerView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
@@ -29,26 +35,52 @@ struct PickyConversationComposerView: View {
     }
 
     private var composerRow: some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .top, spacing: 8) {
             Image(systemName: "text.bubble")
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundColor(DS.Colors.textTertiary)
-            TextField(placeholder, text: $draft)
-                .textFieldStyle(.plain)
+                .padding(.top, 4)
+            composerEditor
+            sendButton
+                .padding(.top, 2)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity)
+        .background(composerBackground)
+    }
+
+    private var composerEditor: some View {
+        ZStack(alignment: .topLeading) {
+            if draft.isEmpty {
+                Text(placeholder)
+                    .font(.system(size: 11.5))
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .padding(.top, 1)
+                    .allowsHitTesting(false)
+            }
+            TextEditor(text: $draft)
                 .font(.system(size: 11.5))
                 .foregroundColor(DS.Colors.textPrimary)
+                .scrollContentBackground(.hidden)
+                .background(Color.clear)
                 .focused($isFocused)
-                .onSubmit { handleReplySubmitKey() }
+                .frame(minHeight: 18, maxHeight: 72)
                 .onChange(of: draft) { _, _ in
                     selectedSlashCommandIndex = 0
                     isSlashCommandAutocompleteDismissed = false
                 }
                 .onKeyPress(keys: [.return], phases: .down) { keyPress in
-                    if keyPress.modifiers.contains(EventModifiers.option) {
+                    switch returnKeyAction(for: keyPress.modifiers) {
+                    case .insertNewline:
+                        return .ignored
+                    case .submitDefault:
+                        handleReplySubmitKey()
+                        return .handled
+                    case .submitOptionReturn:
                         submitOptionReturn()
                         return .handled
                     }
-                    return .ignored
                 }
                 .onKeyPress(keys: [.upArrow], phases: .down) { _ in
                     moveSlashCommandSelection(.up) ? .handled : .ignored
@@ -69,12 +101,7 @@ struct PickyConversationComposerView: View {
                     }
                     return .ignored
                 }
-            sendButton
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity)
-        .background(composerBackground)
     }
 
     // MARK: - Slash command autocomplete
@@ -262,6 +289,16 @@ struct PickyConversationComposerView: View {
         case .cancelled, .failed:
             return nil
         }
+    }
+
+    func returnKeyAction(for modifiers: EventModifiers) -> PickyConversationComposerReturnKeyAction {
+        Self.returnKeyAction(for: modifiers)
+    }
+
+    static func returnKeyAction(for modifiers: EventModifiers) -> PickyConversationComposerReturnKeyAction {
+        if modifiers.contains(.shift) { return .insertNewline }
+        if modifiers.contains(.option) { return .submitOptionReturn }
+        return .submitDefault
     }
 
     private var placeholder: String {

@@ -58,6 +58,7 @@ export class SessionSupervisor extends EventEmitter {
   private suppressInterruptedMainCompletion = false;
   private sideSessionIds = new Set<string>();
   private sideCompletionNotified = new Set<string>();
+  private sideCompletionInFlight = new Set<string>();
   private pendingSideCompletions: string[] = [];
   private sessionContexts = new Map<string, PickyContextPacket>();
   private sessionSeq = new Map<string, number>();
@@ -669,7 +670,7 @@ export class SessionSupervisor extends EventEmitter {
 
   private async notifyMainOfSideCompletion(sessionId: string): Promise<void> {
     const session = this.mustGet(sessionId);
-    if (this.sideCompletionNotified.has(sessionId)) return;
+    if (this.sideCompletionNotified.has(sessionId) || this.sideCompletionInFlight.has(sessionId)) return;
     if (session.notifyMainOnCompletion === false) {
       this.sideCompletionNotified.add(sessionId);
       logAgentd("side completion notify skipped", { sessionId, status: session.status });
@@ -682,7 +683,7 @@ export class SessionSupervisor extends EventEmitter {
     // delayed status:completed finally arrives. Park the sessionId and let
     // applyMainRuntimeEvent drain it once the active turn ends.
     if (this.mainIsProcessing) {
-      if (!this.pendingSideCompletions.includes(sessionId) && !this.sideCompletionNotified.has(sessionId)) {
+      if (!this.pendingSideCompletions.includes(sessionId) && !this.sideCompletionNotified.has(sessionId) && !this.sideCompletionInFlight.has(sessionId)) {
         this.pendingSideCompletions.push(sessionId);
         logAgentd("side completion deferred", { sessionId, status: session.status, queueLength: this.pendingSideCompletions.length });
       }
@@ -692,7 +693,7 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async deliverSideCompletionToMain(sessionId: string): Promise<void> {
-    if (this.sideCompletionNotified.has(sessionId)) return;
+    if (this.sideCompletionNotified.has(sessionId) || this.sideCompletionInFlight.has(sessionId)) return;
     const session = this.sessions.get(sessionId);
     if (!session) return;
     if (session.notifyMainOnCompletion === false) {
@@ -700,16 +701,21 @@ export class SessionSupervisor extends EventEmitter {
       logAgentd("side completion notify skipped", { sessionId, status: session.status });
       return;
     }
-    const prompt = buildMainAgentSideCompletionPrompt(session);
-    this.mainReplyContextId = sessionId;
-    this.mainDraft = "";
-    const delivery = await this.prepareMainCompletionDelivery(prompt, session.cwd);
-    if (!delivery) return;
+    this.sideCompletionInFlight.add(sessionId);
+    try {
+      const prompt = buildMainAgentSideCompletionPrompt(session);
+      this.mainReplyContextId = sessionId;
+      this.mainDraft = "";
+      const delivery = await this.prepareMainCompletionDelivery(prompt, session.cwd);
+      if (!delivery) return;
 
-    this.sideCompletionNotified.add(sessionId);
-    this.mainIsProcessing = true;
-    logAgentd("side completion notifying main", { sessionId, status: session.status });
-    if (delivery.sendAsFollowUp) await delivery.handle.followUp(prompt);
+      this.sideCompletionNotified.add(sessionId);
+      this.mainIsProcessing = true;
+      logAgentd("side completion notifying main", { sessionId, status: session.status });
+      if (delivery.sendAsFollowUp) await delivery.handle.followUp(prompt);
+    } finally {
+      this.sideCompletionInFlight.delete(sessionId);
+    }
   }
 
   private scheduleSideCompletionDrain(): void {
@@ -762,6 +768,7 @@ export class SessionSupervisor extends EventEmitter {
 
   private clearSideCompletionTracking(sessionId: string): void {
     this.sideCompletionNotified.delete(sessionId);
+    this.sideCompletionInFlight.delete(sessionId);
     const queueIndex = this.pendingSideCompletions.indexOf(sessionId);
     if (queueIndex >= 0) {
       this.pendingSideCompletions.splice(queueIndex, 1);

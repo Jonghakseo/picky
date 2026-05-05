@@ -1842,6 +1842,9 @@ describe("SessionSupervisor", () => {
     await settle();
 
     // Now main is idle; side completion must be delivered immediately.
+    // Pi can emit both turn_end and agent_end as completed back-to-back; those
+    // duplicate terminal events must still produce only one main follow-up.
+    sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 

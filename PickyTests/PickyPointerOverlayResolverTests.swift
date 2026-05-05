@@ -94,7 +94,33 @@ struct PickyPointerOverlayResolverTests {
         #expect(manager.detectedElementDisplayFrame == CGRect(x: 10, y: 20, width: 100, height: 100))
         #expect(manager.detectedElementBubbleText == "Settings · 75%")
         #expect(manager.detectedElementDisplayDuration == 1.5)
+        #expect(manager.detectedElementHighlightKind == .screenElement)
+        #expect(manager.detectedElementTargetFrame == nil)
         #expect(manager.voiceState == .idle)
+    }
+
+    @Test func clearDetectedElementResetsAllHighlightFields() {
+        let manager = CompanionManager(agentClient: FakePointerClient(), selectionStore: FakePointerSelectionStore())
+        manager.applyAgentEvent(.pointerOverlayRequested(request(
+            x: 50,
+            y: 25,
+            coordinateSpace: .displayPoint,
+            label: "Reload",
+            durationMs: 1_000,
+            confidence: 0.5,
+            screenBounds: PickyCGRect(x: 0, y: 0, width: 200, height: 200),
+            screenshotSize: nil
+        )))
+        #expect(manager.detectedElementHighlightKind == .screenElement)
+
+        manager.clearDetectedElementLocation()
+
+        #expect(manager.detectedElementScreenLocation == nil)
+        #expect(manager.detectedElementDisplayFrame == nil)
+        #expect(manager.detectedElementBubbleText == nil)
+        #expect(manager.detectedElementDisplayDuration == nil)
+        #expect(manager.detectedElementTargetFrame == nil)
+        #expect(manager.detectedElementHighlightKind == nil)
     }
 
     private func request(

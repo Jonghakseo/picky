@@ -10,8 +10,6 @@ import SwiftUI
 struct PickyConversationHeaderView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     let session: PickySessionListViewModel.SessionCard
-    @State private var pulse = false
-
     private var isVoiceFollowUpTarget: Bool {
         if let activeVoiceFollowUpSessionID = viewModel.activeVoiceFollowUpSessionID {
             return activeVoiceFollowUpSessionID == session.id
@@ -26,7 +24,6 @@ struct PickyConversationHeaderView: View {
         }
         .frame(width: PickyHUDDockLayout.detailContentWidth, alignment: .trailing)
         .frame(minHeight: 24, alignment: .trailing)
-        .onAppear { pulse = true }
     }
 
     private var leadingTitle: some View {
@@ -96,32 +93,15 @@ struct PickyConversationHeaderView: View {
     }
 
     private var statusPill: some View {
-        HStack(spacing: 5) {
-            if isPulsingStatus {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 5, height: 5)
-                    .opacity(pulse ? 1.0 : 0.35)
-                    .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
-            }
-            Text(statusText)
-                .font(.system(size: 10, weight: .semibold))
-        }
-        .foregroundColor(statusColor)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(statusColor.opacity(0.11)))
-        .overlay(Capsule().stroke(statusColor.opacity(0.22), lineWidth: 0.6))
+        Text(statusText)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundColor(statusColor)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(statusColor.opacity(0.11)))
+            .overlay(Capsule().stroke(statusColor.opacity(0.22), lineWidth: 0.6))
     }
 
-    private var isPulsingStatus: Bool {
-        switch session.status {
-        case .running, .queued, .waiting_for_input:
-            return true
-        case .blocked, .completed, .failed, .cancelled:
-            return false
-        }
-    }
 
     private var statusText: String {
         switch session.status {

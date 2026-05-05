@@ -44,6 +44,20 @@ enum PickyHUDExpansion {
     static func shouldDeferPanelShrink(currentHeight: CGFloat, targetHeight: CGFloat, deferShrink: Bool) -> Bool {
         deferShrink && targetHeight < currentHeight - 1
     }
+
+    static func reportedHUDSize(
+        measuredSize: CGSize,
+        previousReportedSize: CGSize,
+        activeSessionChanged: Bool,
+        shouldHoldHeight: Bool
+    ) -> CGSize {
+        guard !activeSessionChanged else { return measuredSize }
+        guard shouldHoldHeight,
+              previousReportedSize.height > 0,
+              measuredSize.height < previousReportedSize.height
+        else { return measuredSize }
+        return CGSize(width: measuredSize.width, height: previousReportedSize.height)
+    }
 }
 
 enum PickyHUDDockLayout {

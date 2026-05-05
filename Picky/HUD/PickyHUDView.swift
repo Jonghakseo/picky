@@ -97,7 +97,10 @@ struct PickyHUDView: View {
             .fixedSize(horizontal: false, vertical: true)
             .background(PickyHUDSizeReader())
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-            .animation(PickyHUDExpansion.animation, value: activeSession?.id)
+            // Animate only expand/collapse. Switching between dock-hovered sessions should
+            // swap content immediately; animating every activeSession id change cross-fades
+            // different card heights and makes the HUD look like it is stretching/flickering.
+            .animation(PickyHUDExpansion.animation, value: activeSession != nil)
             .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: handleHUDSizeChange)
             .onDisappear {
                 closeExpansionTask?.cancel()
@@ -110,15 +113,17 @@ struct PickyHUDView: View {
         let activeID = activeSession?.id
         if activeID != lastReportedActiveSessionID {
             lastReportedActiveSessionID = activeID
-            lastReportedHUDSize = .zero
+            lastReportedHUDSize = size
+            onSizeChange(size)
+            return
         }
 
-        var targetSize = size
-        if shouldHoldPanelHeightDuringActiveTurn,
-           lastReportedHUDSize.height > 0,
-           size.height < lastReportedHUDSize.height {
-            targetSize.height = lastReportedHUDSize.height
-        }
+        let targetSize = PickyHUDExpansion.reportedHUDSize(
+            measuredSize: size,
+            previousReportedSize: lastReportedHUDSize,
+            activeSessionChanged: false,
+            shouldHoldHeight: shouldHoldPanelHeightDuringActiveTurn
+        )
 
         guard !lastReportedHUDSize.isApproximatelyEqual(to: targetSize) else { return }
         lastReportedHUDSize = targetSize

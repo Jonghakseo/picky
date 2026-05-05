@@ -638,6 +638,30 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDExpansion.anchorsContentToPanelTopDuringDeferredShrink)
     }
 
+    @Test func hudReportedSizeHoldsActiveShrinkButResetsAcrossSessionSwitch() throws {
+        let tall = CGSize(width: 540, height: 900)
+        let short = CGSize(width: 540, height: 420)
+
+        #expect(PickyHUDExpansion.reportedHUDSize(
+            measuredSize: short,
+            previousReportedSize: tall,
+            activeSessionChanged: false,
+            shouldHoldHeight: true
+        ) == tall)
+        #expect(PickyHUDExpansion.reportedHUDSize(
+            measuredSize: short,
+            previousReportedSize: tall,
+            activeSessionChanged: true,
+            shouldHoldHeight: true
+        ) == short)
+        #expect(PickyHUDExpansion.reportedHUDSize(
+            measuredSize: short,
+            previousReportedSize: tall,
+            activeSessionChanged: false,
+            shouldHoldHeight: false
+        ) == short)
+    }
+
     @Test func hudChromeUsesSoftShadowWithShadowBleedPadding() throws {
         #expect(PickyHUDExpansion.outerPadding == 8)
         #expect(PickyHUDExpansion.dockShadowVerticalPadding > PickyHUDExpansion.outerPadding)

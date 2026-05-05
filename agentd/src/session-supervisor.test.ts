@@ -380,7 +380,7 @@ describe("SessionSupervisor", () => {
     const emitted: unknown[] = [];
     supervisor.on("pointerOverlayRequested", (request) => emitted.push(request));
 
-    const result = await supervisor.requestPointerOverlay({ sourceSessionId: session.id, screenIndex: 1, x: -20, y: 900, label: "target", durationMs: 99_999, confidence: 0.8 });
+    const result = await supervisor.requestPointerOverlay({ sourceSessionId: session.id, screenIndex: 1, x: -20, y: 900, label: "target", durationMs: 99_999 });
 
     expect(result.emitted).toBe(true);
     expect(emitted).toHaveLength(1);
@@ -394,7 +394,6 @@ describe("SessionSupervisor", () => {
       coordinateSpace: "screenshotPixel",
       clamped: true,
       durationMs: 10_000,
-      confidence: 0.8,
       screenBounds: { x: 100, y: 200, width: 300, height: 400 },
       screenshotSize: { width: 600, height: 800 },
     });

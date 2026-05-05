@@ -13,7 +13,6 @@ export interface PickyShowPointerRequest {
   screenIndex?: number;
   label?: string;
   durationMs?: number;
-  confidence?: number;
   dryRun?: boolean;
   sourceSessionId?: string;
 }
@@ -46,8 +45,7 @@ export function createPickyShowPointerTool(onShowPointer: (request: PickyShowPoi
       screenId: Type.Optional(Type.String({ description: "Target screen id from captured context, e.g. screen1." })),
       screenIndex: Type.Optional(Type.Number({ description: "1-based target screen index from captured context." })),
       label: Type.Optional(Type.String({ description: "Optional short label shown next to the pointer." })),
-      durationMs: Type.Optional(Type.Number({ description: "Optional highlight hold duration in milliseconds. Picky clamps to 250-10000ms." })),
-      confidence: Type.Optional(Type.Number({ description: "Optional confidence from 0 to 1; shown in the bubble when provided." })),
+      durationMs: Type.Optional(Type.Number({ description: "Optional highlight hold duration in milliseconds. Picky clamps to 1000-10000ms." })),
       dryRun: Type.Optional(Type.Boolean({ description: "Validate and return the resolved target without showing the overlay." })),
       sourceSessionId: Type.Optional(Type.String({ description: "Optional Picky session id whose captured screenshots should be used for validation." })),
     }),
@@ -55,11 +53,12 @@ export function createPickyShowPointerTool(onShowPointer: (request: PickyShowPoi
       const result = await onShowPointer(normalizeRequest(params as PickyShowPointerRequest));
       const screen = result.request.screenId ?? (result.request.screenIndex ? `screen${result.request.screenIndex}` : "primary");
       const emittedText = result.emitted ? "Picky visual-only pointer overlay requested" : "Picky visual-only pointer overlay dry run validated";
+      const clampedText = result.request.clamped ? " Coordinates were clamped to the target screen bounds." : "";
       return {
         content: [
           {
             type: "text",
-            text: `${emittedText}: ${screen} (${result.request.x}, ${result.request.y}) in ${result.request.coordinateSpace}. No real cursor/input action was performed.`,
+            text: `${emittedText}: ${screen} (${result.request.x}, ${result.request.y}) in ${result.request.coordinateSpace}.${clampedText} No real cursor/input action was performed.`,
           },
         ],
         details: result,
@@ -70,8 +69,7 @@ export function createPickyShowPointerTool(onShowPointer: (request: PickyShowPoi
 
 export function makePointerOverlayRequest(input: PickyShowPointerRequest, defaults: { contextId?: string; screenId?: string; screenIndex?: number; screenBounds: { x: number; y: number; width: number; height: number }; screenshotSize?: { width: number; height: number } }): PickyPointerOverlayRequest {
   const coordinateSpace = input.coordinateSpace ?? "screenshotPixel";
-  const durationMs = clampOptionalInteger(input.durationMs, 250, 10_000);
-  const confidence = clampOptionalNumber(input.confidence, 0, 1);
+  const durationMs = clampOptionalInteger(input.durationMs, 1_000, 10_000);
   return {
     id: `pointer-${randomUUID()}`,
     contextId: defaults.contextId,
@@ -83,7 +81,6 @@ export function makePointerOverlayRequest(input: PickyShowPointerRequest, defaul
     coordinateSpace,
     label: normalizeOptionalString(input.label),
     ...(durationMs === undefined ? {} : { durationMs }),
-    ...(confidence === undefined ? {} : { confidence }),
     dryRun: input.dryRun === true,
     screenBounds: defaults.screenBounds,
     ...(defaults.screenshotSize ? { screenshotSize: defaults.screenshotSize } : {}),
@@ -101,8 +98,7 @@ function normalizeRequest(input: PickyShowPointerRequest): PickyShowPointerReque
     sourceSessionId: normalizeOptionalString(input.sourceSessionId),
     label: normalizeOptionalString(input.label),
     screenIndex: normalizeOptionalInteger(input.screenIndex),
-    durationMs: clampOptionalInteger(input.durationMs, 250, 10_000),
-    confidence: clampOptionalNumber(input.confidence, 0, 1),
+    durationMs: clampOptionalInteger(input.durationMs, 1_000, 10_000),
     dryRun: input.dryRun === true,
   };
 }
@@ -122,7 +118,3 @@ function clampOptionalInteger(value: number | undefined, min: number, max: numbe
   return Math.max(min, Math.min(max, Math.floor(value!)));
 }
 
-function clampOptionalNumber(value: number | undefined, min: number, max: number): number | undefined {
-  if (!Number.isFinite(value)) return undefined;
-  return Math.max(min, Math.min(max, value!));
-}

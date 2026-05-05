@@ -36,7 +36,6 @@ struct PickyPointerOverlayRequest: Codable, Equatable, Identifiable {
     let coordinateSpace: PickyPointerCoordinateSpace
     let label: String?
     let durationMs: Int?
-    let confidence: Double?
     let dryRun: Bool?
     let clamped: Bool?
     let screenBounds: PickyCGRect
@@ -74,7 +73,7 @@ enum PickyPointerOverlayResolveError: LocalizedError, Equatable {
 
 enum PickyPointerOverlayResolver {
     static let defaultDuration: TimeInterval = 2.5
-    static let minimumDuration: TimeInterval = 0.25
+    static let minimumDuration: TimeInterval = 1.0
     static let maximumDuration: TimeInterval = 10.0
 
     static func resolve(_ request: PickyPointerOverlayRequest) throws -> PickyResolvedPointerOverlayTarget {
@@ -119,7 +118,7 @@ enum PickyPointerOverlayResolver {
         return PickyResolvedPointerOverlayTarget(
             screenLocation: globalPoint,
             displayFrame: displayFrame,
-            bubbleText: normalizedBubbleText(request.label, confidence: request.confidence),
+            bubbleText: normalizedBubbleText(request.label),
             duration: normalizedDuration(milliseconds: request.durationMs)
         )
     }
@@ -130,12 +129,9 @@ enum PickyPointerOverlayResolver {
         return clamp(seconds, lower: minimumDuration, upper: maximumDuration)
     }
 
-    private static func normalizedBubbleText(_ label: String?, confidence: Double?) -> String? {
+    private static func normalizedBubbleText(_ label: String?) -> String? {
         let trimmed = label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !trimmed.isEmpty else { return nil }
-        guard let confidence else { return trimmed }
-        let boundedConfidence = clamp(confidence, lower: 0, upper: 1)
-        return "\(trimmed) · \(Int((boundedConfidence * 100).rounded()))%"
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private static func clamp<T: Comparable>(_ value: T, lower: T, upper: T) -> T {

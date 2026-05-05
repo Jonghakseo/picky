@@ -49,7 +49,6 @@ struct PickyPointerOverlayResolverTests {
             coordinateSpace: .displayPoint,
             label: "  Try Eleven v3  ",
             durationMs: 99_999,
-            confidence: 1.4,
             screenBounds: PickyCGRect(x: 0, y: 0, width: 300, height: 400),
             screenshotSize: nil
         )
@@ -58,7 +57,7 @@ struct PickyPointerOverlayResolverTests {
 
         #expect(target.screenLocation == CGPoint(x: 300, y: 400))
         #expect(target.duration == PickyPointerOverlayResolver.maximumDuration)
-        #expect(target.bubbleText == "Try Eleven v3 · 100%")
+        #expect(target.bubbleText == "Try Eleven v3")
     }
 
     @Test func rejectsScreenshotPixelsWithoutScreenshotSize() {
@@ -75,6 +74,19 @@ struct PickyPointerOverlayResolverTests {
         }
     }
 
+    @Test func clampsShortDurationToOneSecond() throws {
+        let target = try PickyPointerOverlayResolver.resolve(request(
+            x: 50,
+            y: 25,
+            coordinateSpace: .displayPoint,
+            durationMs: 250,
+            screenBounds: PickyCGRect(x: 0, y: 0, width: 100, height: 100),
+            screenshotSize: nil
+        ))
+
+        #expect(target.duration == PickyPointerOverlayResolver.minimumDuration)
+    }
+
     @Test func companionManagerAppliesPointerOverlayEventWithoutSpeaking() {
         let manager = CompanionManager(agentClient: FakePointerClient(), selectionStore: FakePointerSelectionStore())
         let eventRequest = request(
@@ -83,7 +95,6 @@ struct PickyPointerOverlayResolverTests {
             coordinateSpace: .displayPoint,
             label: "Settings",
             durationMs: 1_500,
-            confidence: 0.75,
             screenBounds: PickyCGRect(x: 10, y: 20, width: 100, height: 100),
             screenshotSize: nil
         )
@@ -92,7 +103,7 @@ struct PickyPointerOverlayResolverTests {
 
         #expect(manager.detectedElementScreenLocation == CGPoint(x: 60, y: 95))
         #expect(manager.detectedElementDisplayFrame == CGRect(x: 10, y: 20, width: 100, height: 100))
-        #expect(manager.detectedElementBubbleText == "Settings · 75%")
+        #expect(manager.detectedElementBubbleText == "Settings")
         #expect(manager.detectedElementDisplayDuration == 1.5)
         #expect(manager.detectedElementHighlightKind == .screenElement)
         #expect(manager.detectedElementTargetFrame == nil)
@@ -107,7 +118,6 @@ struct PickyPointerOverlayResolverTests {
             coordinateSpace: .displayPoint,
             label: "Reload",
             durationMs: 1_000,
-            confidence: 0.5,
             screenBounds: PickyCGRect(x: 0, y: 0, width: 200, height: 200),
             screenshotSize: nil
         )))
@@ -129,7 +139,6 @@ struct PickyPointerOverlayResolverTests {
         coordinateSpace: PickyPointerCoordinateSpace,
         label: String? = nil,
         durationMs: Int? = nil,
-        confidence: Double? = nil,
         screenBounds: PickyCGRect,
         screenshotSize: PickyPointerScreenshotSize?
     ) -> PickyPointerOverlayRequest {
@@ -144,7 +153,6 @@ struct PickyPointerOverlayResolverTests {
             coordinateSpace: coordinateSpace,
             label: label,
             durationMs: durationMs,
-            confidence: confidence,
             dryRun: false,
             clamped: nil,
             screenBounds: screenBounds,

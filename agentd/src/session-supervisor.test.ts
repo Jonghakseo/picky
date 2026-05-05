@@ -1057,11 +1057,13 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.pendingExtensionUiRequest).toBeUndefined();
   });
 
-  it("aborts a session", async () => {
+  it("aborts a session without duplicating the cancellation system message", async () => {
     const supervisor = await makeSupervisor();
     const session = await supervisor.create(context("abort me"));
     const updated = await supervisor.abort(session.id);
+    await settle();
     expect(updated.status).toBe("cancelled");
+    expect(supervisor.get(session.id)?.messages?.filter((message) => message.kind === "system" && message.text === "Cancelled by user")).toHaveLength(1);
   });
 
   it("writes report and PR artifacts when a terminal status is observed", async () => {

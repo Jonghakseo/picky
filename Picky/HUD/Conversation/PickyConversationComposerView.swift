@@ -21,14 +21,11 @@ struct PickyConversationComposerView: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        composerRow
-            .overlay(alignment: .top) {
-                if slashCommandAutocompleteIsVisible {
-                    slashCommandAutocomplete
-                        .alignmentGuide(.top) { dim in dim.height + 8 }
-                }
-            }
-            .onAppear { viewModel.ensureSlashCommandsLoaded(sessionID: session.id) }
+        VStack(alignment: .leading, spacing: 4) {
+            slashCommandAutocomplete
+            composerRow
+        }
+        .onAppear { viewModel.ensureSlashCommandsLoaded(sessionID: session.id) }
     }
 
     private var composerRow: some View {

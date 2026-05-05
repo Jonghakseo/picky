@@ -6,7 +6,7 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt } from "./prompt-builder.js";
-import type { PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentState, PickyQueueItem, PickyQueueMode } from "./protocol.js";
+import type { PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyFinalReport, PickyMainAgentMessage, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
@@ -18,7 +18,9 @@ import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX 
 import { cleanFinalAnswer } from "./domain/session-summary.js";
 import { settleActiveTools } from "./domain/tool-activity.js";
 import { titleFromContext } from "./domain/session-title.js";
+import type { ToolCategory } from "./domain/tool-categorizer.js";
 import { logAgentd } from "./local-log.js";
+import { SessionMessageBuilder } from "./session-message-builder.js";
 
 export interface SessionSupervisorOptions {
   taskRouter?: TaskRouter;
@@ -56,21 +58,36 @@ export class SessionSupervisor extends EventEmitter {
   private pendingSideCompletions: string[] = [];
   private sessionContexts = new Map<string, PickyContextPacket>();
   private sessionSeq = new Map<string, number>();
+  private queueUpdateChains = new Map<string, Promise<void>>();
+  private activityUpdateChains = new Map<string, Promise<void>>();
+  private readonly messageBuilder: SessionMessageBuilder;
   private lastEmittedSteeringMode = new Map<string, PickyQueueMode>();
   private lastEmittedFollowUpMode = new Map<string, PickyQueueMode>();
+  private pendingFinalReports = new Map<string, PickyFinalReport>();
 
   constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, artifactStore?: ArtifactStore, private readonly options: SessionSupervisorOptions = {}) {
     super();
     this.artifactMaterializer = new ArtifactMaterializer(artifactStore);
+    this.messageBuilder = new SessionMessageBuilder({
+      emitAppended: async (sessionId, message, seq) => { this.emit("messageAppended", sessionId, message, seq); },
+      emitReplaced: async (sessionId, messageId, message, seq) => { this.emit("messageReplaced", sessionId, messageId, message, seq); },
+      emitRemoved: async (sessionId, messageId, seq) => { this.emit("messageRemoved", sessionId, messageId, seq); },
+      nextSeq: (sessionId) => this.nextSeq(sessionId),
+      now: () => new Date().toISOString(),
+      syncSessionMessages: async (sessionId, messages) => { await this.syncSessionMessages(sessionId, messages); },
+    });
     this.runtimeEventHandler = new RuntimeEventHandler({
       getSession: (sessionId) => this.mustGet(sessionId),
       patchSession: (sessionId, patch) => this.patch(sessionId, patch),
       appendLog: (sessionId, line) => this.appendLog(sessionId, line),
       materializeTerminalArtifacts: (sessionId) => this.materializeTerminalArtifacts(sessionId),
       applyQueueUpdate: (sessionId, steering, followUp) => this.applyQueueUpdate(sessionId, steering, followUp),
+      incrementActivity: (sessionId, category) => this.incrementActivity(sessionId, category),
       notifySideCompletion: (sessionId) => this.notifyMainOfSideCompletion(sessionId),
       isSideSession: (sessionId) => this.sideSessionIds.has(sessionId),
+      consumePendingFinalReport: (sessionId) => this.consumePendingFinalReport(sessionId),
       emitExtensionUiRequest: (request) => this.emit("extensionUiRequest", request),
+      messageBuilder: this.messageBuilder,
     });
   }
 
@@ -345,6 +362,7 @@ export class SessionSupervisor extends EventEmitter {
       tools: [],
       artifacts: [],
       changedFiles: [],
+      activitySummary: zeroActivitySummary(),
     };
     this.sideSessionIds.add(id);
     this.sessionContexts.set(id, sideContext);
@@ -387,10 +405,12 @@ export class SessionSupervisor extends EventEmitter {
       tools: [],
       artifacts: extractSessionLinkArtifacts(context.transcript ?? "", now),
       changedFiles: [],
+      activitySummary: zeroActivitySummary(),
     };
     this.sideSessionIds.add(id);
     logAgentd("side session pinned", { sessionId: id, titleChars: session.title.length, cwd: context.cwd, contextId: context.id });
     await this.upsert(session);
+    await this.messageBuilder.seedPinnedSession(id, context.transcript, session.finalAnswer, session.title);
     await this.materializeTerminalArtifacts(id);
     return this.mustGet(id);
   }
@@ -410,6 +430,7 @@ export class SessionSupervisor extends EventEmitter {
       tools: [],
       artifacts: extractSessionLinkArtifacts(context.transcript ?? "", now),
       changedFiles: [],
+      activitySummary: zeroActivitySummary(),
     };
     this.sessionContexts.set(id, context);
     await this.upsert(session);
@@ -781,6 +802,23 @@ export class SessionSupervisor extends EventEmitter {
     await this.patch(sessionId, { status: "failed", lastSummary: `Follow-up failed: ${message}` });
   }
 
+  async submitFinalReport(sessionId: string, report: PickyFinalReport): Promise<void> {
+    if (!this.sessions.has(sessionId)) {
+      logAgentd("submit final report dropped (unknown session)", { sessionId });
+      return;
+    }
+    logAgentd("submit final report received", { sessionId, status: report.status, summaryChars: report.summary.length });
+    this.pendingFinalReports.set(sessionId, report);
+    await this.patch(sessionId, { finalReport: report, finalAnswer: report.summary });
+    await this.messageBuilder.recordFinalReport(sessionId, report);
+  }
+
+  private consumePendingFinalReport(sessionId: string): PickyFinalReport | undefined {
+    const report = this.pendingFinalReports.get(sessionId);
+    if (report) this.pendingFinalReports.delete(sessionId);
+    return report;
+  }
+
   async clearQueue(sessionId: string, kind: "steering" | "followUp" | "all"): Promise<void> {
     const handle = this.runtimeHandles.get(sessionId);
     if (!handle) throw new Error(`Session has no attached runtime: ${sessionId}`);
@@ -795,21 +833,45 @@ export class SessionSupervisor extends EventEmitter {
   async applyQueueUpdate(sessionId: string, steering: readonly string[], followUp: readonly string[]): Promise<void> {
     const handle = this.runtimeHandles.get(sessionId);
     if (!handle || !this.sessions.has(sessionId)) return;
+    const steeringMode = handle.steeringMode;
+    const followUpMode = handle.followUpMode;
+    const previous = this.queueUpdateChains.get(sessionId) ?? Promise.resolve();
+    const next = previous.then(() => this.applyQueueUpdateNow(sessionId, steering, followUp, steeringMode, followUpMode));
+    this.queueUpdateChains.set(sessionId, next.catch(() => undefined));
+    await next;
+  }
+
+  private async applyQueueUpdateNow(sessionId: string, steering: readonly string[], followUp: readonly string[], steeringMode: PickyQueueMode, followUpMode: PickyQueueMode): Promise<void> {
+    if (!this.sessions.has(sessionId)) return;
     const enqueuedAt = new Date().toISOString();
     const queuedSteers = queueItems(steering, enqueuedAt);
     const queuedFollowUps = queueItems(followUp, enqueuedAt);
     const current = this.mustGet(sessionId);
     const previousSteeringMode = this.lastEmittedSteeringMode.get(sessionId) ?? current.steeringMode ?? "one-at-a-time";
     const previousFollowUpMode = this.lastEmittedFollowUpMode.get(sessionId) ?? current.followUpMode ?? "one-at-a-time";
-    const steeringMode = handle.steeringMode;
-    const followUpMode = handle.followUpMode;
     await this.patch(sessionId, { queuedSteers, queuedFollowUps, steeringMode, followUpMode });
 
     const emittedSteeringMode = steeringMode === previousSteeringMode ? undefined : steeringMode;
     const emittedFollowUpMode = followUpMode === previousFollowUpMode ? undefined : followUpMode;
-    if (emittedSteeringMode) this.lastEmittedSteeringMode.set(sessionId, emittedSteeringMode);
-    if (emittedFollowUpMode) this.lastEmittedFollowUpMode.set(sessionId, emittedFollowUpMode);
+    this.lastEmittedSteeringMode.set(sessionId, steeringMode);
+    this.lastEmittedFollowUpMode.set(sessionId, followUpMode);
     this.emit("queueUpdated", sessionId, queuedSteers, queuedFollowUps, emittedSteeringMode, emittedFollowUpMode, this.nextSeq(sessionId));
+  }
+
+  private async incrementActivity(sessionId: string, category: ToolCategory): Promise<void> {
+    const previous = this.activityUpdateChains.get(sessionId) ?? Promise.resolve();
+    const next = previous.then(() => this.incrementActivityNow(sessionId, category));
+    this.activityUpdateChains.set(sessionId, next.catch(() => undefined));
+    await next;
+  }
+
+  private async incrementActivityNow(sessionId: string, category: ToolCategory): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    const current = session.activitySummary ?? zeroActivitySummary();
+    const next = { ...current, [category]: current[category] + 1 };
+    await this.patch(sessionId, { activitySummary: next });
+    this.emit("activityUpdated", sessionId, next, this.nextSeq(sessionId));
   }
 
   private async tryResumeRuntimeHandle(session: PickyAgentSession): Promise<RuntimeSessionHandle | undefined> {
@@ -920,6 +982,15 @@ export class SessionSupervisor extends EventEmitter {
     const artifacts = mergeArtifacts(session.artifacts, linkArtifacts);
     await this.patch(sessionId, { logs: [...session.logs, line], changedFiles, artifacts });
     this.emit("log", sessionId, line);
+    if (line.startsWith(STEER_PREFIX)) {
+      await this.messageBuilder.recordUserText(sessionId, line.slice(STEER_PREFIX.length), "user");
+    } else if (line.startsWith(FOLLOWUP_PREFIX)) {
+      await this.messageBuilder.recordUserText(sessionId, line.slice(FOLLOWUP_PREFIX.length), "user");
+    } else if (line.startsWith(EXTENSION_ANSWER_PREFIX)) {
+      await this.messageBuilder.recordUserText(sessionId, line.slice(EXTENSION_ANSWER_PREFIX.length), "user");
+    } else if (line.startsWith(HANDOFF_PREFIX)) {
+      await this.messageBuilder.recordUserText(sessionId, line.slice(HANDOFF_PREFIX.length), "main_agent");
+    }
   }
 
   private async materializeTerminalArtifacts(sessionId: string): Promise<void> {
@@ -932,6 +1003,12 @@ export class SessionSupervisor extends EventEmitter {
   private async patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void> {
     const session = { ...this.mustGet(sessionId), ...patch, updatedAt: new Date().toISOString() };
     await this.upsert(session);
+  }
+
+  private async syncSessionMessages(sessionId: string, messages: readonly PickySessionMessage[]): Promise<void> {
+    const session = { ...this.mustGet(sessionId), messages: [...messages], updatedAt: new Date().toISOString() };
+    this.sessions.set(session.id, session);
+    await this.store.save(session);
   }
 
   private nextSeq(sessionId: string): number {
@@ -1070,6 +1147,10 @@ function normalizeOptionalString(value: string | undefined): string | undefined 
 
 function queueItems(items: readonly string[], enqueuedAt: string): PickyQueueItem[] {
   return items.map((text) => ({ text, enqueuedAt }));
+}
+
+function zeroActivitySummary(): PickyActivitySummary {
+  return { edit: 0, bash: 0, thinking: 0, other: 0 };
 }
 
 function buildPinnedSideSessionLogs(context: PickyContextPacket): string[] {

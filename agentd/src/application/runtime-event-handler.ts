@@ -4,10 +4,21 @@ import { sliceUtf16Safe } from "../domain/safe-truncate.js";
 import { isTerminalStatus } from "../domain/session-status.js";
 import { cleanFinalAnswer, summaryFromFinalAnswer } from "../domain/session-summary.js";
 import { settleActiveTools } from "../domain/tool-activity.js";
+import { categorizeTool, type ToolCategory } from "../domain/tool-categorizer.js";
 import { logAgentd } from "../local-log.js";
-import type { PickyAgentSession, PickyExtensionUiRequest } from "../protocol.js";
+import type { PickyAgentSession, PickyExtensionUiRequest, PickyFinalReport } from "../protocol.js";
 import type { RuntimeEvent } from "../runtime/types.js";
 import { extensionUiLogLine, extensionUiWaitingSummary, mapExtensionUiRequest } from "./extension-ui-request-mapper.js";
+
+export interface RuntimeMessageJournal {
+  recordExtensionQuestion(sessionId: string, request: PickyExtensionUiRequest): Promise<void>;
+  recordError(sessionId: string, errorMessage: string, errorContext?: string): Promise<void>;
+  recordSystemMessage(sessionId: string, text: string): Promise<void>;
+  appendAssistantDelta(sessionId: string, delta: string): void;
+  flushAssistantText(sessionId: string): Promise<void>;
+  appendThinkingDelta(sessionId: string, delta: string): Promise<void>;
+  flushThinking(sessionId: string): Promise<void>;
+}
 
 export interface RuntimeEventHandlerDependencies {
   getSession(sessionId: string): PickyAgentSession;
@@ -15,9 +26,12 @@ export interface RuntimeEventHandlerDependencies {
   appendLog(sessionId: string, line: string): Promise<void>;
   materializeTerminalArtifacts(sessionId: string): Promise<void>;
   applyQueueUpdate(sessionId: string, steering: readonly string[], followUp: readonly string[]): Promise<void>;
+  incrementActivity(sessionId: string, category: ToolCategory): Promise<void>;
   notifySideCompletion(sessionId: string): Promise<void>;
   isSideSession(sessionId: string): boolean;
+  consumePendingFinalReport(sessionId: string): PickyFinalReport | undefined;
   emitExtensionUiRequest(request: PickyExtensionUiRequest): void;
+  messageBuilder: RuntimeMessageJournal;
 }
 
 const THINKING_PREVIEW_CHAR_LIMIT = 240;
@@ -26,24 +40,34 @@ const THINKING_DRAFT_CHAR_LIMIT = THINKING_PREVIEW_CHAR_LIMIT * 4;
 export class RuntimeEventHandler {
   private readonly assistantDrafts = new Map<string, string>();
   private readonly thinkingDrafts = new Map<string, string>();
+  private readonly thinkingActive = new Map<string, boolean>();
+  private readonly seenToolCallIds = new Map<string, Set<string>>();
 
   constructor(private readonly dependencies: RuntimeEventHandlerDependencies) {}
 
   resetAssistantDraft(sessionId: string): void {
     this.assistantDrafts.set(sessionId, "");
     this.thinkingDrafts.set(sessionId, "");
+    this.thinkingActive.set(sessionId, false);
+    this.seenToolCallIds.delete(sessionId);
   }
 
   async handle(sessionId: string, event: RuntimeEvent): Promise<void> {
     if (event.type === "log") return this.dependencies.appendLog(sessionId, event.line);
     if (event.type === "assistant_delta") {
+      this.thinkingActive.set(sessionId, false);
+      this.dependencies.messageBuilder.appendAssistantDelta(sessionId, event.delta);
       this.assistantDrafts.set(sessionId, `${this.assistantDrafts.get(sessionId) ?? ""}${event.delta}`);
       return;
     }
     if (event.type === "thinking_delta") return this.applyThinkingEvent(sessionId, event);
     if (event.type === "queue_update") return this.dependencies.applyQueueUpdate(sessionId, event.steering, event.followUp);
-    if (event.type === "status") return this.applyStatusEvent(sessionId, event);
+    if (event.type === "status") {
+      this.thinkingActive.set(sessionId, false);
+      return this.applyStatusEvent(sessionId, event);
+    }
     if (event.type === "extension_ui") {
+      this.thinkingActive.set(sessionId, false);
       logAgentd("extension ui event", { sessionId, waitsForInput: event.waitsForInput, method: typeof event.request.method === "string" ? event.request.method : undefined });
       return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
     }
@@ -71,19 +95,37 @@ export class RuntimeEventHandler {
     // handler when they want to revive a terminal session.
     if (isTerminalStatus(currentSession.status)) return;
 
+    const pendingFinalReport = terminal ? this.dependencies.consumePendingFinalReport(sessionId) : undefined;
     const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
+    if (terminal || event.status === "waiting_for_input") {
+      await this.dependencies.messageBuilder.flushAssistantText(sessionId);
+      await this.dependencies.messageBuilder.flushThinking(sessionId);
+    }
     if (terminal) {
+      if (!event.noTurnRan && event.status === "failed") await this.dependencies.messageBuilder.recordError(sessionId, event.summary ?? "Agent failed");
+      if (!event.noTurnRan && event.status === "cancelled") await this.dependencies.messageBuilder.recordSystemMessage(sessionId, "Cancelled by user");
       patch.thinkingPreview = undefined;
       patch.tools = settleActiveTools(currentSession.tools, terminalToolPreview(event.status));
     }
-    if (finalAnswer) {
+    if (finalAnswer && !pendingFinalReport) {
       patch.finalAnswer = finalAnswer;
       patch.changedFiles = mergeChangedFiles(currentSession.changedFiles, extractChangedFilesFromExplicitText(finalAnswer));
+    }
+    if (pendingFinalReport) {
+      patch.finalReport = pendingFinalReport;
+      if (event.status === "cancelled") {
+        patch.status = "cancelled";
+      } else {
+        patch.status = pendingFinalReport.status === "blocked" ? "blocked" : "completed";
+        patch.finalAnswer = pendingFinalReport.summary;
+        patch.lastSummary = summaryFromFinalAnswer(pendingFinalReport.summary);
+      }
     }
     await this.dependencies.patchSession(sessionId, patch);
     if (terminal) {
       this.assistantDrafts.set(sessionId, "");
       this.thinkingDrafts.set(sessionId, "");
+      this.thinkingActive.set(sessionId, false);
       // Synthetic completions (Pi `/slash` handlers, `input` handlers returning `handled`) flip
       // the session out of the loading state but did not run any agent turn. Re-materializing
       // terminal artifacts would overwrite the previous session report with empty content, and
@@ -98,13 +140,22 @@ export class RuntimeEventHandler {
   private async applyThinkingEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "thinking_delta" }>): Promise<void> {
     if (!event.delta) return;
 
+    const shouldIncrementThinking = this.thinkingActive.get(sessionId) !== true;
+    if (shouldIncrementThinking) this.thinkingActive.set(sessionId, true);
+
     const previousDraft = this.thinkingDrafts.get(sessionId) ?? "";
-    if (previousDraft.length >= THINKING_DRAFT_CHAR_LIMIT) return;
+    if (previousDraft.length >= THINKING_DRAFT_CHAR_LIMIT) {
+      if (shouldIncrementThinking) await this.dependencies.incrementActivity(sessionId, "thinking");
+      return;
+    }
 
     const nextDraft = sliceUtf16Safe(`${previousDraft}${event.delta}`, THINKING_DRAFT_CHAR_LIMIT);
     this.thinkingDrafts.set(sessionId, nextDraft);
 
-    const thinkingPreview = compactThinkingPreview(nextDraft);
+    await this.dependencies.messageBuilder.appendThinkingDelta(sessionId, event.delta);
+    if (shouldIncrementThinking) await this.dependencies.incrementActivity(sessionId, "thinking");
+
+    const thinkingPreview = compactThinkingPreview(this.thinkingDrafts.get(sessionId) ?? nextDraft);
     if (!thinkingPreview || thinkingPreview === this.dependencies.getSession(sessionId).thinkingPreview) return;
 
     await this.dependencies.patchSession(sessionId, { thinkingPreview });
@@ -116,11 +167,27 @@ export class RuntimeEventHandler {
       await this.dependencies.appendLog(sessionId, extensionUiLogLine(request));
       return;
     }
+    await this.dependencies.messageBuilder.flushAssistantText(sessionId);
+    await this.dependencies.messageBuilder.flushThinking(sessionId);
     await this.dependencies.patchSession(sessionId, { status: "waiting_for_input", pendingExtensionUiRequest: request, lastSummary: extensionUiWaitingSummary(request) });
+    await this.dependencies.messageBuilder.recordExtensionQuestion(sessionId, request);
     this.dependencies.emitExtensionUiRequest(request);
   }
 
   private async applyToolEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "tool" }>): Promise<void> {
+    this.thinkingActive.set(sessionId, false);
+    const seen = this.seenToolCallIds.get(sessionId) ?? new Set<string>();
+    const shouldIncrementActivity = event.status === "running" && !seen.has(event.toolCallId);
+    if (shouldIncrementActivity) {
+      seen.add(event.toolCallId);
+      this.seenToolCallIds.set(sessionId, seen);
+    }
+    if (event.status === "running") {
+      await this.dependencies.messageBuilder.flushAssistantText(sessionId);
+      await this.dependencies.messageBuilder.flushThinking(sessionId);
+    }
+    if (shouldIncrementActivity) await this.dependencies.incrementActivity(sessionId, categorizeTool(event.name));
+
     const session = this.dependencies.getSession(sessionId);
     const previous = session.tools.find((tool) => tool.toolCallId === event.toolCallId);
     const tools = session.tools.filter((tool) => tool.toolCallId !== event.toolCallId);

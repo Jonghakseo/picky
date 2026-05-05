@@ -36,7 +36,7 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
     this.followUpQueue.push(prompt.text);
     this.emitQueueUpdate();
     this.emit({ type: "log", line: `follow-up queued (${prompt.text.length} chars)` });
-    this.emit({ type: "status", status: "running", summary: "Follow-up received" });
+    this.emit({ type: "status", status: "running", summary: "Follow-up queued" });
   }
 
   async steer(text: string): Promise<RuntimeSteerResult> {

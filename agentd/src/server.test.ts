@@ -3,8 +3,8 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import WebSocket from "ws";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { PROTOCOL_VERSION, type EventEnvelope, type PickyAgentSession } from "./protocol.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PROTOCOL_VERSION, type EventEnvelope, type PickyAgentSession, type PickyContextPacket } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import { AgentdServer, compactSessionsForSnapshot, sanitizeForJson } from "./server.js";
 import { SessionStore } from "./session-store.js";
@@ -12,10 +12,11 @@ import { SessionSupervisor } from "./session-supervisor.js";
 
 let server: AgentdServer;
 let port: number;
+let supervisor: SessionSupervisor;
 
 beforeEach(async () => {
   const dir = await mkdtemp(join(tmpdir(), "picky-agentd-server-test-"));
-  const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+  supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
   await supervisor.load();
   server = new AgentdServer({ port: 0, token: "test-token", supervisor });
   port = await server.start();
@@ -58,11 +59,15 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
-  it("returns a notImplemented stub error for clearQueue until PR2", async () => {
+  it("clears a session queue through the supervisor", async () => {
+    const session = await supervisor.create(context("initial"));
+    const clearQueue = vi.spyOn(supervisor, "clearQueue");
     const { ws } = await connectWithHello();
-    ws.send(JSON.stringify({ id: "cmd-clear", protocolVersion: PROTOCOL_VERSION, type: "clearQueue", sessionId: "session-001", kind: "all" }));
-    const event = await nextEvent(ws);
-    expect(event).toMatchObject({ type: "error", code: "notImplemented", message: "clearQueue handled in PR2", commandId: "cmd-clear" });
+    ws.send(JSON.stringify({ id: "cmd-clear", protocolVersion: PROTOCOL_VERSION, type: "clearQueue", sessionId: session.id, kind: "all" }));
+
+    await waitUntil(() => clearQueue.mock.calls.length > 0);
+
+    expect(clearQueue).toHaveBeenCalledWith(session.id, "all");
     ws.close();
   });
 
@@ -145,4 +150,24 @@ async function connectWithHello(): Promise<{ ws: WebSocket; hello: EventEnvelope
 async function nextEvent(ws: WebSocket): Promise<EventEnvelope> {
   const [data] = (await once(ws, "message")) as [Buffer];
   return JSON.parse(data.toString()) as EventEnvelope;
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 1_000;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error("Timed out waiting for condition");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+function context(text: string): PickyContextPacket {
+  return {
+    id: `context-${text}`,
+    source: "text",
+    capturedAt: "2026-05-01T00:00:00.000Z",
+    transcript: text,
+    cwd: "/tmp/project",
+    screenshots: [],
+    warnings: [],
+  };
 }

@@ -8,6 +8,7 @@ import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyHandoffTool, createPickySideSessionsTool, createPickySideSteerTool } from "./application/handoff-tool.js";
 import { createPickyAskUserQuestionTool } from "./application/ask-user-question-tool.js";
 import { createPickyShowPointerTool } from "./application/pointer-tool.js";
+import { createPickySubmitFinalReportTool } from "./application/submit-final-report-tool.js";
 import { removeConnectionInfo, writeConnectionInfo } from "./connection-info-store.js";
 import { PROTOCOL_VERSION, ThinkingLevelSchema } from "./protocol.js";
 import { logAgentd } from "./local-log.js";
@@ -28,9 +29,19 @@ logAgentd("startup", { port, runtime: useMockRuntime ? "mock" : "pi", appSupport
 let supervisor: SessionSupervisor;
 const pointerTool = createPickyShowPointerTool(async (request) => supervisor.requestPointerOverlay(request));
 const askUserQuestionTool = createPickyAskUserQuestionTool();
-// Side Pi agents only get `ask_user_question` so they can request structured user input;
+// Side Pi agents get `ask_user_question` plus a per-session final-report tool;
 // pointer/handoff/side-session tools are reserved for the always-on main agent.
-const runtime = useMockRuntime ? new MockRuntime() : new PiSdkRuntime({ customTools: [askUserQuestionTool] });
+// Pinned side sessions bypass runtime creation, so they never receive this tool.
+const runtime = useMockRuntime
+  ? new MockRuntime()
+  : new PiSdkRuntime({
+      customTools: [askUserQuestionTool],
+      customToolsFactory: (sessionId) => [
+        createPickySubmitFinalReportTool(async (report) => {
+          await supervisor.submitFinalReport(sessionId, report);
+        }),
+      ],
+    });
 const mainRuntime = useMockRuntime
   ? undefined
   : new PiSdkRuntime({

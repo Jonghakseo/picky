@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import { PiSdkRuntime } from "./pi-sdk-runtime.js";
+import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 
 class FakeSession extends EventEmitter {
   sessionFile = "/tmp/fake-session.jsonl";
@@ -464,6 +465,32 @@ describe("PiSdkRuntime", () => {
     handle.setThinkingLevel?.("high");
 
     expect(fakeSession.thinkingLevels).toEqual(["high"]);
+  });
+
+  it("combines shared and per-session custom tools when creating a Pi session", async () => {
+    const fakeSession = new FakeSession();
+    const sharedTool = { name: "shared_tool" } as ToolDefinition;
+    const sessionTool = { name: "session_tool" } as ToolDefinition;
+    const createSessionFromServices = vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } }));
+    const runtime = new PiSdkRuntime({
+      getAgentDir: () => "/tmp/.pi/agent",
+      customTools: [sharedTool],
+      customToolsFactory: (sessionId) => sessionId === "session-42" ? [sessionTool] : [],
+      createServices: vi.fn(async () => ({ diagnostics: [] })) as never,
+      createSessionFromServices: createSessionFromServices as never,
+      createRuntime: vi.fn(async (factory, options) => {
+        const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
+        return {
+          session: result.session,
+          diagnostics: result.diagnostics,
+          setRebindSession: vi.fn(),
+        };
+      }) as never,
+    });
+
+    await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-42" });
+
+    expect(createSessionFromServices).toHaveBeenCalledWith(expect.objectContaining({ customTools: [sharedTool, sessionTool] }));
   });
 
   it("uses updated thinking level for future Pi session creation", async () => {

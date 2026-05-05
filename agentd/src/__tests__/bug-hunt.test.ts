@@ -54,9 +54,20 @@ describe("picky agentd known bugs (failing reproductions)", () => {
       appendLog: async () => {},
       materializeTerminalArtifacts: async () => {},
       applyQueueUpdate: async () => {},
+      incrementActivity: async () => {},
       notifySideCompletion: async () => {},
       isSideSession: () => false,
+      consumePendingFinalReport: () => undefined,
       emitExtensionUiRequest: () => {},
+      messageBuilder: {
+        recordExtensionQuestion: async () => {},
+        recordError: async () => {},
+        recordSystemMessage: async () => {},
+        appendAssistantDelta: () => {},
+        flushAssistantText: async () => {},
+        appendThinkingDelta: async () => {},
+        flushThinking: async () => {},
+      },
     });
 
     await handler.handle("s-cancel", { type: "status", status: "running", summary: "stray turn" });

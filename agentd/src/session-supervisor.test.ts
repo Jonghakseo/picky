@@ -49,7 +49,7 @@ describe("SessionSupervisor", () => {
     runtime.handle!.emit({ type: "queue_update", steering: ["first"], followUp: [] });
     runtime.handle!.emit({ type: "queue_update", steering: ["first"], followUp: ["second"] });
     runtime.handle!.emit({ type: "queue_update", steering: [], followUp: ["second"] });
-    await settle();
+    await waitUntil(() => events.length === 3);
 
     expect(events.map((event) => event.seq)).toEqual([1, 2, 3]);
     expect(events.at(0)).toMatchObject({ sessionId: session.id, steering: [{ text: "first" }], followUp: [] });
@@ -64,16 +64,133 @@ describe("SessionSupervisor", () => {
     await supervisor.load();
     const session = await supervisor.create(context("initial"));
     const events: Array<{ steeringMode?: string; followUpMode?: string }> = [];
-    supervisor.on("queueUpdated", (_sessionId, _steering, _followUp, steeringMode, followUpMode) => events.push({ steeringMode, followUpMode }));
+    supervisor.on("queueUpdated", (_sessionId, _steering, _followUp, steeringMode, followUpMode) => {
+      events.push({ ...(steeringMode ? { steeringMode } : {}), ...(followUpMode ? { followUpMode } : {}) });
+    });
 
     runtime.handle!.emit({ type: "queue_update", steering: ["first"], followUp: [] });
     runtime.handle!.steeringMode = "all";
     runtime.handle!.emit({ type: "queue_update", steering: ["first", "second"], followUp: [] });
     runtime.handle!.emit({ type: "queue_update", steering: ["first", "second", "third"], followUp: [] });
-    await settle();
+    await waitUntil(() => events.length === 3);
 
     expect(events).toEqual([{}, { steeringMode: "all" }, {}]);
     expect(supervisor.get(session.id)?.steeringMode).toBe("all");
+  });
+
+  it("increments activity once per new running tool call", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-activity-tool-test-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("activity tools"));
+    const events: Array<{ summary: NonNullable<ReturnType<SessionSupervisor["get"]>>["activitySummary"]; seq: number }> = [];
+    supervisor.on("activityUpdated", (_sessionId, activitySummary, seq) => events.push({ summary: activitySummary, seq }));
+
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running", preview: "npm test" });
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running", preview: "npm test --watch" });
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "succeeded", preview: "done" });
+    await waitUntil(() => supervisor.get(session.id)?.activitySummary?.bash === 1);
+
+    expect(supervisor.get(session.id)?.activitySummary).toMatchObject({ edit: 0, bash: 1, thinking: 0, other: 0 });
+    expect(events.map((event) => event.seq)).toEqual([1]);
+  });
+
+  it("classifies edit, bash, and unknown tools in the activity summary", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-activity-category-test-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("activity categories"));
+
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "edit", status: "running" });
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-2", name: "write", status: "running" });
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-3", name: "bash", status: "running" });
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-4", name: "mcp__notion__readPage", status: "running" });
+    await waitUntil(() => supervisor.get(session.id)?.activitySummary?.other === 1);
+
+    expect(supervisor.get(session.id)?.activitySummary).toEqual({ edit: 2, bash: 1, thinking: 0, other: 1 });
+  });
+
+  it("counts one thinking step per contiguous thinking run", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-activity-thinking-test-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("activity thinking"));
+
+    for (let index = 0; index < 5; index += 1) runtime.handle!.emit({ type: "thinking_delta", delta: `step ${index} ` });
+    await waitUntil(() => supervisor.get(session.id)?.activitySummary?.thinking === 1);
+
+    expect(supervisor.get(session.id)?.activitySummary).toMatchObject({ thinking: 1 });
+  });
+
+  it("starts a new thinking step after assistant text or tool activity", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-activity-thinking-boundary-test-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("activity thinking boundaries"));
+
+    runtime.handle!.emit({ type: "thinking_delta", delta: "first" });
+    runtime.handle!.emit({ type: "assistant_delta", delta: "answer" });
+    runtime.handle!.emit({ type: "thinking_delta", delta: "second" });
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "read", status: "running" });
+    runtime.handle!.emit({ type: "thinking_delta", delta: "third" });
+    await waitUntil(() => supervisor.get(session.id)?.activitySummary?.thinking === 3);
+
+    expect(supervisor.get(session.id)?.activitySummary).toEqual({ edit: 0, bash: 0, thinking: 3, other: 1 });
+  });
+
+  it("shares monotonic sequence numbers across queue and activity updates", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-activity-seq-test-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    await supervisor.create(context("activity seq"));
+    const events: Array<{ type: "queue" | "activity"; seq: number }> = [];
+    supervisor.on("queueUpdated", (_sessionId, _steering, _followUp, _steeringMode, _followUpMode, seq) => events.push({ type: "queue", seq }));
+    supervisor.on("activityUpdated", (_sessionId, _activitySummary, seq) => events.push({ type: "activity", seq }));
+
+    runtime.handle!.emit({ type: "queue_update", steering: ["first"], followUp: [] });
+    await waitUntil(() => events.length === 1);
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running" });
+    await waitUntil(() => events.length === 2);
+    runtime.handle!.emit({ type: "queue_update", steering: [], followUp: ["second"] });
+    await waitUntil(() => events.length === 3);
+
+    expect(events).toEqual([{ type: "queue", seq: 1 }, { type: "activity", seq: 2 }, { type: "queue", seq: 3 }]);
+  });
+
+  it("keeps pinned sessions at zero activity without activity events", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-activity-pinned-test-"));
+    const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir));
+    const events: unknown[] = [];
+    supervisor.on("activityUpdated", (...args) => events.push(args));
+    await supervisor.load();
+
+    const pinned = await supervisor.pinSideSession(context("pin completed source"), "Pinned source");
+
+    expect(pinned.activitySummary).toEqual({ edit: 0, bash: 0, thinking: 0, other: 0 });
+    expect(events).toEqual([]);
+  });
+
+  it("dedupes tool calls per turn but keeps cumulative activity across follow-ups", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-activity-followup-test-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("activity follow-up"));
+
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running" });
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running" });
+    await waitUntil(() => supervisor.get(session.id)?.activitySummary?.bash === 1);
+
+    await supervisor.followUp(session.id, "next turn");
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running" });
+    await waitUntil(() => supervisor.get(session.id)?.activitySummary?.bash === 2);
+
+    expect(supervisor.get(session.id)?.activitySummary).toEqual({ edit: 0, bash: 2, thinking: 0, other: 0 });
   });
 
   it("clears queues by kind while preserving the other queue", async () => {
@@ -286,6 +403,99 @@ describe("SessionSupervisor", () => {
     expect(completed.status).toBe("completed");
     expect(completed.finalAnswer).toBe("최종 답변입니다.");
     expect(completed.finalAnswer).not.toContain("조사 중입니다.");
+  });
+
+  it("records a final report immediately and appends an agent_report message", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-final-report-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("final report"));
+    const report = { summary: "작업 완료", body: "## Completed\n- 구현", status: "success" as const, artifacts: [{ kind: "file", title: "agentd/src/example.ts" }] };
+
+    await supervisor.submitFinalReport(session.id, report);
+
+    const updated = supervisor.get(session.id)!;
+    expect(updated.finalReport).toEqual(report);
+    expect(updated.finalAnswer).toBe("작업 완료");
+    expect(updated.messages?.filter((message) => message.kind === "agent_report")).toHaveLength(1);
+    expect(updated.messages?.find((message) => message.kind === "agent_report")?.report).toEqual(report);
+  });
+
+  it("lets a pending success final report override the terminal runtime answer", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-final-report-success-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("final report success"));
+    const report = { summary: "보고서 요약", body: "body", status: "success" as const, artifacts: [] };
+
+    await supervisor.submitFinalReport(session.id, report);
+    runtime.handle?.emit({ type: "assistant_delta", delta: "일반 최종 답변" });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    const completed = supervisor.get(session.id)!;
+    expect(completed.status).toBe("completed");
+    expect(completed.finalReport).toEqual(report);
+    expect(completed.finalAnswer).toBe("보고서 요약");
+    expect(completed.lastSummary).toBe("보고서 요약");
+  });
+
+  it("maps blocked final reports to blocked session status at turn end", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-final-report-blocked-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("final report blocked"));
+    const report = { summary: "접근 권한 필요", body: "권한이 없어 중단", status: "blocked" as const, artifacts: [] };
+
+    await supervisor.submitFinalReport(session.id, report);
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(supervisor.get(session.id)?.status).toBe("blocked");
+    expect(supervisor.get(session.id)?.finalAnswer).toBe("접근 권한 필요");
+  });
+
+  it("keeps cancelled status when a turn is aborted after a final report", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-final-report-cancel-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("final report cancel"));
+    const report = { summary: "취소 전 보고", body: "일부 결과", status: "success" as const, artifacts: [] };
+
+    await supervisor.submitFinalReport(session.id, report);
+    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    await settle();
+
+    const cancelled = supervisor.get(session.id)!;
+    expect(cancelled.status).toBe("cancelled");
+    expect(cancelled.finalReport).toEqual(report);
+    expect(cancelled.finalAnswer).toBe("취소 전 보고");
+    expect(cancelled.lastSummary).toBe("Cancelled");
+  });
+
+  it("uses the last submitted final report within a turn", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-final-report-last-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("final report last wins"));
+    const first = { summary: "첫 보고", body: "first", status: "success" as const, artifacts: [] };
+    const second = { summary: "최종 보고", body: "second", status: "partial" as const, artifacts: [] };
+
+    await supervisor.submitFinalReport(session.id, first);
+    await supervisor.submitFinalReport(session.id, second);
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    const completed = supervisor.get(session.id)!;
+    expect(completed.status).toBe("completed");
+    expect(completed.finalReport).toEqual(second);
+    expect(completed.finalAnswer).toBe("최종 보고");
+    expect(completed.messages?.filter((message) => message.kind === "agent_report")).toHaveLength(2);
   });
 
   it("marks completed side sessions as running when they are steered", async () => {
@@ -1628,6 +1838,84 @@ describe("SessionSupervisor", () => {
     await expect(supervisor.listSlashCommands(session.id)).resolves.toEqual([]);
   });
 
+  it("appends user_text messages from steer, follow-up, extension answer, and main-agent handoff sources", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-message-sources-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("message sources"));
+
+    await supervisor.steer(session.id, "user steer");
+    await supervisor.followUp(session.id, "user follow-up");
+    runtime.handle?.emit({ type: "extension_ui", waitsForInput: true, request: { id: "ui-message", sessionId: session.id, method: "input", prompt: "Need input", createdAt: "2026-05-01T00:00:00.000Z" } });
+    await settle();
+    await supervisor.answerExtensionUi(session.id, "ui-message", "answer text");
+    const side = await supervisor.createSideFromHandoff(context("handoff"), { title: "Side", instructions: "main instructions" });
+
+    expect(supervisor.get(session.id)?.messages?.filter((message) => message.kind === "user_text").map((message) => ({ text: message.text, originatedBy: message.originatedBy }))).toEqual([
+      { text: "user steer", originatedBy: "user" },
+      { text: "user follow-up", originatedBy: "user" },
+      { text: "answer text", originatedBy: "user" },
+    ]);
+    expect(supervisor.get(side.id)?.messages).toMatchObject([{ kind: "user_text", text: "main instructions", originatedBy: "main_agent" }]);
+  });
+
+  it("commits assistant text and thinking messages at runtime boundaries", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-message-runtime-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("runtime messages"));
+    const events: Array<{ type: string; kind?: string; messageId?: string; seq: number }> = [];
+    supervisor.on("messageAppended", (_sessionId, message, seq) => events.push({ type: "append", kind: message.kind, seq }));
+    supervisor.on("messageReplaced", (_sessionId, messageId, _message, seq) => events.push({ type: "replace", messageId, seq }));
+    supervisor.on("messageRemoved", (_sessionId, messageId, seq) => events.push({ type: "remove", messageId, seq }));
+
+    runtime.handle?.emit({ type: "thinking_delta", delta: "thinking" });
+    runtime.handle?.emit({ type: "thinking_delta", delta: " more" });
+    runtime.handle?.emit({ type: "assistant_delta", delta: "Answer" });
+    runtime.handle?.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running" });
+    runtime.handle?.emit({ type: "assistant_delta", delta: " done" });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => events.length === 5);
+
+    expect(events.map((event) => event.type).sort()).toEqual(["append", "append", "append", "remove", "replace"]);
+    expect(supervisor.get(session.id)?.messages?.map((message) => ({ kind: message.kind, text: message.text }))).toEqual([
+      { kind: "agent_text", text: "Answer" },
+      { kind: "agent_text", text: " done" },
+    ]);
+  });
+
+  it("records extension questions, failed status, cancelled status, and pinned intro messages", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-message-terminal-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const questionSession = await supervisor.create(context("question"));
+
+    runtime.handle?.emit({ type: "extension_ui", waitsForInput: true, request: { id: "question-message", sessionId: questionSession.id, method: "input", prompt: "Need input", createdAt: "2026-05-01T00:00:00.000Z" } });
+    await waitUntil(() => supervisor.get(questionSession.id)?.messages?.[0]?.kind === "agent_question");
+
+    const failedSession = await supervisor.create(context("failed"));
+    runtime.handle?.emit({ type: "status", status: "failed", summary: "Runtime failed" });
+    await waitUntil(() => supervisor.get(failedSession.id)?.messages?.some((message) => message.kind === "agent_error") === true);
+
+    const cancelledSession = await supervisor.create(context("cancelled"));
+    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    await waitUntil(() => supervisor.get(cancelledSession.id)?.messages?.some((message) => message.kind === "system") === true);
+
+    const pinned = await supervisor.pinSideSession(context("\nPinned goal\nMore"), "Pinned title");
+
+    expect(supervisor.get(questionSession.id)?.messages?.[0]).toMatchObject({ id: "question-message", kind: "agent_question" });
+    expect(supervisor.get(failedSession.id)?.messages).toMatchObject([{ kind: "agent_error", errorMessage: "Runtime failed" }]);
+    expect(supervisor.get(cancelledSession.id)?.messages).toMatchObject([{ kind: "system", text: "Cancelled by user" }]);
+    expect(pinned.messages?.map((message) => ({ kind: message.kind, text: message.text, originatedBy: message.originatedBy }))).toEqual([
+      { kind: "user_text", text: "Pinned goal", originatedBy: "pi_extension" },
+      { kind: "system", text: "Pinned from idle Pi session", originatedBy: undefined },
+      { kind: "agent_text", text: "Pinned from an idle Pi session. No Picky side-agent run has been started yet.", originatedBy: undefined },
+    ]);
+  });
+
   it("rejects invalid follow-up transitions", async () => {
     const supervisor = await makeSupervisor();
     const session = await supervisor.create(context("cancel then follow"));
@@ -1793,6 +2081,14 @@ class ManualHandle implements RuntimeSessionHandle {
 
 async function settle(): Promise<void> {
   await delay(10);
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 1_000;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error("Timed out waiting for condition");
+    await delay(10);
+  }
 }
 
 async function delay(milliseconds: number): Promise<void> {

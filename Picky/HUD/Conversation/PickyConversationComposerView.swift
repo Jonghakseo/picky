@@ -40,14 +40,12 @@ struct PickyConversationComposerView: View {
     }
 
     private var composerRow: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .center, spacing: 8) {
             Image(systemName: "text.bubble")
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundColor(DS.Colors.textTertiary)
-                .padding(.top, 3)
             composerEditor
             sendButton
-                .padding(.top, 1)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
@@ -61,7 +59,8 @@ struct PickyConversationComposerView: View {
                 Text(placeholder)
                     .font(.system(size: 11.5))
                     .foregroundColor(DS.Colors.textTertiary)
-                    .padding(.top, 2)
+                    .padding(.leading, 5)
+                    .padding(.top, 7)
                     .allowsHitTesting(false)
             }
             TextEditor(text: $draft)
@@ -257,7 +256,7 @@ struct PickyConversationComposerView: View {
 
     static func editorHeight(for text: String) -> CGFloat {
         let lineCount = text.split(separator: "\n", omittingEmptySubsequences: false).count
-        return min(48, max(20, CGFloat(lineCount) * 16 + 4))
+        return min(48, max(24, CGFloat(lineCount) * 16 + 8))
     }
 
     private var sendButton: some View {

@@ -176,9 +176,9 @@ struct PickyConversationCardViewTests {
     }
 
     @Test func composerEditorHeightStartsCompactAndCapsGrowth() {
-        #expect(PickyConversationComposerView.editorHeight(for: "") == 20)
-        #expect(PickyConversationComposerView.editorHeight(for: "one line") == 20)
-        #expect(PickyConversationComposerView.editorHeight(for: "one\ntwo") == 36)
+        #expect(PickyConversationComposerView.editorHeight(for: "") == 24)
+        #expect(PickyConversationComposerView.editorHeight(for: "one line") == 24)
+        #expect(PickyConversationComposerView.editorHeight(for: "one\ntwo") == 40)
         #expect(PickyConversationComposerView.editorHeight(for: "one\ntwo\nthree\nfour") == 48)
     }
 

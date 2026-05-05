@@ -36,8 +36,6 @@ enum PickyPendingQueueKind {
 struct PickyPendingBubbleView: View {
     let queueItem: PickyQueueItem
     let kind: PickyPendingQueueKind
-    @State private var isHovered = false
-
     var body: some View {
         HStack {
             Spacer(minLength: 48)
@@ -50,11 +48,6 @@ struct PickyPendingBubbleView: View {
                     .font(.system(size: 12))
                     .foregroundColor(DS.Colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
-                if isHovered {
-                    Text(enqueuedText)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(DS.Colors.textTertiary)
-                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -77,19 +70,10 @@ struct PickyPendingBubbleView: View {
                     topTrailingRadius: 12,
                     style: .continuous
                 )
-                .stroke(kind.color.opacity(isHovered ? 0.75 : 0.48), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                .stroke(kind.color.opacity(0.48), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
             )
-            .onHover { isHovered = $0 }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
-    }
-
-    private var enqueuedText: String {
-        let seconds = max(0, Int(Date().timeIntervalSince(queueItem.enqueuedAt)))
-        if seconds < 60 { return "queued now" }
-        let minutes = seconds / 60
-        if minutes < 60 { return "queued \(minutes)m ago" }
-        return "queued \(minutes / 60)h ago"
     }
 }
 

@@ -191,10 +191,6 @@ struct BlueCursorView: View {
     @State private var navigationBubbleOpacity: Double = 0.0
     @State private var navigationBubbleSize: CGSize = .zero
 
-    /// The cursor position at the moment navigation started, used to detect
-    /// if the user moves the cursor enough to cancel the navigation.
-    @State private var cursorPositionWhenNavigationStarted: CGPoint = .zero
-
     /// Timer driving the frame-by-frame bezier arc flight animation.
     /// Invalidated when the flight completes, is canceled, or the view disappears.
     @State private var navigationAnimationTimer: Timer?
@@ -260,7 +256,7 @@ struct BlueCursorView: View {
                                 .preference(key: VoicePromptBubbleSizePreferenceKey.self, value: geo.size)
                         }
                     )
-                    .position(x: cursorPosition.x + 12 + (voicePromptBubbleSize.width / 2), y: cursorPosition.y + 20 + (voicePromptBubbleSize.height / 2))
+                    .position(cursorBubbleCenter(for: voicePromptBubbleSize))
                     .animation(.spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0), value: cursorPosition)
                     .animation(.easeOut(duration: 0.2), value: companionManager.voiceState)
                     .animation(.easeOut(duration: 0.16), value: companionManager.voicePromptBubbleState)
@@ -301,7 +297,7 @@ struct BlueCursorView: View {
                                 .preference(key: ResponseBubbleSizePreferenceKey.self, value: geo.size)
                         }
                     )
-                    .position(x: cursorPosition.x + 12 + (responseBubbleSize.width / 2), y: cursorPosition.y + 20 + (responseBubbleSize.height / 2))
+                    .position(cursorBubbleCenter(for: responseBubbleSize))
                     .animation(.spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0), value: cursorPosition)
                     .animation(.easeOut(duration: 0.2), value: companionManager.voiceState)
                     .onPreferenceChange(ResponseBubbleSizePreferenceKey.self) { newSize in
@@ -336,7 +332,7 @@ struct BlueCursorView: View {
                     )
                     .scaleEffect(navigationBubbleScale)
                     .opacity(navigationBubbleOpacity)
-                    .position(x: cursorPosition.x + 10 + (navigationBubbleSize.width / 2), y: cursorPosition.y + 18)
+                    .position(cursorBubbleCenter(for: navigationBubbleSize, horizontalGap: 10, verticalGap: 18))
                     .animation(.spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0), value: cursorPosition)
                     .animation(.spring(response: 0.4, dampingFraction: 0.6), value: navigationBubbleScale)
                     .animation(.easeOut(duration: 0.5), value: navigationBubbleOpacity)
@@ -452,23 +448,10 @@ struct BlueCursorView: View {
             let mouseLocation = NSEvent.mouseLocation
             self.isCursorOnThisScreen = self.screenFrame.contains(mouseLocation)
 
-            // During forward flight or pointing, the buddy is NOT interrupted by
-            // mouse movement — it completes its full animation and return flight.
-            // Only during the RETURN flight do we allow cursor movement to cancel
-            // (so the buddy snaps to following if the user moves while it's flying back).
-            if self.buddyNavigationMode == .navigatingToTarget && self.isReturningToCursor {
-                let currentMouseInSwiftUI = self.convertScreenPointToSwiftUICoordinates(mouseLocation)
-                let distanceFromNavigationStart = hypot(
-                    currentMouseInSwiftUI.x - self.cursorPositionWhenNavigationStarted.x,
-                    currentMouseInSwiftUI.y - self.cursorPositionWhenNavigationStarted.y
-                )
-                if distanceFromNavigationStart > 100 {
-                    cancelNavigationAndResumeFollowing()
-                }
-                return
-            }
-
-            // During forward navigation or pointing, just skip cursor tracking
+            // The buddy is never interrupted by mouse movement: fly-out runs to
+            // completion, and fly-back uses a live-target spring chase that
+            // already follows the cursor. So during any non-following mode we
+            // simply yield position control to the navigation timer.
             if self.buddyNavigationMode != .followingCursor {
                 return
             }
@@ -487,6 +470,28 @@ struct BlueCursorView: View {
         let x = screenPoint.x - screenFrame.origin.x
         let y = (screenFrame.origin.y + screenFrame.height) - screenPoint.y
         return CGPoint(x: x, y: y)
+    }
+
+    /// Picks a bubble center position around the cursor that stays inside the
+    /// current screen, falling back through bottom-right → bottom-left →
+    /// top-right → top-left before clamping. Returns the bubble's center so
+    /// it can plug straight into `.position(_:)`.
+    private func cursorBubbleCenter(
+        for bubbleSize: CGSize,
+        horizontalGap: CGFloat = 12,
+        verticalGap: CGFloat = 20
+    ) -> CGPoint {
+        let placement = PickyCursorBubblePlacement.compute(
+            cursorPosition: cursorPosition,
+            bubbleSize: bubbleSize,
+            screenSize: CGSize(width: screenFrame.width, height: screenFrame.height),
+            horizontalGap: horizontalGap,
+            verticalGap: verticalGap
+        )
+        return CGPoint(
+            x: placement.topLeading.x + bubbleSize.width / 2,
+            y: placement.topLeading.y + bubbleSize.height / 2
+        )
     }
 
     private var pointerTargetPosition: CGPoint? {
@@ -557,12 +562,7 @@ struct BlueCursorView: View {
             y: max(20, min(offsetTarget.y, screenFrame.height - 20))
         )
 
-        // Record the current cursor position so we can detect if the user
-        // moves the mouse enough to cancel the return flight
-        let mouseLocation = NSEvent.mouseLocation
-        cursorPositionWhenNavigationStarted = convertScreenPointToSwiftUICoordinates(mouseLocation)
-
-        // Enter navigation mode — stop cursor following
+        // Enter navigation mode — stop cursor following.
         buddyNavigationMode = .navigatingToTarget
         isReturningToCursor = false
 
@@ -589,8 +589,9 @@ struct BlueCursorView: View {
         let distance = hypot(deltaX, deltaY)
 
         // Flight duration scales with distance: short hops are quick, long
-        // flights are more dramatic. Clamped to 0.6s–1.4s.
-        let flightDurationSeconds = min(max(distance / 800.0, 0.6), 1.4)
+        // flights are more dramatic. Clamped to 0.35s–1.4s so very short
+        // hops don't drag visibly with the eased curve.
+        let flightDurationSeconds = min(max(distance / 800.0, 0.35), 1.4)
         let frameInterval: Double = 1.0 / 60.0
         let totalFrames = Int(flightDurationSeconds / frameInterval)
         var currentFrame = 0
@@ -619,8 +620,11 @@ struct BlueCursorView: View {
             // Linear progress 0→1 over the flight duration
             let linearProgress = Double(currentFrame) / Double(totalFrames)
 
-            // Smoothstep easeInOut: 3t² - 2t³ (Hermite interpolation)
-            let t = linearProgress * linearProgress * (3.0 - 2.0 * linearProgress)
+            // easeInOutCubic — stronger ease than smoothstep so the start/end
+            // accelerate/decelerate more visibly while the middle still moves quickly.
+            let t: Double = linearProgress < 0.5
+                ? 4.0 * linearProgress * linearProgress * linearProgress
+                : 1.0 - pow(-2.0 * linearProgress + 2.0, 3.0) / 2.0
 
             // Quadratic bezier: B(t) = (1-t)²·P0 + 2(1-t)t·P1 + t²·P2
             let oneMinusT = 1.0 - t
@@ -702,31 +706,70 @@ struct BlueCursorView: View {
         }
     }
 
-    /// Flies the buddy back to the current cursor position after pointing is done.
+    /// Flies the buddy back to the cursor after pointing is done. Uses a
+    /// damped spring that chases the LIVE mouse position each frame, so the
+    /// landing stays in sync even if the user moves the cursor mid-flight.
     private func startFlyingBackToCursor() {
-        let mouseLocation = NSEvent.mouseLocation
-        let cursorInSwiftUI = convertScreenPointToSwiftUICoordinates(mouseLocation)
-        let cursorWithTrackingOffset = CGPoint(x: cursorInSwiftUI.x + 35, y: cursorInSwiftUI.y + 25)
-
-        cursorPositionWhenNavigationStarted = cursorInSwiftUI
-
         buddyNavigationMode = .navigatingToTarget
         isReturningToCursor = true
 
-        animateBezierFlightArc(to: cursorWithTrackingOffset) {
+        animateSpringChaseToLiveCursor {
             self.finishNavigationAndResumeFollowing()
         }
     }
 
-    /// Cancels an in-progress navigation because the user moved the cursor.
-    private func cancelNavigationAndResumeFollowing() {
+    /// Damped-spring chase toward the buddy's normal position relative to the
+    /// live macOS mouse cursor. Used for fly-back so the landing point keeps
+    /// up with cursor movement and the deceleration feels natural instead of
+    /// snapping at the end of a static bezier arc.
+    private func animateSpringChaseToLiveCursor(onComplete: @escaping () -> Void) {
         navigationAnimationTimer?.invalidate()
-        navigationAnimationTimer = nil
-        navigationBubbleText = ""
-        navigationBubbleOpacity = 0.0
-        navigationBubbleScale = 1.0
-        buddyFlightScale = 1.0
-        finishNavigationAndResumeFollowing()
+
+        let frameInterval: Double = 1.0 / 60.0
+        // Slightly underdamped (zeta ≈ 0.85) so the buddy lands quickly without
+        // visible overshoot. Tuned by perceived feel rather than exact units.
+        let stiffness: CGFloat = 220
+        let damping: CGFloat = 25
+        let mass: CGFloat = 1.0
+        let convergenceEpsilon: CGFloat = 0.5
+        let maxDurationSeconds: TimeInterval = 1.5
+
+        var elapsed: TimeInterval = 0
+        var velocity = CGPoint.zero
+
+        navigationAnimationTimer = Timer.scheduledTimer(withTimeInterval: frameInterval, repeats: true) { _ in
+            elapsed += frameInterval
+
+            let mouseLocation = NSEvent.mouseLocation
+            let mouseInSwiftUI = self.convertScreenPointToSwiftUICoordinates(mouseLocation)
+            let target = CGPoint(x: mouseInSwiftUI.x + 35, y: mouseInSwiftUI.y + 25)
+
+            let dx = target.x - self.cursorPosition.x
+            let dy = target.y - self.cursorPosition.y
+            let ax = (stiffness * dx - damping * velocity.x) / mass
+            let ay = (stiffness * dy - damping * velocity.y) / mass
+            velocity.x += ax * CGFloat(frameInterval)
+            velocity.y += ay * CGFloat(frameInterval)
+
+            self.cursorPosition = CGPoint(
+                x: self.cursorPosition.x + velocity.x * CGFloat(frameInterval),
+                y: self.cursorPosition.y + velocity.y * CGFloat(frameInterval)
+            )
+
+            // Gently relax flight scale toward 1.0 in case fly-out left it elevated.
+            self.buddyFlightScale = self.buddyFlightScale + (1.0 - self.buddyFlightScale) * 0.18
+
+            let displacement = hypot(dx, dy)
+            let speed = hypot(velocity.x, velocity.y)
+            let converged = displacement < convergenceEpsilon && speed < convergenceEpsilon
+            if converged || elapsed >= maxDurationSeconds {
+                self.navigationAnimationTimer?.invalidate()
+                self.navigationAnimationTimer = nil
+                self.cursorPosition = target
+                self.buddyFlightScale = 1.0
+                onComplete()
+            }
+        }
     }
 
     /// Returns the buddy to normal cursor-following mode after navigation completes.
@@ -744,6 +787,55 @@ struct BlueCursorView: View {
 
 }
 
+
+// MARK: - Cursor Bubble Placement
+
+/// Picks a placement for a cursor-anchored bubble that stays within the host
+/// screen. The function tries the four corners around the cursor in priority
+/// order (bottom-right → bottom-left → top-right → top-left) and falls back
+/// to clamping when no candidate fits. Pure logic so it can be unit tested.
+struct PickyCursorBubblePlacement: Equatable {
+    enum Side: Equatable { case bottomRight, bottomLeft, topRight, topLeft }
+    let topLeading: CGPoint
+    let side: Side
+
+    static func compute(
+        cursorPosition: CGPoint,
+        bubbleSize: CGSize,
+        screenSize: CGSize,
+        horizontalGap: CGFloat = 12,
+        verticalGap: CGFloat = 20,
+        edgePadding: CGFloat = 8
+    ) -> PickyCursorBubblePlacement {
+        let candidates: [(Side, CGPoint)] = [
+            (.bottomRight, CGPoint(x: cursorPosition.x + horizontalGap, y: cursorPosition.y + verticalGap)),
+            (.bottomLeft, CGPoint(x: cursorPosition.x - horizontalGap - bubbleSize.width, y: cursorPosition.y + verticalGap)),
+            (.topRight, CGPoint(x: cursorPosition.x + horizontalGap, y: cursorPosition.y - verticalGap - bubbleSize.height)),
+            (.topLeft, CGPoint(x: cursorPosition.x - horizontalGap - bubbleSize.width, y: cursorPosition.y - verticalGap - bubbleSize.height)),
+        ]
+
+        for (side, origin) in candidates {
+            let fitsHorizontally = origin.x >= edgePadding
+                && origin.x + bubbleSize.width + edgePadding <= screenSize.width
+            let fitsVertically = origin.y >= edgePadding
+                && origin.y + bubbleSize.height + edgePadding <= screenSize.height
+            if fitsHorizontally && fitsVertically {
+                return PickyCursorBubblePlacement(topLeading: origin, side: side)
+            }
+        }
+
+        let fallbackSide = candidates[0].0
+        let fallbackOrigin = candidates[0].1
+        let maxX = max(edgePadding, screenSize.width - bubbleSize.width - edgePadding)
+        let maxY = max(edgePadding, screenSize.height - bubbleSize.height - edgePadding)
+        let clampedX = min(max(fallbackOrigin.x, edgePadding), maxX)
+        let clampedY = min(max(fallbackOrigin.y, edgePadding), maxY)
+        return PickyCursorBubblePlacement(
+            topLeading: CGPoint(x: clampedX, y: clampedY),
+            side: fallbackSide
+        )
+    }
+}
 
 // MARK: - Voice Prompt Bubble
 

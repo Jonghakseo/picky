@@ -525,7 +525,7 @@ describe("SessionSupervisor", () => {
     expect(runtime.handle?.extensionUiAnswers).toEqual([{ requestId: "ui-steer", value: { cancelled: true } }]);
     expect(updated.pendingExtensionUiRequest).toBeUndefined();
     expect(updated.messages?.find((message) => message.id === "ui-steer")?.cancelledAt).toBeDefined();
-    expect(runtime.handle?.steers).toEqual(["do this instead"]);
+    expect(runtime.handle?.interrupts.map((prompt) => prompt.text)).toEqual(["do this instead"]);
   });
 
   it("prefers the runtime status finalAnswer over the streamed accumulator so reports do not include intermediate ReAct turns", async () => {
@@ -737,11 +737,11 @@ describe("SessionSupervisor", () => {
 
     await supervisor.steer(session.id, "use this screenshot", steerContext);
 
-    expect(runtime.handle?.steers).toHaveLength(1);
-    expect(runtime.handle?.steerPrompts[0]?.text).toContain("## User steering instruction\nuse this screenshot");
-    expect(runtime.handle?.steerPrompts[0]?.text).toContain("## Captured context");
-    expect(runtime.handle?.steerPrompts[0]?.text).toContain("selected snippet");
-    expect(runtime.handle?.steerPrompts[0]?.imagePaths).toEqual(["/tmp/picky-steer.png"]);
+    expect(runtime.handle?.interrupts).toHaveLength(1);
+    expect(runtime.handle?.interrupts[0]?.text).toContain("## User steering instruction\nuse this screenshot");
+    expect(runtime.handle?.interrupts[0]?.text).toContain("## Captured context");
+    expect(runtime.handle?.interrupts[0]?.text).toContain("selected snippet");
+    expect(runtime.handle?.interrupts[0]?.imagePaths).toEqual(["/tmp/picky-steer.png"]);
   });
 
   // Regression for the `/diff-review` (and any other Pi `pi.registerCommand` slash command) HUD

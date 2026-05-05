@@ -41,18 +41,25 @@ struct PickyConversationHeaderView: View {
 
     private var trailingActions: some View {
         HStack(alignment: .center, spacing: 9) {
+            voiceTargetBadgeSlot
             notifyOnCompletionButton
             statusPill
-            if isVoiceFollowUpTarget {
-                voiceTargetBadge
-            }
             conversationMenuButton
         }
         .fixedSize(horizontal: true, vertical: false)
     }
 
     private var trailingActionsReservedWidth: CGFloat {
-        isVoiceFollowUpTarget ? 166 : 140
+        166
+    }
+
+    private var voiceTargetBadgeSlot: some View {
+        ZStack {
+            if isVoiceFollowUpTarget {
+                voiceTargetBadge
+            }
+        }
+        .frame(width: 18, height: 18)
     }
 
     private var voiceTargetBadge: some View {

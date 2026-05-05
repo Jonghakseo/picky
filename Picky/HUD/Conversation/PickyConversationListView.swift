@@ -89,7 +89,12 @@ struct PickyConversationListView: View {
             }
         case .agentQuestion:
             if let request = message.question {
-                PickyQuestionBubbleView(request: request, cancelledAt: message.cancelledAt, viewModel: viewModel)
+                PickyQuestionBubbleView(
+                    request: request,
+                    cancelledAt: message.cancelledAt,
+                    isActiveRequest: session.pendingExtensionUiRequest?.id == request.id,
+                    viewModel: viewModel
+                )
             } else {
                 PickyAgentBubbleView(message: message)
             }

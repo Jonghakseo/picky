@@ -932,6 +932,7 @@ export class SessionSupervisor extends EventEmitter {
           : "Previous run was interrupted by daemon restart; send a follow-up or steer message to continue.";
         if (current.pendingExtensionUiRequest) {
           reattachPatch.pendingExtensionUiRequest = undefined;
+          await this.messageBuilder.cancelExtensionQuestion(session.id, current.pendingExtensionUiRequest.id);
         }
       }
       await this.patch(session.id, reattachPatch);

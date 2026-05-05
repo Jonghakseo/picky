@@ -10,19 +10,27 @@ import SwiftUI
 struct PickyQuestionBubbleView: View {
     let request: PickyExtensionUiRequest
     let cancelledAt: Date?
+    let isActiveRequest: Bool
     @ObservedObject var viewModel: PickySessionListViewModel
     @State private var textValue = ""
     @State private var formState = PickyAskUserQuestionFormState()
     @State private var seededFormRequestID: String?
 
     private var isCancelled: Bool { cancelledAt != nil }
+    private var isClosed: Bool { isCancelled || !isActiveRequest }
+
+    private var statusLabel: String {
+        if isCancelled { return "INPUT CANCELLED" }
+        if !isActiveRequest { return "INPUT CLOSED" }
+        return "INPUT NEEDED"
+    }
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 8) {
-                Text("⌑ INPUT NEEDED · \(request.method)")
+                Text("⌑ \(statusLabel) · \(request.method)")
                     .font(.system(size: 9.5, weight: .bold))
-                    .foregroundColor(isCancelled ? DS.Colors.textTertiary : DS.Colors.warning)
+                    .foregroundColor(isClosed ? DS.Colors.textTertiary : DS.Colors.warning)
                     .lineLimit(1)
                 if let title = request.title, !title.isEmpty {
                     Text(title)
@@ -41,8 +49,8 @@ struct PickyQuestionBubbleView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 controls
-                    .disabled(isCancelled)
-                    .opacity(isCancelled ? 0.48 : 1)
+                    .disabled(isClosed)
+                    .opacity(isClosed ? 0.48 : 1)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
@@ -55,7 +63,7 @@ struct PickyQuestionBubbleView: View {
                     topTrailingRadius: 12,
                     style: .continuous
                 )
-                .fill(isCancelled ? DS.Colors.surface2.opacity(0.55) : DS.Colors.warning.opacity(0.07))
+                .fill(isClosed ? DS.Colors.surface2.opacity(0.55) : DS.Colors.warning.opacity(0.07))
             )
             .overlay(
                 UnevenRoundedRectangle(
@@ -65,7 +73,7 @@ struct PickyQuestionBubbleView: View {
                     topTrailingRadius: 12,
                     style: .continuous
                 )
-                .stroke((isCancelled ? DS.Colors.borderSubtle : DS.Colors.warning.opacity(0.58)), lineWidth: 1)
+                .stroke((isClosed ? DS.Colors.borderSubtle : DS.Colors.warning.opacity(0.58)), lineWidth: 1)
             )
             Spacer(minLength: 36)
         }

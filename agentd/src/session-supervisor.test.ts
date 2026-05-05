@@ -1113,6 +1113,20 @@ describe("SessionSupervisor", () => {
         createdAt: "2026-05-01T00:00:05.000Z",
         prompt: "Need input",
       },
+      messages: [
+        {
+          id: "ui-1",
+          kind: "agent_question",
+          createdAt: "2026-05-01T00:00:05.000Z",
+          question: {
+            id: "ui-1",
+            sessionId: "waiting-with-pending-ui",
+            method: "input",
+            createdAt: "2026-05-01T00:00:05.000Z",
+            prompt: "Need input",
+          },
+        },
+      ],
     });
     const runtime = new ResumableRuntime();
     const supervisor = new SessionSupervisor(runtime, store);
@@ -1122,6 +1136,7 @@ describe("SessionSupervisor", () => {
     const restored = supervisor.get("waiting-with-pending-ui");
     expect(restored?.status).toBe("blocked");
     expect(restored?.pendingExtensionUiRequest).toBeUndefined();
+    expect(restored?.messages?.[0]?.cancelledAt).toBeDefined();
     expect(restored?.lastSummary).toMatch(/previous question can no longer be answered/);
   });
 

@@ -71,9 +71,8 @@ struct PickyConversationListView: View {
         case .agentError:
             PickyErrorBubbleView(
                 message: message,
-                onRetry: {},
                 onOpenTerminal: { viewModel.openTerminalOverlay(sessionID: session.id) },
-                onOpenLogs: {}
+                onOpenLogs: { viewModel.openTerminalOverlay(sessionID: session.id) }
             )
         case .system:
             PickyAgentBubbleView(message: message)

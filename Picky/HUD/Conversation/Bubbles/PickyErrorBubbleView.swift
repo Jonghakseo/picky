@@ -9,7 +9,8 @@ import SwiftUI
 
 struct PickyErrorBubbleView: View {
     let message: PickySessionMessage
-    var onRetry: () -> Void = {}
+    // Retry chip intentionally omitted — user retries via the composer
+    // (re-send their own message). Recovery surface stays narrow on purpose.
     var onOpenTerminal: () -> Void = {}
     var onOpenLogs: () -> Void = {}
 
@@ -40,7 +41,6 @@ struct PickyErrorBubbleView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(spacing: 6) {
-                    recoveryChip("↻ 다시 시도", color: DS.Colors.destructiveText, action: onRetry)
                     recoveryChip("⌨ Terminal 열기", color: DS.Colors.accentText, action: onOpenTerminal)
                     recoveryChip("📄 전체 로그", color: DS.Colors.accentText, action: onOpenLogs)
                 }

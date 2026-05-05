@@ -24,7 +24,6 @@ struct PickyConversationComposerView: View {
                 .foregroundColor(DS.Colors.textPrimary)
                 .focused($isFocused)
                 .onSubmit { submitSteer() }
-            voiceButton
             sendButton
         }
         .padding(.horizontal, 9)
@@ -44,17 +43,11 @@ struct PickyConversationComposerView: View {
         }
     }
 
-    private var voiceButton: some View {
-        Button(action: {}) {
-            Image(systemName: "mic")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(DS.Colors.textTertiary)
-                .frame(width: 18, height: 18)
-        }
-        .buttonStyle(.plain)
-        .disabled(true)
-        .help("Voice input will be wired in PR9b")
-    }
+    // Voice input is intentionally not exposed in the composer.
+    // Voice steering uses the existing hover + global PTT shortcut flow
+    // (CompanionManager.setVoiceFollowUpSessionIDForCurrentUtterance via
+    // selectionStore.hoveredVoiceFollowUpSessionID). The header already shows
+    // the active voice target with a mic.fill indicator.
 
     private var sendButton: some View {
         Button(action: submitSteer) {

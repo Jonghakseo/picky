@@ -9,12 +9,13 @@ import SwiftUI
 
 struct PickyConversationListView: View {
     let session: PickySessionListViewModel.SessionCard
+    @ObservedObject var viewModel: PickySessionListViewModel
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 8) {
-                    if session.messages.isEmpty {
+                    if session.messages.isEmpty && !hasQueueOrActivity {
                         Color.clear
                             .frame(height: 24)
                     } else {
@@ -25,6 +26,15 @@ struct PickyConversationListView: View {
                             messageView(message)
                                 .id(message.id)
                         }
+                        if shouldShowActivityStrip {
+                            PickyActivitySummaryView(
+                                summary: session.activitySummary,
+                                onOpenTerminal: { viewModel.openTerminalOverlay(sessionID: session.id) }
+                            )
+                            .id("__activity__")
+                        }
+                        queueSection(items: session.queuedFollowUps, kind: .followUp, mode: session.followUpMode)
+                        queueSection(items: session.queuedSteers, kind: .steer, mode: session.steeringMode)
                     }
                 }
                 .padding(.vertical, 2)
@@ -46,9 +56,54 @@ struct PickyConversationListView: View {
             PickyAgentBubbleView(message: message)
         case .agentThinking:
             PickyTypingBubbleView(message: message)
-        case .agentQuestion, .agentReport, .agentError, .system:
+        case .agentReport:
+            if let report = message.report {
+                PickyFinalReportBubbleView(report: report)
+            } else {
+                PickyAgentBubbleView(message: message)
+            }
+        case .agentQuestion:
+            if let request = message.question {
+                PickyQuestionBubbleView(request: request, cancelledAt: message.cancelledAt, viewModel: viewModel)
+            } else {
+                PickyAgentBubbleView(message: message)
+            }
+        case .agentError:
+            PickyErrorBubbleView(
+                message: message,
+                onRetry: {},
+                onOpenTerminal: { viewModel.openTerminalOverlay(sessionID: session.id) },
+                onOpenLogs: {}
+            )
+        case .system:
             PickyAgentBubbleView(message: message)
         }
+    }
+
+    @ViewBuilder
+    private func queueSection(items: [PickyQueueItem], kind: PickyPendingQueueKind, mode: PickyQueueMode) -> some View {
+        if !items.isEmpty {
+            if mode == .all {
+                PickyBatchGroupView(items: items, kind: kind)
+            } else {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    PickyPendingBubbleView(queueItem: item, kind: kind)
+                }
+            }
+        }
+    }
+
+    private var shouldShowActivityStrip: Bool {
+        guard !session.pinned else { return false }
+        let total = session.activitySummary.edit
+            + session.activitySummary.bash
+            + session.activitySummary.thinking
+            + session.activitySummary.other
+        return total > 0
+    }
+
+    private var hasQueueOrActivity: Bool {
+        shouldShowActivityStrip || !session.queuedSteers.isEmpty || !session.queuedFollowUps.isEmpty
     }
 
     private func shouldShowSeparator(before index: Int) -> Bool {

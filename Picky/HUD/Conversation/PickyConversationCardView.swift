@@ -15,7 +15,7 @@ struct PickyConversationCardView: View {
         VStack(alignment: .leading, spacing: 10) {
             PickyConversationHeaderView(viewModel: viewModel, session: session)
             PickyConversationContextLineView(session: session)
-            PickyConversationListView(session: session)
+            PickyConversationListView(session: session, viewModel: viewModel)
             composerPlaceholder
         }
         .padding(.horizontal, 12)

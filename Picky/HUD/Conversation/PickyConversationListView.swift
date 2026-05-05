@@ -47,6 +47,31 @@ struct PickyConversationListView: View {
         }
     }
 
+    var renderSnapshot: PickyConversationListRenderSnapshot {
+        var snapshot = PickyConversationListRenderSnapshot()
+        snapshot.showsActivitySummary = shouldShowActivityStrip
+        snapshot.batchGroupCount += session.followUpMode == .all && !session.queuedFollowUps.isEmpty ? 1 : 0
+        snapshot.batchGroupCount += session.steeringMode == .all && !session.queuedSteers.isEmpty ? 1 : 0
+        snapshot.pendingBubbleCount += session.followUpMode == .all ? 0 : session.queuedFollowUps.count
+        snapshot.pendingBubbleCount += session.steeringMode == .all ? 0 : session.queuedSteers.count
+
+        for message in session.messages {
+            switch message.kind {
+            case .agentThinking:
+                snapshot.typingBubbleCount += 1
+            case .agentReport where message.report != nil:
+                snapshot.finalReportBubbleCount += 1
+            case .agentQuestion where message.question != nil:
+                snapshot.questionBubbleCount += 1
+            case .agentError:
+                snapshot.errorBubbleCount += 1
+            default:
+                break
+            }
+        }
+        return snapshot
+    }
+
     @ViewBuilder
     private func messageView(_ message: PickySessionMessage) -> some View {
         switch message.kind {
@@ -135,6 +160,16 @@ struct PickyConversationListView: View {
             }
         }
     }
+}
+
+struct PickyConversationListRenderSnapshot: Equatable {
+    var typingBubbleCount = 0
+    var batchGroupCount = 0
+    var pendingBubbleCount = 0
+    var finalReportBubbleCount = 0
+    var questionBubbleCount = 0
+    var errorBubbleCount = 0
+    var showsActivitySummary = false
 }
 
 private struct PickyConversationTimeSeparatorView: View {

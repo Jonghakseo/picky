@@ -41,6 +41,8 @@ struct PickyUserBubbleView: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
+    var displayedOriginLabel: String? { originLabel }
+
     private var originLabel: String? {
         switch message.originatedBy {
         case .mainAgent:

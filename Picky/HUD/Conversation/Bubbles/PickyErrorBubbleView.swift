@@ -73,6 +73,10 @@ struct PickyErrorBubbleView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    var recoveryChipLabels: [String] {
+        ["⌨ Terminal 열기", "📄 전체 로그"]
+    }
+
     private var title: String {
         let text = message.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return text.isEmpty ? "Runtime error" : text

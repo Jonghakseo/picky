@@ -81,6 +81,8 @@ struct PickyConversationComposerView: View {
             )
     }
 
+    var placeholderText: String { placeholder }
+
     private var placeholder: String {
         switch session.status {
         case .running, .queued, .waiting_for_input:

@@ -11,23 +11,29 @@ struct PickyConversationMenu: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
 
+    var canOpenPiTerminal: Bool { session.piSessionFilePath != nil }
+    var canOpenReport: Bool { session.reportArtifact != nil || session.finalReport != nil }
+    var canCopyResumeCommand: Bool { session.piSessionFilePath != nil }
+    var canStop: Bool { !session.status.isTerminal }
+
     var body: some View {
         Section("QUICK") {
             Button("Open Pi terminal") {
                 viewModel.openTerminalOverlay(sessionID: session.id)
             }
             .keyboardShortcut("t", modifiers: .command)
+            .disabled(!canOpenPiTerminal)
 
             Button("Open report") {
                 Task { try? await viewModel.openReport(sessionID: session.id) }
             }
             .keyboardShortcut("r", modifiers: .command)
-            .disabled(session.reportArtifact == nil && session.finalReport == nil)
+            .disabled(!canOpenReport)
 
             Button("Copy resume command") {
                 viewModel.copyTerminalResumeCommand(sessionID: session.id)
             }
-            .disabled(session.piSessionFilePath == nil)
+            .disabled(!canCopyResumeCommand)
         }
 
         Section("SETTINGS") {
@@ -38,7 +44,7 @@ struct PickyConversationMenu: View {
             Button("Stop session") {
                 Task { try? await viewModel.abort(sessionID: session.id) }
             }
-            .disabled(session.status.isTerminal)
+            .disabled(!canStop)
 
             Button("Archive") {
                 viewModel.archive(sessionID: session.id)

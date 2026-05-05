@@ -107,6 +107,23 @@ struct PickyConversationHeaderView: View {
         }
     }
 
+    var statusColorName: String {
+        switch session.status {
+        case .running:
+            return "blue"
+        case .completed:
+            return "green"
+        case .waiting_for_input:
+            return "amber"
+        case .failed:
+            return "red"
+        case .blocked:
+            return "warning"
+        case .queued, .cancelled:
+            return "tertiary"
+        }
+    }
+
     private var statusColor: Color {
         switch session.status {
         case .running:

@@ -12,10 +12,9 @@ struct PickyActivitySummaryView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            activityChip("✏", label: "edit", count: summary.edit, color: DS.Colors.accentText)
-            activityChip("⌨", label: "bash", count: summary.bash, color: DS.Colors.warning)
-            activityChip("⌁", label: "thinking", count: summary.thinking, color: DS.Colors.textTertiary)
-            activityChip("⊞", label: "etc", count: summary.other, color: DS.Colors.floatingGradientPurple)
+            ForEach(summary.visibleToolCallItems) { item in
+                activityChip(item.icon, label: item.label, count: item.count, color: item.color)
+            }
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 4)
@@ -32,5 +31,24 @@ struct PickyActivitySummaryView: View {
         .font(.system(size: 10.5, weight: .medium, design: .monospaced))
         .foregroundColor(color)
         .lineLimit(1)
+    }
+}
+
+struct PickyActivitySummaryDisplayItem: Identifiable {
+    let id: String
+    let icon: String
+    let label: String
+    let count: Int
+    let color: Color
+}
+
+extension PickyActivitySummary {
+    var visibleToolCallItems: [PickyActivitySummaryDisplayItem] {
+        [
+            PickyActivitySummaryDisplayItem(id: "read", icon: "📖", label: "read", count: read, color: DS.Colors.info),
+            PickyActivitySummaryDisplayItem(id: "bash", icon: "⌨", label: "bash", count: bash, color: DS.Colors.warning),
+            PickyActivitySummaryDisplayItem(id: "edit", icon: "✏", label: "edit", count: edit, color: DS.Colors.accentText),
+            PickyActivitySummaryDisplayItem(id: "write", icon: "▣", label: "write", count: write, color: DS.Colors.floatingGradientPurple),
+        ].filter { $0.count > 0 }
     }
 }

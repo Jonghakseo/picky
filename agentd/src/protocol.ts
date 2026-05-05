@@ -123,7 +123,14 @@ export const PickyQueueModeSchema = z.enum(["one-at-a-time", "all"]);
 export type PickyQueueMode = z.infer<typeof PickyQueueModeSchema>;
 export const PickyQueueItemSchema = z.object({ text: z.string(), enqueuedAt: isoTimestamp });
 export type PickyQueueItem = z.infer<typeof PickyQueueItemSchema>;
-export const PickyActivitySummarySchema = z.object({ edit: z.number().int(), bash: z.number().int(), thinking: z.number().int(), other: z.number().int() });
+export const PickyActivitySummarySchema = z.object({
+  read: z.number().int().default(0),
+  bash: z.number().int().default(0),
+  edit: z.number().int().default(0),
+  write: z.number().int().default(0),
+  thinking: z.number().int().default(0),
+  other: z.number().int().default(0),
+});
 export type PickyActivitySummary = z.infer<typeof PickyActivitySummarySchema>;
 export const PickySessionMessageSchema = z.object({
   id: z.string(),
@@ -158,7 +165,7 @@ export const PickyAgentSessionSchema = z.object({
   queuedFollowUps: z.array(PickyQueueItemSchema).default([]),
   steeringMode: PickyQueueModeSchema.default("one-at-a-time"),
   followUpMode: PickyQueueModeSchema.default("one-at-a-time"),
-  activitySummary: PickyActivitySummarySchema.default({ edit: 0, bash: 0, thinking: 0, other: 0 }),
+  activitySummary: PickyActivitySummarySchema.default({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 }),
   pendingExtensionUiRequest: PickyExtensionUiRequestSchema.optional(),
   notifyMainOnCompletion: z.boolean().optional(),
   archived: z.boolean().optional(),

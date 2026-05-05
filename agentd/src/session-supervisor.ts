@@ -1358,11 +1358,11 @@ function diffQueueRemovedTexts(
 }
 
 function zeroActivitySummary(): PickyActivitySummary {
-  return { edit: 0, bash: 0, thinking: 0, other: 0 };
+  return { read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 };
 }
 
 function activityTotal(summary: PickyActivitySummary): number {
-  return summary.edit + summary.bash + summary.thinking + summary.other;
+  return summary.read + summary.bash + summary.edit + summary.write + summary.thinking + summary.other;
 }
 
 function buildPinnedSideSessionLogs(context: PickyContextPacket): string[] {

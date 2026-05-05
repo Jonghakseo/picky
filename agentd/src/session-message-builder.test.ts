@@ -81,10 +81,10 @@ describe("SessionMessageBuilder", () => {
   it("records activity snapshots as message stream entries", async () => {
     const { builder, events, messages } = makeBuilder();
 
-    await builder.recordActivitySnapshot("session-1", { edit: 1, bash: 2, thinking: 0, other: 0 });
-    await builder.recordActivitySnapshot("session-1", { edit: 0, bash: 0, thinking: 0, other: 0 });
+    await builder.recordActivitySnapshot("session-1", { read: 1, bash: 2, edit: 3, write: 4, thinking: 0, other: 0 });
+    await builder.recordActivitySnapshot("session-1", { read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });
 
-    expect(messages).toMatchObject([{ kind: "agent_activity", activitySnapshot: { edit: 1, bash: 2, thinking: 0, other: 0 } }]);
+    expect(messages).toMatchObject([{ kind: "agent_activity", activitySnapshot: { read: 1, bash: 2, edit: 3, write: 4, thinking: 0, other: 0 } }]);
     expect(events).toMatchObject([{ type: "appended", message: { kind: "agent_activity" }, seq: 1 }]);
   });
 

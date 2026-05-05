@@ -51,7 +51,7 @@ struct PickyConversationListView: View {
         var snapshot = PickyConversationListRenderSnapshot()
         snapshot.showsActivitySummary = session.messages.contains { message in
             guard message.kind == .agentActivity, let snapshot = message.activitySnapshot else { return false }
-            return activityTotal(snapshot) > 0
+            return !snapshot.visibleToolCallItems.isEmpty
         }
         let followUps = visibleQueuedFollowUps
         let steers = visibleQueuedSteers
@@ -70,7 +70,7 @@ struct PickyConversationListView: View {
                 snapshot.questionBubbleCount += 1
             case .agentError:
                 snapshot.errorBubbleCount += 1
-            case .agentActivity where message.activitySnapshot != nil:
+            case .agentActivity where message.activitySnapshot?.visibleToolCallItems.isEmpty == false:
                 snapshot.activitySummaryCount += 1
             default:
                 break
@@ -110,7 +110,7 @@ struct PickyConversationListView: View {
                 onOpenLogs: { viewModel.openTerminalOverlay(sessionID: session.id) }
             )
         case .agentActivity:
-            if let snapshot = message.activitySnapshot, activityTotal(snapshot) > 0 {
+            if let snapshot = message.activitySnapshot, !snapshot.visibleToolCallItems.isEmpty {
                 PickyActivitySummaryView(summary: snapshot)
             } else {
                 EmptyView()
@@ -283,10 +283,6 @@ struct PickyConversationListRenderSnapshot: Equatable {
     var errorBubbleCount = 0
     var activitySummaryCount = 0
     var showsActivitySummary = false
-}
-
-private func activityTotal(_ summary: PickyActivitySummary) -> Int {
-    summary.edit + summary.bash + summary.thinking + summary.other
 }
 
 private struct PickyConversationTimeSeparatorView: View {

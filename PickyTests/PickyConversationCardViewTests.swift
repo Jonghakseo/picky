@@ -51,7 +51,7 @@ struct PickyConversationCardViewTests {
             status: .running,
             messages: [
                 message("m-user", kind: .userText, text: "please build"),
-                message("m-activity", kind: .agentActivity, activitySnapshot: PickyActivitySummary(edit: 3, bash: 5, thinking: 8, other: 1)),
+                message("m-activity", kind: .agentActivity, activitySnapshot: PickyActivitySummary(edit: 3, bash: 5, thinking: 8, other: 1, read: 2, write: 1)),
                 message("m-agent", kind: .agentText, text: "working"),
                 message("m-thinking", kind: .agentThinking, text: "Thinking…")
             ],
@@ -59,7 +59,7 @@ struct PickyConversationCardViewTests {
             queuedFollowUps: [queueItem("follow up one"), queueItem("follow up two")],
             steeringMode: .oneAtATime,
             followUpMode: .all,
-            activitySummary: PickyActivitySummary(edit: 3, bash: 5, thinking: 8, other: 1)
+            activitySummary: PickyActivitySummary(edit: 3, bash: 5, thinking: 8, other: 1, read: 2, write: 1)
         )
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
@@ -337,8 +337,31 @@ struct PickyConversationCardViewTests {
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
 
-        #expect(snapshot.activitySummaryCount == 1, "agent_activity message itself is counted")
+        #expect(snapshot.activitySummaryCount == 0, "zero-count snapshot should not render a visible activity strip")
         #expect(!snapshot.showsActivitySummary, "zero-count snapshot should not surface in UI")
+    }
+
+    @Test func activitySummaryShowsOnlyCalledReadBashEditWriteTools() {
+        let items = PickyActivitySummary(edit: 3, bash: 0, thinking: 4, other: 5, read: 2, write: 0).visibleToolCallItems
+
+        #expect(items.map(\.id) == ["read", "edit"])
+        #expect(items.map(\.count) == [2, 3])
+    }
+
+    @Test func activitySnapshotWithOnlyThinkingAndOtherIsHidden() {
+        let session = makeConversationSession(
+            status: .running,
+            messages: [
+                message("u", kind: .userText, text: "hello"),
+                message("a-act", kind: .agentActivity, activitySnapshot: PickyActivitySummary(thinking: 2, other: 1)),
+                message("a", kind: .agentText, text: "hi")
+            ]
+        )
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+
+        #expect(snapshot.activitySummaryCount == 0)
+        #expect(!snapshot.showsActivitySummary)
     }
 
     // MARK: - Last turn-only visibility (Earlier history)

@@ -276,7 +276,7 @@ export class SessionMessageBuilder {
 }
 
 function activityTotal(summary: PickyActivitySummary): number {
-  return summary.edit + summary.bash + summary.thinking + summary.other;
+  return summary.read + summary.bash + summary.edit + summary.write + summary.thinking + summary.other;
 }
 
 function firstNonEmptyLine(value: string | undefined): string | undefined {

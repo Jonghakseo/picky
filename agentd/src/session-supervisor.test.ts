@@ -97,7 +97,7 @@ describe("SessionSupervisor", () => {
     runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "succeeded", preview: "done" });
     await waitUntil(() => supervisor.get(session.id)?.activitySummary?.bash === 1);
 
-    expect(supervisor.get(session.id)?.activitySummary).toMatchObject({ edit: 0, bash: 1, thinking: 0, other: 0 });
+    expect(supervisor.get(session.id)?.activitySummary).toMatchObject({ read: 0, bash: 1, edit: 0, write: 0, thinking: 0, other: 0 });
     expect(events.map((event) => event.seq)).toEqual([1]);
   });
 
@@ -121,26 +121,27 @@ describe("SessionSupervisor", () => {
 
     const activityMessages = messages.filter((message) => message.kind === "agent_activity");
     expect(activityMessages.map((message) => message.activitySnapshot)).toEqual([
-      { edit: 0, bash: 1, thinking: 0, other: 0 },
-      { edit: 1, bash: 0, thinking: 0, other: 0 },
+      { read: 0, bash: 1, edit: 0, write: 0, thinking: 0, other: 0 },
+      { read: 0, bash: 0, edit: 1, write: 0, thinking: 0, other: 0 },
     ]);
-    expect(supervisor.get(session.id)?.activitySummary).toEqual({ edit: 1, bash: 1, thinking: 0, other: 0 });
+    expect(supervisor.get(session.id)?.activitySummary).toEqual({ read: 0, bash: 1, edit: 1, write: 0, thinking: 0, other: 0 });
   });
 
-  it("classifies edit, bash, and unknown tools in the activity summary", async () => {
+  it("classifies read, bash, edit, write, and unknown tools in the activity summary", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-activity-category-test-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
     const session = await supervisor.create(context("activity categories"));
 
-    runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "edit", status: "running" });
-    runtime.handle!.emit({ type: "tool", toolCallId: "tool-2", name: "write", status: "running" });
-    runtime.handle!.emit({ type: "tool", toolCallId: "tool-3", name: "bash", status: "running" });
-    runtime.handle!.emit({ type: "tool", toolCallId: "tool-4", name: "mcp__notion__readPage", status: "running" });
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "read", status: "running" });
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-2", name: "bash", status: "running" });
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-3", name: "edit", status: "running" });
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-4", name: "write", status: "running" });
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-5", name: "mcp__notion__readPage", status: "running" });
     await waitUntil(() => supervisor.get(session.id)?.activitySummary?.other === 1);
 
-    expect(supervisor.get(session.id)?.activitySummary).toEqual({ edit: 2, bash: 1, thinking: 0, other: 1 });
+    expect(supervisor.get(session.id)?.activitySummary).toEqual({ read: 1, bash: 1, edit: 1, write: 1, thinking: 0, other: 1 });
   });
 
   it("counts one thinking step per contiguous thinking run", async () => {
@@ -170,7 +171,7 @@ describe("SessionSupervisor", () => {
     runtime.handle!.emit({ type: "thinking_delta", delta: "third" });
     await waitUntil(() => supervisor.get(session.id)?.activitySummary?.thinking === 3);
 
-    expect(supervisor.get(session.id)?.activitySummary).toEqual({ edit: 0, bash: 0, thinking: 3, other: 1 });
+    expect(supervisor.get(session.id)?.activitySummary).toEqual({ read: 1, bash: 0, edit: 0, write: 0, thinking: 3, other: 0 });
   });
 
   it("shares monotonic sequence numbers across queue and activity updates", async () => {
@@ -202,7 +203,7 @@ describe("SessionSupervisor", () => {
 
     const pinned = await supervisor.pinSideSession(context("pin completed source"), "Pinned source");
 
-    expect(pinned.activitySummary).toEqual({ edit: 0, bash: 0, thinking: 0, other: 0 });
+    expect(pinned.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });
     expect(events).toEqual([]);
   });
 
@@ -221,7 +222,7 @@ describe("SessionSupervisor", () => {
     runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running" });
     await waitUntil(() => supervisor.get(session.id)?.activitySummary?.bash === 2);
 
-    expect(supervisor.get(session.id)?.activitySummary).toEqual({ edit: 0, bash: 2, thinking: 0, other: 0 });
+    expect(supervisor.get(session.id)?.activitySummary).toEqual({ read: 0, bash: 2, edit: 0, write: 0, thinking: 0, other: 0 });
   });
 
   it("preserves enqueuedAt for unchanged queue items", async () => {
@@ -2257,7 +2258,7 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.messages?.map((message) => ({ kind: message.kind, text: message.text, activitySnapshot: message.activitySnapshot }))).toEqual([
       { kind: "agent_text", text: "Answer", activitySnapshot: undefined },
       { kind: "agent_text", text: " done", activitySnapshot: undefined },
-      { kind: "agent_activity", text: undefined, activitySnapshot: { edit: 0, bash: 1, thinking: 1, other: 0 } },
+      { kind: "agent_activity", text: undefined, activitySnapshot: { read: 0, bash: 1, edit: 0, write: 0, thinking: 1, other: 0 } },
     ]);
   });
 

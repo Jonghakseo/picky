@@ -28,6 +28,7 @@ struct PickyConversationHeaderView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .layoutPriority(1)
+            Spacer(minLength: 8)
             statusPill
             if isVoiceFollowUpTarget {
                 Image(systemName: "mic.fill")
@@ -49,6 +50,7 @@ struct PickyConversationHeaderView: View {
             .menuIndicator(.hidden)
             .accessibilityLabel("Conversation menu")
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear { pulse = true }
     }
 

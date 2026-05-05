@@ -22,6 +22,62 @@ enum CompanionPanelSettingsSection: CaseIterable, Hashable {
     case shortcuts
 }
 
+/// One screen of the Settings tab. The index screen lists the categories;
+/// every other case is a leaf page hosting that category's content. Adding a
+/// new category amounts to: extend this enum, add a label/subtitle, and route
+/// to the matching helper view inside CompanionPanelSettingsView.
+enum CompanionPanelSettingsRoute: Hashable {
+    case index
+    case workspace
+    case notifications
+    case mainAgent
+    case voice
+    case shortcuts
+
+    var section: CompanionPanelSettingsSection? {
+        switch self {
+        case .index: nil
+        case .workspace: .workspace
+        case .notifications: .notifications
+        case .mainAgent: .mainAgent
+        case .voice: .voice
+        case .shortcuts: .shortcuts
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .index: "Settings"
+        case .workspace: "Workspace"
+        case .notifications: "Notifications"
+        case .mainAgent: "Main Agent"
+        case .voice: "Voice"
+        case .shortcuts: "Shortcuts"
+        }
+    }
+
+    var subtitle: String? {
+        switch self {
+        case .index: nil
+        case .workspace: "Default folder for new sessions."
+        case .notifications: "Banners for session events."
+        case .mainAgent: "Reasoning level for the always-on agent."
+        case .voice: "Speech providers and language."
+        case .shortcuts: "Push to Talk and Quick Input bindings."
+        }
+    }
+}
+
+/// Order of the categories shown on the Settings index. Kept separate from
+/// the enum so we can rearrange without disturbing the type.
+private let companionPanelSettingsRouteOrder: [CompanionPanelSettingsRoute] = [
+    .workspace,
+    .notifications,
+    .mainAgent,
+    .voice,
+    .shortcuts
+]
+
 enum CompanionPanelSettingsSaveStatus: Equatable {
     case idle
     case saved
@@ -66,20 +122,14 @@ struct CompanionPanelSettingsView: View {
     @State private var azureDraft: String = ""
     @State private var saveStatuses = CompanionPanelSettingsSaveStatuses()
     @State private var saveStatusResets: [CompanionPanelSettingsSection: AnyCancellable] = [:]
+    @State private var route: CompanionPanelSettingsRoute = .index
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            workspaceSection
-            sectionDivider
-            notificationsSection
-            sectionDivider
-            mainAgentSection
-            sectionDivider
-            voiceSection
-            sectionDivider
-            shortcutsSection
+            navHeader
+            content
 
-            if let error = viewModel.validationError {
+            if route != .index, let error = viewModel.validationError {
                 Text(error)
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundColor(DS.Colors.destructiveText)
@@ -87,6 +137,7 @@ struct CompanionPanelSettingsView: View {
                     .padding(.top, 12)
             }
         }
+        .animation(.easeOut(duration: 0.16), value: route)
         .onAppear {
             pathDraft = viewModel.settings.defaultCwd
             azureDraft = viewModel.settings.azureSTTPreferredLanguage
@@ -96,6 +147,79 @@ struct CompanionPanelSettingsView: View {
             // Persist immediately and flash the saved indicator next to the changed
             // section only. Draft text in other sections remains untouched.
             saveImmediately(for: .notifications)
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch route {
+        case .index: indexView
+        case .workspace: workspaceSection
+        case .notifications: notificationsSection
+        case .mainAgent: mainAgentSection
+        case .voice: voiceSection
+        case .shortcuts: shortcutsSection
+        }
+    }
+
+    @ViewBuilder
+    private var navHeader: some View {
+        if route != .index {
+            HStack(spacing: 8) {
+                Button(action: { route = .index }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Settings")
+                            .font(.system(size: 11.5, weight: .medium))
+                    }
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .pointerCursor()
+
+                Spacer(minLength: 6)
+            }
+            .padding(.bottom, 8)
+        }
+    }
+
+    private var indexView: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(companionPanelSettingsRouteOrder.enumerated()), id: \.element) { index, item in
+                Button(action: { route = item }) {
+                    HStack(alignment: .center, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.title)
+                                .font(.system(size: 12.5, weight: .semibold))
+                                .foregroundColor(DS.Colors.textPrimary)
+                            if let subtitle = item.subtitle {
+                                Text(subtitle)
+                                    .font(.system(size: 10.5, weight: .medium))
+                                    .foregroundColor(DS.Colors.textTertiary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        if let section = item.section {
+                            statusIndicator(for: section)
+                        }
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(DS.Colors.textTertiary)
+                    }
+                    .padding(.vertical, 9)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .pointerCursor()
+
+                if index < companionPanelSettingsRouteOrder.count - 1 {
+                    Divider()
+                        .background(DS.Colors.borderSubtle.opacity(0.3))
+                }
+            }
         }
     }
 
@@ -229,12 +353,6 @@ struct CompanionPanelSettingsView: View {
                 }
             }
         }
-    }
-
-    private var sectionDivider: some View {
-        Divider()
-            .background(DS.Colors.borderSubtle.opacity(0.4))
-            .padding(.vertical, 14)
     }
 
     @ViewBuilder

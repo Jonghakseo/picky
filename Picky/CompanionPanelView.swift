@@ -112,7 +112,7 @@ private struct CompanionPanelTabBar: View {
     @Binding var selectedTab: CompanionPanelTab
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: 0) {
             ForEach(CompanionPanelTab.allCases) { tab in
                 Button {
                     withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) {
@@ -122,6 +122,7 @@ private struct CompanionPanelTabBar: View {
                     Text(tab.rawValue)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(selectedTab == tab ? DS.Colors.textPrimary : DS.Colors.textTertiary)
+                        .padding(.horizontal, 10)
                         .padding(.vertical, 8)
                         .overlay(alignment: .bottom) {
                             Rectangle()
@@ -129,12 +130,14 @@ private struct CompanionPanelTabBar: View {
                                 .frame(height: 1.5)
                                 .offset(y: 0.5)
                         }
+                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .pointerCursor()
             }
-            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(DS.Colors.borderSubtle.opacity(0.5))

@@ -1238,12 +1238,12 @@ struct PickySessionViewModelTests {
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-follow", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
         try await settle()
 
-        try await viewModel.followUp(text: "  continue here  ")
+        try await viewModel.steer(text: "  continue here  ")
         #expect(client.sentCommands.last?.type == .steer)
         #expect(client.sentCommands.last?.sessionId == "session-follow")
         #expect(client.sentCommands.last?.text == "continue here")
         await #expect(throws: PickySessionListViewModelError.emptyFollowUp) {
-            try await viewModel.followUp(text: "   ")
+            try await viewModel.steer(text: "   ")
         }
     }
 
@@ -1289,7 +1289,7 @@ struct PickySessionViewModelTests {
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-cancelled", status: "cancelled", summary: "Cancelled", updatedAt: "2026-05-01T00:00:05.000Z"))))
         try await settle()
 
-        try await viewModel.followUp(text: "  다시 진행해줘  ", sessionID: "session-cancelled")
+        try await viewModel.steer(text: "  다시 진행해줘  ", sessionID: "session-cancelled")
 
         #expect(client.sentCommands.last?.type == .steer)
         #expect(client.sentCommands.last?.sessionId == "session-cancelled")

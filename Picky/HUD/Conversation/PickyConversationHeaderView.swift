@@ -37,11 +37,17 @@ struct PickyConversationHeaderView: View {
                     .background(Circle().fill(DS.Colors.accentSubtle.opacity(0.95)))
                     .help("Voice steering target")
             }
-            Image(systemName: "ellipsis")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(DS.Colors.textTertiary)
-                .frame(width: 20, height: 20)
-                .accessibilityLabel("Conversation menu")
+            Menu {
+                PickyConversationMenu(session: session, viewModel: viewModel)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .frame(width: 18, height: 18)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .accessibilityLabel("Conversation menu")
         }
         .onAppear { pulse = true }
     }

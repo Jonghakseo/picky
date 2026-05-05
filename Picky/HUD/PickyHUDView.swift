@@ -70,6 +70,7 @@ struct PickyHUDView: View {
     @State private var closeExpansionTask: Task<Void, Never>?
     @State private var gitSectionExpansionBySessionID: [String: Bool] = [:]
     @State private var dockIconScreenFramesBySessionID: [String: CGRect] = [:]
+    @State private var useConversationCard = PickySettingsStore().load().useConversationCard
 
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {
         Array(viewModel.sessions.prefix(PickyHUDDockLayout.visibleSessionLimit).reversed())
@@ -103,18 +104,25 @@ struct PickyHUDView: View {
     private var hudContent: some View {
         HStack(alignment: .center, spacing: PickyHUDDockLayout.panelGap) {
             if let activeSession {
-                PickySessionCardView(
-                    session: activeSession,
-                    isExpanded: true,
-                    isGitSectionExpanded: gitSectionExpandedBinding(for: activeSession.id),
-                    viewModel: viewModel,
-                    showsDisclosure: false,
-                    onToggle: { pinSession(activeSession.id) },
-                    onHoverChanged: { _ in }
-                )
-                .id(activeSession.id)
-                .frame(width: PickyHUDDockLayout.detailWidth)
-                .transition(.opacity)
+                if useConversationCard {
+                    PickyConversationCardView(viewModel: viewModel, session: activeSession)
+                        .id(activeSession.id)
+                        .frame(width: PickyHUDDockLayout.detailWidth)
+                        .transition(.opacity)
+                } else {
+                    PickySessionCardView(
+                        session: activeSession,
+                        isExpanded: true,
+                        isGitSectionExpanded: gitSectionExpandedBinding(for: activeSession.id),
+                        viewModel: viewModel,
+                        showsDisclosure: false,
+                        onToggle: { pinSession(activeSession.id) },
+                        onHoverChanged: { _ in }
+                    )
+                    .id(activeSession.id)
+                    .frame(width: PickyHUDDockLayout.detailWidth)
+                    .transition(.opacity)
+                }
             }
 
             PickyHUDDockRailView(
@@ -136,6 +144,9 @@ struct PickyHUDView: View {
         .onChange(of: visibleSessions.map(\.id)) { _, visibleIDs in
             dockIconScreenFramesBySessionID = dockIconScreenFramesBySessionID.filter { visibleIDs.contains($0.key) }
             pointAtPendingDockSessionIfPossible()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pickySettingsDidSave)) { _ in
+            useConversationCard = PickySettingsStore().load().useConversationCard
         }
     }
 
@@ -868,7 +879,7 @@ private struct PickySessionCardView: View {
     private func submitFollowUp() {
         let text = followUpText
         followUpText = ""
-        Task { try? await viewModel.followUp(text: text, sessionID: session.id) }
+        Task { try? await viewModel.steer(text: text, sessionID: session.id) }
     }
 
     private func metaRow(icon: String, text: String) -> some View {

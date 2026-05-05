@@ -385,6 +385,27 @@ final class PickySessionListViewModel: ObservableObject {
     func followUp(text: String, sessionID: String? = nil) async throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
+            lastError = "Follow-up message cannot be empty"
+            throw PickySessionListViewModelError.emptyFollowUp
+        }
+        guard let target = sessionID ?? selectedSession?.id else {
+            lastError = "No session selected for follow-up"
+            throw PickySessionListViewModelError.noSessionSelected
+        }
+        pickySessionLog("follow-up session=\(target) textChars=\(trimmed.count)")
+        try await client.send(PickyCommandEnvelope(type: .followUp, sessionId: target, text: trimmed))
+        let now = Date()
+        update(sessionID: target) { card in
+            card.lastRequestText = trimmed
+            card.lastRequestAt = now
+            card.updatedAt = now
+        }
+        select(sessionID: target)
+    }
+
+    func steer(text: String, sessionID: String? = nil) async throws {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
             lastError = "Steer message cannot be empty"
             throw PickySessionListViewModelError.emptyFollowUp
         }

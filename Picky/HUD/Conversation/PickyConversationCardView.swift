@@ -16,23 +16,12 @@ struct PickyConversationCardView: View {
             PickyConversationHeaderView(viewModel: viewModel, session: session)
             PickyConversationContextLineView(session: session)
             PickyConversationListView(session: session, viewModel: viewModel)
-            composerPlaceholder
+            PickyConversationComposerView(session: session, viewModel: viewModel)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
         .frame(width: PickyHUDDockLayout.detailWidth)
         .background(cardBackground)
-    }
-
-    private var composerPlaceholder: some View {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(DS.Colors.surface2.opacity(0.35))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(DS.Colors.borderSubtle.opacity(0.45), lineWidth: 0.8)
-            )
-            .frame(height: 34)
-            .accessibilityHidden(true)
     }
 
     private var cardBackground: some View {

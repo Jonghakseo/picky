@@ -55,6 +55,7 @@ describe("picky agentd known bugs (failing reproductions)", () => {
       materializeTerminalArtifacts: async () => {},
       applyQueueUpdate: async () => {},
       incrementActivity: async () => {},
+      commitTurnActivity: async () => {},
       notifySideCompletion: async () => {},
       isSideSession: () => false,
       consumePendingFinalReport: () => undefined,
@@ -67,6 +68,7 @@ describe("picky agentd known bugs (failing reproductions)", () => {
         flushAssistantText: async () => {},
         appendThinkingDelta: async () => {},
         flushThinking: async () => {},
+        recordActivitySnapshot: async () => {},
       },
     });
 

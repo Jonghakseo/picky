@@ -41,6 +41,7 @@ struct PickyConversationCardViewTests {
             status: .running,
             messages: [
                 message("m-user", kind: .userText, text: "please build"),
+                message("m-activity", kind: .agentActivity, activitySnapshot: PickyActivitySummary(edit: 3, bash: 5, thinking: 8, other: 1)),
                 message("m-agent", kind: .agentText, text: "working"),
                 message("m-thinking", kind: .agentThinking, text: "Thinking…")
             ],
@@ -56,6 +57,7 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.typingBubbleCount == 1)
         #expect(snapshot.batchGroupCount == 1)
         #expect(snapshot.pendingBubbleCount == 1)
+        #expect(snapshot.activitySummaryCount == 1)
         #expect(snapshot.showsActivitySummary)
     }
 
@@ -199,6 +201,65 @@ struct PickyConversationCardViewTests {
 
         #expect(bubble.displayedOriginLabel == "by Pi terminal")
     }
+
+    // MARK: - PR11 regression: per-turn agent_activity snapshot
+
+    @Test func multipleTurnsRenderSeparateActivitySnapshots() {
+        let snap1 = PickyActivitySummary(edit: 1, bash: 0, thinking: 2, other: 0)
+        let snap2 = PickyActivitySummary(edit: 0, bash: 3, thinking: 1, other: 0)
+        let session = makeConversationSession(
+            status: .running,
+            messages: [
+                message("u1", kind: .userText, text: "first task"),
+                message("a1-act", kind: .agentActivity, activitySnapshot: snap1),
+                message("a1", kind: .agentText, text: "first reply"),
+                message("u2", kind: .userText, text: "second task"),
+                message("a2-act", kind: .agentActivity, activitySnapshot: snap2),
+                message("a2", kind: .agentText, text: "second reply")
+            ],
+            activitySummary: PickyActivitySummary(edit: 1, bash: 3, thinking: 3, other: 0)
+        )
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+
+        #expect(snapshot.activitySummaryCount == 2)
+        #expect(snapshot.showsActivitySummary)
+    }
+
+    @Test func zeroCountActivitySnapshotIsHidden() {
+        let session = makeConversationSession(
+            status: .running,
+            messages: [
+                message("u", kind: .userText, text: "hello"),
+                message("a-act", kind: .agentActivity, activitySnapshot: .zero),
+                message("a", kind: .agentText, text: "hi")
+            ]
+        )
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+
+        #expect(snapshot.activitySummaryCount == 1, "agent_activity message itself is counted")
+        #expect(!snapshot.showsActivitySummary, "zero-count snapshot should not surface in UI")
+    }
+
+    @Test func activityStripIsNotAutoInsertedWhenNoAgentActivityMessage() {
+        // Regression: the legacy auto-insert (after first user_text) was removed in PR11.
+        // Without an explicit agent_activity message, no strip should be shown — even if
+        // the lifetime activitySummary on the session is non-zero.
+        let session = makeConversationSession(
+            status: .running,
+            messages: [
+                message("u", kind: .userText, text: "hello"),
+                message("a", kind: .agentText, text: "hi")
+            ],
+            activitySummary: PickyActivitySummary(edit: 5, bash: 5, thinking: 5, other: 5)
+        )
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+
+        #expect(snapshot.activitySummaryCount == 0)
+        #expect(!snapshot.showsActivitySummary)
+    }
 }
 
 private let baseDate = Date(timeIntervalSince1970: 1_777_777_777)
@@ -254,6 +315,7 @@ private func message(
     originatedBy: PickyMessageOrigin? = nil,
     question: PickyExtensionUiRequest? = nil,
     report: PickyFinalReport? = nil,
+    activitySnapshot: PickyActivitySummary? = nil,
     errorContext: String? = nil,
     errorMessage: String? = nil
 ) -> PickySessionMessage {
@@ -266,6 +328,7 @@ private func message(
         question: question,
         cancelledAt: nil,
         report: report,
+        activitySnapshot: activitySnapshot,
         errorContext: errorContext,
         errorMessage: errorMessage
     )

@@ -342,6 +342,7 @@ enum PickySessionMessageKind: String, Codable, Equatable {
     case agentQuestion = "agent_question"
     case agentReport = "agent_report"
     case agentError = "agent_error"
+    case agentActivity = "agent_activity"
     case system
 }
 
@@ -354,6 +355,7 @@ struct PickySessionMessage: Codable, Equatable, Identifiable {
     let question: PickyExtensionUiRequest?
     let cancelledAt: Date?
     let report: PickyFinalReport?
+    let activitySnapshot: PickyActivitySummary?
     let errorContext: String?
     let errorMessage: String?
 }

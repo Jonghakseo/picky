@@ -264,6 +264,34 @@ struct ProtocolContractTests {
         #expect(seq == 7)
     }
 
+    @Test func decodesAgentActivitySessionMessage() throws {
+        let json = """
+        {
+          "id":"event-activity-message",
+          "protocolVersion":"2026-05-05",
+          "timestamp":"2026-05-05T00:00:00.000Z",
+          "type":"sessionMessageAppended",
+          "sessionId":"session-001",
+          "message":{
+            "id":"message-activity-001",
+            "kind":"agent_activity",
+            "createdAt":"2026-05-05T00:00:00.000Z",
+            "activitySnapshot":{"edit":1,"bash":2,"thinking":3,"other":4}
+          },
+          "seq":8
+        }
+        """.data(using: .utf8)!
+
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
+        guard case .sessionMessageAppended(_, let message, let seq) = envelope.event else {
+            Issue.record("Expected sessionMessageAppended")
+            return
+        }
+        #expect(message.kind == .agentActivity)
+        #expect(message.activitySnapshot == PickyActivitySummary(edit: 1, bash: 2, thinking: 3, other: 4))
+        #expect(seq == 8)
+    }
+
     @Test func decodesSessionQueueUpdatedWithoutModes() throws {
         let json = """
         {

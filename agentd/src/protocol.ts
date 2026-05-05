@@ -134,13 +134,14 @@ export const PickyFinalReportSchema = z.object({
 export type PickyFinalReport = z.infer<typeof PickyFinalReportSchema>;
 export const PickySessionMessageSchema = z.object({
   id: z.string(),
-  kind: z.enum(["user_text", "agent_text", "agent_thinking", "agent_question", "agent_report", "agent_error", "system"]),
+  kind: z.enum(["user_text", "agent_text", "agent_thinking", "agent_question", "agent_report", "agent_error", "agent_activity", "system"]),
   createdAt: isoTimestamp,
   originatedBy: z.enum(["user", "main_agent", "pi_extension"]).optional(),
   text: z.string().optional(),
   question: PickyExtensionUiRequestSchema.optional(),
   cancelledAt: isoTimestamp.optional(),
   report: PickyFinalReportSchema.optional(),
+  activitySnapshot: PickyActivitySummarySchema.optional(),
   errorContext: z.string().optional(),
   errorMessage: z.string().optional(),
 });

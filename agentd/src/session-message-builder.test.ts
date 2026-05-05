@@ -4,6 +4,7 @@ import { SessionMessageBuilder } from "./session-message-builder.js";
 
 function makeBuilder() {
   let seq = 0;
+  let now = "2026-05-01T00:00:00.000Z";
   const messages: PickySessionMessage[] = [];
   const events: Array<{ type: "appended"; message: PickySessionMessage; seq: number } | { type: "replaced"; messageId: string; message: PickySessionMessage; seq: number } | { type: "removed"; messageId: string; seq: number }> = [];
   const builder = new SessionMessageBuilder({
@@ -11,12 +12,12 @@ function makeBuilder() {
     emitReplaced: async (_sessionId, messageId, message, eventSeq) => { events.push({ type: "replaced", messageId, message, seq: eventSeq }); },
     emitRemoved: async (_sessionId, messageId, eventSeq) => { events.push({ type: "removed", messageId, seq: eventSeq }); },
     nextSeq: () => ++seq,
-    now: () => "2026-05-01T00:00:00.000Z",
+    now: () => now,
     syncSessionMessages: async (_sessionId, nextMessages) => {
       messages.splice(0, messages.length, ...nextMessages);
     },
   });
-  return { builder, events, messages };
+  return { builder, events, messages, setNow: (value: string) => { now = value; } };
 }
 
 describe("SessionMessageBuilder", () => {
@@ -72,6 +73,30 @@ describe("SessionMessageBuilder", () => {
     expect(events[2]).toMatchObject({ type: "removed", messageId: thinkingId });
     expect(messages).toMatchObject([{ kind: "agent_thinking", text: "new phase" }]);
     expect(messages[0].id).not.toBe(thinkingId);
+  });
+
+  it("records activity snapshots as message stream entries", async () => {
+    const { builder, events, messages } = makeBuilder();
+
+    await builder.recordActivitySnapshot("session-1", { edit: 1, bash: 2, thinking: 0, other: 0 });
+    await builder.recordActivitySnapshot("session-1", { edit: 0, bash: 0, thinking: 0, other: 0 });
+
+    expect(messages).toMatchObject([{ kind: "agent_activity", activitySnapshot: { edit: 1, bash: 2, thinking: 0, other: 0 } }]);
+    expect(events).toMatchObject([{ type: "appended", message: { kind: "agent_activity" }, seq: 1 }]);
+  });
+
+  it("keeps appended message timestamps monotonic when the clock moves backward", async () => {
+    const { builder, messages, setNow } = makeBuilder();
+
+    setNow("2026-05-01T00:05:00.000Z");
+    await builder.recordUserText("session-1", "first", "user");
+    setNow("2026-05-01T00:01:00.000Z");
+    await builder.recordUserText("session-1", "second", "user");
+
+    expect(messages.map((message) => message.createdAt)).toEqual([
+      "2026-05-01T00:05:00.000Z",
+      "2026-05-01T00:05:00.000Z",
+    ]);
   });
 
   it("records questions, cancellations, errors, system messages, and final reports", async () => {

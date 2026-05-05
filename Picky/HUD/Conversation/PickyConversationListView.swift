@@ -10,6 +10,7 @@ import SwiftUI
 struct PickyConversationListView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
+    @State private var hasAppeared = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -26,30 +27,29 @@ struct PickyConversationListView: View {
                             messageView(message)
                                 .id(message.id)
                         }
-                        if shouldShowActivityStrip {
-                            PickyActivitySummaryView(
-                                summary: session.activitySummary,
-                                onOpenTerminal: { viewModel.openTerminalOverlay(sessionID: session.id) }
-                            )
-                            .id("__activity__")
-                        }
                         queueSection(items: session.queuedFollowUps, kind: .followUp, mode: session.followUpMode)
                         queueSection(items: session.queuedSteers, kind: .steer, mode: session.steeringMode)
                     }
                 }
                 .padding(.vertical, 2)
             }
-            .frame(maxHeight: 280)
-            .onAppear { scrollToLatest(proxy: proxy) }
+            .frame(minHeight: 80, maxHeight: 1050)
+            .onAppear {
+                scrollToLatest(proxy: proxy, animated: false)
+                hasAppeared = true
+            }
             .onChange(of: session.messages.last?.id) { _, _ in
-                scrollToLatest(proxy: proxy)
+                scrollToLatest(proxy: proxy, animated: hasAppeared)
             }
         }
     }
 
     var renderSnapshot: PickyConversationListRenderSnapshot {
         var snapshot = PickyConversationListRenderSnapshot()
-        snapshot.showsActivitySummary = shouldShowActivityStrip
+        snapshot.showsActivitySummary = session.messages.contains { message in
+            guard message.kind == .agentActivity, let snapshot = message.activitySnapshot else { return false }
+            return activityTotal(snapshot) > 0
+        }
         snapshot.batchGroupCount += session.followUpMode == .all && !session.queuedFollowUps.isEmpty ? 1 : 0
         snapshot.batchGroupCount += session.steeringMode == .all && !session.queuedSteers.isEmpty ? 1 : 0
         snapshot.pendingBubbleCount += session.followUpMode == .all ? 0 : session.queuedFollowUps.count
@@ -65,6 +65,8 @@ struct PickyConversationListView: View {
                 snapshot.questionBubbleCount += 1
             case .agentError:
                 snapshot.errorBubbleCount += 1
+            case .agentActivity where message.activitySnapshot != nil:
+                snapshot.activitySummaryCount += 1
             default:
                 break
             }
@@ -104,6 +106,12 @@ struct PickyConversationListView: View {
                 onOpenTerminal: { viewModel.openTerminalOverlay(sessionID: session.id) },
                 onOpenLogs: { viewModel.openTerminalOverlay(sessionID: session.id) }
             )
+        case .agentActivity:
+            if let snapshot = message.activitySnapshot, activityTotal(snapshot) > 0 {
+                PickyActivitySummaryView(summary: snapshot)
+            } else {
+                EmptyView()
+            }
         case .system:
             PickyAgentBubbleView(message: message)
         }
@@ -112,6 +120,7 @@ struct PickyConversationListView: View {
     @ViewBuilder
     private func queueSection(items: [PickyQueueItem], kind: PickyPendingQueueKind, mode: PickyQueueMode) -> some View {
         if !items.isEmpty {
+            queueGroupHeader(items: items, kind: kind)
             if mode == .all {
                 PickyBatchGroupView(items: items, kind: kind)
             } else {
@@ -122,17 +131,40 @@ struct PickyConversationListView: View {
         }
     }
 
-    private var shouldShowActivityStrip: Bool {
-        guard !session.pinned else { return false }
-        let total = session.activitySummary.edit
-            + session.activitySummary.bash
-            + session.activitySummary.thinking
-            + session.activitySummary.other
-        return total > 0
+    private func queueGroupHeader(items: [PickyQueueItem], kind: PickyPendingQueueKind) -> some View {
+        HStack(spacing: 6) {
+            Text(kind.label)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(kind.color)
+            Text("\(items.count)")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(DS.Colors.textTertiary)
+            Spacer(minLength: 8)
+            Button(action: {
+                let clearKind: PickyQueueClearKind = (kind == .steer) ? .steering : .followUp
+                Task { try? await viewModel.clearQueue(sessionID: session.id, kind: clearKind) }
+            }) {
+                Text("Clear all")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule().fill(DS.Colors.surface2.opacity(0.6))
+                    )
+                    .overlay(
+                        Capsule().stroke(DS.Colors.borderSubtle.opacity(0.5), lineWidth: 0.5)
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(kind == .steer ? "Clear queued steering messages" : "Clear queued follow-up messages")
+        }
+        .padding(.horizontal, 4)
+        .padding(.top, 4)
     }
 
     private var hasQueueOrActivity: Bool {
-        shouldShowActivityStrip || !session.queuedSteers.isEmpty || !session.queuedFollowUps.isEmpty
+        !session.queuedSteers.isEmpty || !session.queuedFollowUps.isEmpty
     }
 
     private func shouldShowSeparator(before index: Int) -> Bool {
@@ -157,10 +189,14 @@ struct PickyConversationListView: View {
         return "\(hours)h \(minutes % 60)m later"
     }
 
-    private func scrollToLatest(proxy: ScrollViewProxy) {
+    private func scrollToLatest(proxy: ScrollViewProxy, animated: Bool) {
         guard let latestID = session.messages.last?.id else { return }
         DispatchQueue.main.async {
-            withAnimation(.easeOut(duration: 0.18)) {
+            if animated {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    proxy.scrollTo(latestID, anchor: .bottom)
+                }
+            } else {
                 proxy.scrollTo(latestID, anchor: .bottom)
             }
         }
@@ -174,7 +210,12 @@ struct PickyConversationListRenderSnapshot: Equatable {
     var finalReportBubbleCount = 0
     var questionBubbleCount = 0
     var errorBubbleCount = 0
+    var activitySummaryCount = 0
     var showsActivitySummary = false
+}
+
+private func activityTotal(_ summary: PickyActivitySummary) -> Int {
+    summary.edit + summary.bash + summary.thinking + summary.other
 }
 
 private struct PickyConversationTimeSeparatorView: View {

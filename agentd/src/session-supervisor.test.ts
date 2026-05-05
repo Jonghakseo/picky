@@ -96,6 +96,32 @@ describe("SessionSupervisor", () => {
     expect(events.map((event) => event.seq)).toEqual([1]);
   });
 
+  it("emits a turn-local activity message at terminal turn boundary and resets it for the next turn", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-activity-message-test-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("activity message"));
+    const messages: Array<{ kind: string; activitySnapshot?: unknown }> = [];
+    supervisor.on("messageAppended", (_sessionId, message) => messages.push({ kind: message.kind, activitySnapshot: message.activitySnapshot }));
+
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running" });
+    runtime.handle!.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => messages.some((message) => message.kind === "agent_activity"));
+
+    await supervisor.followUp(session.id, "next turn");
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-2", name: "edit", status: "running" });
+    runtime.handle!.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => messages.filter((message) => message.kind === "agent_activity").length === 2);
+
+    const activityMessages = messages.filter((message) => message.kind === "agent_activity");
+    expect(activityMessages.map((message) => message.activitySnapshot)).toEqual([
+      { edit: 0, bash: 1, thinking: 0, other: 0 },
+      { edit: 1, bash: 0, thinking: 0, other: 0 },
+    ]);
+    expect(supervisor.get(session.id)?.activitySummary).toEqual({ edit: 1, bash: 1, thinking: 0, other: 0 });
+  });
+
   it("classifies edit, bash, and unknown tools in the activity summary", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-activity-category-test-"));
@@ -2064,13 +2090,14 @@ describe("SessionSupervisor", () => {
     runtime.handle?.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running" });
     runtime.handle?.emit({ type: "assistant_delta", delta: " done" });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await waitUntil(() => (supervisor.get(session.id)?.messages ?? []).length === 2);
+    await waitUntil(() => (supervisor.get(session.id)?.messages ?? []).length === 3);
 
     expect(events.map((event) => event.type)).toContain("append");
     expect(events.some((event) => event.type === "replace" || event.type === "remove")).toBe(true);
-    expect(supervisor.get(session.id)?.messages?.map((message) => ({ kind: message.kind, text: message.text }))).toEqual([
-      { kind: "agent_text", text: "Answer" },
-      { kind: "agent_text", text: " done" },
+    expect(supervisor.get(session.id)?.messages?.map((message) => ({ kind: message.kind, text: message.text, activitySnapshot: message.activitySnapshot }))).toEqual([
+      { kind: "agent_text", text: "Answer", activitySnapshot: undefined },
+      { kind: "agent_text", text: " done", activitySnapshot: undefined },
+      { kind: "agent_activity", text: undefined, activitySnapshot: { edit: 0, bash: 1, thinking: 1, other: 0 } },
     ]);
   });
 

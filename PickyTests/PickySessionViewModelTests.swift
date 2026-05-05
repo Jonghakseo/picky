@@ -1753,6 +1753,7 @@ private extension PickySessionMessage {
             question: nil,
             cancelledAt: nil,
             report: nil,
+            activitySnapshot: nil,
             errorContext: nil,
             errorMessage: nil
         )

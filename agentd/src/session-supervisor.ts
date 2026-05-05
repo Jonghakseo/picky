@@ -63,6 +63,7 @@ export class SessionSupervisor extends EventEmitter {
   private sessionSeq = new Map<string, number>();
   private queueUpdateChains = new Map<string, Promise<void>>();
   private activityUpdateChains = new Map<string, Promise<void>>();
+  private turnActivity = new Map<string, PickyActivitySummary>();
   private emitChains = new Map<string, Promise<void>>();
   private readonly messageBuilder: SessionMessageBuilder;
   private lastEmittedSteeringMode = new Map<string, PickyQueueMode>();
@@ -87,6 +88,7 @@ export class SessionSupervisor extends EventEmitter {
       materializeTerminalArtifacts: (sessionId) => this.materializeTerminalArtifacts(sessionId),
       applyQueueUpdate: (sessionId, steering, followUp) => this.applyQueueUpdate(sessionId, steering, followUp),
       incrementActivity: (sessionId, category) => this.incrementActivity(sessionId, category),
+      commitTurnActivity: (sessionId) => this.commitTurnActivity(sessionId),
       notifySideCompletion: (sessionId) => this.notifyMainOfSideCompletion(sessionId),
       isSideSession: (sessionId) => this.sideSessionIds.has(sessionId),
       consumePendingFinalReport: (sessionId) => this.consumePendingFinalReport(sessionId),
@@ -825,6 +827,7 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("submit final report received", { sessionId, status: report.status, summaryChars: report.summary.length });
     this.pendingFinalReports.set(sessionId, report);
     await this.patch(sessionId, { finalReport: report, finalAnswer: report.summary });
+    await this.commitTurnActivity(sessionId);
     await this.messageBuilder.recordFinalReport(sessionId, report);
   }
 
@@ -901,9 +904,25 @@ export class SessionSupervisor extends EventEmitter {
     if (!session) return;
     const current = session.activitySummary ?? zeroActivitySummary();
     const next = { ...current, [category]: current[category] + 1 };
+    const currentTurn = this.turnActivity.get(sessionId) ?? zeroActivitySummary();
+    this.turnActivity.set(sessionId, { ...currentTurn, [category]: currentTurn[category] + 1 });
     await this.patch(sessionId, { activitySummary: next });
     const seq = this.nextSeq(sessionId);
     await this.chainEmit(sessionId, async () => { this.emit("activityUpdated", sessionId, next, seq); });
+  }
+
+  private async commitTurnActivity(sessionId: string): Promise<void> {
+    const previous = this.activityUpdateChains.get(sessionId) ?? Promise.resolve();
+    const next = previous.then(() => this.commitTurnActivityNow(sessionId));
+    this.activityUpdateChains.set(sessionId, next.catch(() => undefined));
+    await next;
+  }
+
+  private async commitTurnActivityNow(sessionId: string): Promise<void> {
+    const snapshot = this.turnActivity.get(sessionId);
+    if (!snapshot || activityTotal(snapshot) <= 0) return;
+    await this.messageBuilder.recordActivitySnapshot(sessionId, snapshot);
+    this.turnActivity.delete(sessionId);
   }
 
   private async tryResumeRuntimeHandle(session: PickyAgentSession): Promise<RuntimeSessionHandle | undefined> {
@@ -1207,6 +1226,10 @@ function sameQueueItems(left: readonly PickyQueueItem[], right: readonly PickyQu
 
 function zeroActivitySummary(): PickyActivitySummary {
   return { edit: 0, bash: 0, thinking: 0, other: 0 };
+}
+
+function activityTotal(summary: PickyActivitySummary): number {
+  return summary.edit + summary.bash + summary.thinking + summary.other;
 }
 
 function buildPinnedSideSessionLogs(context: PickyContextPacket): string[] {

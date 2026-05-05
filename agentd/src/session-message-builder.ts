@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { PickyExtensionUiRequest, PickyFinalReport, PickySessionMessage } from "./protocol.js";
+import type { PickyActivitySummary, PickyExtensionUiRequest, PickyFinalReport, PickySessionMessage } from "./protocol.js";
 
 type MessageOrigin = "user" | "main_agent" | "pi_extension";
 
@@ -116,6 +116,16 @@ export class SessionMessageBuilder {
     });
   }
 
+  async recordActivitySnapshot(sessionId: string, activitySnapshot: PickyActivitySummary): Promise<void> {
+    if (activityTotal(activitySnapshot) <= 0) return;
+    await this.appendInternal(sessionId, {
+      id: `msg-activity-${randomUUID()}`,
+      kind: "agent_activity",
+      createdAt: this.deps.now(),
+      activitySnapshot,
+    });
+  }
+
   appendAssistantDelta(sessionId: string, delta: string): void {
     if (!delta) return;
     void this.flushThinking(sessionId);
@@ -181,7 +191,7 @@ export class SessionMessageBuilder {
     }
     const entry = state.journal.find((candidate) => candidate.message.id === state.activeThinkingId);
     if (!entry) return;
-    await this.replaceInternal(sessionId, state.activeThinkingId, { ...entry.message, createdAt: this.deps.now(), text: state.thinkingDraft });
+    await this.replaceInternal(sessionId, state.activeThinkingId, { ...entry.message, text: state.thinkingDraft });
   }
 
   private async flushThinkingNow(sessionId: string): Promise<void> {
@@ -205,11 +215,12 @@ export class SessionMessageBuilder {
   private async appendInternal(sessionId: string, message: PickySessionMessage): Promise<void> {
     const state = this.stateFor(sessionId);
     if (state.journal.some((entry) => entry.message.id === message.id) || state.removedIds.has(message.id)) return;
-    const index = state.journal.push({ seq: 0, message }) - 1;
+    const normalizedMessage = { ...message, createdAt: this.monotonicCreatedAt(state, message.createdAt) };
+    const index = state.journal.push({ seq: 0, message: normalizedMessage }) - 1;
     await this.sync(sessionId, state);
     const seq = this.deps.nextSeq(sessionId);
-    state.journal[index] = { seq, message };
-    await this.deps.emitAppended(sessionId, message, seq);
+    state.journal[index] = { seq, message: normalizedMessage };
+    await this.deps.emitAppended(sessionId, normalizedMessage, seq);
   }
 
   private async replaceInternal(sessionId: string, messageId: string, message: PickySessionMessage): Promise<void> {
@@ -240,6 +251,15 @@ export class SessionMessageBuilder {
     await this.deps.syncSessionMessages(sessionId, state.journal.map((entry) => entry.message));
   }
 
+  private monotonicCreatedAt(state: SessionState, proposed: string): string {
+    const latest = state.journal.reduce<string | undefined>((max, entry) => {
+      if (!max || Date.parse(entry.message.createdAt) > Date.parse(max)) return entry.message.createdAt;
+      return max;
+    }, undefined);
+    if (!latest || Date.parse(proposed) >= Date.parse(latest)) return proposed;
+    return latest;
+  }
+
   private stateFor(sessionId: string): SessionState {
     const existing = this.states.get(sessionId);
     if (existing) return existing;
@@ -247,6 +267,10 @@ export class SessionMessageBuilder {
     this.states.set(sessionId, state);
     return state;
   }
+}
+
+function activityTotal(summary: PickyActivitySummary): number {
+  return summary.edit + summary.bash + summary.thinking + summary.other;
 }
 
 function firstNonEmptyLine(value: string | undefined): string | undefined {

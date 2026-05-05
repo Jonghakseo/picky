@@ -6,7 +6,7 @@ import { cleanFinalAnswer, summaryFromFinalAnswer } from "../domain/session-summ
 import { settleActiveTools } from "../domain/tool-activity.js";
 import { categorizeTool, type ToolCategory } from "../domain/tool-categorizer.js";
 import { logAgentd } from "../local-log.js";
-import type { PickyAgentSession, PickyExtensionUiRequest, PickyFinalReport } from "../protocol.js";
+import type { PickyActivitySummary, PickyAgentSession, PickyExtensionUiRequest, PickyFinalReport } from "../protocol.js";
 import type { RuntimeEvent } from "../runtime/types.js";
 import { extensionUiLogLine, extensionUiWaitingSummary, mapExtensionUiRequest } from "./extension-ui-request-mapper.js";
 
@@ -18,6 +18,7 @@ export interface RuntimeMessageJournal {
   flushAssistantText(sessionId: string): Promise<void>;
   appendThinkingDelta(sessionId: string, delta: string): Promise<void>;
   flushThinking(sessionId: string): Promise<void>;
+  recordActivitySnapshot(sessionId: string, activitySnapshot: PickyActivitySummary): Promise<void>;
 }
 
 export interface RuntimeEventHandlerDependencies {
@@ -27,6 +28,7 @@ export interface RuntimeEventHandlerDependencies {
   materializeTerminalArtifacts(sessionId: string): Promise<void>;
   applyQueueUpdate(sessionId: string, steering: readonly string[], followUp: readonly string[]): Promise<void>;
   incrementActivity(sessionId: string, category: ToolCategory): Promise<void>;
+  commitTurnActivity(sessionId: string): Promise<void>;
   notifySideCompletion(sessionId: string): Promise<void>;
   isSideSession(sessionId: string): boolean;
   consumePendingFinalReport(sessionId: string): PickyFinalReport | undefined;
@@ -99,6 +101,7 @@ export class RuntimeEventHandler {
     if (terminal || event.status === "waiting_for_input" || finalAnswer) {
       await this.dependencies.messageBuilder.flushAssistantText(sessionId);
       await this.dependencies.messageBuilder.flushThinking(sessionId);
+      await this.dependencies.commitTurnActivity(sessionId);
     }
     if (terminal) {
       if (!event.noTurnRan && event.status === "failed") await this.dependencies.messageBuilder.recordError(sessionId, event.summary ?? "Agent failed");
@@ -175,6 +178,7 @@ export class RuntimeEventHandler {
     }
     await this.dependencies.messageBuilder.flushAssistantText(sessionId);
     await this.dependencies.messageBuilder.flushThinking(sessionId);
+    await this.dependencies.commitTurnActivity(sessionId);
     await this.dependencies.patchSession(sessionId, { status: "waiting_for_input", pendingExtensionUiRequest: request, lastSummary: extensionUiWaitingSummary(request) });
     await this.dependencies.messageBuilder.recordExtensionQuestion(sessionId, request);
     this.dependencies.emitExtensionUiRequest(request);

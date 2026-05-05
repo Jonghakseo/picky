@@ -21,6 +21,7 @@ struct PickyConversationCardView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
         .frame(width: PickyHUDDockLayout.detailWidth)
+        .frame(minHeight: 320, maxHeight: 1080, alignment: .top)
         .background(cardBackground)
     }
 

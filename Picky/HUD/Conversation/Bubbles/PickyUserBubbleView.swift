@@ -17,6 +17,7 @@ struct PickyUserBubbleView: View {
                 Text(message.text ?? "")
                     .font(.system(size: 12))
                     .foregroundColor(DS.Colors.textPrimary)
+                    .multilineTextAlignment(.trailing)
                     .fixedSize(horizontal: false, vertical: true)
                 if let originLabel {
                     Text(originLabel)
@@ -26,7 +27,6 @@ struct PickyUserBubbleView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .frame(maxWidth: PickyHUDDockLayout.detailWidth * 0.85, alignment: .trailing)
             .background(
                 UnevenRoundedRectangle(
                     topLeadingRadius: 12,
@@ -37,6 +37,7 @@ struct PickyUserBubbleView: View {
                 )
                 .fill(DS.Colors.accentSubtle.opacity(0.95))
             )
+            .frame(maxWidth: PickyHUDDockLayout.detailWidth * 0.85, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }

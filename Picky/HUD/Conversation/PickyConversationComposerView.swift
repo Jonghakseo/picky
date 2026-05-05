@@ -24,23 +24,26 @@ struct PickyConversationComposerView: View {
                 .foregroundColor(DS.Colors.textPrimary)
                 .focused($isFocused)
                 .onSubmit { submitSteer() }
+                .onKeyPress(keys: [.return], phases: .down) { keyPress in
+                    if keyPress.modifiers.contains(EventModifiers.option) {
+                        submitFollowUp()
+                        return .handled
+                    }
+                    return .ignored
+                }
+                .onKeyPress(keys: [.escape], phases: .down) { _ in
+                    if draft.isEmpty {
+                        stopIfPossible()
+                        return .handled
+                    }
+                    return .ignored
+                }
             sendButton
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
         .frame(maxWidth: .infinity)
         .background(composerBackground)
-        .background {
-            Button(action: submitFollowUp) { EmptyView() }
-                .keyboardShortcut(.return, modifiers: .option)
-                .opacity(0)
-                .frame(width: 0, height: 0)
-            Button(action: stopIfPossible) { EmptyView() }
-                .keyboardShortcut(.escape, modifiers: [])
-                .opacity(0)
-                .frame(width: 0, height: 0)
-                .disabled(!draft.isEmpty)
-        }
     }
 
     // Voice input is intentionally not exposed in the composer.

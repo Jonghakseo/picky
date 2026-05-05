@@ -99,6 +99,25 @@ describe("protocol contract fixtures", () => {
     ).not.toThrow();
   });
 
+  it("parses agent activity session message events", () => {
+    expect(() =>
+      EventEnvelopeSchema.parse({
+        id: "event-activity-message",
+        protocolVersion: "2026-05-05",
+        timestamp: "2026-05-05T00:00:00.000Z",
+        type: "sessionMessageAppended",
+        sessionId: "session-001",
+        message: {
+          id: "message-activity-001",
+          kind: "agent_activity",
+          createdAt: "2026-05-05T00:00:00.000Z",
+          activitySnapshot: { edit: 1, bash: 2, thinking: 3, other: 4 },
+        },
+        seq: 2,
+      }),
+    ).not.toThrow();
+  });
+
   it("parses session queue updates with optional mode fields", () => {
     const base = {
       id: "event-queue-updated",

@@ -13,16 +13,10 @@ struct PickyBatchGroupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Text(kind.batchLabel)
-                    .font(.system(size: 9.5, weight: .bold))
-                    .foregroundColor(kind.color)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                Text("Clear all")
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundColor(DS.Colors.textTertiary)
-            }
+            Text(kind.batchLabel)
+                .font(.system(size: 9.5, weight: .bold))
+                .foregroundColor(kind.color)
+                .lineLimit(1)
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 PickyPendingBubbleView(queueItem: item, kind: kind)
             }

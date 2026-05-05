@@ -4,6 +4,8 @@
 <dict>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Picky reads the active browser tab's URL and title only at capture time so the local agent receives accurate desktop context.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Picky uses your microphone only when you hold Control+Option to dictate a local agent task.</string>
 	<key>NSScreenCaptureUsageDescription</key>

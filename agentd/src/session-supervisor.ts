@@ -981,7 +981,12 @@ export class SessionSupervisor extends EventEmitter {
     }
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     const prompt = buildSteerPrompt(text, context);
-    const interruptible = isInterruptibleSteerStatus(session.status) && Boolean(handle.interrupt);
+    const previousSession = this.mustGet(sessionId);
+    const revivedTerminalSession = isTerminalStatus(previousSession.status);
+    if (revivedTerminalSession) {
+      await this.patch(sessionId, { status: "running", lastSummary: "Steering message sent", thinkingPreview: undefined });
+    }
+    const interruptible = isInterruptibleSteerStatus(previousSession.status) && Boolean(handle.interrupt);
     logAgentd("steer requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length, interruptible });
     if (interruptible && handle.interrupt) {
       await handle.interrupt(prompt);
@@ -994,11 +999,15 @@ export class SessionSupervisor extends EventEmitter {
     await this.appendLog(sessionId, `${STEER_PREFIX}${text}`);
     // Pi handles `/slash` extension commands and `input` handlers that return `handled` synchronously
     // inside `session.prompt()` without starting an agent turn. PiSdkRuntimeSession synthesizes a
-    // `completed` runtime status for those and surfaces `handledSynchronously: true` here. Skipping
-    // the `running` patch in that case keeps the HUD card from getting stuck on a loading spinner
-    // (e.g. `/diff-review` reported by the user). Normal text steers still flip to `running`
-    // immediately so the existing UX contract is preserved.
-    if (!outcome?.handledSynchronously) {
+    // `completed` runtime status for those and surfaces `handledSynchronously: true` here. Do not
+    // leave the HUD card running if no synthetic status arrived after the pre-prompt revival patch.
+    // Normal text steers still flip to `running` immediately so the existing UX contract is preserved.
+    if (outcome?.handledSynchronously) {
+      const current = this.mustGet(sessionId);
+      if (revivedTerminalSession && current.status === "running") {
+        await this.patch(sessionId, { status: previousSession.status, lastSummary: previousSession.lastSummary, thinkingPreview: previousSession.thinkingPreview });
+      }
+    } else {
       await this.patch(sessionId, { status: "running", lastSummary: "Steering message sent", finalAnswer: undefined, thinkingPreview: undefined });
     }
     return this.mustGet(sessionId);

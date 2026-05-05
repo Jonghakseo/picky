@@ -725,6 +725,50 @@ describe("SessionSupervisor", () => {
     expect(updated.logs).toContain("steer: /diff-review");
   });
 
+  it("preserves synchronous runtime tool events when steering a completed side session", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+    expect(supervisor.get(side.id)?.status).toBe("completed");
+
+    runtime.handle!.onSteer = (handle) => {
+      handle.emit({ type: "tool", toolCallId: "sync-tool", name: "bash", status: "running", preview: "sleep 10" });
+    };
+
+    const updated = await supervisor.steerSideSession(side.id, "interrupt now");
+
+    expect(updated.status).toBe("running");
+    expect(updated.tools).toEqual([expect.objectContaining({ toolCallId: "sync-tool", name: "bash", status: "running", preview: "sleep 10" })]);
+  });
+
+  it("preserves synchronous runtime queue events when following up a completed side session", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+    expect(supervisor.get(side.id)?.status).toBe("completed");
+
+    runtime.handle!.onFollowUp = (handle) => {
+      handle.emit({ type: "queue_update", steering: ["queued steer"], followUp: ["queued follow-up"] });
+    };
+
+    const updated = await supervisor.followUp(side.id, "continue");
+    await waitUntil(() => (supervisor.get(side.id)?.queuedSteers ?? []).length === 1);
+
+    expect(updated.status).toBe("running");
+    expect(supervisor.get(side.id)?.queuedSteers?.map((item) => item.text)).toEqual(["queued steer"]);
+    expect(supervisor.get(side.id)?.queuedFollowUps?.map((item) => item.text)).toEqual(["queued follow-up"]);
+  });
+
   it("settles active tools when a session is aborted", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
@@ -2314,9 +2358,12 @@ class ManualHandle implements RuntimeSessionHandle {
   extensionUiAnswers: Array<{ requestId: string; value: unknown }> = [];
   thinkingLevels: string[] = [];
   slashCommands: RuntimeSlashCommand[] = [];
+  onFollowUp?: (handle: ManualHandle, prompt: BuiltPrompt) => void;
+  onSteer?: (handle: ManualHandle, prompt: BuiltPrompt) => void;
   constructor(readonly id: string) {}
   async followUp(prompt: BuiltPrompt): Promise<void> {
     this.followUps.push(prompt);
+    this.onFollowUp?.(this, prompt);
   }
   async interrupt(prompt: BuiltPrompt): Promise<void> {
     this.interrupts.push(prompt);
@@ -2328,6 +2375,7 @@ class ManualHandle implements RuntimeSessionHandle {
   async steer(prompt: BuiltPrompt): Promise<{ handledSynchronously: boolean }> {
     this.steerPrompts.push(prompt);
     this.steers.push(prompt.text);
+    this.onSteer?.(this, prompt);
     return this.steerOutcome;
   }
   async abort(): Promise<void> {

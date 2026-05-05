@@ -95,11 +95,26 @@ enum CompanionVoicePresentationReducer {
 @MainActor
 final class CompanionManager: ObservableObject {
     private static let minimumVoiceProcessingDisplayDuration: TimeInterval = 1.0
+    /// How long the recognized-transcript bubble stays on screen after STT
+    /// finishes. The agent may still be processing — the bubble auto-hides so
+    /// it doesn't sit on the cursor for the entire response wait.
+    private static let recognizedTranscriptVisibleDuration: TimeInterval = 3.0
 
     @Published private(set) var voiceState: CompanionVoiceState = .idle
     @Published private(set) var lastTranscript: String?
     @Published private(set) var currentVoicePromptPreview: String?
-    @Published private(set) var voicePromptBubbleState: CompanionVoicePromptBubbleState = .hidden
+    @Published private(set) var voicePromptBubbleState: CompanionVoicePromptBubbleState = .hidden {
+        didSet {
+            // Any transition into .hidden (whether from finishAwaitingAgentResponse,
+            // a fresh PTT, or the presentation reducer) makes the auto-hide task
+            // redundant. Cancel it so we don't race a stale hide against a future
+            // .recognized state from the next utterance.
+            if case .hidden = voicePromptBubbleState {
+                voicePromptBubbleAutoHideTask?.cancel()
+                voicePromptBubbleAutoHideTask = nil
+            }
+        }
+    }
     @Published private(set) var latestAgentSessionSummary: String?
     @Published private(set) var mainAgentMessages: [PickyMainAgentMessage] = []
     @Published private(set) var isSendingDirectMessage = false
@@ -184,6 +199,8 @@ final class CompanionManager: ObservableObject {
     private var transientHideTask: Task<Void, Never>?
     private var responseStateTask: Task<Void, Never>?
     private var deferredFinishAwaitingAgentResponseTask: Task<Void, Never>?
+    /// Caps how long the recognized-transcript bubble lingers after STT.
+    private var voicePromptBubbleAutoHideTask: Task<Void, Never>?
     private var activeSpeechID: UUID?
     /// Tracks the physical push-to-talk hold separately from dictation state so
     /// audio stays suppressed even if recording fails before the key is released.
@@ -917,7 +934,8 @@ final class CompanionManager: ObservableObject {
             applyPointerOverlayRequest(request)
         case .error(let error):
             finishAwaitingAgentResponse(visibleText: error.message, spokenText: nil)
-        case .hello, .sessionSnapshot, .artifactUpdated, .artifactOpened, .slashCommandsSnapshot, .unknown:
+        case .hello, .sessionSnapshot, .artifactUpdated, .artifactOpened, .slashCommandsSnapshot, .unknown,
+             .sessionMessageAppended, .sessionMessageReplaced, .sessionMessageRemoved, .sessionQueueUpdated, .sessionActivityUpdated:
             break
         }
     }
@@ -1035,6 +1053,29 @@ final class CompanionManager: ObservableObject {
         pendingAgentResponseStartedAt = Date()
         latestAgentSessionSummary = "응답 준비 중…"
         voiceState = .processing
+        scheduleRecognizedTranscriptAutoHide(trimmedTranscript: trimmedTranscript)
+    }
+
+    private func scheduleRecognizedTranscriptAutoHide(trimmedTranscript: String) {
+        voicePromptBubbleAutoHideTask?.cancel()
+        voicePromptBubbleAutoHideTask = nil
+        guard !trimmedTranscript.isEmpty else { return }
+
+        let visibleDuration = Self.recognizedTranscriptVisibleDuration
+        voicePromptBubbleAutoHideTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(visibleDuration * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                // Only retract the bubble if it's still showing the same
+                // recognized transcript. If the agent already responded, or a
+                // new utterance replaced it, the didSet on voicePromptBubbleState
+                // already cancelled this task — but guard defensively anyway.
+                guard case .recognized = self.voicePromptBubbleState else { return }
+                self.voicePromptBubbleState = .hidden
+                self.currentVoicePromptPreview = nil
+            }
+        }
     }
 
     private func finishAwaitingAgentResponse(

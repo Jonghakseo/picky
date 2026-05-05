@@ -1,5 +1,5 @@
 {
   "id": "cmd-reset-main-agent-001",
-  "protocolVersion": "2026-05-01",
+  "protocolVersion": "2026-05-05",
   "type": "resetMainAgent"
 }

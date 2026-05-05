@@ -1,6 +1,6 @@
 {
   "id": "cmd-artifact-001",
-  "protocolVersion": "2026-05-01",
+  "protocolVersion": "2026-05-05",
   "type": "openArtifact",
   "sessionId": "session-001",
   "artifactId": "artifact-001"

@@ -1,6 +1,6 @@
 {
   "id": "cmd-abort-001",
-  "protocolVersion": "2026-05-01",
+  "protocolVersion": "2026-05-05",
   "type": "abort",
   "sessionId": "session-001"
 }

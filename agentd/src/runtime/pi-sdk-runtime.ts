@@ -16,6 +16,7 @@ import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
+import type { PickyQueueMode } from "../protocol.js";
 import { logAgentd } from "../local-log.js";
 
 export interface PiSdkRuntimeOptions {
@@ -187,6 +188,26 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       commands.push({ name: `skill:${skill.name}`, description: skill.description, source: "skill" });
     }
     return commands;
+  }
+
+  clearQueue(): { steering: string[]; followUp: string[] } {
+    return this.runtime.session.clearQueue();
+  }
+
+  getSteeringMessages(): readonly string[] {
+    return this.runtime.session.getSteeringMessages();
+  }
+
+  getFollowUpMessages(): readonly string[] {
+    return this.runtime.session.getFollowUpMessages();
+  }
+
+  get steeringMode(): PickyQueueMode {
+    return this.runtime.session.steeringMode;
+  }
+
+  get followUpMode(): PickyQueueMode {
+    return this.runtime.session.followUpMode;
   }
 
   async injectInitialBootstrap(messages: { user: string; assistant: string }): Promise<void> {

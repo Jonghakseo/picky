@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { createServer, type Server as HttpServer } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import { isAuthorized } from "./auth.js";
+import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-prefixes.js";
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
-import { PROTOCOL_VERSION, parseCommand, type EventEnvelope, type PickyAgentSession } from "./protocol.js";
+import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type EventEnvelope, type PickyAgentSession, type PickyAgentSessionParsed } from "./protocol.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
 
@@ -34,7 +35,7 @@ export class AgentdServer {
       this.wsServer?.handleUpgrade(request, socket, head, (ws) => this.accept(ws));
     });
 
-    this.options.supervisor.on("session", (session) => this.broadcast({ type: "sessionUpdated", session }));
+    this.options.supervisor.on("session", (session) => this.broadcast({ type: "sessionUpdated", session: protocolSession(session) }));
     this.options.supervisor.on("log", (sessionId, line) => this.broadcast({ type: "sessionLogAppended", sessionId, line }));
     this.options.supervisor.on("extensionUiRequest", (request) => this.broadcast({ type: "extensionUiRequest", request }));
     this.options.supervisor.on("quickReply", (contextId, text) => this.broadcast({ type: "quickReply", contextId, text }));
@@ -72,7 +73,7 @@ export class AgentdServer {
       parsed = JSON.parse(raw);
       const command = parseCommand(parsed);
       logAgentd("command received", commandLogFields(command));
-      if (command.type === "listSessions") this.send(ws, { type: "sessionSnapshot", sessions: compactSessionsForSnapshot(this.options.supervisor.list()) });
+      if (command.type === "listSessions") this.send(ws, { type: "sessionSnapshot", sessions: compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession) });
       if (command.type === "listMainMessages") this.send(ws, { type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() });
       if (command.type === "resetMainAgent") {
         await this.options.supervisor.resetMainAgent();
@@ -87,7 +88,7 @@ export class AgentdServer {
       if (command.type === "getSession") {
         const session = this.options.supervisor.get(command.sessionId);
         if (!session) throw new Error(`Unknown session: ${command.sessionId}`);
-        this.send(ws, { type: "sessionUpdated", session });
+        this.send(ws, { type: "sessionUpdated", session: protocolSession(session) });
       }
       if (command.type === "routeTask") await this.options.supervisor.route(command.context);
       if (command.type === "createTask") await this.options.supervisor.create(command.context);
@@ -95,6 +96,7 @@ export class AgentdServer {
       if (command.type === "pinSideSession") await this.options.supervisor.pinSideSession(command.context, command.title);
       if (command.type === "setNotifyMainOnCompletion") await this.options.supervisor.setNotifyMainOnCompletion(command.sessionId, command.enabled);
       if (command.type === "setSessionArchived") await this.options.supervisor.setSessionArchived(command.sessionId, command.archived);
+      if (command.type === "clearQueue") this.send(ws, { type: "error", code: "notImplemented", message: "clearQueue handled in PR2", commandId: command.id });
       if (command.type === "followUp") await this.options.supervisor.followUp(command.sessionId, command.text, command.context);
       if (command.type === "steer") await this.options.supervisor.steer(command.sessionId, command.text);
       if (command.type === "abort") await this.options.supervisor.abort(command.sessionId);
@@ -169,6 +171,8 @@ function commandLogFields(command: ReturnType<typeof parseCommand>): Record<stri
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, enabled: command.enabled ? 1 : 0 };
     case "setSessionArchived":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, archived: command.archived ? 1 : 0 };
+    case "clearQueue":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, kind: command.kind };
     case "abort":
     case "getSession":
     case "listSlashCommands":
@@ -215,6 +219,12 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, requestId: event.request.id, screenId: event.request.screenId, screenIndex: event.request.screenIndex };
     case "slashCommandsSnapshot":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, commands: event.commands.length };
+    case "sessionMessageAppended":
+    case "sessionMessageReplaced":
+    case "sessionMessageRemoved":
+    case "sessionQueueUpdated":
+    case "sessionActivityUpdated":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, seq: event.seq };
     case "error":
       return { eventId: event.id, type: event.type, commandId: event.commandId, code: event.code };
   }
@@ -280,12 +290,16 @@ function isImportantSnapshotLog(line: string): boolean {
   return trimmed.startsWith("pi session: ")
     || trimmed.startsWith("- Session file: ")
     || trimmed.startsWith("source transcript:")
-    || trimmed.startsWith("follow-up: ")
-    || trimmed.startsWith("steer: ")
+    || trimmed.startsWith(FOLLOWUP_PREFIX)
+    || trimmed.startsWith(STEER_PREFIX)
     || trimmed.startsWith("steer rejected:")
-    || trimmed.startsWith("main-agent handoff: ")
+    || trimmed.startsWith(HANDOFF_PREFIX)
     || trimmed.includes("Runtime session is not attached after daemon restart")
     || trimmed.includes("Runtime not attached after daemon restart");
+}
+
+function protocolSession(session: PickyAgentSession): PickyAgentSessionParsed {
+  return PickyAgentSessionSchema.parse(session);
 }
 
 function truncateSnapshotLogLine(line: string): string {

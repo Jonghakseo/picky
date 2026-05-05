@@ -277,6 +277,16 @@ private extension PickyEventEnvelope {
             return "type=pointerOverlayRequested id=\(id) request=\(request.id) screen=\(request.screenId ?? String(request.screenIndex ?? 0))"
         case .slashCommandsSnapshot(let sessionId, let commands):
             return "type=slashCommandsSnapshot id=\(id) session=\(sessionId) commands=\(commands.count)"
+        case .sessionMessageAppended(let sessionId, _, let seq):
+            return "type=sessionMessageAppended id=\(id) session=\(sessionId) seq=\(seq)"
+        case .sessionMessageReplaced(let sessionId, let messageId, _, let seq):
+            return "type=sessionMessageReplaced id=\(id) session=\(sessionId) message=\(messageId) seq=\(seq)"
+        case .sessionMessageRemoved(let sessionId, let messageId, let seq):
+            return "type=sessionMessageRemoved id=\(id) session=\(sessionId) message=\(messageId) seq=\(seq)"
+        case .sessionQueueUpdated(let sessionId, let steering, let followUp, _, _, let seq):
+            return "type=sessionQueueUpdated id=\(id) session=\(sessionId) steering=\(steering.count) followUp=\(followUp.count) seq=\(seq)"
+        case .sessionActivityUpdated(let sessionId, let activitySummary, let seq):
+            return "type=sessionActivityUpdated id=\(id) session=\(sessionId) edit=\(activitySummary.edit) bash=\(activitySummary.bash) thinking=\(activitySummary.thinking) other=\(activitySummary.other) seq=\(seq)"
         case .error(let error):
             return "type=error id=\(id) command=\(error.commandId ?? "none") code=\(error.code)"
         case .unknown(let type):

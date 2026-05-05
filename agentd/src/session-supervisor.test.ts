@@ -1636,6 +1636,20 @@ class ManualHandle implements RuntimeSessionHandle {
   setThinkingLevel(level: ThinkingLevel): void {
     this.thinkingLevels.push(level);
   }
+  clearQueue(): { steering: string[]; followUp: string[] } {
+    const result = { steering: [...this.steers], followUp: this.followUps.map((prompt) => prompt.text) };
+    this.steers = [];
+    this.followUps = [];
+    return result;
+  }
+  getSteeringMessages(): readonly string[] {
+    return this.steers;
+  }
+  getFollowUpMessages(): readonly string[] {
+    return this.followUps.map((prompt) => prompt.text);
+  }
+  readonly steeringMode = "one-at-a-time" as const;
+  readonly followUpMode = "one-at-a-time" as const;
   listSlashCommands(): RuntimeSlashCommand[] {
     return this.slashCommands;
   }

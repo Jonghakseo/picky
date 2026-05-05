@@ -823,7 +823,7 @@ struct PickySessionViewModelTests {
         #expect(viewModel.activeVoiceFollowUpSessionID == "side-voice")
 
         client.emit(.protocolEvent(.fixture(eventJSON: """
-        {"id":"snapshot-empty","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":[]}
+        {"id":"snapshot-empty","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":[]}
         """)))
         try await settle()
 
@@ -1173,7 +1173,7 @@ struct PickySessionViewModelTests {
         viewModel.start()
 
         client.emit(.protocolEvent(.fixture(eventJSON: """
-        {"id":"snapshot-detached","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionSnapshot","sessions":[{"id":"lost-runtime","title":"Old side agent","status":"blocked","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Runtime not attached after daemon restart; start a new task or resume support is required","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},{"id":"manual-completed","title":"Manual archive","status":"completed","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
+        {"id":"snapshot-detached","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionSnapshot","sessions":[{"id":"lost-runtime","title":"Old side agent","status":"blocked","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Runtime not attached after daemon restart; start a new task or resume support is required","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},{"id":"manual-completed","title":"Manual archive","status":"completed","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
         """)))
         try await settle()
 
@@ -1186,7 +1186,7 @@ struct PickySessionViewModelTests {
         #expect(archiveStore.manuallyArchivedSessionIDs == ["lost-runtime", "manual-completed"])
 
         client.emit(.protocolEvent(.fixture(eventJSON: """
-        {"id":"snapshot-detached-2","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionSnapshot","sessions":[{"id":"lost-runtime","title":"Old side agent","status":"blocked","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","lastSummary":"Runtime not attached after daemon restart; start a new task or resume support is required","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},{"id":"manual-completed","title":"Manual archive","status":"completed","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
+        {"id":"snapshot-detached-2","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionSnapshot","sessions":[{"id":"lost-runtime","title":"Old side agent","status":"blocked","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","lastSummary":"Runtime not attached after daemon restart; start a new task or resume support is required","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},{"id":"manual-completed","title":"Manual archive","status":"completed","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
         """)))
         try await settle()
         #expect(viewModel.sessions.isEmpty)
@@ -1516,14 +1516,14 @@ private enum EventJSON {
         let encodedNotify = notifyMainOnCompletion.map { ",\"notifyMainOnCompletion\":\($0)" } ?? ""
         let encodedPinned = pinned.map { ",\"pinned\":\($0)" } ?? ""
         return """
-        {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedNotify)\(encodedPinned)}}
+        {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-05","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedNotify)\(encodedPinned)}}
         """
     }
 
     static func sessionUpdatedWithReport(path: String, title: String = "Investigate current screen") -> String {
         let encodedPath = String(decoding: try! JSONEncoder().encode(path), as: UTF8.self)
         return """
-        {"id":"event-session-report","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionUpdated","session":{"id":"session-1","title":"\(title)","status":"completed","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[{"id":"report","kind":"report","title":"Session report","path":\(encodedPath),"url":null,"updatedAt":"2026-05-01T00:00:01.000Z"}],"changedFiles":[]}}
+        {"id":"event-session-report","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionUpdated","session":{"id":"session-1","title":"\(title)","status":"completed","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[{"id":"report","kind":"report","title":"Session report","path":\(encodedPath),"url":null,"updatedAt":"2026-05-01T00:00:01.000Z"}],"changedFiles":[]}}
         """
     }
 
@@ -1538,25 +1538,25 @@ private enum EventJSON {
     ) -> String {
         let encodedLogs = String(decoding: try! JSONEncoder().encode(logs), as: UTF8.self)
         return """
-        {"id":"snapshot-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionSnapshot","sessions":[{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]}]}
+        {"id":"snapshot-\(id)-\(status)","protocolVersion":"2026-05-05","timestamp":"\(updatedAt)","type":"sessionSnapshot","sessions":[{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]}]}
         """
     }
 
     static func slashCommandsSnapshot() -> String {
         """
-        {"id":"event-slash-commands","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:00.000Z","type":"slashCommandsSnapshot","sessionId":"session-commands","commands":[{"name":"deploy","description":"Deploy an environment","source":"extension"},{"name":"fix-tests","description":"Fix failing tests","source":"prompt"},{"name":"skill:context7-cli","description":"Look up library docs","source":"skill"}]}
+        {"id":"event-slash-commands","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:00.000Z","type":"slashCommandsSnapshot","sessionId":"session-commands","commands":[{"name":"deploy","description":"Deploy an environment","source":"extension"},{"name":"fix-tests","description":"Fix failing tests","source":"prompt"},{"name":"skill:context7-cli","description":"Look up library docs","source":"skill"}]}
         """
     }
 
     static func extensionUiRequest() -> String {
         """
-        {"id":"event-ui","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-1","sessionId":"session-1","method":"confirm","title":"Confirm","prompt":"Proceed?","options":null,"createdAt":"2026-05-01T00:00:02.000Z"}}
+        {"id":"event-ui","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-1","sessionId":"session-1","method":"confirm","title":"Confirm","prompt":"Proceed?","options":null,"createdAt":"2026-05-01T00:00:02.000Z"}}
         """
     }
 
     static func askUserQuestionRequest() -> String {
         """
-        {"id":"event-ui-form","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-form","sessionId":"session-1","method":"askUserQuestion","title":"Confirm memory","description":"Pick what to save","questions":[{"id":"scope","type":"radio","prompt":"Scope?","options":[{"value":"user","label":"User"},{"value":"project","label":"Project"}],"default":"project"},{"id":"items","type":"checkbox","prompt":"Items?","options":[{"value":"rule","label":"Rule"}],"default":["rule"],"allowOther":true},{"id":"note","type":"text","prompt":"Note","required":false}],"createdAt":"2026-05-01T00:00:02.000Z"}}
+        {"id":"event-ui-form","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-form","sessionId":"session-1","method":"askUserQuestion","title":"Confirm memory","description":"Pick what to save","questions":[{"id":"scope","type":"radio","prompt":"Scope?","options":[{"value":"user","label":"User"},{"value":"project","label":"Project"}],"default":"project"},{"id":"items","type":"checkbox","prompt":"Items?","options":[{"value":"rule","label":"Rule"}],"default":["rule"],"allowOther":true},{"id":"note","type":"text","prompt":"Note","required":false}],"createdAt":"2026-05-01T00:00:02.000Z"}}
         """
     }
 
@@ -1567,7 +1567,7 @@ private enum EventJSON {
         updatedAt: String = "2026-05-01T00:00:02.000Z"
     ) -> String {
         """
-        {"id":"event-\(id)-pending","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"Investigate current screen","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"pendingExtensionUiRequest":{"id":"ui-form","sessionId":"\(id)","method":"askUserQuestion","title":"Continue?","prompt":"Pick one","options":null,"questions":[{"id":"choice","type":"radio","prompt":"Choice","options":[{"value":"a","label":"A"}],"required":true}],"createdAt":"\(updatedAt)"}}}
+        {"id":"event-\(id)-pending","protocolVersion":"2026-05-05","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"Investigate current screen","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"pendingExtensionUiRequest":{"id":"ui-form","sessionId":"\(id)","method":"askUserQuestion","title":"Continue?","prompt":"Pick one","options":null,"questions":[{"id":"choice","type":"radio","prompt":"Choice","options":[{"value":"a","label":"A"}],"required":true}],"createdAt":"\(updatedAt)"}}}
         """
     }
 
@@ -1580,20 +1580,20 @@ private enum EventJSON {
     ) -> String {
         let encodedThinking = String(decoding: try! JSONEncoder().encode(thinkingPreview), as: UTF8.self)
         return """
-        {"id":"event-\(id)-thinking","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"Investigate current screen","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","thinkingPreview":\(encodedThinking),"logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
+        {"id":"event-\(id)-thinking","protocolVersion":"2026-05-05","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"Investigate current screen","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","thinkingPreview":\(encodedThinking),"logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
         """
     }
 
     static func sessionLog(sessionId: String, line: String) -> String {
         let encodedLine = String(decoding: try! JSONEncoder().encode(line), as: UTF8.self)
         return """
-        {"id":"event-log","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:03.000Z","type":"sessionLogAppended","sessionId":"\(sessionId)","line":\(encodedLine)}
+        {"id":"event-log","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:03.000Z","type":"sessionLogAppended","sessionId":"\(sessionId)","line":\(encodedLine)}
         """
     }
 
     static func tool(sessionId: String, toolCallId: String, name: String, status: String, preview: String) -> String {
         """
-        {"id":"event-tool-\(status)","protocolVersion":"2026-05-01","timestamp":"2026-05-01T00:00:03.000Z","type":"toolActivityUpdated","sessionId":"\(sessionId)","tool":{"toolCallId":"\(toolCallId)","name":"\(name)","status":"\(status)","preview":"\(preview)","startedAt":"2026-05-01T00:00:02.000Z","endedAt":null}}
+        {"id":"event-tool-\(status)","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:03.000Z","type":"toolActivityUpdated","sessionId":"\(sessionId)","tool":{"toolCallId":"\(toolCallId)","name":"\(name)","status":"\(status)","preview":"\(preview)","startedAt":"2026-05-01T00:00:02.000Z","endedAt":null}}
         """
     }
 }

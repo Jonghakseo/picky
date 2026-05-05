@@ -1,6 +1,6 @@
 {
   "id": "event-pointer-001",
-  "protocolVersion": "2026-05-01",
+  "protocolVersion": "2026-05-05",
   "timestamp": "2026-05-01T00:00:06.000Z",
   "type": "pointerOverlayRequested",
   "request": {

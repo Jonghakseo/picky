@@ -58,6 +58,14 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("returns a notImplemented stub error for clearQueue until PR2", async () => {
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-clear", protocolVersion: PROTOCOL_VERSION, type: "clearQueue", sessionId: "session-001", kind: "all" }));
+    const event = await nextEvent(ws);
+    expect(event).toMatchObject({ type: "error", code: "notImplemented", message: "clearQueue handled in PR2", commandId: "cmd-clear" });
+    ws.close();
+  });
+
   it("sanitizes unpaired surrogate strings before JSON serialization", () => {
     const sanitized = sanitizeForJson({
       brokenHigh: "tool output: \uD83C",

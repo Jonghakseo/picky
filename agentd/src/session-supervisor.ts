@@ -14,6 +14,7 @@ import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashComm
 import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
 import { isTerminalStatus } from "./domain/session-status.js";
+import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
 import { cleanFinalAnswer } from "./domain/session-summary.js";
 import { settleActiveTools } from "./domain/tool-activity.js";
 import { titleFromContext } from "./domain/session-title.js";
@@ -306,7 +307,7 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("side session create requested", { contextId: context.id, titleChars: handoff.title.length, instructionChars: handoff.instructions.length, cwd: handoffContext.cwd });
     const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildSideAgentPrompt(handoffContext, handoff), { notifyMainOnCompletion: true, includePointerToolSessionHint: false });
     this.sideSessionIds.add(session.id);
-    await this.appendLog(session.id, `main-agent handoff: ${handoff.instructions}`);
+    await this.appendLog(session.id, `${HANDOFF_PREFIX}${handoff.instructions}`);
     if (handoffContext.cwd) await this.appendLog(session.id, `main-agent handoff cwd: ${handoffContext.cwd}`);
     return this.mustGet(session.id);
   }
@@ -727,7 +728,7 @@ export class SessionSupervisor extends EventEmitter {
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     const prompt = buildFollowUpPrompt(sessionId, text, context);
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id });
-    await this.appendLog(sessionId, `follow-up: ${text}`);
+    await this.appendLog(sessionId, `${FOLLOWUP_PREFIX}${text}`);
     await this.patch(sessionId, { status: "running", lastSummary: "Follow-up queued", finalAnswer: undefined, thinkingPreview: undefined });
     this.queueFollowUpDelivery(sessionId, handle, prompt);
     return this.mustGet(sessionId);
@@ -802,7 +803,7 @@ export class SessionSupervisor extends EventEmitter {
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     logAgentd("steer requested", { sessionId, textChars: text.length });
     const outcome = await handle.steer(text);
-    await this.appendLog(sessionId, `steer: ${text}`);
+    await this.appendLog(sessionId, `${STEER_PREFIX}${text}`);
     // Pi handles `/slash` extension commands and `input` handlers that return `handled` synchronously
     // inside `session.prompt()` without starting an agent turn. PiSdkRuntimeSession synthesizes a
     // `completed` runtime status for those and surfaces `handledSynchronously: true` here. Skipping
@@ -834,7 +835,7 @@ export class SessionSupervisor extends EventEmitter {
     if (session.pendingExtensionUiRequest?.id === requestId) {
       const pending = pendingBeforeAnswer?.id === requestId ? pendingBeforeAnswer : session.pendingExtensionUiRequest;
       const summary = pending ? summarizeExtensionUiAnswer(pending, value) : undefined;
-      if (summary) await this.appendLog(sessionId, `extension ui answer: ${summary}`);
+      if (summary) await this.appendLog(sessionId, `${EXTENSION_ANSWER_PREFIX}${summary}`);
       await this.patch(sessionId, { pendingExtensionUiRequest: undefined, status: "running", lastSummary: "Extension UI answered", thinkingPreview: undefined });
     }
     return this.mustGet(sessionId);
@@ -1060,7 +1061,7 @@ function appendUniqueLog(logs: string[], line: string): string[] {
 }
 
 function hasSideSessionMarkerLog(session: PickyAgentSession): boolean {
-  return session.logs.some((line) => line.startsWith("main-agent handoff:") || line.startsWith("pi-extension handoff pin:") || line.startsWith("manual side agent:"));
+  return session.logs.some((line) => line.startsWith(HANDOFF_PREFIX.trimEnd()) || line.startsWith("pi-extension handoff pin:") || line.startsWith("manual side agent:"));
 }
 
 function titleForEmptySideSession(context: PickyContextPacket): string {

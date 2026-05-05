@@ -1,6 +1,6 @@
 {
   "id": "event-artifact-opened-1",
-  "protocolVersion": "2026-05-01",
+  "protocolVersion": "2026-05-05",
   "timestamp": "2026-05-01T00:00:00.000Z",
   "type": "artifactOpened",
   "sessionId": "session-fixture-1",

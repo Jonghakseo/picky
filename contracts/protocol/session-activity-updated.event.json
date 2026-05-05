@@ -1,0 +1,9 @@
+{
+  "id": "event-session-activity-updated",
+  "protocolVersion": "2026-05-05",
+  "timestamp": "2026-05-05T00:00:04.000Z",
+  "type": "sessionActivityUpdated",
+  "sessionId": "session-001",
+  "activitySummary": { "edit": 1, "bash": 2, "thinking": 3, "other": 4 },
+  "seq": 5
+}

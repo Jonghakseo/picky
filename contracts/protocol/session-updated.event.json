@@ -1,6 +1,6 @@
 {
   "id": "event-session-001",
-  "protocolVersion": "2026-05-01",
+  "protocolVersion": "2026-05-05",
   "timestamp": "2026-05-01T00:00:01.000Z",
   "type": "sessionUpdated",
   "session": {

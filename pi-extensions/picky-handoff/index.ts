@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const DEFAULT_PROTOCOL_VERSION = "2026-05-01";
+const DEFAULT_PROTOCOL_VERSION = "2026-05-05";
 const DEFAULT_CONNECTION_FILE = join(homedir(), "Library", "Application Support", "Picky", "agentd-connection.json");
 const MAX_BRANCH_ENTRIES = 16;
 const MAX_BRANCH_CHARS = 12_000;

@@ -689,7 +689,8 @@ final class PickySessionListViewModel: ObservableObject {
         case .error(let error):
             pickySessionLog("protocol error code=\(error.code) command=\(error.commandId ?? "none")")
             lastError = error.message
-        case .quickReply, .mainMessagesSnapshot, .mainMessageAppended, .pointerOverlayRequested, .hello, .unknown:
+        case .quickReply, .mainMessagesSnapshot, .mainMessageAppended, .pointerOverlayRequested, .hello, .unknown,
+             .sessionMessageAppended, .sessionMessageReplaced, .sessionMessageRemoved, .sessionQueueUpdated, .sessionActivityUpdated:
             break
         }
     }
@@ -924,13 +925,13 @@ private extension PickySessionListViewModel.SessionCard {
 
     static func isDisplayableLogPreview(_ line: String) -> Bool {
         let normalized = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return !normalized.hasPrefix("extension ui:") && !normalized.hasPrefix("extension ui answer:")
+        return !normalized.hasPrefix("extension ui:") && !normalized.hasPrefix(PickyLogPrefixes.extensionAnswer.trimmingCharacters(in: .whitespaces))
     }
 
     static func isMainAgentHandoffLogLine(_ line: String) -> Bool {
         line.trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-            .hasPrefix("main-agent handoff: ")
+            .hasPrefix(PickyLogPrefixes.handoff)
     }
 
     static func lastRequestText(from logs: [String]) -> String? {
@@ -939,7 +940,7 @@ private extension PickySessionListViewModel.SessionCard {
 
     static func requestText(fromLogLine line: String) -> String? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        for prefix in ["steer: ", "follow-up: ", "main-agent handoff: ", "extension ui answer: "] {
+        for prefix in [PickyLogPrefixes.steer, PickyLogPrefixes.followUp, PickyLogPrefixes.handoff, PickyLogPrefixes.extensionAnswer] {
             if trimmed.hasPrefix(prefix) {
                 return normalizedRequestText(String(trimmed.dropFirst(prefix.count)))
             }

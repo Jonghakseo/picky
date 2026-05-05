@@ -7,7 +7,7 @@
 
 import Foundation
 
-let pickyAgentProtocolVersion = "2026-05-01"
+let pickyAgentProtocolVersion = "2026-05-05"
 
 struct PickyCommandEnvelope: Codable, Equatable {
     let id: String
@@ -22,6 +22,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var enabled: Bool?
     var archived: Bool?
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel?
+    var kind: PickyQueueClearKind?
 
     init(
         id: String = "cmd-\(UUID().uuidString)",
@@ -34,7 +35,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
         artifactId: String? = nil,
         enabled: Bool? = nil,
         archived: Bool? = nil,
-        mainAgentThinkingLevel: PickyMainAgentThinkingLevel? = nil
+        mainAgentThinkingLevel: PickyMainAgentThinkingLevel? = nil,
+        kind: PickyQueueClearKind? = nil
     ) {
         self.id = id
         self.protocolVersion = pickyAgentProtocolVersion
@@ -48,13 +50,19 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.enabled = enabled
         self.archived = archived
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
+        self.kind = kind
     }
+}
+
+enum PickyQueueClearKind: String, Codable, Equatable {
+    case steering, followUp, all
 }
 
 enum PickyCommandType: String, Codable, Equatable {
     case routeTask
     case createTask
     case createEmptySideSession
+    case clearQueue
     case followUp
     case steer
     case abort
@@ -103,11 +111,17 @@ enum PickyEvent: Equatable {
     case artifactOpened(sessionId: String, artifactId: String, path: String)
     case pointerOverlayRequested(PickyPointerOverlayRequest)
     case slashCommandsSnapshot(sessionId: String, commands: [PickySlashCommand])
+    case sessionMessageAppended(sessionId: String, message: PickySessionMessage, seq: Int)
+    case sessionMessageReplaced(sessionId: String, messageId: String, message: PickySessionMessage, seq: Int)
+    case sessionMessageRemoved(sessionId: String, messageId: String, seq: Int)
+    case sessionQueueUpdated(sessionId: String, steering: [PickyQueueItem], followUp: [PickyQueueItem], steeringMode: PickyQueueMode?, followUpMode: PickyQueueMode?, seq: Int)
+    case sessionActivityUpdated(sessionId: String, activitySummary: PickyActivitySummary, seq: Int)
     case error(PickyErrorEvent)
     case unknown(type: String)
 
     private enum CodingKeys: String, CodingKey {
         case sessions, session, sessionId, line, tool, request, artifact, artifactId, path, contextId, text, messages, message, commands
+        case messageId, seq, steering, followUp, steeringMode, followUpMode, activitySummary
     }
 
     init(type: String, decoder: Decoder) throws {
@@ -152,6 +166,28 @@ enum PickyEvent: Equatable {
                 sessionId: try c.decode(String.self, forKey: .sessionId),
                 commands: try c.decode([PickySlashCommand].self, forKey: .commands)
             )
+        case "sessionMessageAppended":
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self = .sessionMessageAppended(sessionId: try c.decode(String.self, forKey: .sessionId), message: try c.decode(PickySessionMessage.self, forKey: .message), seq: try c.decode(Int.self, forKey: .seq))
+        case "sessionMessageReplaced":
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self = .sessionMessageReplaced(sessionId: try c.decode(String.self, forKey: .sessionId), messageId: try c.decode(String.self, forKey: .messageId), message: try c.decode(PickySessionMessage.self, forKey: .message), seq: try c.decode(Int.self, forKey: .seq))
+        case "sessionMessageRemoved":
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self = .sessionMessageRemoved(sessionId: try c.decode(String.self, forKey: .sessionId), messageId: try c.decode(String.self, forKey: .messageId), seq: try c.decode(Int.self, forKey: .seq))
+        case "sessionQueueUpdated":
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self = .sessionQueueUpdated(
+                sessionId: try c.decode(String.self, forKey: .sessionId),
+                steering: try c.decode([PickyQueueItem].self, forKey: .steering),
+                followUp: try c.decode([PickyQueueItem].self, forKey: .followUp),
+                steeringMode: try c.decodeIfPresent(PickyQueueMode.self, forKey: .steeringMode),
+                followUpMode: try c.decodeIfPresent(PickyQueueMode.self, forKey: .followUpMode),
+                seq: try c.decode(Int.self, forKey: .seq)
+            )
+        case "sessionActivityUpdated":
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self = .sessionActivityUpdated(sessionId: try c.decode(String.self, forKey: .sessionId), activitySummary: try c.decode(PickyActivitySummary.self, forKey: .activitySummary), seq: try c.decode(Int.self, forKey: .seq))
         case "error": self = .error(try PickyErrorEvent(from: decoder))
         default: self = .unknown(type: type)
         }
@@ -206,6 +242,85 @@ struct PickyMainAgentMessage: Codable, Equatable, Identifiable {
     let createdAt: Date
 }
 
+enum PickyQueueMode: String, Codable, Equatable {
+    case oneAtATime = "one-at-a-time"
+    case all
+}
+
+struct PickyQueueItem: Codable, Equatable {
+    let text: String
+    let enqueuedAt: Date
+}
+
+struct PickyActivitySummary: Codable, Equatable {
+    var edit: Int
+    var bash: Int
+    var thinking: Int
+    var other: Int
+
+    static let zero = PickyActivitySummary(edit: 0, bash: 0, thinking: 0, other: 0)
+}
+
+struct PickyFinalReport: Codable, Equatable {
+    let summary: String
+    let body: String
+    let status: Status
+    let artifacts: [Artifact]
+
+    enum Status: String, Codable, Equatable { case success, partial, blocked }
+    struct Artifact: Codable, Equatable {
+        let kind: String
+        let title: String
+        let url: URL?
+    }
+
+    init(summary: String, body: String, status: Status, artifacts: [Artifact] = []) {
+        self.summary = summary
+        self.body = body
+        self.status = status
+        self.artifacts = artifacts
+    }
+
+    enum CodingKeys: String, CodingKey { case summary, body, status, artifacts }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        summary = try container.decode(String.self, forKey: .summary)
+        body = try container.decode(String.self, forKey: .body)
+        status = try container.decode(Status.self, forKey: .status)
+        artifacts = try container.decodeIfPresent([Artifact].self, forKey: .artifacts) ?? []
+    }
+}
+
+enum PickyMessageOrigin: String, Codable, Equatable {
+    case user
+    case mainAgent = "main_agent"
+    case piExtension = "pi_extension"
+}
+
+enum PickySessionMessageKind: String, Codable, Equatable {
+    case userText = "user_text"
+    case agentText = "agent_text"
+    case agentThinking = "agent_thinking"
+    case agentQuestion = "agent_question"
+    case agentReport = "agent_report"
+    case agentError = "agent_error"
+    case system
+}
+
+struct PickySessionMessage: Codable, Equatable, Identifiable {
+    let id: String
+    let kind: PickySessionMessageKind
+    let createdAt: Date
+    let originatedBy: PickyMessageOrigin?
+    let text: String?
+    let question: PickyExtensionUiRequest?
+    let cancelledAt: Date?
+    let report: PickyFinalReport?
+    let errorContext: String?
+    let errorMessage: String?
+}
+
 struct PickyAgentSession: Codable, Equatable, Identifiable {
     let id: String
     let title: String
@@ -220,10 +335,103 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     var tools: [PickyToolActivity]
     var artifacts: [PickyArtifact]
     var changedFiles: [PickyChangedFile]
+    var messages: [PickySessionMessage] = []
+    var queuedSteers: [PickyQueueItem] = []
+    var queuedFollowUps: [PickyQueueItem] = []
+    var steeringMode: PickyQueueMode = .oneAtATime
+    var followUpMode: PickyQueueMode = .oneAtATime
+    var activitySummary: PickyActivitySummary = .zero
+    var finalReport: PickyFinalReport? = nil
     var pendingExtensionUiRequest: PickyExtensionUiRequest?
     var notifyMainOnCompletion: Bool? = nil
     var archived: Bool? = nil
     var pinned: Bool? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, status, cwd, createdAt, updatedAt, lastSummary, thinkingPreview, finalAnswer, logs, tools, artifacts, changedFiles
+        case messages, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary, finalReport
+        case pendingExtensionUiRequest, notifyMainOnCompletion, archived, pinned
+    }
+
+    init(
+        id: String,
+        title: String,
+        status: PickySessionStatus,
+        cwd: String? = nil,
+        createdAt: Date,
+        updatedAt: Date,
+        lastSummary: String? = nil,
+        thinkingPreview: String? = nil,
+        finalAnswer: String? = nil,
+        logs: [String],
+        tools: [PickyToolActivity],
+        artifacts: [PickyArtifact],
+        changedFiles: [PickyChangedFile],
+        messages: [PickySessionMessage] = [],
+        queuedSteers: [PickyQueueItem] = [],
+        queuedFollowUps: [PickyQueueItem] = [],
+        steeringMode: PickyQueueMode = .oneAtATime,
+        followUpMode: PickyQueueMode = .oneAtATime,
+        activitySummary: PickyActivitySummary = .zero,
+        finalReport: PickyFinalReport? = nil,
+        pendingExtensionUiRequest: PickyExtensionUiRequest? = nil,
+        notifyMainOnCompletion: Bool? = nil,
+        archived: Bool? = nil,
+        pinned: Bool? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.status = status
+        self.cwd = cwd
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.lastSummary = lastSummary
+        self.thinkingPreview = thinkingPreview
+        self.finalAnswer = finalAnswer
+        self.logs = logs
+        self.tools = tools
+        self.artifacts = artifacts
+        self.changedFiles = changedFiles
+        self.messages = messages
+        self.queuedSteers = queuedSteers
+        self.queuedFollowUps = queuedFollowUps
+        self.steeringMode = steeringMode
+        self.followUpMode = followUpMode
+        self.activitySummary = activitySummary
+        self.finalReport = finalReport
+        self.pendingExtensionUiRequest = pendingExtensionUiRequest
+        self.notifyMainOnCompletion = notifyMainOnCompletion
+        self.archived = archived
+        self.pinned = pinned
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        status = try container.decode(PickySessionStatus.self, forKey: .status)
+        cwd = try container.decodeIfPresent(String.self, forKey: .cwd)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        lastSummary = try container.decodeIfPresent(String.self, forKey: .lastSummary)
+        thinkingPreview = try container.decodeIfPresent(String.self, forKey: .thinkingPreview)
+        finalAnswer = try container.decodeIfPresent(String.self, forKey: .finalAnswer)
+        logs = try container.decodeIfPresent([String].self, forKey: .logs) ?? []
+        tools = try container.decodeIfPresent([PickyToolActivity].self, forKey: .tools) ?? []
+        artifacts = try container.decodeIfPresent([PickyArtifact].self, forKey: .artifacts) ?? []
+        changedFiles = try container.decodeIfPresent([PickyChangedFile].self, forKey: .changedFiles) ?? []
+        messages = try container.decodeIfPresent([PickySessionMessage].self, forKey: .messages) ?? []
+        queuedSteers = try container.decodeIfPresent([PickyQueueItem].self, forKey: .queuedSteers) ?? []
+        queuedFollowUps = try container.decodeIfPresent([PickyQueueItem].self, forKey: .queuedFollowUps) ?? []
+        steeringMode = try container.decodeIfPresent(PickyQueueMode.self, forKey: .steeringMode) ?? .oneAtATime
+        followUpMode = try container.decodeIfPresent(PickyQueueMode.self, forKey: .followUpMode) ?? .oneAtATime
+        activitySummary = try container.decodeIfPresent(PickyActivitySummary.self, forKey: .activitySummary) ?? .zero
+        finalReport = try container.decodeIfPresent(PickyFinalReport.self, forKey: .finalReport)
+        pendingExtensionUiRequest = try container.decodeIfPresent(PickyExtensionUiRequest.self, forKey: .pendingExtensionUiRequest)
+        notifyMainOnCompletion = try container.decodeIfPresent(Bool.self, forKey: .notifyMainOnCompletion)
+        archived = try container.decodeIfPresent(Bool.self, forKey: .archived)
+        pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned)
+    }
 }
 
 enum PickySessionStatus: String, Codable, Equatable {

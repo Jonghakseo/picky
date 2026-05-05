@@ -1,0 +1,15 @@
+{
+  "id": "event-session-message-appended",
+  "protocolVersion": "2026-05-05",
+  "timestamp": "2026-05-05T00:00:00.000Z",
+  "type": "sessionMessageAppended",
+  "sessionId": "session-001",
+  "message": {
+    "id": "message-001",
+    "kind": "agent_text",
+    "createdAt": "2026-05-05T00:00:00.000Z",
+    "originatedBy": "main_agent",
+    "text": "Working on it"
+  },
+  "seq": 1
+}

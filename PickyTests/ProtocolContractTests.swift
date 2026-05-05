@@ -27,7 +27,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-future-001",
-          "protocolVersion":"2026-05-01",
+          "protocolVersion":"2026-05-05",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"sessionLogAppended",
           "sessionId":"session-001",
@@ -44,7 +44,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-future-002",
-          "protocolVersion":"2026-05-01",
+          "protocolVersion":"2026-05-05",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"newFutureEvent",
           "details":"kept recoverable"
@@ -82,7 +82,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-quick-001",
-          "protocolVersion":"2026-05-01",
+          "protocolVersion":"2026-05-05",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"quickReply",
           "contextId":"context-1",
@@ -98,7 +98,7 @@ struct ProtocolContractTests {
         let snapshotJSON = """
         {
           "id":"event-main-messages-001",
-          "protocolVersion":"2026-05-01",
+          "protocolVersion":"2026-05-05",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"mainMessagesSnapshot",
           "messages":[{"role":"user","text":"안녕","createdAt":"2026-05-01T00:00:00.000Z"}]
@@ -107,7 +107,7 @@ struct ProtocolContractTests {
         let appendedJSON = """
         {
           "id":"event-main-message-001",
-          "protocolVersion":"2026-05-01",
+          "protocolVersion":"2026-05-05",
           "timestamp":"2026-05-01T00:00:01.000Z",
           "type":"mainMessageAppended",
           "message":{"role":"assistant","text":"바로 답변","createdAt":"2026-05-01T00:00:01.000Z"}
@@ -145,6 +145,111 @@ struct ProtocolContractTests {
         #expect(request.questions?.map(\.type) == [.radio, .checkbox, .text])
         #expect(request.questions?.first?.options?.last?.description == "현재 프로젝트에만 적용")
         #expect(request.questions?[1].defaultValue == .array([.string("rule")]))
+    }
+
+    @Test func decodesSessionWithoutNewFields() throws {
+        let json = """
+        {
+          "id":"event-legacy-session",
+          "protocolVersion":"2026-05-05",
+          "timestamp":"2026-05-05T00:00:00.000Z",
+          "type":"sessionUpdated",
+          "session":{
+            "id":"session-legacy",
+            "title":"Legacy session",
+            "status":"running",
+            "createdAt":"2026-05-05T00:00:00.000Z",
+            "updatedAt":"2026-05-05T00:00:01.000Z",
+            "logs":[],
+            "tools":[],
+            "artifacts":[],
+            "changedFiles":[]
+          }
+        }
+        """.data(using: .utf8)!
+
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
+        guard case .sessionUpdated(let session) = envelope.event else {
+            Issue.record("Expected sessionUpdated")
+            return
+        }
+        #expect(session.messages.isEmpty)
+        #expect(session.queuedSteers.isEmpty)
+        #expect(session.queuedFollowUps.isEmpty)
+        #expect(session.steeringMode == .oneAtATime)
+        #expect(session.followUpMode == .oneAtATime)
+        #expect(session.activitySummary == .zero)
+        #expect(session.finalReport == nil)
+    }
+
+    @Test func decodesSessionMessageAppendedEvent() throws {
+        let json = """
+        {
+          "id":"event-message-appended",
+          "protocolVersion":"2026-05-05",
+          "timestamp":"2026-05-05T00:00:00.000Z",
+          "type":"sessionMessageAppended",
+          "sessionId":"session-001",
+          "message":{
+            "id":"message-001",
+            "kind":"agent_text",
+            "createdAt":"2026-05-05T00:00:00.000Z",
+            "originatedBy":"main_agent",
+            "text":"Done"
+          },
+          "seq":7
+        }
+        """.data(using: .utf8)!
+
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
+        guard case .sessionMessageAppended(let sessionId, let message, let seq) = envelope.event else {
+            Issue.record("Expected sessionMessageAppended")
+            return
+        }
+        #expect(sessionId == "session-001")
+        #expect(message.id == "message-001")
+        #expect(message.kind == .agentText)
+        #expect(message.originatedBy == .mainAgent)
+        #expect(message.text == "Done")
+        #expect(seq == 7)
+    }
+
+    @Test func decodesSessionQueueUpdatedWithoutModes() throws {
+        let json = """
+        {
+          "id":"event-queue-updated",
+          "protocolVersion":"2026-05-05",
+          "timestamp":"2026-05-05T00:00:00.000Z",
+          "type":"sessionQueueUpdated",
+          "sessionId":"session-001",
+          "steering":[{"text":"steer","enqueuedAt":"2026-05-05T00:00:00.000Z"}],
+          "followUp":[],
+          "seq":8
+        }
+        """.data(using: .utf8)!
+
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
+        guard case .sessionQueueUpdated(let sessionId, let steering, let followUp, let steeringMode, let followUpMode, let seq) = envelope.event else {
+            Issue.record("Expected sessionQueueUpdated")
+            return
+        }
+        #expect(sessionId == "session-001")
+        #expect(steering.map(\.text) == ["steer"])
+        #expect(followUp.isEmpty)
+        #expect(steeringMode == nil)
+        #expect(followUpMode == nil)
+        #expect(seq == 8)
+    }
+
+    @Test func encodesClearQueueCommand() throws {
+        let command = PickyCommandEnvelope(id: "cmd-clear", type: .clearQueue, sessionId: "session-001", kind: .steering)
+        let data = try JSONEncoder.pickyAgentProtocolEncoder().encode(command)
+        let decoded = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyCommandEnvelope.self, from: data)
+
+        #expect(decoded.protocolVersion == pickyAgentProtocolVersion)
+        #expect(decoded.type == .clearQueue)
+        #expect(decoded.sessionId == "session-001")
+        #expect(decoded.kind == .steering)
     }
 }
 

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const PROTOCOL_VERSION = "2026-05-01";
+export const PROTOCOL_VERSION = "2026-05-05";
 
 const isoTimestamp = z.string().datetime({ offset: true });
 
@@ -119,6 +119,33 @@ export const PickyExtensionUiRequestSchema = z.object({
 });
 export type PickyExtensionUiRequest = z.infer<typeof PickyExtensionUiRequestSchema>;
 
+export const PickyQueueModeSchema = z.enum(["one-at-a-time", "all"]);
+export type PickyQueueMode = z.infer<typeof PickyQueueModeSchema>;
+export const PickyQueueItemSchema = z.object({ text: z.string(), enqueuedAt: isoTimestamp });
+export type PickyQueueItem = z.infer<typeof PickyQueueItemSchema>;
+export const PickyActivitySummarySchema = z.object({ edit: z.number().int(), bash: z.number().int(), thinking: z.number().int(), other: z.number().int() });
+export type PickyActivitySummary = z.infer<typeof PickyActivitySummarySchema>;
+export const PickyFinalReportSchema = z.object({
+  summary: z.string(),
+  body: z.string(),
+  status: z.enum(["success", "partial", "blocked"]),
+  artifacts: z.array(z.object({ kind: z.string(), title: z.string(), url: z.string().url().optional() })).default([]),
+});
+export type PickyFinalReport = z.infer<typeof PickyFinalReportSchema>;
+export const PickySessionMessageSchema = z.object({
+  id: z.string(),
+  kind: z.enum(["user_text", "agent_text", "agent_thinking", "agent_question", "agent_report", "agent_error", "system"]),
+  createdAt: isoTimestamp,
+  originatedBy: z.enum(["user", "main_agent", "pi_extension"]).optional(),
+  text: z.string().optional(),
+  question: PickyExtensionUiRequestSchema.optional(),
+  cancelledAt: isoTimestamp.optional(),
+  report: PickyFinalReportSchema.optional(),
+  errorContext: z.string().optional(),
+  errorMessage: z.string().optional(),
+});
+export type PickySessionMessage = z.infer<typeof PickySessionMessageSchema>;
+
 export const PickyAgentSessionSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -133,13 +160,21 @@ export const PickyAgentSessionSchema = z.object({
   tools: z.array(PickyToolActivitySchema).default([]),
   artifacts: z.array(PickyArtifactSchema).default([]),
   changedFiles: z.array(PickyChangedFileSchema).default([]),
+  messages: z.array(PickySessionMessageSchema).default([]),
+  queuedSteers: z.array(PickyQueueItemSchema).default([]),
+  queuedFollowUps: z.array(PickyQueueItemSchema).default([]),
+  steeringMode: PickyQueueModeSchema.default("one-at-a-time"),
+  followUpMode: PickyQueueModeSchema.default("one-at-a-time"),
+  activitySummary: PickyActivitySummarySchema.default({ edit: 0, bash: 0, thinking: 0, other: 0 }),
+  finalReport: PickyFinalReportSchema.optional(),
   pendingExtensionUiRequest: PickyExtensionUiRequestSchema.optional(),
   notifyMainOnCompletion: z.boolean().optional(),
   archived: z.boolean().optional(),
   pinned: z.boolean().optional(),
 });
 
-export type PickyAgentSession = z.infer<typeof PickyAgentSessionSchema>;
+export type PickyAgentSessionParsed = z.infer<typeof PickyAgentSessionSchema>;
+export type PickyAgentSession = Omit<PickyAgentSessionParsed, "messages" | "queuedSteers" | "queuedFollowUps" | "steeringMode" | "followUpMode" | "activitySummary" | "finalReport"> & Partial<Pick<PickyAgentSessionParsed, "messages" | "queuedSteers" | "queuedFollowUps" | "steeringMode" | "followUpMode" | "activitySummary" | "finalReport">>;
 
 export const PointerCoordinateSpaceSchema = z.enum(["screenshotPixel", "displayPoint"]);
 export type PointerCoordinateSpace = z.infer<typeof PointerCoordinateSpaceSchema>;
@@ -170,6 +205,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("pinSideSession"), context: PickyContextPacketSchema, title: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("setNotifyMainOnCompletion"), sessionId: z.string(), enabled: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("setSessionArchived"), sessionId: z.string(), archived: z.boolean() }),
+  CommandBaseSchema.extend({ type: z.literal("clearQueue"), sessionId: z.string(), kind: z.enum(["steering", "followUp", "all"]) }),
   CommandBaseSchema.extend({ type: z.literal("followUp"), sessionId: z.string(), text: z.string().min(1), context: PickyContextPacketSchema.optional() }),
   CommandBaseSchema.extend({ type: z.literal("steer"), sessionId: z.string(), text: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("abort"), sessionId: z.string() }),
@@ -201,6 +237,11 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("artifactOpened"), sessionId: z.string(), artifactId: z.string(), path: z.string() }),
   EventBaseSchema.extend({ type: z.literal("pointerOverlayRequested"), request: PickyPointerOverlayRequestSchema }),
   EventBaseSchema.extend({ type: z.literal("slashCommandsSnapshot"), sessionId: z.string(), commands: z.array(PickySlashCommandSchema) }),
+  EventBaseSchema.extend({ type: z.literal("sessionMessageAppended"), sessionId: z.string(), message: PickySessionMessageSchema, seq: z.number().int() }),
+  EventBaseSchema.extend({ type: z.literal("sessionMessageReplaced"), sessionId: z.string(), messageId: z.string(), message: PickySessionMessageSchema, seq: z.number().int() }),
+  EventBaseSchema.extend({ type: z.literal("sessionMessageRemoved"), sessionId: z.string(), messageId: z.string(), seq: z.number().int() }),
+  EventBaseSchema.extend({ type: z.literal("sessionQueueUpdated"), sessionId: z.string(), steering: z.array(PickyQueueItemSchema), followUp: z.array(PickyQueueItemSchema), steeringMode: PickyQueueModeSchema.optional(), followUpMode: PickyQueueModeSchema.optional(), seq: z.number().int() }),
+  EventBaseSchema.extend({ type: z.literal("sessionActivityUpdated"), sessionId: z.string(), activitySummary: PickyActivitySummarySchema, seq: z.number().int() }),
   EventBaseSchema.extend({ type: z.literal("error"), code: z.string(), message: z.string(), commandId: z.string().optional() }),
 ]);
 

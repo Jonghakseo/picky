@@ -60,7 +60,7 @@ struct PickyConversationComposerView: View {
                     .font(.system(size: 11.5))
                     .foregroundColor(DS.Colors.textTertiary)
                     .padding(.leading, 5)
-                    .padding(.top, 0)
+                    .padding(.top, 2)
                     .allowsHitTesting(false)
             }
             TextEditor(text: $draft)
@@ -70,6 +70,7 @@ struct PickyConversationComposerView: View {
                 .background(Color.clear)
                 .focused($isFocused)
                 .frame(height: editorHeight)
+                .offset(y: 2)
                 .onChange(of: draft) { _, _ in
                     selectedSlashCommandIndex = 0
                     isSlashCommandAutocompleteDismissed = false

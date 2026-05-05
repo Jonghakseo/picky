@@ -883,8 +883,8 @@ final class CompanionManager: ObservableObject {
         voiceFollowUpSessionID: String? = nil
     ) async throws -> PickyAgentSubmissionReceipt {
         if let targetSessionID = normalizedVoiceFollowUpSessionID(voiceFollowUpSessionID) {
-            print("🎙️ Picky voice route — STEER side=\(targetSessionID)")
-            try await agentClient.send(PickyCommandEnvelope(type: .steer, context: contextPacket, sessionId: targetSessionID, text: transcript))
+            print("🎙️ Picky voice route — FOLLOW-UP side=\(targetSessionID)")
+            try await agentClient.send(PickyCommandEnvelope(type: .followUp, context: contextPacket, sessionId: targetSessionID, text: transcript))
             return PickyAgentSubmissionReceipt(sessionID: targetSessionID, message: "")
         }
         print("🎙️ Picky voice route — SUBMIT main (arg=\(voiceFollowUpSessionID ?? "<nil>") self=\(voiceFollowUpSessionIDForCurrentUtterance ?? "<nil>"))")
@@ -1103,11 +1103,11 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    fileprivate func runSteerSideEffect(inputID: UUID, sessionID: String, transcript: String, context: PickyContextPacket) {
+    fileprivate func runFollowUpSideEffect(inputID: UUID, sessionID: String, transcript: String, context: PickyContextPacket) {
         currentResponseTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                try await agentClient.send(PickyCommandEnvelope(type: .steer, context: context, sessionId: sessionID, text: transcript))
+                try await agentClient.send(PickyCommandEnvelope(type: .followUp, context: context, sessionId: sessionID, text: transcript))
                 guard !Task.isCancelled else { return }
                 let receipt = PickyAgentSubmissionReceipt(sessionID: sessionID, message: "")
                 interactionCoordinator.effectCompleted(
@@ -1718,8 +1718,8 @@ private final class CompanionInteractionEffectRunner: PickyInteractionEffectRunn
                 manager?.runCaptureVoiceContextEffect(inputID: inputID, transcript: transcript, targetSessionID: targetSessionID)
             case .submitMain(let inputID, let transcript, let context):
                 manager?.runSubmitMainEffect(inputID: inputID, transcript: transcript, context: context)
-            case .steerSide(let inputID, let sessionID, let transcript, let context):
-                manager?.runSteerSideEffect(inputID: inputID, sessionID: sessionID, transcript: transcript, context: context)
+            case .followUpSide(let inputID, let sessionID, let transcript, let context):
+                manager?.runFollowUpSideEffect(inputID: inputID, sessionID: sessionID, transcript: transcript, context: context)
             case .scheduleMinimumDisplay(let timerID, let speechID, let inputID, let delay):
                 manager?.runMinimumDisplayTimerEffect(timerID: timerID, speechID: speechID, inputID: inputID, delay: delay)
             case .speak(let speechID, let text, let contextID):

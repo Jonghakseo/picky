@@ -94,7 +94,7 @@ struct PickyCompanionManagerTests {
         let receipt = try await manager.routeVoiceTranscript(transcript: "snapshot follow-up", contextPacket: context, voiceFollowUpSessionID: "session-at-press")
 
         #expect(receipt.sessionID == "session-at-press")
-        #expect(client.commands.first?.type == .steer)
+        #expect(client.commands.first?.type == .followUp)
         #expect(client.commands.first?.sessionId == "session-at-press")
         #expect(client.commands.first?.text == "snapshot follow-up")
         #expect(client.commands.first?.context?.source == "voice-follow-up")
@@ -410,8 +410,8 @@ struct PickyCompanionManagerTests {
         try await settle()
         _ = try await manager.routeVoiceTranscript(transcript: "새 음성 입력", contextPacket: context(source: "voice-follow-up"), voiceFollowUpSessionID: "session-hovered")
 
-        #expect(client.calls == ["send:abortMainAgent", "send:steer"])
-        #expect(client.commands.map(\.type) == [.abortMainAgent, .steer])
+        #expect(client.calls == ["send:abortMainAgent", "send:followUp"])
+        #expect(client.commands.map(\.type) == [.abortMainAgent, .followUp])
         #expect(client.commands.first?.sessionId == nil)
         #expect(client.commands.last?.sessionId == "session-hovered")
         #expect(client.commands.last?.text == "새 음성 입력")

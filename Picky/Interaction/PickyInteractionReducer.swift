@@ -147,7 +147,7 @@ enum PickyInteractionReducer {
             state.output = .waitingForAgent(inputID: inputID, contextID: context.id, promptPreview: transcript)
             effects.append(.recordContextOwnership(inputID: inputID, contextID: context.id, owner: .voice(inputID: inputID)))
             if let targetSessionID {
-                effects.append(.steerSide(inputID: inputID, sessionID: targetSessionID, transcript: transcript, context: context))
+                effects.append(.followUpSide(inputID: inputID, sessionID: targetSessionID, transcript: transcript, context: context))
             } else {
                 effects.append(.submitMain(inputID: inputID, transcript: transcript, context: context))
             }

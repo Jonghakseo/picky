@@ -16,8 +16,15 @@ struct PickyAgentBubbleView: View {
         HStack {
             VStack(alignment: .leading, spacing: 6) {
                 PickyConversationMarkdownText(markdown: displayText)
-                if showsOpenAsReportAction, let onOpenAsReport {
-                    PickyOpenAsReportButton(action: onOpenAsReport)
+                if showsFooter {
+                    HStack(alignment: .center, spacing: 7) {
+                        if showsOpenAsReportAction, let onOpenAsReport {
+                            PickyOpenAsReportButton(action: onOpenAsReport)
+                        }
+                        if let assistantRunText {
+                            PickyAssistantRunMetadataLabel(text: assistantRunText)
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 10)
@@ -38,11 +45,32 @@ struct PickyAgentBubbleView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private var showsFooter: Bool {
+        (showsOpenAsReportAction && onOpenAsReport != nil) || assistantRunText != nil
+    }
+
+    private var assistantRunText: String? {
+        message.assistantRun?.displayText
+    }
+
     private var displayText: String {
         if let text = message.text, !text.isEmpty { return text }
         if let errorMessage = message.errorMessage, !errorMessage.isEmpty { return errorMessage }
         if let question = message.question { return question.prompt ?? question.title ?? "Input requested" }
         return ""
+    }
+}
+
+struct PickyAssistantRunMetadataLabel: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+            .foregroundColor(DS.Colors.textTertiary.opacity(0.72))
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .help("Model and reasoning level: \(text)")
     }
 }
 

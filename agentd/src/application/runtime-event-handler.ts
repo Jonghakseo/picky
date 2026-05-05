@@ -6,7 +6,7 @@ import { cleanFinalAnswer, summaryFromFinalAnswer } from "../domain/session-summ
 import { settleActiveTools } from "../domain/tool-activity.js";
 import { categorizeTool, type ToolCategory } from "../domain/tool-categorizer.js";
 import { logAgentd } from "../local-log.js";
-import type { PickyActivitySummary, PickyAgentSession, PickyExtensionUiRequest } from "../protocol.js";
+import type { PickyActivitySummary, PickyAgentSession, PickyAssistantRunMetadata, PickyExtensionUiRequest } from "../protocol.js";
 import type { RuntimeEvent } from "../runtime/types.js";
 import { extensionUiLogLine, extensionUiWaitingSummary, mapExtensionUiRequest } from "./extension-ui-request-mapper.js";
 
@@ -15,7 +15,7 @@ export interface RuntimeMessageJournal {
   recordError(sessionId: string, errorMessage: string, errorContext?: string): Promise<void>;
   recordSystemMessage(sessionId: string, text: string): Promise<void>;
   appendAssistantDelta(sessionId: string, delta: string): void;
-  flushAssistantText(sessionId: string): Promise<void>;
+  flushAssistantText(sessionId: string, assistantRun?: PickyAssistantRunMetadata): Promise<void>;
   appendThinkingDelta(sessionId: string, delta: string): Promise<void>;
   flushThinking(sessionId: string): Promise<void>;
   clearAllThinking(sessionId: string): Promise<void>;
@@ -98,7 +98,7 @@ export class RuntimeEventHandler {
 
     const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
     if (terminal || event.status === "waiting_for_input" || finalAnswer) {
-      await this.dependencies.messageBuilder.flushAssistantText(sessionId);
+      await this.dependencies.messageBuilder.flushAssistantText(sessionId, event.assistantRun);
       if (terminal) {
         await this.dependencies.messageBuilder.clearAllThinking(sessionId);
       } else {

@@ -21,9 +21,9 @@ describe("normalizePiEvent", () => {
   it("maps final turn completion before agent_end so completed cards do not stay working", () => {
     expect(normalizePiEvent({
       type: "turn_end",
-      message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "완료 답변" }] },
+      message: { role: "assistant", stopReason: "end_turn", model: "openai-codex/gpt-5.5", content: [{ type: "text", text: "완료 답변" }] },
       toolResults: [],
-    })).toMatchObject({ kind: "status", status: "completed", finalAnswer: "완료 답변" });
+    }, { currentThinkingLevel: "high" })).toMatchObject({ kind: "status", status: "completed", finalAnswer: "완료 답변", assistantRun: { model: "openai-codex/gpt-5.5", thinkingLevel: "high" } });
 
     expect(normalizePiEvent({
       type: "turn_end",

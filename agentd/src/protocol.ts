@@ -132,6 +132,11 @@ export const PickyActivitySummarySchema = z.object({
   other: z.number().int().default(0),
 });
 export type PickyActivitySummary = z.infer<typeof PickyActivitySummarySchema>;
+export const PickyAssistantRunMetadataSchema = z.object({
+  model: z.string().optional(),
+  thinkingLevel: ThinkingLevelSchema.optional(),
+});
+export type PickyAssistantRunMetadata = z.infer<typeof PickyAssistantRunMetadataSchema>;
 export const PickySessionMessageSchema = z.object({
   id: z.string(),
   kind: z.enum(["user_text", "agent_text", "agent_thinking", "agent_question", "agent_error", "agent_activity", "system"]),
@@ -141,6 +146,7 @@ export const PickySessionMessageSchema = z.object({
   question: PickyExtensionUiRequestSchema.optional(),
   cancelledAt: isoTimestamp.optional(),
   activitySnapshot: PickyActivitySummarySchema.optional(),
+  assistantRun: PickyAssistantRunMetadataSchema.optional(),
   errorContext: z.string().optional(),
   errorMessage: z.string().optional(),
 });

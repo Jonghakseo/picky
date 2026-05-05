@@ -9,13 +9,17 @@ export interface RuntimeSlashCommand {
   source: RuntimeSlashCommandSource;
 }
 export type RuntimeSessionStatus = "running" | "waiting_for_input" | "blocked" | "completed" | "failed" | "cancelled";
+export interface RuntimeAssistantRunMetadata {
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
+}
 
 export type RuntimeEvent =
   | { type: "log"; line: string }
   | { type: "assistant_delta"; delta: string }
   | { type: "thinking_delta"; delta: string }
   | { type: "queue_update"; steering: readonly string[]; followUp: readonly string[] }
-  | { type: "status"; status: RuntimeSessionStatus; summary?: string; finalAnswer?: string; noTurnRan?: boolean }
+  | { type: "status"; status: RuntimeSessionStatus; summary?: string; finalAnswer?: string; noTurnRan?: boolean; assistantRun?: RuntimeAssistantRunMetadata }
   | { type: "tool"; toolCallId: string; name: string; status: "running" | "succeeded" | "failed"; preview?: string }
   | { type: "extension_ui"; request: Record<string, unknown>; waitsForInput: boolean };
 

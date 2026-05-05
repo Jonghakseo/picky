@@ -10,7 +10,8 @@
     "kind": "agent_text",
     "createdAt": "2026-05-05T00:00:01.000Z",
     "originatedBy": "main_agent",
-    "text": "Updated answer"
+    "text": "Updated answer",
+    "assistantRun": { "model": "openai-codex/gpt-5.5", "thinkingLevel": "high" }
   },
   "seq": 2
 }

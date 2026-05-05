@@ -53,9 +53,9 @@ describe("SessionMessageBuilder", () => {
     builder.appendAssistantDelta("session-1", "lo");
     expect(messages).toEqual([]);
 
-    await builder.flushAssistantText("session-1");
+    await builder.flushAssistantText("session-1", { model: "openai-codex/gpt-5.5", thinkingLevel: "high" });
 
-    expect(messages).toMatchObject([{ kind: "agent_text", text: "Hello" }]);
+    expect(messages).toMatchObject([{ kind: "agent_text", text: "Hello", assistantRun: { model: "openai-codex/gpt-5.5", thinkingLevel: "high" } }]);
     expect(events).toMatchObject([{ type: "appended", seq: 1 }]);
   });
 

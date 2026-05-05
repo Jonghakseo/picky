@@ -1,18 +1,20 @@
 import type { PickyToolActivity, SessionStatus } from "../protocol.js";
-import type { RuntimeEvent, RuntimeSessionStatus } from "../runtime/types.js";
+import type { RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionStatus, ThinkingLevel } from "../runtime/types.js";
 import { sliceUtf16Safe } from "./safe-truncate.js";
 
 export interface PiEventNormalizationContext {
   hasQueuedSteering?: boolean;
   hasQueuedFollowUp?: boolean;
   hasPendingExtensionUiRequest?: boolean;
+  currentModel?: string;
+  currentThinkingLevel?: ThinkingLevel;
 }
 
 export type NormalizedPiEvent =
   | { kind: "log"; line: string }
   | { kind: "assistantDelta"; delta: string }
   | { kind: "thinkingDelta"; delta: string }
-  | { kind: "status"; status: SessionStatus; summary?: string; finalAnswer?: string }
+  | { kind: "status"; status: SessionStatus; summary?: string; finalAnswer?: string; assistantRun?: RuntimeAssistantRunMetadata }
   | { kind: "tool"; tool: PickyToolActivity }
   | { kind: "extensionUi"; request: Record<string, unknown>; waitsForInput: boolean }
   | { kind: "none" };
@@ -84,17 +86,19 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
 
   if (type === "turn_end") {
     const message = asRecord(piEvent.message);
+    const assistantRun = assistantRunMetadata(message, context);
     const stopReasonStatus = terminalStatusFromStopReason(stringValue(message.stopReason));
-    if (stopReasonStatus) return withFinalAnswer(stopReasonStatus, assistantTextFromMessage(message));
+    if (stopReasonStatus) return withFinalAnswer(stopReasonStatus, assistantTextFromMessage(message), assistantRun);
     if (!hasAssistantText(message) || hasAssistantToolCalls(message) || hasToolResults(piEvent.toolResults)) return { kind: "none" };
-    return withFinalAnswer(completionStatusFromContext(context), assistantTextFromMessage(message));
+    return withFinalAnswer(completionStatusFromContext(context), assistantTextFromMessage(message), assistantRun);
   }
 
   if (type === "agent_end") {
     const lastMessage = lastAssistantMessage(piEvent.messages);
+    const assistantRun = lastMessage ? assistantRunMetadata(lastMessage, context) : assistantRunMetadata(undefined, context);
     const stopReasonStatus = terminalStatusFromStopReason(lastMessage ? stringValue(lastMessage.stopReason) : undefined);
-    if (stopReasonStatus) return withFinalAnswer(stopReasonStatus, lastMessage ? assistantTextFromMessage(lastMessage) : undefined);
-    return withFinalAnswer(completionStatusFromContext(context), lastMessage ? assistantTextFromMessage(lastMessage) : undefined);
+    if (stopReasonStatus) return withFinalAnswer(stopReasonStatus, lastMessage ? assistantTextFromMessage(lastMessage) : undefined, assistantRun);
+    return withFinalAnswer(completionStatusFromContext(context), lastMessage ? assistantTextFromMessage(lastMessage) : undefined, assistantRun);
   }
 
   if (type === "extension_error" || type === "auto_retry_end") {
@@ -110,7 +114,15 @@ export function runtimeEventFromPiEvent(event: unknown, context?: PiEventNormali
   if (normalized.kind === "log") return { type: "log", line: normalized.line };
   if (normalized.kind === "assistantDelta") return { type: "assistant_delta", delta: normalized.delta };
   if (normalized.kind === "thinkingDelta") return { type: "thinking_delta", delta: normalized.delta };
-  if (normalized.kind === "status") return { type: "status", status: normalized.status as RuntimeSessionStatus, summary: normalized.summary, finalAnswer: normalized.finalAnswer };
+  if (normalized.kind === "status") {
+    return {
+      type: "status",
+      status: normalized.status as RuntimeSessionStatus,
+      ...(normalized.summary ? { summary: normalized.summary } : {}),
+      ...(normalized.finalAnswer ? { finalAnswer: normalized.finalAnswer } : {}),
+      ...(normalized.assistantRun ? { assistantRun: normalized.assistantRun } : {}),
+    };
+  }
   if (normalized.kind === "tool") return { type: "tool", toolCallId: normalized.tool.toolCallId, name: normalized.tool.name, status: normalized.tool.status, preview: normalized.tool.preview };
   if (normalized.kind === "extensionUi") return { type: "extension_ui", request: normalized.request, waitsForInput: normalized.waitsForInput };
   return undefined;
@@ -150,9 +162,32 @@ function assistantTextFromMessage(message: Record<string, unknown>): string | un
   return text.length > 0 ? text : undefined;
 }
 
-function withFinalAnswer(status: NormalizedPiEvent, finalAnswer: string | undefined): NormalizedPiEvent {
-  if (status.kind !== "status" || !finalAnswer) return status;
-  return { ...status, finalAnswer };
+function withFinalAnswer(status: NormalizedPiEvent, finalAnswer: string | undefined, assistantRun?: RuntimeAssistantRunMetadata): NormalizedPiEvent {
+  if (status.kind !== "status") return status;
+  return {
+    ...status,
+    ...(finalAnswer ? { finalAnswer } : {}),
+    ...(assistantRun && hasAssistantRunMetadata(assistantRun) ? { assistantRun } : {}),
+  };
+}
+
+function assistantRunMetadata(message: Record<string, unknown> | undefined, context: PiEventNormalizationContext): RuntimeAssistantRunMetadata | undefined {
+  const model = stringValue(message?.model) ?? context.currentModel;
+  const thinkingLevel = parseThinkingLevel(message?.thinkingLevel) ?? context.currentThinkingLevel;
+  const metadata: RuntimeAssistantRunMetadata = {
+    ...(model ? { model } : {}),
+    ...(thinkingLevel ? { thinkingLevel } : {}),
+  };
+  return hasAssistantRunMetadata(metadata) ? metadata : undefined;
+}
+
+function hasAssistantRunMetadata(metadata: RuntimeAssistantRunMetadata): boolean {
+  return Boolean(metadata.model || metadata.thinkingLevel);
+}
+
+function parseThinkingLevel(value: unknown): ThinkingLevel | undefined {
+  if (value === "off" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh") return value;
+  return undefined;
 }
 
 function hasAssistantText(message: Record<string, unknown>): boolean {

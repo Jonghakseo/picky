@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { PickyActivitySummary, PickyExtensionUiRequest, PickySessionMessage } from "./protocol.js";
+import type { PickyActivitySummary, PickyAssistantRunMetadata, PickyExtensionUiRequest, PickySessionMessage } from "./protocol.js";
 
 type MessageOrigin = "user" | "main_agent" | "pi_extension";
 
@@ -128,12 +128,12 @@ export class SessionMessageBuilder {
     state.assistantDraft += delta;
   }
 
-  async flushAssistantText(sessionId: string): Promise<void> {
+  async flushAssistantText(sessionId: string, assistantRun?: PickyAssistantRunMetadata): Promise<void> {
     const state = this.states.get(sessionId);
     if (!state?.assistantDraft) return;
     const text = state.assistantDraft;
     state.assistantDraft = "";
-    await this.enqueue(sessionId, async () => this.appendAssistantTextNow(sessionId, text));
+    await this.enqueue(sessionId, async () => this.appendAssistantTextNow(sessionId, text, assistantRun));
   }
 
   async appendThinkingDelta(sessionId: string, delta: string): Promise<void> {
@@ -163,13 +163,14 @@ export class SessionMessageBuilder {
     this.operationChains.delete(sessionId);
   }
 
-  private async appendAssistantTextNow(sessionId: string, text: string): Promise<void> {
+  private async appendAssistantTextNow(sessionId: string, text: string, assistantRun?: PickyAssistantRunMetadata): Promise<void> {
     if (!text) return;
     await this.appendInternal(sessionId, {
       id: `msg-agent-text-${randomUUID()}`,
       kind: "agent_text",
       createdAt: this.deps.now(),
       text,
+      ...(hasAssistantRunMetadata(assistantRun) ? { assistantRun } : {}),
     });
   }
 
@@ -277,6 +278,10 @@ export class SessionMessageBuilder {
 
 function activityTotal(summary: PickyActivitySummary): number {
   return summary.read + summary.bash + summary.edit + summary.write + summary.thinking + summary.other;
+}
+
+function hasAssistantRunMetadata(metadata: PickyAssistantRunMetadata | undefined): metadata is PickyAssistantRunMetadata {
+  return Boolean(metadata?.model || metadata?.thinkingLevel);
 }
 
 function firstNonEmptyLine(value: string | undefined): string | undefined {

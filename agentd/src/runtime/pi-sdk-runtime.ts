@@ -89,7 +89,7 @@ export class PiSdkRuntime implements AgentRuntime {
       sessionManager: options.sessionFilePath ? SessionManager.open(options.sessionFilePath, undefined, cwd) : SessionManager.create(cwd),
     });
 
-    const handle = new PiSdkRuntimeSession(sessionId, runtime);
+    const handle = new PiSdkRuntimeSession(sessionId, runtime, this.thinkingLevel);
     await handle.bindCurrentSession();
     return handle;
   }
@@ -104,7 +104,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private queuedFollowUpCount = 0;
   private pendingExtensionUiRequestIds = new Set<string>();
 
-  constructor(readonly id: string, private readonly runtime: AgentSessionRuntime) {
+  constructor(readonly id: string, private readonly runtime: AgentSessionRuntime, private configuredThinkingLevel?: ThinkingLevel) {
     this.uiBridge = this.createBridge();
     this.transcriptRepairLogLine = repairDanglingToolCalls(runtime.session);
     this.runtime.setRebindSession(async () => this.bindCurrentSession());
@@ -174,6 +174,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       return;
     }
     session.setThinkingLevel(level);
+    this.configuredThinkingLevel = level;
     logAgentd("pi thinking level set", { sessionId: this.id, level });
   }
 
@@ -316,6 +317,8 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       hasQueuedSteering: this.queuedSteeringCount > 0,
       hasQueuedFollowUp: this.queuedFollowUpCount > 0,
       hasPendingExtensionUiRequest: this.pendingExtensionUiRequestIds.size > 0,
+      currentModel: currentModelId(this.runtime.session),
+      currentThinkingLevel: currentThinkingLevel(this.runtime.session) ?? this.configuredThinkingLevel,
     });
 
     if (runtimeEvent?.type === "extension_ui" && runtimeEvent.waitsForInput) {
@@ -451,6 +454,22 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function currentModelId(session: AgentSession): string | undefined {
+  const directModel = asRecord((session as unknown as Record<string, unknown>).model);
+  const stateModel = asRecord(asRecord((session as unknown as Record<string, unknown>).state).model);
+  return stringValue(directModel.id) ?? stringValue(directModel.model) ?? stringValue(stateModel.id) ?? stringValue(stateModel.model);
+}
+
+function currentThinkingLevel(session: AgentSession): ThinkingLevel | undefined {
+  return parseThinkingLevel((session as unknown as Record<string, unknown>).thinkingLevel)
+    ?? parseThinkingLevel(asRecord((session as unknown as Record<string, unknown>).state).thinkingLevel);
+}
+
+function parseThinkingLevel(value: unknown): ThinkingLevel | undefined {
+  if (value === "off" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh") return value;
+  return undefined;
 }
 
 function repairDanglingToolCalls(session: AgentSession): string | undefined {

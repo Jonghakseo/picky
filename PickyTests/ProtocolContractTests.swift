@@ -244,7 +244,8 @@ struct ProtocolContractTests {
             "kind":"agent_text",
             "createdAt":"2026-05-05T00:00:00.000Z",
             "originatedBy":"main_agent",
-            "text":"Done"
+            "text":"Done",
+            "assistantRun":{"model":"anthropic/claude-opus-4-7","thinkingLevel":"xhigh"}
           },
           "seq":7
         }
@@ -260,6 +261,7 @@ struct ProtocolContractTests {
         #expect(message.kind == .agentText)
         #expect(message.originatedBy == .mainAgent)
         #expect(message.text == "Done")
+        #expect(message.assistantRun?.displayText == "opus-4-7 xhigh")
         #expect(seq == 7)
     }
 

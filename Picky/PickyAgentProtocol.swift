@@ -351,6 +351,29 @@ enum PickySessionMessageKind: String, Codable, Equatable {
     case system
 }
 
+struct PickyAssistantRunMetadata: Codable, Equatable {
+    var model: String?
+    var thinkingLevel: PickyMainAgentThinkingLevel?
+
+    var displayText: String? {
+        let parts = [model.map(Self.compactModelName), thinkingLevel?.rawValue]
+            .compactMap { value -> String? in
+                let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return trimmed.isEmpty ? nil : trimmed
+            }
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: " ")
+    }
+
+    private static func compactModelName(_ rawModel: String) -> String {
+        let leaf = rawModel.split(separator: "/").last.map(String.init) ?? rawModel
+        for prefix in ["claude-", "openai-"] where leaf.hasPrefix(prefix) {
+            return String(leaf.dropFirst(prefix.count))
+        }
+        return leaf
+    }
+}
+
 struct PickySessionMessage: Codable, Equatable, Identifiable {
     let id: String
     let kind: PickySessionMessageKind
@@ -360,6 +383,7 @@ struct PickySessionMessage: Codable, Equatable, Identifiable {
     let question: PickyExtensionUiRequest?
     let cancelledAt: Date?
     let activitySnapshot: PickyActivitySummary?
+    var assistantRun: PickyAssistantRunMetadata? = nil
     let errorContext: String?
     let errorMessage: String?
 }

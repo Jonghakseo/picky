@@ -85,7 +85,7 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
     return { kind: "extensionUi", request: piEvent, waitsForInput: ["select", "confirm", "input", "editor", "askUserQuestion"].includes(method) };
   }
 
-  if (type === "session_info") {
+  if (type === "session_info" || type === "session_info_changed") {
     const name = stringValue(piEvent.name)?.trim();
     if (!name) return { kind: "none" };
     return { kind: "sessionInfo", name };

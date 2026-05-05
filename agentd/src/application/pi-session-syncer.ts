@@ -22,6 +22,30 @@ export interface PiTerminalSessionSyncResult {
   baselineFound: boolean;
 }
 
+export async function readPiSessionInfoName(sessionFilePath: string): Promise<string | undefined> {
+  let text: string;
+  try {
+    text = await readFile(sessionFilePath, "utf8");
+  } catch {
+    return undefined;
+  }
+  const lines = text.split(/\r?\n/);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]?.trim();
+    if (!line) continue;
+    let entry: { type?: string; name?: unknown } | undefined;
+    try {
+      entry = JSON.parse(line) as { type?: string; name?: unknown };
+    } catch {
+      continue;
+    }
+    if (entry?.type !== "session_info") continue;
+    const name = typeof entry.name === "string" ? entry.name.trim() : "";
+    if (name) return name;
+  }
+  return undefined;
+}
+
 export async function readPiTerminalSessionMessages(sessionFilePath: string, baselinePiMessageId?: string): Promise<PiTerminalSessionSyncResult> {
   const text = await readFile(sessionFilePath, "utf8");
   const entries = parseMessageEntries(text);

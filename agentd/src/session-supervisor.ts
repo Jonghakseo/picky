@@ -8,7 +8,7 @@ import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-m
 import { buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
 import type { EventEnvelope, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
-import { readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
+import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
 import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, ThinkingLevel } from "./runtime/types.js";
@@ -119,6 +119,7 @@ export class SessionSupervisor extends EventEmitter {
       this.sessions.set(session.id, session);
       this.messageBuilder.hydrateSession(session.id, session.messages);
       if (session !== persistedSession) await this.store.save(session);
+      if (this.sideSessionIds.has(session.id)) void this.refreshSideSessionTitleFromPi(session.id);
 
       if (!isTerminalStatus(session.status)) {
         if (session.archived === true) {
@@ -1175,6 +1176,30 @@ export class SessionSupervisor extends EventEmitter {
       await this.messageBuilder.recordUserText(sessionId, line.slice(EXTENSION_ANSWER_PREFIX.length), "user");
     } else if (line.startsWith(HANDOFF_PREFIX)) {
       await this.messageBuilder.recordUserText(sessionId, line.slice(HANDOFF_PREFIX.length), "main_agent");
+    }
+    if (piSessionFilePathFromLogLine(line) || /^runtime reattached from pi session:/.test(line)) {
+      void this.refreshSideSessionTitleFromPi(sessionId);
+    }
+  }
+
+  // Pi names the underlying session asynchronously after the first turn, but session_info_changed
+  // events do not fire when Picky resumes an existing pi session file. Read the JSONL directly and
+  // patch the side-agent title so the HUD card shows Pi's name instead of "New side agent · cwd".
+  private async refreshSideSessionTitleFromPi(sessionId: string): Promise<void> {
+    if (!this.isSideSession(sessionId)) return;
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    const sessionFilePath = piSessionFilePathFromLogs(session.logs);
+    if (!sessionFilePath) return;
+    try {
+      const name = await readPiSessionInfoName(sessionFilePath);
+      if (!name) return;
+      const current = this.sessions.get(sessionId);
+      if (!current || current.title === name) return;
+      logAgentd("side session title refreshed from pi", { sessionId, previousTitle: current.title, name });
+      await this.patch(sessionId, { title: name });
+    } catch (error) {
+      logAgentd("side session title refresh failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
     }
   }
 

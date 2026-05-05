@@ -111,9 +111,10 @@ describe("normalizePiEvent", () => {
     expect(normalizePiEvent(await fixture("queue-update.json"))).toEqual({ kind: "none" });
   });
 
-  it("maps session_info events to a sessionInfo name update and ignores blank names", () => {
-    expect(normalizePiEvent({ type: "session_info", id: "abc", name: "型트 소개" })).toEqual({ kind: "sessionInfo", name: "型트 소개" });
-    expect(normalizePiEvent({ type: "session_info", id: "abc", name: "  " })).toEqual({ kind: "none" });
-    expect(normalizePiEvent({ type: "session_info", id: "abc" })).toEqual({ kind: "none" });
+  it("maps session_info / session_info_changed events to a sessionInfo name update and ignores blank names", () => {
+    expect(normalizePiEvent({ type: "session_info_changed", name: "원래 이름" })).toEqual({ kind: "sessionInfo", name: "원래 이름" });
+    expect(normalizePiEvent({ type: "session_info", id: "abc", name: "세션 파일 이름" })).toEqual({ kind: "sessionInfo", name: "세션 파일 이름" });
+    expect(normalizePiEvent({ type: "session_info_changed", name: "  " })).toEqual({ kind: "none" });
+    expect(normalizePiEvent({ type: "session_info_changed" })).toEqual({ kind: "none" });
   });
 });

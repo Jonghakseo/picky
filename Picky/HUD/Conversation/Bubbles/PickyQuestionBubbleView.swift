@@ -37,11 +37,13 @@ struct PickyQuestionBubbleView: View {
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundColor(DS.Colors.textPrimary)
                 }
-                Text(request.prompt ?? request.title ?? request.method)
-                    .font(.system(size: 12))
-                    .foregroundColor(DS.Colors.textPrimary)
-                    .strikethrough(isCancelled, color: DS.Colors.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let bodyText = PickyQuestionBubbleCopy.bodyText(for: request) {
+                    Text(bodyText)
+                        .font(.system(size: 12))
+                        .foregroundColor(DS.Colors.textPrimary)
+                        .strikethrough(isCancelled, color: DS.Colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let description = request.description, !description.isEmpty {
                     Text(description)
                         .font(.system(size: 11))
@@ -245,5 +247,16 @@ struct PickyQuestionBubbleView: View {
 
     private func cancel() {
         Task { try? await viewModel.cancelExtensionUi(sessionID: request.sessionId, requestID: request.id) }
+    }
+}
+
+enum PickyQuestionBubbleCopy {
+    static func bodyText(for request: PickyExtensionUiRequest) -> String? {
+        let title = request.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let prompt = request.prompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        if !prompt.isEmpty, prompt != title { return prompt }
+        if title.isEmpty { return request.method }
+        return nil
     }
 }

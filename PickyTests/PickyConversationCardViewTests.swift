@@ -91,6 +91,18 @@ struct PickyConversationCardViewTests {
         #expect(PickyFinderOpenRequest.existingDirectoryURL(cwd: " ") == nil)
     }
 
+    @Test func questionBubbleBodyTextDoesNotDuplicateTitle() {
+        let titledOnly = extensionUiRequest(title: "짧은 테스트", prompt: nil)
+        let samePrompt = extensionUiRequest(title: "짧은 테스트", prompt: " 짧은 테스트 ")
+        let distinctPrompt = extensionUiRequest(title: "짧은 테스트", prompt: "잘 뜨나요?")
+        let untitled = extensionUiRequest(title: nil, prompt: nil)
+
+        #expect(PickyQuestionBubbleCopy.bodyText(for: titledOnly) == nil)
+        #expect(PickyQuestionBubbleCopy.bodyText(for: samePrompt) == nil)
+        #expect(PickyQuestionBubbleCopy.bodyText(for: distinctPrompt) == "잘 뜨나요?")
+        #expect(PickyQuestionBubbleCopy.bodyText(for: untitled) == "askUserQuestion")
+    }
+
     @Test func queuedFollowUpMatchingUserTextStillRendersPendingBubble() {
         let legacyFollowUpPrompt = """
         # Picky follow-up
@@ -594,13 +606,13 @@ private func queueItem(_ text: String) -> PickyQueueItem {
     PickyQueueItem(text: text, enqueuedAt: baseDate)
 }
 
-private func extensionUiRequest() -> PickyExtensionUiRequest {
+private func extensionUiRequest(title: String? = "Need a decision", prompt: String? = "Pick one") -> PickyExtensionUiRequest {
     PickyExtensionUiRequest(
         id: "request-1",
         sessionId: "session-1",
         method: "askUserQuestion",
-        title: "Need a decision",
-        prompt: "Pick one",
+        title: title,
+        prompt: prompt,
         description: nil,
         options: nil,
         questions: [

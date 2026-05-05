@@ -35,13 +35,18 @@ When the user asks about a feature, start here before broad searching:
 - Global hotkey semantics: `Picky/Companion/Dictation/GlobalPushToTalkShortcutMonitor.swift`, `Picky/Companion/Dictation/BuddyPushToTalkShortcut.swift`
 - Speech transcription provider: `Picky/Companion/Dictation/AppleSpeechTranscriptionProvider.swift`, `Picky/Companion/Dictation/BuddyTranscriptionProvider.swift`
 - Screen/context capture: `Picky/Context/`, `Picky/PickyAdvancedContext.swift`, `Picky/Context/PickyContextPacketAssembler.swift`
-- HUD / side agent cards / follow-up UI: `Picky/HUD/`, `Picky/HUD/PickyHUDView.swift`, `Picky/PickySessionViewModel.swift`
+- HUD shell / dock / side-agent container: `Picky/HUD/`, `Picky/HUD/PickyHUDView.swift`, `Picky/PickySessionViewModel.swift`
+- Conversation card UI: `Picky/HUD/Conversation/`, particularly `PickyConversationCardView`, `PickyConversationListView`, `PickyConversationComposerView`, `PickyConversationMenu`
+- Conversation bubble components: `Picky/HUD/Conversation/Bubbles/`
 - Session selection/archive state: `Picky/Sessions/PickySessionSelectionStore.swift`, `Picky/Sessions/`
 - Ghostty resume / terminal handoff: `Picky/PickySessionViewModel.swift`, search `PickyGhosttyResumeLauncher`
 - App-daemon protocol/client: `Picky/PickyAgentProtocol.swift`, `Picky/PickyAgentClient.swift`, `Picky/PickyAgentDaemonLauncher.swift`
 - agentd entry/composition: `agentd/src/index.ts`
 - agentd WebSocket protocol handling: `agentd/src/server.ts`, `agentd/src/protocol.ts`
 - agentd session lifecycle/orchestration: `agentd/src/session-supervisor.ts`, `agentd/src/session-store.ts`
+- Backend message journal / source mapping: `agentd/src/session-message-builder.ts`, `agentd/src/domain/log-prefixes.ts`
+- Tool categorizer (activity counts): `agentd/src/domain/tool-categorizer.ts`
+- submit_final_report tool: `agentd/src/application/submit-final-report-tool.ts`
 - agentd prompt/context construction: `agentd/src/prompt-builder.ts`, `contracts/prompts/`, `contracts/context/`
 - Pi SDK runtime adapter: `agentd/src/runtime/pi-sdk-runtime.ts`, `agentd/src/runtime/types.ts`, `agentd/src/runtime/mock-runtime.ts`
 - Main-agent side-session tools: `agentd/src/application/handoff-tool.ts`

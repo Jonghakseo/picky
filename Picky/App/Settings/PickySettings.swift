@@ -147,7 +147,7 @@ struct PickySettings: Codable, Equatable {
         notifications: PickyNotificationPreferences = .defaults,
         fontScales: PickyFontScales = .defaults,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .medium,
-        useConversationCard: Bool = false,
+        useConversationCard: Bool = true,
         pushToTalkShortcut: PickyShortcutSpec = .defaultPushToTalk,
         quickInputShortcut: PickyShortcutSpec = .defaultQuickInput
     ) {
@@ -187,7 +187,7 @@ struct PickySettings: Codable, Equatable {
             notifications: .defaults,
             fontScales: .defaults,
             mainAgentThinkingLevel: .medium,
-            useConversationCard: false,
+            useConversationCard: true,
             pushToTalkShortcut: .defaultPushToTalk,
             quickInputShortcut: .defaultQuickInput
         )

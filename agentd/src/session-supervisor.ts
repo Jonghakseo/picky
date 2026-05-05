@@ -70,6 +70,7 @@ export class SessionSupervisor extends EventEmitter {
   private queueUpdateChains = new Map<string, Promise<void>>();
   private activityUpdateChains = new Map<string, Promise<void>>();
   private turnActivity = new Map<string, PickyActivitySummary>();
+  private runtimeEventChains = new Map<string, Promise<void>>();
   private emitChains = new Map<string, Promise<void>>();
   private readonly messageBuilder: SessionMessageBuilder;
   private lastEmittedSteeringMode = new Map<string, PickyQueueMode>();
@@ -1086,9 +1087,17 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async abort(sessionId: string): Promise<PickyAgentSession> {
+    const beforeAbort = this.mustGet(sessionId);
     const handle = this.runtimeHandles.get(sessionId);
+    const cancellationMessagesBefore = countSystemMessages(beforeAbort, "Cancelled by user");
     logAgentd("abort requested", { sessionId, hasHandle: Boolean(handle) });
-    if (handle) await handle.abort();
+    if (handle) {
+      await handle.abort();
+      await this.waitForRuntimeEvents(sessionId);
+    }
+    if (beforeAbort.status !== "cancelled" && countSystemMessages(this.mustGet(sessionId), "Cancelled by user") === cancellationMessagesBefore) {
+      await this.messageBuilder.recordSystemMessage(sessionId, "Cancelled by user");
+    }
     // Pending follow-up/steer prompts that were waiting for Pi to dequeue them will never be
     // processed after an abort, so drop their journal placeholders too.
     this.pendingQueueDeliveries.delete(sessionId);
@@ -1127,7 +1136,20 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async applyRuntimeEvent(sessionId: string, event: RuntimeEvent): Promise<void> {
-    await this.runtimeEventHandler.handle(sessionId, event);
+    if (event.type !== "status") {
+      await this.runtimeEventHandler.handle(sessionId, event);
+      return;
+    }
+    const previous = this.runtimeEventChains.get(sessionId) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(() => this.runtimeEventHandler.handle(sessionId, event));
+    const tracked = next.catch(() => undefined);
+    this.runtimeEventChains.set(sessionId, tracked);
+    await next;
+    if (this.runtimeEventChains.get(sessionId) === tracked) this.runtimeEventChains.delete(sessionId);
+  }
+
+  private async waitForRuntimeEvents(sessionId: string): Promise<void> {
+    await (this.runtimeEventChains.get(sessionId) ?? Promise.resolve());
   }
 
   private async chainEmit(sessionId: string, fn: () => Promise<void>): Promise<void> {
@@ -1429,6 +1451,10 @@ function normalizeMainAgentState(state: PickyMainAgentState): PickyMainAgentStat
 
 function appendUniqueLog(logs: string[], line: string): string[] {
   return logs.includes(line) ? logs : [...logs, line];
+}
+
+function countSystemMessages(session: PickyAgentSession, text: string): number {
+  return (session.messages ?? []).filter((message) => message.kind === "system" && message.text === text).length;
 }
 
 function hasSideSessionMarkerLog(session: PickyAgentSession): boolean {

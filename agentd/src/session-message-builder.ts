@@ -97,9 +97,6 @@ export class SessionMessageBuilder {
   }
 
   async recordSystemMessage(sessionId: string, text: string): Promise<void> {
-    const state = this.stateFor(sessionId);
-    const existing = state.journal.find((entry) => !state.removedIds.has(entry.message.id) && entry.message.kind === "system" && entry.message.text === text);
-    if (existing) return;
     await this.appendInternal(sessionId, {
       id: `msg-system-${randomUUID()}`,
       kind: "system",

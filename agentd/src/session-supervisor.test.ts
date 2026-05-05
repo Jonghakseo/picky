@@ -1066,6 +1066,34 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.messages?.filter((message) => message.kind === "system" && message.text === "Cancelled by user")).toHaveLength(1);
   });
 
+  it("records cancellation system messages for separate cancelled turns", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-repeat-cancel-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("cancel twice"));
+
+    await supervisor.abort(session.id);
+    await supervisor.steer(session.id, "run again");
+    await supervisor.abort(session.id);
+
+    expect(supervisor.get(session.id)?.messages?.filter((message) => message.kind === "system" && message.text === "Cancelled by user")).toHaveLength(2);
+  });
+
+  it("coalesces duplicate runtime cancelled status events in the same turn", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-duplicate-cancel-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("duplicate cancel"));
+
+    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled again" });
+    await settle();
+
+    expect(supervisor.get(session.id)?.messages?.filter((message) => message.kind === "system" && message.text === "Cancelled by user")).toHaveLength(1);
+  });
+
   it("writes report and PR artifacts when a terminal status is observed", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new MockRuntime();

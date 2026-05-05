@@ -15,7 +15,7 @@ struct PickyAgentBubbleView: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 6) {
-                PickyConversationMarkdownText(markdown: displayText)
+                PickyConversationMarkdownText(markdown: previewText)
                 if showsFooter {
                     HStack(alignment: .center, spacing: 7) {
                         if showsOpenAsReportAction, let onOpenAsReport {
@@ -53,11 +53,29 @@ struct PickyAgentBubbleView: View {
         message.assistantRun?.displayText
     }
 
+    private var previewText: String {
+        let text = displayText
+        guard message.kind == .agentText else { return text }
+        return PickyAgentResponsePreview.truncatedMarkdown(text)
+    }
+
     private var displayText: String {
         if let text = message.text, !text.isEmpty { return text }
         if let errorMessage = message.errorMessage, !errorMessage.isEmpty { return errorMessage }
         if let question = message.question { return question.prompt ?? question.title ?? "Input requested" }
         return ""
+    }
+}
+
+enum PickyAgentResponsePreview {
+    static let maxCharacters = 200
+
+    static func truncatedMarkdown(_ text: String, maxCharacters: Int = maxCharacters) -> String {
+        guard maxCharacters > 0 else { return "..." }
+        guard text.count > maxCharacters else { return text }
+
+        let endIndex = text.index(text.startIndex, offsetBy: maxCharacters)
+        return String(text[..<endIndex]).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
     }
 }
 

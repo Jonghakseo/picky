@@ -77,6 +77,16 @@ struct PickyConversationCardViewTests {
         #expect(PickyAssistantRunMetadata(model: "anthropic/claude-opus-4-7", thinkingLevel: .xhigh).displayText == "opus-4-7 xhigh")
     }
 
+    @Test func agentResponsePreviewTruncatesAfterTwoHundredCharacters() {
+        let exact = String(repeating: "가", count: 200)
+        let long = exact + "나다라"
+        let truncated = PickyAgentResponsePreview.truncatedMarkdown(long)
+
+        #expect(PickyAgentResponsePreview.truncatedMarkdown(exact) == exact)
+        #expect(truncated == exact + "...")
+        #expect(truncated.count == 203)
+    }
+
     @Test func finderOpenRequestOnlyResolvesExistingCwdDirectories() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

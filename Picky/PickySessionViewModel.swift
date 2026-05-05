@@ -1085,7 +1085,7 @@ enum PickySlashCommandNavigationDirection {
 }
 
 enum PickySlashCommandAutocompletePolicy {
-    static let maxSuggestions = 6
+    static let maxSuggestions = 4
 
     static func query(in text: String) -> String? {
         guard text.hasPrefix("/") else { return nil }

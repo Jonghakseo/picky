@@ -60,7 +60,7 @@ struct PickyConversationComposerView: View {
                     .font(.system(size: 11.5))
                     .foregroundColor(DS.Colors.textTertiary)
                     .padding(.leading, 5)
-                    .padding(.top, 7)
+                    .padding(.top, 0)
                     .allowsHitTesting(false)
             }
             TextEditor(text: $draft)

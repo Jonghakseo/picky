@@ -103,7 +103,7 @@ export class AgentdServer {
       if (command.type === "setSessionArchived") await this.options.supervisor.setSessionArchived(command.sessionId, command.archived);
       if (command.type === "clearQueue") await this.options.supervisor.clearQueue(command.sessionId, command.kind);
       if (command.type === "followUp") await this.options.supervisor.followUp(command.sessionId, command.text, command.context);
-      if (command.type === "steer") await this.options.supervisor.steer(command.sessionId, command.text);
+      if (command.type === "steer") await this.options.supervisor.steer(command.sessionId, command.text, command.context);
       if (command.type === "abort") await this.options.supervisor.abort(command.sessionId);
       if (command.type === "answerExtensionUi") await this.options.supervisor.answerExtensionUi(command.sessionId, command.requestId, command.value);
       if (command.type === "openArtifact") {
@@ -171,7 +171,7 @@ function commandLogFields(command: ReturnType<typeof parseCommand>): Record<stri
       return { commandId: command.id, type: command.type, contextId: command.context.id, source: command.context.source, transcriptChars: command.context.transcript?.length, screenshots: command.context.screenshots.length };
     case "followUp":
     case "steer":
-      return { commandId: command.id, type: command.type, sessionId: command.sessionId, textChars: command.text.length };
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, textChars: command.text.length, contextId: command.context?.id, screenshots: command.context?.screenshots.length };
     case "setNotifyMainOnCompletion":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, enabled: command.enabled ? 1 : 0 };
     case "setSessionArchived":

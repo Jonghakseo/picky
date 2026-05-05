@@ -54,6 +54,13 @@ export function buildMainAgentPrompt(context: PickyContextPacket): BuiltPrompt {
   return { text: lines.join("\n"), imagePaths: context.screenshots.map((s) => s.path) };
 }
 
+export function buildSteerPrompt(text: string, context?: PickyContextPacket): BuiltPrompt {
+  if (!context) return { text, imagePaths: [] };
+  const lines = ["# Picky steering message", "", neutralInstruction, "", "## User steering instruction", text];
+  appendContext(lines, context);
+  return { text: lines.join("\n"), imagePaths: context.screenshots.map((s) => s.path) };
+}
+
 export function buildSideAgentPrompt(context: PickyContextPacket, handoff: { title: string; instructions: string }): BuiltPrompt {
   const lines = [
     "# Picky side-agent task",

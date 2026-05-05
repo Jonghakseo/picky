@@ -5,7 +5,7 @@ import { ArtifactStore, extractChangedFilesFromExplicitText, extractSessionLinkA
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
-import { buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt, type BuiltPrompt } from "./prompt-builder.js";
+import { buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
 import type { EventEnvelope, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyFinalReport, PickyMainAgentMessage, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { SessionStore } from "./session-store.js";
@@ -852,7 +852,7 @@ export class SessionSupervisor extends EventEmitter {
     } else if (kind === "followUp") {
       for (const text of drained.steering) {
         try {
-          await handle.steer(text);
+          await handle.steer({ text, imagePaths: [] });
         } catch (error) {
           logAgentd("clearQueue re-enqueue failed", { sessionId, text, error: error instanceof Error ? error.message : String(error) });
         }
@@ -964,7 +964,7 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
-  async steer(sessionId: string, text: string): Promise<PickyAgentSession> {
+  async steer(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
     if (session.status === "failed") throw new Error(`Cannot steer ${session.status} session`);
     // TODO(PR6): replace this temporary guard with pinned side-session reattach.
@@ -980,8 +980,9 @@ export class SessionSupervisor extends EventEmitter {
       throw new Error(reason);
     }
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
-    logAgentd("steer requested", { sessionId, textChars: text.length });
-    const outcome = await handle.steer(text);
+    const prompt = buildSteerPrompt(text, context);
+    logAgentd("steer requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length });
+    const outcome = await handle.steer(prompt);
     await this.appendLog(sessionId, `${STEER_PREFIX}${text}`);
     // Pi handles `/slash` extension commands and `input` handlers that return `handled` synchronously
     // inside `session.prompt()` without starting an agent turn. PiSdkRuntimeSession synthesizes a

@@ -10,7 +10,7 @@ describe("MockRuntimeSession queue foundation", () => {
     expect(session.getSteeringMessages()).toEqual([]);
     expect(session.getFollowUpMessages()).toEqual([]);
 
-    await session.steer("review logs");
+    await session.steer({ text: "review logs", imagePaths: [] });
     await session.followUp({ text: "summarize later", imagePaths: [] });
 
     expect(session.getSteeringMessages()).toEqual(["review logs"]);

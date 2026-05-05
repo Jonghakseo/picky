@@ -65,6 +65,27 @@ describe("protocol contract fixtures", () => {
     ).not.toThrow();
   });
 
+  it("parses steer commands with optional captured context", () => {
+    const parsed = CommandEnvelopeSchema.parse({
+      id: "cmd-steer-context",
+      protocolVersion: "2026-05-05",
+      type: "steer",
+      sessionId: "session-001",
+      text: "look at this screenshot",
+      context: {
+        id: "context-steer",
+        source: "text-follow-up",
+        capturedAt: "2026-05-05T00:00:00.000Z",
+        transcript: "look at this screenshot",
+        screenshots: [{ id: "shot-1", label: "Main", path: "/tmp/shot.png" }],
+        warnings: [],
+      },
+    });
+
+    expect(parsed.type).toBe("steer");
+    if (parsed.type === "steer") expect(parsed.context?.screenshots[0]?.path).toBe("/tmp/shot.png");
+  });
+
   it("parses clearQueue commands for every queue kind", () => {
     for (const kind of ["steering", "followUp", "all"] as const) {
       expect(() =>

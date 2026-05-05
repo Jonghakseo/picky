@@ -59,6 +59,23 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("passes optional steer context through to the supervisor", async () => {
+    const session = await supervisor.create(context("initial"));
+    const steer = vi.spyOn(supervisor, "steer");
+    const steerContext: PickyContextPacket = {
+      ...context("visual steer"),
+      id: "context-visual-steer",
+      screenshots: [{ id: "shot-1", label: "Main", path: "/tmp/shot.png" }],
+    };
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-steer", protocolVersion: PROTOCOL_VERSION, type: "steer", sessionId: session.id, text: "inspect this", context: steerContext }));
+
+    await waitUntil(() => steer.mock.calls.length > 0);
+
+    expect(steer).toHaveBeenCalledWith(session.id, "inspect this", expect.objectContaining({ id: "context-visual-steer", screenshots: [expect.objectContaining({ path: "/tmp/shot.png" })] }));
+    ws.close();
+  });
+
   it("clears a session queue through the supervisor", async () => {
     const session = await supervisor.create(context("initial"));
     const clearQueue = vi.spyOn(supervisor, "clearQueue");

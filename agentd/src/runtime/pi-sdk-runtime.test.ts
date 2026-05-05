@@ -191,7 +191,7 @@ describe("PiSdkRuntime", () => {
 
     const handle = await runtime.create({ text: "initial", imagePaths: [] }, { cwd: "/tmp/project", sessionId: "session-1" });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    await handle.steer("focus on the previous result");
+    await handle.steer({ text: "focus on the previous result", imagePaths: [] });
 
     expect(fakeSession.prompts).toEqual(["initial", "focus on the previous result"]);
     expect(fakeSession.steers).toEqual([]);
@@ -284,7 +284,7 @@ describe("PiSdkRuntime", () => {
     const events: unknown[] = [];
     handle.subscribe((event) => events.push(event));
 
-    const outcome = await handle.steer("/diff-review");
+    const outcome = await handle.steer({ text: "/diff-review", imagePaths: [] });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(outcome).toEqual({ handledSynchronously: true });

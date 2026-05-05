@@ -146,10 +146,10 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
   }
 
-  async steer(text: string): Promise<RuntimeSteerResult> {
-    logAgentd("pi steer", { sessionId: this.id, textChars: text.length });
+  async steer(prompt: BuiltPrompt): Promise<RuntimeSteerResult> {
+    logAgentd("pi steer", { sessionId: this.id, promptChars: prompt.text.length, images: prompt.imagePaths?.length ?? 0 });
     try {
-      const handledSynchronously = await this.promptWithOptions({ text, imagePaths: [] }, "steer");
+      const handledSynchronously = await this.promptWithOptions(prompt, "steer");
       return { handledSynchronously };
     } catch (error) {
       this.emit({ type: "status", status: "failed", summary: messageOf(error) });

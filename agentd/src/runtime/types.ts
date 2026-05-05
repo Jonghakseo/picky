@@ -35,7 +35,7 @@ export interface RuntimeSessionHandle {
   followUp(prompt: BuiltPrompt): Promise<void>;
   /** Resolves when replacement input is accepted/queued after interruption, not when the agent finishes the turn. */
   interrupt?(prompt: BuiltPrompt): Promise<void>;
-  steer(text: string): Promise<RuntimeSteerResult>;
+  steer(prompt: BuiltPrompt): Promise<RuntimeSteerResult>;
   abort(): Promise<void>;
   answerExtensionUi?(requestId: string, value: unknown): Promise<void>;
   openArtifact?(artifactId: string): Promise<string>;

@@ -257,8 +257,8 @@ describe("SessionSupervisor", () => {
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
     const session = await supervisor.create(context("initial"));
-    await runtime.handle!.steer("steer a");
-    await runtime.handle!.steer("steer b");
+    await runtime.handle!.steer({ text: "steer a", imagePaths: [] });
+    await runtime.handle!.steer({ text: "steer b", imagePaths: [] });
     await runtime.handle!.followUp({ text: "follow a", imagePaths: [] });
     await runtime.handle!.followUp({ text: "follow b", imagePaths: [] });
 
@@ -266,7 +266,7 @@ describe("SessionSupervisor", () => {
     expect(runtime.handle!.getSteeringMessages()).toEqual([]);
     expect(runtime.handle!.getFollowUpMessages()).toEqual(["follow a", "follow b"]);
 
-    await runtime.handle!.steer("steer c");
+    await runtime.handle!.steer({ text: "steer c", imagePaths: [] });
     await supervisor.clearQueue(session.id, "followUp");
     expect(runtime.handle!.getSteeringMessages()).toEqual(["steer c"]);
     expect(runtime.handle!.getFollowUpMessages()).toEqual([]);
@@ -634,6 +634,30 @@ describe("SessionSupervisor", () => {
     expect(updated.status).toBe("running");
     expect(updated.finalAnswer).toBeUndefined();
     expect(updated.lastSummary).toBe("Steering message sent");
+  });
+
+  it("passes steer context and screenshot image paths to the runtime", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("initial"));
+    const steerContext: PickyContextPacket = {
+      ...context("look here"),
+      id: "context-steer-visual",
+      selectedText: "selected snippet",
+      screenshots: [
+        { id: "screenshot-1", label: "Main display", path: "/tmp/picky-steer.png", screenId: "main", isCursorScreen: true },
+      ],
+    };
+
+    await supervisor.steer(session.id, "use this screenshot", steerContext);
+
+    expect(runtime.handle?.steers).toHaveLength(1);
+    expect(runtime.handle?.steerPrompts[0]?.text).toContain("## User steering instruction\nuse this screenshot");
+    expect(runtime.handle?.steerPrompts[0]?.text).toContain("## Captured context");
+    expect(runtime.handle?.steerPrompts[0]?.text).toContain("selected snippet");
+    expect(runtime.handle?.steerPrompts[0]?.imagePaths).toEqual(["/tmp/picky-steer.png"]);
   });
 
   // Regression for the `/diff-review` (and any other Pi `pi.registerCommand` slash command) HUD
@@ -2263,10 +2287,12 @@ class ManualHandle implements RuntimeSessionHandle {
     this.interrupts.push(prompt);
   }
   steers: string[] = [];
+  steerPrompts: BuiltPrompt[] = [];
   steerOutcome: { handledSynchronously: boolean } = { handledSynchronously: false };
   aborts = 0;
-  async steer(text: string): Promise<{ handledSynchronously: boolean }> {
-    this.steers.push(text);
+  async steer(prompt: BuiltPrompt): Promise<{ handledSynchronously: boolean }> {
+    this.steerPrompts.push(prompt);
+    this.steers.push(prompt.text);
     return this.steerOutcome;
   }
   async abort(): Promise<void> {

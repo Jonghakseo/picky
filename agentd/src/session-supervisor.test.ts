@@ -311,7 +311,42 @@ describe("SessionSupervisor", () => {
 
     const steered = await supervisor.steerSideSession(session.id, "첫 작업 시작해줘");
     expect(steered.status).toBe("running");
-    expect(runtime.handle?.steers).toEqual(["첫 작업 시작해줘"]);
+    expect(runtime.handle?.interrupts.map((prompt) => prompt.text)).toEqual(["첫 작업 시작해줘"]);
+    expect(runtime.handle?.steers).toEqual([]);
+  });
+
+  it("interrupts active side-session work when steering is supported", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-side-steer-interrupt-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.createSideFromHandoff(context("side request"), { title: "Side work", instructions: "Investigate" });
+
+    runtime.handle?.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running", preview: "sleep 50" });
+    await waitUntil(() => supervisor.get(session.id)?.tools[0]?.status === "running");
+
+    const steered = await supervisor.steerSideSession(session.id, "아니다 10초");
+
+    expect(runtime.handle?.interrupts).toEqual([{ text: "아니다 10초", imagePaths: [] }]);
+    expect(runtime.handle?.steers).toEqual([]);
+    expect(steered.status).toBe("running");
+    expect(steered.lastSummary).toBe("Steering message sent");
+    expect(steered.tools[0]).toMatchObject({ toolCallId: "tool-1", status: "failed", preview: "Tool was interrupted by a steering message." });
+  });
+
+  it("falls back to queued steer for active side sessions when interrupt is unavailable", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-side-steer-fallback-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.createSideFromHandoff(context("side request"), { title: "Side work", instructions: "Investigate" });
+    (runtime.handle as unknown as { interrupt?: undefined }).interrupt = undefined;
+
+    const steered = await supervisor.steerSideSession(session.id, "기존 큐 방식");
+
+    expect(runtime.handle?.interrupts).toEqual([]);
+    expect(runtime.handle?.steers).toEqual(["기존 큐 방식"]);
+    expect(steered.status).toBe("running");
   });
 
   it("validates and emits visual-only pointer overlays against captured screenshots", async () => {

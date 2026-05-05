@@ -981,7 +981,15 @@ export class SessionSupervisor extends EventEmitter {
     }
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     const prompt = buildSteerPrompt(text, context);
-    logAgentd("steer requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length });
+    const interruptible = isInterruptibleSteerStatus(session.status) && Boolean(handle.interrupt);
+    logAgentd("steer requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length, interruptible });
+    if (interruptible && handle.interrupt) {
+      await handle.interrupt(prompt);
+      await this.appendLog(sessionId, `${STEER_PREFIX}${text}`);
+      const current = this.mustGet(sessionId);
+      await this.patch(sessionId, { status: "running", lastSummary: "Steering message sent", finalAnswer: undefined, thinkingPreview: undefined, tools: settleActiveTools(current.tools, "Tool was interrupted by a steering message.") });
+      return this.mustGet(sessionId);
+    }
     const outcome = await handle.steer(prompt);
     await this.appendLog(sessionId, `${STEER_PREFIX}${text}`);
     // Pi handles `/slash` extension commands and `input` handlers that return `handled` synchronously
@@ -1309,6 +1317,10 @@ function normalizeMainAgentState(state: PickyMainAgentState): PickyMainAgentStat
 
 function appendUniqueLog(logs: string[], line: string): string[] {
   return logs.includes(line) ? logs : [...logs, line];
+}
+
+function isInterruptibleSteerStatus(status: PickyAgentSession["status"]): boolean {
+  return status === "running" || status === "queued" || status === "waiting_for_input";
 }
 
 function hasSideSessionMarkerLog(session: PickyAgentSession): boolean {

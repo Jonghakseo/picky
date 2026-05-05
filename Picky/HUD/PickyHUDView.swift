@@ -89,6 +89,10 @@ struct PickyHUDView: View {
 
     var body: some View {
         hudContent
+            // Measure the HUD's intrinsic content height before the hosting view
+            // applies the current panel height. Without this, active streaming
+            // updates can report the already-clipped height and prevent growth.
+            .fixedSize(horizontal: false, vertical: true)
             .background(PickyHUDSizeReader())
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
             .animation(PickyHUDExpansion.animation, value: activeSession?.id)

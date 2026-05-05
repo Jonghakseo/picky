@@ -119,7 +119,8 @@ struct PickyHUDView: View {
             )
             .frame(width: PickyHUDDockLayout.railWidth)
         }
-        .padding(PickyHUDExpansion.outerPadding)
+        .padding(.horizontal, PickyHUDExpansion.outerPadding)
+        .padding(.vertical, PickyHUDExpansion.dockShadowVerticalPadding)
         .onHover(perform: handleHUDHover)
         .onChange(of: viewModel.pendingDockPointerSessionID) { _, _ in
             pointAtPendingDockSessionIfPossible()
@@ -344,8 +345,18 @@ private struct PickyHUDDockRailView: View {
                     .strokeBorder(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
             )
             .compositingGroup()
-            .shadow(color: Color.black.opacity(0.30), radius: 18, x: 0, y: 10)
-            .shadow(color: Color.black.opacity(0.10), radius: 3, x: 0, y: 1)
+            .shadow(
+                color: Color.black.opacity(PickyHUDExpansion.dockShadowOpacity),
+                radius: PickyHUDExpansion.dockShadowRadius,
+                x: 0,
+                y: PickyHUDExpansion.dockShadowYOffset
+            )
+            .shadow(
+                color: Color.black.opacity(PickyHUDExpansion.dockTightShadowOpacity),
+                radius: PickyHUDExpansion.dockTightShadowRadius,
+                x: 0,
+                y: PickyHUDExpansion.dockTightShadowYOffset
+            )
     }
 
     private var addAgentSlotButton: some View {

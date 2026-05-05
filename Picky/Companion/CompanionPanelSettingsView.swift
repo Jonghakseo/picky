@@ -19,6 +19,7 @@ enum CompanionPanelSettingsSection: CaseIterable, Hashable {
     case notifications
     case mainAgent
     case voice
+    case shortcuts
 }
 
 enum CompanionPanelSettingsSaveStatus: Equatable {
@@ -75,6 +76,8 @@ struct CompanionPanelSettingsView: View {
             mainAgentSection
             sectionDivider
             voiceSection
+            sectionDivider
+            shortcutsSection
 
             if let error = viewModel.validationError {
                 Text(error)
@@ -151,6 +154,53 @@ struct CompanionPanelSettingsView: View {
                 .pickerStyle(.menu)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .onChange(of: viewModel.settings.mainAgentThinkingLevel) { _, _ in saveImmediately(for: .mainAgent) }
+            }
+        }
+    }
+
+    private var shortcutsSection: some View {
+        sectionHeader(section: .shortcuts, title: "Shortcuts", subtitle: "단축키를 자유롭게 설정하세요.") {
+            VStack(alignment: .leading, spacing: 14) {
+                ShortcutSettingsRow(
+                    title: "Push to Talk",
+                    subtitle: "Hold to start a voice session. Release to send.",
+                    allowance: .pushToTalk,
+                    currentSpec: viewModel.settings.pushToTalkShortcut
+                ) { newSpec in
+                    saveShortcut(newSpec, keyPath: \.pushToTalkShortcut, conflictsWith: viewModel.settings.quickInputShortcut)
+                }
+
+                ShortcutSettingsRow(
+                    title: "Quick Input",
+                    subtitle: "Press to open the text composer.",
+                    allowance: .quickInput,
+                    currentSpec: viewModel.settings.quickInputShortcut
+                ) { newSpec in
+                    saveShortcut(newSpec, keyPath: \.quickInputShortcut, conflictsWith: viewModel.settings.pushToTalkShortcut)
+                }
+
+                Button(action: resetShortcutsToDefaults) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("Reset to defaults")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(DS.Colors.surface1.opacity(0.55))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .stroke(DS.Colors.borderSubtle.opacity(0.4), lineWidth: 0.5)
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+                .pointerCursor()
             }
         }
     }
@@ -297,6 +347,34 @@ struct CompanionPanelSettingsView: View {
             saveImmediately(for: .mainAgent)
         case .voice:
             commitAzureField()
+        case .shortcuts:
+            saveImmediately(for: .shortcuts)
+        }
+    }
+
+    /// Persists the new shortcut spec via the view-model. The view-model
+    /// refuses the change when it would collide with the other shortcut so
+    /// the runtime never has two paths fighting over the same keypress.
+    private func saveShortcut(
+        _ newSpec: PickyShortcutSpec,
+        keyPath: WritableKeyPath<PickySettings, PickyShortcutSpec>,
+        conflictsWith other: PickyShortcutSpec
+    ) {
+        let succeeded = viewModel.updateShortcut(newSpec, keyPath: keyPath, conflictsWith: other)
+        if succeeded {
+            saveStatuses.markSaved(.shortcuts)
+            scheduleSaveStatusReset(for: .shortcuts)
+        } else {
+            saveStatuses.markDirty(.shortcuts)
+        }
+    }
+
+    private func resetShortcutsToDefaults() {
+        if viewModel.resetShortcutsToDefaults() {
+            saveStatuses.markSaved(.shortcuts)
+            scheduleSaveStatusReset(for: .shortcuts)
+        } else {
+            saveStatuses.markDirty(.shortcuts)
         }
     }
 
@@ -342,7 +420,7 @@ struct CompanionPanelSettingsView: View {
         switch section {
         case .workspace:
             pathDraft = viewModel.settings.defaultCwd
-        case .notifications, .mainAgent:
+        case .notifications, .mainAgent, .shortcuts:
             break
         case .voice:
             azureDraft = viewModel.settings.azureSTTPreferredLanguage

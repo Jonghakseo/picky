@@ -34,4 +34,37 @@ final class PickySettingsViewModel: ObservableObject {
             return false
         }
     }
+
+    /// Updates one of the two shortcut specs, refusing if the new spec would
+    /// collide with the other shortcut. Returns true on success.
+    func updateShortcut(
+        _ newSpec: PickyShortcutSpec,
+        keyPath: WritableKeyPath<PickySettings, PickyShortcutSpec>,
+        conflictsWith other: PickyShortcutSpec
+    ) -> Bool {
+        guard newSpec.isValid else {
+            validationError = "단축키 조합이 올바르지 않습니다."
+            return false
+        }
+        if newSpec.conflicts(with: other) {
+            validationError = "다른 단축키와 중복됩니다."
+            return false
+        }
+        validationError = nil
+        var updated = settings
+        updated[keyPath: keyPath] = newSpec
+        settings = updated
+        return save()
+    }
+
+    /// Restores both shortcut specs to their default values.
+    @discardableResult
+    func resetShortcutsToDefaults() -> Bool {
+        validationError = nil
+        var updated = settings
+        updated.pushToTalkShortcut = .defaultPushToTalk
+        updated.quickInputShortcut = .defaultQuickInput
+        settings = updated
+        return save()
+    }
 }

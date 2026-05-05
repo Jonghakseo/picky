@@ -223,6 +223,7 @@ final class CompanionManager: ObservableObject {
             Task { await agentClient.connect() }
         }
         wireQuickInputPanel()
+        applyShortcutSpecsFromSettings()
         refreshAllPermissions()
         print("🔑 Picky start — accessibility: \(hasAccessibilityPermission), screen: \(hasScreenRecordingPermission), mic: \(hasMicrophonePermission), screenContent: \(hasScreenContentPermission)")
         startPermissionPolling()
@@ -428,7 +429,16 @@ final class CompanionManager: ObservableObject {
                 let settings = PickySettingsStore().load()
                 self?.reloadVoiceProvidersFromSettings(settings)
                 self?.syncDaemonSettings(settings)
+                self?.applyShortcutSpecsFromSettings(settings)
             }
+    }
+
+    /// Pushes the persisted PTT/Quick Input shortcut specs into the live
+    /// monitor and detector. Called on launch and whenever Settings saves.
+    private func applyShortcutSpecsFromSettings(_ settings: PickySettings = PickySettingsStore().load()) {
+        globalPushToTalkShortcutMonitor.currentShortcutSpec = settings.pushToTalkShortcut
+        quickInputDoubleTapDetector.currentShortcutSpec = settings.quickInputShortcut
+        print("⌨️  Shortcuts applied — PTT: \(settings.pushToTalkShortcut), QuickInput: \(settings.quickInputShortcut)")
     }
 
     private func reloadVoiceProvidersFromSettings(_ settings: PickySettings = PickySettingsStore().load()) {

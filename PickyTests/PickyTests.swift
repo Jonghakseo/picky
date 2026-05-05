@@ -74,19 +74,22 @@ struct PickyTests {
 
     @Test func pushToTalkShortcutKeepsControlOptionTransitionSemantics() throws {
         let controlOptionFlags: NSEvent.ModifierFlags = [.control, .option]
+        let spec = PickyShortcutSpec.defaultPushToTalk
 
-        #expect(BuddyPushToTalkShortcut.pushToTalkDisplayText == "ctrl + option")
+        #expect(BuddyPushToTalkShortcut.displayText(for: spec) == "control + option")
         #expect(BuddyPushToTalkShortcut.shortcutTransition(
             for: .flagsChanged,
             keyCode: 0,
             modifierFlagsRawValue: UInt64(controlOptionFlags.rawValue),
-            wasShortcutPreviouslyPressed: false
+            wasShortcutPreviouslyPressed: false,
+            spec: spec
         ) == .pressed)
         #expect(BuddyPushToTalkShortcut.shortcutTransition(
             for: .flagsChanged,
             keyCode: 0,
             modifierFlagsRawValue: 0,
-            wasShortcutPreviouslyPressed: true
+            wasShortcutPreviouslyPressed: true,
+            spec: spec
         ) == .released)
     }
 

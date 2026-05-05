@@ -128,6 +128,8 @@ struct PickySettings: Codable, Equatable {
     var notifications: PickyNotificationPreferences
     var fontScales: PickyFontScales
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel
+    var pushToTalkShortcut: PickyShortcutSpec
+    var quickInputShortcut: PickyShortcutSpec
 
     init(
         defaultCwd: String,
@@ -143,7 +145,9 @@ struct PickySettings: Codable, Equatable {
         appearance: PickyAppearanceMode = .dark,
         notifications: PickyNotificationPreferences = .defaults,
         fontScales: PickyFontScales = .defaults,
-        mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .medium
+        mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .medium,
+        pushToTalkShortcut: PickyShortcutSpec = .defaultPushToTalk,
+        quickInputShortcut: PickyShortcutSpec = .defaultQuickInput
     ) {
         self.defaultCwd = defaultCwd
         self.worktreeParent = worktreeParent
@@ -159,6 +163,8 @@ struct PickySettings: Codable, Equatable {
         self.notifications = notifications
         self.fontScales = fontScales
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
+        self.pushToTalkShortcut = pushToTalkShortcut
+        self.quickInputShortcut = quickInputShortcut
     }
 
     static func defaults(appSupportRoot: URL = PickyAppSupport.defaultRoot()) -> PickySettings {
@@ -177,7 +183,9 @@ struct PickySettings: Codable, Equatable {
             appearance: .dark,
             notifications: .defaults,
             fontScales: .defaults,
-            mainAgentThinkingLevel: .medium
+            mainAgentThinkingLevel: .medium,
+            pushToTalkShortcut: .defaultPushToTalk,
+            quickInputShortcut: .defaultQuickInput
         )
     }
 
@@ -206,6 +214,8 @@ struct PickySettings: Codable, Equatable {
         case notifications
         case fontScales
         case mainAgentThinkingLevel
+        case pushToTalkShortcut
+        case quickInputShortcut
     }
 
     init(from decoder: Decoder) throws {
@@ -233,6 +243,10 @@ struct PickySettings: Codable, Equatable {
         } else {
             fontScales = defaults.fontScales
         }
+        let storedPTT = try container.decodeIfPresent(PickyShortcutSpec.self, forKey: .pushToTalkShortcut)
+        pushToTalkShortcut = (storedPTT?.isValid == true) ? storedPTT! : defaults.pushToTalkShortcut
+        let storedQuickInput = try container.decodeIfPresent(PickyShortcutSpec.self, forKey: .quickInputShortcut)
+        quickInputShortcut = (storedQuickInput?.isValid == true) ? storedQuickInput! : defaults.quickInputShortcut
     }
 }
 

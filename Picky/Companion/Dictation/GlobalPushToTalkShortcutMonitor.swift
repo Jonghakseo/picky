@@ -20,6 +20,12 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
     /// Always invoked on the main thread (the event tap runs on `CFRunLoopGetMain()`).
     var rawEventForwarder: ((CGEventType, UInt16, UInt64) -> Void)?
 
+    /// Currently-active push-to-talk shortcut. Mutated by CompanionManager
+    /// whenever the user saves a new spec in Settings.
+    var currentShortcutSpec: PickyShortcutSpec = .defaultPushToTalk {
+        didSet { isShortcutCurrentlyPressed = false }
+    }
+
     private var globalEventTap: CFMachPort?
     private var globalEventTapRunLoopSource: CFRunLoopSource?
     /// Mutated exclusively from the CGEvent tap callback, which runs on
@@ -120,7 +126,8 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
             for: eventType,
             keyCode: eventKeyCode,
             modifierFlagsRawValue: modifierFlagsRawValue,
-            wasShortcutPreviouslyPressed: isShortcutCurrentlyPressed
+            wasShortcutPreviouslyPressed: isShortcutCurrentlyPressed,
+            spec: currentShortcutSpec
         )
 
         switch shortcutTransition {

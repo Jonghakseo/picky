@@ -72,7 +72,7 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.showsActivitySummary)
     }
 
-    @Test func queuedFollowUpMatchingUserTextDoesNotRenderPendingBubble() {
+    @Test func queuedFollowUpMatchingUserTextStillRendersPendingBubble() {
         let legacyFollowUpPrompt = """
         # Picky follow-up
 
@@ -90,11 +90,11 @@ struct PickyConversationCardViewTests {
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
 
-        #expect(snapshot.pendingBubbleCount == 0)
+        #expect(snapshot.pendingBubbleCount == 1)
         #expect(snapshot.batchGroupCount == 0)
     }
 
-    @Test func queuedSteerMatchingUserTextDoesNotRenderPendingBubble() {
+    @Test func queuedSteerMatchingUserTextStillRendersPendingBubble() {
         let session = makeConversationSession(
             status: .running,
             messages: [message("m-user", kind: .userText, text: "stop and use 10 seconds")],
@@ -103,7 +103,7 @@ struct PickyConversationCardViewTests {
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
 
-        #expect(snapshot.pendingBubbleCount == 0)
+        #expect(snapshot.pendingBubbleCount == 1)
         #expect(snapshot.batchGroupCount == 0)
     }
 

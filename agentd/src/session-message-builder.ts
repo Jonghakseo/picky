@@ -116,6 +116,12 @@ export class SessionMessageBuilder {
     });
   }
 
+  async recordTerminalSessionMessages(sessionId: string, messages: readonly PickySessionMessage[]): Promise<void> {
+    await this.flushAssistantText(sessionId);
+    await this.flushThinking(sessionId);
+    for (const message of messages) await this.appendInternal(sessionId, message);
+  }
+
   async recordActivitySnapshot(sessionId: string, activitySnapshot: PickyActivitySummary): Promise<void> {
     if (activityTotal(activitySnapshot) <= 0) return;
     await this.appendInternal(sessionId, {
@@ -147,6 +153,10 @@ export class SessionMessageBuilder {
 
   async flushThinking(sessionId: string): Promise<void> {
     await this.enqueue(sessionId, async () => this.flushThinkingNow(sessionId));
+  }
+
+  async clearAllThinking(sessionId: string): Promise<void> {
+    await this.enqueue(sessionId, async () => this.clearAllThinkingNow(sessionId));
   }
 
   hydrateSession(sessionId: string, messages: readonly PickySessionMessage[] | undefined): void {
@@ -197,10 +207,17 @@ export class SessionMessageBuilder {
   private async flushThinkingNow(sessionId: string): Promise<void> {
     const state = this.states.get(sessionId);
     if (!state?.activeThinkingId) return;
-    const id = state.activeThinkingId;
     state.activeThinkingId = undefined;
     state.thinkingDraft = "";
-    await this.removeInternal(sessionId, id);
+  }
+
+  private async clearAllThinkingNow(sessionId: string): Promise<void> {
+    const state = this.states.get(sessionId);
+    if (!state) return;
+    state.activeThinkingId = undefined;
+    state.thinkingDraft = "";
+    const thinkingIds = state.journal.filter((entry) => entry.message.kind === "agent_thinking").map((entry) => entry.message.id);
+    for (const id of thinkingIds) await this.removeInternal(sessionId, id);
   }
 
   private async enqueue(sessionId: string, operation: () => Promise<void>): Promise<void> {

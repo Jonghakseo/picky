@@ -18,6 +18,7 @@ export interface RuntimeMessageJournal {
   flushAssistantText(sessionId: string): Promise<void>;
   appendThinkingDelta(sessionId: string, delta: string): Promise<void>;
   flushThinking(sessionId: string): Promise<void>;
+  clearAllThinking(sessionId: string): Promise<void>;
   recordActivitySnapshot(sessionId: string, activitySnapshot: PickyActivitySummary): Promise<void>;
 }
 
@@ -100,7 +101,11 @@ export class RuntimeEventHandler {
     const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
     if (terminal || event.status === "waiting_for_input" || finalAnswer) {
       await this.dependencies.messageBuilder.flushAssistantText(sessionId);
-      await this.dependencies.messageBuilder.flushThinking(sessionId);
+      if (terminal) {
+        await this.dependencies.messageBuilder.clearAllThinking(sessionId);
+      } else {
+        await this.dependencies.messageBuilder.flushThinking(sessionId);
+      }
       await this.dependencies.commitTurnActivity(sessionId);
     }
     if (terminal) {

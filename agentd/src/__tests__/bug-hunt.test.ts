@@ -68,6 +68,7 @@ describe("picky agentd known bugs (failing reproductions)", () => {
         flushAssistantText: async () => {},
         appendThinkingDelta: async () => {},
         flushThinking: async () => {},
+        clearAllThinking: async () => {},
         recordActivitySnapshot: async () => {},
       },
     });

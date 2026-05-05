@@ -59,20 +59,23 @@ describe("SessionMessageBuilder", () => {
     expect(events).toMatchObject([{ type: "appended", seq: 1 }]);
   });
 
-  it("replaces and removes a stable thinking message per phase", async () => {
+  it("keeps each thinking phase persisted and starts a new bubble per phase", async () => {
     const { builder, events, messages } = makeBuilder();
 
     await builder.appendThinkingDelta("session-1", "think");
-    const thinkingId = messages[0].id;
+    const firstThinkingId = messages[0].id;
     await builder.appendThinkingDelta("session-1", " more");
     await builder.flushThinking("session-1");
     await builder.appendThinkingDelta("session-1", "new phase");
 
-    expect(events.map((event) => event.type)).toEqual(["appended", "replaced", "removed", "appended"]);
-    expect(events[1]).toMatchObject({ type: "replaced", messageId: thinkingId, message: { text: "think more" } });
-    expect(events[2]).toMatchObject({ type: "removed", messageId: thinkingId });
-    expect(messages).toMatchObject([{ kind: "agent_thinking", text: "new phase" }]);
-    expect(messages[0].id).not.toBe(thinkingId);
+    expect(events.map((event) => event.type)).toEqual(["appended", "replaced", "appended"]);
+    expect(events[1]).toMatchObject({ type: "replaced", messageId: firstThinkingId, message: { text: "think more" } });
+    expect(messages).toMatchObject([
+      { kind: "agent_thinking", text: "think more" },
+      { kind: "agent_thinking", text: "new phase" },
+    ]);
+    expect(messages[0].id).toBe(firstThinkingId);
+    expect(messages[1].id).not.toBe(firstThinkingId);
   });
 
   it("records activity snapshots as message stream entries", async () => {

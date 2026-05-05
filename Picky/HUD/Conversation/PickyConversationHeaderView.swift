@@ -20,6 +20,16 @@ struct PickyConversationHeaderView: View {
     }
 
     var body: some View {
+        ZStack(alignment: .trailing) {
+            leadingTitle
+            trailingActions
+        }
+        .frame(width: PickyHUDDockLayout.detailContentWidth, alignment: .trailing)
+        .frame(minHeight: 24, alignment: .trailing)
+        .onAppear { pulse = true }
+    }
+
+    private var leadingTitle: some View {
         HStack(alignment: .center, spacing: 9) {
             piBadge
             Text(session.title)
@@ -27,31 +37,47 @@ struct PickyConversationHeaderView: View {
                 .foregroundColor(DS.Colors.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .layoutPriority(1)
-            Spacer(minLength: 8)
+        }
+        .padding(.trailing, trailingActionsReservedWidth)
+        .frame(width: PickyHUDDockLayout.detailContentWidth, alignment: .leading)
+    }
+
+    private var trailingActions: some View {
+        HStack(alignment: .center, spacing: 9) {
             statusPill
             if isVoiceFollowUpTarget {
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 10.5, weight: .bold))
-                    .foregroundColor(DS.Colors.accentText)
-                    .frame(width: 18, height: 18)
-                    .background(Circle().fill(DS.Colors.accentSubtle.opacity(0.95)))
-                    .help("Voice steering target")
+                voiceTargetBadge
             }
-            Menu {
-                PickyConversationMenu(session: session, viewModel: viewModel)
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .frame(width: 18, height: 18)
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .accessibilityLabel("Conversation menu")
+            conversationMenuButton
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .onAppear { pulse = true }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var trailingActionsReservedWidth: CGFloat {
+        isVoiceFollowUpTarget ? 132 : 106
+    }
+
+    private var voiceTargetBadge: some View {
+        Image(systemName: "mic.fill")
+            .font(.system(size: 10.5, weight: .bold))
+            .foregroundColor(DS.Colors.accentText)
+            .frame(width: 18, height: 18)
+            .background(Circle().fill(DS.Colors.accentSubtle.opacity(0.95)))
+            .help("Voice steering target")
+    }
+
+    private var conversationMenuButton: some View {
+        Menu {
+            PickyConversationMenu(session: session, viewModel: viewModel)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(DS.Colors.textTertiary)
+                .frame(width: 18, height: 18)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .accessibilityLabel("Conversation menu")
     }
 
     private var piBadge: some View {

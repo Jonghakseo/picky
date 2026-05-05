@@ -121,6 +121,7 @@ final class PickySessionListViewModel: ObservableObject {
         var notifyMainOnCompletion: Bool?
         var pinned: Bool
         var hasRuntimeDetachedFollowUpRejection: Bool
+        var isMainAgentHandoff: Bool
 
         var activeTool: PickyToolActivity? {
             tools.last { $0.isActive }
@@ -209,6 +210,7 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var lastOpenedArtifactPath: String?
     @Published private(set) var slashCommandsBySessionID: [String: [PickySlashCommand]] = [:]
+    @Published private(set) var pendingDockPointerSessionID: String?
 
     var selectedSession: SessionCard? {
         guard let selectedSessionID else { return sessions.first }
@@ -229,6 +231,8 @@ final class PickySessionListViewModel: ObservableObject {
     private var voiceFollowUpTargetCancellable: AnyCancellable?
     private var deliveredNotificationKeys = Set<String>()
     private var slashCommandRequestedSessionIDs = Set<String>()
+    private var dockPointerQueuedSessionIDs = Set<String>()
+    private var dockPointerDeliveredSessionIDs = Set<String>()
     private var hasExplicitSelection = false
 
     init(
@@ -361,6 +365,13 @@ final class PickySessionListViewModel: ObservableObject {
 
     func hasLoadedSlashCommands(sessionID: String) -> Bool {
         slashCommandsBySessionID[sessionID] != nil
+    }
+
+    func markDockPointerDelivered(sessionID: String) {
+        guard pendingDockPointerSessionID == sessionID else { return }
+        pendingDockPointerSessionID = nil
+        dockPointerQueuedSessionIDs.remove(sessionID)
+        dockPointerDeliveredSessionIDs.insert(sessionID)
     }
 
     func followUp(text: String, sessionID: String? = nil) async throws {
@@ -598,6 +609,7 @@ final class PickySessionListViewModel: ObservableObject {
             let archivedIDs = effectiveArchivedSessionIDs(for: cards)
             sessions = cards.filter { !archivedIDs.contains($0.id) }.sortedForHUD()
             archivedSessions = cards.filter { archivedIDs.contains($0.id) }.sortedForHUD()
+            dockPointerDeliveredSessionIDs.formUnion(cards.filter(\.isMainAgentHandoff).map(\.id))
             pruneSlashCommandCache(knownSessionIDs: Set(cards.map(\.id)))
             syncSelectionAfterSessionListChange()
             syncVoiceFollowUpAfterSessionListChange()
@@ -617,6 +629,9 @@ final class PickySessionListViewModel: ObservableObject {
             update(sessionID: sessionId) { card in
                 if SessionCard.isDisplayableLogPreview(line) {
                     card.logPreview = line
+                }
+                if SessionCard.isMainAgentHandoffLogLine(line) {
+                    card.isMainAgentHandoff = true
                 }
                 if let piSessionFilePath = SessionCard.piSessionFilePath(fromLogLine: line) {
                     card.piSessionFilePath = piSessionFilePath
@@ -682,6 +697,11 @@ final class PickySessionListViewModel: ObservableObject {
     private func pruneSlashCommandCache(knownSessionIDs: Set<String>) {
         slashCommandsBySessionID = slashCommandsBySessionID.filter { knownSessionIDs.contains($0.key) }
         slashCommandRequestedSessionIDs = slashCommandRequestedSessionIDs.filter { knownSessionIDs.contains($0) }
+        dockPointerQueuedSessionIDs = dockPointerQueuedSessionIDs.filter { knownSessionIDs.contains($0) }
+        dockPointerDeliveredSessionIDs = dockPointerDeliveredSessionIDs.filter { knownSessionIDs.contains($0) }
+        if let pendingDockPointerSessionID, !knownSessionIDs.contains(pendingDockPointerSessionID) {
+            self.pendingDockPointerSessionID = nil
+        }
     }
 
     private func effectiveArchivedSessionIDs(for _: [SessionCard]) -> Set<String> {
@@ -713,8 +733,16 @@ final class PickySessionListViewModel: ObservableObject {
         syncVoiceFollowUpAfterSessionListChange()
         syncActiveVoiceFollowUpAfterSessionListChange()
         if !shouldArchive {
+            requestDockPointerIfNeeded(for: incoming)
             deliverNotificationIfNeeded(for: incoming)
         }
+    }
+
+    private func requestDockPointerIfNeeded(for card: SessionCard) {
+        guard card.isMainAgentHandoff else { return }
+        guard !dockPointerQueuedSessionIDs.contains(card.id), !dockPointerDeliveredSessionIDs.contains(card.id) else { return }
+        dockPointerQueuedSessionIDs.insert(card.id)
+        pendingDockPointerSessionID = card.id
     }
 
     private func update(sessionID: String, mutate: (inout SessionCard) -> Void) {
@@ -726,6 +754,7 @@ final class PickySessionListViewModel: ObservableObject {
             syncSelectionAfterSessionListChange()
             syncVoiceFollowUpAfterSessionListChange()
             syncActiveVoiceFollowUpAfterSessionListChange()
+            requestDockPointerIfNeeded(for: card)
             deliverNotificationIfNeeded(for: card)
             return
         }
@@ -839,6 +868,7 @@ private extension PickySessionListViewModel.SessionCard {
         self.notifyMainOnCompletion = session.notifyMainOnCompletion
         self.pinned = session.pinned ?? false
         self.hasRuntimeDetachedFollowUpRejection = session.logs.contains(where: Self.isRuntimeDetachedFollowUpRejection)
+        self.isMainAgentHandoff = session.logs.contains(where: Self.isMainAgentHandoffLogLine)
     }
 
     func merged(with incoming: Self) -> Self {
@@ -869,6 +899,7 @@ private extension PickySessionListViewModel.SessionCard {
         if result.piSessionFilePath == nil { result.piSessionFilePath = piSessionFilePath }
         if result.notifyMainOnCompletion == nil { result.notifyMainOnCompletion = notifyMainOnCompletion }
         result.hasRuntimeDetachedFollowUpRejection = result.hasRuntimeDetachedFollowUpRejection || hasRuntimeDetachedFollowUpRejection
+        result.isMainAgentHandoff = result.isMainAgentHandoff || isMainAgentHandoff
         return result
     }
 
@@ -894,6 +925,12 @@ private extension PickySessionListViewModel.SessionCard {
     static func isDisplayableLogPreview(_ line: String) -> Bool {
         let normalized = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return !normalized.hasPrefix("extension ui:") && !normalized.hasPrefix("extension ui answer:")
+    }
+
+    static func isMainAgentHandoffLogLine(_ line: String) -> Bool {
+        line.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .hasPrefix("main-agent handoff: ")
     }
 
     static func lastRequestText(from logs: [String]) -> String? {

@@ -594,7 +594,8 @@ struct PickySessionViewModelTests {
             piSessionFilePath: nil,
             notifyMainOnCompletion: nil,
             pinned: false,
-            hasRuntimeDetachedFollowUpRejection: false
+            hasRuntimeDetachedFollowUpRejection: false,
+            isMainAgentHandoff: false
         )
         #expect(card.elapsedDescription(now: now) == "3h 0m")
         #expect(card.elapsedSinceUpdate(now: now) == "<1m")
@@ -1107,6 +1108,58 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.lastRequestText == "include CWD in the HUD")
     }
 
+    @Test func mainAgentHandoffSessionRequestsDockPointerOnce() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "handoff-side",
+            title: "New handoff",
+            status: "queued",
+            logs: ["main-agent handoff: check the failing flow"]
+        ))))
+        try await settle()
+
+        #expect(viewModel.pendingDockPointerSessionID == "handoff-side")
+        #expect(viewModel.sessions.first?.isMainAgentHandoff == true)
+
+        viewModel.markDockPointerDelivered(sessionID: "handoff-side")
+        #expect(viewModel.pendingDockPointerSessionID == nil)
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "handoff-side",
+            title: "New handoff",
+            status: "running",
+            updatedAt: "2026-05-01T00:00:01.000Z",
+            logs: ["main-agent handoff: check the failing flow"]
+        ))))
+        try await settle()
+        #expect(viewModel.pendingDockPointerSessionID == nil)
+    }
+
+    @Test func mainAgentHandoffLogRequestsDockPointerButHistoricalSnapshotDoesNot() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(
+            id: "historical-handoff",
+            title: "Historical handoff",
+            logs: ["main-agent handoff: old task"]
+        ))))
+        try await settle()
+        #expect(viewModel.pendingDockPointerSessionID == nil)
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "fresh-side", title: "Fresh side", status: "queued"))))
+        try await settle()
+        #expect(viewModel.pendingDockPointerSessionID == nil)
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "fresh-side", line: "main-agent handoff: new task"))))
+        try await settle()
+        #expect(viewModel.pendingDockPointerSessionID == "fresh-side")
+    }
+
     @Test func runtimeDetachedRestoredSessionsStayVisibleAndClearAutoArchiveState() async throws {
         let client = FakePickyAgentClient()
         let archiveStore = FakeArchiveStore()
@@ -1480,10 +1533,12 @@ private enum EventJSON {
         status: String = "running",
         summary: String = "Started",
         createdAt: String = "2026-05-01T00:00:00.000Z",
-        updatedAt: String = "2026-05-01T00:00:00.000Z"
+        updatedAt: String = "2026-05-01T00:00:00.000Z",
+        logs: [String] = []
     ) -> String {
-        """
-        {"id":"snapshot-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionSnapshot","sessions":[{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
+        let encodedLogs = String(decoding: try! JSONEncoder().encode(logs), as: UTF8.self)
+        return """
+        {"id":"snapshot-\(id)-\(status)","protocolVersion":"2026-05-01","timestamp":"\(updatedAt)","type":"sessionSnapshot","sessions":[{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]}]}
         """
     }
 
@@ -1564,7 +1619,8 @@ private extension PickySessionListViewModel.SessionCard {
             piSessionFilePath: nil,
             notifyMainOnCompletion: nil,
             pinned: false,
-            hasRuntimeDetachedFollowUpRejection: false
+            hasRuntimeDetachedFollowUpRejection: false,
+            isMainAgentHandoff: false
         )
     }
 }

@@ -8,6 +8,59 @@
 import AppKit
 import SwiftUI
 
+extension Notification.Name {
+    static let pickyPointAtHUDDockSession = Notification.Name("pickyPointAtHUDDockSession")
+}
+
+struct PickyHUDDockPointerTarget: Equatable {
+    let sessionID: String
+    let title: String
+    let screenFrame: CGRect
+    let label: String
+    let duration: TimeInterval
+
+    var screenLocation: CGPoint {
+        CGPoint(x: screenFrame.midX, y: screenFrame.midY)
+    }
+}
+
+enum PickyHUDDockPointerTargetNotification {
+    private static let sessionIDKey = "sessionID"
+    private static let titleKey = "title"
+    private static let screenFrameKey = "screenFrame"
+    private static let labelKey = "label"
+    private static let durationKey = "duration"
+    private static let defaultDuration: TimeInterval = 2.8
+
+    static func userInfo(sessionID: String, title: String, screenFrame: CGRect) -> [String: Any] {
+        [
+            sessionIDKey: sessionID,
+            titleKey: title,
+            screenFrameKey: NSValue(rect: screenFrame),
+            labelKey: "New side agent: \(title)",
+            durationKey: defaultDuration,
+        ]
+    }
+
+    static func target(from notification: Notification) -> PickyHUDDockPointerTarget? {
+        guard let userInfo = notification.userInfo,
+              let sessionID = userInfo[sessionIDKey] as? String,
+              let title = userInfo[titleKey] as? String,
+              let frameValue = userInfo[screenFrameKey] as? NSValue else {
+            return nil
+        }
+        let label = userInfo[labelKey] as? String ?? "New side agent: \(title)"
+        let duration = userInfo[durationKey] as? TimeInterval ?? defaultDuration
+        return PickyHUDDockPointerTarget(
+            sessionID: sessionID,
+            title: title,
+            screenFrame: frameValue.rectValue,
+            label: label,
+            duration: duration
+        )
+    }
+}
+
 struct PickyHUDView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     var onSizeChange: (CGSize) -> Void = { _ in }
@@ -16,6 +69,7 @@ struct PickyHUDView: View {
     @State private var isHUDHovered = false
     @State private var closeExpansionTask: Task<Void, Never>?
     @State private var gitSectionExpansionBySessionID: [String: Bool] = [:]
+    @State private var dockIconScreenFramesBySessionID: [String: CGRect] = [:]
 
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {
         Array(viewModel.sessions.prefix(PickyHUDDockLayout.visibleSessionLimit).reversed())
@@ -69,12 +123,20 @@ struct PickyHUDView: View {
                 pinnedSessionID: pinnedSessionID,
                 onHoverSession: previewDockSession,
                 onPinSession: pinSession,
-                onCreateSideAgent: chooseFolderForEmptySideAgent
+                onCreateSideAgent: chooseFolderForEmptySideAgent,
+                onIconScreenFrameChange: recordDockIconScreenFrame
             )
             .frame(width: PickyHUDDockLayout.railWidth)
         }
         .padding(PickyHUDExpansion.outerPadding)
         .onHover(perform: handleHUDHover)
+        .onChange(of: viewModel.pendingDockPointerSessionID) { _, _ in
+            pointAtPendingDockSessionIfPossible()
+        }
+        .onChange(of: visibleSessions.map(\.id)) { _, visibleIDs in
+            dockIconScreenFramesBySessionID = dockIconScreenFramesBySessionID.filter { visibleIDs.contains($0.key) }
+            pointAtPendingDockSessionIfPossible()
+        }
     }
 
     private func handleHUDHover(_ isHovering: Bool) {
@@ -108,6 +170,28 @@ struct PickyHUDView: View {
             sessionID: sessionID,
             pinnedID: pinnedSessionID
         )
+    }
+
+    private func recordDockIconScreenFrame(sessionID: String, frame: CGRect) {
+        guard frame.width > 0, frame.height > 0 else { return }
+        dockIconScreenFramesBySessionID[sessionID] = frame
+        pointAtPendingDockSessionIfPossible()
+    }
+
+    private func pointAtPendingDockSessionIfPossible() {
+        guard let sessionID = viewModel.pendingDockPointerSessionID else { return }
+        guard let session = visibleSessions.first(where: { $0.id == sessionID }) else { return }
+        guard let frame = dockIconScreenFramesBySessionID[sessionID], frame.width > 0, frame.height > 0 else { return }
+        NotificationCenter.default.post(
+            name: .pickyPointAtHUDDockSession,
+            object: nil,
+            userInfo: PickyHUDDockPointerTargetNotification.userInfo(
+                sessionID: session.id,
+                title: session.title,
+                screenFrame: frame
+            )
+        )
+        viewModel.markDockPointerDelivered(sessionID: sessionID)
     }
 
     private func gitSectionExpandedBinding(for sessionID: String) -> Binding<Bool> {
@@ -236,6 +320,7 @@ private struct PickyHUDDockRailView: View {
     let onHoverSession: (String) -> Void
     let onPinSession: (String) -> Void
     let onCreateSideAgent: () -> Void
+    let onIconScreenFrameChange: (String, CGRect) -> Void
 
     @State private var isAddSlotExpanded = false
 
@@ -253,7 +338,8 @@ private struct PickyHUDDockRailView: View {
                             isActive: activeSessionID == session.id,
                             isPinned: pinnedSessionID == session.id,
                             onHover: { onHoverSession(session.id) },
-                            onPin: { onPinSession(session.id) }
+                            onPin: { onPinSession(session.id) },
+                            onScreenFrameChange: { frame in onIconScreenFrameChange(session.id, frame) }
                         )
                     }
                 }
@@ -339,6 +425,7 @@ private struct PickyHUDDockIconView: View {
     let isPinned: Bool
     let onHover: () -> Void
     let onPin: () -> Void
+    let onScreenFrameChange: (CGRect) -> Void
 
     var body: some View {
         Button(action: onPin) {
@@ -349,6 +436,7 @@ private struct PickyHUDDockIconView: View {
                     .foregroundColor(isActive ? DS.Colors.textPrimary : DS.Colors.textSecondary)
             }
             .frame(width: 36, height: 36)
+            .background(PickyHUDDockIconScreenFrameReporter(onFrameChange: onScreenFrameChange))
             .overlay(alignment: .topTrailing) {
                 statusDot.offset(x: -1.3, y: 1.3)
             }
@@ -435,6 +523,66 @@ private struct PickyHUDDockIconView: View {
         case .cancelled:
             return DS.Colors.textTertiary
         }
+    }
+}
+
+private struct PickyHUDDockIconScreenFrameReporter: NSViewRepresentable {
+    let onFrameChange: (CGRect) -> Void
+
+    func makeNSView(context: Context) -> ReportingView {
+        let view = ReportingView()
+        view.onFrameChange = onFrameChange
+        return view
+    }
+
+    func updateNSView(_ view: ReportingView, context: Context) {
+        view.onFrameChange = onFrameChange
+        view.scheduleReport()
+    }
+
+    final class ReportingView: NSView {
+        var onFrameChange: ((CGRect) -> Void)?
+        private var lastReportedFrame = CGRect.null
+        private var reportScheduled = false
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            scheduleReport()
+        }
+
+        override func layout() {
+            super.layout()
+            scheduleReport()
+        }
+
+        func scheduleReport() {
+            guard !reportScheduled else { return }
+            reportScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.reportScheduled = false
+                self.reportFrameIfNeeded()
+            }
+        }
+
+        private func reportFrameIfNeeded() {
+            guard let window, bounds.width > 0, bounds.height > 0 else { return }
+            let frameInWindow = convert(bounds, to: nil)
+            let screenFrame = window.convertToScreen(frameInWindow)
+            guard screenFrame.width > 0, screenFrame.height > 0 else { return }
+            guard !screenFrame.isApproximatelyEqual(to: lastReportedFrame) else { return }
+            lastReportedFrame = screenFrame
+            onFrameChange?(screenFrame)
+        }
+    }
+}
+
+private extension CGRect {
+    func isApproximatelyEqual(to other: CGRect, tolerance: CGFloat = 0.5) -> Bool {
+        abs(origin.x - other.origin.x) <= tolerance
+            && abs(origin.y - other.origin.y) <= tolerance
+            && abs(size.width - other.size.width) <= tolerance
+            && abs(size.height - other.size.height) <= tolerance
     }
 }
 

@@ -40,10 +40,6 @@ struct PickyPendingBubbleView: View {
         HStack {
             Spacer(minLength: 48)
             VStack(alignment: .trailing, spacing: 5) {
-                Text(kind.label)
-                    .font(.system(size: 9.5, weight: .bold))
-                    .foregroundColor(kind.color)
-                    .lineLimit(1)
                 Text(PickyQueuedInputText.displayText(from: queueItem.text))
                     .font(.system(size: 12))
                     .foregroundColor(DS.Colors.textPrimary)

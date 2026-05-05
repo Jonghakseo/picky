@@ -107,19 +107,31 @@ struct PickyInteractionCorrelation: Equatable, Codable {
 }
 ```
 
-### Quick reply source
+### Quick reply metadata
+
+`quickReply` metadata must separate the user's input origin from the daemon component that produced the reply. A single `source` field is ambiguous because `voice` / `text` describe origin, while `sideCompletion` / `main` describe producer.
 
 ```swift
-enum PickyQuickReplySource: String, Codable, Equatable {
+enum PickyQuickReplyOriginSource: String, Codable, Equatable {
     case voice
     case text
-    case sideCompletion
+    case voiceFollowUp
+    case textFollowUp
+    case system
+    case unknown
+}
+
+enum PickyQuickReplyKind: String, Codable, Equatable {
     case main
+    case sideCompletion
+    case router
+    case handoffAck
+    case error
     case unknown
 }
 ```
 
-`unknown` is a backward-compatibility fallback only. New daemon events should send explicit source metadata where possible.
+`unknown` is a backward-compatibility fallback only. New daemon events should send explicit metadata where possible.
 
 ### Event
 
@@ -140,7 +152,7 @@ enum PickyInteractionEvent: Equatable, Codable {
     case textSubmissionFailed(message: String, inputID: UUID)
 
     case agentSubmissionAccepted(contextID: String?, sessionID: String, inputID: UUID?)
-    case quickReply(contextID: String, text: String, source: PickyQuickReplySource?)
+    case quickReply(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, inputID: UUID?)
     case passiveAgentSummary(sessionID: String, text: String)
     case sideAgentCompleted(sessionID: String, summary: String?)
 
@@ -151,6 +163,7 @@ enum PickyInteractionEvent: Equatable, Codable {
     case speechStarted(text: String, speechID: UUID, sourceContextID: String?)
     case speechFinished(speechID: UUID)
     case speechFailed(speechID: UUID)
+    case minimumDisplayTimerFired(timerID: UUID, speechID: UUID?, inputID: UUID?)
 
     case overlayShown(reason: PickyOverlayReason)
     case overlayHidden(reason: PickyOverlayReason)
@@ -191,9 +204,9 @@ enum PickyInputPhase: Equatable, Codable {
 enum PickyOutputPhase: Equatable, Codable {
     case idle
     case waitingForAgent(inputID: UUID?, contextID: String?, promptPreview: String?)
-    case showingTextReply(contextID: String, text: String)
-    case speaking(contextID: String?, speechID: UUID, text: String)
-    case suppressedReply(contextID: String, text: String, reason: PickyReplySuppressionReason)
+    case showingTextReply(contextID: String, text: String, minimumDisplayUntil: Date?)
+    case speaking(contextID: String?, speechID: UUID, text: String, minimumDisplayUntil: Date, finishPending: Bool)
+    case suppressedReply(contextID: String, text: String, reason: PickyReplySuppressionReason, minimumDisplayUntil: Date?)
 }
 ```
 
@@ -270,6 +283,7 @@ enum PickyInteractionEffect: Equatable {
     case submitText(inputID: UUID, context: PickyContextPacket, text: String)
     case speak(speechID: UUID, text: String, contextID: String?)
     case stopSpeech(reason: PickySpeechStopReason)
+    case scheduleMinimumDisplay(timerID: UUID, speechID: UUID?, inputID: UUID?, delay: TimeInterval)
     case showOverlay(reason: PickyOverlayReason)
     case scheduleTransientHide(timerID: UUID, delay: TimeInterval)
     case cancelTransientHide(timerID: UUID?)
@@ -280,10 +294,13 @@ enum PickyInteractionEffect: Equatable {
 
 Effect runner responsibilities:
 
-- Run async work in `Task`s.
-- Convert completion/failure callbacks back into `PickyInteractionEvent`s.
-- Do not mutate UI state directly.
+- `run(_:)` itself is non-async and must not mutate UI state directly.
+- It starts async work in `Task`s and returns immediately.
+- Convert completion/failure callbacks back into `PickyInteractionEvent`s through `coordinator.accept`, never by mutating projection or legacy fields.
 - Check task cancellation and also rely on reducer id validation.
+- Effects in one transition are executed in array order. Effects that must be ordered must be emitted in that order, for example `scheduleMinimumDisplay` before `speak` and `stopSpeech` before `speak`.
+- Long-running independent effects may run concurrently after they are started, but their completions are serialized by coordinator events.
+- If an effect can synchronously fail or immediately call back, it must still re-enter through `accept`; direct callback mutation is forbidden.
 
 ## Event Sourcing Model
 
@@ -295,14 +312,8 @@ actor PickyInteractionRuntime {
     private var sequence: UInt64 = 0
     private var ringBuffer: [PickyInteractionJournalRecord] = []
 
-    func dispatch(_ event: PickyInteractionEvent, correlation: PickyInteractionCorrelation) -> PickyInteractionDispatchResult {
+    func dispatch(_ envelope: PickyInteractionEnvelope) -> PickyInteractionDispatchResult {
         sequence += 1
-        let envelope = PickyInteractionEnvelope(
-            id: UUID(),
-            occurredAt: Date(),
-            event: event,
-            correlation: correlation
-        )
         let transition = PickyInteractionReducer.reduce(state: state, envelope: envelope)
         state = transition.state
         ringBuffer.append(contentsOf: transition.journalRecords)
@@ -332,7 +343,7 @@ Initial implementation can keep a memory ring buffer plus optional debug JSONL u
 
 `~/Library/Application Support/Picky/interaction-events.jsonl`
 
-The JSONL file is for debugging and replay, not the source of runtime truth on launch. Launch replay can be a later enhancement.
+The JSONL file is for debugging and replay, not the source of runtime truth on launch. Launch replay can be a later enhancement. Every record includes the runtime sequence. Appends should either run through an ordered append chain or export should sort by sequence before writing, so debugging output preserves transition order even if disk flushes are asynchronous.
 
 ## Coordinator Shape
 
@@ -360,12 +371,13 @@ The coordinator owns a FIFO on the main actor. This preserves arrival order from
 `accept` must enqueue and return quickly. Exactly one drain loop may run at a time. The drain loop order is part of the correctness contract:
 
 1. Pop the next queued event from the main-actor FIFO.
-2. Await `runtime.dispatch(envelope)`. `dispatch` itself must not suspend internally; it only reduces state and returns a transition.
-3. Apply the returned projection to `@Published` state on the main actor.
-4. Start effect execution only after projection publication. This guarantees response text is visible before `speak` can synchronously fail or immediately complete.
-5. Append journal records asynchronously after transition publication. Journal flush ordering must not affect state transition ordering.
-6. Effect completions re-enter through `accept` as new events and must carry the original correlation id.
-7. If a projection result has an older sequence than the last published sequence, drop it and journal a stale projection warning.
+2. Build `PickyInteractionEnvelope` on the main actor using injected clock/id generator.
+3. Await `runtime.dispatch(envelope)`. `dispatch` itself must not suspend internally; it only reduces state and returns a transition.
+4. Apply the returned projection to `@Published` state on the main actor.
+5. Start effect execution only after projection publication. This guarantees response text is published before `speak` can synchronously fail or immediately complete. Actual user-visible rendering is protected separately by the minimum display timer invariant.
+6. Append journal records asynchronously after transition publication using sequence-preserving append/export. Journal flush ordering must not affect state transition ordering.
+7. Effect completions re-enter through `accept` as new events and must carry the original correlation id.
+8. If a projection result has an older sequence than the last published sequence, drop it and journal a stale projection warning.
 
 Pseudo-code:
 
@@ -382,7 +394,8 @@ private func drainQueueIfNeeded() {
         defer { isDraining = false }
         while !eventQueue.isEmpty {
             let next = eventQueue.removeFirst()
-            let result = await runtime.dispatch(next.event, correlation: next.correlation)
+            let envelope = eventFactory.makeEnvelope(event: next.event, correlation: next.correlation)
+            let result = await runtime.dispatch(envelope)
             guard result.sequence > lastPublishedSequence else { continue }
             lastPublishedSequence = result.sequence
             projection = PickyInteractionProjection(state: result.state)
@@ -414,16 +427,19 @@ This avoids a large SwiftUI rewrite in the first pass.
 
 These invariants should be enforced by tests:
 
-1. A `speechFinished(speechID:)` event only changes state if `speechID` equals the current output speech id.
-2. A `pointerAnimationFinished(pointerID:)` event only clears pointer state if `pointerID` equals the current pointer id.
-3. A `transientHideTimerFired(timerID:)` event only hides the overlay if the timer id matches and no visibility reasons remain.
-4. A `quickReply(contextID:)` from a text-owned context updates text display only and never starts TTS.
-5. A `quickReply(contextID:)` from a voice-owned context starts TTS only if no voice input is currently active.
-6. A `quickReply(contextID:)` from a side-completion context is suppressed while voice input is active and can be displayed as text without speech.
-7. PTT press cancels or supersedes prior output, but older output callbacks cannot affect the new input.
-8. Pointer request B supersedes pointer request A. Any delayed callback from A is ignored.
-9. `detectedElementScreenLocation == nil` or pointer cancel causes local pointer animation cancellation, not just manager state clearing.
-10. Overlay visibility is derived from reasons, not toggled ad hoc.
+1. A `speechFinished(speechID:)` event only changes state if `speechID` equals the current output speech id. If the current response has not satisfied its minimum display deadline, the reducer records `finishPending = true` and keeps the display text visible until `minimumDisplayTimerFired`.
+2. A `minimumDisplayTimerFired(timerID:speechID:inputID:)` event only clears or advances output state if it matches the currently visible response.
+3. A `pointerAnimationFinished(pointerID:)` event only clears pointer state if `pointerID` equals the current pointer id.
+4. A `transientHideTimerFired(timerID:)` event only hides the overlay if the timer id matches and no visibility reasons remain.
+5. A `quickReply(contextID:)` from a text-owned context updates text display only and never starts TTS.
+6. A `quickReply(contextID:)` from a voice-owned context starts TTS only if no voice input is currently active.
+7. A `quickReply(contextID:)` from a side-completion context is suppressed while voice input is active and can be displayed as text without speech.
+8. PTT press cancels or supersedes prior output, but older output callbacks cannot affect the new input.
+9. Pointer request B supersedes pointer request A. Any delayed callback from A is ignored.
+10. `detectedElementScreenLocation == nil` or pointer cancel causes local pointer animation cancellation, not just manager state clearing.
+11. Overlay visibility is derived from reasons, not toggled ad hoc.
+12. `contextOwnership[contextID]` is recorded immediately after context capture succeeds and before `agentClient.submit` / `agentClient.send` is invoked. `agentSubmissionAccepted` may confirm or enrich ownership but must not be the first ownership write.
+13. Unknown quickReply metadata defaults to text-only display unless local context ownership proves it belongs to a voice interaction.
 
 ## Migration Strategy
 
@@ -439,7 +455,7 @@ Use a strangler pattern. The new coordinator first shadows existing state, then 
 | Phase 4 | `PickyPointerTarget`, pointer id/generation, pointer cancel/finish lifecycle | voice input, text input, TTS already migrated, overlay persistent preference | `detectedElement*` writes and `clearDetectedElementLocation` outside coordinator events |
 | Phase 5 | PTT input id, hovered target snapshot, transcript finalization, voice submit/steer, voice context ownership | overlay visibility reasons until Phase 6 | `pendingAgentResponseStartedAt`, `voiceFollowUpSessionIDForCurrentUtterance`, `voicePromptBubbleState` direct writes |
 | Phase 6 | overlay visibility reasons and transient hide timers | low-level `OverlayWindowManager` window creation only | `showOverlay`, `hideOverlay`, `fadeOutAndHideOverlay` calls except projection effect runner |
-| Phase 7 | quickReply source classification, side completion suppression/spoken policy | agentd side completion scheduling internals | app-side guessing as primary classification path |
+| Phase 7 | quickReply origin/replyKind classification, side completion suppression/spoken policy | agentd side completion scheduling internals | app-side guessing as primary classification path |
 | Phase 8 | all interaction presentation state | facade compatibility properties only | all old reducer/task state writes |
 
 Each phase must include a mechanical cleanup pass that removes or guards old direct writes for newly coordinator-owned fields. If old code still needs to expose the property, it must assign from coordinator projection only.
@@ -464,7 +480,10 @@ Test cases:
 - transient hide does not fire while active voice input exists.
 - synchronous `speak` failure still publishes response text before returning to idle.
 - immediate speech finish callback cannot beat projection publication.
+- immediate finish before the next run loop still leaves visible display projection until minimum display timer fires.
 - minimum processing delay plus new PTT does not surface stale reply text or speech.
+- quickReply arriving before `agentSubmissionAccepted` still routes correctly because context ownership was recorded pre-submit.
+- old daemon/new app and new daemon/old app quickReply decoding remains backward compatible.
 
 Acceptance:
 
@@ -514,9 +533,9 @@ Behavior:
 sendDirectMessage
 → coordinator.accept(.textSubmitted)
 → effect captureTextContext
+→ contextOwnership[contextID] = .text(inputID) before daemon submit
 → effect submitText
-→ .textSubmissionAccepted(contextID)
-→ contextOwnership[contextID] = .text(inputID)
+→ .textSubmissionAccepted(contextID) confirms receipt only
 → quickReply(contextID) updates latest display only
 ```
 
@@ -538,15 +557,16 @@ Modify:
 Behavior:
 
 ```text
-legacy voice submission accepted
-→ coordinator records contextOwnership[contextID] = .voice(inputID)
+legacy voice context captured
+→ coordinator records contextOwnership[contextID] = .voice(inputID) before daemon submit
+→ legacy voice submission accepted confirms receipt only
 → quickReply from voice context
-→ coordinator/event factory supplies speechID
-→ reducer emits speak(speechID) effect
+→ coordinator/event factory supplies speechID and minimumDisplay timerID
+→ reducer emits scheduleMinimumDisplay + speak(speechID) effects
 → projection publishes visible text and responding state
 → effect speak(speechID)
 → speech provider callback emits speechFinished(speechID)
-→ reducer validates speechID
+→ reducer validates speechID and either keeps display until minimumDisplayTimerFired or finishes immediately if deadline already elapsed
 ```
 
 Acceptance:
@@ -556,7 +576,7 @@ Acceptance:
 - `voiceState` remains `.responding` until the current speech id finishes.
 - existing tests around quick reply minimum display duration still pass.
 - synchronous `speak` failure and immediate finish callback do not skip visible text publication.
-- unknown quickReply sources are text-only by default until explicit ownership is known.
+- unknown quickReply metadata is text-only by default until explicit ownership is known.
 
 ### Phase 4 — Pointer Target Generation and BlueCursorView Wiring
 
@@ -667,14 +687,15 @@ agentd already has strong guards around side completion delivery. App-side coord
 
 Protocol metadata is the recommended default, not a last resort. App-side inference from `contextId` may race with `sessionSnapshot` / `sessionUpdated` arrival and should be a fallback only.
 
-Recommended protocol shape for a small protocol bump:
+Recommended protocol shape for a small backward-compatible optional-field protocol bump:
 
 ```ts
 {
   type: "quickReply",
   contextId: string,
   text: string,
-  source?: "voice" | "text" | "sideCompletion" | "main",
+  originSource?: "voice" | "text" | "voice-follow-up" | "text-follow-up" | "system",
+  replyKind?: "main" | "sideCompletion" | "router" | "handoffAck" | "error",
   sessionId?: string,
   inputId?: string
 }
@@ -682,9 +703,11 @@ Recommended protocol shape for a small protocol bump:
 
 Rules:
 
-- agentd should set `source: "sideCompletion"` when `deliverSideCompletionToMain` drives a reply.
-- app text submissions should set local context ownership immediately and still accept `source: "text"` when daemon support exists.
-- app-side inference is allowed only when source metadata is missing for backward compatibility.
+- agentd should set `replyKind: "sideCompletion"` when `deliverSideCompletionToMain` drives a reply.
+- agentd should set `originSource` from the originating context packet source when known.
+- app text and voice submissions should set local context ownership immediately and still accept daemon metadata when available.
+- app-side inference is allowed only when metadata is missing for backward compatibility.
+- If `inputId` must be echoed by the daemon, a preceding protocol change must add it to the command/context payload; otherwise app-side input correlation remains local-only.
 
 Acceptance:
 
@@ -800,15 +823,18 @@ Files:
 Steps:
 
 1. Convert `finishAwaitingAgentResponse` behavior into reducer events/effects.
-2. Generate `speechID` in the coordinator/event factory before dispatch, not in the reducer.
+2. Generate `speechID` and minimum display `timerID` in the coordinator/event factory before dispatch, not in the reducer.
 3. Speech callback emits `.speechFinished(speechID)`.
 4. Old speech completion ignored if id stale.
-5. Preserve minimum processing duration behavior as an effect or reducer timer event.
+5. Preserve minimum processing and minimum visible display duration with explicit `minimumDisplayTimerFired(timerID:speechID:inputID:)`.
+6. Record legacy voice `contextOwnership` at context capture completion before daemon submit.
 
 Expected:
 
 - TTS bubble appears reliably before speech starts.
 - stale speech finish tests pass.
+- immediate speech finish before the next run loop does not erase visible display before minimum display duration.
+- quickReply before `agentSubmissionAccepted` still routes by pre-submit context ownership.
 
 ### Task 6: Migrate pointer path with generation ids
 
@@ -876,14 +902,15 @@ Expected:
 Files:
 
 - Modify `Picky/CompanionManager.swift`
-- Modify `Picky/PickyAgentProtocol.swift` and agentd protocol for backward-compatible optional quickReply source metadata.
-- Update agentd protocol tests and Swift decoding tests.
+- Modify `Picky/PickyAgentProtocol.swift` and agentd protocol for backward-compatible optional quickReply `originSource` / `replyKind` metadata.
+- Update agentd protocol tests and Swift decoding tests, including old/new compatibility cases.
 
 Steps:
 
-1. Add optional quickReply source metadata as the default protocol direction, with backward-compatible decoding.
+1. Add optional quickReply `originSource` and `replyKind` metadata as the default protocol direction, with backward-compatible decoding.
 2. Use app-side context/session ownership only as fallback for old daemons.
 3. Ensure side completion during voice active is not spoken.
+4. Add tests for quickReply arriving before session snapshot/update and before agent submission receipt.
 
 Expected:
 
@@ -923,7 +950,7 @@ Recommended PR slicing:
 3. **PR C — pointer generation**: fixes stale pointer and local timer races.
 4. **PR D — voice input migration**: moves PTT/STT lifecycle into coordinator.
 5. **PR E — overlay derived state + cleanup**: removes transient hide races and legacy fragments.
-6. **PR F — quickReply source metadata**: optional-field protocol bump for reliable side completion / voice / text classification, unless implemented earlier with Phase 7.
+6. **PR F — quickReply origin/replyKind metadata**: optional-field protocol bump for reliable side completion / voice / text classification, unless implemented earlier with Phase 7.
 
 ## Non-goals
 

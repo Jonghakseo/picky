@@ -596,7 +596,6 @@ struct PickySessionViewModelTests {
             steeringMode: .oneAtATime,
             followUpMode: .oneAtATime,
             activitySummary: .zero,
-            finalReport: nil,
             pendingExtensionUiRequest: nil,
             piSessionFilePath: nil,
             notifyMainOnCompletion: nil,
@@ -968,17 +967,15 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.piSessionFilePath == "/tmp/from-handoff.jsonl")
     }
 
-    @Test func terminalOverlayCloseSyncsSessionFileWhenSnapshotChanged() async throws {
+    @Test func terminalOverlayCloseRequestsCanonicalDaemonSyncWithBaselinePiMessage() async throws {
         let client = FakePickyAgentClient()
         let presenter = FakeTerminalOverlayPresenter()
         let syncer = FakeTerminalSessionSyncer()
-        syncer.snapshotSequences["/tmp/pi-session.jsonl"] = [
-            PickyTerminalSessionSnapshot(lastUserText: "old question", lastAssistantText: "Old terminal answer"),
-            PickyTerminalSessionSnapshot(
-                lastUserText: "what changed?",
-                lastAssistantText: "Here is a synced terminal answer with enough text to be visible in the card."
-            ),
-        ]
+        syncer.snapshots["/tmp/pi-session.jsonl"] = PickyTerminalSessionSnapshot(
+            lastUserText: "old question",
+            lastAssistantText: "Old terminal answer",
+            lastMessageId: "a1"
+        )
         let viewModel = PickySessionListViewModel(
             client: client,
             notificationCenter: PickyNoopNotificationCenter(),
@@ -997,22 +994,20 @@ struct PickySessionViewModelTests {
 
         viewModel.openTerminalOverlay(sessionID: "side-1")
         presenter.close(sessionID: "side-1")
+        try await settle()
 
-        #expect(syncer.paths == ["/tmp/pi-session.jsonl", "/tmp/pi-session.jsonl"])
-        #expect(viewModel.sessions.first?.lastRequestText == "what changed?")
-        #expect(viewModel.sessions.first?.lastSummary == "Here is a synced terminal answer with enough text to be visible in the card.")
-        #expect(viewModel.sessions.first?.logPreview == "Synced from Pi terminal session")
+        #expect(syncer.paths == ["/tmp/pi-session.jsonl"])
+        let command = try #require(client.sentCommands.last)
+        #expect(command.type == .syncTerminalSession)
+        #expect(command.sessionId == "side-1")
+        #expect(command.baselinePiMessageId == "a1")
+        #expect(viewModel.sessions.first?.lastSummary == "Old summary")
     }
 
-    @Test func terminalOverlayCloseSkipsUnchangedSessionFileSnapshot() async throws {
+    @Test func terminalOverlayCloseRequestsCanonicalDaemonSyncWithoutBaselineWhenSnapshotUnavailable() async throws {
         let client = FakePickyAgentClient()
         let presenter = FakeTerminalOverlayPresenter()
         let syncer = FakeTerminalSessionSyncer()
-        let unchangedSnapshot = PickyTerminalSessionSnapshot(
-            lastUserText: "same prompt",
-            lastAssistantText: "A long existing terminal answer that should not temporarily replace the stored HUD summary."
-        )
-        syncer.snapshotSequences["/tmp/pi-session.jsonl"] = [unchangedSnapshot, unchangedSnapshot]
         let viewModel = PickySessionListViewModel(
             client: client,
             notificationCenter: PickyNoopNotificationCenter(),
@@ -1031,11 +1026,13 @@ struct PickySessionViewModelTests {
 
         viewModel.openTerminalOverlay(sessionID: "side-1")
         presenter.close(sessionID: "side-1")
+        try await settle()
 
-        #expect(syncer.paths == ["/tmp/pi-session.jsonl", "/tmp/pi-session.jsonl"])
-        #expect(viewModel.sessions.first?.lastRequestText == nil)
+        let command = try #require(client.sentCommands.last)
+        #expect(command.type == .syncTerminalSession)
+        #expect(command.sessionId == "side-1")
+        #expect(command.baselinePiMessageId == nil)
         #expect(viewModel.sessions.first?.lastSummary == "Stored summary")
-        #expect(viewModel.sessions.first?.logPreview != "Synced from Pi terminal session")
     }
 
     @Test func terminalCommandShellQuotesPaths() throws {
@@ -1086,6 +1083,7 @@ struct PickySessionViewModelTests {
 
         #expect(snapshot.lastUserText == "new prompt")
         #expect(snapshot.lastAssistantText == "new answer")
+        #expect(snapshot.lastMessageId == "a2")
     }
 
     @Test func extensionUiLogsAreHiddenFromRecentLogPreview() async throws {
@@ -1257,6 +1255,29 @@ struct PickySessionViewModelTests {
         await #expect(throws: PickySessionListViewModelError.emptyFollowUp) {
             try await viewModel.steer(text: "   ")
         }
+    }
+
+    @Test func pinnedCompletedSessionAcceptsFollowUpCommand() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "pinned-completed",
+            title: "Pinned completed Pi session",
+            status: "completed",
+            summary: "Pinned completed Pi session",
+            updatedAt: "2026-05-01T00:00:05.000Z",
+            pinned: true
+        ))))
+        try await settle()
+
+        try await viewModel.followUp(text: "  continue from pinned card  ", sessionID: "pinned-completed")
+
+        #expect(client.sentCommands.last?.type == .followUp)
+        #expect(client.sentCommands.last?.sessionId == "pinned-completed")
+        #expect(client.sentCommands.last?.text == "continue from pinned card")
+        #expect(viewModel.sessions.first?.pinned == true)
+        #expect(viewModel.sessions.first?.lastRequestText == "continue from pinned card")
     }
 
     @Test func slashCommandAutocompleteRequestsCachesAndFiltersCommands() async throws {
@@ -1545,7 +1566,6 @@ struct PickySessionViewModelTests {
         let message = PickySessionMessage.fixture(id: "m-1", kind: .agentText, text: "hello")
         let queueItem = PickyQueueItem(text: "next", enqueuedAt: createdAt)
         let activity = PickyActivitySummary(edit: 1, bash: 2, thinking: 3, other: 4)
-        let report = PickyFinalReport(summary: "Done", body: "Body", status: .success)
         let session = PickyAgentSession(
             id: "conversation-session",
             title: "Conversation",
@@ -1562,8 +1582,7 @@ struct PickySessionViewModelTests {
             queuedFollowUps: [PickyQueueItem(text: "follow", enqueuedAt: createdAt)],
             steeringMode: .all,
             followUpMode: .all,
-            activitySummary: activity,
-            finalReport: report
+            activitySummary: activity
         )
 
         let card = PickySessionListViewModel.SessionCard.fromAgentSession(session)
@@ -1574,7 +1593,6 @@ struct PickySessionViewModelTests {
         #expect(card.steeringMode == .all)
         #expect(card.followUpMode == .all)
         #expect(card.activitySummary == activity)
-        #expect(card.finalReport == report)
     }
 
     @Test func sessionMessageIncrementalEventsAppendReplaceRemoveAndIgnoreStaleSeq() async throws {
@@ -1790,7 +1808,6 @@ private extension PickySessionMessage {
             text: text,
             question: nil,
             cancelledAt: nil,
-            report: nil,
             activitySnapshot: nil,
             errorContext: nil,
             errorMessage: nil
@@ -1821,7 +1838,6 @@ private extension PickySessionListViewModel.SessionCard {
             steeringMode: .oneAtATime,
             followUpMode: .oneAtATime,
             activitySummary: .zero,
-            finalReport: nil,
             pendingExtensionUiRequest: nil,
             piSessionFilePath: nil,
             notifyMainOnCompletion: nil,

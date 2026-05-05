@@ -21,6 +21,11 @@ const context = (text: string): PickyContextPacket => ({
   warnings: [],
 });
 
+const contextWithPiSessionFile = (text: string, sessionFilePath: string): PickyContextPacket => ({
+  ...context(text),
+  transcript: `${text}\n\n## Source Pi session\n- CWD: /tmp/project\n- Session file: ${sessionFilePath}\n`,
+});
+
 describe("SessionSupervisor", () => {
   it("creates multiple mock sessions concurrently", async () => {
     const supervisor = await makeSupervisor();
@@ -529,157 +534,6 @@ describe("SessionSupervisor", () => {
     expect(completed.finalAnswer).not.toContain("조사 중입니다.");
   });
 
-  it("records a final report immediately and appends an agent_report message", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-final-report-test-"));
-    const runtime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
-    await supervisor.load();
-    const session = await supervisor.create(context("final report"));
-    const report = { summary: "작업 완료", body: "## Completed\n- 구현", status: "success" as const, artifacts: [{ kind: "file", title: "agentd/src/example.ts" }] };
-
-    await supervisor.submitFinalReport(session.id, report);
-
-    const updated = supervisor.get(session.id)!;
-    expect(updated.finalReport).toEqual(report);
-    expect(updated.finalAnswer).toBe("작업 완료");
-    expect(updated.messages?.filter((message) => message.kind === "agent_report")).toHaveLength(1);
-    expect(updated.messages?.find((message) => message.kind === "agent_report")?.report).toEqual(report);
-  });
-
-  it("lets a pending success final report override the terminal runtime answer", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-final-report-success-test-"));
-    const runtime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
-    await supervisor.load();
-    const session = await supervisor.create(context("final report success"));
-    const report = { summary: "보고서 요약", body: "body", status: "success" as const, artifacts: [] };
-
-    await supervisor.submitFinalReport(session.id, report);
-    runtime.handle?.emit({ type: "assistant_delta", delta: "일반 최종 답변" });
-    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
-
-    const completed = supervisor.get(session.id)!;
-    expect(completed.status).toBe("completed");
-    expect(completed.finalReport).toEqual(report);
-    expect(completed.finalAnswer).toBe("보고서 요약");
-    expect(completed.lastSummary).toBe("보고서 요약");
-  });
-
-  it("maps blocked final reports to blocked session status at turn end", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-final-report-blocked-test-"));
-    const runtime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
-    await supervisor.load();
-    const session = await supervisor.create(context("final report blocked"));
-    const report = { summary: "접근 권한 필요", body: "권한이 없어 중단", status: "blocked" as const, artifacts: [] };
-
-    await supervisor.submitFinalReport(session.id, report);
-    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
-
-    expect(supervisor.get(session.id)?.status).toBe("blocked");
-    expect(supervisor.get(session.id)?.finalAnswer).toBe("접근 권한 필요");
-  });
-
-  it("keeps cancelled status when a turn is aborted after a final report", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-final-report-cancel-test-"));
-    const runtime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
-    await supervisor.load();
-    const session = await supervisor.create(context("final report cancel"));
-    const report = { summary: "취소 전 보고", body: "일부 결과", status: "success" as const, artifacts: [] };
-
-    await supervisor.submitFinalReport(session.id, report);
-    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
-    await settle();
-
-    const cancelled = supervisor.get(session.id)!;
-    expect(cancelled.status).toBe("cancelled");
-    expect(cancelled.finalReport).toEqual(report);
-    expect(cancelled.finalAnswer).toBe("취소 전 보고");
-    expect(cancelled.lastSummary).toBe("Cancelled");
-  });
-
-  it("preserves runtime failed status when a final report was already submitted", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-final-report-failed-test-"));
-    const runtime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
-    await supervisor.load();
-    const session = await supervisor.create(context("final report failed"));
-    const report = { summary: "실패 전 보고", body: "일부 결과", status: "success" as const, artifacts: [] };
-
-    await supervisor.submitFinalReport(session.id, report);
-    runtime.handle?.emit({ type: "status", status: "failed", summary: "Crashed" });
-    await settle();
-
-    const failed = supervisor.get(session.id)!;
-    expect(failed.status).toBe("failed");
-    expect(failed.finalReport).toEqual(report);
-    expect(failed.lastSummary).toBe("Crashed");
-    expect(failed.finalAnswer).toBeUndefined();
-  });
-
-  it("ignores duplicate completed status when session is blocked by final report", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-final-report-blocked-duplicate-test-"));
-    const runtime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
-    await supervisor.load();
-    const session = await supervisor.create(context("final report blocked duplicate"));
-    const report = { summary: "접근 권한 필요", body: "권한이 없어 중단", status: "blocked" as const, artifacts: [] };
-
-    await supervisor.submitFinalReport(session.id, report);
-    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
-    runtime.handle?.emit({ type: "status", status: "completed", summary: "Duplicate completed" });
-    await settle();
-
-    expect(supervisor.get(session.id)?.status).toBe("blocked");
-    expect(supervisor.get(session.id)?.finalAnswer).toBe("접근 권한 필요");
-  });
-
-  it("drops pending final report on abort before a steered turn", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-final-report-abort-leak-test-"));
-    const runtime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
-    await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side report abort"), { title: "Side", instructions: "Investigate" });
-    const report = { summary: "취소 전 보고", body: "old", status: "success" as const, artifacts: [] };
-
-    await supervisor.submitFinalReport(side.id, report);
-    await supervisor.abort(side.id);
-    await supervisor.steerSideSession(side.id, "새 턴");
-    runtime.handle?.emit({ type: "assistant_delta", delta: "새 답변" });
-    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
-
-    const completed = supervisor.get(side.id)!;
-    expect(completed.status).toBe("completed");
-    expect(completed.finalAnswer).toBe("새 답변");
-    expect(completed.finalAnswer).not.toBe("취소 전 보고");
-  });
-
-  it("uses the last submitted final report within a turn", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-final-report-last-test-"));
-    const runtime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
-    await supervisor.load();
-    const session = await supervisor.create(context("final report last wins"));
-    const first = { summary: "첫 보고", body: "first", status: "success" as const, artifacts: [] };
-    const second = { summary: "최종 보고", body: "second", status: "partial" as const, artifacts: [] };
-
-    await supervisor.submitFinalReport(session.id, first);
-    await supervisor.submitFinalReport(session.id, second);
-    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
-
-    const completed = supervisor.get(session.id)!;
-    expect(completed.status).toBe("completed");
-    expect(completed.finalReport).toEqual(second);
-    expect(completed.finalAnswer).toBe("최종 보고");
-    expect(completed.messages?.filter((message) => message.kind === "agent_report")).toHaveLength(2);
-  });
-
   it("marks completed side sessions as running when they are steered", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
@@ -1120,27 +974,58 @@ describe("SessionSupervisor", () => {
     expect(secondSupervisor.isSideSession(pinned.id)).toBe(true);
   });
 
-  it("rejects steering of a pinned session until reattach lands", async () => {
+  it("reattaches a persisted pinned session before accepting follow-up input", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
-    const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
-    await supervisor.load();
-    const pinned = await supervisor.pinSideSession(context("pin then steer"), "Pinned source");
-    expect(pinned.pinned).toBe(true);
+    const store = new SessionStore(dir);
+    const firstSupervisor = new SessionSupervisor(new MockRuntime(), store);
+    await firstSupervisor.load();
+    const pinned = await firstSupervisor.pinSideSession(contextWithPiSessionFile("persist pinned with source", "/tmp/source-pi-session.jsonl"), "Pinned persisted");
 
-    await expect(supervisor.steerSideSession(pinned.id, "continue this work")).rejects.toThrow(/Pinned sessions cannot accept steers yet/);
+    const runtime = new ResumableRuntime();
+    const secondSupervisor = new SessionSupervisor(runtime, store);
+    await secondSupervisor.load();
 
-    expect(supervisor.get(pinned.id)?.pinned).toBe(true);
+    const followedUp = await secondSupervisor.followUp(pinned.id, "continue after app restart");
+    await settle();
+
+    expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/source-pi-session.jsonl", cwd: "/tmp/project", sessionId: pinned.id }]);
+    expect(runtime.handle?.followUps.map((prompt) => prompt.text)).toEqual(["continue after app restart"]);
+    expect(followedUp.pinned).toBe(false);
+    expect(secondSupervisor.get(pinned.id)?.pinned).toBe(false);
+    expect(userTexts(secondSupervisor.get(pinned.id))).toContain("continue after app restart");
   });
 
-  it("rejects pinned side-session follow-up until reattach lands", async () => {
+  it("reattaches a pinned session and sends steering input", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
-    const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const pinned = await supervisor.pinSideSession(context("pin then follow up"), "Pinned source");
+    const pinned = await supervisor.pinSideSession(contextWithPiSessionFile("pin then steer", "/tmp/source-pi-session.jsonl"), "Pinned source");
+    expect(pinned.pinned).toBe(true);
 
-    await expect(supervisor.followUp(pinned.id, "continue this work")).rejects.toThrow(/Pinned sessions cannot accept follow-ups yet/);
+    const steered = await supervisor.steerSideSession(pinned.id, "continue this work");
 
-    expect(supervisor.get(pinned.id)?.pinned).toBe(true);
+    expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/source-pi-session.jsonl", cwd: "/tmp/project", sessionId: pinned.id }]);
+    expect(runtime.handle?.steerPrompts.map((prompt) => prompt.text)).toEqual(["continue this work"]);
+    expect(steered.pinned).toBe(false);
+    expect(steered.status).toBe("running");
+  });
+
+  it("reattaches a pinned session and sends follow-up input", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pinned = await supervisor.pinSideSession(contextWithPiSessionFile("pin then follow up", "/tmp/source-pi-session.jsonl"), "Pinned source");
+
+    const followedUp = await supervisor.followUp(pinned.id, "continue this work");
+    await settle();
+
+    expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/source-pi-session.jsonl", cwd: "/tmp/project", sessionId: pinned.id }]);
+    expect(runtime.handle?.followUps.map((prompt) => prompt.text)).toEqual(["continue this work"]);
+    expect(followedUp.pinned).toBe(false);
+    expect(supervisor.get(pinned.id)?.status).toBe("running");
+    expect(userTexts(supervisor.get(pinned.id))).toContain("continue this work");
   });
 
   it("ignores late tool/thinking/assistant events after abort", async () => {
@@ -2273,6 +2158,53 @@ describe("SessionSupervisor", () => {
 
     expect(events.map((event) => event.seq)).toEqual([...events].map((event) => event.seq).sort((a, b) => a - b));
     expect(new Set(events.map((event) => event.seq)).size).toBe(events.length);
+  });
+
+  it("syncs Pi terminal transcript additions into canonical session messages without duplicating prior HUD history", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-sync-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    await writeFile(piSessionFile, [
+      JSON.stringify({ type: "session", version: 3, id: "pi-session", timestamp: "2026-05-01T00:00:00.000Z", cwd: "/tmp/project" }),
+      JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-05-01T00:00:01.000Z", message: { role: "user", content: "old prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-05-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "old answer" }], timestamp: 0, stopReason: "stop" } }),
+      JSON.stringify({ type: "message", id: "u2", parentId: "a1", timestamp: "2026-05-01T00:00:03.000Z", message: { role: "user", content: "terminal thanks", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a2", parentId: "u2", timestamp: "2026-05-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: "terminal reply" }], timestamp: 0, stopReason: "stop" } }),
+    ].join("\n"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "terminal-sync-session",
+      title: "Terminal sync",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "old answer",
+      finalAnswer: "old answer",
+      logs: [`pi session: ${piSessionFile}`],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [
+        { id: "msg-existing-user", kind: "user_text", createdAt: "2026-05-01T00:00:01.000Z", originatedBy: "user", text: "old prompt" },
+        { id: "msg-existing-agent", kind: "agent_text", createdAt: "2026-05-01T00:00:02.000Z", text: "old answer" },
+      ],
+    });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store);
+    await supervisor.load();
+
+    await supervisor.syncTerminalSession("terminal-sync-session", "a1");
+
+    expect(supervisor.get("terminal-sync-session")?.messages?.map((message) => ({ id: message.id, kind: message.kind, text: message.text, originatedBy: message.originatedBy }))).toEqual([
+      { id: "msg-existing-user", kind: "user_text", text: "old prompt", originatedBy: "user" },
+      { id: "msg-existing-agent", kind: "agent_text", text: "old answer", originatedBy: undefined },
+      { id: "msg-pi-user-u2", kind: "user_text", text: "terminal thanks", originatedBy: "pi_extension" },
+      { id: "msg-pi-agent-a2", kind: "agent_text", text: "terminal reply", originatedBy: undefined },
+    ]);
+    expect(supervisor.get("terminal-sync-session")?.lastSummary).toBe("terminal reply");
+    expect(supervisor.get("terminal-sync-session")?.finalAnswer).toBe("terminal reply");
+
+    await supervisor.syncTerminalSession("terminal-sync-session", "a1");
+    expect(supervisor.get("terminal-sync-session")?.messages).toHaveLength(4);
   });
 
   it("preserves persisted messages on daemon restart", async () => {

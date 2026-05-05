@@ -6,8 +6,9 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
-import type { EventEnvelope, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyFinalReport, PickyMainAgentMessage, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
+import type { EventEnvelope, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
+import { readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
 import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, ThinkingLevel } from "./runtime/types.js";
@@ -73,7 +74,6 @@ export class SessionSupervisor extends EventEmitter {
   private readonly messageBuilder: SessionMessageBuilder;
   private lastEmittedSteeringMode = new Map<string, PickyQueueMode>();
   private lastEmittedFollowUpMode = new Map<string, PickyQueueMode>();
-  private pendingFinalReports = new Map<string, PickyFinalReport>();
   // Track follow-up/steer prompts that Pi has queued but not yet started processing. We defer the
   // user_text journal write until Pi actually dequeues the prompt, so the HUD can render queued
   // items as pending bubbles instead of (incorrectly) hiding them behind a duplicate user bubble.
@@ -100,7 +100,6 @@ export class SessionSupervisor extends EventEmitter {
       commitTurnActivity: (sessionId) => this.commitTurnActivity(sessionId),
       notifySideCompletion: (sessionId) => this.notifyMainOfSideCompletion(sessionId),
       isSideSession: (sessionId) => this.sideSessionIds.has(sessionId),
-      consumePendingFinalReport: (sessionId) => this.consumePendingFinalReport(sessionId),
       emitExtensionUiRequest: (request) => this.emit("extensionUiRequest", request),
       messageBuilder: this.messageBuilder,
     });
@@ -777,7 +776,6 @@ export class SessionSupervisor extends EventEmitter {
   private async prepareSideSessionForUserInput(sessionId: string): Promise<void> {
     if (!this.isSideSession(sessionId)) return;
     this.clearSideCompletionTracking(sessionId);
-    this.pendingFinalReports.delete(sessionId);
     if (this.mustGet(sessionId).pinned) await this.patch(sessionId, { pinned: false });
   }
 
@@ -791,11 +789,41 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
+  async syncTerminalSession(sessionId: string, baselinePiMessageId?: string): Promise<PickyAgentSession> {
+    const session = this.mustGet(sessionId);
+    const sessionFilePath = piSessionFilePathFromLogs(session.logs);
+    if (!sessionFilePath) throw new Error(`Session has no Pi session file to sync: ${sessionId}`);
+    logAgentd("terminal session sync requested", { sessionId, sessionFilePath, baselinePiMessageId });
+    const result = await readPiTerminalSessionMessages(sessionFilePath, baselinePiMessageId);
+    if (!result.baselineFound) {
+      logAgentd("terminal session sync skipped", { sessionId, reason: "baseline pi message not found", baselinePiMessageId, activeLastMessageId: result.activeLastMessageId });
+      return this.mustGet(sessionId);
+    }
+
+    const existingIds = new Set(this.mustGet(sessionId).messages?.map((message) => message.id) ?? []);
+    const messagesToImport = result.messages.filter((message) => !existingIds.has(message.id));
+    if (messagesToImport.length === 0) {
+      logAgentd("terminal session sync noop", { sessionId, activeLastMessageId: result.activeLastMessageId });
+      return this.mustGet(sessionId);
+    }
+
+    await this.messageBuilder.recordTerminalSessionMessages(sessionId, messagesToImport);
+    const latestAssistantText = [...messagesToImport].reverse().find((message) => message.kind === "agent_text")?.text?.trim();
+    const latestUserText = [...messagesToImport].reverse().find((message) => message.kind === "user_text")?.text?.trim();
+    const patch: Partial<PickyAgentSession> = {
+      thinkingPreview: undefined,
+      ...(latestAssistantText ? { lastSummary: latestAssistantText, finalAnswer: latestAssistantText } : {}),
+      ...(latestUserText ? { logs: appendUniqueLog(this.mustGet(sessionId).logs, `${FOLLOWUP_PREFIX}${latestUserText}`) } : {}),
+    };
+    if (latestAssistantText && !["failed", "cancelled"].includes(this.mustGet(sessionId).status)) patch.status = "completed";
+    await this.patch(sessionId, patch);
+    logAgentd("terminal session synced", { sessionId, importedMessages: messagesToImport.length, activeLastMessageId: result.activeLastMessageId });
+    return this.mustGet(sessionId);
+  }
+
   async followUp(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
     if (["failed", "cancelled"].includes(session.status)) throw new Error(`Cannot follow up ${session.status} session`);
-    // TODO(PR6): replace this temporary guard with pinned side-session reattach.
-    if (session.pinned) throw new Error("Pinned sessions cannot accept follow-ups yet (PR6 reattach)");
     await this.prepareSideSessionForUserInput(sessionId);
     const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
     if (!handle) {
@@ -847,24 +875,6 @@ export class SessionSupervisor extends EventEmitter {
     const current = this.sessions.get(sessionId);
     if (!current || ["completed", "cancelled"].includes(current.status)) return;
     await this.patch(sessionId, { status: "failed", lastSummary: `Follow-up failed: ${message}` });
-  }
-
-  async submitFinalReport(sessionId: string, report: PickyFinalReport): Promise<void> {
-    if (!this.sessions.has(sessionId)) {
-      logAgentd("submit final report dropped (unknown session)", { sessionId });
-      return;
-    }
-    logAgentd("submit final report received", { sessionId, status: report.status, summaryChars: report.summary.length });
-    this.pendingFinalReports.set(sessionId, report);
-    await this.patch(sessionId, { finalReport: report, finalAnswer: report.summary });
-    await this.commitTurnActivity(sessionId);
-    await this.messageBuilder.recordFinalReport(sessionId, report);
-  }
-
-  private consumePendingFinalReport(sessionId: string): PickyFinalReport | undefined {
-    const report = this.pendingFinalReports.get(sessionId);
-    if (report) this.pendingFinalReports.delete(sessionId);
-    return report;
   }
 
   private async cancelPendingExtensionUiForUserInput(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {
@@ -1033,8 +1043,6 @@ export class SessionSupervisor extends EventEmitter {
   async steer(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
     if (session.status === "failed") throw new Error(`Cannot steer ${session.status} session`);
-    // TODO(PR6): replace this temporary guard with pinned side-session reattach.
-    if (session.pinned) throw new Error("Pinned sessions cannot accept steers yet (PR6 reattach)");
     await this.prepareSideSessionForUserInput(sessionId);
     const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
     if (!handle) {
@@ -1093,7 +1101,6 @@ export class SessionSupervisor extends EventEmitter {
     const handle = this.runtimeHandles.get(sessionId);
     logAgentd("abort requested", { sessionId, hasHandle: Boolean(handle) });
     if (handle) await handle.abort();
-    this.pendingFinalReports.delete(sessionId);
     // Pending follow-up/steer prompts that were waiting for Pi to dequeue them will never be
     // processed after an abort, so drop their journal placeholders too.
     this.pendingQueueDeliveries.delete(sessionId);

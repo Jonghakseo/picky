@@ -118,4 +118,103 @@ struct PickyAdvancedContextTests {
         #expect(valid.validate(within: screen))
         #expect(!invalid.validate(within: screen))
     }
+
+    // MARK: - AppleScriptBrowserContextProvider gating
+
+    @Test func appleScriptProviderSkipsScriptWhenMultipleBrowserInstancesDetected() {
+        let scriptCalls = ScriptCallCounter()
+        var provider = AppleScriptBrowserContextProvider()
+        provider.frontmostBundleIdProvider = { "com.google.Chrome" }
+        provider.instanceCountProvider = { _ in 2 }
+        provider.frontmostWindowTitleProvider = { "Anything" }
+        provider.scriptRunner = { _ in
+            scriptCalls.increment()
+            return ""
+        }
+
+        let result = provider.browserContextResult()
+
+        #expect(result.value == nil)
+        #expect(scriptCalls.count == 0)
+        #expect(result.warnings.contains(where: { $0.contains("multiple Google Chrome instances") }))
+    }
+
+    @Test func appleScriptProviderReturnsUnavailableWhenFrontmostWindowMissingFromAppleScriptList() {
+        var provider = AppleScriptBrowserContextProvider()
+        provider.frontmostBundleIdProvider = { "com.google.Chrome" }
+        provider.instanceCountProvider = { _ in 1 }
+        provider.frontmostWindowTitleProvider = { "Personal Access Tokens (Classic)" }
+        provider.scriptRunner = { _ in
+            "http://localhost:5173/\nAdmin | Creatrip\n1\nAdmin | Creatrip\u{1F}"
+        }
+
+        let result = provider.browserContextResult()
+
+        #expect(result.value == nil)
+        #expect(result.warnings.contains(where: { $0.contains("not visible to AppleScript") }))
+    }
+
+    @Test func appleScriptProviderReturnsValueWhenFrontmostTitleMatchesAppleScriptList() throws {
+        var provider = AppleScriptBrowserContextProvider()
+        provider.frontmostBundleIdProvider = { "com.google.Chrome" }
+        provider.instanceCountProvider = { _ in 1 }
+        provider.frontmostWindowTitleProvider = { "Picky Docs" }
+        provider.scriptRunner = { _ in
+            "https://example.com/picky\nPicky Docs\n2\nPicky Docs\u{1F}Other Tab\u{1F}"
+        }
+
+        let result = provider.browserContextResult()
+        let context = try #require(result.value)
+
+        #expect(context.url?.absoluteString == "https://example.com/picky")
+        #expect(context.title == "Picky Docs")
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test func appleScriptProviderSkipsCrossCheckWhenFrontmostWindowTitleUnavailable() throws {
+        var provider = AppleScriptBrowserContextProvider()
+        provider.frontmostBundleIdProvider = { "com.google.Chrome" }
+        provider.instanceCountProvider = { _ in 1 }
+        provider.frontmostWindowTitleProvider = { nil }
+        provider.scriptRunner = { _ in
+            "https://example.com/path\nSome Title\n1\nSome Title\u{1F}"
+        }
+
+        let result = provider.browserContextResult()
+        let context = try #require(result.value)
+
+        #expect(context.url?.absoluteString == "https://example.com/path")
+        #expect(context.title == "Some Title")
+    }
+
+    @Test func appleScriptProviderTreatsZeroWindowCountAsUnavailable() {
+        var provider = AppleScriptBrowserContextProvider()
+        provider.frontmostBundleIdProvider = { "com.google.Chrome" }
+        provider.instanceCountProvider = { _ in 1 }
+        provider.frontmostWindowTitleProvider = { nil }
+        provider.scriptRunner = { _ in "\n\n0\n" }
+
+        let result = provider.browserContextResult()
+
+        #expect(result.value == nil)
+        #expect(result.warnings.contains(where: { $0.contains("no active tab URL") }))
+    }
+
+    @Test func appleScriptProviderReturnsUnavailableForUnsupportedFrontmostBundle() {
+        var provider = AppleScriptBrowserContextProvider()
+        provider.frontmostBundleIdProvider = { "com.example.NotABrowser" }
+        provider.instanceCountProvider = { _ in 1 }
+        provider.frontmostWindowTitleProvider = { "x" }
+        provider.scriptRunner = { _ in "unused" }
+
+        let result = provider.browserContextResult()
+
+        #expect(result.value == nil)
+        #expect(result.warnings.isEmpty)
+    }
+}
+
+private final class ScriptCallCounter: @unchecked Sendable {
+    private(set) var count = 0
+    func increment() { count += 1 }
 }

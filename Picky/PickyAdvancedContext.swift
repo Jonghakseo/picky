@@ -78,7 +78,13 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
         let scriptBody: String
     }
 
-    var frontmostApplicationProvider: () -> NSRunningApplication? = { NSWorkspace.shared.frontmostApplication }
+    var frontmostBundleIdProvider: () -> String? = { NSWorkspace.shared.frontmostApplication?.bundleIdentifier }
+    var instanceCountProvider: (String) -> Int = { bundleId in
+        NSWorkspace.shared.runningApplications.filter { $0.bundleIdentifier == bundleId }.count
+    }
+    var frontmostWindowTitleProvider: () -> String? = {
+        CGWindowPickyWindowContextProvider().activeWindowContext()?.title
+    }
     var scriptRunner: (String) throws -> String = { source in
         var error: NSDictionary?
         guard let script = NSAppleScript(source: source) else { return "" }
@@ -87,28 +93,111 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
         return descriptor.stringValue ?? ""
     }
 
+    /// Each target's script returns four newline-separated fields:
+    ///   1) URL of the front window's active tab
+    ///   2) Title of that active tab
+    ///   3) Total count of windows visible to AppleScript
+    ///   4) Active-tab titles of every window joined by character id 31 (US).
+    /// We need (3)/(4) so the caller can detect when the OS frontmost window is
+    /// not visible to AppleScript at all (e.g. Chrome incognito or Playwright
+    /// background instance), in which case (1)/(2) describe a different window.
     private let targets: [BrowserScriptTarget] = [
-        BrowserScriptTarget(bundleIdentifier: "com.apple.Safari", applicationName: "Safari", scriptBody: "tell application \"Safari\" to return URL of current tab of front window & linefeed & name of current tab of front window"),
-        BrowserScriptTarget(bundleIdentifier: "com.google.Chrome", applicationName: "Google Chrome", scriptBody: "tell application \"Google Chrome\" to return URL of active tab of front window & linefeed & title of active tab of front window"),
-        BrowserScriptTarget(bundleIdentifier: "company.thebrowser.Browser", applicationName: "Arc", scriptBody: "tell application \"Arc\" to return URL of active tab of front window & linefeed & title of active tab of front window")
+        BrowserScriptTarget(
+            bundleIdentifier: "com.apple.Safari",
+            applicationName: "Safari",
+            scriptBody: """
+            tell application "Safari"
+              set wc to count of windows
+              if wc is 0 then return linefeed & linefeed & "0" & linefeed
+              set sep to character id 31
+              set u to URL of current tab of front window
+              set t to name of current tab of front window
+              set ns to ""
+              repeat with w in windows
+                set ns to ns & (name of current tab of w) & sep
+              end repeat
+              return u & linefeed & t & linefeed & wc & linefeed & ns
+            end tell
+            """
+        ),
+        BrowserScriptTarget(
+            bundleIdentifier: "com.google.Chrome",
+            applicationName: "Google Chrome",
+            scriptBody: """
+            tell application "Google Chrome"
+              set wc to count of windows
+              if wc is 0 then return linefeed & linefeed & "0" & linefeed
+              set sep to character id 31
+              set u to URL of active tab of front window
+              set t to title of active tab of front window
+              set ns to ""
+              repeat with w in windows
+                set ns to ns & (title of active tab of w) & sep
+              end repeat
+              return u & linefeed & t & linefeed & wc & linefeed & ns
+            end tell
+            """
+        ),
+        BrowserScriptTarget(
+            bundleIdentifier: "company.thebrowser.Browser",
+            applicationName: "Arc",
+            scriptBody: """
+            tell application "Arc"
+              set wc to count of windows
+              if wc is 0 then return linefeed & linefeed & "0" & linefeed
+              set sep to character id 31
+              set u to URL of active tab of front window
+              set t to title of active tab of front window
+              set ns to ""
+              repeat with w in windows
+                set ns to ns & (title of active tab of w) & sep
+              end repeat
+              return u & linefeed & t & linefeed & wc & linefeed & ns
+            end tell
+            """
+        )
     ]
 
     func browserContextResult() -> PickyContextCaptureResult<PickyBrowserContext> {
-        guard let bundleIdentifier = frontmostApplicationProvider()?.bundleIdentifier,
+        guard let bundleIdentifier = frontmostBundleIdProvider(),
               let target = targets.first(where: { $0.bundleIdentifier == bundleIdentifier }) else {
             return .unavailable()
         }
+        if instanceCountProvider(bundleIdentifier) >= 2 {
+            return .unavailable(warnings: [
+                "Browser context unavailable: multiple \(target.applicationName) instances detected; AppleScript dispatch may target the wrong instance (e.g. Playwright/headless)."
+            ])
+        }
+        let raw: String
         do {
-            let raw = try scriptRunner(target.scriptBody)
-            let parts = raw.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
-            guard let first = parts.first, let url = URL(string: first.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-                return .unavailable(warnings: ["Browser context unavailable: no URL returned from \(target.applicationName)."])
-            }
-            let title = parts.dropFirst().first?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return .value(PickyBrowserContext(url: url, title: title?.isEmpty == true ? nil : title, selectedText: nil))
+            raw = try scriptRunner(target.scriptBody)
         } catch {
             return .unavailable(warnings: ["Browser context permission or automation failure for \(target.applicationName): \(error.localizedDescription)"])
         }
+        let parts = raw.split(separator: "\n", maxSplits: 3, omittingEmptySubsequences: false).map(String.init)
+        guard parts.count >= 4 else {
+            return .unavailable(warnings: ["Browser context unavailable: unexpected response format from \(target.applicationName)."])
+        }
+        let urlString = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+        let windowCount = Int(parts[2].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        guard windowCount > 0, !urlString.isEmpty, let url = URL(string: urlString) else {
+            return .unavailable(warnings: ["Browser context unavailable: no active tab URL returned from \(target.applicationName)."])
+        }
+        let separator: Character = "\u{1F}"
+        let names = parts[3]
+            .split(separator: separator, omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if let frontTitle = frontmostWindowTitleProvider()?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !frontTitle.isEmpty,
+           !names.contains(frontTitle) {
+            return .unavailable(warnings: [
+                "Browser context unavailable: frontmost \(target.applicationName) window \"\(frontTitle)\" not visible to AppleScript (likely incognito or background instance)."
+            ])
+        }
+        let resolvedTitle = title.isEmpty ? nil : title
+        return .value(PickyBrowserContext(url: url, title: resolvedTitle, selectedText: nil))
     }
 }
 

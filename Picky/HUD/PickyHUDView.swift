@@ -367,18 +367,7 @@ private struct PickyHUDDockRailView: View {
             )
             .overlay(
                 Capsule(style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(0.55),
-                                Color.white.opacity(0.05),
-                                Color.black.opacity(0.18)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 0.8
-                    )
+                    .strokeBorder(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
             )
             .compositingGroup()
             .shadow(color: Color.black.opacity(0.30), radius: 18, x: 0, y: 10)
@@ -518,15 +507,7 @@ private struct PickyHUDDockIconView: View {
                 } else {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .stroke(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(isActive ? 0.65 : 0.45),
-                                    Color.white.opacity(0.05),
-                                    statusColor.opacity(isActive ? 0.55 : 0.22)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
+                            isActive ? statusColor.opacity(0.55) : statusColor.opacity(0.30),
                             lineWidth: isActive ? 1.0 : 0.7
                         )
                 }

@@ -124,7 +124,11 @@ export class SessionMessageBuilder {
   }
 
   async flushAssistantText(sessionId: string): Promise<void> {
-    await this.flushAssistantTextNow(sessionId);
+    const state = this.states.get(sessionId);
+    if (!state?.assistantDraft) return;
+    const text = state.assistantDraft;
+    state.assistantDraft = "";
+    await this.enqueue(sessionId, async () => this.appendAssistantTextNow(sessionId, text));
   }
 
   async appendThinkingDelta(sessionId: string, delta: string): Promise<void> {
@@ -135,16 +139,23 @@ export class SessionMessageBuilder {
     await this.enqueue(sessionId, async () => this.flushThinkingNow(sessionId));
   }
 
+  hydrateSession(sessionId: string, messages: readonly PickySessionMessage[] | undefined): void {
+    if (!messages?.length) return;
+    this.states.set(sessionId, {
+      journal: messages.map((message, index) => ({ seq: index + 1, message })),
+      removedIds: new Set(),
+      assistantDraft: "",
+      thinkingDraft: "",
+    });
+  }
+
   onSessionRemoved(sessionId: string): void {
     this.states.delete(sessionId);
     this.operationChains.delete(sessionId);
   }
 
-  private async flushAssistantTextNow(sessionId: string): Promise<void> {
-    const state = this.states.get(sessionId);
-    if (!state?.assistantDraft) return;
-    const text = state.assistantDraft;
-    state.assistantDraft = "";
+  private async appendAssistantTextNow(sessionId: string, text: string): Promise<void> {
+    if (!text) return;
     await this.appendInternal(sessionId, {
       id: `msg-agent-text-${randomUUID()}`,
       kind: "agent_text",
@@ -194,9 +205,10 @@ export class SessionMessageBuilder {
   private async appendInternal(sessionId: string, message: PickySessionMessage): Promise<void> {
     const state = this.stateFor(sessionId);
     if (state.journal.some((entry) => entry.message.id === message.id) || state.removedIds.has(message.id)) return;
-    const seq = this.deps.nextSeq(sessionId);
-    state.journal.push({ seq, message });
+    const index = state.journal.push({ seq: 0, message }) - 1;
     await this.sync(sessionId, state);
+    const seq = this.deps.nextSeq(sessionId);
+    state.journal[index] = { seq, message };
     await this.deps.emitAppended(sessionId, message, seq);
   }
 
@@ -205,9 +217,10 @@ export class SessionMessageBuilder {
     if (!state || state.removedIds.has(messageId)) return;
     const index = state.journal.findIndex((entry) => entry.message.id === messageId);
     if (index < 0) return;
+    state.journal[index] = { seq: 0, message };
+    await this.sync(sessionId, state);
     const seq = this.deps.nextSeq(sessionId);
     state.journal[index] = { seq, message };
-    await this.sync(sessionId, state);
     await this.deps.emitReplaced(sessionId, messageId, message, seq);
   }
 
@@ -216,10 +229,10 @@ export class SessionMessageBuilder {
     if (!state || state.removedIds.has(messageId)) return;
     const index = state.journal.findIndex((entry) => entry.message.id === messageId);
     if (index < 0) return;
-    const seq = this.deps.nextSeq(sessionId);
     state.journal.splice(index, 1);
     state.removedIds.add(messageId);
     await this.sync(sessionId, state);
+    const seq = this.deps.nextSeq(sessionId);
     await this.deps.emitRemoved(sessionId, messageId, seq);
   }
 

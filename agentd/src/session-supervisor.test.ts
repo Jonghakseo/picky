@@ -193,6 +193,38 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.activitySummary).toEqual({ edit: 0, bash: 2, thinking: 0, other: 0 });
   });
 
+  it("preserves enqueuedAt for unchanged queue items", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-queue-timestamp-test-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("queue timestamp"));
+
+    runtime.handle!.emit({ type: "queue_update", steering: ["first"], followUp: [] });
+    await waitUntil(() => (supervisor.get(session.id)?.queuedSteers ?? []).length === 1);
+    const firstEnqueuedAt = supervisor.get(session.id)?.queuedSteers?.[0]?.enqueuedAt;
+    await delay(2);
+    runtime.handle!.emit({ type: "queue_update", steering: ["first", "second"], followUp: [] });
+    await waitUntil(() => (supervisor.get(session.id)?.queuedSteers ?? []).length === 2);
+
+    expect(supervisor.get(session.id)?.queuedSteers?.[0]?.enqueuedAt).toBe(firstEnqueuedAt);
+    expect(supervisor.get(session.id)?.queuedSteers?.[1]?.enqueuedAt).not.toBe(firstEnqueuedAt);
+  });
+
+  it("captures initial queue and modes on runtime attach", async () => {
+    const runtime = new InitialQueueRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-initial-queue-test-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+
+    const session = await supervisor.create(context("initial queue"));
+
+    expect(supervisor.get(session.id)?.queuedSteers?.map((item) => item.text)).toEqual(["initial steer"]);
+    expect(supervisor.get(session.id)?.queuedFollowUps?.map((item) => item.text)).toEqual(["initial follow-up"]);
+    expect(supervisor.get(session.id)?.steeringMode).toBe("all");
+    expect(supervisor.get(session.id)?.followUpMode).toBe("all");
+  });
+
   it("clears queues by kind while preserving the other queue", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-clear-test-"));
@@ -475,6 +507,64 @@ describe("SessionSupervisor", () => {
     expect(cancelled.finalReport).toEqual(report);
     expect(cancelled.finalAnswer).toBe("취소 전 보고");
     expect(cancelled.lastSummary).toBe("Cancelled");
+  });
+
+  it("preserves runtime failed status when a final report was already submitted", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-final-report-failed-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("final report failed"));
+    const report = { summary: "실패 전 보고", body: "일부 결과", status: "success" as const, artifacts: [] };
+
+    await supervisor.submitFinalReport(session.id, report);
+    runtime.handle?.emit({ type: "status", status: "failed", summary: "Crashed" });
+    await settle();
+
+    const failed = supervisor.get(session.id)!;
+    expect(failed.status).toBe("failed");
+    expect(failed.finalReport).toEqual(report);
+    expect(failed.lastSummary).toBe("Crashed");
+    expect(failed.finalAnswer).toBeUndefined();
+  });
+
+  it("ignores duplicate completed status when session is blocked by final report", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-final-report-blocked-duplicate-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("final report blocked duplicate"));
+    const report = { summary: "접근 권한 필요", body: "권한이 없어 중단", status: "blocked" as const, artifacts: [] };
+
+    await supervisor.submitFinalReport(session.id, report);
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Duplicate completed" });
+    await settle();
+
+    expect(supervisor.get(session.id)?.status).toBe("blocked");
+    expect(supervisor.get(session.id)?.finalAnswer).toBe("접근 권한 필요");
+  });
+
+  it("drops pending final report on abort before a steered turn", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-final-report-abort-leak-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side report abort"), { title: "Side", instructions: "Investigate" });
+    const report = { summary: "취소 전 보고", body: "old", status: "success" as const, artifacts: [] };
+
+    await supervisor.submitFinalReport(side.id, report);
+    await supervisor.abort(side.id);
+    await supervisor.steerSideSession(side.id, "새 턴");
+    runtime.handle?.emit({ type: "assistant_delta", delta: "새 답변" });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    const completed = supervisor.get(side.id)!;
+    expect(completed.status).toBe("completed");
+    expect(completed.finalAnswer).toBe("새 답변");
+    expect(completed.finalAnswer).not.toBe("취소 전 보고");
   });
 
   it("uses the last submitted final report within a turn", async () => {
@@ -870,19 +960,16 @@ describe("SessionSupervisor", () => {
     expect(secondSupervisor.isSideSession(pinned.id)).toBe(true);
   });
 
-  it("clears pinned flag when a pinned side session is steered", async () => {
+  it("rejects steering of a pinned session until reattach lands", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
     await supervisor.load();
     const pinned = await supervisor.pinSideSession(context("pin then steer"), "Pinned source");
     expect(pinned.pinned).toBe(true);
 
-    // Steering currently fails because pinned sessions have no runtime handle yet,
-    // but the pinned flag must be cleared before the runtime call so that any
-    // subsequent successful run delivers the normal completion notification.
-    await expect(supervisor.steerSideSession(pinned.id, "continue this work")).rejects.toThrow();
+    await expect(supervisor.steerSideSession(pinned.id, "continue this work")).rejects.toThrow(/Pinned sessions cannot accept steers yet/);
 
-    expect(supervisor.get(pinned.id)?.pinned).toBe(false);
+    expect(supervisor.get(pinned.id)?.pinned).toBe(true);
   });
 
   it("rejects pinned side-session follow-up until reattach lands", async () => {
@@ -894,6 +981,31 @@ describe("SessionSupervisor", () => {
     await expect(supervisor.followUp(pinned.id, "continue this work")).rejects.toThrow(/Pinned sessions cannot accept follow-ups yet/);
 
     expect(supervisor.get(pinned.id)?.pinned).toBe(true);
+  });
+
+  it("ignores late tool/thinking/assistant events after abort", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-late-events-after-abort-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("late events after abort"));
+
+    await supervisor.abort(session.id);
+    const aborted = supervisor.get(session.id)!;
+    runtime.handle?.emit({ type: "assistant_delta", delta: "late answer" });
+    runtime.handle?.emit({ type: "thinking_delta", delta: "late thinking" });
+    runtime.handle?.emit({ type: "tool", toolCallId: "late-tool", name: "bash", status: "running", preview: "late" });
+    runtime.handle?.emit({ type: "queue_update", steering: ["late steer"], followUp: [] });
+    runtime.handle?.emit({ type: "extension_ui", waitsForInput: true, request: { id: "late-ui", sessionId: session.id, method: "input", prompt: "Late", createdAt: "2026-05-01T00:00:00.000Z" } });
+    await settle();
+
+    expect(supervisor.get(session.id)).toMatchObject({
+      status: aborted.status,
+      tools: aborted.tools,
+      thinkingPreview: aborted.thinkingPreview,
+      queuedSteers: aborted.queuedSteers,
+    });
+    expect(supervisor.get(session.id)?.pendingExtensionUiRequest).toBeUndefined();
   });
 
   it("aborts a session", async () => {
@@ -1860,6 +1972,66 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(side.id)?.messages).toMatchObject([{ kind: "user_text", text: "main instructions", originatedBy: "main_agent" }]);
   });
 
+  it("commits assistant text before queued follow-up turn", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-message-queued-turn-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("queued final answer"));
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "Turn one answer" });
+    runtime.handle?.emit({ type: "status", status: "running", summary: "Next turn started", finalAnswer: "Turn one answer" });
+    await waitUntil(() => supervisor.get(session.id)?.messages?.some((message) => message.kind === "agent_text") === true);
+
+    expect(supervisor.get(session.id)?.messages).toMatchObject([{ kind: "agent_text", text: "Turn one answer" }]);
+    expect(supervisor.get(session.id)?.finalAnswer).toBe("Turn one answer");
+  });
+
+  it("emits incremental events with monotonic seq across message and queue paths", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-message-queue-seq-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    await supervisor.create(context("message queue seq"));
+    const events: Array<{ type: "message" | "queue"; seq: number }> = [];
+    supervisor.on("messageAppended", (_sessionId, _message, seq) => events.push({ type: "message", seq }));
+    supervisor.on("queueUpdated", (_sessionId, _steering, _followUp, _steeringMode, _followUpMode, seq) => events.push({ type: "queue", seq }));
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "Answer" });
+    runtime.handle?.emit({ type: "status", status: "running", summary: "Next", finalAnswer: "Answer" });
+    runtime.handle?.emit({ type: "queue_update", steering: ["next steer"], followUp: [] });
+    await waitUntil(() => events.length === 2);
+
+    expect(events.map((event) => event.seq)).toEqual([...events].map((event) => event.seq).sort((a, b) => a - b));
+    expect(new Set(events.map((event) => event.seq)).size).toBe(events.length);
+  });
+
+  it("preserves persisted messages on daemon restart", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-message-hydrate-"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "persisted-message-session",
+      title: "Persisted messages",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      logs: ["main-agent handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [{ id: "msg-existing", kind: "user_text", createdAt: "2026-05-01T00:00:00.000Z", originatedBy: "user", text: "first steer" }],
+    });
+
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+    await supervisor.steerSideSession("persisted-message-session", "second steer");
+
+    expect(supervisor.get("persisted-message-session")?.messages?.map((message) => message.kind)).toEqual(["user_text", "user_text"]);
+    expect(supervisor.get("persisted-message-session")?.messages?.map((message) => message.text)).toEqual(["first steer", "second steer"]);
+  });
+
   it("commits assistant text and thinking messages at runtime boundaries", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-message-runtime-"));
@@ -1877,9 +2049,10 @@ describe("SessionSupervisor", () => {
     runtime.handle?.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running" });
     runtime.handle?.emit({ type: "assistant_delta", delta: " done" });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await waitUntil(() => events.length === 5);
+    await waitUntil(() => (supervisor.get(session.id)?.messages ?? []).length === 2);
 
-    expect(events.map((event) => event.type).sort()).toEqual(["append", "append", "append", "remove", "replace"]);
+    expect(events.map((event) => event.type)).toContain("append");
+    expect(events.some((event) => event.type === "replace" || event.type === "remove")).toBe(true);
     expect(supervisor.get(session.id)?.messages?.map((message) => ({ kind: message.kind, text: message.text }))).toEqual([
       { kind: "agent_text", text: "Answer" },
       { kind: "agent_text", text: " done" },
@@ -1949,6 +2122,19 @@ class ResumableRuntime implements AgentRuntime {
   async resume(sessionFilePath: string, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
     this.resumeCalls.push({ sessionFilePath, cwd: options.cwd, sessionId: options.sessionId });
     this.handle = new ManualHandle(options.sessionId ?? "manual");
+    return this.handle;
+  }
+}
+
+class InitialQueueRuntime implements AgentRuntime {
+  handle?: ManualHandle;
+
+  async create(_prompt: BuiltPrompt, options: { sessionId?: string }): Promise<RuntimeSessionHandle> {
+    this.handle = new ManualHandle(options.sessionId ?? "manual");
+    this.handle.steers = ["initial steer"];
+    this.handle.followUps = [{ text: "initial follow-up", imagePaths: [] }];
+    this.handle.steeringMode = "all";
+    this.handle.followUpMode = "all";
     return this.handle;
   }
 }

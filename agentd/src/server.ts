@@ -243,6 +243,7 @@ const SNAPSHOT_TOOL_PREVIEW_CHAR_LIMIT = 500;
 const SNAPSHOT_THINKING_PREVIEW_CHAR_LIMIT = 240;
 const SNAPSHOT_CHANGED_FILE_LIMIT = 30;
 const SNAPSHOT_CHANGED_FILE_SUMMARY_CHAR_LIMIT = 500;
+const SNAPSHOT_MESSAGE_LIMIT = 50;
 
 export function compactSessionsForSnapshot(sessions: PickyAgentSession[]): PickyAgentSession[] {
   return sessions.map((session) => ({
@@ -251,7 +252,12 @@ export function compactSessionsForSnapshot(sessions: PickyAgentSession[]): Picky
     logs: compactSnapshotLogs(session.logs),
     tools: compactSnapshotTools(session.tools),
     changedFiles: compactSnapshotChangedFiles(session.changedFiles),
+    messages: compactSnapshotMessages(session.messages),
   }));
+}
+
+function compactSnapshotMessages(messages: PickyAgentSession["messages"]): PickyAgentSession["messages"] {
+  return messages?.slice(-SNAPSHOT_MESSAGE_LIMIT);
 }
 
 function compactSnapshotLogs(logs: string[]): string[] {

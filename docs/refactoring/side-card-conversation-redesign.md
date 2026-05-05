@@ -663,6 +663,7 @@ func followUp(text: String, sessionID: String? = nil) async throws { ... } // .f
     2. steer 가 question 을 cancel 하고 새 흐름 시작? (채택)
     3. steer 가 question 의 답변으로 routing? (호환되는 형식일 때만)
     4. waiting 중 steer 자체를 거부하고 user 에게 안내?
+    - **현재 구현 상태 (Step 1 완료 시점)**: 결정은 Option 2 (question 자동 cancel) 로 확정됐지만, Step 1 백엔드에서는 미구현 — `cancelExtensionQuestion` 헬퍼만 존재 (dead code). 실제 호출은 Step 2 UI 구현 시 함께 진행.
     - 확정 영향: §1.2 waiting_for_input 행, §1.8, §3.6, Step 2 키 핸들링.
 15. **§7.15 submit_final_report lifecycle ✓ 결정 완료 (C)** — 도구 호출은 일반 tool 처럼 turn 안에서 result 가 다시 모델로 들어감. 모델이 도구 호출 후 텍스트 emit / 도구 두 번 호출 / final assistant text 전에 호출할 수 있음. 옵션 히스토리:
     - **Option A** (first-wins): 첫 호출 시 즉시 status=completed 로 patch + agent_report 메시지 추가. 이후 동일 도구 호출은 "already recorded" ack 반환, 메시지 추가 안 함.

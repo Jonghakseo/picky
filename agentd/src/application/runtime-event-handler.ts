@@ -54,6 +54,7 @@ export class RuntimeEventHandler {
 
   async handle(sessionId: string, event: RuntimeEvent): Promise<void> {
     if (event.type === "log") return this.dependencies.appendLog(sessionId, event.line);
+    if (event.type !== "status" && isTerminalStatus(this.dependencies.getSession(sessionId).status)) return;
     if (event.type === "assistant_delta") {
       this.thinkingActive.set(sessionId, false);
       this.dependencies.messageBuilder.appendAssistantDelta(sessionId, event.delta);
@@ -83,9 +84,7 @@ export class RuntimeEventHandler {
     // diagnostic summary while the draft is merely partial output, so do not promote the draft to
     // finalAnswer for failures unless Pi explicitly provides event.finalAnswer.
     const explicitFinalAnswer = cleanFinalAnswer(event.finalAnswer);
-    const finalAnswer = terminal
-      ? (explicitFinalAnswer ?? (event.status === "failed" ? undefined : cleanFinalAnswer(this.assistantDrafts.get(sessionId))))
-      : undefined;
+    const finalAnswer = explicitFinalAnswer ?? (terminal ? (event.status === "failed" ? undefined : cleanFinalAnswer(this.assistantDrafts.get(sessionId))) : undefined);
     const currentSession = this.dependencies.getSession(sessionId);
     // Once a session has reached a terminal status, ignore any subsequent runtime status
     // events. Stragglers (delayed agent_start emitting `running` after abort, late
@@ -95,9 +94,9 @@ export class RuntimeEventHandler {
     // handler when they want to revive a terminal session.
     if (isTerminalStatus(currentSession.status)) return;
 
-    const pendingFinalReport = terminal ? this.dependencies.consumePendingFinalReport(sessionId) : undefined;
+    const pendingFinalReport = terminal || finalAnswer ? this.dependencies.consumePendingFinalReport(sessionId) : undefined;
     const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
-    if (terminal || event.status === "waiting_for_input") {
+    if (terminal || event.status === "waiting_for_input" || finalAnswer) {
       await this.dependencies.messageBuilder.flushAssistantText(sessionId);
       await this.dependencies.messageBuilder.flushThinking(sessionId);
     }
@@ -115,8 +114,15 @@ export class RuntimeEventHandler {
       patch.finalReport = pendingFinalReport;
       if (event.status === "cancelled") {
         patch.status = "cancelled";
-      } else {
+      } else if (event.status === "failed") {
+        patch.status = "failed";
+        patch.finalAnswer = event.finalAnswer ?? undefined;
+        // Preserve finalReport, but keep status/lastSummary from the runtime failure.
+      } else if (terminal) {
         patch.status = pendingFinalReport.status === "blocked" ? "blocked" : "completed";
+        patch.finalAnswer = pendingFinalReport.summary;
+        patch.lastSummary = summaryFromFinalAnswer(pendingFinalReport.summary);
+      } else {
         patch.finalAnswer = pendingFinalReport.summary;
         patch.lastSummary = summaryFromFinalAnswer(pendingFinalReport.summary);
       }

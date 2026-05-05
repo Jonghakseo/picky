@@ -107,6 +107,12 @@ describe("AgentdServer", () => {
         status: "modified",
         summary: "large summary ".repeat(1_000),
       })),
+      messages: Array.from({ length: 80 }, (_, index) => ({
+        id: `msg-${index}`,
+        kind: "agent_text" as const,
+        createdAt: "2026-05-03T00:00:00.000Z",
+        text: `message ${index}`,
+      })),
     });
 
     const [compact] = compactSessionsForSnapshot([session]);
@@ -119,7 +125,9 @@ describe("AgentdServer", () => {
     expect(compact.tools.at(-1)?.preview?.length).toBeLessThanOrEqual(501);
     expect(compact.changedFiles.length).toBeLessThanOrEqual(30);
     expect(compact.changedFiles.at(-1)?.summary?.length).toBeLessThanOrEqual(501);
-    expect(JSON.stringify(compact).length).toBeLessThan(30_000);
+    expect(compact.messages?.length).toBeLessThanOrEqual(50);
+    expect(compact.messages?.[0]?.id).toBe("msg-30");
+    expect(JSON.stringify(compact).length).toBeLessThan(40_000);
   });
 });
 

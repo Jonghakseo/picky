@@ -10,30 +10,45 @@ import SwiftUI
 struct PickyTypingBubbleView: View {
     let message: PickySessionMessage
     @State private var isAnimating = false
+    @State private var isCollapsed: Bool
+
+    init(message: PickySessionMessage, initiallyCollapsed: Bool = false) {
+        self.message = message
+        _isCollapsed = State(initialValue: initiallyCollapsed)
+    }
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 5) {
-                    Text("⌁ thinking")
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundColor(DS.Colors.info)
-                    HStack(spacing: 3) {
-                        ForEach(0..<3, id: \.self) { index in
-                            Circle()
-                                .fill(DS.Colors.info)
-                                .frame(width: 3.5, height: 3.5)
-                                .opacity(isAnimating ? 1.0 : 0.25)
-                                .animation(
-                                    .easeInOut(duration: 0.6)
-                                        .repeatForever(autoreverses: true)
-                                        .delay(Double(index) * 0.18),
-                                    value: isAnimating
-                                )
+                Button {
+                    isCollapsed.toggle()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                            .font(.system(size: 8.5, weight: .bold))
+                        Text("⌁ thinking")
+                            .font(.system(size: 9.5, weight: .semibold))
+                        if !isCollapsed {
+                            HStack(spacing: 3) {
+                                ForEach(0..<3, id: \.self) { index in
+                                    Circle()
+                                        .fill(DS.Colors.info)
+                                        .frame(width: 3.5, height: 3.5)
+                                        .opacity(isAnimating ? 1.0 : 0.25)
+                                        .animation(
+                                            .easeInOut(duration: 0.6)
+                                                .repeatForever(autoreverses: true)
+                                                .delay(Double(index) * 0.18),
+                                            value: isAnimating
+                                        )
+                                }
+                            }
                         }
                     }
+                    .foregroundColor(DS.Colors.info)
                 }
-                if let text = message.text, !text.isEmpty {
+                .buttonStyle(.plain)
+                if !isCollapsed, let text = message.text, !text.isEmpty {
                     PickyConversationMarkdownText(markdown: text)
                 }
             }

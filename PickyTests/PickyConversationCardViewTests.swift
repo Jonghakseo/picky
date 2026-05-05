@@ -436,12 +436,25 @@ struct PickyConversationCardViewTests {
         #expect(list.visibleMessages.count == 2)
     }
 
-    @Test func activityStripIsNotAutoInsertedWhenNoAgentActivityMessage() {
-        // Regression: the legacy auto-insert (after first user_text) was removed in PR11.
-        // Without an explicit agent_activity message, no strip should be shown — even if
-        // the lifetime activitySummary on the session is non-zero.
+    @Test func runningSessionShowsLiveActivitySummaryWithoutAgentActivityMessage() {
         let session = makeConversationSession(
             status: .running,
+            messages: [
+                message("u", kind: .userText, text: "hello"),
+                message("a", kind: .agentText, text: "hi")
+            ],
+            activitySummary: PickyActivitySummary(edit: 5, bash: 5, thinking: 5, other: 5)
+        )
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+
+        #expect(snapshot.activitySummaryCount == 1)
+        #expect(snapshot.showsActivitySummary)
+    }
+
+    @Test func completedSessionDoesNotAutoInsertLifetimeActivitySummary() {
+        let session = makeConversationSession(
+            status: .completed,
             messages: [
                 message("u", kind: .userText, text: "hello"),
                 message("a", kind: .agentText, text: "hi")

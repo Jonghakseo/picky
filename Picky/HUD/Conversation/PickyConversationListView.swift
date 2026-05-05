@@ -32,6 +32,9 @@ struct PickyConversationListView: View {
                         }
                         queueSection(items: visibleQueuedFollowUps, kind: .followUp, mode: session.followUpMode)
                         queueSection(items: visibleQueuedSteers, kind: .steer, mode: session.steeringMode)
+                        if showsLiveActivitySummary {
+                            PickyActivitySummaryView(summary: session.activitySummary)
+                        }
                     }
                 }
                 .padding(.vertical, 2)
@@ -52,7 +55,7 @@ struct PickyConversationListView: View {
         snapshot.showsActivitySummary = session.messages.contains { message in
             guard message.kind == .agentActivity, let snapshot = message.activitySnapshot else { return false }
             return !snapshot.visibleToolCallItems.isEmpty
-        }
+        } || showsLiveActivitySummary
         let followUps = visibleQueuedFollowUps
         let steers = visibleQueuedSteers
         snapshot.batchGroupCount += session.followUpMode == .all && !followUps.isEmpty ? 1 : 0
@@ -76,6 +79,9 @@ struct PickyConversationListView: View {
                 break
             }
         }
+        if showsLiveActivitySummary {
+            snapshot.activitySummaryCount += 1
+        }
         return snapshot
     }
 
@@ -91,7 +97,7 @@ struct PickyConversationListView: View {
                 onOpenAsReport: { openReport() }
             )
         case .agentThinking:
-            PickyTypingBubbleView(message: message)
+            PickyTypingBubbleView(message: message, initiallyCollapsed: PickyPiSettingsReader.hideThinkingBlock(cwd: session.cwd))
         case .agentQuestion:
             if let request = message.question {
                 PickyQuestionBubbleView(
@@ -174,7 +180,18 @@ struct PickyConversationListView: View {
     }
 
     private var hasQueueOrActivity: Bool {
-        !visibleQueuedSteers.isEmpty || !visibleQueuedFollowUps.isEmpty
+        !visibleQueuedSteers.isEmpty || !visibleQueuedFollowUps.isEmpty || showsLiveActivitySummary
+    }
+
+    private var showsLiveActivitySummary: Bool {
+        session.status == .running && !session.activitySummary.visibleToolCallItems.isEmpty && !hasVisibleActivitySnapshot
+    }
+
+    private var hasVisibleActivitySnapshot: Bool {
+        session.messages.contains { message in
+            guard message.kind == .agentActivity, let snapshot = message.activitySnapshot else { return false }
+            return !snapshot.visibleToolCallItems.isEmpty
+        }
     }
 
     private var visibleQueuedFollowUps: [PickyQueueItem] {

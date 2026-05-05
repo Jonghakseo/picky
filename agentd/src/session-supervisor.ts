@@ -125,17 +125,37 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async listSlashCommands(sessionId: string): Promise<RuntimeSlashCommand[]> {
-    this.mustGet(sessionId);
-    const handle = this.runtimeHandles.get(sessionId);
+    const session = this.mustGet(sessionId);
+    const attachedCommands = await this.listSlashCommandsFromHandle(sessionId, this.runtimeHandles.get(sessionId), "attached");
+    if (attachedCommands) return attachedCommands;
+
+    const fallbackHandle = await this.slashCommandFallbackHandle(session);
+    const fallbackCommands = await this.listSlashCommandsFromHandle(sessionId, fallbackHandle, "main");
+    return fallbackCommands ?? [];
+  }
+
+  private async listSlashCommandsFromHandle(sessionId: string, handle: RuntimeSessionHandle | undefined, source: "attached" | "main"): Promise<RuntimeSlashCommand[] | undefined> {
     if (!handle?.listSlashCommands) {
-      logAgentd("slash commands unavailable", { sessionId, reason: handle ? "runtime handle unsupported" : "runtime handle missing" });
-      return [];
+      logAgentd("slash commands unavailable", { sessionId, source, reason: handle ? "runtime handle unsupported" : "runtime handle missing" });
+      return undefined;
     }
     try {
       return normalizeSlashCommands(await handle.listSlashCommands());
     } catch (error) {
-      logAgentd("slash commands failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
-      return [];
+      logAgentd("slash commands failed", { sessionId, source, error: error instanceof Error ? error.message : String(error) });
+      return undefined;
+    }
+  }
+
+  private async slashCommandFallbackHandle(session: PickyAgentSession): Promise<RuntimeSessionHandle | undefined> {
+    if (!this.options.mainRuntime) return undefined;
+    try {
+      if (this.mainHandle) return this.mainHandle;
+      if (this.mainHandlePromise) return await this.mainHandlePromise;
+      return await this.ensurePrewarmedMainHandle(session.cwd?.trim() || process.cwd());
+    } catch (error) {
+      logAgentd("slash commands fallback failed", { sessionId: session.id, error: error instanceof Error ? error.message : String(error) });
+      return undefined;
     }
   }
 

@@ -1472,7 +1472,23 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
-  it("returns an empty slash command list when the runtime handle is missing", async () => {
+  it("falls back to the main runtime command catalog when the session handle is missing", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), undefined, { mainRuntime });
+    await supervisor.load();
+    const session = await supervisor.create(context("slash commands"));
+    await supervisor.prewarmMainAgent("/tmp/project");
+    mainRuntime.handle!.slashCommands = [{ name: "deploy", description: "Deploy", source: "extension" }];
+    (supervisor as unknown as { runtimeHandles: Map<string, RuntimeSessionHandle> }).runtimeHandles.delete(session.id);
+
+    await expect(supervisor.listSlashCommands(session.id)).resolves.toEqual([
+      { name: "deploy", description: "Deploy", source: "extension" },
+    ]);
+  });
+
+  it("returns an empty slash command list when the runtime handle is missing and no fallback is available", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));

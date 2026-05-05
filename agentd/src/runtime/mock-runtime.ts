@@ -29,6 +29,7 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
   private followUpQueue: string[] = [];
   steeringMode: PickyQueueMode = "one-at-a-time";
   followUpMode: PickyQueueMode = "one-at-a-time";
+  isStreaming = false;
 
   constructor(readonly id: string) {}
 

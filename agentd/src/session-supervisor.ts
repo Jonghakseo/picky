@@ -70,6 +70,10 @@ export class SessionSupervisor extends EventEmitter {
   private lastEmittedSteeringMode = new Map<string, PickyQueueMode>();
   private lastEmittedFollowUpMode = new Map<string, PickyQueueMode>();
   private pendingFinalReports = new Map<string, PickyFinalReport>();
+  // Track follow-up/steer prompts that Pi has queued but not yet started processing. We defer the
+  // user_text journal write until Pi actually dequeues the prompt, so the HUD can render queued
+  // items as pending bubbles instead of (incorrectly) hiding them behind a duplicate user bubble.
+  private pendingQueueDeliveries = new Map<string, Array<{ text: string; originatedBy: "user" | "main_agent" }>>();
 
   constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, artifactStore?: ArtifactStore, private readonly options: SessionSupervisorOptions = {}) {
     super();
@@ -802,6 +806,7 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id });
     await this.appendLog(sessionId, `${FOLLOWUP_PREFIX}${text}`);
     await this.patch(sessionId, { status: "running", lastSummary: "Follow-up queued", finalAnswer: undefined, thinkingPreview: undefined });
+    this.pushPendingQueueDelivery(sessionId, text, "user");
     this.queueFollowUpDelivery(sessionId, handle, prompt);
     return this.mustGet(sessionId);
   }
@@ -810,7 +815,16 @@ export class SessionSupervisor extends EventEmitter {
     // Pi SDK followUp may resolve only after an idle session finishes its whole next turn.
     // Picky follow-ups are enqueue semantics, so do not hold the caller/main-agent tool open.
     void handle.followUp(prompt)
-      .then(() => logAgentd("follow-up delivery finished", { sessionId }))
+      .then(async () => {
+        logAgentd("follow-up delivery finished", { sessionId });
+        // Pi only fires queue_update when the prompt traverses the queue. For idle (non-streaming)
+        // sessions Pi runs the prompt inline and never enqueues, so our deferred pending entry would
+        // never get drained. Detect that by checking Pi's queue snapshot once the prompt is
+        // accepted and drain explicitly when the prompt is not waiting in either queue.
+        if (!this.isPromptInRuntimeQueue(handle, prompt.text)) {
+          await this.drainPendingTextOnce(sessionId, prompt.text);
+        }
+      })
       .catch((error) => void this.handleFollowUpDeliveryError(sessionId, error));
   }
 
@@ -855,8 +869,45 @@ export class SessionSupervisor extends EventEmitter {
   async clearQueue(sessionId: string, _kind: "steering" | "followUp" | "all"): Promise<void> {
     const handle = this.runtimeHandles.get(sessionId);
     if (!handle) throw new Error(`Session has no attached runtime: ${sessionId}`);
+    // Drop pending deliveries BEFORE applyQueueUpdate so the [] -> [] transition is not
+    // mis-interpreted as Pi delivering the prompts; user explicitly discarded them.
+    this.pendingQueueDeliveries.delete(sessionId);
     handle.clearQueue();
     await this.applyQueueUpdate(sessionId, [], []);
+  }
+
+  private isPromptInRuntimeQueue(handle: RuntimeSessionHandle, text: string): boolean {
+    return handle.getFollowUpMessages().includes(text) || handle.getSteeringMessages().includes(text);
+  }
+
+  private async drainPendingTextOnce(sessionId: string, text: string): Promise<void> {
+    const pending = this.pendingQueueDeliveries.get(sessionId);
+    if (!pending || pending.length === 0) return;
+    const index = pending.findIndex((entry) => entry.text === text);
+    if (index < 0) return;
+    const [entry] = pending.splice(index, 1);
+    if (!entry) return;
+    if (pending.length === 0) this.pendingQueueDeliveries.delete(sessionId);
+    await this.messageBuilder.recordUserText(sessionId, entry.text, entry.originatedBy);
+  }
+
+  private pushPendingQueueDelivery(sessionId: string, text: string, originatedBy: "user" | "main_agent"): void {
+    const list = this.pendingQueueDeliveries.get(sessionId) ?? [];
+    list.push({ text, originatedBy });
+    this.pendingQueueDeliveries.set(sessionId, list);
+  }
+
+  private async drainDeliveredQueueItems(sessionId: string, removedTexts: readonly string[]): Promise<void> {
+    const pending = this.pendingQueueDeliveries.get(sessionId);
+    if (!pending || pending.length === 0) return;
+    for (const text of removedTexts) {
+      const index = pending.findIndex((entry) => entry.text === text);
+      if (index < 0) continue;
+      const [entry] = pending.splice(index, 1);
+      if (!entry) continue;
+      await this.messageBuilder.recordUserText(sessionId, entry.text, entry.originatedBy);
+    }
+    if (pending.length === 0) this.pendingQueueDeliveries.delete(sessionId);
   }
 
   async applyQueueUpdate(sessionId: string, steering: readonly string[], followUp: readonly string[]): Promise<void> {
@@ -880,7 +931,11 @@ export class SessionSupervisor extends EventEmitter {
     const previousFollowUpMode = this.lastEmittedFollowUpMode.get(sessionId) ?? current.followUpMode ?? "one-at-a-time";
     const queueChanged = !sameQueueItems(current.queuedSteers ?? [], queuedSteers) || !sameQueueItems(current.queuedFollowUps ?? [], queuedFollowUps);
     const modeChanged = steeringMode !== (current.steeringMode ?? "one-at-a-time") || followUpMode !== (current.followUpMode ?? "one-at-a-time");
+    const removedTexts = diffQueueRemovedTexts(current.queuedSteers ?? [], current.queuedFollowUps ?? [], steering, followUp);
     await this.patch(sessionId, { queuedSteers, queuedFollowUps, steeringMode, followUpMode });
+    if (removedTexts.length > 0 && !isTerminalStatus(current.status)) {
+      await this.drainDeliveredQueueItems(sessionId, removedTexts);
+    }
 
     const emittedSteeringMode = steeringMode === previousSteeringMode ? undefined : steeringMode;
     const emittedFollowUpMode = followUpMode === previousFollowUpMode ? undefined : followUpMode;
@@ -986,14 +1041,26 @@ export class SessionSupervisor extends EventEmitter {
     const interruptible = isInterruptibleSteerStatus(previousSession.status) && Boolean(handle.interrupt);
     logAgentd("steer requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length, interruptible });
     if (interruptible && handle.interrupt) {
+      // handle.interrupt aborts the active turn, then submits the steer prompt without specifying
+      // a streamingBehavior. After abort Pi is no longer streaming, so the prompt runs inline and
+      // never traverses the queue. Record the user_text directly.
       await handle.interrupt(prompt);
       await this.appendLog(sessionId, `${STEER_PREFIX}${text}`);
+      await this.messageBuilder.recordUserText(sessionId, text, "user");
       const current = this.mustGet(sessionId);
       await this.patch(sessionId, { status: "running", lastSummary: "Steering message sent", finalAnswer: undefined, thinkingPreview: undefined, tools: settleActiveTools(current.tools, "Tool was interrupted by a steering message.") });
       return this.mustGet(sessionId);
     }
+    this.pushPendingQueueDelivery(sessionId, text, "user");
     const outcome = await handle.steer(prompt);
     await this.appendLog(sessionId, `${STEER_PREFIX}${text}`);
+    // Pi accepted the prompt: either it queued the steer (queue_update will eventually drain the
+    // pending entry) or it executed inline. For the inline case the prompt is no longer in either
+    // Pi queue, so drain immediately so the user_text journal entry surfaces without waiting for a
+    // queue_update that will never fire.
+    if (outcome?.handledSynchronously || !this.isPromptInRuntimeQueue(handle, text)) {
+      await this.drainPendingTextOnce(sessionId, text);
+    }
     // Pi handles `/slash` extension commands and `input` handlers that return `handled` synchronously
     // inside `session.prompt()` without starting an agent turn. PiSdkRuntimeSession synthesizes a
     // `completed` runtime status for those and surfaces `handledSynchronously: true` here. Do not
@@ -1015,6 +1082,9 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("abort requested", { sessionId, hasHandle: Boolean(handle) });
     if (handle) await handle.abort();
     this.pendingFinalReports.delete(sessionId);
+    // Pending follow-up/steer prompts that were waiting for Pi to dequeue them will never be
+    // processed after an abort, so drop their journal placeholders too.
+    this.pendingQueueDeliveries.delete(sessionId);
     const current = this.mustGet(sessionId);
     await this.patch(sessionId, { status: "cancelled", lastSummary: "Cancelled", tools: settleActiveTools(current.tools, "Tool stopped because the session was cancelled."), thinkingPreview: undefined });
     await this.materializeTerminalArtifacts(sessionId);
@@ -1068,11 +1138,11 @@ export class SessionSupervisor extends EventEmitter {
     const artifacts = mergeArtifacts(session.artifacts, linkArtifacts);
     await this.patch(sessionId, { logs: [...session.logs, line], changedFiles, artifacts });
     this.emit("log", sessionId, line);
-    if (line.startsWith(STEER_PREFIX)) {
-      await this.messageBuilder.recordUserText(sessionId, line.slice(STEER_PREFIX.length), "user");
-    } else if (line.startsWith(FOLLOWUP_PREFIX)) {
-      await this.messageBuilder.recordUserText(sessionId, line.slice(FOLLOWUP_PREFIX.length), "user");
-    } else if (line.startsWith(EXTENSION_ANSWER_PREFIX)) {
+    // STEER_PREFIX and FOLLOWUP_PREFIX user_text writes are intentionally NOT recorded here. The
+    // supervisor decides per-call whether to recordUserText immediately (Pi will execute inline)
+    // or defer until the prompt is actually dequeued by Pi (so queued items render as pending
+    // bubbles in the HUD instead of being hidden behind a duplicate user bubble).
+    if (line.startsWith(EXTENSION_ANSWER_PREFIX)) {
       await this.messageBuilder.recordUserText(sessionId, line.slice(EXTENSION_ANSWER_PREFIX.length), "user");
     } else if (line.startsWith(HANDOFF_PREFIX)) {
       await this.messageBuilder.recordUserText(sessionId, line.slice(HANDOFF_PREFIX.length), "main_agent");
@@ -1237,6 +1307,35 @@ function queueItems(items: readonly string[], enqueuedAt: string, previous: read
 
 function sameQueueItems(left: readonly PickyQueueItem[], right: readonly PickyQueueItem[]): boolean {
   return left.length === right.length && left.every((item, index) => item.text === right[index]?.text && item.enqueuedAt === right[index]?.enqueuedAt);
+}
+
+/**
+ * Compute texts that exist in the previous combined queue (steers + follow-ups) but not in the new
+ * one, accounting for duplicates. Used to detect prompts that Pi has just dequeued (= started
+ * processing) so the supervisor can record their user_text journal entry now instead of at enqueue
+ * time.
+ */
+function diffQueueRemovedTexts(
+  previousSteers: readonly PickyQueueItem[],
+  previousFollowUps: readonly PickyQueueItem[],
+  nextSteers: readonly string[],
+  nextFollowUps: readonly string[],
+): string[] {
+  const counts = new Map<string, number>();
+  for (const text of nextSteers) counts.set(text, (counts.get(text) ?? 0) + 1);
+  for (const text of nextFollowUps) counts.set(text, (counts.get(text) ?? 0) + 1);
+  const removed: string[] = [];
+  const visit = (item: PickyQueueItem): void => {
+    const remaining = counts.get(item.text) ?? 0;
+    if (remaining > 0) {
+      counts.set(item.text, remaining - 1);
+    } else {
+      removed.push(item.text);
+    }
+  };
+  for (const item of previousSteers) visit(item);
+  for (const item of previousFollowUps) visit(item);
+  return removed;
 }
 
 function zeroActivitySummary(): PickyActivitySummary {

@@ -212,6 +212,10 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     return this.runtime.session.followUpMode;
   }
 
+  get isStreaming(): boolean {
+    return this.runtime.session.isStreaming;
+  }
+
   async injectInitialBootstrap(messages: { user: string; assistant: string }): Promise<void> {
     const session = this.runtime.session;
     const existing = (session.state.messages ?? []) as unknown[];

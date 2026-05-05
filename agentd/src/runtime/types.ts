@@ -53,6 +53,11 @@ export interface RuntimeSessionHandle {
   getFollowUpMessages(): readonly string[];
   readonly steeringMode: PickyQueueMode;
   readonly followUpMode: PickyQueueMode;
+  /**
+   * True when Pi is mid-turn (LLM streaming or awaiting tool result). Callers use this to
+   * decide whether a new prompt will be queued by Pi (true) or executed inline (false).
+   */
+  readonly isStreaming: boolean;
   subscribe(listener: (event: RuntimeEvent) => void): () => void;
 }
 

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ArtifactStore } from "./artifact-store.js";
-import type { PickyContextPacket } from "./protocol.js";
+import type { PickyAgentSession, PickyContextPacket } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { BuiltPrompt } from "./prompt-builder.js";
 import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, ThinkingLevel } from "./runtime/types.js";
@@ -2150,6 +2150,76 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(side.id)?.messages).toMatchObject([{ kind: "user_text", text: "main instructions", originatedBy: "main_agent" }]);
   });
 
+  it("defers user_text for queued follow-ups until Pi dequeues them", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-deferred-followup-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("deferred follow-up"));
+    runtime.handle!.isStreaming = true;
+
+    await supervisor.followUp(session.id, "queued one");
+    await supervisor.followUp(session.id, "queued two");
+    runtime.handle?.emit({ type: "queue_update", steering: [], followUp: ["queued one", "queued two"] });
+    await settle();
+
+    // While items sit in Pi's queue we must NOT have written user_text yet (otherwise the HUD
+    // would hide the pending bubbles). queuedFollowUps is the source of truth for the UI.
+    expect(userTexts(supervisor.get(session.id))).toEqual([]);
+    expect(supervisor.get(session.id)?.queuedFollowUps?.map((item) => item.text)).toEqual(["queued one", "queued two"]);
+
+    // Pi dequeues "queued one" → user_text is recorded for that text only.
+    runtime.handle?.emit({ type: "queue_update", steering: [], followUp: ["queued two"] });
+    await settle();
+    expect(userTexts(supervisor.get(session.id))).toEqual(["queued one"]);
+    expect(supervisor.get(session.id)?.queuedFollowUps?.map((item) => item.text)).toEqual(["queued two"]);
+
+    // Pi dequeues "queued two" → second user_text recorded.
+    runtime.handle?.emit({ type: "queue_update", steering: [], followUp: [] });
+    await settle();
+    expect(userTexts(supervisor.get(session.id))).toEqual(["queued one", "queued two"]);
+    expect(supervisor.get(session.id)?.queuedFollowUps).toEqual([]);
+  });
+
+  it("records user_text without waiting for queue_update when Pi runs the prompt inline", async () => {
+    // Simulate Pi's direct path: handle.followUp accepts the prompt but never queues it. The
+    // supervisor should detect the prompt is not in Pi's queue snapshot and drain the pending
+    // user_text immediately so the journal does not stay empty forever.
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-idle-followup-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("idle follow-up"));
+    runtime.handle!.onFollowUp = (handle) => {
+      // Mimic Pi's direct (non-streaming) path: the prompt is consumed inline rather than enqueued.
+      handle.followUps = [];
+    };
+
+    await supervisor.followUp(session.id, "idle text");
+    await settle();
+
+    expect(userTexts(supervisor.get(session.id))).toEqual(["idle text"]);
+  });
+
+  it("drops pending queue deliveries on clearQueue without recording user_text", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-clearqueue-pending-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("clearqueue"));
+    runtime.handle!.isStreaming = true;
+
+    await supervisor.followUp(session.id, "discard me");
+    runtime.handle?.emit({ type: "queue_update", steering: [], followUp: ["discard me"] });
+    await settle();
+    expect(supervisor.get(session.id)?.queuedFollowUps?.map((item) => item.text)).toEqual(["discard me"]);
+
+    await supervisor.clearQueue(session.id, "all");
+    await settle();
+    expect(supervisor.get(session.id)?.queuedFollowUps).toEqual([]);
+    expect(userTexts(supervisor.get(session.id))).toEqual([]);
+  });
+
   it("commits assistant text before queued follow-up turn", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-message-queued-turn-"));
@@ -2310,8 +2380,8 @@ class InitialQueueRuntime implements AgentRuntime {
 
   async create(_prompt: BuiltPrompt, options: { sessionId?: string }): Promise<RuntimeSessionHandle> {
     this.handle = new ManualHandle(options.sessionId ?? "manual");
-    this.handle.steers = ["initial steer"];
-    this.handle.followUps = [{ text: "initial follow-up", imagePaths: [] }];
+    this.handle.queuedSteerTexts = ["initial steer"];
+    this.handle.queuedFollowUpTexts = ["initial follow-up"];
     this.handle.steeringMode = "all";
     this.handle.followUpMode = "all";
     return this.handle;
@@ -2387,6 +2457,8 @@ class ManualRuntime implements AgentRuntime {
 class ManualHandle implements RuntimeSessionHandle {
   private listeners = new Set<(event: RuntimeEvent) => void>();
   followUps: BuiltPrompt[] = [];
+  /** Subset of follow-up prompts Pi would have queued (mirrors `_followUpMessages` when isStreaming). */
+  queuedFollowUpTexts: string[] = [];
   interrupts: BuiltPrompt[] = [];
   bootstrapInjections: Array<{ user: string; assistant: string }> = [];
   extensionUiAnswers: Array<{ requestId: string; value: unknown }> = [];
@@ -2397,6 +2469,12 @@ class ManualHandle implements RuntimeSessionHandle {
   constructor(readonly id: string) {}
   async followUp(prompt: BuiltPrompt): Promise<void> {
     this.followUps.push(prompt);
+    if (this.isStreaming) {
+      // Mirror Pi's queued path: track the queued text and emit the matching queue_update so the
+      // supervisor sees a real Pi-like enqueue/dequeue lifecycle.
+      this.queuedFollowUpTexts.push(prompt.text);
+      this.emit({ type: "queue_update", steering: [...this.steers], followUp: [...this.queuedFollowUpTexts] });
+    }
     this.onFollowUp?.(this, prompt);
   }
   async interrupt(prompt: BuiltPrompt): Promise<void> {
@@ -2404,11 +2482,17 @@ class ManualHandle implements RuntimeSessionHandle {
   }
   steers: string[] = [];
   steerPrompts: BuiltPrompt[] = [];
+  /** Subset of steer prompts Pi would have queued (mirrors `_steeringMessages` when isStreaming). */
+  queuedSteerTexts: string[] = [];
   steerOutcome: { handledSynchronously: boolean } = { handledSynchronously: false };
   aborts = 0;
   async steer(prompt: BuiltPrompt): Promise<{ handledSynchronously: boolean }> {
     this.steerPrompts.push(prompt);
     this.steers.push(prompt.text);
+    if (this.isStreaming) {
+      this.queuedSteerTexts.push(prompt.text);
+      this.emit({ type: "queue_update", steering: [...this.queuedSteerTexts], followUp: [...this.queuedFollowUpTexts] });
+    }
     this.onSteer?.(this, prompt);
     return this.steerOutcome;
   }
@@ -2425,19 +2509,26 @@ class ManualHandle implements RuntimeSessionHandle {
     this.thinkingLevels.push(level);
   }
   clearQueue(): { steering: string[]; followUp: string[] } {
-    const result = { steering: [...this.steers], followUp: this.followUps.map((prompt) => prompt.text) };
-    this.steers = [];
-    this.followUps = [];
+    const result = { steering: [...this.queuedSteerTexts], followUp: [...this.queuedFollowUpTexts] };
+    this.queuedSteerTexts = [];
+    this.queuedFollowUpTexts = [];
+    this.emit({ type: "queue_update", steering: [], followUp: [] });
     return result;
   }
   getSteeringMessages(): readonly string[] {
-    return this.steers;
+    return this.queuedSteerTexts;
   }
   getFollowUpMessages(): readonly string[] {
-    return this.followUps.map((prompt) => prompt.text);
+    return this.queuedFollowUpTexts;
   }
   steeringMode: "one-at-a-time" | "all" = "one-at-a-time";
   followUpMode: "one-at-a-time" | "all" = "one-at-a-time";
+  /**
+   * Mirrors Pi's `session.isStreaming`. Tests can set this to `true` to exercise the queued path
+   * (where Pi would enqueue follow-up/steer prompts and emit `queue_update` events) and leave it
+   * `false` to exercise the direct path (where Pi runs the prompt inline without enqueueing).
+   */
+  isStreaming = false;
   listSlashCommands(): RuntimeSlashCommand[] {
     return this.slashCommands;
   }
@@ -2448,6 +2539,10 @@ class ManualHandle implements RuntimeSessionHandle {
   emit(event: RuntimeEvent): void {
     for (const listener of this.listeners) listener(event);
   }
+}
+
+function userTexts(session: PickyAgentSession | undefined): string[] {
+  return (session?.messages ?? []).filter((message) => message.kind === "user_text").map((message) => message.text ?? "");
 }
 
 async function settle(): Promise<void> {

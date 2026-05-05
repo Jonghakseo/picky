@@ -2,7 +2,7 @@
 //  PickyAgentBubbleView.swift
 //  Picky
 //
-//  Agent message bubble for conversation cards.
+//  Markdown-aware agent message bubble for conversation cards.
 //
 
 import SwiftUI
@@ -15,10 +15,7 @@ struct PickyAgentBubbleView: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 6) {
-                Text(displayText)
-                    .font(.system(size: 12))
-                    .foregroundColor(DS.Colors.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
+                PickyConversationMarkdownText(markdown: displayText)
                 if showsOpenAsReportAction, let onOpenAsReport {
                     PickyOpenAsReportButton(action: onOpenAsReport)
                 }

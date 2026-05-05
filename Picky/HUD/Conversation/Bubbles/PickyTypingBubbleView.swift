@@ -34,10 +34,7 @@ struct PickyTypingBubbleView: View {
                     }
                 }
                 if let text = message.text, !text.isEmpty {
-                    Text(text)
-                        .font(.system(size: 12))
-                        .foregroundColor(DS.Colors.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    PickyConversationMarkdownText(markdown: text)
                 }
             }
             .padding(.horizontal, 10)

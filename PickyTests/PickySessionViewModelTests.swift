@@ -1586,12 +1586,12 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
 
-        try await viewModel.clearQueue(sessionID: "queue-session", kind: .followUp)
+        try await viewModel.clearQueue(sessionID: "queue-session", kind: .all)
 
         let command = try #require(client.sentCommands.last)
         #expect(command.type == .clearQueue)
         #expect(command.sessionId == "queue-session")
-        #expect(command.kind == .followUp)
+        #expect(command.kind == .all)
     }
 }
 

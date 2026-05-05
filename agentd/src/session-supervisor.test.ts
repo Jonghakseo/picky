@@ -251,26 +251,36 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.followUpMode).toBe("all");
   });
 
-  it("clears queues by kind while preserving the other queue", async () => {
+  it("clears all queues for any clear kind and immediately broadcasts empty queue state", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-clear-test-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
     const session = await supervisor.create(context("initial"));
+    const events: Array<{ steering: unknown[]; followUp: unknown[] }> = [];
+    supervisor.on("queueUpdated", (_sessionId, steering, followUp) => events.push({ steering, followUp }));
     await runtime.handle!.steer({ text: "steer a", imagePaths: [] });
     await runtime.handle!.steer({ text: "steer b", imagePaths: [] });
     await runtime.handle!.followUp({ text: "follow a", imagePaths: [] });
     await runtime.handle!.followUp({ text: "follow b", imagePaths: [] });
+    runtime.handle!.emit({ type: "queue_update", steering: ["steer a", "steer b"], followUp: ["follow a", "follow b"] });
+    await waitUntil(() => (supervisor.get(session.id)?.queuedSteers ?? []).length === 2);
 
     await supervisor.clearQueue(session.id, "steering");
     expect(runtime.handle!.getSteeringMessages()).toEqual([]);
-    expect(runtime.handle!.getFollowUpMessages()).toEqual(["follow a", "follow b"]);
+    expect(runtime.handle!.getFollowUpMessages()).toEqual([]);
+    expect(supervisor.get(session.id)?.queuedSteers).toEqual([]);
+    expect(supervisor.get(session.id)?.queuedFollowUps).toEqual([]);
+    expect(events.at(-1)).toMatchObject({ steering: [], followUp: [] });
 
     await runtime.handle!.steer({ text: "steer c", imagePaths: [] });
+    await runtime.handle!.followUp({ text: "follow c", imagePaths: [] });
     await supervisor.clearQueue(session.id, "followUp");
-    expect(runtime.handle!.getSteeringMessages()).toEqual(["steer c"]);
+    expect(runtime.handle!.getSteeringMessages()).toEqual([]);
     expect(runtime.handle!.getFollowUpMessages()).toEqual([]);
 
+    await runtime.handle!.steer({ text: "steer d", imagePaths: [] });
+    await runtime.handle!.followUp({ text: "follow d", imagePaths: [] });
     await supervisor.clearQueue(session.id, "all");
     expect(runtime.handle!.getSteeringMessages()).toEqual([]);
     expect(runtime.handle!.getFollowUpMessages()).toEqual([]);

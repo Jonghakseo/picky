@@ -144,8 +144,7 @@ struct PickyConversationListView: View {
                 .foregroundColor(DS.Colors.textTertiary)
             Spacer(minLength: 8)
             Button(action: {
-                let clearKind: PickyQueueClearKind = (kind == .steer) ? .steering : .followUp
-                Task { try? await viewModel.clearQueue(sessionID: session.id, kind: clearKind) }
+                Task { try? await viewModel.clearQueue(sessionID: session.id, kind: .all) }
             }) {
                 Text("Clear all")
                     .font(.system(size: 9.5, weight: .semibold))
@@ -160,7 +159,7 @@ struct PickyConversationListView: View {
                     )
             }
             .buttonStyle(.plain)
-            .help(kind == .steer ? "Clear queued steering messages" : "Clear queued follow-up messages")
+            .help("Clear all queued messages")
         }
         .padding(.horizontal, 4)
         .padding(.top, 4)

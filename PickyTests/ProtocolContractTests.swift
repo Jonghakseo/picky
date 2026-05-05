@@ -320,14 +320,14 @@ struct ProtocolContractTests {
     }
 
     @Test func encodesClearQueueCommand() throws {
-        let command = PickyCommandEnvelope(id: "cmd-clear", type: .clearQueue, sessionId: "session-001", kind: .steering)
+        let command = PickyCommandEnvelope(id: "cmd-clear", type: .clearQueue, sessionId: "session-001", kind: .all)
         let data = try JSONEncoder.pickyAgentProtocolEncoder().encode(command)
         let decoded = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyCommandEnvelope.self, from: data)
 
         #expect(decoded.protocolVersion == pickyAgentProtocolVersion)
         #expect(decoded.type == .clearQueue)
         #expect(decoded.sessionId == "session-001")
-        #expect(decoded.kind == .steering)
+        #expect(decoded.kind == .all)
     }
 }
 

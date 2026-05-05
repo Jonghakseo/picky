@@ -846,27 +846,11 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
-  async clearQueue(sessionId: string, kind: "steering" | "followUp" | "all"): Promise<void> {
+  async clearQueue(sessionId: string, _kind: "steering" | "followUp" | "all"): Promise<void> {
     const handle = this.runtimeHandles.get(sessionId);
     if (!handle) throw new Error(`Session has no attached runtime: ${sessionId}`);
-    const drained = handle.clearQueue();
-    if (kind === "steering") {
-      for (const text of drained.followUp) {
-        try {
-          await handle.followUp({ text, imagePaths: [] });
-        } catch (error) {
-          logAgentd("clearQueue re-enqueue failed", { sessionId, text, error: error instanceof Error ? error.message : String(error) });
-        }
-      }
-    } else if (kind === "followUp") {
-      for (const text of drained.steering) {
-        try {
-          await handle.steer({ text, imagePaths: [] });
-        } catch (error) {
-          logAgentd("clearQueue re-enqueue failed", { sessionId, text, error: error instanceof Error ? error.message : String(error) });
-        }
-      }
-    }
+    handle.clearQueue();
+    await this.applyQueueUpdate(sessionId, [], []);
   }
 
   async applyQueueUpdate(sessionId: string, steering: readonly string[], followUp: readonly string[]): Promise<void> {

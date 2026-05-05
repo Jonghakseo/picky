@@ -107,7 +107,7 @@ describe("normalizePiEvent", () => {
     expect(normalizePiEvent({ type: "extension_ui_request", id: "ui-form", method: "askUserQuestion", questions: [] })).toMatchObject({ kind: "extensionUi", waitsForInput: true });
   });
 
-  it("logs queue updates without routing policy", async () => {
-    expect(normalizePiEvent(await fixture("queue-update.json"))).toEqual({ kind: "log", line: "queue update: steering=1 followUp=1" });
+  it("leaves queue updates for the runtime adapter to forward", async () => {
+    expect(normalizePiEvent(await fixture("queue-update.json"))).toEqual({ kind: "none" });
   });
 });

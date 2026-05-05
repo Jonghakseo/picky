@@ -191,14 +191,18 @@ describe("SessionSupervisor", () => {
     expect(runtime.creates[0].prompt.text).toContain("- CWD: /tmp/override-project");
   });
 
-  it("routes side-session follow-up compatibility calls through steer", async () => {
+  it("routes side-session follow-ups through the follow-up queue", async () => {
     const supervisor = await makeSupervisor();
     const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
 
-    const result = await supervisor.followUpSideSession(side.id, "추가로 원인도 정리해줘", context("follow-up"));
+    const result = await supervisor.followUp(side.id, "추가로 원인도 정리해줘", context("follow-up"));
+    await settle();
 
-    expect(result.lastSummary).toBe("Steering message sent");
-    expect(result.logs.some((line) => line === "steer: 추가로 원인도 정리해줘")).toBe(true);
+    const updated = supervisor.get(side.id)!;
+    expect(["Follow-up queued", "Follow-up received"]).toContain(result.lastSummary);
+    expect(updated.logs.some((line: string) => line === "follow-up: 추가로 원인도 정리해줘")).toBe(true);
+    expect((updated.queuedFollowUps ?? []).map((item) => item.text)).toEqual([expect.stringContaining("추가로 원인도 정리해줘")]);
+    expect(updated.queuedSteers ?? []).toEqual([]);
   });
 
   it("prefers the runtime status finalAnswer over the streamed accumulator so reports do not include intermediate ReAct turns", async () => {
@@ -309,7 +313,7 @@ describe("SessionSupervisor", () => {
     expect(updated.logs).toContain("steer: 다시 진행해줘");
   });
 
-  it("routes cancelled side-session follow-up calls through steer instead of regular follow-up", async () => {
+  it("rejects cancelled side-session follow-up calls", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
@@ -318,12 +322,9 @@ describe("SessionSupervisor", () => {
 
     await supervisor.abort(side.id);
 
-    const updated = await supervisor.followUp(side.id, "follow-up 경로로 다시 진행");
-
+    await expect(supervisor.followUp(side.id, "follow-up 경로로 다시 진행")).rejects.toThrow(/Cannot follow up cancelled session/);
     expect(runtime.handle?.followUps).toEqual([]);
-    expect(runtime.handle?.steers).toEqual(["follow-up 경로로 다시 진행"]);
-    expect(updated.status).toBe("running");
-    expect(updated.logs).toContain("steer: follow-up 경로로 다시 진행");
+    expect(runtime.handle?.steers).toEqual([]);
   });
 
   it("clears stale cancelled side-session output when a new steering turn starts", async () => {
@@ -850,6 +851,59 @@ describe("SessionSupervisor", () => {
     expect(supervisor.listMainMessages().map((message) => ({ role: message.role, text: message.text }))).toEqual([
       { role: "user", text: "안녕" },
       { role: "assistant", text: "안녕하세요. 무엇을 도와드릴까요?" },
+    ]);
+  });
+
+  // Pi emits both `turn_end` and `agent_end` for a single agent run, both of which
+  // pi-event-normalizer.ts maps to `status:"completed"`. They arrive back-to-back
+  // through the same fire-and-forget subscriber, and the previous applyMainRuntimeEvent
+  // implementation cleared `mainDraft` only AFTER `await appendMainMessage`, so the
+  // second terminal event read the still-populated draft and re-emitted both the
+  // `mainMessage` (Picky menu-bar Messages tab) and the `quickReply` (TTS) events.
+  // Two consecutive runtime status events with the same draft must produce exactly
+  // one assistant message and one quickReply.
+  it("deduplicates a duplicated terminal status event so the main reply and TTS only fire once per turn", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const replies: Array<{ contextId: string; text: string }> = [];
+    const broadcastedMainMessages: Array<{ role: string; text: string }> = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+    supervisor.on("mainMessage", (message) => broadcastedMainMessages.push({ role: message.role, text: message.text }));
+
+    await supervisor.route(context("안녕"));
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "안녕하세요. 무엇을 도와드릴까요?" });
+    // Replay Pi's `turn_end` -> `agent_end` pair: both normalize to `status:"completed"`
+    // and arrive synchronously back-to-back.
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed", finalAnswer: "안녕하세요. 무엇을 도와드릴까요?" });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed", finalAnswer: "안녕하세요. 무엇을 도와드릴까요?" });
+    await settle();
+
+    // Both the user-visible Messages tab (broadcasted via `mainMessage`) and the TTS
+    // pipeline (driven by `quickReply`) must see exactly one assistant entry per turn.
+    expect(replies.filter((reply) => reply.text === "안녕하세요. 무엇을 도와드릴까요?")).toHaveLength(1);
+    expect(broadcastedMainMessages.filter((message) => message.role === "assistant")).toEqual([
+      { role: "assistant", text: "안녕하세요. 무엇을 도와드릴까요?" },
+    ]);
+    expect(supervisor.listMainMessages().map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: "user", text: "안녕" },
+      { role: "assistant", text: "안녕하세요. 무엇을 도와드릴까요?" },
+    ]);
+
+    // The next turn must re-arm: a fresh assistant_delta + status:completed pair
+    // (without an explicit status:running between them, mirroring follow-up flows
+    // used elsewhere in this suite) should produce a new reply, not be swallowed
+    // by the guard.
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "두 번째 답변" });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(replies.filter((reply) => reply.text === "두 번째 답변")).toHaveLength(1);
+    expect(broadcastedMainMessages.filter((message) => message.text === "두 번째 답변")).toEqual([
+      { role: "assistant", text: "두 번째 답변" },
     ]);
   });
 

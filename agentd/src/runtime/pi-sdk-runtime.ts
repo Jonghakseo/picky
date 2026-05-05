@@ -300,8 +300,11 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private runtimeEventFromPiEvent(event: unknown): RuntimeEvent | undefined {
     const record = asRecord(event);
     if (record.type === "queue_update") {
-      this.queuedSteeringCount = Array.isArray(record.steering) ? record.steering.length : 0;
-      this.queuedFollowUpCount = Array.isArray(record.followUp) ? record.followUp.length : 0;
+      const steering = Array.isArray(record.steering) ? (record.steering as readonly string[]) : [];
+      const followUp = Array.isArray(record.followUp) ? (record.followUp as readonly string[]) : [];
+      this.queuedSteeringCount = steering.length;
+      this.queuedFollowUpCount = followUp.length;
+      return { type: "queue_update", steering, followUp };
     }
 
     const runtimeEvent = runtimeEventFromPiEvent(event, {

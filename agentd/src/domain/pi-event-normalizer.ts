@@ -77,12 +77,6 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
     };
   }
 
-  if (type === "queue_update") {
-    const steering = Array.isArray(piEvent.steering) ? piEvent.steering.length : 0;
-    const followUp = Array.isArray(piEvent.followUp) ? piEvent.followUp.length : 0;
-    return { kind: "log", line: `queue update: steering=${steering} followUp=${followUp}` };
-  }
-
   if (type === "extension_ui_request") {
     const method = requiredString(piEvent.method, "method");
     return { kind: "extensionUi", request: piEvent, waitsForInput: ["select", "confirm", "input", "editor", "askUserQuestion"].includes(method) };

@@ -53,6 +53,7 @@ describe("picky agentd known bugs (failing reproductions)", () => {
       },
       appendLog: async () => {},
       materializeTerminalArtifacts: async () => {},
+      applyQueueUpdate: async () => {},
       notifySideCompletion: async () => {},
       isSideSession: () => false,
       emitExtensionUiRequest: () => {},

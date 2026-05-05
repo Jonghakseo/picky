@@ -330,8 +330,8 @@ describe("PiSdkRuntime", () => {
     fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "최종 답변" }] }, toolResults: [] });
 
     expect(statusEvents(events).map((event) => event.status)).toEqual(["running", "completed"]);
-    expect(events).toContainEqual({ type: "log", line: "queue update: steering=1 followUp=0" });
-    expect(events).toContainEqual({ type: "log", line: "queue update: steering=0 followUp=0" });
+    expect(events).toContainEqual({ type: "queue_update", steering: ["revise"], followUp: [] });
+    expect(events).toContainEqual({ type: "queue_update", steering: [], followUp: [] });
   });
 
   it("keeps final turn_end waiting while bridge extension UI is pending and completes after answer", async () => {

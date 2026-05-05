@@ -40,6 +40,15 @@ export class SessionSupervisor extends EventEmitter {
   private mainState: PickyMainAgentState = { messages: [] };
   private mainReplyContextId = "main";
   private mainIsProcessing = false;
+  // Pi emits both `turn_end` and `agent_end` for a single agent run, both of which
+  // normalize to `status:"completed"` (see pi-event-normalizer.ts). They arrive
+  // back-to-back through the same fire-and-forget subscriber, and the first call's
+  // sync work yields at `await appendMainMessage` before reaching `mainDraft = ""`.
+  // Without this guard, the second terminal event reads the still-populated draft
+  // and re-emits both `mainMessage` and `quickReply`, producing duplicate menu-bar
+  // messages and overlapping TTS playback. Reset on each `running` and on every new
+  // `assistant_delta` so a follow-up turn re-arms.
+  private mainTerminalProcessed = false;
   private suppressNextMainReply = false;
   private suppressInterruptedMainCompletion = false;
   private sideSessionIds = new Set<string>();
@@ -260,6 +269,7 @@ export class SessionSupervisor extends EventEmitter {
     this.mainContext = undefined;
     this.mainReplyContextId = "main";
     this.mainIsProcessing = false;
+    this.mainTerminalProcessed = false;
     this.suppressNextMainReply = false;
     this.suppressInterruptedMainCompletion = false;
     if (this.pendingSideCompletions.length > 0) logAgentd("main pending side completions cleared", { count: this.pendingSideCompletions.length });
@@ -574,23 +584,39 @@ export class SessionSupervisor extends EventEmitter {
       return;
     }
     if (event.type === "assistant_delta") {
+      // A new delta means a new turn has started. Re-arm the terminal guard even
+      // if the runtime did not emit an explicit `status:"running"` between turns
+      // (Pi normally does, but follow-up flows that immediately stream content can
+      // skip it). Without this, a side-completion follow-up turn whose `running`
+      // is omitted would be silently swallowed by the prior turn's guard.
+      this.mainTerminalProcessed = false;
       this.mainDraft += event.delta;
       return;
     }
     if (event.type === "status") {
       if (event.status === "running") {
         this.mainIsProcessing = true;
+        this.mainTerminalProcessed = false;
       }
       if (["completed", "failed", "cancelled"].includes(event.status)) {
         this.mainIsProcessing = false;
+        // Guard A: drop any subsequent terminal events for the same turn (e.g. the
+        // `agent_end` that follows `turn_end`). The first one wins.
+        if (this.mainTerminalProcessed) return;
+        this.mainTerminalProcessed = true;
+        // Guard B: snapshot and clear `mainDraft` synchronously before any await,
+        // so a racing terminal event that slipped past Guard A (e.g. via a custom
+        // runtime that does not flip `mainTerminalProcessed`) cannot read the
+        // still-populated draft and double-emit the reply.
+        const draftSnapshot = this.mainDraft;
+        this.mainDraft = "";
         if (this.suppressInterruptedMainCompletion) {
           this.suppressInterruptedMainCompletion = false;
-          this.mainDraft = "";
           this.scheduleSideCompletionDrain();
           return;
         }
-        logAgentd("main status", { status: event.status, contextId: this.mainReplyContextId, draftChars: this.mainDraft.length });
-        const reply = cleanFinalAnswer(this.mainDraft) ?? (event.status === "failed" ? event.summary : undefined);
+        logAgentd("main status", { status: event.status, contextId: this.mainReplyContextId, draftChars: draftSnapshot.length });
+        const reply = cleanFinalAnswer(draftSnapshot) ?? (event.status === "failed" ? event.summary : undefined);
         if (this.suppressNextMainReply) {
           this.suppressNextMainReply = false;
         } else if (reply) {
@@ -598,7 +624,6 @@ export class SessionSupervisor extends EventEmitter {
           await this.appendMainMessage("assistant", reply);
           this.emit("quickReply", this.mainReplyContextId, reply);
         }
-        this.mainDraft = "";
         this.scheduleSideCompletionDrain();
       }
     }

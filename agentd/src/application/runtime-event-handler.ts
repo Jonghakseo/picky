@@ -14,6 +14,7 @@ export interface RuntimeEventHandlerDependencies {
   patchSession(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
   appendLog(sessionId: string, line: string): Promise<void>;
   materializeTerminalArtifacts(sessionId: string): Promise<void>;
+  applyQueueUpdate(sessionId: string, steering: readonly string[], followUp: readonly string[]): Promise<void>;
   notifySideCompletion(sessionId: string): Promise<void>;
   isSideSession(sessionId: string): boolean;
   emitExtensionUiRequest(request: PickyExtensionUiRequest): void;
@@ -40,6 +41,7 @@ export class RuntimeEventHandler {
       return;
     }
     if (event.type === "thinking_delta") return this.applyThinkingEvent(sessionId, event);
+    if (event.type === "queue_update") return this.dependencies.applyQueueUpdate(sessionId, event.steering, event.followUp);
     if (event.type === "status") return this.applyStatusEvent(sessionId, event);
     if (event.type === "extension_ui") {
       logAgentd("extension ui event", { sessionId, waitsForInput: event.waitsForInput, method: typeof event.request.method === "string" ? event.request.method : undefined });

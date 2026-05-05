@@ -128,6 +128,7 @@ struct PickySettings: Codable, Equatable {
     var notifications: PickyNotificationPreferences
     var fontScales: PickyFontScales
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel
+    var useConversationCard: Bool
     var pushToTalkShortcut: PickyShortcutSpec
     var quickInputShortcut: PickyShortcutSpec
 
@@ -146,6 +147,7 @@ struct PickySettings: Codable, Equatable {
         notifications: PickyNotificationPreferences = .defaults,
         fontScales: PickyFontScales = .defaults,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .medium,
+        useConversationCard: Bool = false,
         pushToTalkShortcut: PickyShortcutSpec = .defaultPushToTalk,
         quickInputShortcut: PickyShortcutSpec = .defaultQuickInput
     ) {
@@ -163,6 +165,7 @@ struct PickySettings: Codable, Equatable {
         self.notifications = notifications
         self.fontScales = fontScales
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
+        self.useConversationCard = useConversationCard
         self.pushToTalkShortcut = pushToTalkShortcut
         self.quickInputShortcut = quickInputShortcut
     }
@@ -184,6 +187,7 @@ struct PickySettings: Codable, Equatable {
             notifications: .defaults,
             fontScales: .defaults,
             mainAgentThinkingLevel: .medium,
+            useConversationCard: false,
             pushToTalkShortcut: .defaultPushToTalk,
             quickInputShortcut: .defaultQuickInput
         )
@@ -214,6 +218,7 @@ struct PickySettings: Codable, Equatable {
         case notifications
         case fontScales
         case mainAgentThinkingLevel
+        case useConversationCard
         case pushToTalkShortcut
         case quickInputShortcut
     }
@@ -235,6 +240,7 @@ struct PickySettings: Codable, Equatable {
         appearance = try container.decodeIfPresent(PickyAppearanceMode.self, forKey: .appearance) ?? defaults.appearance
         notifications = try container.decodeIfPresent(PickyNotificationPreferences.self, forKey: .notifications) ?? defaults.notifications
         mainAgentThinkingLevel = try container.decodeIfPresent(PickyMainAgentThinkingLevel.self, forKey: .mainAgentThinkingLevel) ?? defaults.mainAgentThinkingLevel
+        useConversationCard = try container.decodeIfPresent(Bool.self, forKey: .useConversationCard) ?? defaults.useConversationCard
         if let storedScales = try container.decodeIfPresent(PickyFontScales.self, forKey: .fontScales) {
             fontScales = PickyFontScales(
                 markdownReport: PickyFontScales.clamped(storedScales.markdownReport),

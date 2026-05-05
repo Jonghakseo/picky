@@ -116,6 +116,13 @@ final class PickySessionListViewModel: ObservableObject {
         var tools: [PickyToolActivity]
         var artifacts: [PickyArtifact]
         var changedFiles: [PickyChangedFile]
+        var messages: [PickySessionMessage]
+        var queuedSteers: [PickyQueueItem]
+        var queuedFollowUps: [PickyQueueItem]
+        var steeringMode: PickyQueueMode
+        var followUpMode: PickyQueueMode
+        var activitySummary: PickyActivitySummary
+        var finalReport: PickyFinalReport?
         var pendingExtensionUiRequest: PickyExtensionUiRequest?
         var piSessionFilePath: String?
         var notifyMainOnCompletion: Bool?
@@ -233,6 +240,7 @@ final class PickySessionListViewModel: ObservableObject {
     private var slashCommandRequestedSessionIDs = Set<String>()
     private var dockPointerQueuedSessionIDs = Set<String>()
     private var dockPointerDeliveredSessionIDs = Set<String>()
+    private var lastIncrementalSeqBySessionID: [String: Int] = [:]
     private var hasExplicitSelection = false
 
     init(
@@ -402,6 +410,11 @@ final class PickySessionListViewModel: ObservableObject {
             if !card.status.isTerminal { card.status = .cancelled }
             card.updatedAt = Date()
         }
+    }
+
+    func clearQueue(sessionID: String, kind: PickyQueueClearKind) async throws {
+        pickySessionLog("clear queue session=\(sessionID) kind=\(kind.rawValue)")
+        try await client.send(PickyCommandEnvelope(type: .clearQueue, sessionId: sessionID, kind: kind))
     }
 
     func setNotifyMainOnCompletion(sessionID: String, enabled: Bool) async throws {
@@ -605,8 +618,9 @@ final class PickySessionListViewModel: ObservableObject {
         case .sessionSnapshot(let snapshot):
             pickySessionLog("snapshot sessions=\(snapshot.count)")
             let previousCardsByID = Dictionary(uniqueKeysWithValues: (sessions + archivedSessions).map { ($0.id, $0) })
-            let cards = snapshot.map(SessionCard.init(session:))
+            let cards = snapshot.map(SessionCard.fromAgentSession)
             let archivedIDs = effectiveArchivedSessionIDs(for: cards)
+            lastIncrementalSeqBySessionID = lastIncrementalSeqBySessionID.filter { sessionID, _ in cards.contains { $0.id == sessionID } }
             sessions = cards.filter { !archivedIDs.contains($0.id) }.sortedForHUD()
             archivedSessions = cards.filter { archivedIDs.contains($0.id) }.sortedForHUD()
             dockPointerDeliveredSessionIDs.formUnion(cards.filter(\.isMainAgentHandoff).map(\.id))
@@ -623,7 +637,7 @@ final class PickySessionListViewModel: ObservableObject {
             }
         case .sessionUpdated(let session):
             pickySessionLog("session updated session=\(session.id) status=\(session.status.rawValue)")
-            upsert(SessionCard(session: session))
+            upsert(SessionCard.fromAgentSession(session))
         case .sessionLogAppended(let sessionId, let line):
             pickySessionLog("session log session=\(sessionId) lineChars=\(line.count)")
             update(sessionID: sessionId) { card in
@@ -686,13 +700,56 @@ final class PickySessionListViewModel: ObservableObject {
             pickySessionLog("slash commands snapshot session=\(sessionId) commands=\(commands.count)")
             slashCommandsBySessionID[sessionId] = commands
             slashCommandRequestedSessionIDs.insert(sessionId)
+        case .sessionMessageAppended(let sessionId, let message, let seq):
+            guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
+            update(sessionID: sessionId) { card in
+                card.messages.append(message)
+                card.updatedAt = max(card.updatedAt, message.createdAt)
+            }
+        case .sessionMessageReplaced(let sessionId, let messageId, let message, let seq):
+            guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
+            update(sessionID: sessionId) { card in
+                if let index = card.messages.firstIndex(where: { $0.id == messageId }) {
+                    card.messages[index] = message
+                } else {
+                    card.messages.append(message)
+                }
+                card.updatedAt = max(card.updatedAt, message.createdAt)
+            }
+        case .sessionMessageRemoved(let sessionId, let messageId, let seq):
+            guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
+            update(sessionID: sessionId) { card in
+                card.messages.removeAll { $0.id == messageId }
+                card.updatedAt = Date()
+            }
+        case .sessionQueueUpdated(let sessionId, let steering, let followUp, let steeringMode, let followUpMode, let seq):
+            guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
+            update(sessionID: sessionId) { card in
+                card.queuedSteers = steering
+                card.queuedFollowUps = followUp
+                if let steeringMode { card.steeringMode = steeringMode }
+                if let followUpMode { card.followUpMode = followUpMode }
+                card.updatedAt = Date()
+            }
+        case .sessionActivityUpdated(let sessionId, let activitySummary, let seq):
+            guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
+            update(sessionID: sessionId) { card in
+                card.activitySummary = activitySummary
+                card.updatedAt = Date()
+            }
         case .error(let error):
             pickySessionLog("protocol error code=\(error.code) command=\(error.commandId ?? "none")")
             lastError = error.message
-        case .quickReply, .mainMessagesSnapshot, .mainMessageAppended, .pointerOverlayRequested, .hello, .unknown,
-             .sessionMessageAppended, .sessionMessageReplaced, .sessionMessageRemoved, .sessionQueueUpdated, .sessionActivityUpdated:
+        case .quickReply, .mainMessagesSnapshot, .mainMessageAppended, .pointerOverlayRequested, .hello, .unknown:
             break
         }
+    }
+
+    private func acceptIncrementalEvent(sessionID: String, seq: Int) -> Bool {
+        let lastSeq = lastIncrementalSeqBySessionID[sessionID] ?? 0
+        guard seq > lastSeq else { return false }
+        lastIncrementalSeqBySessionID[sessionID] = seq
+        return true
     }
 
     private func pruneSlashCommandCache(knownSessionIDs: Set<String>) {
@@ -700,6 +757,7 @@ final class PickySessionListViewModel: ObservableObject {
         slashCommandRequestedSessionIDs = slashCommandRequestedSessionIDs.filter { knownSessionIDs.contains($0) }
         dockPointerQueuedSessionIDs = dockPointerQueuedSessionIDs.filter { knownSessionIDs.contains($0) }
         dockPointerDeliveredSessionIDs = dockPointerDeliveredSessionIDs.filter { knownSessionIDs.contains($0) }
+        lastIncrementalSeqBySessionID = lastIncrementalSeqBySessionID.filter { knownSessionIDs.contains($0.key) }
         if let pendingDockPointerSessionID, !knownSessionIDs.contains(pendingDockPointerSessionID) {
             self.pendingDockPointerSessionID = nil
         }
@@ -846,7 +904,11 @@ final class PickySessionListViewModel: ObservableObject {
     }
 }
 
-private extension PickySessionListViewModel.SessionCard {
+extension PickySessionListViewModel.SessionCard {
+    static func fromAgentSession(_ session: PickyAgentSession) -> Self {
+        Self(session: session)
+    }
+
     init(session: PickyAgentSession) {
         self.id = session.id
         self.title = session.title
@@ -864,6 +926,13 @@ private extension PickySessionListViewModel.SessionCard {
         self.tools = session.tools
         self.artifacts = session.artifacts
         self.changedFiles = session.changedFiles
+        self.messages = session.messages
+        self.queuedSteers = session.queuedSteers
+        self.queuedFollowUps = session.queuedFollowUps
+        self.steeringMode = session.steeringMode
+        self.followUpMode = session.followUpMode
+        self.activitySummary = session.activitySummary
+        self.finalReport = session.finalReport
         self.pendingExtensionUiRequest = session.pendingExtensionUiRequest
         self.piSessionFilePath = session.logs.compactMap(Self.piSessionFilePath(fromLogLine:)).last
         self.notifyMainOnCompletion = session.notifyMainOnCompletion
@@ -889,6 +958,8 @@ private extension PickySessionListViewModel.SessionCard {
         if result.tools.isEmpty { result.tools = tools }
         if result.artifacts.isEmpty { result.artifacts = artifacts }
         if result.changedFiles.isEmpty { result.changedFiles = changedFiles }
+        // Conversation fields are daemon-authoritative in full sessionUpdated/sessionSnapshot
+        // payloads; an incoming empty queue/messages array or nil finalReport means cleared.
         // pendingExtensionUiRequest is authoritative on the daemon side: every sessionUpdated
         // carries the full session, so an incoming `nil` means the daemon has explicitly cleared
         // the request (answered, cancelled, timed out, dropped on reattach). Falling back to the

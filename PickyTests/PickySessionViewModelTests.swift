@@ -590,6 +590,13 @@ struct PickySessionViewModelTests {
             tools: [],
             artifacts: [],
             changedFiles: [],
+            messages: [],
+            queuedSteers: [],
+            queuedFollowUps: [],
+            steeringMode: .oneAtATime,
+            followUpMode: .oneAtATime,
+            activitySummary: .zero,
+            finalReport: nil,
             pendingExtensionUiRequest: nil,
             piSessionFilePath: nil,
             notifyMainOnCompletion: nil,
@@ -1494,6 +1501,98 @@ struct PickySessionViewModelTests {
         #expect(client.submitted.first?.context.id == "context-1")
         #expect(client.submitted.first?.transcript == "hello")
     }
+
+    @Test func sessionCardMirrorsConversationFieldsFromAgentSession() throws {
+        let createdAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let message = PickySessionMessage.fixture(id: "m-1", kind: .agentText, text: "hello")
+        let queueItem = PickyQueueItem(text: "next", enqueuedAt: createdAt)
+        let activity = PickyActivitySummary(edit: 1, bash: 2, thinking: 3, other: 4)
+        let report = PickyFinalReport(summary: "Done", body: "Body", status: .success)
+        let session = PickyAgentSession(
+            id: "conversation-session",
+            title: "Conversation",
+            status: .running,
+            createdAt: createdAt,
+            updatedAt: createdAt,
+            lastSummary: "Started",
+            logs: [],
+            tools: [],
+            artifacts: [],
+            changedFiles: [],
+            messages: [message],
+            queuedSteers: [queueItem],
+            queuedFollowUps: [PickyQueueItem(text: "follow", enqueuedAt: createdAt)],
+            steeringMode: .all,
+            followUpMode: .all,
+            activitySummary: activity,
+            finalReport: report
+        )
+
+        let card = PickySessionListViewModel.SessionCard.fromAgentSession(session)
+
+        #expect(card.messages == [message])
+        #expect(card.queuedSteers == [queueItem])
+        #expect(card.queuedFollowUps.map(\.text) == ["follow"])
+        #expect(card.steeringMode == .all)
+        #expect(card.followUpMode == .all)
+        #expect(card.activitySummary == activity)
+        #expect(card.finalReport == report)
+    }
+
+    @Test func sessionMessageIncrementalEventsAppendReplaceRemoveAndIgnoreStaleSeq() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "conversation-session"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "conversation-session", messageId: "m-1", text: "first", seq: 1))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageReplaced(sessionId: "conversation-session", messageId: "m-1", text: "updated", seq: 2))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "conversation-session", messageId: "m-stale", text: "stale", seq: 2))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageRemoved(sessionId: "conversation-session", messageId: "m-1", seq: 3))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "conversation-session", messageId: "m-old", text: "old", seq: 1))))
+        try await settle()
+
+        let card = try #require(viewModel.sessions.first)
+        #expect(card.messages.isEmpty)
+    }
+
+    @Test func sessionQueueUpdatedAppliesModesAndPreservesExistingModeWhenNil() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "queue-session"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "queue-session", steering: ["steer"], followUp: ["follow"], steeringMode: "all", followUpMode: "all", seq: 1))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "queue-session", steering: ["steer-2"], followUp: [], steeringMode: nil, followUpMode: nil, seq: 2))))
+        try await settle()
+
+        let card = try #require(viewModel.sessions.first)
+        #expect(card.queuedSteers.map(\.text) == ["steer-2"])
+        #expect(card.queuedFollowUps.isEmpty)
+        #expect(card.steeringMode == .all)
+        #expect(card.followUpMode == .all)
+    }
+
+    @Test func sessionActivityUpdatedMirrorsSummary() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "activity-session"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionActivityUpdated(sessionId: "activity-session", edit: 2, bash: 3, thinking: 4, other: 5, seq: 1))))
+        try await settle()
+
+        #expect(viewModel.sessions.first?.activitySummary == PickyActivitySummary(edit: 2, bash: 3, thinking: 4, other: 5))
+    }
+
+    @Test func clearQueueSendsClearQueueCommandEnvelope() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+
+        try await viewModel.clearQueue(sessionID: "queue-session", kind: .followUp)
+
+        let command = try #require(client.sentCommands.last)
+        #expect(command.type == .clearQueue)
+        #expect(command.sessionId == "queue-session")
+        #expect(command.kind == .followUp)
+    }
 }
 
 private func settle() async throws {
@@ -1596,6 +1695,68 @@ private enum EventJSON {
         {"id":"event-tool-\(status)","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:03.000Z","type":"toolActivityUpdated","sessionId":"\(sessionId)","tool":{"toolCallId":"\(toolCallId)","name":"\(name)","status":"\(status)","preview":"\(preview)","startedAt":"2026-05-01T00:00:02.000Z","endedAt":null}}
         """
     }
+
+    static func sessionMessageAppended(sessionId: String, messageId: String, text: String, seq: Int) -> String {
+        sessionMessageEvent(type: "sessionMessageAppended", sessionId: sessionId, messageId: messageId, text: text, seq: seq)
+    }
+
+    static func sessionMessageReplaced(sessionId: String, messageId: String, text: String, seq: Int) -> String {
+        sessionMessageEvent(type: "sessionMessageReplaced", sessionId: sessionId, messageId: messageId, text: text, seq: seq)
+    }
+
+    static func sessionMessageRemoved(sessionId: String, messageId: String, seq: Int) -> String {
+        """
+        {"id":"event-message-remove-\(seq)","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionMessageRemoved","sessionId":"\(sessionId)","messageId":"\(messageId)","seq":\(seq)}
+        """
+    }
+
+    static func sessionQueueUpdated(sessionId: String, steering: [String], followUp: [String], steeringMode: String?, followUpMode: String?, seq: Int) -> String {
+        let steeringItems = queueItemsJSON(steering)
+        let followUpItems = queueItemsJSON(followUp)
+        let encodedSteeringMode = steeringMode.map { ",\"steeringMode\":\"\($0)\"" } ?? ""
+        let encodedFollowUpMode = followUpMode.map { ",\"followUpMode\":\"\($0)\"" } ?? ""
+        return """
+        {"id":"event-queue-\(seq)","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionQueueUpdated","sessionId":"\(sessionId)","steering":\(steeringItems),"followUp":\(followUpItems)\(encodedSteeringMode)\(encodedFollowUpMode),"seq":\(seq)}
+        """
+    }
+
+    static func sessionActivityUpdated(sessionId: String, edit: Int, bash: Int, thinking: Int, other: Int, seq: Int) -> String {
+        """
+        {"id":"event-activity-\(seq)","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionActivityUpdated","sessionId":"\(sessionId)","activitySummary":{"edit":\(edit),"bash":\(bash),"thinking":\(thinking),"other":\(other)},"seq":\(seq)}
+        """
+    }
+
+    private static func sessionMessageEvent(type: String, sessionId: String, messageId: String, text: String, seq: Int) -> String {
+        let encodedText = String(decoding: try! JSONEncoder().encode(text), as: UTF8.self)
+        return """
+        {"id":"event-message-\(type)-\(seq)","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:04.000Z","type":"\(type)","sessionId":"\(sessionId)","messageId":"\(messageId)","message":{"id":"\(messageId)","kind":"agent_text","createdAt":"2026-05-01T00:00:04.000Z","originatedBy":"main_agent","text":\(encodedText),"question":null,"cancelledAt":null,"report":null,"errorContext":null,"errorMessage":null},"seq":\(seq)}
+        """
+    }
+
+    private static func queueItemsJSON(_ texts: [String]) -> String {
+        let items = texts.map { text in
+            let encodedText = String(decoding: try! JSONEncoder().encode(text), as: UTF8.self)
+            return "{\"text\":\(encodedText),\"enqueuedAt\":\"2026-05-01T00:00:04.000Z\"}"
+        }
+        return "[\(items.joined(separator: ","))]"
+    }
+}
+
+private extension PickySessionMessage {
+    static func fixture(id: String, kind: PickySessionMessageKind, text: String?) -> PickySessionMessage {
+        PickySessionMessage(
+            id: id,
+            kind: kind,
+            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+            originatedBy: .mainAgent,
+            text: text,
+            question: nil,
+            cancelledAt: nil,
+            report: nil,
+            errorContext: nil,
+            errorMessage: nil
+        )
+    }
 }
 
 private extension PickySessionListViewModel.SessionCard {
@@ -1615,6 +1776,13 @@ private extension PickySessionListViewModel.SessionCard {
             tools: [],
             artifacts: artifacts,
             changedFiles: [],
+            messages: [],
+            queuedSteers: [],
+            queuedFollowUps: [],
+            steeringMode: .oneAtATime,
+            followUpMode: .oneAtATime,
+            activitySummary: .zero,
+            finalReport: nil,
             pendingExtensionUiRequest: nil,
             piSessionFilePath: nil,
             notifyMainOnCompletion: nil,

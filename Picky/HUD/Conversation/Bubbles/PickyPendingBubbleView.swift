@@ -46,7 +46,7 @@ struct PickyPendingBubbleView: View {
                     .font(.system(size: 9.5, weight: .bold))
                     .foregroundColor(kind.color)
                     .lineLimit(1)
-                Text(queueItem.text)
+                Text(PickyQueuedInputText.displayText(from: queueItem.text))
                     .font(.system(size: 12))
                     .foregroundColor(DS.Colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -90,5 +90,39 @@ struct PickyPendingBubbleView: View {
         let minutes = seconds / 60
         if minutes < 60 { return "queued \(minutes)m ago" }
         return "queued \(minutes / 60)h ago"
+    }
+}
+
+enum PickyQueuedInputText {
+    static func displayText(from text: String) -> String {
+        extractLegacyUserFollowUp(from: text) ?? text
+    }
+
+    static func normalized(_ text: String) -> String {
+        displayText(from: text)
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func extractLegacyUserFollowUp(from text: String) -> String? {
+        guard text.contains("# Picky follow-up"),
+              let headingRange = text.range(of: "## User follow-up")
+        else { return nil }
+
+        let body = text[headingRange.upperBound...]
+        let lines = body.split(separator: "\n", omittingEmptySubsequences: false)
+        var extracted: [Substring] = []
+        var hasStarted = false
+
+        for line in lines {
+            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+            if !hasStarted && trimmedLine.isEmpty { continue }
+            if hasStarted && trimmedLine.hasPrefix("## ") { break }
+            hasStarted = true
+            extracted.append(line)
+        }
+
+        let result = extracted.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return result.isEmpty ? nil : result
     }
 }

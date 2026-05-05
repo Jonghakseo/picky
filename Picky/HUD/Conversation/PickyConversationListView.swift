@@ -30,8 +30,8 @@ struct PickyConversationListView: View {
                             messageView(message)
                                 .id(message.id)
                         }
-                        queueSection(items: session.queuedFollowUps, kind: .followUp, mode: session.followUpMode)
-                        queueSection(items: session.queuedSteers, kind: .steer, mode: session.steeringMode)
+                        queueSection(items: visibleQueuedFollowUps, kind: .followUp, mode: session.followUpMode)
+                        queueSection(items: visibleQueuedSteers, kind: .steer, mode: session.steeringMode)
                     }
                 }
                 .padding(.vertical, 2)
@@ -53,10 +53,12 @@ struct PickyConversationListView: View {
             guard message.kind == .agentActivity, let snapshot = message.activitySnapshot else { return false }
             return activityTotal(snapshot) > 0
         }
-        snapshot.batchGroupCount += session.followUpMode == .all && !session.queuedFollowUps.isEmpty ? 1 : 0
-        snapshot.batchGroupCount += session.steeringMode == .all && !session.queuedSteers.isEmpty ? 1 : 0
-        snapshot.pendingBubbleCount += session.followUpMode == .all ? 0 : session.queuedFollowUps.count
-        snapshot.pendingBubbleCount += session.steeringMode == .all ? 0 : session.queuedSteers.count
+        let followUps = visibleQueuedFollowUps
+        let steers = visibleQueuedSteers
+        snapshot.batchGroupCount += session.followUpMode == .all && !followUps.isEmpty ? 1 : 0
+        snapshot.batchGroupCount += session.steeringMode == .all && !steers.isEmpty ? 1 : 0
+        snapshot.pendingBubbleCount += session.followUpMode == .all ? 0 : followUps.count
+        snapshot.pendingBubbleCount += session.steeringMode == .all ? 0 : steers.count
 
         for message in session.messages {
             switch message.kind {
@@ -166,7 +168,33 @@ struct PickyConversationListView: View {
     }
 
     private var hasQueueOrActivity: Bool {
-        !session.queuedSteers.isEmpty || !session.queuedFollowUps.isEmpty
+        !visibleQueuedSteers.isEmpty || !visibleQueuedFollowUps.isEmpty
+    }
+
+    private var visibleQueuedFollowUps: [PickyQueueItem] {
+        visibleQueueItems(session.queuedFollowUps)
+    }
+
+    private var visibleQueuedSteers: [PickyQueueItem] {
+        visibleQueueItems(session.queuedSteers)
+    }
+
+    private func visibleQueueItems(_ items: [PickyQueueItem]) -> [PickyQueueItem] {
+        items.filter { item in
+            !recentUserTextMatchesQueuedItem(item)
+        }
+    }
+
+    private func recentUserTextMatchesQueuedItem(_ item: PickyQueueItem) -> Bool {
+        let queuedText = PickyQueuedInputText.normalized(item.text)
+        guard !queuedText.isEmpty else { return false }
+        return session.messages.contains { message in
+            guard message.kind == .userText,
+                  let text = message.text,
+                  abs(message.createdAt.timeIntervalSince(item.enqueuedAt)) <= 300
+            else { return false }
+            return PickyQueuedInputText.normalized(text) == queuedText
+        }
     }
 
     /// 카드 안에는 "마지막 user_text → 끝" 한 쌍만 노출. 히스토리 전체는 "Earlier history" 버튼 → terminal.

@@ -61,6 +61,54 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.showsActivitySummary)
     }
 
+    @Test func queuedFollowUpMatchingUserTextDoesNotRenderPendingBubble() {
+        let legacyFollowUpPrompt = """
+        # Picky follow-up
+
+        ## User follow-up
+        아니다 10초
+
+        ## Context
+        Keep this internal context hidden.
+        """
+        let session = makeConversationSession(
+            status: .running,
+            messages: [message("m-user", kind: .userText, text: "아니다 10초")],
+            queuedFollowUps: [queueItem(legacyFollowUpPrompt)]
+        )
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+
+        #expect(snapshot.pendingBubbleCount == 0)
+        #expect(snapshot.batchGroupCount == 0)
+    }
+
+    @Test func queuedSteerMatchingUserTextDoesNotRenderPendingBubble() {
+        let session = makeConversationSession(
+            status: .running,
+            messages: [message("m-user", kind: .userText, text: "stop and use 10 seconds")],
+            queuedSteers: [queueItem("stop and use 10 seconds")]
+        )
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+
+        #expect(snapshot.pendingBubbleCount == 0)
+        #expect(snapshot.batchGroupCount == 0)
+    }
+
+    @Test func queuedItemWithoutMatchingUserTextStillRendersPendingBubble() {
+        let session = makeConversationSession(
+            status: .running,
+            messages: [message("m-user", kind: .userText, text: "first request")],
+            queuedSteers: [queueItem("different queued steer")]
+        )
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+
+        #expect(snapshot.pendingBubbleCount == 1)
+        #expect(snapshot.batchGroupCount == 0)
+    }
+
     @Test func donePhaseRendersFinalReportBubble() {
         let report = PickyFinalReport(summary: "Done", body: "All tasks complete", status: .success)
         let session = makeConversationSession(

@@ -24,6 +24,16 @@ struct PickyConversationCardView: View {
         .frame(width: PickyHUDDockLayout.detailWidth)
         .frame(minHeight: 320, maxHeight: 1080, alignment: .top)
         .background(cardBackground)
+        .contentShape(Rectangle())
+        .onHover(perform: updateVoiceFollowUpHover)
+    }
+
+    func updateVoiceFollowUpHover(_ hovering: Bool) {
+        if hovering {
+            viewModel.beginHoveredVoiceFollowUp(sessionID: session.id)
+        } else {
+            viewModel.endHoveredVoiceFollowUp(sessionID: session.id)
+        }
     }
 
     private var cardBackground: some View {

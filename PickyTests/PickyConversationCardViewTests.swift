@@ -33,7 +33,14 @@ private final class ConversationCardFakeClient: PickyAgentClient {
         sentCommands.append(command)
     }
 
+    func emit(_ event: PickyClientEvent) { continuation.yield(event) }
+
     func disconnect() { continuation.yield(.disconnected) }
+}
+
+private final class ConversationCardSelectionStore: PickySessionSelectionStoring {
+    var selectedSessionID: String?
+    var hoveredVoiceFollowUpSessionID: String?
 }
 
 @Suite(.serialized)
@@ -288,6 +295,28 @@ struct PickyConversationCardViewTests {
         #expect(!finalReportMenu.canStop)
     }
 
+    @Test func cardHoverSeedsVoiceFollowUpTargetForPushToTalk() async throws {
+        let client = ConversationCardFakeClient()
+        let selection = ConversationCardSelectionStore()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter(), selectionStore: selection)
+        viewModel.start()
+        defer { viewModel.stop() }
+
+        client.emit(.protocolEvent(.fixture(eventJSON: sessionUpdatedJSON(id: "side-voice", status: "running"))))
+        try await settle()
+
+        let session = try #require(viewModel.sessions.first(where: { $0.id == "side-voice" }))
+        let card = PickyConversationCardView(viewModel: viewModel, session: session)
+
+        card.updateVoiceFollowUpHover(true)
+        #expect(viewModel.hoveredVoiceFollowUpSessionID == "side-voice")
+        #expect(selection.hoveredVoiceFollowUpSessionID == "side-voice")
+
+        card.updateVoiceFollowUpHover(false)
+        #expect(viewModel.hoveredVoiceFollowUpSessionID == nil)
+        #expect(selection.hoveredVoiceFollowUpSessionID == nil)
+    }
+
     @Test func userBubbleShowsByMainAgentLabelWhenOriginated() {
         let bubble = PickyUserBubbleView(message: message("m-main", kind: .userText, text: "delegated", originatedBy: .mainAgent))
 
@@ -411,6 +440,22 @@ struct PickyConversationCardViewTests {
 }
 
 private let baseDate = Date(timeIntervalSince1970: 1_777_777_777)
+
+private func settle() async throws {
+    try await Task.sleep(nanoseconds: 20_000_000)
+}
+
+private func sessionUpdatedJSON(id: String = "session-1", status: String = "running") -> String {
+    """
+    {"id":"evt-\(id)","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionUpdated","session":{"id":"\(id)","title":"Test session","status":"\(status)","cwd":"/tmp/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"summary","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
+    """
+}
+
+private extension PickyEventEnvelope {
+    static func fixture(eventJSON: String) -> PickyEventEnvelope {
+        try! JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(eventJSON.utf8))
+    }
+}
 
 @MainActor
 private func makeViewModel() -> PickySessionListViewModel {

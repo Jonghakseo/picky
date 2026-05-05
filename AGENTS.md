@@ -46,7 +46,6 @@ When the user asks about a feature, start here before broad searching:
 - agentd session lifecycle/orchestration: `agentd/src/session-supervisor.ts`, `agentd/src/session-store.ts`
 - Backend message journal / source mapping: `agentd/src/session-message-builder.ts`, `agentd/src/domain/log-prefixes.ts`
 - Tool categorizer (activity counts): `agentd/src/domain/tool-categorizer.ts`
-- submit_final_report tool: `agentd/src/application/submit-final-report-tool.ts`
 - agentd prompt/context construction: `agentd/src/prompt-builder.ts`, `contracts/prompts/`, `contracts/context/`
 - Pi SDK runtime adapter: `agentd/src/runtime/pi-sdk-runtime.ts`, `agentd/src/runtime/types.ts`, `agentd/src/runtime/mock-runtime.ts`
 - Main-agent side-session tools: `agentd/src/application/handoff-tool.ts`

@@ -27,7 +27,6 @@ export interface PiSdkRuntimeOptions {
   getAgentDir?: typeof getAgentDir;
   resourceLoaderOptions?: CreateAgentSessionServicesOptions["resourceLoaderOptions"];
   customTools?: ToolDefinition[];
-  customToolsFactory?: (sessionId: string) => ToolDefinition[];
   thinkingLevel?: ThinkingLevel;
 }
 
@@ -73,7 +72,7 @@ export class PiSdkRuntime implements AgentRuntime {
     const createSessionFromServices = this.options.createSessionFromServices ?? createAgentSessionFromServices;
     const createRuntimeImpl = this.options.createRuntime ?? createAgentSessionRuntime;
     const agentDir = this.options.agentDir ?? (this.options.getAgentDir ?? getAgentDir)();
-    const customTools = [...(this.options.customTools ?? []), ...(this.options.customToolsFactory?.(sessionId) ?? [])];
+    const customTools = this.options.customTools ?? [];
 
     const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd: runtimeCwd, sessionManager, sessionStartEvent }) => {
       const services = await createServices({ cwd: runtimeCwd, agentDir, resourceLoaderOptions: this.options.resourceLoaderOptions });

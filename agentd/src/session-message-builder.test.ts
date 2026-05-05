@@ -109,10 +109,9 @@ describe("SessionMessageBuilder", () => {
     await builder.cancelExtensionQuestion("session-1", "question-1");
     await builder.recordError("session-1", "Boom");
     await builder.recordSystemMessage("session-1", "Cancelled by user");
-    await builder.recordFinalReport("session-1", { summary: "Done", body: "Body", status: "success", artifacts: [] });
 
-    expect(messages.map((message) => message.kind)).toEqual(["agent_question", "agent_error", "system", "agent_report"]);
+    expect(messages.map((message) => message.kind)).toEqual(["agent_question", "agent_error", "system"]);
     expect(messages[0].cancelledAt).toBe("2026-05-01T00:00:00.000Z");
-    expect(events.map((event) => event.type)).toEqual(["appended", "replaced", "appended", "appended", "appended"]);
+    expect(events.map((event) => event.type)).toEqual(["appended", "replaced", "appended", "appended"]);
   });
 });

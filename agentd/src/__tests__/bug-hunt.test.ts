@@ -58,7 +58,6 @@ describe("picky agentd known bugs (failing reproductions)", () => {
       commitTurnActivity: async () => {},
       notifySideCompletion: async () => {},
       isSideSession: () => false,
-      consumePendingFinalReport: () => undefined,
       emitExtensionUiRequest: () => {},
       messageBuilder: {
         recordExtensionQuestion: async () => {},

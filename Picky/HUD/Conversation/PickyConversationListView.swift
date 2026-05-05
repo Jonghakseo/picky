@@ -66,8 +66,6 @@ struct PickyConversationListView: View {
             switch message.kind {
             case .agentThinking:
                 snapshot.typingBubbleCount += 1
-            case .agentReport where message.report != nil:
-                snapshot.finalReportBubbleCount += 1
             case .agentQuestion where message.question != nil:
                 snapshot.questionBubbleCount += 1
             case .agentError:
@@ -94,16 +92,6 @@ struct PickyConversationListView: View {
             )
         case .agentThinking:
             PickyTypingBubbleView(message: message)
-        case .agentReport:
-            if let report = message.report {
-                PickyFinalReportBubbleView(
-                    report: report,
-                    showsOpenAsReportAction: showsOpenAsReportAction(for: message),
-                    onOpenAsReport: { openReport() }
-                )
-            } else {
-                PickyAgentBubbleView(message: message)
-            }
         case .agentQuestion:
             if let request = message.question {
                 PickyQuestionBubbleView(
@@ -290,7 +278,6 @@ struct PickyConversationListRenderSnapshot: Equatable {
     var typingBubbleCount = 0
     var batchGroupCount = 0
     var pendingBubbleCount = 0
-    var finalReportBubbleCount = 0
     var openAsReportActionCount = 0
     var questionBubbleCount = 0
     var errorBubbleCount = 0

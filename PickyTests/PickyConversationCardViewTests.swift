@@ -119,26 +119,6 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.batchGroupCount == 0)
     }
 
-    @Test func donePhaseRendersFinalReportBubble() {
-        let report = PickyFinalReport(summary: "Done", body: "All tasks complete", status: .success)
-        let session = makeConversationSession(
-            status: .completed,
-            messages: [
-                message("m-user", kind: .userText, text: "finish it"),
-                message("m-report", kind: .agentReport, text: "done", report: report)
-            ],
-            activitySummary: .zero,
-            finalReport: report
-        )
-        let viewModel = makeViewModel()
-        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
-        let header = PickyConversationHeaderView(viewModel: viewModel, session: session)
-
-        #expect(snapshot.finalReportBubbleCount == 1)
-        #expect(header.statusColorName == "green")
-        #expect(!snapshot.showsActivitySummary)
-    }
-
     @Test func waitingPhaseRendersQuestionBubble() {
         let request = extensionUiRequest()
         let session = makeConversationSession(
@@ -270,11 +250,6 @@ struct PickyConversationCardViewTests {
             status: .completed,
             artifacts: [PickyArtifact(id: "a-report", kind: "report", title: "Report", path: "/tmp/report.md", url: nil, updatedAt: baseDate)]
         )
-        let terminalWithFinalReport = makeConversationSession(
-            status: .failed,
-            finalReport: PickyFinalReport(summary: "Partial", body: "Report body", status: .partial)
-        )
-
         let activeMenu = PickyConversationMenu(session: activeWithPiSession, viewModel: viewModel)
         #expect(activeMenu.canOpenPiTerminal)
         #expect(activeMenu.canCopyResumeCommand)
@@ -290,9 +265,6 @@ struct PickyConversationCardViewTests {
         let reportArtifactMenu = PickyConversationMenu(session: terminalWithReportArtifact, viewModel: viewModel)
         #expect(reportArtifactMenu.canOpenReport)
 
-        let finalReportMenu = PickyConversationMenu(session: terminalWithFinalReport, viewModel: viewModel)
-        #expect(finalReportMenu.canOpenReport)
-        #expect(!finalReportMenu.canStop)
     }
 
     @Test func cardHoverSeedsVoiceFollowUpTargetForPushToTalk() async throws {
@@ -489,7 +461,6 @@ private func makeConversationSession(
     steeringMode: PickyQueueMode = .oneAtATime,
     followUpMode: PickyQueueMode = .oneAtATime,
     activitySummary: PickyActivitySummary = .zero,
-    finalReport: PickyFinalReport? = nil,
     pendingExtensionUiRequest: PickyExtensionUiRequest? = nil,
     artifacts: [PickyArtifact] = [],
     logs: [String] = []
@@ -513,7 +484,6 @@ private func makeConversationSession(
             steeringMode: steeringMode,
             followUpMode: followUpMode,
             activitySummary: activitySummary,
-            finalReport: finalReport,
             pendingExtensionUiRequest: pendingExtensionUiRequest
         )
     )
@@ -525,7 +495,6 @@ private func message(
     text: String? = nil,
     originatedBy: PickyMessageOrigin? = nil,
     question: PickyExtensionUiRequest? = nil,
-    report: PickyFinalReport? = nil,
     activitySnapshot: PickyActivitySummary? = nil,
     errorContext: String? = nil,
     errorMessage: String? = nil
@@ -538,7 +507,6 @@ private func message(
         text: text,
         question: question,
         cancelledAt: nil,
-        report: report,
         activitySnapshot: activitySnapshot,
         errorContext: errorContext,
         errorMessage: errorMessage

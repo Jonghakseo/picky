@@ -41,7 +41,6 @@ struct PickyAgentBubbleView: View {
     private var displayText: String {
         if let text = message.text, !text.isEmpty { return text }
         if let errorMessage = message.errorMessage, !errorMessage.isEmpty { return errorMessage }
-        if let report = message.report { return report.summary }
         if let question = message.question { return question.prompt ?? question.title ?? "Input requested" }
         return ""
     }

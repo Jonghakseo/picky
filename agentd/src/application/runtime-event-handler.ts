@@ -6,7 +6,7 @@ import { cleanFinalAnswer, summaryFromFinalAnswer } from "../domain/session-summ
 import { settleActiveTools } from "../domain/tool-activity.js";
 import { categorizeTool, type ToolCategory } from "../domain/tool-categorizer.js";
 import { logAgentd } from "../local-log.js";
-import type { PickyActivitySummary, PickyAgentSession, PickyExtensionUiRequest, PickyFinalReport } from "../protocol.js";
+import type { PickyActivitySummary, PickyAgentSession, PickyExtensionUiRequest } from "../protocol.js";
 import type { RuntimeEvent } from "../runtime/types.js";
 import { extensionUiLogLine, extensionUiWaitingSummary, mapExtensionUiRequest } from "./extension-ui-request-mapper.js";
 
@@ -32,7 +32,6 @@ export interface RuntimeEventHandlerDependencies {
   commitTurnActivity(sessionId: string): Promise<void>;
   notifySideCompletion(sessionId: string): Promise<void>;
   isSideSession(sessionId: string): boolean;
-  consumePendingFinalReport(sessionId: string): PickyFinalReport | undefined;
   emitExtensionUiRequest(request: PickyExtensionUiRequest): void;
   messageBuilder: RuntimeMessageJournal;
 }
@@ -97,7 +96,6 @@ export class RuntimeEventHandler {
     // handler when they want to revive a terminal session.
     if (isTerminalStatus(currentSession.status)) return;
 
-    const pendingFinalReport = terminal || finalAnswer ? this.dependencies.consumePendingFinalReport(sessionId) : undefined;
     const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
     if (terminal || event.status === "waiting_for_input" || finalAnswer) {
       await this.dependencies.messageBuilder.flushAssistantText(sessionId);
@@ -114,26 +112,9 @@ export class RuntimeEventHandler {
       patch.thinkingPreview = undefined;
       patch.tools = settleActiveTools(currentSession.tools, terminalToolPreview(event.status));
     }
-    if (finalAnswer && !pendingFinalReport) {
+    if (finalAnswer) {
       patch.finalAnswer = finalAnswer;
       patch.changedFiles = mergeChangedFiles(currentSession.changedFiles, extractChangedFilesFromExplicitText(finalAnswer));
-    }
-    if (pendingFinalReport) {
-      patch.finalReport = pendingFinalReport;
-      if (event.status === "cancelled") {
-        patch.status = "cancelled";
-      } else if (event.status === "failed") {
-        patch.status = "failed";
-        patch.finalAnswer = event.finalAnswer ?? undefined;
-        // Preserve finalReport, but keep status/lastSummary from the runtime failure.
-      } else if (terminal) {
-        patch.status = pendingFinalReport.status === "blocked" ? "blocked" : "completed";
-        patch.finalAnswer = pendingFinalReport.summary;
-        patch.lastSummary = summaryFromFinalAnswer(pendingFinalReport.summary);
-      } else {
-        patch.finalAnswer = pendingFinalReport.summary;
-        patch.lastSummary = summaryFromFinalAnswer(pendingFinalReport.summary);
-      }
     }
     await this.dependencies.patchSession(sessionId, patch);
     if (terminal) {

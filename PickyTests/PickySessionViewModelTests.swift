@@ -145,7 +145,7 @@ struct PickySessionViewModelTests {
     @Test func eventSequenceDrivesExpectedStatusChanges() async throws {
         let client = FakePickyAgentClient()
         let notifications = PickyNoopNotificationCenter()
-        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications)
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications, notificationPreferencesProvider: PickyStubNotificationPreferences(notificationPreferences: .defaults))
         viewModel.start()
 
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "queued", summary: "Queued"))))
@@ -341,7 +341,7 @@ struct PickySessionViewModelTests {
     @Test func terminalNotificationsAreDeduplicated() async throws {
         let client = FakePickyAgentClient()
         let notifications = PickyNoopNotificationCenter()
-        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications)
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications, notificationPreferencesProvider: PickyStubNotificationPreferences(notificationPreferences: .defaults))
         viewModel.start()
 
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Done"))))
@@ -354,7 +354,7 @@ struct PickySessionViewModelTests {
     @Test func terminalNotificationResetsAfterSessionRunsAgain() async throws {
         let client = FakePickyAgentClient()
         let notifications = PickyNoopNotificationCenter()
-        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications)
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications, notificationPreferencesProvider: PickyStubNotificationPreferences(notificationPreferences: .defaults))
         viewModel.start()
 
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "First done"))))
@@ -368,7 +368,7 @@ struct PickySessionViewModelTests {
     @Test func snapshotHydrationDoesNotNotifyHistoricalCompletedSessions() async throws {
         let client = FakePickyAgentClient()
         let notifications = PickyNoopNotificationCenter()
-        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications)
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications, notificationPreferencesProvider: PickyStubNotificationPreferences(notificationPreferences: .defaults))
         viewModel.start()
 
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(status: "completed", summary: "Already done"))))
@@ -380,7 +380,7 @@ struct PickySessionViewModelTests {
     @Test func snapshotTransitionFromRunningToCompletedDeliversNotification() async throws {
         let client = FakePickyAgentClient()
         let notifications = PickyNoopNotificationCenter()
-        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications)
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications, notificationPreferencesProvider: PickyStubNotificationPreferences(notificationPreferences: .defaults))
         viewModel.start()
 
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Running"))))
@@ -393,7 +393,7 @@ struct PickySessionViewModelTests {
     @Test func pinnedSideSessionDoesNotDeliverCompletedNotification() async throws {
         let client = FakePickyAgentClient()
         let notifications = PickyNoopNotificationCenter()
-        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications)
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications, notificationPreferencesProvider: PickyStubNotificationPreferences(notificationPreferences: .defaults))
         viewModel.start()
 
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Pinned completed Pi session", pinned: true))))
@@ -492,7 +492,7 @@ struct PickySessionViewModelTests {
     @Test func unpinnedAfterFollowUpDeliversCompletedNotification() async throws {
         let client = FakePickyAgentClient()
         let notifications = PickyNoopNotificationCenter()
-        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications)
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications, notificationPreferencesProvider: PickyStubNotificationPreferences(notificationPreferences: .defaults))
         viewModel.start()
 
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "completed", summary: "Pinned completed Pi session", pinned: true))))

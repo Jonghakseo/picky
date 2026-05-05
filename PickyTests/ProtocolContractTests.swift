@@ -229,7 +229,6 @@ struct ProtocolContractTests {
         #expect(session.steeringMode == .oneAtATime)
         #expect(session.followUpMode == .oneAtATime)
         #expect(session.activitySummary == .zero)
-        #expect(session.finalReport == nil)
     }
 
     @Test func decodesSessionMessageAppendedEvent() throws {

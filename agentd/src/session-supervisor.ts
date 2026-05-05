@@ -774,9 +774,6 @@ export class SessionSupervisor extends EventEmitter {
     if (["failed", "cancelled"].includes(session.status)) throw new Error(`Cannot follow up ${session.status} session`);
     // TODO(PR6): replace this temporary guard with pinned side-session reattach.
     if (session.pinned) throw new Error("Pinned sessions cannot accept follow-ups yet (PR6 reattach)");
-    // TODO(Step 2): §7.14 waiting_for_input auto-cancel is deferred; when
-    // pendingExtensionUiRequest is active, steer/follow-up should cancel the question via
-    // SessionMessageBuilder.cancelExtensionQuestion before continuing this flow.
     await this.prepareSideSessionForUserInput(sessionId);
     const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
     if (!handle) {
@@ -793,6 +790,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.appendLog(sessionId, `follow-up rejected: ${reason}`);
       throw new Error(reason);
     }
+    await this.cancelPendingExtensionUiForUserInput(sessionId, handle);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     const prompt: BuiltPrompt = { text, imagePaths: [] };
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id });
@@ -835,6 +833,17 @@ export class SessionSupervisor extends EventEmitter {
     const report = this.pendingFinalReports.get(sessionId);
     if (report) this.pendingFinalReports.delete(sessionId);
     return report;
+  }
+
+  private async cancelPendingExtensionUiForUserInput(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {
+    const pending = this.mustGet(sessionId).pendingExtensionUiRequest;
+    if (!pending) return;
+    if (handle.answerExtensionUi) await handle.answerExtensionUi(pending.id, { cancelled: true });
+    await this.messageBuilder.cancelExtensionQuestion(sessionId, pending.id);
+    const current = this.mustGet(sessionId);
+    if (current.pendingExtensionUiRequest?.id === pending.id) {
+      await this.patch(sessionId, { pendingExtensionUiRequest: undefined, thinkingPreview: undefined });
+    }
   }
 
   async clearQueue(sessionId: string, kind: "steering" | "followUp" | "all"): Promise<void> {
@@ -969,9 +978,6 @@ export class SessionSupervisor extends EventEmitter {
     if (session.status === "failed") throw new Error(`Cannot steer ${session.status} session`);
     // TODO(PR6): replace this temporary guard with pinned side-session reattach.
     if (session.pinned) throw new Error("Pinned sessions cannot accept steers yet (PR6 reattach)");
-    // TODO(Step 2): §7.14 waiting_for_input auto-cancel is deferred; when
-    // pendingExtensionUiRequest is active, steer/follow-up should cancel the question via
-    // SessionMessageBuilder.cancelExtensionQuestion before continuing this flow.
     await this.prepareSideSessionForUserInput(sessionId);
     const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
     if (!handle) {
@@ -979,6 +985,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.appendLog(sessionId, `steer rejected: ${reason}`);
       throw new Error(reason);
     }
+    await this.cancelPendingExtensionUiForUserInput(sessionId, handle);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     const prompt = buildSteerPrompt(text, context);
     const previousSession = this.mustGet(sessionId);

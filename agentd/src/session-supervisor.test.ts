@@ -479,6 +479,45 @@ describe("SessionSupervisor", () => {
     expect(updated.queuedSteers ?? []).toEqual([]);
   });
 
+  it("cancels a pending extension UI question before sending a follow-up", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-followup-cancel-ui-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("pending follow-up"));
+
+    runtime.handle?.emit({ type: "extension_ui", waitsForInput: true, request: { id: "ui-follow", sessionId: session.id, method: "input", prompt: "Need input", createdAt: "2026-05-01T00:00:00.000Z" } });
+    await waitUntil(() => supervisor.get(session.id)?.pendingExtensionUiRequest?.id === "ui-follow");
+
+    await supervisor.followUp(session.id, "continue instead");
+    await settle();
+
+    const updated = supervisor.get(session.id)!;
+    expect(runtime.handle?.extensionUiAnswers).toEqual([{ requestId: "ui-follow", value: { cancelled: true } }]);
+    expect(updated.pendingExtensionUiRequest).toBeUndefined();
+    expect(updated.messages?.find((message) => message.id === "ui-follow")?.cancelledAt).toBeDefined();
+    expect(runtime.handle?.followUps.map((prompt) => prompt.text)).toContain("continue instead");
+  });
+
+  it("cancels a pending extension UI question before steering", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-steer-cancel-ui-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("pending steer"));
+
+    runtime.handle?.emit({ type: "extension_ui", waitsForInput: true, request: { id: "ui-steer", sessionId: session.id, method: "input", prompt: "Need input", createdAt: "2026-05-01T00:00:00.000Z" } });
+    await waitUntil(() => supervisor.get(session.id)?.pendingExtensionUiRequest?.id === "ui-steer");
+
+    await supervisor.steer(session.id, "do this instead");
+
+    const updated = supervisor.get(session.id)!;
+    expect(runtime.handle?.extensionUiAnswers).toEqual([{ requestId: "ui-steer", value: { cancelled: true } }]);
+    expect(updated.pendingExtensionUiRequest).toBeUndefined();
+    expect(updated.messages?.find((message) => message.id === "ui-steer")?.cancelledAt).toBeDefined();
+    expect(runtime.handle?.steers).toEqual(["do this instead"]);
+  });
+
   it("prefers the runtime status finalAnswer over the streamed accumulator so reports do not include intermediate ReAct turns", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

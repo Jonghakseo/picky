@@ -17,6 +17,7 @@ export type NormalizedPiEvent =
   | { kind: "status"; status: SessionStatus; summary?: string; finalAnswer?: string; assistantRun?: RuntimeAssistantRunMetadata }
   | { kind: "tool"; tool: PickyToolActivity }
   | { kind: "extensionUi"; request: Record<string, unknown>; waitsForInput: boolean }
+  | { kind: "sessionInfo"; name: string }
   | { kind: "none" };
 
 export function normalizePiEvent(event: unknown, context: PiEventNormalizationContext = {}): NormalizedPiEvent {
@@ -84,6 +85,12 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
     return { kind: "extensionUi", request: piEvent, waitsForInput: ["select", "confirm", "input", "editor", "askUserQuestion"].includes(method) };
   }
 
+  if (type === "session_info") {
+    const name = stringValue(piEvent.name)?.trim();
+    if (!name) return { kind: "none" };
+    return { kind: "sessionInfo", name };
+  }
+
   if (type === "turn_end") {
     const message = asRecord(piEvent.message);
     const assistantRun = assistantRunMetadata(message, context);
@@ -125,6 +132,7 @@ export function runtimeEventFromPiEvent(event: unknown, context?: PiEventNormali
   }
   if (normalized.kind === "tool") return { type: "tool", toolCallId: normalized.tool.toolCallId, name: normalized.tool.name, status: normalized.tool.status, preview: normalized.tool.preview };
   if (normalized.kind === "extensionUi") return { type: "extension_ui", request: normalized.request, waitsForInput: normalized.waitsForInput };
+  if (normalized.kind === "sessionInfo") return { type: "session_info", name: normalized.name };
   return undefined;
 }
 

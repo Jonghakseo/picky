@@ -110,4 +110,10 @@ describe("normalizePiEvent", () => {
   it("leaves queue updates for the runtime adapter to forward", async () => {
     expect(normalizePiEvent(await fixture("queue-update.json"))).toEqual({ kind: "none" });
   });
+
+  it("maps session_info events to a sessionInfo name update and ignores blank names", () => {
+    expect(normalizePiEvent({ type: "session_info", id: "abc", name: "型트 소개" })).toEqual({ kind: "sessionInfo", name: "型트 소개" });
+    expect(normalizePiEvent({ type: "session_info", id: "abc", name: "  " })).toEqual({ kind: "none" });
+    expect(normalizePiEvent({ type: "session_info", id: "abc" })).toEqual({ kind: "none" });
+  });
 });

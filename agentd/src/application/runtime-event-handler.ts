@@ -74,7 +74,17 @@ export class RuntimeEventHandler {
       logAgentd("extension ui event", { sessionId, waitsForInput: event.waitsForInput, method: typeof event.request.method === "string" ? event.request.method : undefined });
       return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
     }
+    if (event.type === "session_info") return this.applySessionInfoEvent(sessionId, event.name);
     return this.applyToolEvent(sessionId, event);
+  }
+
+  private async applySessionInfoEvent(sessionId: string, name: string): Promise<void> {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const session = this.dependencies.getSession(sessionId);
+    if (session.title === trimmed) return;
+    logAgentd("session info name", { sessionId, previousTitle: session.title, name: trimmed });
+    await this.dependencies.patchSession(sessionId, { title: trimmed });
   }
 
   private async applyStatusEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "status" }>): Promise<void> {

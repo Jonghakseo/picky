@@ -178,6 +178,7 @@ enum PickyInteractionReducer {
             let deadline = envelope.occurredAt.addingTimeInterval(minimumDisplayDuration)
             let owner = state.contextOwnership[contextID] ?? ownerFromMetadata(originSource)
             let hasActiveVoiceInput = state.hasActiveVoiceInput
+            let shouldSpeakReply = owner.isVoiceOwned || replyKind == .sideCompletion
             if hasActiveVoiceInput, replyKind == .sideCompletion {
                 state.output = .suppressedReply(
                     contextID: contextID,
@@ -189,8 +190,9 @@ enum PickyInteractionReducer {
                 effects.append(.scheduleMinimumDisplay(timerID: timerID, speechID: nil, inputID: inputID, delay: minimumDisplayDuration))
                 state.lastDisplayMessage = PickyDisplayMessage(id: contextID, contextID: contextID, text: text, source: .suppressed, updatedAt: envelope.occurredAt)
                 record(.stateChanged, "Suppressed side completion quick reply while voice input is active")
-            } else if owner.isVoiceOwned, !hasActiveVoiceInput {
+            } else if shouldSpeakReply, !hasActiveVoiceInput {
                 let speechID = envelope.correlation.speechID ?? envelope.id
+                let displaySource: PickyDisplaySource = replyKind == .sideCompletion ? .sideCompletion : .voiceReply
                 state.output = .speaking(
                     contextID: contextID,
                     speechID: speechID,
@@ -201,7 +203,7 @@ enum PickyInteractionReducer {
                 )
                 state = state.removingOverlayReason(.waitingForVoiceResponse)
                 state = state.addingOverlayReason(.speakingResponse)
-                state.lastDisplayMessage = PickyDisplayMessage(id: contextID, contextID: contextID, text: text, source: .voiceReply, updatedAt: envelope.occurredAt)
+                state.lastDisplayMessage = PickyDisplayMessage(id: contextID, contextID: contextID, text: text, source: displaySource, updatedAt: envelope.occurredAt)
                 effects.append(.scheduleMinimumDisplay(timerID: timerID, speechID: speechID, inputID: inputID, delay: minimumDisplayDuration))
                 effects.append(.speak(speechID: speechID, text: text, contextID: contextID))
                 record(.stateChanged, "Voice quick reply is speaking")

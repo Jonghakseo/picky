@@ -80,6 +80,28 @@ struct PickyInteractionReducerTests {
         #expect(cleared.state.output == .idle)
     }
 
+    @Test func notifySideCompletionQuickReplySpeaksEvenWhenSystemOriginated() {
+        let transition = reduce(
+            PickyInteractionState(),
+            .quickReply(contextID: "side-session", text: "사이드 에이전트 작업이 완료됐습니다.", originSource: .system, replyKind: .sideCompletion, sessionID: "side-session", inputID: nil),
+            id: timerA
+        )
+
+        #expect(transition.state.output == .speaking(
+            contextID: "side-session",
+            speechID: timerA,
+            text: "사이드 에이전트 작업이 완료됐습니다.",
+            minimumDisplayTimerID: timerA,
+            minimumDisplayUntil: baseDate.addingTimeInterval(PickyInteractionReducer.minimumDisplayDuration),
+            finishPending: false
+        ))
+        #expect(transition.state.lastDisplayMessage?.source == .sideCompletion)
+        #expect(transition.effects == [
+            .scheduleMinimumDisplay(timerID: timerA, speechID: timerA, inputID: nil, delay: PickyInteractionReducer.minimumDisplayDuration),
+            .speak(speechID: timerA, text: "사이드 에이전트 작업이 완료됐습니다.", contextID: "side-session")
+        ])
+    }
+
     @Test func textContextCapturedRecordsOwnershipBeforeSubmitEffect() {
         var state = PickyInteractionState()
         state.pendingTextInputs[inputA] = PickyTextInputState(text: "hello")

@@ -226,15 +226,20 @@ struct BlueCursorView: View {
             // Nearly transparent background (helps with compositing)
             Color.black.opacity(0.001)
 
-            // Fixed target marker — independent of the cursor buddy animation so
+            // Fixed target highlight — independent of the cursor buddy animation so
             // pointer requests remain visible even on another display or while
             // the buddy is flying in/out.
             if let pointerTargetPosition {
-                PointerTargetHighlightView()
-                    .position(pointerTargetPosition)
-                    .allowsHitTesting(false)
-                    .transition(.scale(scale: 0.82).combined(with: .opacity))
-                    .animation(.spring(response: 0.22, dampingFraction: 0.7), value: pointerTargetPosition)
+                PickyHighlightOverlayView(
+                    kind: companionManager.detectedElementHighlightKind ?? .screenElement,
+                    targetCenter: pointerTargetPosition,
+                    targetSize: pointerTargetSizeInThisScreen,
+                    bubbleText: companionManager.detectedElementBubbleText,
+                    screenSize: CGSize(width: screenFrame.width, height: screenFrame.height)
+                )
+                .allowsHitTesting(false)
+                .transition(.opacity)
+                .animation(.easeOut(duration: 0.18), value: pointerTargetPosition)
             }
 
             // Voice prompt bubble — once the push-to-talk button is released,
@@ -493,9 +498,19 @@ struct BlueCursorView: View {
 
         let localPoint = convertScreenPointToSwiftUICoordinates(screenLocation)
         return CGPoint(
-            x: max(24, min(localPoint.x, screenFrame.width - 24)),
-            y: max(24, min(localPoint.y, screenFrame.height - 24))
+            x: max(0, min(localPoint.x, screenFrame.width)),
+            y: max(0, min(localPoint.y, screenFrame.height))
         )
+    }
+
+    /// SwiftUI-space size of the highlighted element's bounding box. When the
+    /// detection only carries a point, falls back to a default size so the
+    /// highlight ring still draws cleanly.
+    private var pointerTargetSizeInThisScreen: CGSize {
+        if let frame = companionManager.detectedElementTargetFrame, frame.width > 0, frame.height > 0 {
+            return CGSize(width: frame.width, height: frame.height)
+        }
+        return CGSize(width: 28, height: 28)
     }
 
     private func pointerTargetBelongsToThisScreen(screenLocation: CGPoint, displayFrame: CGRect?) -> Bool {
@@ -760,38 +775,272 @@ private struct VoicePromptCursorBubbleView: View {
 
 // MARK: - Pointer Target Highlight
 
-/// A fixed marker rendered at the requested pointer target. The animated buddy
-/// may start from another display, so this marker makes the target immediately
-/// visible as soon as the request is received.
-private struct PointerTargetHighlightView: View {
+/// Pi-cursor-blue highlight overlay used when Picky points at something on
+/// screen. Renders three concentric pulsing rings around the target and a
+/// status tag with a tail; for in-screen targets it also dims the surrounding
+/// area so the focus is unmistakable. Picky's own HUD chrome (e.g. the side
+/// agent dock) opts out of the dim layer.
+private struct PickyHighlightOverlayView: View {
+    let kind: PickyDetectedHighlightKind
+    let targetCenter: CGPoint
+    let targetSize: CGSize
+    let bubbleText: String?
+    let screenSize: CGSize
+
+    @State private var pulsePhase: Double = 0
+    @State private var measuredTagSize: CGSize = CGSize(width: 132, height: 22)
+
+    private var ringInnerRadius: CGFloat {
+        max(max(targetSize.width, targetSize.height) / 2 + 4, 14)
+    }
+
+    private var ringMidRadius: CGFloat { ringInnerRadius + 6 }
+    private var ringOuterRadius: CGFloat { ringInnerRadius + 13 }
+
+    private var tagPlacement: PickyHighlightTagPlacement {
+        PickyHighlightTagPlacement.compute(
+            targetCenter: targetCenter,
+            ringOuterRadius: ringOuterRadius,
+            tagSize: measuredTagSize,
+            screenSize: screenSize
+        )
+    }
+
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(DS.Colors.overlayCursorBlue.opacity(0.16))
-                .frame(width: 48, height: 48)
-                .blur(radius: 1)
+        ZStack(alignment: .topLeading) {
+            if kind == .screenElement {
+                Canvas { context, size in
+                    var path = Path()
+                    path.addRect(CGRect(origin: .zero, size: size))
+                    let r = ringInnerRadius
+                    let hole = CGRect(
+                        x: targetCenter.x - r,
+                        y: targetCenter.y - r,
+                        width: r * 2,
+                        height: r * 2
+                    )
+                    path.addEllipse(in: hole)
+                    context.fill(
+                        path,
+                        with: .color(Color(red: 10.0 / 255.0, green: 26.0 / 255.0, blue: 56.0 / 255.0).opacity(0.30)),
+                        style: FillStyle(eoFill: true)
+                    )
+                }
+                .frame(width: screenSize.width, height: screenSize.height)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+            }
 
             Circle()
-                .stroke(DS.Colors.overlayCursorBlue.opacity(0.95), lineWidth: 2.4)
-                .frame(width: 34, height: 34)
+                .stroke(DS.Colors.overlayCursorBlue.opacity(0.25), lineWidth: 0.6)
+                .frame(width: ringOuterRadius * 2, height: ringOuterRadius * 2)
+                .scaleEffect(0.95 + 0.18 * pulsePhase)
+                .opacity(1.0 - 0.55 * pulsePhase)
+                .position(targetCenter)
 
             Circle()
-                .stroke(Color.white.opacity(0.85), lineWidth: 1)
-                .frame(width: 22, height: 22)
-
-            Rectangle()
-                .fill(DS.Colors.overlayCursorBlue)
-                .frame(width: 3, height: 44)
-
-            Rectangle()
-                .fill(DS.Colors.overlayCursorBlue)
-                .frame(width: 44, height: 3)
+                .stroke(DS.Colors.overlayCursorBlue.opacity(0.55), lineWidth: 1.0)
+                .frame(width: ringMidRadius * 2, height: ringMidRadius * 2)
+                .scaleEffect(0.97 + 0.10 * pulsePhase)
+                .opacity(1.0 - 0.30 * pulsePhase)
+                .position(targetCenter)
 
             Circle()
-                .fill(Color.white)
-                .frame(width: 5, height: 5)
+                .stroke(DS.Colors.overlayCursorBlue, lineWidth: 1.6)
+                .frame(width: ringInnerRadius * 2, height: ringInnerRadius * 2)
+                .position(targetCenter)
+
+            if let bubbleText, !bubbleText.isEmpty {
+                PickyHighlightTagView(text: bubbleText, tailEdge: tagPlacement.tailEdge)
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(key: PickyHighlightTagSizeKey.self, value: proxy.size)
+                        }
+                    )
+                    .offset(x: tagPlacement.topLeading.x, y: tagPlacement.topLeading.y)
+            }
         }
-        .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.8), radius: 10, x: 0, y: 0)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) {
+                pulsePhase = 1.0
+            }
+        }
+        .onPreferenceChange(PickyHighlightTagSizeKey.self) { newSize in
+            if newSize.width > 0, newSize.height > 0 {
+                measuredTagSize = newSize
+            }
+        }
+    }
+}
+
+private struct PickyHighlightTagSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
+}
+
+struct PickyHighlightTagPlacement: Equatable {
+    enum TailEdge { case left, right, top, bottom }
+    let topLeading: CGPoint
+    let tailEdge: TailEdge
+
+    static func compute(
+        targetCenter: CGPoint,
+        ringOuterRadius: CGFloat,
+        tagSize: CGSize,
+        screenSize: CGSize
+    ) -> PickyHighlightTagPlacement {
+        let gap: CGFloat = 12
+        let edgePadding: CGFloat = 8
+        let leftSpace = targetCenter.x - ringOuterRadius - gap
+        let rightSpace = screenSize.width - targetCenter.x - ringOuterRadius - gap
+
+        if rightSpace >= tagSize.width + edgePadding,
+           rightSpace >= leftSpace {
+            let originX = targetCenter.x + ringOuterRadius + gap
+            let originY = targetCenter.y - tagSize.height / 2
+            return PickyHighlightTagPlacement(
+                topLeading: CGPoint(x: originX, y: clampY(originY, height: tagSize.height, screenSize: screenSize)),
+                tailEdge: .left
+            )
+        }
+
+        if leftSpace >= tagSize.width + edgePadding {
+            let originX = targetCenter.x - ringOuterRadius - gap - tagSize.width
+            let originY = targetCenter.y - tagSize.height / 2
+            return PickyHighlightTagPlacement(
+                topLeading: CGPoint(x: originX, y: clampY(originY, height: tagSize.height, screenSize: screenSize)),
+                tailEdge: .right
+            )
+        }
+
+        // Not enough horizontal space — anchor below or above the ring.
+        let belowOrigin = CGPoint(
+            x: clampX(targetCenter.x - tagSize.width / 2, width: tagSize.width, screenSize: screenSize),
+            y: targetCenter.y + ringOuterRadius + gap
+        )
+        let belowFits = belowOrigin.y + tagSize.height + edgePadding <= screenSize.height
+        if belowFits {
+            return PickyHighlightTagPlacement(topLeading: belowOrigin, tailEdge: .top)
+        }
+        let aboveOrigin = CGPoint(
+            x: clampX(targetCenter.x - tagSize.width / 2, width: tagSize.width, screenSize: screenSize),
+            y: targetCenter.y - ringOuterRadius - gap - tagSize.height
+        )
+        return PickyHighlightTagPlacement(topLeading: aboveOrigin, tailEdge: .bottom)
+    }
+
+    private static func clampX(_ x: CGFloat, width: CGFloat, screenSize: CGSize) -> CGFloat {
+        let minX: CGFloat = 8
+        let maxX = max(minX, screenSize.width - width - 8)
+        return min(max(x, minX), maxX)
+    }
+
+    private static func clampY(_ y: CGFloat, height: CGFloat, screenSize: CGSize) -> CGFloat {
+        let minY: CGFloat = 8
+        let maxY = max(minY, screenSize.height - height - 8)
+        return min(max(y, minY), maxY)
+    }
+}
+
+private struct PickyHighlightTagView: View {
+    let text: String
+    let tailEdge: PickyHighlightTagPlacement.TailEdge
+
+    private static let fillColor = Color(red: 230.0 / 255.0, green: 239.0 / 255.0, blue: 255.0 / 255.0)
+    private static let textColor = Color(red: 14.0 / 255.0, green: 61.0 / 255.0, blue: 143.0 / 255.0)
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(DS.Colors.overlayCursorBlue)
+                .frame(width: 5, height: 5)
+            Text(text)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(Self.textColor)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            PickyHighlightTagShape(tailEdge: tailEdge)
+                .fill(Self.fillColor)
+        )
+        .overlay(
+            PickyHighlightTagShape(tailEdge: tailEdge)
+                .stroke(DS.Colors.overlayCursorBlue, lineWidth: 0.6)
+        )
+        .fixedSize()
+    }
+}
+
+private struct PickyHighlightTagShape: Shape {
+    let tailEdge: PickyHighlightTagPlacement.TailEdge
+    var cornerRadius: CGFloat = 7
+    var tailLength: CGFloat = 5
+    var tailHalfBase: CGFloat = 4
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let r = cornerRadius
+
+        switch tailEdge {
+        case .left:
+            path.move(to: CGPoint(x: rect.minX + r, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + r), control: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX - r, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
+            path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - r), control: CGPoint(x: rect.minX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.midY + tailHalfBase))
+            path.addLine(to: CGPoint(x: rect.minX - tailLength, y: rect.midY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.midY - tailHalfBase))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+            path.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.minY), control: CGPoint(x: rect.minX, y: rect.minY))
+        case .right:
+            path.move(to: CGPoint(x: rect.minX + r, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + r), control: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY - tailHalfBase))
+            path.addLine(to: CGPoint(x: rect.maxX + tailLength, y: rect.midY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY + tailHalfBase))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX - r, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
+            path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - r), control: CGPoint(x: rect.minX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+            path.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.minY), control: CGPoint(x: rect.minX, y: rect.minY))
+        case .top:
+            path.move(to: CGPoint(x: rect.minX + r, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.midX - tailHalfBase, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.midX, y: rect.minY - tailLength))
+            path.addLine(to: CGPoint(x: rect.midX + tailHalfBase, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + r), control: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX - r, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
+            path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - r), control: CGPoint(x: rect.minX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+            path.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.minY), control: CGPoint(x: rect.minX, y: rect.minY))
+        case .bottom:
+            path.move(to: CGPoint(x: rect.minX + r, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + r), control: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX - r, y: rect.maxY), control: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.midX + tailHalfBase, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY + tailLength))
+            path.addLine(to: CGPoint(x: rect.midX - tailHalfBase, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
+            path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.maxY - r), control: CGPoint(x: rect.minX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+            path.addQuadCurve(to: CGPoint(x: rect.minX + r, y: rect.minY), control: CGPoint(x: rect.minX, y: rect.minY))
+        }
+        path.closeSubpath()
+        return path
     }
 }
 

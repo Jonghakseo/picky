@@ -10,6 +10,14 @@
 import CoreGraphics
 import Foundation
 
+/// Whether a Picky highlight is over an arbitrary in-screen element
+/// (where Picky should dim the surroundings) or over Picky's own HUD
+/// chrome like the side-agent dock (where dimming would feel intrusive).
+enum PickyDetectedHighlightKind: String, Codable, Equatable {
+    case screenElement
+    case hudDockIcon
+}
+
 enum PickyPointerCoordinateSpace: String, Codable, Equatable {
     /// Pixel coordinates in the captured screenshot image, top-left origin.
     case screenshotPixel

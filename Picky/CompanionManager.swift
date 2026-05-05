@@ -122,6 +122,13 @@ final class CompanionManager: ObservableObject {
     @Published var detectedElementBubbleText: String?
     /// How long the buddy should keep the pointer bubble visible after arriving.
     @Published var detectedElementDisplayDuration: TimeInterval?
+    /// Optional bounding rect (global AppKit coords) of the highlighted element.
+    /// When provided, the highlight overlay sizes its rings to match the bbox.
+    /// When nil, the overlay falls back to a default-sized circle around the point.
+    @Published var detectedElementTargetFrame: CGRect?
+    /// Whether the highlight is over an in-screen element (dim the surroundings)
+    /// or over Picky's own HUD chrome like the dock (no dim).
+    @Published var detectedElementHighlightKind: PickyDetectedHighlightKind?
 
     let buddyDictationManager: BuddyDictationManager
     let globalPushToTalkShortcutMonitor = GlobalPushToTalkShortcutMonitor()
@@ -258,6 +265,8 @@ final class CompanionManager: ObservableObject {
         detectedElementDisplayFrame = nil
         detectedElementBubbleText = nil
         detectedElementDisplayDuration = nil
+        detectedElementTargetFrame = nil
+        detectedElementHighlightKind = nil
         scheduleTransientHideIfNeeded()
     }
 
@@ -919,6 +928,8 @@ final class CompanionManager: ObservableObject {
             detectedElementDisplayFrame = target.displayFrame
             detectedElementBubbleText = target.bubbleText
             detectedElementDisplayDuration = target.duration
+            detectedElementTargetFrame = nil
+            detectedElementHighlightKind = .screenElement
             detectedElementScreenLocation = target.screenLocation
             latestAgentSessionSummary = target.bubbleText.map { "가리키는 중: \($0)" } ?? "화면 위치를 가리키는 중…"
 
@@ -939,6 +950,8 @@ final class CompanionManager: ObservableObject {
         detectedElementDisplayFrame = displayFrame
         detectedElementBubbleText = target.label
         detectedElementDisplayDuration = target.duration
+        detectedElementTargetFrame = target.screenFrame
+        detectedElementHighlightKind = .hudDockIcon
         detectedElementScreenLocation = screenLocation
         latestAgentSessionSummary = "새 사이드 에이전트를 가리키는 중…"
 

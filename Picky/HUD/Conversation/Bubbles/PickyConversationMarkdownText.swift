@@ -9,6 +9,7 @@ import SwiftUI
 
 struct PickyConversationMarkdownText: View {
     let markdown: String
+    var lineLimit: Int? = nil
 
     private let renderer = PickyReportMarkdownRenderer()
 
@@ -28,11 +29,13 @@ struct PickyConversationMarkdownText: View {
             Text(renderer.inlineAttributedString(for: text))
                 .font(font(forHeadingLevel: level))
                 .foregroundColor(DS.Colors.textPrimary)
+                .lineLimit(lineLimit)
                 .fixedSize(horizontal: false, vertical: true)
         case .paragraph(let text):
             Text(renderer.inlineAttributedString(for: text))
                 .font(.system(size: 12, weight: .regular))
                 .foregroundColor(DS.Colors.textPrimary)
+                .lineLimit(lineLimit)
                 .fixedSize(horizontal: false, vertical: true)
         case .bullet(let text):
             HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -42,6 +45,7 @@ struct PickyConversationMarkdownText: View {
                 Text(renderer.inlineAttributedString(for: text))
                     .font(.system(size: 12, weight: .regular))
                     .foregroundColor(DS.Colors.textPrimary)
+                    .lineLimit(lineLimit)
                     .fixedSize(horizontal: false, vertical: true)
             }
         case .table(let headers, let rows):
@@ -62,6 +66,7 @@ struct PickyConversationMarkdownText: View {
                 Text(text.isEmpty ? " " : text)
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
                     .foregroundColor(DS.Colors.codeText)
+                    .lineLimit(lineLimit)
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

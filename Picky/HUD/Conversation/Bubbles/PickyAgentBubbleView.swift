@@ -15,7 +15,7 @@ struct PickyAgentBubbleView: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 6) {
-                PickyConversationMarkdownText(markdown: previewText)
+                PickyConversationMarkdownText(markdown: previewText, lineLimit: PickyAgentResponsePreview.maxLines)
                 if showsFooter {
                     HStack(alignment: .center, spacing: 7) {
                         if showsOpenAsReportAction, let onOpenAsReport {

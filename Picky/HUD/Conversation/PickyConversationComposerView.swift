@@ -216,26 +216,22 @@ struct PickyConversationComposerView: View {
 
     private var sendButton: some View {
         Button(action: submitDefault) {
-            if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("↵")
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
-                    )
-            } else {
-                Image(systemName: "paperplane.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(sendColor)
-                    .frame(width: 18, height: 18)
-            }
+            Image(systemName: "paperplane.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(isSendDisabled ? DS.Colors.textTertiary : sendColor)
+                .frame(width: 18, height: 18)
         }
         .buttonStyle(.plain)
-        .disabled(defaultSubmitKind == nil)
+        .disabled(isSendDisabled)
         .help(sendHelpText)
+    }
+
+    private var isSendDisabled: Bool {
+        defaultSubmitKind == nil || !hasDraftText
+    }
+
+    private var hasDraftText: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var composerBackground: some View {
@@ -282,6 +278,13 @@ struct PickyConversationComposerView: View {
     }
 
     private var sendHelpText: String {
+        guard defaultSubmitKind != nil else {
+            return "This session cannot accept composer input"
+        }
+        guard hasDraftText else {
+            return "Enter a message to send"
+        }
+
         switch defaultSubmitKind {
         case .steer:
             return "Send steering message"

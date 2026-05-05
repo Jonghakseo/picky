@@ -29,7 +29,7 @@ struct AccessibilityBrowserContextProvider: PickyAdvancedBrowserContextProviding
     var axTrustChecker: () -> Bool = { AXIsProcessTrusted() }
     var supportedBundleIds: Set<String> = AccessibilityBrowserContextProvider.defaultSupportedBundleIds
     var titleExtractor: TitleExtractor = AccessibilityBrowserContextProvider.defaultTitleExtractor
-    var urlExtractor: URLExtractor = { _, _ in nil }
+    var urlExtractor: URLExtractor = AccessibilityBrowserContextProvider.defaultURLExtractor
 
     func browserContextResult() -> PickyContextCaptureResult<PickyBrowserContext> {
         guard let app = frontmostApplicationProvider(),
@@ -60,15 +60,66 @@ struct AccessibilityBrowserContextProvider: PickyAdvancedBrowserContextProviding
     }
 
     private static func defaultTitleExtractor(pid: pid_t) -> String? {
-        let app = AXUIElementCreateApplication(pid)
-        var focused: AnyObject?
-        let err = AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &focused)
-        guard err == .success, let value = focused else { return nil }
-        let window = value as! AXUIElement
+        guard let window = focusedWindow(forPID: pid) else { return nil }
         var titleAny: AnyObject?
         guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleAny) == .success,
               let title = titleAny as? String,
               !title.isEmpty else { return nil }
         return title
+    }
+
+    /// Best-effort URL extraction from the frontmost browser window's omnibox.
+    /// Chrome/Brave/Edge expose the address bar with a stable AXIdentifier of
+    /// "AddressAndSearchBar". Safari and Arc are not yet covered; they fall
+    /// through to nil and the chained AppleScript provider remains the source
+    /// of truth for the URL when its gates pass.
+    static func defaultURLExtractor(pid: pid_t, bundleId: String) -> String? {
+        let identifier: String
+        switch bundleId {
+        case "com.google.Chrome", "com.brave.Browser", "com.microsoft.edgemac":
+            identifier = "AddressAndSearchBar"
+        default:
+            return nil
+        }
+        guard let window = focusedWindow(forPID: pid) else { return nil }
+        return findOmniboxValue(in: window, identifier: identifier)
+    }
+
+    private static func focusedWindow(forPID pid: pid_t) -> AXUIElement? {
+        let app = AXUIElementCreateApplication(pid)
+        var focused: AnyObject?
+        let err = AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &focused)
+        guard err == .success, let value = focused else { return nil }
+        return (value as! AXUIElement)
+    }
+
+    /// BFS the AX subtree under `root` looking for the first descendant whose
+    /// AXIdentifier matches `identifier`, then return its AXValue. Bounded by
+    /// `maxNodes` so we never wander into a runaway WebKit subtree.
+    private static func findOmniboxValue(in root: AXUIElement, identifier: String) -> String? {
+        var queue: [AXUIElement] = [root]
+        var visited = 0
+        let maxNodes = 2000
+        while !queue.isEmpty && visited < maxNodes {
+            let element = queue.removeFirst()
+            visited += 1
+            var idAny: AnyObject?
+            if AXUIElementCopyAttributeValue(element, kAXIdentifierAttribute as CFString, &idAny) == .success,
+               let idString = idAny as? String,
+               idString == identifier {
+                var valueAny: AnyObject?
+                if AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &valueAny) == .success,
+                   let value = valueAny as? String,
+                   !value.isEmpty {
+                    return value
+                }
+            }
+            var childrenAny: AnyObject?
+            if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenAny) == .success,
+               let children = childrenAny as? [AXUIElement] {
+                queue.append(contentsOf: children)
+            }
+        }
+        return nil
     }
 }

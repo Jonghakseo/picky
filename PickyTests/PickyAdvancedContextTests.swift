@@ -324,6 +324,13 @@ struct PickyAccessibilityBrowserContextProviderTests {
         #expect(result.warnings.contains(where: { $0.contains("Accessibility permission") }))
     }
 
+    @Test func defaultURLExtractorReturnsNilForBundlesWithoutOmniboxMapping() {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        #expect(AccessibilityBrowserContextProvider.defaultURLExtractor(pid: pid, bundleId: "com.apple.Safari") == nil)
+        #expect(AccessibilityBrowserContextProvider.defaultURLExtractor(pid: pid, bundleId: "company.thebrowser.Browser") == nil)
+        #expect(AccessibilityBrowserContextProvider.defaultURLExtractor(pid: pid, bundleId: "com.example.NotABrowser") == nil)
+    }
+
     @Test func accessibilityProviderReturnsUnavailableWhenNoTitleAndNoURL() {
         var provider = AccessibilityBrowserContextProvider()
         provider.frontmostApplicationProvider = { NSRunningApplication.current }

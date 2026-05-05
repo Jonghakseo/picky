@@ -126,6 +126,8 @@ final class CompanionManager: ObservableObject {
     let buddyDictationManager: BuddyDictationManager
     let globalPushToTalkShortcutMonitor = GlobalPushToTalkShortcutMonitor()
     let overlayWindowManager = OverlayWindowManager()
+    let quickInputDoubleTapDetector = QuickInputDoubleTapDetector()
+    let quickInputPanelManager = QuickInputPanelManager()
     // Response text is now displayed inline on the cursor overlay via
     // streamingResponseText, so no separate response overlay manager is needed.
 
@@ -155,6 +157,7 @@ final class CompanionManager: ObservableObject {
     private var directMessageContextIDs = Set<String>()
 
     private var shortcutTransitionCancellable: AnyCancellable?
+    private var quickInputDoubleTapCancellable: AnyCancellable?
     private var voiceStateCancellable: AnyCancellable?
     private var audioPowerCancellable: AnyCancellable?
     private var dictationErrorCancellable: AnyCancellable?
@@ -219,6 +222,7 @@ final class CompanionManager: ObservableObject {
             bindAgentEvents()
             Task { await agentClient.connect() }
         }
+        wireQuickInputPanel()
         refreshAllPermissions()
         print("🔑 Picky start — accessibility: \(hasAccessibilityPermission), screen: \(hasScreenRecordingPermission), mic: \(hasMicrophonePermission), screenContent: \(hasScreenContentPermission)")
         startPermissionPolling()
@@ -226,6 +230,7 @@ final class CompanionManager: ObservableObject {
         bindAudioPowerLevel()
         bindDictationErrors()
         bindShortcutTransitions()
+        bindQuickInputDoubleTap()
         bindSettingsChanges()
         // Show the cursor as soon as all permissions are available and the
         // cursor preference is enabled.
@@ -247,6 +252,9 @@ final class CompanionManager: ObservableObject {
 
     func stop() {
         globalPushToTalkShortcutMonitor.stop()
+        globalPushToTalkShortcutMonitor.rawEventForwarder = nil
+        quickInputDoubleTapDetector.reset()
+        quickInputPanelManager.dismiss()
         buddyDictationManager.cancelCurrentDictation()
         overlayWindowManager.hideOverlay()
         transientHideTask?.cancel()
@@ -266,6 +274,7 @@ final class CompanionManager: ObservableObject {
         agentEventTask = nil
         agentClient.disconnect()
         shortcutTransitionCancellable?.cancel()
+        quickInputDoubleTapCancellable?.cancel()
         voiceStateCancellable?.cancel()
         audioPowerCancellable?.cancel()
         dictationErrorCancellable?.cancel()
@@ -517,6 +526,51 @@ final class CompanionManager: ObservableObject {
             .sink { [weak self] transition in
                 self?.handleShortcutTransition(transition)
             }
+    }
+
+    /// Routes raw flags/key events from the PTT event tap into the Quick
+    /// Input detector so we don't need a second CGEvent tap.
+    private func wireQuickInputPanel() {
+        globalPushToTalkShortcutMonitor.rawEventForwarder = { [weak self] eventType, keyCode, flagsRawValue in
+            guard let self else { return }
+            self.quickInputDoubleTapDetector.handleGlobalEvent(
+                eventType: eventType,
+                keyCode: keyCode,
+                modifierFlagsRawValue: flagsRawValue
+            )
+        }
+        quickInputPanelManager.onSubmit = { [weak self] text in
+            self?.handleQuickInputSubmit(text: text)
+        }
+    }
+
+    private func bindQuickInputDoubleTap() {
+        quickInputDoubleTapCancellable = quickInputDoubleTapDetector
+            .eventPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] event in
+                self?.handleQuickInputDoubleTap(event)
+            }
+    }
+
+    private func handleQuickInputDoubleTap(_ event: QuickInputDoubleTapEvent) {
+        // PTT-in-progress and the input panel are mutually exclusive: voice and
+        // typed quick input share the same submission lane and we don't want a
+        // floating focus stealer mid-utterance.
+        guard !isPushToTalkShortcutHeld,
+              !buddyDictationManager.isDictationInProgress else { return }
+        quickInputPanelManager.presentPanel(near: event.mouseLocation)
+    }
+
+    private func handleQuickInputSubmit(text: String) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let success = await self.sendDirectMessage(text)
+            self.quickInputPanelManager.panelDidFinishSending(
+                success: success,
+                errorMessage: success ? nil : self.directMessageError
+            )
+        }
     }
 
     private func handleShortcutTransition(_ transition: BuddyPushToTalkShortcut.ShortcutTransition) {

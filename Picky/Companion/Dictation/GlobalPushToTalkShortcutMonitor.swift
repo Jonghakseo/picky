@@ -15,6 +15,11 @@ import Foundation
 final class GlobalPushToTalkShortcutMonitor: ObservableObject {
     let shortcutTransitionPublisher = PassthroughSubject<BuddyPushToTalkShortcut.ShortcutTransition, Never>()
 
+    /// Optional sink for raw flagsChanged/keyDown/keyUp events. Used by
+    /// QuickInputDoubleTapDetector so we don't install a second CGEvent tap.
+    /// Always invoked on the main thread (the event tap runs on `CFRunLoopGetMain()`).
+    var rawEventForwarder: ((CGEventType, UInt16, UInt64) -> Void)?
+
     private var globalEventTap: CFMachPort?
     private var globalEventTapRunLoopSource: CFRunLoopSource?
     /// Mutated exclusively from the CGEvent tap callback, which runs on
@@ -109,10 +114,12 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
         }
 
         let eventKeyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+        let modifierFlagsRawValue = event.flags.rawValue
+        rawEventForwarder?(eventType, eventKeyCode, modifierFlagsRawValue)
         let shortcutTransition = BuddyPushToTalkShortcut.shortcutTransition(
             for: eventType,
             keyCode: eventKeyCode,
-            modifierFlagsRawValue: event.flags.rawValue,
+            modifierFlagsRawValue: modifierFlagsRawValue,
             wasShortcutPreviouslyPressed: isShortcutCurrentlyPressed
         )
 

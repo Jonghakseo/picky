@@ -349,19 +349,49 @@ private struct PickyHUDDockRailView: View {
             .padding(.horizontal, 6)
             .padding(.top, 8)
             .padding(.bottom, 10)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(DS.Colors.surface1.opacity(0.92))
-                    .overlay(Capsule(style: .continuous).stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8))
-            )
+            .background(dockGlassBackground)
         }
+    }
+
+    /// Frosted-glass capsule that hosts the dock icons. Uses .ultraThinMaterial
+    /// so the desktop / app underneath actually shows through, then layers a
+    /// gradient stroke (bright top, dimmer bottom) for the macOS-style top
+    /// gloss, and an ambient shadow so the dock no longer disappears against
+    /// light backgrounds.
+    private var dockGlassBackground: some View {
+        Capsule(style: .continuous)
+            .fill(.ultraThinMaterial)
+            .overlay(
+                Capsule(style: .continuous)
+                    .fill(DS.Colors.surface1.opacity(0.18))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.55),
+                                Color.white.opacity(0.05),
+                                Color.black.opacity(0.18)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 0.8
+                    )
+            )
+            .compositingGroup()
+            .shadow(color: Color.black.opacity(0.30), radius: 18, x: 0, y: 10)
+            .shadow(color: Color.black.opacity(0.10), radius: 3, x: 0, y: 1)
     }
 
     private var addAgentSlotButton: some View {
         Button(action: onCreateSideAgent) {
             ZStack {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(DS.Colors.surface2.opacity(0.55))
+                    .fill(.ultraThinMaterial)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.white.opacity(0.04))
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(
                         DS.Colors.textTertiary.opacity(0.7),
@@ -385,7 +415,9 @@ private struct PickyHUDDockRailView: View {
             ZStack {
                 ZStack {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(DS.Colors.surface2.opacity(0.55))
+                        .fill(.ultraThinMaterial)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.white.opacity(0.04))
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .strokeBorder(
                             DS.Colors.textTertiary.opacity(0.7),
@@ -461,9 +493,20 @@ private struct PickyHUDDockIconView: View {
     }
 
     private var dockIconBackground: some View {
+        // Glass icon: ultraThinMaterial base + (active) status-tinted glaze +
+        // (inactive) faint white film. The stroke is a top-bright / status-tinted
+        // bottom gradient so the icon reads as a small piece of glass on the
+        // bigger glass capsule rather than a flat fill.
         RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .fill(DS.Colors.surface2.opacity(isActive ? 0.78 : 0.58))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(statusColor.opacity(isActive ? 0.12 : 0.06)))
+            .fill(.ultraThinMaterial)
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(statusColor.opacity(isActive ? 0.22 : 0.0))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.white.opacity(isActive ? 0.0 : 0.04))
+            )
             .overlay {
                 if usesAnimatedStatusBorder {
                     PickyHUDAnimatedStatusBorderView(
@@ -474,7 +517,18 @@ private struct PickyHUDDockIconView: View {
                     )
                 } else {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(isActive ? statusColor.opacity(0.70) : statusColor.opacity(0.40), lineWidth: isActive ? 1.15 : 0.8)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(isActive ? 0.65 : 0.45),
+                                    Color.white.opacity(0.05),
+                                    statusColor.opacity(isActive ? 0.55 : 0.22)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: isActive ? 1.0 : 0.7
+                        )
                 }
             }
     }

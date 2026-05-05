@@ -64,17 +64,16 @@ describe("neutral prompt builder", () => {
     expect(pair.user).toContain("ask them to retype or clarify");
   });
 
-  it("includes user-provided main-agent extra instructions when present", () => {
-    const context = PickyContextPacketSchema.parse(readJson("context/plain-text.context.json"));
-    const promptWithInstructions = buildMainAgentPrompt(context, "   으은 답해주세요.   ");
-    const promptWithoutInstructions = buildMainAgentPrompt(context, "   ");
+  it("includes user-provided main-agent extra instructions in the bootstrap pair when present", () => {
+    const pairWithInstructions = buildMainAgentBootstrapPair("   으은 답해주세요.   ");
+    const pairWithoutInstructions = buildMainAgentBootstrapPair("   ");
 
-    expect(promptWithInstructions.text).toContain("## User-provided main-agent instructions");
-    expect(promptWithInstructions.text).toContain("으은 답해주세요.");
-    // Heading appears before the request so the LLM sees user preferences before the prompt body.
-    expect(promptWithInstructions.text.indexOf("User-provided main-agent instructions"))
-      .toBeLessThan(promptWithInstructions.text.indexOf("## User request"));
-    expect(promptWithoutInstructions.text).not.toContain("User-provided main-agent instructions");
+    expect(pairWithInstructions.user).toContain("## User-provided main-agent instructions");
+    expect(pairWithInstructions.user).toContain("으은 답해주세요.");
+    // Bootstrap-only — the per-turn prompt template stays clean of user-additional content.
+    const turnPrompt = buildMainAgentPrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")));
+    expect(turnPrompt.text).not.toContain("User-provided main-agent instructions");
+    expect(pairWithoutInstructions.user).not.toContain("User-provided main-agent instructions");
   });
 
   it("puts pointer overlay instructions in the main-agent bootstrap, not every turn", () => {

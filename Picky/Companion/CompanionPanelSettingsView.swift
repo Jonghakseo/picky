@@ -296,7 +296,7 @@ struct CompanionPanelSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     fieldLabel("Additional instructions")
-                    Text("Appended to every main-agent turn. Use it to set tone, language, or recurring reminders.")
+                    Text("Baked into the main-agent bootstrap. Edits apply on the next main-agent session — reset the main agent or relaunch Picky to pick up changes mid-session.")
                         .font(.system(size: 11))
                         .foregroundColor(DS.Colors.textTertiary)
                     TextEditor(text: $viewModel.settings.mainAgentExtraInstructions)

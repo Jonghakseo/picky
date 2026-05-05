@@ -1674,26 +1674,25 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.handle?.thinkingLevels).toEqual(["high"]);
   });
 
-  it("includes the configured main-agent extra instructions in every routed prompt", async () => {
+  it("bakes the configured main-agent extra instructions into the bootstrap pair, not per-turn prompts", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-extra-instructions-"));
-    const mainRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
 
     supervisor.setMainAgentExtraInstructions("  항상 존대말로 답해주세요  ");
+    await supervisor.prewarmMainAgent("/tmp/project");
+
+    expect(mainRuntime.handle?.bootstrapInjections).toHaveLength(1);
+    const injectedUser = mainRuntime.handle!.bootstrapInjections[0]!.user;
+    expect(injectedUser).toContain("## User-provided main-agent instructions");
+    expect(injectedUser).toContain("항상 존대말로 답해주세요");
+
+    // Per-turn prompt stays free of the user-additional block; only the bootstrap carries it.
     await supervisor.route(context("첫 질문"));
     await settle();
-
-    expect(mainRuntime.createPrompts).toHaveLength(1);
-    expect(mainRuntime.createPrompts[0]!.text).toContain("## User-provided main-agent instructions");
-    expect(mainRuntime.createPrompts[0]!.text).toContain("항상 존대말로 답해주세요");
-
-    // Empty/whitespace clears the override on the next routed prompt.
-    supervisor.setMainAgentExtraInstructions("   ");
-    await supervisor.route(context("다음 질문"));
-    await settle();
-
-    const followUpPrompt = mainRuntime.handle?.followUps.at(-1)?.text ?? "";
-    expect(followUpPrompt).not.toContain("User-provided main-agent instructions");
+    const turnPromptText = mainRuntime.handle?.followUps.at(-1)?.text ?? "";
+    expect(turnPromptText).toContain("# Picky main-agent turn");
+    expect(turnPromptText).not.toContain("User-provided main-agent instructions");
   });
 
   it("applies configured thinking level to the active main runtime", async () => {

@@ -23,19 +23,17 @@ export function buildInitialTaskPrompt(context: PickyContextPacket): BuiltPrompt
   return { text: lines.join("\n"), imagePaths: context.screenshots.map((s) => s.path) };
 }
 
-export function buildMainAgentPrompt(context: PickyContextPacket, extraInstructions?: string): BuiltPrompt {
+export function buildMainAgentPrompt(context: PickyContextPacket): BuiltPrompt {
   const lines = [
     "# Picky main-agent turn",
     "",
     "Follow the standing Picky main-agent bootstrap instructions. Use only this turn's user request and captured desktop context below for fresh context.",
     "",
     `Input modality: ${inputModalityLabel(context.source)}`,
+    "",
+    "## User request",
+    context.transcript?.trim() || "(no transcript provided)",
   ];
-  const trimmedExtra = extraInstructions?.trim();
-  if (trimmedExtra) {
-    lines.push("", "## User-provided main-agent instructions", trimmedExtra);
-  }
-  lines.push("", "## User request", context.transcript?.trim() || "(no transcript provided)");
   appendContext(lines, context);
   return { text: lines.join("\n"), imagePaths: context.screenshots.map((s) => s.path) };
 }
@@ -104,7 +102,8 @@ export interface MainAgentBootstrapPair {
  * spoken playback, so detail like URLs or paths can be safely placed inside
  * `(...)` for the visible transcript without being read aloud.
  */
-export function buildMainAgentBootstrapPair(): MainAgentBootstrapPair {
+export function buildMainAgentBootstrapPair(extraInstructions?: string): MainAgentBootstrapPair {
+  const trimmedExtra = extraInstructions?.trim();
   const user = [
     "이 메시지는 사용자가 보낸 것이 아니라 Picky agentd가 메인 에이전트 세션 시작 시 한 번 주입하는 부트스트랩 안내입니다.",
     "앞으로 들어오는 `# Picky main-agent turn` 메시지는 매 턴의 사용자 요청과 캡처 컨텍스트만 담습니다. 아래 상시 지침을 세션 내내 유지하세요.",
@@ -136,6 +135,17 @@ export function buildMainAgentBootstrapPair(): MainAgentBootstrapPair {
     "2. URL, 파일 경로, 세션 ID, 코드 식별자처럼 음성으로 들으면 어색한 세부 정보가 꼭 필요하면 문장 끝에 괄호 `( ... )` 안에 넣어주세요. Picky의 TTS 레이어는 괄호 안 내용을 음성에서는 자동으로 제외하고, 화면에는 그대로 표시합니다.",
     "3. 한 번에 1~3 문장으로 짧게 답하고, 사용자가 더 묻지 않는 한 추가 설명을 길게 늘어뜨리지 않습니다.",
     "4. 사이드 에이전트로 위임하거나 도구를 호출해야 하는 상황에서는 위의 도구 사용 규칙을 그대로 따르고, 이 답변 스타일 규칙은 사용자에게 직접 말하는 텍스트 답변에만 적용합니다.",
+    "",
+    ...(trimmedExtra
+      ? [
+          "",
+          "## User-provided main-agent instructions",
+          "",
+          "아래는 사용자가 Picky 설정에서 직접 추가한 메인 에이전트 상시 지침입니다. 세션 내내 함께 유지하고, 위 기본 규칙과 충돌하면 사용자 지침을 우선하되 안전/투명성 규칙은 이어갑니다.",
+          "",
+          trimmedExtra,
+        ]
+      : []),
     "",
     "이해했으면 짧게 'OK' 한 마디로만 답하세요. 이 OK는 사용자에게 노출되지 않습니다.",
   ].join("\n");

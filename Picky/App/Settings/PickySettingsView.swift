@@ -40,7 +40,7 @@ struct PickySettingsView: View {
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Additional instructions")
-                    Text("Appended to every main-agent turn (tone, language, reminders).")
+                    Text("Baked into the main-agent bootstrap. Reset the main agent to apply edits mid-session.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     TextEditor(text: $viewModel.settings.mainAgentExtraInstructions)

@@ -485,7 +485,7 @@ export class SessionSupervisor extends EventEmitter {
     this.mainReplyContextId = context.id;
     this.mainDraft = "";
     if (context.transcript?.trim()) await this.appendMainMessage("user", context.transcript.trim());
-    const prompt = buildMainAgentPrompt(context, this.mainExtraInstructions);
+    const prompt = buildMainAgentPrompt(context);
     if (this.mainHandlePromise && !this.mainHandle) {
       const handle = await this.mainHandlePromise;
       if (generation !== this.mainHandleGeneration) return;
@@ -562,7 +562,10 @@ export class SessionSupervisor extends EventEmitter {
   private async injectMainBootstrap(handle: RuntimeSessionHandle): Promise<void> {
     if (!handle.injectInitialBootstrap) return;
     try {
-      await handle.injectInitialBootstrap(buildMainAgentBootstrapPair());
+      // Bake the user's extra instructions into the standing bootstrap turn instead of every
+      // per-turn prompt: it costs zero tokens beyond the first turn, mirrors the "standing
+      // instructions" mental model, and makes changes opt-in via main-agent reset.
+      await handle.injectInitialBootstrap(buildMainAgentBootstrapPair(this.mainExtraInstructions));
     } catch (error) {
       logAgentd("main bootstrap inject failed", { error: error instanceof Error ? error.message : String(error) });
     }

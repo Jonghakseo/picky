@@ -69,6 +69,8 @@ struct PickyHUDView: View {
     @State private var isHUDHovered = false
     @State private var closeExpansionTask: Task<Void, Never>?
     @State private var dockIconScreenFramesBySessionID: [String: CGRect] = [:]
+    @State private var lastReportedHUDSize: CGSize = .zero
+    @State private var lastReportedActiveSessionID: String?
 
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {
         Array(viewModel.sessions.prefix(PickyHUDDockLayout.visibleSessionLimit).reversed())
@@ -96,11 +98,40 @@ struct PickyHUDView: View {
             .background(PickyHUDSizeReader())
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
             .animation(PickyHUDExpansion.animation, value: activeSession?.id)
-            .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: onSizeChange)
+            .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: handleHUDSizeChange)
             .onDisappear {
                 closeExpansionTask?.cancel()
                 closeExpansionTask = nil
             }
+    }
+
+    private func handleHUDSizeChange(_ size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        let activeID = activeSession?.id
+        if activeID != lastReportedActiveSessionID {
+            lastReportedActiveSessionID = activeID
+            lastReportedHUDSize = .zero
+        }
+
+        var targetSize = size
+        if shouldHoldPanelHeightDuringActiveTurn,
+           lastReportedHUDSize.height > 0,
+           size.height < lastReportedHUDSize.height {
+            targetSize.height = lastReportedHUDSize.height
+        }
+
+        guard !lastReportedHUDSize.isApproximatelyEqual(to: targetSize) else { return }
+        lastReportedHUDSize = targetSize
+        onSizeChange(targetSize)
+    }
+
+    private var shouldHoldPanelHeightDuringActiveTurn: Bool {
+        switch activeSession?.status {
+        case .running, .queued, .waiting_for_input:
+            return true
+        case .completed, .blocked, .cancelled, .failed, nil:
+            return false
+        }
     }
 
     private var hudContent: some View {
@@ -598,6 +629,13 @@ private struct PickyHUDDockIconScreenFrameReporter: NSViewRepresentable {
             lastReportedFrame = screenFrame
             onFrameChange?(screenFrame)
         }
+    }
+}
+
+private extension CGSize {
+    func isApproximatelyEqual(to other: CGSize, tolerance: CGFloat = 0.5) -> Bool {
+        abs(width - other.width) <= tolerance
+            && abs(height - other.height) <= tolerance
     }
 }
 

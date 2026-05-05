@@ -1644,6 +1644,26 @@ struct PickySessionViewModelTests {
         #expect(card.followUpMode == .all)
     }
 
+    @Test func sessionUpdatedAfterIncrementalEventDoesNotResetConversationRenderState() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "live-conversation", status: "running"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "live-conversation", messageId: "m-1", text: "rendered answer", seq: 1))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "live-conversation", steering: [], followUp: ["queued follow-up"], steeringMode: nil, followUpMode: nil, seq: 2))))
+
+        // Runtime status/tool patches still broadcast full sessionUpdated snapshots. They often
+        // carry transient empty conversation arrays because the granular message/queue events are
+        // the live render source of truth. Those snapshots must not make bubbles disappear.
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "live-conversation", status: "completed", summary: "Done", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        try await settle()
+
+        let card = try #require(viewModel.sessions.first)
+        #expect(card.status == .completed)
+        #expect(card.messages.map(\.text) == ["rendered answer"])
+        #expect(card.queuedFollowUps.map(\.text) == ["queued follow-up"])
+    }
+
     @Test func sessionActivityUpdatedMirrorsSummary() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())

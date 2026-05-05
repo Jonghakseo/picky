@@ -700,7 +700,10 @@ final class PickySessionListViewModel: ObservableObject {
             }
         case .sessionUpdated(let session):
             pickySessionLog("session updated session=\(session.id) status=\(session.status.rawValue)")
-            upsert(SessionCard.fromAgentSession(session))
+            upsert(
+                SessionCard.fromAgentSession(session),
+                preserveIncrementalConversationState: lastIncrementalSeqBySessionID[session.id] != nil
+            )
         case .sessionLogAppended(let sessionId, let line):
             pickySessionLog("session log session=\(sessionId) lineChars=\(line.count)")
             update(sessionID: sessionId) { card in
@@ -834,12 +837,12 @@ final class PickySessionListViewModel: ObservableObject {
         return manuallyArchivedIDs
     }
 
-    private func upsert(_ card: SessionCard) {
+    private func upsert(_ card: SessionCard, preserveIncrementalConversationState: Bool = false) {
         let archivedIDs = effectiveArchivedSessionIDs(for: [card])
         let shouldArchive = archivedIDs.contains(card.id)
         var incoming = card
         if let existing = (sessions + archivedSessions).first(where: { $0.id == card.id }) {
-            incoming = existing.merged(with: card)
+            incoming = existing.merged(with: card, preserveConversationState: preserveIncrementalConversationState)
         }
 
         sessions.removeAll { $0.id == card.id }
@@ -1004,7 +1007,7 @@ extension PickySessionListViewModel.SessionCard {
         self.isMainAgentHandoff = session.logs.contains(where: Self.isMainAgentHandoffLogLine)
     }
 
-    func merged(with incoming: Self) -> Self {
+    func merged(with incoming: Self, preserveConversationState: Bool = false) -> Self {
         var result = incoming
         if !status.canTransition(to: incoming.status) {
             result.status = status
@@ -1021,8 +1024,22 @@ extension PickySessionListViewModel.SessionCard {
         if result.tools.isEmpty { result.tools = tools }
         if result.artifacts.isEmpty { result.artifacts = artifacts }
         if result.changedFiles.isEmpty { result.changedFiles = changedFiles }
-        // Conversation fields are daemon-authoritative in full sessionUpdated/sessionSnapshot
-        // payloads; an incoming empty queue/messages array means cleared.
+        if preserveConversationState {
+            // After the daemon starts sending granular conversation events, intermediate
+            // sessionUpdated snapshots are still emitted for status/log/tool patches. Those
+            // snapshots can legitimately represent a transient state between queue removal,
+            // user_text materialization, thinking flushes, and final status, so letting them
+            // replace the incrementally rendered conversation makes pending/user/thinking
+            // bubbles disappear and reappear during follow-up and Working ↔ Done transitions.
+            // Reconnect/sessionSnapshot still hydrates these fields fully; only live
+            // sessionUpdated merges preserve the incremental render state.
+            result.messages = messages
+            result.queuedSteers = queuedSteers
+            result.queuedFollowUps = queuedFollowUps
+            result.steeringMode = steeringMode
+            result.followUpMode = followUpMode
+            result.activitySummary = activitySummary
+        }
         // pendingExtensionUiRequest is authoritative on the daemon side: every sessionUpdated
         // carries the full session, so an incoming `nil` means the daemon has explicitly cleared
         // the request (answered, cancelled, timed out, dropped on reattach). Falling back to the

@@ -16,11 +16,14 @@ struct PickyConversationListView: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 8) {
-                    if session.messages.isEmpty && !hasQueueOrActivity {
+                    if hiddenHistoryCount > 0 {
+                        moreHistoryButton
+                    }
+                    if visibleMessages.isEmpty && !hasQueueOrActivity {
                         Color.clear
                             .frame(height: 24)
                     } else {
-                        ForEach(Array(session.messages.enumerated()), id: \.element.id) { index, message in
+                        ForEach(Array(visibleMessages.enumerated()), id: \.element.id) { index, message in
                             if shouldShowSeparator(before: index) {
                                 PickyConversationTimeSeparatorView(text: separatorText(before: index))
                             }
@@ -167,17 +170,52 @@ struct PickyConversationListView: View {
         !session.queuedSteers.isEmpty || !session.queuedFollowUps.isEmpty
     }
 
+    /// 카드 안에는 "마지막 user_text → 끝" 한 쌍만 노출. 히스토리 전체는 "Earlier history" 버튼 → terminal.
+    var visibleMessages: [PickySessionMessage] {
+        let messages = session.messages
+        guard let lastUserIndex = messages.lastIndex(where: { $0.kind == .userText }) else {
+            return messages
+        }
+        return Array(messages[lastUserIndex...])
+    }
+
+    var hiddenHistoryCount: Int {
+        max(0, session.messages.count - visibleMessages.count)
+    }
+
+    private var moreHistoryButton: some View {
+        Button(action: {
+            viewModel.openTerminalOverlay(sessionID: session.id)
+        }) {
+            HStack(spacing: 5) {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 8, weight: .semibold))
+                Text("Earlier history · \(hiddenHistoryCount) more")
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .foregroundColor(DS.Colors.textTertiary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(DS.Colors.surface2.opacity(0.55)))
+            .overlay(Capsule().stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.bottom, 4)
+        .help("Open terminal to see full session history")
+    }
+
     private func shouldShowSeparator(before index: Int) -> Bool {
         guard index > 0 else { return false }
-        let previous = session.messages[index - 1].createdAt
-        let current = session.messages[index].createdAt
+        let previous = visibleMessages[index - 1].createdAt
+        let current = visibleMessages[index].createdAt
         return current.timeIntervalSince(previous) >= 60
     }
 
     private func separatorText(before index: Int) -> String {
         guard index > 0 else { return "now" }
-        let previous = session.messages[index - 1].createdAt
-        let current = session.messages[index].createdAt
+        let previous = visibleMessages[index - 1].createdAt
+        let current = visibleMessages[index].createdAt
         return elapsedText(seconds: max(0, Int(current.timeIntervalSince(previous))))
     }
 

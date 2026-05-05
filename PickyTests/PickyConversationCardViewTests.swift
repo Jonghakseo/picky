@@ -242,6 +242,56 @@ struct PickyConversationCardViewTests {
         #expect(!snapshot.showsActivitySummary, "zero-count snapshot should not surface in UI")
     }
 
+    // MARK: - Last turn-only visibility (Earlier history)
+
+    @Test func visibleMessagesContainsOnlyLastUserTextOnward() {
+        let session = makeConversationSession(
+            status: .running,
+            messages: [
+                message("u1", kind: .userText, text: "first"),
+                message("a1", kind: .agentText, text: "reply 1"),
+                message("u2", kind: .userText, text: "second"),
+                message("a2-act", kind: .agentActivity, activitySnapshot: PickyActivitySummary(edit: 0, bash: 1, thinking: 0, other: 0)),
+                message("a2", kind: .agentText, text: "reply 2")
+            ]
+        )
+        let viewModel = makeViewModel()
+        let list = PickyConversationListView(session: session, viewModel: viewModel)
+
+        #expect(list.visibleMessages.map(\.id) == ["u2", "a2-act", "a2"])
+        #expect(list.hiddenHistoryCount == 2)
+    }
+
+    @Test func visibleMessagesShowsAllWhenNoUserTextExists() {
+        let session = makeConversationSession(
+            status: .running,
+            messages: [
+                message("a1", kind: .agentText, text: "hello"),
+                message("a2", kind: .agentThinking, text: "thinking")
+            ]
+        )
+        let viewModel = makeViewModel()
+        let list = PickyConversationListView(session: session, viewModel: viewModel)
+
+        #expect(list.visibleMessages.count == 2)
+        #expect(list.hiddenHistoryCount == 0)
+    }
+
+    @Test func hiddenHistoryCountIsZeroWhenOnlyOneTurnExists() {
+        let session = makeConversationSession(
+            status: .completed,
+            messages: [
+                message("u", kind: .userText, text: "one"),
+                message("a", kind: .agentText, text: "done")
+            ]
+        )
+        let viewModel = makeViewModel()
+        let list = PickyConversationListView(session: session, viewModel: viewModel)
+
+        #expect(list.hiddenHistoryCount == 0)
+        #expect(list.visibleMessages.count == 2)
+    }
+
     @Test func activityStripIsNotAutoInsertedWhenNoAgentActivityMessage() {
         // Regression: the legacy auto-insert (after first user_text) was removed in PR11.
         // Without an explicit agent_activity message, no strip should be shown — even if

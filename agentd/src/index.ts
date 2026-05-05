@@ -39,8 +39,11 @@ const mainRuntime = useMockRuntime
   ? undefined
   : new PiSdkRuntime({
       thinkingLevel: mainAgentThinkingLevel,
-      // Main agent never opens an `ask_user_question` dialog itself; deeper questions belong
-      // to the side agent it hands off to.
+      // Main agent has no UI surface for blocking dialogs (ask_user_question/confirm/input/...).
+      // Without this flag, any extension or tool that calls `ctx.ui.<dialog>` would hang the main
+      // session forever (`applyMainRuntimeEvent` ignores `extension_ui` events). Reject blocking
+      // calls eagerly so the LLM gets a usable error and can fall back to picky_handoff.
+      disableBlockingDialogs: true,
       customTools: [
         pointerTool,
         createPickyHandoffTool(async (request) => {

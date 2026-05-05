@@ -28,6 +28,7 @@ export interface PiSdkRuntimeOptions {
   resourceLoaderOptions?: CreateAgentSessionServicesOptions["resourceLoaderOptions"];
   customTools?: ToolDefinition[];
   thinkingLevel?: ThinkingLevel;
+  disableBlockingDialogs?: boolean;
 }
 
 export class PiSdkRuntime implements AgentRuntime {
@@ -89,7 +90,7 @@ export class PiSdkRuntime implements AgentRuntime {
       sessionManager: options.sessionFilePath ? SessionManager.open(options.sessionFilePath, undefined, cwd) : SessionManager.create(cwd),
     });
 
-    const handle = new PiSdkRuntimeSession(sessionId, runtime, this.thinkingLevel);
+    const handle = new PiSdkRuntimeSession(sessionId, runtime, this.thinkingLevel, { disableBlockingDialogs: this.options.disableBlockingDialogs ?? false });
     await handle.bindCurrentSession();
     return handle;
   }
@@ -104,7 +105,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private queuedFollowUpCount = 0;
   private pendingExtensionUiRequestIds = new Set<string>();
 
-  constructor(readonly id: string, private readonly runtime: AgentSessionRuntime, private configuredThinkingLevel?: ThinkingLevel) {
+  constructor(readonly id: string, private readonly runtime: AgentSessionRuntime, private configuredThinkingLevel?: ThinkingLevel, private readonly bridgeOptions: { disableBlockingDialogs?: boolean } = {}) {
     this.uiBridge = this.createBridge();
     this.transcriptRepairLogLine = repairDanglingToolCalls(runtime.session);
     this.runtime.setRebindSession(async () => this.bindCurrentSession());
@@ -416,7 +417,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   private createBridge(): ExtensionUiBridge {
-    const bridge = new ExtensionUiBridge(this.id);
+    const bridge = new ExtensionUiBridge(this.id, { disableBlockingDialogs: this.bridgeOptions.disableBlockingDialogs ?? false });
     bridge.on("request", (request, waitsForInput) => {
       const waits = Boolean(waitsForInput);
       if (waits) this.pendingExtensionUiRequestIds.add(request.id);

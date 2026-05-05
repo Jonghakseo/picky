@@ -213,6 +213,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("resetMainAgent") }),
   CommandBaseSchema.extend({ type: z.literal("abortMainAgent") }),
   CommandBaseSchema.extend({ type: z.literal("setMainAgentThinkingLevel"), mainAgentThinkingLevel: ThinkingLevelSchema }),
+  CommandBaseSchema.extend({ type: z.literal("setMainAgentExtraInstructions"), mainAgentExtraInstructions: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("listSlashCommands"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("getSession"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("answerExtensionUi"), sessionId: z.string(), requestId: z.string(), value: z.unknown().optional() }),

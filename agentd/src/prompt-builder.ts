@@ -23,17 +23,19 @@ export function buildInitialTaskPrompt(context: PickyContextPacket): BuiltPrompt
   return { text: lines.join("\n"), imagePaths: context.screenshots.map((s) => s.path) };
 }
 
-export function buildMainAgentPrompt(context: PickyContextPacket): BuiltPrompt {
+export function buildMainAgentPrompt(context: PickyContextPacket, extraInstructions?: string): BuiltPrompt {
   const lines = [
     "# Picky main-agent turn",
     "",
     "Follow the standing Picky main-agent bootstrap instructions. Use only this turn's user request and captured desktop context below for fresh context.",
     "",
     `Input modality: ${inputModalityLabel(context.source)}`,
-    "",
-    "## User request",
-    context.transcript?.trim() || "(no transcript provided)",
   ];
+  const trimmedExtra = extraInstructions?.trim();
+  if (trimmedExtra) {
+    lines.push("", "## User-provided main-agent instructions", trimmedExtra);
+  }
+  lines.push("", "## User request", context.transcript?.trim() || "(no transcript provided)");
   appendContext(lines, context);
   return { text: lines.join("\n"), imagePaths: context.screenshots.map((s) => s.path) };
 }

@@ -266,7 +266,7 @@ struct CompanionPanelSettingsView: View {
     }
 
     private var mainAgentSection: some View {
-        sectionHeader(section: .mainAgent, title: "Main Agent", subtitle: "Reasoning level and which screens are captured for context.") {
+        sectionHeader(section: .mainAgent, title: "Main Agent", subtitle: "Reasoning level, captured screens, and your own standing instructions.") {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
                     fieldLabel("Reasoning level")
@@ -292,6 +292,27 @@ struct CompanionPanelSettingsView: View {
                     .pickerStyle(.menu)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .onChange(of: viewModel.settings.screenContextScope) { _, _ in saveImmediately(for: .mainAgent) }
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    fieldLabel("Additional instructions")
+                    Text("Appended to every main-agent turn. Use it to set tone, language, or recurring reminders.")
+                        .font(.system(size: 11))
+                        .foregroundColor(DS.Colors.textTertiary)
+                    TextEditor(text: $viewModel.settings.mainAgentExtraInstructions)
+                        .font(.system(size: 12))
+                        .frame(minHeight: 96, maxHeight: 200)
+                        .padding(6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(DS.Colors.surface2.opacity(0.4))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(DS.Colors.borderSubtle.opacity(0.5), lineWidth: 0.5)
+                        )
+                        .scrollContentBackground(.hidden)
+                        .onChange(of: viewModel.settings.mainAgentExtraInstructions) { _, _ in saveImmediately(for: .mainAgent) }
                 }
             }
         }

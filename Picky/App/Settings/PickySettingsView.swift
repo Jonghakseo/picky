@@ -38,6 +38,19 @@ struct PickySettingsView: View {
                         Text(scope.displayName).tag(scope)
                     }
                 }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Additional instructions")
+                    Text("Appended to every main-agent turn (tone, language, reminders).")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    TextEditor(text: $viewModel.settings.mainAgentExtraInstructions)
+                        .font(.system(size: 12))
+                        .frame(minHeight: 80)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
+                        )
+                }
             }
 
             Section("Voice") {

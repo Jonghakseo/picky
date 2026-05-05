@@ -86,6 +86,7 @@ export class AgentdServer {
       }
       if (command.type === "abortMainAgent") await this.options.supervisor.abortMainAgent();
       if (command.type === "setMainAgentThinkingLevel") await this.options.supervisor.setMainAgentThinkingLevel(command.mainAgentThinkingLevel);
+      if (command.type === "setMainAgentExtraInstructions") this.options.supervisor.setMainAgentExtraInstructions(command.mainAgentExtraInstructions);
       if (command.type === "listSlashCommands") {
         const commands = await this.options.supervisor.listSlashCommands(command.sessionId);
         this.send(ws, { type: "slashCommandsSnapshot", sessionId: command.sessionId, commands });
@@ -193,6 +194,8 @@ function commandLogFields(command: ReturnType<typeof parseCommand>): Record<stri
       return { commandId: command.id, type: command.type };
     case "setMainAgentThinkingLevel":
       return { commandId: command.id, type: command.type, mainAgentThinkingLevel: command.mainAgentThinkingLevel };
+    case "setMainAgentExtraInstructions":
+      return { commandId: command.id, type: command.type, instructionChars: command.mainAgentExtraInstructions.length };
   }
 }
 

@@ -605,6 +605,16 @@ final class CompanionManager: ObservableObject {
             } catch {
                 print("⚠️ Failed to apply main agent thinking level: \(error.localizedDescription)")
             }
+            let trimmedExtra = settings.mainAgentExtraInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
+            do {
+                try await agentClient.send(PickyCommandEnvelope(
+                    type: .setMainAgentExtraInstructions,
+                    mainAgentExtraInstructions: trimmedExtra
+                ))
+                print("🎛️ Main agent extra instructions applied — \(trimmedExtra.count) chars")
+            } catch {
+                print("⚠️ Failed to apply main agent extra instructions: \(error.localizedDescription)")
+            }
         }
     }
 

@@ -1674,6 +1674,28 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.handle?.thinkingLevels).toEqual(["high"]);
   });
 
+  it("includes the configured main-agent extra instructions in every routed prompt", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-extra-instructions-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+
+    supervisor.setMainAgentExtraInstructions("  항상 존대말로 답해주세요  ");
+    await supervisor.route(context("첫 질문"));
+    await settle();
+
+    expect(mainRuntime.createPrompts).toHaveLength(1);
+    expect(mainRuntime.createPrompts[0]!.text).toContain("## User-provided main-agent instructions");
+    expect(mainRuntime.createPrompts[0]!.text).toContain("항상 존대말로 답해주세요");
+
+    // Empty/whitespace clears the override on the next routed prompt.
+    supervisor.setMainAgentExtraInstructions("   ");
+    await supervisor.route(context("다음 질문"));
+    await settle();
+
+    const followUpPrompt = mainRuntime.handle?.followUps.at(-1)?.text ?? "";
+    expect(followUpPrompt).not.toContain("User-provided main-agent instructions");
+  });
+
   it("applies configured thinking level to the active main runtime", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
@@ -2427,6 +2449,9 @@ class DeferredPrewarmRuntime implements AgentRuntime {
 class ManualRuntime implements AgentRuntime {
   handle?: ManualHandle;
   createCalls = 0;
+  /** Initial prompts captured by `create`, in invocation order. Useful for asserting on the very
+   * first message the runtime received before any follow-up calls. */
+  createPrompts: BuiltPrompt[] = [];
   thinkingLevels: string[] = [];
   prewarmCalls = 0;
   prewarmOptions: Array<{ cwd?: string; sessionId?: string }> = [];
@@ -2443,8 +2468,9 @@ class ManualRuntime implements AgentRuntime {
     }
   }
 
-  async create(_prompt: BuiltPrompt, options: { sessionId?: string }): Promise<RuntimeSessionHandle> {
+  async create(prompt: BuiltPrompt, options: { sessionId?: string }): Promise<RuntimeSessionHandle> {
     this.createCalls += 1;
+    this.createPrompts.push(prompt);
     this.handle = new ManualHandle(options.sessionId ?? "manual");
     return this.handle;
   }

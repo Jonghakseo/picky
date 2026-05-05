@@ -22,6 +22,9 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var enabled: Bool?
     var archived: Bool?
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel?
+    /// User-additional instructions for `setMainAgentExtraInstructions`. Empty string clears the
+    /// daemon-side override; nil omits the field for unrelated command types.
+    var mainAgentExtraInstructions: String?
     var kind: PickyQueueClearKind?
 
     init(
@@ -36,6 +39,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         enabled: Bool? = nil,
         archived: Bool? = nil,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel? = nil,
+        mainAgentExtraInstructions: String? = nil,
         kind: PickyQueueClearKind? = nil
     ) {
         self.id = id
@@ -50,6 +54,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.enabled = enabled
         self.archived = archived
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
+        self.mainAgentExtraInstructions = mainAgentExtraInstructions
         self.kind = kind
     }
 }
@@ -71,6 +76,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case resetMainAgent
     case abortMainAgent
     case setMainAgentThinkingLevel
+    case setMainAgentExtraInstructions
     case listSlashCommands
     case getSession
     case answerExtensionUi

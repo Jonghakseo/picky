@@ -40,6 +40,10 @@ export class SessionSupervisor extends EventEmitter {
   private mainHandleUnsubscribe?: () => void;
   private mainHandleGeneration = 0;
   private mainThinkingLevel?: ThinkingLevel;
+  /// Free-form user instructions appended to every main-agent per-turn prompt. Mirrors the
+  /// `mainAgentExtraInstructions` field stored in PickySettings on the Picky.app side; pushed
+  /// over the websocket via `setMainAgentExtraInstructions` whenever settings are saved.
+  private mainExtraInstructions = "";
   private mainDraft = "";
   private mainContext?: PickyContextPacket;
   private mainState: PickyMainAgentState = { messages: [] };
@@ -291,6 +295,11 @@ export class SessionSupervisor extends EventEmitter {
     this.applyMainThinkingLevel(this.mainHandle, level);
   }
 
+  setMainAgentExtraInstructions(instructions: string): void {
+    this.mainExtraInstructions = instructions.trim();
+    logAgentd("main extra instructions configured", { instructionChars: this.mainExtraInstructions.length });
+  }
+
   private detachMainHandleForInterruption(): void {
     this.mainHandleGeneration += 1;
     this.mainHandleUnsubscribe?.();
@@ -476,7 +485,7 @@ export class SessionSupervisor extends EventEmitter {
     this.mainReplyContextId = context.id;
     this.mainDraft = "";
     if (context.transcript?.trim()) await this.appendMainMessage("user", context.transcript.trim());
-    const prompt = buildMainAgentPrompt(context);
+    const prompt = buildMainAgentPrompt(context, this.mainExtraInstructions);
     if (this.mainHandlePromise && !this.mainHandle) {
       const handle = await this.mainHandlePromise;
       if (generation !== this.mainHandleGeneration) return;

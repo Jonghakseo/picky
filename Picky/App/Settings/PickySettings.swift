@@ -142,6 +142,10 @@ struct PickySettings: Codable, Equatable {
     var notifications: PickyNotificationPreferences
     var fontScales: PickyFontScales
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel
+    /// Free-form Korean/English instructions appended to every main-agent turn prompt. Lets users
+    /// teach the always-on main agent personal preferences (tone, language, recurring reminders)
+    /// without forking the bootstrap pair. Empty by default; trimmed before persisting.
+    var mainAgentExtraInstructions: String
     var screenContextScope: PickyScreenContextScope
     var useConversationCard: Bool
     var pushToTalkShortcut: PickyShortcutSpec
@@ -162,6 +166,7 @@ struct PickySettings: Codable, Equatable {
         notifications: PickyNotificationPreferences = .defaults,
         fontScales: PickyFontScales = .defaults,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .medium,
+        mainAgentExtraInstructions: String = "",
         screenContextScope: PickyScreenContextScope = .allScreens,
         useConversationCard: Bool = true,
         pushToTalkShortcut: PickyShortcutSpec = .defaultPushToTalk,
@@ -181,6 +186,7 @@ struct PickySettings: Codable, Equatable {
         self.notifications = notifications
         self.fontScales = fontScales
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
+        self.mainAgentExtraInstructions = mainAgentExtraInstructions
         self.screenContextScope = screenContextScope
         self.useConversationCard = useConversationCard
         self.pushToTalkShortcut = pushToTalkShortcut
@@ -204,6 +210,7 @@ struct PickySettings: Codable, Equatable {
             notifications: .defaults,
             fontScales: .defaults,
             mainAgentThinkingLevel: .medium,
+            mainAgentExtraInstructions: "",
             screenContextScope: .allScreens,
             useConversationCard: true,
             pushToTalkShortcut: .defaultPushToTalk,
@@ -218,6 +225,7 @@ struct PickySettings: Codable, Equatable {
             copy.worktreeParent = NSString(string: worktreeParent).expandingTildeInPath
         }
         copy.azureSTTPreferredLanguage = azureSTTPreferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.mainAgentExtraInstructions = mainAgentExtraInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
         return copy
     }
 
@@ -236,6 +244,7 @@ struct PickySettings: Codable, Equatable {
         case notifications
         case fontScales
         case mainAgentThinkingLevel
+        case mainAgentExtraInstructions
         case screenContextScope
         case useConversationCard
         case pushToTalkShortcut
@@ -259,6 +268,7 @@ struct PickySettings: Codable, Equatable {
         appearance = try container.decodeIfPresent(PickyAppearanceMode.self, forKey: .appearance) ?? defaults.appearance
         notifications = try container.decodeIfPresent(PickyNotificationPreferences.self, forKey: .notifications) ?? defaults.notifications
         mainAgentThinkingLevel = try container.decodeIfPresent(PickyMainAgentThinkingLevel.self, forKey: .mainAgentThinkingLevel) ?? defaults.mainAgentThinkingLevel
+        mainAgentExtraInstructions = try container.decodeIfPresent(String.self, forKey: .mainAgentExtraInstructions) ?? defaults.mainAgentExtraInstructions
         screenContextScope = try container.decodeIfPresent(PickyScreenContextScope.self, forKey: .screenContextScope) ?? defaults.screenContextScope
         useConversationCard = try container.decodeIfPresent(Bool.self, forKey: .useConversationCard) ?? defaults.useConversationCard
         if let storedScales = try container.decodeIfPresent(PickyFontScales.self, forKey: .fontScales) {

@@ -99,6 +99,8 @@ final class CompanionManager: ObservableObject {
     /// finishes. The agent may still be processing — the bubble auto-hides so
     /// it doesn't sit on the cursor for the entire response wait.
     private static let recognizedTranscriptVisibleDuration: TimeInterval = 3.0
+    private static let deferredSpeechRetryInterval: TimeInterval = 0.05
+    private static let deferredSpeechMaximumWait: TimeInterval = 2.0
 
     @Published private(set) var voiceState: CompanionVoiceState = .idle
     @Published private(set) var lastTranscript: String?
@@ -211,6 +213,7 @@ final class CompanionManager: ObservableObject {
     /// speaks again before the delay elapses.
     private var transientHideTask: Task<Void, Never>?
     private var responseStateTask: Task<Void, Never>?
+    private var deferredInteractionSpeechTask: Task<Void, Never>?
     private var deferredFinishAwaitingAgentResponseTask: Task<Void, Never>?
     /// Caps how long the recognized-transcript bubble lingers after STT.
     private var voicePromptBubbleAutoHideTask: Task<Void, Never>?
@@ -222,8 +225,9 @@ final class CompanionManager: ObservableObject {
     /// audio stays suppressed even if recording fails before the key is released.
     private var isPushToTalkShortcutHeld = false
     /// Suppresses local spoken audio while the user is starting, holding,
-    /// or finalizing voice input. Responses arriving in this window update
-    /// visible UI only and are not queued for delayed playback.
+    /// or finalizing voice input. If a voice-owned reply arrives during the
+    /// finalizing→idle transition, speech is deferred briefly rather than failed
+    /// so fast agent replies are not dropped by the tail of the same utterance.
     private var isVoiceInputAudioSuppressionActive = false
     private var pendingAgentResponseStartedAt: Date?
     /// Voice follow-up target captured at PTT press time and used by the response
@@ -1165,14 +1169,36 @@ final class CompanionManager: ObservableObject {
     }
 
     fileprivate func runSpeakEffect(speechID: UUID, text: String, contextID: String?) {
+        deferredInteractionSpeechTask?.cancel()
+        deferredInteractionSpeechTask = nil
+        startOrDeferInteractionSpeech(speechID: speechID, text: text, contextID: contextID, requestedAt: Date())
+    }
+
+    private func startOrDeferInteractionSpeech(speechID: UUID, text: String, contextID: String?, requestedAt: Date) {
+        guard isCurrentInteractionSpeechOutput(speechID) else { return }
         guard !shouldSuppressSpokenAudioForVoiceInput else {
-            stopCurrentSpeech()
-            interactionCoordinator.effectCompleted(
-                .speechFailed(speechID: speechID),
-                correlation: PickyInteractionCorrelation(contextID: contextID, speechID: speechID, source: .system)
-            )
+            let elapsed = Date().timeIntervalSince(requestedAt)
+            guard elapsed < Self.deferredSpeechMaximumWait else {
+                interactionCoordinator.effectCompleted(
+                    .speechFailed(speechID: speechID),
+                    correlation: PickyInteractionCorrelation(contextID: contextID, speechID: speechID, source: .system)
+                )
+                return
+            }
+
+            deferredInteractionSpeechTask?.cancel()
+            deferredInteractionSpeechTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(Self.deferredSpeechRetryInterval * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                await MainActor.run { [weak self] in
+                    self?.startOrDeferInteractionSpeech(speechID: speechID, text: text, contextID: contextID, requestedAt: requestedAt)
+                }
+            }
             return
         }
+
+        deferredInteractionSpeechTask?.cancel()
+        deferredInteractionSpeechTask = nil
         stopCurrentSpeech()
         activeSpeechID = speechID
         interactionSpeechID = speechID
@@ -1205,6 +1231,13 @@ final class CompanionManager: ObservableObject {
                 return
             }
         }
+    }
+
+    private func isCurrentInteractionSpeechOutput(_ speechID: UUID) -> Bool {
+        if case .speaking(_, let currentSpeechID, _, _, _, _) = interactionCoordinator.projection.state.output {
+            return currentSpeechID == speechID
+        }
+        return false
     }
 
     private func handleInteractionSpeechFinished(speechID: UUID, didFinish: Bool, contextID: String?) {
@@ -1576,6 +1609,8 @@ final class CompanionManager: ObservableObject {
 
     fileprivate func stopCurrentSpeech() {
         activeSpeechID = nil
+        deferredInteractionSpeechTask?.cancel()
+        deferredInteractionSpeechTask = nil
         responseStateTask?.cancel()
         responseStateTask = nil
         speechPlaybackProvider.stopSpeaking()

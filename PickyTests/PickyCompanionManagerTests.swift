@@ -402,6 +402,44 @@ struct PickyCompanionManagerTests {
         #expect(manager.voiceState != .responding)
     }
 
+    @Test func voiceQuickReplyDuringFinalizingDefersSpeechUntilSuppressionClears() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+
+        manager.updateVoicePresentation(
+            isKeyboardRecording: false,
+            isMicrophoneRecording: false,
+            isFinalizing: true,
+            isPreparing: false
+        )
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "context-voice",
+            text: "빠른 답변",
+            originSource: .voice,
+            replyKind: .main
+        )))
+        try await settle()
+
+        #expect(manager.latestAgentSessionSummary == "빠른 답변")
+        #expect(manager.voiceState == .responding)
+        #expect(speechProvider.spokenUtterances.isEmpty)
+
+        manager.updateVoicePresentation(
+            isKeyboardRecording: false,
+            isMicrophoneRecording: false,
+            isFinalizing: false,
+            isPreparing: false
+        )
+        try await Task.sleep(nanoseconds: 150_000_000)
+
+        #expect(speechProvider.spokenUtterances == ["빠른 답변"])
+        manager.stop()
+    }
+
     @Test func completedVoiceInputAllowsCurrentResponseSpeech() async throws {
         let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
 

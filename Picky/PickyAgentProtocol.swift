@@ -263,12 +263,14 @@ enum PickySlashCommandSource: String, Codable, Equatable {
     case `extension`
     case prompt
     case skill
+    case builtin
 
     var displayName: String {
         switch self {
         case .extension: "Extension"
         case .prompt: "Prompt"
         case .skill: "Skill"
+        case .builtin: "Built-in"
         }
     }
 }

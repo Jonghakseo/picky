@@ -19,6 +19,15 @@ import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashComm
 import type { PickyQueueMode } from "../protocol.js";
 import { logAgentd } from "../local-log.js";
 
+// Picky exposes a curated subset of Pi's BUILTIN_SLASH_COMMANDS. Each entry must be backed by a
+// public AgentSession API call inside handleBuiltinSlashCommand below; do not list a command we
+// cannot actually execute, otherwise users will see autocomplete suggestions that silently fall
+// through to the LLM as plain user text.
+const PICKY_BUILTIN_SLASH_COMMANDS: ReadonlyArray<{ name: string; description: string }> = [
+  { name: "name", description: "Set the Pi session display name (usage: /name <session name>)" },
+  { name: "compact", description: "Manually compact the session context (optional: /compact <focus instructions>)" },
+];
+
 export interface PiSdkRuntimeOptions {
   agentDir?: string;
   createRuntime?: typeof createAgentSessionRuntime;
@@ -113,6 +122,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
   async prompt(prompt: BuiltPrompt): Promise<void> {
     logAgentd("pi prompt", { sessionId: this.id, promptChars: prompt.text.length, images: prompt.imagePaths?.length ?? 0 });
+    if (await this.handleBuiltinSlashCommand(prompt.text)) return;
     const wasStreaming = this.runtime.session.isStreaming;
     try {
       await this.runtime.session.prompt(prompt.text, { images: await imageOptions(prompt.imagePaths), source: "rpc" });
@@ -180,7 +190,9 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   listSlashCommands(): RuntimeSlashCommand[] {
-    const commands: RuntimeSlashCommand[] = [];
+    const commands: RuntimeSlashCommand[] = [
+      ...PICKY_BUILTIN_SLASH_COMMANDS.map((command) => ({ ...command, source: "builtin" as const })),
+    ];
     for (const command of this.runtime.session.extensionRunner.getRegisteredCommands()) {
       commands.push({ name: command.invocationName, description: command.description, source: "extension" });
     }
@@ -331,11 +343,61 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   }
 
   private async promptWithOptions(prompt: BuiltPrompt, streamingBehavior?: "steer" | "followUp"): Promise<boolean> {
+    if (await this.handleBuiltinSlashCommand(prompt.text)) return true;
     return this.promptUntilAccepted(prompt.text, {
       images: await imageOptions(prompt.imagePaths),
       source: "rpc",
       streamingBehavior,
     });
+  }
+
+  // Pi exposes session.setSessionName() / session.compact() as public APIs but only its TUI
+  // interactive-mode wires them to /name and /compact slash commands. Picky doesn't run that
+  // mode, so we intercept the built-in slash commands here before they would otherwise be
+  // forwarded to the LLM as ordinary user text. The synthetic completed/noTurnRan status keeps
+  // higher layers from treating the call as a real agent turn (no side-completion notification,
+  // no artifact materialization).
+  private async handleBuiltinSlashCommand(text: string): Promise<boolean> {
+    const trimmed = text.trim();
+    if (trimmed === "/name" || trimmed.startsWith("/name ")) {
+      const name = trimmed.replace(/^\/name\s*/, "").trim();
+      if (!name) {
+        this.emit({ type: "log", line: "/name requires a name argument (usage: /name <session name>)" });
+        this.emit({ type: "status", status: "completed", summary: "/name: missing argument", noTurnRan: true });
+        return true;
+      }
+      try {
+        this.runtime.session.setSessionName(name);
+        this.emit({ type: "log", line: `session renamed to "${name}"` });
+        // Pi emits session_info_changed internally, so the title flips via the normalized event.
+        this.emit({ type: "status", status: "completed", summary: `Session renamed to ${name}`, noTurnRan: true });
+      } catch (error) {
+        const message = messageOf(error);
+        logAgentd("slash /name failed", { sessionId: this.id, error: message });
+        this.emit({ type: "status", status: "failed", summary: `/name failed: ${message}` });
+      }
+      return true;
+    }
+    if (trimmed === "/compact" || trimmed.startsWith("/compact ")) {
+      const instructions = trimmed.replace(/^\/compact\s*/, "").trim() || undefined;
+      const session = this.runtime.session as unknown as { compact?: (instructions?: string) => Promise<unknown> };
+      if (typeof session.compact !== "function") {
+        this.emit({ type: "status", status: "failed", summary: "/compact is not supported by this Pi runtime" });
+        return true;
+      }
+      this.emit({ type: "status", status: "running", summary: instructions ? `Compacting (${instructions})…` : "Compacting session…" });
+      try {
+        await session.compact(instructions);
+        this.emit({ type: "log", line: instructions ? `compact completed with instructions: ${instructions}` : "compact completed" });
+        this.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true });
+      } catch (error) {
+        const message = messageOf(error);
+        logAgentd("slash /compact failed", { sessionId: this.id, error: message });
+        this.emit({ type: "status", status: "failed", summary: `/compact failed: ${message}` });
+      }
+      return true;
+    }
+    return false;
   }
 
   private async promptUntilAccepted(

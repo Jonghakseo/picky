@@ -451,10 +451,49 @@ describe("PiSdkRuntime", () => {
 
     expect(handle.listSlashCommands).toBeDefined();
     expect(await handle.listSlashCommands!()).toEqual([
+      { name: "name", description: "Set the Pi session display name (usage: /name <session name>)", source: "builtin" },
+      { name: "compact", description: "Manually compact the session context (optional: /compact <focus instructions>)", source: "builtin" },
       { name: "deploy", description: "Deploy an environment", source: "extension" },
       { name: "fix-tests", description: "Fix failing tests", source: "prompt" },
       { name: "skill:context7-cli", description: "Look up library docs", source: "skill" },
     ]);
+  });
+
+  it("intercepts /name as a built-in slash command and renames the underlying Pi session", async () => {
+    const fakeSession = new FakeSession();
+    const setSessionNameCalls: string[] = [];
+    (fakeSession as unknown as { setSessionName: (name: string) => void }).setSessionName = (name: string) => {
+      setSessionNameCalls.push(name);
+    };
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-name" });
+    const events: Array<{ type: string; status?: string; noTurnRan?: boolean }> = [];
+    handle.subscribe((event) => events.push(event as { type: string; status?: string; noTurnRan?: boolean }));
+
+    await handle.followUp({ text: "/name 새 이름", imagePaths: [] });
+
+    expect(setSessionNameCalls).toEqual(["새 이름"]);
+    expect(fakeSession.prompts).toEqual([]);
+    expect(events.some((event) => event.type === "status" && event.status === "completed" && event.noTurnRan === true)).toBe(true);
+  });
+
+  it("intercepts /compact and forwards optional instructions to AgentSession.compact", async () => {
+    const fakeSession = new FakeSession();
+    const compactCalls: Array<string | undefined> = [];
+    (fakeSession as unknown as { compact: (instructions?: string) => Promise<unknown> }).compact = async (instructions) => {
+      compactCalls.push(instructions);
+      return {};
+    };
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-compact" });
+    const events: Array<{ type: string; status?: string; noTurnRan?: boolean }> = [];
+    handle.subscribe((event) => events.push(event as { type: string; status?: string; noTurnRan?: boolean }));
+
+    await handle.followUp({ text: "/compact focus on bug area", imagePaths: [] });
+
+    expect(compactCalls).toEqual(["focus on bug area"]);
+    expect(fakeSession.prompts).toEqual([]);
+    const statuses = events.filter((event) => event.type === "status").map((event) => event.status);
+    expect(statuses).toContain("running");
+    expect(statuses).toContain("completed");
   });
 
   it("updates the active Pi session thinking level", async () => {

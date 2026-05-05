@@ -2,7 +2,7 @@ import type { BuiltPrompt } from "../prompt-builder.js";
 import type { PickyQueueMode } from "../protocol.js";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-export type RuntimeSlashCommandSource = "extension" | "prompt" | "skill";
+export type RuntimeSlashCommandSource = "extension" | "prompt" | "skill" | "builtin";
 export interface RuntimeSlashCommand {
   name: string;
   description?: string;

@@ -77,7 +77,7 @@ export type PickyMainAgentState = z.infer<typeof PickyMainAgentStateSchema>;
 
 export const ThinkingLevelSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh"]);
 export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>;
-export const PickySlashCommandSourceSchema = z.enum(["extension", "prompt", "skill"]);
+export const PickySlashCommandSourceSchema = z.enum(["extension", "prompt", "skill", "builtin"]);
 export const PickySlashCommandSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),

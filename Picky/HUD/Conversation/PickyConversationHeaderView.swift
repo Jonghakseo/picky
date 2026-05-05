@@ -41,8 +41,8 @@ struct PickyConversationHeaderView: View {
 
     private var trailingActions: some View {
         HStack(alignment: .center, spacing: 9) {
-            statusPill
             notifyOnCompletionButton
+            statusPill
             if isVoiceFollowUpTarget {
                 voiceTargetBadge
             }

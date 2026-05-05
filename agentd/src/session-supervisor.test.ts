@@ -327,27 +327,29 @@ describe("SessionSupervisor", () => {
 
     const steered = await supervisor.steerSideSession(session.id, "첫 작업 시작해줘");
     expect(steered.status).toBe("running");
-    expect(runtime.handle?.interrupts.map((prompt) => prompt.text)).toEqual(["첫 작업 시작해줘"]);
-    expect(runtime.handle?.steers).toEqual([]);
+    expect(runtime.handle?.interrupts).toEqual([]);
+    expect(runtime.handle?.steers).toEqual(["첫 작업 시작해줘"]);
   });
 
-  it("interrupts active side-session work when steering is supported", async () => {
+  it("queues active side-session steering without interrupting current work", async () => {
     const runtime = new ManualRuntime();
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-side-steer-interrupt-"));
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-side-steer-queue-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
     const session = await supervisor.createSideFromHandoff(context("side request"), { title: "Side work", instructions: "Investigate" });
 
+    runtime.handle!.isStreaming = true;
     runtime.handle?.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running", preview: "sleep 50" });
     await waitUntil(() => supervisor.get(session.id)?.tools[0]?.status === "running");
 
     const steered = await supervisor.steerSideSession(session.id, "아니다 10초");
 
-    expect(runtime.handle?.interrupts).toEqual([{ text: "아니다 10초", imagePaths: [] }]);
-    expect(runtime.handle?.steers).toEqual([]);
+    expect(runtime.handle?.interrupts).toEqual([]);
+    expect(runtime.handle?.steers).toEqual(["아니다 10초"]);
     expect(steered.status).toBe("running");
     expect(steered.lastSummary).toBe("Steering message sent");
-    expect(steered.tools[0]).toMatchObject({ toolCallId: "tool-1", status: "failed", preview: "Tool was interrupted by a steering message." });
+    expect(steered.tools[0]).toMatchObject({ toolCallId: "tool-1", status: "running", preview: "sleep 50" });
+    expect(steered.queuedSteers?.map((item) => item.text)).toEqual(["아니다 10초"]);
   });
 
   it("falls back to queued steer for active side sessions when interrupt is unavailable", async () => {
@@ -513,7 +515,8 @@ describe("SessionSupervisor", () => {
     expect(runtime.handle?.extensionUiAnswers).toEqual([{ requestId: "ui-steer", value: { cancelled: true } }]);
     expect(updated.pendingExtensionUiRequest).toBeUndefined();
     expect(updated.messages?.find((message) => message.id === "ui-steer")?.cancelledAt).toBeDefined();
-    expect(runtime.handle?.interrupts.map((prompt) => prompt.text)).toEqual(["do this instead"]);
+    expect(runtime.handle?.interrupts).toEqual([]);
+    expect(runtime.handle?.steers).toEqual(["do this instead"]);
   });
 
   it("prefers the runtime status finalAnswer over the streamed accumulator so reports do not include intermediate ReAct turns", async () => {
@@ -574,11 +577,11 @@ describe("SessionSupervisor", () => {
 
     await supervisor.steer(session.id, "use this screenshot", steerContext);
 
-    expect(runtime.handle?.interrupts).toHaveLength(1);
-    expect(runtime.handle?.interrupts[0]?.text).toContain("## User steering instruction\nuse this screenshot");
-    expect(runtime.handle?.interrupts[0]?.text).toContain("## Captured context");
-    expect(runtime.handle?.interrupts[0]?.text).toContain("selected snippet");
-    expect(runtime.handle?.interrupts[0]?.imagePaths).toEqual(["/tmp/picky-steer.png"]);
+    expect(runtime.handle?.steerPrompts).toHaveLength(1);
+    expect(runtime.handle?.steerPrompts[0]?.text).toContain("## User steering instruction\nuse this screenshot");
+    expect(runtime.handle?.steerPrompts[0]?.text).toContain("## Captured context");
+    expect(runtime.handle?.steerPrompts[0]?.text).toContain("selected snippet");
+    expect(runtime.handle?.steerPrompts[0]?.imagePaths).toEqual(["/tmp/picky-steer.png"]);
   });
 
   // Regression for the `/diff-review` (and any other Pi `pi.registerCommand` slash command) HUD

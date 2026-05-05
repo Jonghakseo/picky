@@ -1058,19 +1058,7 @@ export class SessionSupervisor extends EventEmitter {
     if (revivedTerminalSession) {
       await this.patch(sessionId, { status: "running", lastSummary: "Steering message sent", thinkingPreview: undefined });
     }
-    const interruptible = isInterruptibleSteerStatus(previousSession.status) && Boolean(handle.interrupt);
-    logAgentd("steer requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length, interruptible });
-    if (interruptible && handle.interrupt) {
-      // handle.interrupt aborts the active turn, then submits the steer prompt without specifying
-      // a streamingBehavior. After abort Pi is no longer streaming, so the prompt runs inline and
-      // never traverses the queue. Record the user_text directly.
-      await handle.interrupt(prompt);
-      await this.appendLog(sessionId, `${STEER_PREFIX}${text}`);
-      await this.messageBuilder.recordUserText(sessionId, text, "user");
-      const current = this.mustGet(sessionId);
-      await this.patch(sessionId, { status: "running", lastSummary: "Steering message sent", finalAnswer: undefined, thinkingPreview: undefined, tools: settleActiveTools(current.tools, "Tool was interrupted by a steering message.") });
-      return this.mustGet(sessionId);
-    }
+    logAgentd("steer requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length, isStreaming: handle.isStreaming });
     this.pushPendingQueueDelivery(sessionId, text, "user");
     const outcome = await handle.steer(prompt);
     await this.appendLog(sessionId, `${STEER_PREFIX}${text}`);
@@ -1441,10 +1429,6 @@ function normalizeMainAgentState(state: PickyMainAgentState): PickyMainAgentStat
 
 function appendUniqueLog(logs: string[], line: string): string[] {
   return logs.includes(line) ? logs : [...logs, line];
-}
-
-function isInterruptibleSteerStatus(status: PickyAgentSession["status"]): boolean {
-  return status === "running" || status === "queued" || status === "waiting_for_input";
 }
 
 function hasSideSessionMarkerLog(session: PickyAgentSession): boolean {

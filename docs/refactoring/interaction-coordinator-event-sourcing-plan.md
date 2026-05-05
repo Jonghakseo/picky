@@ -133,6 +133,13 @@ enum PickyQuickReplyKind: String, Codable, Equatable {
 
 `unknown` is a backward-compatibility fallback only. New daemon events should send explicit metadata where possible.
 
+Swift decoding must be tolerant:
+
+- missing metadata decodes as `.unknown` rather than failing the whole event.
+- unknown raw values decode as `.unknown`.
+- hyphenated daemon values are accepted: `"voice-follow-up"` maps to `.voiceFollowUp`, `"text-follow-up"` maps to `.textFollowUp`.
+- legacy `source` metadata maps best-effort to the new shape: `voice` / `text` become `originSource`, `sideCompletion` / `main` become `replyKind`.
+
 ### Event
 
 ```swift
@@ -148,9 +155,11 @@ enum PickyInteractionEvent: Equatable, Codable {
     case transcriptFailed(message: String, inputID: UUID)
 
     case textSubmitted(text: String, inputID: UUID)
+    case textContextCaptured(inputID: UUID, context: PickyContextPacket)
     case textSubmissionAccepted(contextID: String, inputID: UUID)
     case textSubmissionFailed(message: String, inputID: UUID)
 
+    case voiceContextCaptured(inputID: UUID, transcript: String, context: PickyContextPacket, targetSessionID: String?)
     case agentSubmissionAccepted(contextID: String?, sessionID: String, inputID: UUID?)
     case quickReply(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, inputID: UUID?)
     case passiveAgentSummary(sessionID: String, text: String)
@@ -204,9 +213,9 @@ enum PickyInputPhase: Equatable, Codable {
 enum PickyOutputPhase: Equatable, Codable {
     case idle
     case waitingForAgent(inputID: UUID?, contextID: String?, promptPreview: String?)
-    case showingTextReply(contextID: String, text: String, minimumDisplayUntil: Date?)
-    case speaking(contextID: String?, speechID: UUID, text: String, minimumDisplayUntil: Date, finishPending: Bool)
-    case suppressedReply(contextID: String, text: String, reason: PickyReplySuppressionReason, minimumDisplayUntil: Date?)
+    case showingTextReply(contextID: String, text: String, minimumDisplayTimerID: UUID?, minimumDisplayUntil: Date?)
+    case speaking(contextID: String?, speechID: UUID, text: String, minimumDisplayTimerID: UUID, minimumDisplayUntil: Date, finishPending: Bool)
+    case suppressedReply(contextID: String, text: String, reason: PickyReplySuppressionReason, minimumDisplayTimerID: UUID?, minimumDisplayUntil: Date?)
 }
 ```
 
@@ -277,6 +286,7 @@ enum PickyInteractionEffect: Equatable {
     case startDictation(inputID: UUID)
     case stopDictation(inputID: UUID)
     case captureVoiceContext(inputID: UUID, transcript: String, targetSessionID: String?)
+    case recordContextOwnership(inputID: UUID, contextID: String, owner: PickyContextOwner)
     case submitMain(inputID: UUID, transcript: String, context: PickyContextPacket)
     case steerSide(inputID: UUID, sessionID: String, transcript: String, context: PickyContextPacket)
     case captureTextContext(inputID: UUID, text: String)
@@ -298,9 +308,10 @@ Effect runner responsibilities:
 - It starts async work in `Task`s and returns immediately.
 - Convert completion/failure callbacks back into `PickyInteractionEvent`s through `coordinator.accept`, never by mutating projection or legacy fields.
 - Check task cancellation and also rely on reducer id validation.
-- Effects in one transition are executed in array order. Effects that must be ordered must be emitted in that order, for example `scheduleMinimumDisplay` before `speak` and `stopSpeech` before `speak`.
+- Effects in one transition are executed in array order. Effects that must be ordered must be emitted in that order, for example `recordContextOwnership` before `submitText`, `scheduleMinimumDisplay` before `speak`, and `stopSpeech` before `speak`.
 - Long-running independent effects may run concurrently after they are started, but their completions are serialized by coordinator events.
 - If an effect can synchronously fail or immediately call back, it must still re-enter through `accept`; direct callback mutation is forbidden.
+- Context capture effects must not chain directly into daemon submit. They emit `.textContextCaptured` / `.voiceContextCaptured`; the reducer records ownership and then emits submit/steer effects.
 
 ## Event Sourcing Model
 
@@ -406,6 +417,10 @@ private func drainQueueIfNeeded() {
 }
 ```
 
+### Render visibility guarantee
+
+The plan does not require proving that SwiftUI painted a frame before TTS starts. That would couple the state machine to framework scheduling. The guarantee is state-level: once a response enters the projection, its display text remains in projection for at least the matching minimum display duration unless a newer correlated interaction supersedes it. This is enough to prevent immediate speech completion/failure from erasing the visible response state before the UI has an opportunity to render.
+
 ## Projection Back to Existing UI
 
 `CompanionManager` should initially remain the public surface for existing SwiftUI views. It will subscribe to coordinator projection and continue exposing the old properties:
@@ -427,8 +442,8 @@ This avoids a large SwiftUI rewrite in the first pass.
 
 These invariants should be enforced by tests:
 
-1. A `speechFinished(speechID:)` event only changes state if `speechID` equals the current output speech id. If the current response has not satisfied its minimum display deadline, the reducer records `finishPending = true` and keeps the display text visible until `minimumDisplayTimerFired`.
-2. A `minimumDisplayTimerFired(timerID:speechID:inputID:)` event only clears or advances output state if it matches the currently visible response.
+1. A `speechFinished(speechID:)` or `speechFailed(speechID:)` event only changes state if `speechID` equals the current output speech id. If the current response has not satisfied its minimum display deadline, the reducer records `finishPending = true` and keeps the display text visible until `minimumDisplayTimerFired`.
+2. A `minimumDisplayTimerFired(timerID:speechID:inputID:)` event only clears or advances output state if it matches the current output state's stored `minimumDisplayTimerID`.
 3. A `pointerAnimationFinished(pointerID:)` event only clears pointer state if `pointerID` equals the current pointer id.
 4. A `transientHideTimerFired(timerID:)` event only hides the overlay if the timer id matches and no visibility reasons remain.
 5. A `quickReply(contextID:)` from a text-owned context updates text display only and never starts TTS.
@@ -438,7 +453,7 @@ These invariants should be enforced by tests:
 9. Pointer request B supersedes pointer request A. Any delayed callback from A is ignored.
 10. `detectedElementScreenLocation == nil` or pointer cancel causes local pointer animation cancellation, not just manager state clearing.
 11. Overlay visibility is derived from reasons, not toggled ad hoc.
-12. `contextOwnership[contextID]` is recorded immediately after context capture succeeds and before `agentClient.submit` / `agentClient.send` is invoked. `agentSubmissionAccepted` may confirm or enrich ownership but must not be the first ownership write.
+12. `contextOwnership[contextID]` is recorded in the `.textContextCaptured` / `.voiceContextCaptured` transition before any `agentClient.submit` / `agentClient.send` effect is emitted. `agentSubmissionAccepted` may confirm or enrich ownership but must not be the first ownership write.
 13. Unknown quickReply metadata defaults to text-only display unless local context ownership proves it belongs to a voice interaction.
 
 ## Migration Strategy
@@ -483,7 +498,9 @@ Test cases:
 - immediate finish before the next run loop still leaves visible display projection until minimum display timer fires.
 - minimum processing delay plus new PTT does not surface stale reply text or speech.
 - quickReply arriving before `agentSubmissionAccepted` still routes correctly because context ownership was recorded pre-submit.
-- old daemon/new app and new daemon/old app quickReply decoding remains backward compatible.
+- `textContextCaptured` / `voiceContextCaptured` transitions record ownership before emitting submit effects.
+- stale minimum display timer is ignored when reply B replaces reply A.
+- old daemon/new app and new daemon/old app quickReply decoding remains backward compatible, including invalid enum raw values and legacy `source`.
 
 Acceptance:
 
@@ -533,6 +550,7 @@ Behavior:
 sendDirectMessage
 → coordinator.accept(.textSubmitted)
 → effect captureTextContext
+→ .textContextCaptured(inputID, context)
 → contextOwnership[contextID] = .text(inputID) before daemon submit
 → effect submitText
 → .textSubmissionAccepted(contextID) confirms receipt only
@@ -558,6 +576,7 @@ Behavior:
 
 ```text
 legacy voice context captured
+→ .voiceContextCaptured(inputID, transcript, context, targetSessionID)
 → coordinator records contextOwnership[contextID] = .voice(inputID) before daemon submit
 → legacy voice submission accepted confirms receipt only
 → quickReply from voice context
@@ -566,7 +585,7 @@ legacy voice context captured
 → projection publishes visible text and responding state
 → effect speak(speechID)
 → speech provider callback emits speechFinished(speechID)
-→ reducer validates speechID and either keeps display until minimumDisplayTimerFired or finishes immediately if deadline already elapsed
+→ reducer validates speechID and either keeps display until matching minimumDisplayTimerFired or finishes immediately if deadline already elapsed
 ```
 
 Acceptance:
@@ -707,6 +726,8 @@ Rules:
 - agentd should set `originSource` from the originating context packet source when known.
 - app text and voice submissions should set local context ownership immediately and still accept daemon metadata when available.
 - app-side inference is allowed only when metadata is missing for backward compatibility.
+- Swift decoders must map unknown or invalid metadata values to `.unknown` instead of failing the whole event.
+- Legacy `source` is accepted and mapped best-effort for old daemons.
 - If `inputId` must be echoed by the daemon, a preceding protocol change must add it to the command/context payload; otherwise app-side input correlation remains local-only.
 
 Acceptance:
@@ -804,8 +825,8 @@ Steps:
 
 1. Keep `sendDirectMessage(_:)` signature.
 2. Internally dispatch `.textSubmitted`.
-3. Effect runner captures context and submits.
-4. Store text context ownership in state.
+3. Effect runner captures context and emits `.textContextCaptured`.
+4. Reducer stores text context ownership, then emits `submitText`.
 5. Route `quickReply` for text-owned contexts to text-only display.
 
 Expected:
@@ -827,7 +848,7 @@ Steps:
 3. Speech callback emits `.speechFinished(speechID)`.
 4. Old speech completion ignored if id stale.
 5. Preserve minimum processing and minimum visible display duration with explicit `minimumDisplayTimerFired(timerID:speechID:inputID:)`.
-6. Record legacy voice `contextOwnership` at context capture completion before daemon submit.
+6. Record legacy voice `contextOwnership` in `.voiceContextCaptured` before daemon submit.
 
 Expected:
 
@@ -835,6 +856,7 @@ Expected:
 - stale speech finish tests pass.
 - immediate speech finish before the next run loop does not erase visible display before minimum display duration.
 - quickReply before `agentSubmissionAccepted` still routes by pre-submit context ownership.
+- stale minimum display timer for an older reply cannot clear the current reply.
 
 ### Task 6: Migrate pointer path with generation ids
 
@@ -908,9 +930,10 @@ Files:
 Steps:
 
 1. Add optional quickReply `originSource` and `replyKind` metadata as the default protocol direction, with backward-compatible decoding.
-2. Use app-side context/session ownership only as fallback for old daemons.
-3. Ensure side completion during voice active is not spoken.
-4. Add tests for quickReply arriving before session snapshot/update and before agent submission receipt.
+2. Implement custom Swift fallback decoding for missing, invalid, hyphenated, and legacy `source` metadata.
+3. Use app-side context/session ownership only as fallback for old daemons.
+4. Ensure side completion during voice active is not spoken.
+5. Add tests for quickReply arriving before session snapshot/update and before agent submission receipt.
 
 Expected:
 

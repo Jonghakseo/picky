@@ -28,20 +28,18 @@ struct PickyTypingBubbleView: View {
                             .font(.system(size: 8.5, weight: .bold))
                         Text("⌁ thinking")
                             .font(.system(size: 9.5, weight: .semibold))
-                        if !isCollapsed {
-                            HStack(spacing: 3) {
-                                ForEach(0..<3, id: \.self) { index in
-                                    Circle()
-                                        .fill(DS.Colors.info)
-                                        .frame(width: 3.5, height: 3.5)
-                                        .opacity(isAnimating ? 1.0 : 0.25)
-                                        .animation(
-                                            .easeInOut(duration: 0.6)
-                                                .repeatForever(autoreverses: true)
-                                                .delay(Double(index) * 0.18),
-                                            value: isAnimating
-                                        )
-                                }
+                        HStack(spacing: 3) {
+                            ForEach(0..<3, id: \.self) { index in
+                                Circle()
+                                    .fill(DS.Colors.info)
+                                    .frame(width: 3.5, height: 3.5)
+                                    .opacity(isAnimating ? 1.0 : 0.25)
+                                    .animation(
+                                        .easeInOut(duration: 0.6)
+                                            .repeatForever(autoreverses: true)
+                                            .delay(Double(index) * 0.18),
+                                        value: isAnimating
+                                    )
                             }
                         }
                     }

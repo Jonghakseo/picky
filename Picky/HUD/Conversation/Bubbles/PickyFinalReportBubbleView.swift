@@ -9,6 +9,8 @@ import SwiftUI
 
 struct PickyFinalReportBubbleView: View {
     let report: PickyFinalReport
+    var showsOpenAsReportAction = false
+    var onOpenAsReport: (() -> Void)?
 
     var body: some View {
         HStack {
@@ -29,6 +31,9 @@ struct PickyFinalReportBubbleView: View {
                 }
                 if !report.artifacts.isEmpty {
                     artifactsRow
+                }
+                if showsOpenAsReportAction, let onOpenAsReport {
+                    PickyOpenAsReportButton(action: onOpenAsReport)
                 }
             }
             .padding(.horizontal, 10)

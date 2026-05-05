@@ -1446,6 +1446,32 @@ struct PickySessionViewModelTests {
         #expect(!client.sentCommands.contains { $0.type == .openArtifact })
     }
 
+    @Test func openReportFallsBackToLatestAgentResponseInInternalViewer() async throws {
+        let generatedRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-generated-report-\(UUID().uuidString)", isDirectory: true)
+        let presenter = FakeReportPresenter()
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            reportPresenter: presenter,
+            generatedReportDirectory: generatedRoot
+        )
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-response", title: "Response task", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "session-response", messageId: "msg-response", text: "# Answer\n\nDone", seq: 1))))
+        try await settle()
+
+        try await viewModel.openReport(sessionID: "session-response")
+
+        let call = try #require(presenter.calls.first)
+        #expect(call.sessionID == "session-response:message:msg-response")
+        #expect(call.title == "Response task — Response")
+        #expect(call.fileURL.lastPathComponent == "response-msg-response.md")
+        #expect(call.markdown == "# Answer\n\nDone")
+        #expect(FileManager.default.fileExists(atPath: call.fileURL.path))
+        #expect(!client.sentCommands.contains { $0.type == .openArtifact })
+    }
+
     @Test func reportBuilderToolSummaryUsesOnlyToolCallCounts() async throws {
         let session = PickyAgentSession.fixture(
             lastSummary: "Done",

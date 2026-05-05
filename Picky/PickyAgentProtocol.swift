@@ -360,6 +360,50 @@ struct PickySessionMessage: Codable, Equatable, Identifiable {
     let errorMessage: String?
 }
 
+extension PickyFinalReport {
+    var markdownReport: String {
+        var lines: [String] = ["# Final report", "", "Status: `\(status.rawValue)`", ""]
+        let trimmedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedSummary.isEmpty {
+            lines.append("## Summary")
+            lines.append(trimmedSummary)
+            lines.append("")
+        }
+        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedBody.isEmpty {
+            lines.append("## Details")
+            lines.append(trimmedBody)
+            lines.append("")
+        }
+        if !artifacts.isEmpty {
+            lines.append("## Artifacts")
+            for artifact in artifacts {
+                if let url = artifact.url {
+                    lines.append("- [\(artifact.title)](\(url.absoluteString))")
+                } else {
+                    lines.append("- \(artifact.title)")
+                }
+            }
+            lines.append("")
+        }
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+extension PickySessionMessage {
+    var openAsReportMarkdown: String? {
+        switch kind {
+        case .agentText:
+            let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? nil : trimmed
+        case .agentReport:
+            return report?.markdownReport
+        default:
+            return nil
+        }
+    }
+}
+
 struct PickyAgentSession: Codable, Equatable, Identifiable {
     let id: String
     let title: String

@@ -12,7 +12,7 @@ struct PickyConversationMenu: View {
     @ObservedObject var viewModel: PickySessionListViewModel
 
     var canOpenPiTerminal: Bool { session.piSessionFilePath != nil }
-    var canOpenReport: Bool { session.reportArtifact != nil || session.finalReport != nil }
+    var canOpenReport: Bool { session.canOpenMarkdownReport }
     var canCopyResumeCommand: Bool { session.piSessionFilePath != nil }
     var canStop: Bool { !session.status.isTerminal }
 

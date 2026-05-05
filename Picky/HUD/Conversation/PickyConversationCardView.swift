@@ -24,6 +24,7 @@ struct PickyConversationCardView: View {
         .frame(width: PickyHUDDockLayout.detailWidth)
         .frame(minHeight: 320, maxHeight: 1080, alignment: .top)
         .background(cardBackground)
+        .background(reportKeyboardShortcut)
         .contentShape(Rectangle())
         .onHover(perform: updateVoiceFollowUpHover)
     }
@@ -34,6 +35,20 @@ struct PickyConversationCardView: View {
         } else {
             viewModel.endHoveredVoiceFollowUp(sessionID: session.id)
         }
+    }
+
+    /// Hidden button that binds ⌘R at card/window scope. Menu keyboard shortcuts are
+    /// only reliable while the menu is open; this keeps "Open report" available while
+    /// the HUD card itself is focused.
+    private var reportKeyboardShortcut: some View {
+        Button("Open report") {
+            Task { try? await viewModel.openReport(sessionID: session.id) }
+        }
+        .keyboardShortcut("r", modifiers: .command)
+        .disabled(!session.canOpenMarkdownReport)
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
     }
 
     private var cardBackground: some View {

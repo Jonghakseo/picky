@@ -60,6 +60,8 @@ struct PickyConversationListView: View {
         snapshot.pendingBubbleCount += session.followUpMode == .all ? 0 : followUps.count
         snapshot.pendingBubbleCount += session.steeringMode == .all ? 0 : steers.count
 
+        snapshot.openAsReportActionCount = visibleMessages.filter { showsOpenAsReportAction(for: $0) }.count
+
         for message in session.messages {
             switch message.kind {
             case .agentThinking:
@@ -85,12 +87,20 @@ struct PickyConversationListView: View {
         case .userText:
             PickyUserBubbleView(message: message)
         case .agentText:
-            PickyAgentBubbleView(message: message)
+            PickyAgentBubbleView(
+                message: message,
+                showsOpenAsReportAction: showsOpenAsReportAction(for: message),
+                onOpenAsReport: { openReport() }
+            )
         case .agentThinking:
             PickyTypingBubbleView(message: message)
         case .agentReport:
             if let report = message.report {
-                PickyFinalReportBubbleView(report: report)
+                PickyFinalReportBubbleView(
+                    report: report,
+                    showsOpenAsReportAction: showsOpenAsReportAction(for: message),
+                    onOpenAsReport: { openReport() }
+                )
             } else {
                 PickyAgentBubbleView(message: message)
             }
@@ -120,6 +130,14 @@ struct PickyConversationListView: View {
         case .system:
             PickyAgentBubbleView(message: message)
         }
+    }
+
+    private func showsOpenAsReportAction(for message: PickySessionMessage) -> Bool {
+        session.canOpenMarkdownReport && message.id == session.latestOpenAsReportMessage?.id
+    }
+
+    private func openReport() {
+        Task { try? await viewModel.openReport(sessionID: session.id) }
     }
 
     @ViewBuilder
@@ -273,6 +291,7 @@ struct PickyConversationListRenderSnapshot: Equatable {
     var batchGroupCount = 0
     var pendingBubbleCount = 0
     var finalReportBubbleCount = 0
+    var openAsReportActionCount = 0
     var questionBubbleCount = 0
     var errorBubbleCount = 0
     var activitySummaryCount = 0

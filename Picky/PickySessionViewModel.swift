@@ -146,6 +146,14 @@ final class PickySessionListViewModel: ObservableObject {
             artifacts.first { $0.kind == "report" || $0.kind == "final_answer" }
         }
 
+        var latestOpenAsReportMessage: PickySessionMessage? {
+            messages.reversed().first { $0.openAsReportMarkdown != nil }
+        }
+
+        var canOpenMarkdownReport: Bool {
+            reportArtifact != nil || finalReport != nil || latestOpenAsReportMessage != nil
+        }
+
         var linkBadgeArtifacts: [PickyArtifact] {
             artifacts.filter(\.isHUDLinkBadge)
         }
@@ -234,6 +242,7 @@ final class PickySessionListViewModel: ObservableObject {
     private let terminalPresenter: PickyTerminalOverlayPresenting
     private let terminalSessionSyncer: PickyTerminalSessionSyncing
     private let reportPresenter: PickyReportPresenting
+    private let generatedReportDirectory: URL
     private var eventTask: Task<Void, Never>?
     private var voiceFollowUpTargetCancellable: AnyCancellable?
     private var deliveredNotificationKeys = Set<String>()
@@ -253,7 +262,8 @@ final class PickySessionListViewModel: ObservableObject {
         clipboardWriter: PickyClipboardWriting = PickyPasteboardClipboardWriter(),
         terminalPresenter: PickyTerminalOverlayPresenting? = nil,
         terminalSessionSyncer: PickyTerminalSessionSyncing = PickyPiSessionFileSyncer(),
-        reportPresenter: PickyReportPresenting? = nil
+        reportPresenter: PickyReportPresenting? = nil,
+        generatedReportDirectory: URL = PickyAppSupport.defaultRoot().appendingPathComponent("GeneratedReports", isDirectory: true)
     ) {
         self.client = client
         self.notificationCenter = notificationCenter
@@ -265,6 +275,7 @@ final class PickySessionListViewModel: ObservableObject {
         self.terminalPresenter = terminalPresenter ?? PickyTerminalOverlayPresenter.shared
         self.terminalSessionSyncer = terminalSessionSyncer
         self.reportPresenter = reportPresenter ?? PickyReportViewerPresenter.shared
+        self.generatedReportDirectory = generatedReportDirectory
         self.selectedSessionID = selectionStore.selectedSessionID
         self.hoveredVoiceFollowUpSessionID = selectionStore.hoveredVoiceFollowUpSessionID
         self.hasExplicitSelection = self.selectedSessionID != nil
@@ -483,20 +494,43 @@ final class PickySessionListViewModel: ObservableObject {
 
     func openReport(sessionID: String, workspace _: NSWorkspace = .shared) async throws {
         pickySessionLog("open report session=\(sessionID)")
-        guard let artifact = sessions.first(where: { $0.id == sessionID })?.reportArtifact else {
+        guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }) else {
             lastError = "Report is not available yet"
             throw PickySessionListViewModelError.missingReport
         }
-        if let path = artifact.path {
-            do {
-                try openReportFile(sessionID: sessionID, path: path)
-            } catch {
-                lastError = error.localizedDescription
-                throw error
+        if let artifact = session.reportArtifact {
+            if let path = artifact.path {
+                do {
+                    try openReportFile(sessionID: sessionID, path: path)
+                } catch {
+                    lastError = error.localizedDescription
+                    throw error
+                }
+            } else {
+                try await client.send(PickyCommandEnvelope(type: .openArtifact, sessionId: sessionID, artifactId: artifact.id))
             }
-        } else {
-            try await client.send(PickyCommandEnvelope(type: .openArtifact, sessionId: sessionID, artifactId: artifact.id))
+            return
         }
+        if let finalReport = session.finalReport {
+            try openGeneratedReport(
+                windowKey: sessionID,
+                title: session.title,
+                fileName: "final-report-\(sanitizedReportFileComponent(session.id)).md",
+                markdown: finalReport.markdownReport
+            )
+            return
+        }
+        if let message = session.latestOpenAsReportMessage, let markdown = message.openAsReportMarkdown {
+            try openGeneratedReport(
+                windowKey: "\(sessionID):message:\(message.id)",
+                title: "\(session.title) — Response",
+                fileName: "response-\(sanitizedReportFileComponent(message.id)).md",
+                markdown: markdown
+            )
+            return
+        }
+        lastError = "Report is not available yet"
+        throw PickySessionListViewModelError.missingReport
     }
 
     private func openReportFile(sessionID: String, path: String) throws {
@@ -505,6 +539,20 @@ final class PickySessionListViewModel: ObservableObject {
         let title = (sessions + archivedSessions).first(where: { $0.id == sessionID })?.title ?? "Session report"
         lastOpenedArtifactPath = url.path
         try reportPresenter.openReport(sessionID: sessionID, title: title, fileURL: url, markdown: markdown)
+    }
+
+    private func openGeneratedReport(windowKey: String, title: String, fileName: String, markdown: String) throws {
+        try FileManager.default.createDirectory(at: generatedReportDirectory, withIntermediateDirectories: true)
+        let fileURL = generatedReportDirectory.appendingPathComponent(fileName, isDirectory: false)
+        try markdown.write(to: fileURL, atomically: true, encoding: .utf8)
+        lastOpenedArtifactPath = fileURL.path
+        try reportPresenter.openReport(sessionID: windowKey, title: title, fileURL: fileURL, markdown: markdown)
+    }
+
+    private func sanitizedReportFileComponent(_ value: String) -> String {
+        let sanitized = value.replacingOccurrences(of: #"[^A-Za-z0-9._-]+"#, with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".-"))
+        return sanitized.isEmpty ? "report" : String(sanitized.prefix(96))
     }
 
     func copyTerminalResumeCommand(sessionID: String) {

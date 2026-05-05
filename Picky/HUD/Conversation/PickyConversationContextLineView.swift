@@ -5,6 +5,7 @@
 //  Compact cwd, git, and external-link context row for conversation cards.
 //
 
+import AppKit
 import SwiftUI
 
 struct PickyConversationContextLineView: View {
@@ -18,15 +19,21 @@ struct PickyConversationContextLineView: View {
     var body: some View {
         HStack(spacing: 6) {
             if let compactCwd = session.compactCwdDescription {
-                Label {
-                    Text(compactCwd)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                } icon: {
-                    Image(systemName: "folder")
+                Button(action: { PickyFinderOpenRequest.open(cwd: session.cwd) }) {
+                    Label {
+                        Text(compactCwd)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    } icon: {
+                        Image(systemName: "folder")
+                    }
+                    .labelStyle(.titleAndIcon)
+                    .contentShape(Rectangle())
                 }
-                .labelStyle(.titleAndIcon)
+                .buttonStyle(.plain)
                 .layoutPriority(1)
+                .help("Open working folder in Finder")
+                .pointerCursor()
             }
 
             if let gitStatus {
@@ -115,5 +122,22 @@ struct PickyConversationContextLineView: View {
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
             .background(Capsule().fill(color.opacity(0.10)))
+    }
+}
+
+enum PickyFinderOpenRequest {
+    static func existingDirectoryURL(cwd: String?, fileManager: FileManager = .default) -> URL? {
+        let trimmed = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return nil }
+
+        let path = NSString(string: trimmed).standardizingPath
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
+    static func open(cwd: String?, workspace: NSWorkspace = .shared) {
+        guard let url = existingDirectoryURL(cwd: cwd) else { return }
+        workspace.open(url)
     }
 }

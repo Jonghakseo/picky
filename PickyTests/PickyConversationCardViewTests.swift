@@ -77,6 +77,20 @@ struct PickyConversationCardViewTests {
         #expect(PickyAssistantRunMetadata(model: "anthropic/claude-opus-4-7", thinkingLevel: .xhigh).displayText == "opus-4-7 xhigh")
     }
 
+    @Test func finderOpenRequestOnlyResolvesExistingCwdDirectories() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let fileURL = root.appendingPathComponent("not-a-directory.txt")
+        try "file".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        #expect(PickyFinderOpenRequest.existingDirectoryURL(cwd: "  \(root.path)  ")?.standardizedFileURL == root.standardizedFileURL)
+        #expect(PickyFinderOpenRequest.existingDirectoryURL(cwd: fileURL.path) == nil)
+        #expect(PickyFinderOpenRequest.existingDirectoryURL(cwd: root.appendingPathComponent("missing").path) == nil)
+        #expect(PickyFinderOpenRequest.existingDirectoryURL(cwd: " ") == nil)
+    }
+
     @Test func queuedFollowUpMatchingUserTextStillRendersPendingBubble() {
         let legacyFollowUpPrompt = """
         # Picky follow-up

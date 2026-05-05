@@ -186,6 +186,23 @@ struct PickyConversationCardViewTests {
         #expect(composer.placeholderText.contains("esc Stop"))
     }
 
+    @Test func headerShowsNotifyOnCompletionState() {
+        let viewModel = makeViewModel()
+        let enabledHeader = PickyConversationHeaderView(
+            viewModel: viewModel,
+            session: makeConversationSession(status: .running, notifyMainOnCompletion: true)
+        )
+        let disabledHeader = PickyConversationHeaderView(
+            viewModel: viewModel,
+            session: makeConversationSession(status: .running, notifyMainOnCompletion: false)
+        )
+
+        #expect(enabledHeader.notifyOnCompletionIconName == "bell.fill")
+        #expect(enabledHeader.notifyOnCompletionHelpText == "Notify main agent on completion")
+        #expect(disabledHeader.notifyOnCompletionIconName == "bell.slash")
+        #expect(disabledHeader.notifyOnCompletionHelpText == "Do not notify main agent on completion")
+    }
+
     @Test func failedPhaseRendersErrorBubbleWithoutRetryChip() {
         let errorMessage = message(
             "m-error",
@@ -566,7 +583,8 @@ private func makeConversationSession(
     activitySummary: PickyActivitySummary = .zero,
     pendingExtensionUiRequest: PickyExtensionUiRequest? = nil,
     artifacts: [PickyArtifact] = [],
-    logs: [String] = []
+    logs: [String] = [],
+    notifyMainOnCompletion: Bool? = nil
 ) -> PickySessionListViewModel.SessionCard {
     PickySessionListViewModel.SessionCard.fromAgentSession(
         PickyAgentSession(
@@ -587,7 +605,8 @@ private func makeConversationSession(
             steeringMode: steeringMode,
             followUpMode: followUpMode,
             activitySummary: activitySummary,
-            pendingExtensionUiRequest: pendingExtensionUiRequest
+            pendingExtensionUiRequest: pendingExtensionUiRequest,
+            notifyMainOnCompletion: notifyMainOnCompletion
         )
     )
 }

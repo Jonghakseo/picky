@@ -42,6 +42,7 @@ struct PickyConversationHeaderView: View {
     private var trailingActions: some View {
         HStack(alignment: .center, spacing: 9) {
             statusPill
+            notifyOnCompletionButton
             if isVoiceFollowUpTarget {
                 voiceTargetBadge
             }
@@ -51,7 +52,7 @@ struct PickyConversationHeaderView: View {
     }
 
     private var trailingActionsReservedWidth: CGFloat {
-        isVoiceFollowUpTarget ? 132 : 106
+        isVoiceFollowUpTarget ? 166 : 140
     }
 
     private var voiceTargetBadge: some View {
@@ -61,6 +62,41 @@ struct PickyConversationHeaderView: View {
             .frame(width: 18, height: 18)
             .background(Circle().fill(DS.Colors.accentSubtle.opacity(0.95)))
             .help("Voice steering target")
+    }
+
+    private var notifyOnCompletionButton: some View {
+        Button {
+            let enabled = !(session.notifyMainOnCompletion == true)
+            Task { try? await viewModel.setNotifyMainOnCompletion(sessionID: session.id, enabled: enabled) }
+        } label: {
+            Image(systemName: notifyOnCompletionIconName)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundColor(notifyOnCompletionColor)
+                .frame(width: 22, height: 22)
+                .background(Circle().fill(notifyOnCompletionBackgroundColor))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
+        .help(notifyOnCompletionHelpText)
+        .accessibilityLabel("Notify on completion")
+        .accessibilityValue(session.notifyMainOnCompletion == true ? "On" : "Off")
+    }
+
+    var notifyOnCompletionIconName: String {
+        session.notifyMainOnCompletion == true ? "bell.fill" : "bell.slash"
+    }
+
+    var notifyOnCompletionHelpText: String {
+        session.notifyMainOnCompletion == true ? "Notify main agent on completion" : "Do not notify main agent on completion"
+    }
+
+    private var notifyOnCompletionColor: Color {
+        session.notifyMainOnCompletion == true ? DS.Colors.accentText : DS.Colors.textTertiary
+    }
+
+    private var notifyOnCompletionBackgroundColor: Color {
+        session.notifyMainOnCompletion == true ? DS.Colors.accentSubtle.opacity(0.34) : DS.Colors.surface2.opacity(0.65)
     }
 
     private var conversationMenuButton: some View {

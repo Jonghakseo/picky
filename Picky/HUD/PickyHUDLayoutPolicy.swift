@@ -43,6 +43,9 @@ enum PickyHUDDockLayout {
     static let railWidth: CGFloat = 56
     static let panelGap: CGFloat = 10
     static let screenMargin: CGFloat = 8
+    /// Distance kept between the dock capsule and the screen's right edge.
+    /// Tighter than `screenMargin` so the dock visually anchors to the bezel.
+    static let dockRightEdgeMargin: CGFloat = 4
     static let closeDelay: TimeInterval = 0.4
     static let closeDelayNanoseconds: UInt64 = 400_000_000
     static let defaultGitSectionExpanded = true

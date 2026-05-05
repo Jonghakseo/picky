@@ -135,7 +135,7 @@ final class PickyHUDOverlayManager {
         guard let visibleFrame = screen?.visibleFrame else { return nil }
         let targetHeight = min(max(contentSize.height, minimumHeight), visibleFrame.height - (PickyHUDDockLayout.screenMargin * 2))
         return NSRect(
-            x: visibleFrame.maxX - width - PickyHUDDockLayout.screenMargin,
+            x: visibleFrame.maxX - width - PickyHUDDockLayout.dockRightEdgeMargin,
             y: PickyHUDDockLayout.centeredPanelY(visibleFrame: visibleFrame, targetHeight: targetHeight),
             width: width,
             height: targetHeight

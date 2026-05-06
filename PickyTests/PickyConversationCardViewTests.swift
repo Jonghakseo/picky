@@ -223,6 +223,16 @@ struct PickyConversationCardViewTests {
         #expect(disabledHeader.notifyOnCompletionHelpText == "Do not notify main agent on completion")
     }
 
+    @Test func headerTitleTooltipMentionsNameCommand() {
+        let header = PickyConversationHeaderView(
+            viewModel: makeViewModel(),
+            session: makeConversationSession(status: .running)
+        )
+
+        #expect(header.titleHelpText.contains("/name"))
+        #expect(header.titleHelpText.contains("rename"))
+    }
+
     @Test func failedPhaseRendersErrorBubbleWithoutRetryChip() {
         let errorMessage = message(
             "m-error",

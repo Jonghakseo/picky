@@ -37,6 +37,8 @@ struct PickyConversationHeaderView: View {
         }
         .padding(.trailing, trailingActionsReservedWidth)
         .frame(width: PickyHUDDockLayout.detailContentWidth, alignment: .leading)
+        .nativeTooltip(titleHelpText)
+        .accessibilityHint(titleHelpText)
     }
 
     private var trailingActions: some View {
@@ -96,6 +98,10 @@ struct PickyConversationHeaderView: View {
 
     var notifyOnCompletionHelpText: String {
         session.notifyMainOnCompletion == true ? "Notify main agent on completion" : "Do not notify main agent on completion"
+    }
+
+    var titleHelpText: String {
+        "Use /name <new title> to rename this side agent"
     }
 
     private var notifyOnCompletionColor: Color {

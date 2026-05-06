@@ -979,7 +979,7 @@ struct BlueCursorView: View {
             idleShadowMultiplier = 1.0
         }
         idleBehaviorActive = false
-        scheduleNextIdleBehavior(delayRange: 18...40)
+        scheduleNextIdleBehavior()
     }
 
     private func runShiverBehavior() {

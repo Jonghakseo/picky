@@ -91,6 +91,30 @@ struct PickyCompanionDirectMessageTests {
         #expect(speechProvider.spokenUtterances.isEmpty)
     }
 
+    @Test func quickInputMessageShowsCursorLoadingAndSpeaksQuickReply() async throws {
+        let client = FakeDirectMessageClient()
+        let speechProvider = FakeDirectMessageSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: client,
+            speechPlaybackProvider: speechProvider,
+            voiceContextCaptureCoordinator: fakeDirectMessageContextCaptureCoordinator()
+        )
+
+        let didSend = await manager.sendDirectMessage("  hello from cursor  ", source: .quickInput)
+
+        #expect(didSend)
+        #expect(client.submissions.count == 1)
+        #expect(client.submissions.first?.transcript == "hello from cursor")
+        #expect(manager.voiceState == .processing)
+        #expect(manager.overlayVisibilityReasons.contains(.waitingForVoiceResponse))
+
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(contextId: "typed-context", text: "cursor reply")))
+        try await waitUntil { speechProvider.spokenUtterances == ["cursor reply"] }
+
+        #expect(manager.latestAgentSessionSummary == "cursor reply")
+        #expect(manager.voiceState == .responding)
+    }
+
     private func waitUntil(_ predicate: @escaping @MainActor () -> Bool) async throws {
         for _ in 0..<50 {
             if predicate() { return }

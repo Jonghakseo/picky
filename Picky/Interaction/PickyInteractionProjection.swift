@@ -7,6 +7,7 @@ struct PickyInteractionProjection: Equatable {
     let overlayVisible: Bool
     let pointerTarget: PickyPointerTarget?
     let hasPendingTextSubmission: Bool
+    let isWaitingForCursorResponse: Bool
     let isSpeaking: Bool
 
     init(state: PickyInteractionState) {
@@ -15,6 +16,7 @@ struct PickyInteractionProjection: Equatable {
         self.overlayVisible = Self.overlayVisible(from: state.overlay)
         self.pointerTarget = state.pointer.target
         self.hasPendingTextSubmission = !state.pendingTextInputs.isEmpty
+        self.isWaitingForCursorResponse = Self.isWaitingForCursorResponse(from: state)
         if case .speaking = state.output {
             self.isSpeaking = true
         } else {
@@ -33,6 +35,17 @@ struct PickyInteractionProjection: Equatable {
         case .suppressedReply(_, let text, _, _, _):
             text
         }
+    }
+
+    private static func isWaitingForCursorResponse(from state: PickyInteractionState) -> Bool {
+        guard case .waitingForAgent(let inputID, let contextID, _) = state.output else { return false }
+        if let inputID, state.pendingTextInputs[inputID]?.source == .quickInput {
+            return true
+        }
+        if let contextID, state.contextOwnership[contextID]?.usesCursorResponsePresentation == true {
+            return true
+        }
+        return false
     }
 
     private static func overlayVisible(from phase: PickyOverlayPhase) -> Bool {

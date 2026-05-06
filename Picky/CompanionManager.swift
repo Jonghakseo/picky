@@ -761,7 +761,7 @@ final class CompanionManager: ObservableObject {
     private func handleQuickInputSubmit(text: String) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let success = await self.sendDirectMessage(text)
+            let success = await self.sendDirectMessage(text, source: .quickInput)
             self.quickInputPanelManager.panelDidFinishSending(
                 success: success,
                 errorMessage: success ? nil : self.directMessageError
@@ -921,7 +921,7 @@ final class CompanionManager: ObservableObject {
     }
 
     @discardableResult
-    func sendDirectMessage(_ text: String) async -> Bool {
+    func sendDirectMessage(_ text: String, source: PickyInteractionSource = .text) async -> Bool {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return false }
 
@@ -931,7 +931,7 @@ final class CompanionManager: ObservableObject {
             directMessageContinuations[inputID] = continuation
             interactionCoordinator.accept(
                 .textSubmitted(text: trimmedText, inputID: inputID),
-                correlation: PickyInteractionCorrelation(inputID: inputID, source: .text)
+                correlation: PickyInteractionCorrelation(inputID: inputID, source: source)
             )
         }
     }
@@ -966,7 +966,9 @@ final class CompanionManager: ObservableObject {
         case .suppressedReply:
             clearPendingAgentResponseTiming()
         case .waitingForAgent:
-            break
+            if projection.isWaitingForCursorResponse {
+                voiceState = .processing
+            }
         }
     }
 

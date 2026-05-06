@@ -97,8 +97,13 @@ enum PickyInteractionReducer {
             record(.stateChanged, "Voice transcript failed")
 
         case .textSubmitted(let text, let inputID):
+            let source = envelope.correlation.source
             state.input = .textSubmitting(inputID: inputID, text: text)
-            state.pendingTextInputs[inputID] = PickyTextInputState(text: text)
+            state.pendingTextInputs[inputID] = PickyTextInputState(text: text, source: source)
+            if source == .quickInput {
+                state.output = .waitingForAgent(inputID: inputID, contextID: nil, promptPreview: text)
+                state = state.addingOverlayReason(.waitingForVoiceResponse)
+            }
             effects.append(.captureTextContext(inputID: inputID, text: text))
             record(.stateChanged, "Text input submitted")
 
@@ -109,9 +114,13 @@ enum PickyInteractionReducer {
             }
             pendingText.contextID = context.id
             state.pendingTextInputs[inputID] = pendingText
-            state.contextOwnership[context.id] = .text(inputID: inputID)
+            let owner: PickyContextOwner = pendingText.source == .quickInput ? .quickInputText(inputID: inputID) : .text(inputID: inputID)
+            state.contextOwnership[context.id] = owner
             state.output = .waitingForAgent(inputID: inputID, contextID: context.id, promptPreview: pendingText.text)
-            effects.append(.recordContextOwnership(inputID: inputID, contextID: context.id, owner: .text(inputID: inputID)))
+            if pendingText.source == .quickInput {
+                state = state.addingOverlayReason(.waitingForVoiceResponse)
+            }
+            effects.append(.recordContextOwnership(inputID: inputID, contextID: context.id, owner: owner))
             effects.append(.submitText(inputID: inputID, context: context, text: pendingText.text))
             record(.stateChanged, "Text context captured before submit")
 
@@ -127,12 +136,16 @@ enum PickyInteractionReducer {
             record(.accepted, "Text submission accepted")
 
         case .textSubmissionFailed(let message, let inputID):
-            guard state.pendingTextInputs[inputID] != nil else {
+            guard let pendingText = state.pendingTextInputs[inputID] else {
                 record(.staleEvent, "Ignored text submission failure: \(message)")
                 break
             }
             state.pendingTextInputs[inputID] = nil
             if case .textSubmitting(inputID, _) = state.input { state.input = .idle }
+            if pendingText.source == .quickInput {
+                state.output = .idle
+                state = state.removingOverlayReason(.waitingForVoiceResponse)
+            }
             record(.stateChanged, "Text submission failed")
 
         case .voiceContextCaptured(let inputID, let transcript, let context, let targetSessionID):
@@ -178,7 +191,7 @@ enum PickyInteractionReducer {
             let deadline = envelope.occurredAt.addingTimeInterval(minimumDisplayDuration)
             let owner = state.contextOwnership[contextID] ?? ownerFromMetadata(originSource)
             let hasActiveVoiceInput = state.hasActiveVoiceInput
-            let shouldSpeakReply = owner.isVoiceOwned || replyKind == .sideCompletion
+            let shouldSpeakReply = owner.isVoiceOwned || owner.usesCursorResponsePresentation || replyKind == .sideCompletion
             if hasActiveVoiceInput, replyKind == .sideCompletion {
                 state.output = .suppressedReply(
                     contextID: contextID,
@@ -192,7 +205,7 @@ enum PickyInteractionReducer {
                 record(.stateChanged, "Suppressed side completion quick reply while voice input is active")
             } else if shouldSpeakReply, !hasActiveVoiceInput {
                 let speechID = envelope.correlation.speechID ?? envelope.id
-                let displaySource: PickyDisplaySource = replyKind == .sideCompletion ? .sideCompletion : .voiceReply
+                let displaySource: PickyDisplaySource = replyKind == .sideCompletion ? .sideCompletion : (owner.usesCursorResponsePresentation ? .textReply : .voiceReply)
                 state.output = .speaking(
                     contextID: contextID,
                     speechID: speechID,

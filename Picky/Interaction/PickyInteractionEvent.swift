@@ -47,6 +47,7 @@ struct PickyInteractionCorrelation: Equatable, Codable {
 enum PickyInteractionSource: String, Codable, Equatable {
     case voice
     case text
+    case quickInput
     case pointer
     case agent
     case system

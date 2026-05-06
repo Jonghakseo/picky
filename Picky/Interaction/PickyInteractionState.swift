@@ -72,10 +72,12 @@ enum PickyOverlayPhase: Equatable, Codable {
 struct PickyTextInputState: Equatable, Codable {
     var text: String
     var contextID: String?
+    var source: PickyInteractionSource
 
-    init(text: String, contextID: String? = nil) {
+    init(text: String, contextID: String? = nil, source: PickyInteractionSource = .text) {
         self.text = text
         self.contextID = contextID
+        self.source = source
     }
 }
 
@@ -93,6 +95,7 @@ struct PickyVoiceInputState: Equatable, Codable {
 
 enum PickyContextOwner: Equatable, Codable {
     case text(inputID: UUID)
+    case quickInputText(inputID: UUID)
     case voice(inputID: UUID)
     case metadataText
     case metadataVoice
@@ -103,16 +106,25 @@ enum PickyContextOwner: Equatable, Codable {
         switch self {
         case .voice, .metadataVoice:
             true
-        case .text, .metadataText, .system, .unknown:
+        case .text, .quickInputText, .metadataText, .system, .unknown:
             false
         }
     }
 
     var isTextOwned: Bool {
         switch self {
-        case .text, .metadataText:
+        case .text, .quickInputText, .metadataText:
             true
         case .voice, .metadataVoice, .system, .unknown:
+            false
+        }
+    }
+
+    var usesCursorResponsePresentation: Bool {
+        switch self {
+        case .quickInputText:
+            true
+        case .text, .voice, .metadataText, .metadataVoice, .system, .unknown:
             false
         }
     }

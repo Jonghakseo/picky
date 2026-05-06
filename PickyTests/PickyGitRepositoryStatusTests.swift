@@ -35,6 +35,7 @@ struct PickyGitRepositoryStatusTests {
         try runGit(["config", "user.email", "picky@example.com"], cwd: directory)
         try runGit(["config", "user.name", "Picky Tests"], cwd: directory)
         try runGit(["config", "commit.gpgsign", "false"], cwd: directory)
+        try runGit(["remote", "add", "origin", "git@github.com:creatrip/product.git"], cwd: directory)
         let fileURL = directory.appendingPathComponent("notes.txt")
         try "one\ntwo\n".write(to: fileURL, atomically: true, encoding: .utf8)
         try runGit(["add", "notes.txt"], cwd: directory)
@@ -43,16 +44,21 @@ struct PickyGitRepositoryStatusTests {
 
         let status = await PickyGitRepositoryStatus.load(cwd: directory.path)
 
-        #expect(status?.repositoryName == directory.lastPathComponent)
+        #expect(status?.repositoryName == "product")
         #expect(status?.branchName == "main")
         #expect(status?.hasUncommittedChanges == true)
-        #expect(status?.repositoryDisplayName == directory.lastPathComponent)
+        #expect(status?.repositoryDisplayName == "product")
         #expect(status?.branchDisplayName == "main*")
         #expect(status?.insertions == 2)
         #expect(status?.deletions == 1)
         #expect(status?.aheadCount == 0)
         #expect(status?.behindCount == 0)
         #expect(PickyGitRepositoryStatus.cached(cwd: directory.path) == status)
+    }
+
+    @Test func extractsRepositoryNameFromRemoteWebURL() {
+        #expect(PickyGitRepositoryStatus.remoteRepositoryName(from: URL(string: "https://github.com/creatrip/product")!) == "product")
+        #expect(PickyGitRepositoryStatus.remoteRepositoryName(from: URL(string: "https://github.com/creatrip/product.git")!) == "product")
     }
 
     @Test func loadKeepsCachedStatusAvailableBetweenRefreshes() async throws {

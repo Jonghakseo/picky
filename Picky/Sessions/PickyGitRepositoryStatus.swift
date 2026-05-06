@@ -63,12 +63,12 @@ struct PickyGitRepositoryStatus: Equatable {
             return nil
         }
 
-        let repositoryName = URL(fileURLWithPath: topLevel).lastPathComponent
+        let remoteWebURL = remoteWebURLForOrigin(cwd: trimmedCwd)
+        let repositoryName = remoteWebURL.flatMap(remoteRepositoryName(from:)) ?? URL(fileURLWithPath: topLevel).lastPathComponent
         let branchName = currentBranchName(cwd: trimmedCwd)
         let statusOutput = git(["status", "--porcelain"], cwd: trimmedCwd) ?? ""
         let diffStats = parseNumstat(git(["diff", "--numstat", "HEAD", "--"], cwd: trimmedCwd, allowsFailure: true) ?? "")
         let position = parseAheadBehind(git(["rev-list", "--left-right", "--count", "@{upstream}...HEAD"], cwd: trimmedCwd, allowsFailure: true) ?? "")
-        let remoteWebURL = remoteWebURLForOrigin(cwd: trimmedCwd)
 
         return PickyGitRepositoryStatus(
             repositoryName: repositoryName,
@@ -87,6 +87,11 @@ struct PickyGitRepositoryStatus: Equatable {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !raw.isEmpty else { return nil }
         return convertRemoteURLToWeb(raw)
+    }
+
+    static func remoteRepositoryName(from url: URL) -> String? {
+        let name = url.deletingPathExtension().lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
     }
 
     static func convertRemoteURLToWeb(_ raw: String) -> URL? {

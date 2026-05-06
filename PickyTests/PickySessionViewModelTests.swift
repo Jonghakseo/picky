@@ -1166,7 +1166,7 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.lastRequestText == "include CWD in the HUD")
     }
 
-    @Test func mainAgentHandoffSessionRequestsDockPointerOnce() async throws {
+    @Test func mainAgentHandoffSessionDoesNotRequestDockPointer() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
@@ -1179,11 +1179,8 @@ struct PickySessionViewModelTests {
         ))))
         try await settle()
 
-        #expect(viewModel.pendingDockPointerSessionID == "handoff-side")
-        #expect(viewModel.sessions.first?.isMainAgentHandoff == true)
-
-        viewModel.markDockPointerDelivered(sessionID: "handoff-side")
         #expect(viewModel.pendingDockPointerSessionID == nil)
+        #expect(viewModel.sessions.first?.isMainAgentHandoff == true)
 
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
             id: "handoff-side",
@@ -1196,7 +1193,7 @@ struct PickySessionViewModelTests {
         #expect(viewModel.pendingDockPointerSessionID == nil)
     }
 
-    @Test func mainAgentHandoffLogRequestsDockPointerButHistoricalSnapshotDoesNot() async throws {
+    @Test func mainAgentHandoffLogDoesNotRequestDockPointer() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
@@ -1215,7 +1212,7 @@ struct PickySessionViewModelTests {
 
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "fresh-side", line: "main-agent handoff: new task"))))
         try await settle()
-        #expect(viewModel.pendingDockPointerSessionID == "fresh-side")
+        #expect(viewModel.pendingDockPointerSessionID == nil)
     }
 
     @Test func runtimeDetachedRestoredSessionsStayVisibleAndClearAutoArchiveState() async throws {

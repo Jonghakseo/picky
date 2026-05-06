@@ -864,11 +864,10 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    private func requestDockPointerIfNeeded(for card: SessionCard) {
-        guard card.isMainAgentHandoff else { return }
-        guard !dockPointerQueuedSessionIDs.contains(card.id), !dockPointerDeliveredSessionIDs.contains(card.id) else { return }
-        dockPointerQueuedSessionIDs.insert(card.id)
-        pendingDockPointerSessionID = card.id
+    private func requestDockPointerIfNeeded(for _: SessionCard) {
+        // Handoff-created side agents already appear in the HUD dock with their
+        // own status/active highlight. Do not fly the Picky cursor to the dock:
+        // that stacks a cursor response bubble, a pointer bubble, and a dock tag.
     }
 
     private func update(sessionID: String, mutate: (inout SessionCard) -> Void) {

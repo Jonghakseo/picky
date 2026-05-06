@@ -1423,8 +1423,6 @@ final class CompanionManager: ObservableObject {
             )),
             correlation: PickyInteractionCorrelation(pointerID: pointerID, source: .pointer)
         )
-        latestAgentSessionSummary = "새 사이드 에이전트를 가리키는 중…"
-
         setLocalOverlayReason(.activePointerAnimation, visible: true)
     }
 

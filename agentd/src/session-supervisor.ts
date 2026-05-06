@@ -916,6 +916,13 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private pushPendingQueueDelivery(sessionId: string, text: string, originatedBy: "user" | "main_agent"): void {
+    // Slash commands like /diff, /fix-tests, /name, /compact are not really chat input — they
+    // either run an extension overlay, fire a prompt template, or trigger a Picky-intercepted
+    // built-in. Recording them as user_text adds a misleading bubble to the conversation card.
+    // Skills (/skill:<name>) ARE recorded because they expand into a real prompt and the user
+    // expects to see what they invoked. The strict identifier match also exempts path-like
+    // inputs (/Users/foo) which contain a second '/' before whitespace.
+    if (isNonSkillSlashCommand(text)) return;
     const list = this.pendingQueueDeliveries.get(sessionId) ?? [];
     list.push({ text, originatedBy });
     this.pendingQueueDeliveries.set(sessionId, list);
@@ -1417,6 +1424,13 @@ function piSessionFilePathFromHandoffTranscript(transcript: string | undefined):
     if (path && !path.startsWith("(") && path !== "ephemeral" && path !== "unavailable") return path;
   }
   return undefined;
+}
+
+// Matches `/name`, `/name args` where name is an identifier-like token without `/` or `:`.
+// Intentionally rejects `/skill:context7-cli` (skill commands stay visible as user text) and
+// `/Users/foo` (path-like inputs).
+function isNonSkillSlashCommand(text: string): boolean {
+  return /^\s*\/[a-zA-Z][\w-]*(\s|$)/.test(text);
 }
 
 function piSessionFilePathFromLogs(logs: string[]): string | undefined {

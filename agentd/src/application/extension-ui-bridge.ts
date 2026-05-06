@@ -67,7 +67,9 @@ export class ExtensionUiBridge extends EventEmitter {
       setEditorText: (text) => void this.fireAndForget("set_editor_text", { text }),
       pasteToEditor: (text) => void this.fireAndForget("set_editor_text", { text }),
       getEditorText: () => "",
-      custom: async <T>() => undefined as T,
+      custom: async <T>(): Promise<T> => {
+        throw new Error("Custom TUI overlays (ctx.ui.custom) are not supported in Picky. Use a non-overlay alternative such as bash, or run the command in pi's interactive TUI.");
+      },
       onTerminalInput: () => () => undefined,
       setWorkingMessage: () => undefined,
       setWorkingVisible: () => undefined,

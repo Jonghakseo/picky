@@ -66,6 +66,7 @@ export class SessionSupervisor extends EventEmitter {
   private sideCompletionInFlight = new Set<string>();
   private pendingSideCompletions: string[] = [];
   private sessionContexts = new Map<string, PickyContextPacket>();
+  private pendingRuntimeHandles = new Map<string, Promise<RuntimeSessionHandle>>();
   private sessionSeq = new Map<string, number>();
   private queueUpdateChains = new Map<string, Promise<void>>();
   private activityUpdateChains = new Map<string, Promise<void>>();
@@ -184,12 +185,16 @@ export class SessionSupervisor extends EventEmitter {
     const attachedCommands = await this.listSlashCommandsFromHandle(sessionId, this.runtimeHandles.get(sessionId), "attached");
     if (attachedCommands) return attachedCommands;
 
+    const pendingHandle = await this.pendingRuntimeHandle(sessionId);
+    const pendingCommands = await this.listSlashCommandsFromHandle(sessionId, pendingHandle, "pending");
+    if (pendingCommands) return pendingCommands;
+
     const fallbackHandle = await this.slashCommandFallbackHandle(session);
     const fallbackCommands = await this.listSlashCommandsFromHandle(sessionId, fallbackHandle, "main");
     return fallbackCommands ?? [];
   }
 
-  private async listSlashCommandsFromHandle(sessionId: string, handle: RuntimeSessionHandle | undefined, source: "attached" | "main"): Promise<RuntimeSlashCommand[] | undefined> {
+  private async listSlashCommandsFromHandle(sessionId: string, handle: RuntimeSessionHandle | undefined, source: "attached" | "pending" | "main"): Promise<RuntimeSlashCommand[] | undefined> {
     if (!handle?.listSlashCommands) {
       logAgentd("slash commands unavailable", { sessionId, source, reason: handle ? "runtime handle unsupported" : "runtime handle missing" });
       return undefined;
@@ -198,6 +203,17 @@ export class SessionSupervisor extends EventEmitter {
       return normalizeSlashCommands(await handle.listSlashCommands());
     } catch (error) {
       logAgentd("slash commands failed", { sessionId, source, error: error instanceof Error ? error.message : String(error) });
+      return undefined;
+    }
+  }
+
+  private async pendingRuntimeHandle(sessionId: string): Promise<RuntimeSessionHandle | undefined> {
+    const pending = this.pendingRuntimeHandles.get(sessionId);
+    if (!pending) return undefined;
+    try {
+      return await pending;
+    } catch (error) {
+      logAgentd("slash commands pending runtime failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
       return undefined;
     }
   }
@@ -398,10 +414,13 @@ export class SessionSupervisor extends EventEmitter {
     };
     this.sideSessionIds.add(id);
     this.sessionContexts.set(id, sideContext);
-    await this.upsert(session);
-    logAgentd("empty side session queued", { sessionId: id, cwd: sideContext.cwd, contextId: context.id });
+    const pendingHandle = createPendingRuntimeHandle();
+    this.pendingRuntimeHandles.set(id, pendingHandle.promise);
     try {
+      await this.upsert(session);
+      logAgentd("empty side session queued", { sessionId: id, cwd: sideContext.cwd, contextId: context.id });
       const handle = await this.runtime.prewarm({ cwd: sideContext.cwd, sessionId: id });
+      pendingHandle.resolve(handle);
       await this.attachRuntimeHandle(id, handle);
       await this.appendLog(id, "manual side agent: waiting for first instruction");
       if (sideContext.cwd) await this.appendLog(id, `manual side agent cwd: ${sideContext.cwd}`);
@@ -414,7 +433,10 @@ export class SessionSupervisor extends EventEmitter {
         lastSummary: `Failed to start runtime: ${message}`,
         logs: [...this.mustGet(id).logs, `Failed to start runtime: ${message}`],
       });
+      pendingHandle.reject(error);
       throw error;
+    } finally {
+      if (this.pendingRuntimeHandles.get(id) === pendingHandle.promise) this.pendingRuntimeHandles.delete(id);
     }
   }
 
@@ -465,12 +487,15 @@ export class SessionSupervisor extends EventEmitter {
       activitySummary: zeroActivitySummary(),
     };
     this.sessionContexts.set(id, context);
-    await this.upsert(session);
-    logAgentd("session queued", { sessionId: id, titleChars: title.length, cwd: context.cwd });
+    const pendingHandle = createPendingRuntimeHandle();
+    this.pendingRuntimeHandles.set(id, pendingHandle.promise);
     try {
+      await this.upsert(session);
+      logAgentd("session queued", { sessionId: id, titleChars: title.length, cwd: context.cwd });
       this.runtimeEventHandler.resetAssistantDraft(id);
       const runtimePrompt = options.includePointerToolSessionHint === false ? prompt : withPointerToolSessionHint(prompt, id);
       const handle = await this.runtime.create(runtimePrompt, { cwd: context.cwd, sessionId: id });
+      pendingHandle.resolve(handle);
       await this.attachRuntimeHandle(id, handle);
       logAgentd("runtime attached", { sessionId: id });
       await this.patch(id, { status: "running", lastSummary: "Started", thinkingPreview: undefined });
@@ -483,7 +508,10 @@ export class SessionSupervisor extends EventEmitter {
         lastSummary: `Failed to start runtime: ${message}`,
         logs: [...this.mustGet(id).logs, `Failed to start runtime: ${message}`],
       });
+      pendingHandle.reject(error);
       throw error;
+    } finally {
+      if (this.pendingRuntimeHandles.get(id) === pendingHandle.promise) this.pendingRuntimeHandles.delete(id);
     }
   }
 
@@ -1430,6 +1458,19 @@ function zeroActivitySummary(): PickyActivitySummary {
 
 function activityTotal(summary: PickyActivitySummary): number {
   return summary.read + summary.bash + summary.edit + summary.write + summary.thinking + summary.other;
+}
+
+function createPendingRuntimeHandle(): { promise: Promise<RuntimeSessionHandle>; resolve: (handle: RuntimeSessionHandle) => void; reject: (error: unknown) => void } {
+  let resolve!: (handle: RuntimeSessionHandle) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<RuntimeSessionHandle>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  // The pending handle exists so slash-command requests can await startup; startup failures are
+  // handled by the session creation path, so avoid an unhandled rejection when no request races it.
+  promise.catch(() => undefined);
+  return { promise, resolve, reject };
 }
 
 function buildPinnedSideSessionLogs(context: PickyContextPacket): string[] {

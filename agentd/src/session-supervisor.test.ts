@@ -2059,6 +2059,29 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
+  it("waits for a pending session runtime before falling back to the main command catalog", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), undefined, { mainRuntime });
+    await supervisor.load();
+    const session = await supervisor.create({ ...context("slash command race"), cwd: "/tmp/product" });
+    await supervisor.prewarmMainAgent("/tmp/picky");
+    mainRuntime.handle!.slashCommands = [{ name: "skill:context7-cli", description: "Docs", source: "skill" }];
+
+    const sideHandle = new ManualHandle(session.id);
+    sideHandle.slashCommands = [{ name: "skill:general-click-event-insight", description: "Product insight", source: "skill" }];
+    (supervisor as unknown as { runtimeHandles: Map<string, RuntimeSessionHandle> }).runtimeHandles.delete(session.id);
+    (supervisor as unknown as { pendingRuntimeHandles: Map<string, Promise<RuntimeSessionHandle>> }).pendingRuntimeHandles.set(
+      session.id,
+      delay(20).then(() => sideHandle),
+    );
+
+    await expect(supervisor.listSlashCommands(session.id)).resolves.toEqual([
+      { name: "skill:general-click-event-insight", description: "Product insight", source: "skill" },
+    ]);
+  });
+
   it("falls back to the main runtime command catalog when the session handle is missing", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

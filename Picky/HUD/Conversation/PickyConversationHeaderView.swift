@@ -242,11 +242,7 @@ private struct PickyHeaderSessionMetaPill: View {
             }
         }
         .font(PickyHUDTypography.metaMonospacedMedium)
-        .foregroundColor(tint.opacity(0.92))
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(tint.opacity(contextDisplay == nil ? 0.06 : 0.11)))
-        .overlay(Capsule().stroke(tint.opacity(contextDisplay == nil ? 0.16 : 0.26), lineWidth: 0.6))
+        .foregroundColor(tint.opacity(0.88))
         .lineLimit(1)
         .help(helpText)
     }

@@ -503,6 +503,19 @@ struct PickyConversationCardViewTests {
         #expect(bubble.displayedOriginLabel == "from Pi extension")
     }
 
+    @Test func userBubblePreviewUsesSameLineAndCharacterLimitsAsAgentResponses() {
+        let eightLines = (1...8).map { "line \($0)" }.joined(separator: "\n")
+        let nineLines = eightLines + "\nline 9"
+        let exactCharacters = String(repeating: "가", count: 500)
+        let longCharacters = exactCharacters + "나다라"
+
+        let multilineBubble = PickyUserBubbleView(message: message("m-user-lines", kind: .userText, text: nineLines))
+        let longBubble = PickyUserBubbleView(message: message("m-user-chars", kind: .userText, text: longCharacters, originatedBy: .mainAgent))
+
+        #expect(multilineBubble.displayedMarkdownPreview == eightLines + "...")
+        #expect(longBubble.displayedMarkdownPreview == exactCharacters + "...")
+    }
+
     // MARK: - PR11 regression: per-turn agent_activity snapshot
 
     @Test func multipleTurnsRenderSeparateActivitySnapshots() {

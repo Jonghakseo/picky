@@ -14,12 +14,11 @@ struct PickyUserBubbleView: View {
         HStack {
             Spacer(minLength: 48)
             VStack(alignment: .leading, spacing: 4) {
-                Text(displayText)
-                    .font(.system(size: 12))
-                    .foregroundColor(DS.Colors.textPrimary)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(isPiExtensionMessage ? 4 : nil)
-                    .fixedSize(horizontal: false, vertical: true)
+                PickyConversationMarkdownText(
+                    markdown: displayedMarkdownPreview,
+                    lineLimit: PickyAgentResponsePreview.maxLines
+                )
+                .multilineTextAlignment(.leading)
                 if let originLabel {
                     Text(originLabel)
                         .font(.system(size: 9, weight: .medium))
@@ -44,10 +43,8 @@ struct PickyUserBubbleView: View {
     }
 
     var displayedOriginLabel: String? { originLabel }
-
-    private var displayText: String {
-        guard isPiExtensionMessage, let text = message.text else { return message.text ?? "" }
-        return PickyAgentResponsePreview.truncatedMarkdown(text, maxLines: 4, maxCharacters: 280)
+    var displayedMarkdownPreview: String {
+        PickyAgentResponsePreview.truncatedMarkdown(message.text ?? "")
     }
 
     private var isPiExtensionMessage: Bool {

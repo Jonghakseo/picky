@@ -19,7 +19,7 @@ struct PickyConversationHeaderView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .trailing) {
+        HStack(alignment: .center, spacing: 8) {
             leadingTitle
             trailingActions
         }
@@ -36,8 +36,7 @@ struct PickyConversationHeaderView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-        .padding(.trailing, trailingActionsReservedWidth)
-        .frame(width: PickyHUDDockLayout.detailContentWidth, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .nativeTooltip(titleHelpText)
         .accessibilityHint(titleHelpText)
     }
@@ -46,15 +45,11 @@ struct PickyConversationHeaderView: View {
         HStack(alignment: .center, spacing: 8) {
             if showsHeaderSessionMeta {
                 PickyHeaderSessionMetaPill(assistantRun: latestAssistantRun, contextUsage: session.contextUsage)
-                    .frame(width: 184, alignment: .trailing)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             conversationMenuButton
         }
         .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private var trailingActionsReservedWidth: CGFloat {
-        showsHeaderSessionMeta ? 212 : 28
     }
 
     private var showsHeaderSessionMeta: Bool {
@@ -234,7 +229,6 @@ private struct PickyHeaderSessionMetaPill: View {
             }
             if let modelText {
                 Text(modelText)
-                    .frame(maxWidth: 68, alignment: .trailing)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -251,7 +245,6 @@ private struct PickyHeaderSessionMetaPill: View {
         .foregroundColor(tint.opacity(0.92))
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
-        .frame(maxWidth: .infinity, alignment: .trailing)
         .background(Capsule().fill(tint.opacity(contextDisplay == nil ? 0.06 : 0.11)))
         .overlay(Capsule().stroke(tint.opacity(contextDisplay == nil ? 0.16 : 0.26), lineWidth: 0.6))
         .lineLimit(1)

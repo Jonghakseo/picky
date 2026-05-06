@@ -241,19 +241,24 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
   }
 }
 
-const SNAPSHOT_LOG_LIMIT = 24;
-const SNAPSHOT_IMPORTANT_LOG_LIMIT = 8;
-const SNAPSHOT_LOG_CHAR_LIMIT = 1_200;
-const SNAPSHOT_TOOL_LIMIT = 16;
-const SNAPSHOT_TOOL_PREVIEW_CHAR_LIMIT = 500;
+const SNAPSHOT_LOG_LIMIT = 16;
+const SNAPSHOT_IMPORTANT_LOG_LIMIT = 6;
+const SNAPSHOT_LOG_CHAR_LIMIT = 600;
+const SNAPSHOT_TOOL_LIMIT = 12;
+const SNAPSHOT_TOOL_PREVIEW_CHAR_LIMIT = 240;
 const SNAPSHOT_THINKING_PREVIEW_CHAR_LIMIT = 240;
-const SNAPSHOT_CHANGED_FILE_LIMIT = 30;
-const SNAPSHOT_CHANGED_FILE_SUMMARY_CHAR_LIMIT = 500;
-const SNAPSHOT_MESSAGE_LIMIT = 50;
+const SNAPSHOT_CHANGED_FILE_LIMIT = 20;
+const SNAPSHOT_CHANGED_FILE_SUMMARY_CHAR_LIMIT = 240;
+const SNAPSHOT_MESSAGE_LIMIT = 12;
+const SNAPSHOT_MESSAGE_TEXT_CHAR_LIMIT = 700;
+const SNAPSHOT_FINAL_ANSWER_CHAR_LIMIT = 1_500;
+const SNAPSHOT_LAST_SUMMARY_CHAR_LIMIT = 700;
 
 export function compactSessionsForSnapshot(sessions: PickyAgentSession[]): PickyAgentSession[] {
   return sessions.map((session) => ({
     ...session,
+    lastSummary: session.lastSummary ? truncateText(session.lastSummary, SNAPSHOT_LAST_SUMMARY_CHAR_LIMIT) : session.lastSummary,
+    finalAnswer: session.finalAnswer ? truncateText(session.finalAnswer, SNAPSHOT_FINAL_ANSWER_CHAR_LIMIT) : session.finalAnswer,
     thinkingPreview: session.thinkingPreview ? truncateText(session.thinkingPreview, SNAPSHOT_THINKING_PREVIEW_CHAR_LIMIT) : session.thinkingPreview,
     logs: compactSnapshotLogs(session.logs),
     tools: compactSnapshotTools(session.tools),
@@ -263,7 +268,19 @@ export function compactSessionsForSnapshot(sessions: PickyAgentSession[]): Picky
 }
 
 function compactSnapshotMessages(messages: PickyAgentSession["messages"]): PickyAgentSession["messages"] {
-  return messages?.slice(-SNAPSHOT_MESSAGE_LIMIT);
+  return messages?.slice(-SNAPSHOT_MESSAGE_LIMIT).map((message) => ({
+    ...message,
+    text: message.text ? truncateText(message.text, SNAPSHOT_MESSAGE_TEXT_CHAR_LIMIT) : message.text,
+    errorContext: message.errorContext ? truncateText(message.errorContext, SNAPSHOT_MESSAGE_TEXT_CHAR_LIMIT) : message.errorContext,
+    errorMessage: message.errorMessage ? truncateText(message.errorMessage, SNAPSHOT_MESSAGE_TEXT_CHAR_LIMIT) : message.errorMessage,
+    question: message.question
+      ? {
+          ...message.question,
+          prompt: message.question.prompt ? truncateText(message.question.prompt, SNAPSHOT_MESSAGE_TEXT_CHAR_LIMIT) : message.question.prompt,
+          description: message.question.description ? truncateText(message.question.description, SNAPSHOT_MESSAGE_TEXT_CHAR_LIMIT) : message.question.description,
+        }
+      : message.question,
+  }));
 }
 
 function compactSnapshotLogs(logs: string[]): string[] {

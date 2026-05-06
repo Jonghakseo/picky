@@ -101,7 +101,7 @@ describe("picky agentd known bugs (failing reproductions)", () => {
 
     const [compact] = compactSessionsForSnapshot([session]);
     const steerIndex = compact.logs.indexOf("steer: keep this important log");
-    const earlierEntryIndex = compact.logs.indexOf("noisy log 5");
+    const earlierEntryIndex = compact.logs.indexOf("noisy log 15");
 
     expect(steerIndex).toBeGreaterThan(-1);
     expect(earlierEntryIndex).toBeGreaterThan(-1);

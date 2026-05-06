@@ -98,10 +98,14 @@ protocol PickyWebSocketTaskMaking {
 }
 
 struct URLSessionPickyWebSocketTaskFactory: PickyWebSocketTaskMaking {
+    private static let maximumMessageSize = 16 * 1024 * 1024
+
     func makeWebSocketTask(url: URL, token: String) -> PickyWebSocketTask {
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        return URLSession.shared.webSocketTask(with: request)
+        let task = URLSession.shared.webSocketTask(with: request)
+        task.maximumMessageSize = Self.maximumMessageSize
+        return task
     }
 }
 

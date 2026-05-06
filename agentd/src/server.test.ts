@@ -125,27 +125,30 @@ describe("AgentdServer", () => {
         status: "modified",
         summary: "large summary ".repeat(1_000),
       })),
+      finalAnswer: "large final answer ".repeat(1_000),
       messages: Array.from({ length: 80 }, (_, index) => ({
         id: `msg-${index}`,
         kind: "agent_text" as const,
         createdAt: "2026-05-03T00:00:00.000Z",
-        text: `message ${index}`,
+        text: `message ${index} ${"large text ".repeat(1_000)}`,
       })),
     });
 
     const [compact] = compactSessionsForSnapshot([session]);
 
     expect(compact.piSessionFilePath).toBe("/tmp/explicit-picky.jsonl");
-    expect(compact.logs.length).toBeLessThanOrEqual(24);
+    expect(compact.logs.length).toBeLessThanOrEqual(16);
     expect(compact.logs).toContain("pi session: /tmp/picky.jsonl");
     expect(compact.logs).toContain("steer: keep this visible in the HUD");
     expect(compact.logs.at(-1)).toBe("latest useful log");
-    expect(compact.tools.length).toBeLessThanOrEqual(16);
-    expect(compact.tools.at(-1)?.preview?.length).toBeLessThanOrEqual(501);
-    expect(compact.changedFiles.length).toBeLessThanOrEqual(30);
-    expect(compact.changedFiles.at(-1)?.summary?.length).toBeLessThanOrEqual(501);
-    expect(compact.messages?.length).toBeLessThanOrEqual(50);
-    expect(compact.messages?.[0]?.id).toBe("msg-30");
+    expect(compact.tools.length).toBeLessThanOrEqual(12);
+    expect(compact.tools.at(-1)?.preview?.length).toBeLessThanOrEqual(241);
+    expect(compact.changedFiles.length).toBeLessThanOrEqual(20);
+    expect(compact.changedFiles.at(-1)?.summary?.length).toBeLessThanOrEqual(241);
+    expect(compact.finalAnswer?.length).toBeLessThanOrEqual(1_501);
+    expect(compact.messages?.length).toBeLessThanOrEqual(12);
+    expect(compact.messages?.[0]?.id).toBe("msg-68");
+    expect(compact.messages?.at(-1)?.text?.length).toBeLessThanOrEqual(701);
     expect(JSON.stringify(compact).length).toBeLessThan(40_000);
   });
 });

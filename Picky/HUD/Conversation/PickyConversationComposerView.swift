@@ -333,12 +333,10 @@ struct PickyConversationComposerView: View {
     var placeholderText: String { placeholder }
     var defaultSubmitKind: PickyConversationComposerSubmitKind? {
         switch session.status {
-        case .running, .queued, .waiting_for_input, .cancelled:
+        case .running, .queued, .waiting_for_input, .cancelled, .failed:
             return .steer
         case .completed, .blocked:
             return .followUp
-        case .failed:
-            return nil
         }
     }
 
@@ -379,7 +377,7 @@ struct PickyConversationComposerView: View {
         case .cancelled:
             return "Resume this agent with a steer…"
         case .failed:
-            return "Open terminal or start a new task"
+            return "Send a recovery steer or open terminal"
         }
     }
 

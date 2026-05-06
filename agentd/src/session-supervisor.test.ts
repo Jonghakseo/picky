@@ -739,7 +739,7 @@ describe("SessionSupervisor", () => {
     expect(completed.finalAnswer).not.toContain("취소 전 부분 답변");
   });
 
-  it("keeps failed side sessions rejected from steering", async () => {
+  it("allows failed side sessions to be steered back to running", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
@@ -749,9 +749,12 @@ describe("SessionSupervisor", () => {
     runtime.handle?.emit({ type: "status", status: "failed", summary: "Failed" });
     await settle();
 
-    await expect(supervisor.steerSideSession(side.id, "실패 세션 재개 시도")).rejects.toThrow(/Cannot steer failed session/);
-    expect(runtime.handle?.steers).toEqual([]);
-    expect(supervisor.get(side.id)?.status).toBe("failed");
+    const steered = await supervisor.steerSideSession(side.id, "실패 세션 재개 시도");
+
+    expect(runtime.handle?.steers).toEqual(["실패 세션 재개 시도"]);
+    expect(steered.status).toBe("running");
+    expect(steered.lastSummary).toBe("Steering message sent");
+    expect(steered.thinkingPreview).toBeUndefined();
   });
 
   it("keeps the runtime failure summary instead of replacing it with partial streamed text", async () => {

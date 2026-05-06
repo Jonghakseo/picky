@@ -326,9 +326,10 @@ struct PickyConversationCardViewTests {
         #expect(!cancelledComposer.placeholderText.contains("follow-up"))
 
         let failedComposer = PickyConversationComposerView(session: makeConversationSession(status: .failed), viewModel: viewModel)
-        #expect(failedComposer.defaultSubmitKind == nil)
+        #expect(failedComposer.defaultSubmitKind == .steer)
         #expect(failedComposer.optionReturnSubmitKind == nil)
-        #expect(failedComposer.placeholderText.contains("Open terminal"))
+        #expect(failedComposer.placeholderText.contains("recovery steer"))
+        #expect(failedComposer.placeholderText.contains("open terminal"))
         #expect(!failedComposer.placeholderText.contains("logs"))
         #expect(!failedComposer.placeholderText.contains("Follow-up"))
     }

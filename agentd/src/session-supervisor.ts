@@ -1087,7 +1087,6 @@ export class SessionSupervisor extends EventEmitter {
 
   async steer(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
-    if (session.status === "failed") throw new Error(`Cannot steer ${session.status} session`);
     await this.prepareSideSessionForUserInput(sessionId);
     const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
     if (!handle) {

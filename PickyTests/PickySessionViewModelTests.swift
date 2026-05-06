@@ -660,61 +660,6 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDDockLayout.centeredPanelY(visibleFrame: visibleFrame, targetHeight: 900) == 108)
     }
 
-    @Test func hudDockAnchoredPanelKeepsDockCenterFixedAcrossCardHeights() throws {
-        // Visible frame midY = 700. Dock rail center is reported P + D/2 from the top of
-        // the panel content; with vertical padding P = 32 and dock height D = 200, the
-        // anchor sits at 132 from the panel content top regardless of the conversation
-        // card height. dockAnchoredPanelY must position the panel so that the anchor's
-        // screen Y is exactly visibleFrame.midY for both a tall and a short card, as long
-        // as the panel still fits within the visible frame.
-        let visibleFrame = CGRect(x: 0, y: 100, width: 1200, height: 1200)
-        let dockAnchor: CGFloat = 132
-
-        let originForTallCard = PickyHUDDockLayout.dockAnchoredPanelY(
-            visibleFrame: visibleFrame,
-            targetHeight: 700,
-            dockAnchorYFromTop: dockAnchor
-        )
-        let originForShortCard = PickyHUDDockLayout.dockAnchoredPanelY(
-            visibleFrame: visibleFrame,
-            targetHeight: 264,
-            dockAnchorYFromTop: dockAnchor
-        )
-
-        // panel.origin.y + panel.height - dockAnchor == visibleFrame.midY
-        #expect(originForTallCard + 700 - dockAnchor == visibleFrame.midY)
-        #expect(originForShortCard + 264 - dockAnchor == visibleFrame.midY)
-    }
-
-    @Test func hudDockAnchoredPanelClampsWithinVisibleFrame() throws {
-        // When the dock anchor wants to push the panel above the visible frame top, the
-        // policy clamps to (visibleFrame.maxY - screenMargin - targetHeight) so the panel
-        // stays fully on screen. Same for the bottom edge. This protects the layout when
-        // the conversation card is so tall that strict anchoring would push the panel out.
-        let visibleFrame = CGRect(x: 0, y: 100, width: 1200, height: 800)
-
-        // Anchor very close to the top of the content with a tall panel → wants the panel
-        // bottom near visibleFrame.midY which would clip below the visible frame minY.
-        let clampedTop = PickyHUDDockLayout.dockAnchoredPanelY(
-            visibleFrame: visibleFrame,
-            targetHeight: 700,
-            dockAnchorYFromTop: 50
-        )
-        let maximumY = max(visibleFrame.minY + PickyHUDDockLayout.screenMargin,
-                           visibleFrame.maxY - PickyHUDDockLayout.screenMargin - 700)
-        #expect(clampedTop <= maximumY)
-        #expect(clampedTop >= visibleFrame.minY + PickyHUDDockLayout.screenMargin)
-
-        // Anchor near the bottom of the content with a short panel → wants the panel top
-        // near visibleFrame.midY which would push the panel below visibleFrame.minY.
-        let clampedBottom = PickyHUDDockLayout.dockAnchoredPanelY(
-            visibleFrame: visibleFrame,
-            targetHeight: 100,
-            dockAnchorYFromTop: 90
-        )
-        #expect(clampedBottom >= visibleFrame.minY + PickyHUDDockLayout.screenMargin)
-    }
-
     @Test func hudExpansionDefersOuterPanelShrinkUntilCollapseFinishes() throws {
         #expect(PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 320, targetHeight: 80, deferShrink: true))
         #expect(!PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 80, targetHeight: 320, deferShrink: true))

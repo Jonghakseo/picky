@@ -110,27 +110,6 @@ enum PickyHUDDockLayout {
         let centeredY = visibleFrame.midY - (targetHeight / 2)
         return min(max(centeredY, minimumY), maximumY)
     }
-
-    /// Compute the panel origin Y (NSPanel screen coords, bottom-up) so that a specific
-    /// anchor inside the panel's SwiftUI content sits at `visibleFrame.midY`. Used to
-    /// keep the dock rail's vertical center fixed regardless of the active conversation
-    /// card's height — otherwise the card growing or shrinking pushes the panel up and
-    /// down around its center, dragging the dock with it and producing a layout shift
-    /// every time the user switches between side agents.
-    ///
-    /// `dockAnchorYFromTop` is measured top-down inside the panel content (e.g. the
-    /// dock rail's `frame(in:).midY` in the panel's coordinate space). The result is
-    /// clamped to the visible frame so a tall card still fits on screen.
-    static func dockAnchoredPanelY(
-        visibleFrame: CGRect,
-        targetHeight: CGFloat,
-        dockAnchorYFromTop: CGFloat
-    ) -> CGFloat {
-        let anchored = visibleFrame.midY - targetHeight + dockAnchorYFromTop
-        let minimumY = visibleFrame.minY + screenMargin
-        let maximumY = max(minimumY, visibleFrame.maxY - screenMargin - targetHeight)
-        return min(max(anchored, minimumY), maximumY)
-    }
 }
 
 enum PickyHUDExpandedContentPolicy {

@@ -6,6 +6,7 @@
 import Foundation
 import SwiftUI
 import Testing
+import UniformTypeIdentifiers
 @testable import Picky
 
 private final class ConversationCardFakeClient: PickyAgentClient {
@@ -297,8 +298,44 @@ struct PickyConversationCardViewTests {
             isFileDropTargeted: true
         )
 
+        #expect(composer.placeholderText.contains("screenshots"))
         #expect(composer.placeholderText.contains("anywhere"))
         #expect(composer.placeholderText.contains("insert paths"))
+    }
+
+    @Test func fileDropAcceptsImageProviders() {
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.png.identifier, visibility: .all) { completion in
+            completion(Data("image".utf8), nil)
+            return nil
+        }
+
+        #expect(PickyConversationFileDrop.acceptsDrop(provider))
+        #expect(!PickyConversationFileDrop.acceptsFileURL(provider))
+    }
+
+    @Test func imageDropsAreCopiedToLocalTemporaryFilesBeforeInsertingPath() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let imageData = Data("picky screenshot bytes".utf8)
+        let provider = NSItemProvider()
+        provider.suggestedName = "Screenshot 2026-05-06 at 11.53.32 AM.png"
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.png.identifier, visibility: .all) { completion in
+            completion(imageData, nil)
+            return nil
+        }
+
+        let paths = await PickyConversationFileDrop.filePaths(from: [provider], destinationDirectory: directory)
+
+        #expect(paths.count == 1)
+        let path = try #require(paths.first)
+        #expect(path.hasPrefix(directory.path))
+        #expect(path.contains("Screenshot 2026-05-06"))
+        #expect(URL(fileURLWithPath: path).pathExtension == "png")
+        #expect(FileManager.default.contents(atPath: path) == imageData)
     }
 
     @Test func composerDefaultSubmitKindAndPlaceholderMatchSessionStatus() {

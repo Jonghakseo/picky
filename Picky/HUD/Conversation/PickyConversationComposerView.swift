@@ -368,7 +368,7 @@ struct PickyConversationComposerView: View {
     }
 
     private var placeholder: String {
-        if isFileDropTargeted { return "Drop files anywhere to insert paths" }
+        if isFileDropTargeted { return "Drop files or screenshots anywhere to insert paths" }
         switch session.status {
         case .running, .queued, .waiting_for_input:
             return "Steer this agent · ⌥↵ Follow-up · esc Stop"

@@ -5,6 +5,7 @@
 //  Core conversation-style side-agent card container.
 //
 
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -34,12 +35,12 @@ struct PickyConversationCardView: View {
         .background(cardBackground)
         .background(reportKeyboardShortcut)
         .contentShape(Rectangle())
-        .onDrop(of: [PickyConversationFileDrop.fileURLType], isTargeted: $isFileDropTargeted, perform: handleFileDrop)
+        .onDrop(of: PickyConversationFileDrop.acceptedTypeIdentifiers, isTargeted: $isFileDropTargeted, perform: handleFileDrop)
         .onHover(perform: updateVoiceFollowUpHover)
     }
 
     private func handleFileDrop(_ providers: [NSItemProvider]) -> Bool {
-        let fileProviders = providers.filter(PickyConversationFileDrop.acceptsFileURL)
+        let fileProviders = providers.filter(PickyConversationFileDrop.acceptsDrop)
         guard !fileProviders.isEmpty else { return false }
 
         Task {
@@ -106,17 +107,33 @@ struct PickyConversationCardView: View {
     }
 }
 
-private enum PickyConversationFileDrop {
+enum PickyConversationFileDrop {
     static let fileURLType = UTType.fileURL.identifier
+    static let imageType = UTType.image.identifier
+    static let acceptedTypeIdentifiers = [fileURLType, imageType]
+
+    private static let preferredImageTypeIdentifiers = [
+        UTType.png.identifier,
+        UTType.jpeg.identifier,
+        UTType.tiff.identifier,
+    ]
+
+    static func acceptsDrop(_ provider: NSItemProvider) -> Bool {
+        acceptsFileURL(provider) || imageTypeIdentifier(for: provider) != nil
+    }
 
     static func acceptsFileURL(_ provider: NSItemProvider) -> Bool {
         provider.hasItemConformingToTypeIdentifier(fileURLType)
     }
 
-    static func filePaths(from providers: [NSItemProvider]) async -> [String] {
+    static func filePaths(from providers: [NSItemProvider], destinationDirectory: URL? = nil) async -> [String] {
         var paths: [String] = []
         for provider in providers {
             if let path = await filePath(from: provider) {
+                paths.append(path)
+                continue
+            }
+            if let path = await imageFilePath(from: provider, destinationDirectory: destinationDirectory) {
                 paths.append(path)
             }
         }
@@ -136,9 +153,138 @@ private enum PickyConversationFileDrop {
         }
     }
 
+    private static func imageFilePath(from provider: NSItemProvider, destinationDirectory: URL?) async -> String? {
+        guard let typeIdentifier = imageTypeIdentifier(for: provider) else { return nil }
+        if let path = await imageFilePathFromFileRepresentation(
+            provider,
+            typeIdentifier: typeIdentifier,
+            destinationDirectory: destinationDirectory
+        ) {
+            return path
+        }
+        if let path = await imageFilePathFromDataRepresentation(
+            provider,
+            typeIdentifier: typeIdentifier,
+            destinationDirectory: destinationDirectory
+        ) {
+            return path
+        }
+        return await imageFilePathFromItem(
+            provider,
+            typeIdentifier: typeIdentifier,
+            destinationDirectory: destinationDirectory
+        )
+    }
+
+    private static func imageFilePathFromFileRepresentation(
+        _ provider: NSItemProvider,
+        typeIdentifier: String,
+        destinationDirectory: URL?
+    ) async -> String? {
+        let suggestedName = provider.suggestedName
+        return await withCheckedContinuation { continuation in
+            provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { sourceURL, error in
+                guard error == nil, let sourceURL else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                do {
+                    let destinationURL = try copyImageFile(
+                        from: sourceURL,
+                        typeIdentifier: typeIdentifier,
+                        suggestedName: suggestedName,
+                        destinationDirectory: destinationDirectory
+                    )
+                    continuation.resume(returning: destinationURL.path)
+                } catch {
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
+
+    private static func imageFilePathFromDataRepresentation(
+        _ provider: NSItemProvider,
+        typeIdentifier: String,
+        destinationDirectory: URL?
+    ) async -> String? {
+        let suggestedName = provider.suggestedName
+        return await withCheckedContinuation { continuation in
+            provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { data, error in
+                guard error == nil, let data else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                do {
+                    let destinationURL = try writeImageData(
+                        data,
+                        typeIdentifier: typeIdentifier,
+                        suggestedName: suggestedName,
+                        destinationDirectory: destinationDirectory
+                    )
+                    continuation.resume(returning: destinationURL.path)
+                } catch {
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
+
+    private static func imageFilePathFromItem(
+        _ provider: NSItemProvider,
+        typeIdentifier: String,
+        destinationDirectory: URL?
+    ) async -> String? {
+        let suggestedName = provider.suggestedName
+        return await withCheckedContinuation { continuation in
+            provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, error in
+                guard error == nil else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                do {
+                    if let sourceURL = fileURL(fromDropItem: item) {
+                        let destinationURL = try copyImageFile(
+                            from: sourceURL,
+                            typeIdentifier: typeIdentifier,
+                            suggestedName: suggestedName,
+                            destinationDirectory: destinationDirectory
+                        )
+                        continuation.resume(returning: destinationURL.path)
+                        return
+                    }
+                    guard let data = imageData(fromDropItem: item) else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    let destinationURL = try writeImageData(
+                        data,
+                        typeIdentifier: typeIdentifier,
+                        suggestedName: suggestedName,
+                        destinationDirectory: destinationDirectory
+                    )
+                    continuation.resume(returning: destinationURL.path)
+                } catch {
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
+
+    private static func imageTypeIdentifier(for provider: NSItemProvider) -> String? {
+        for typeIdentifier in preferredImageTypeIdentifiers where provider.registeredTypeIdentifiers.contains(typeIdentifier) {
+            return typeIdentifier
+        }
+        if let registeredImageType = provider.registeredTypeIdentifiers.first(where: { identifier in
+            UTType(identifier)?.conforms(to: .image) == true
+        }) {
+            return registeredImageType
+        }
+        return provider.hasItemConformingToTypeIdentifier(imageType) ? imageType : nil
+    }
+
     private static func filePath(fromDropItem item: Any?) -> String? {
-        if let url = item as? URL, url.isFileURL { return url.path }
-        if let url = item as? NSURL, url.isFileURL { return url.path }
+        if let url = fileURL(fromDropItem: item) { return url.path }
         if let string = item as? String { return filePath(fromDropString: string) }
         if let string = item as? NSString { return filePath(fromDropString: string as String) }
         if let data = item as? Data {
@@ -150,6 +296,116 @@ private enum PickyConversationFileDrop {
             }
         }
         return nil
+    }
+
+    private static func fileURL(fromDropItem item: Any?) -> URL? {
+        if let url = item as? URL, url.isFileURL { return url }
+        if let url = item as? NSURL, url.isFileURL { return url as URL }
+        return nil
+    }
+
+    private static func imageData(fromDropItem item: Any?) -> Data? {
+        if let data = item as? Data { return data }
+        if let image = item as? NSImage,
+           let tiffData = image.tiffRepresentation,
+           let bitmap = NSBitmapImageRep(data: tiffData) {
+            return bitmap.representation(using: .png, properties: [:])
+        }
+        return nil
+    }
+
+    private static func copyImageFile(
+        from sourceURL: URL,
+        typeIdentifier: String,
+        suggestedName: String?,
+        destinationDirectory: URL?
+    ) throws -> URL {
+        let destinationURL = try makeDestinationURL(
+            typeIdentifier: typeIdentifier,
+            suggestedName: suggestedName,
+            sourceURL: sourceURL,
+            destinationDirectory: destinationDirectory
+        )
+        try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+        return destinationURL
+    }
+
+    private static func writeImageData(
+        _ data: Data,
+        typeIdentifier: String,
+        suggestedName: String?,
+        destinationDirectory: URL?
+    ) throws -> URL {
+        let destinationURL = try makeDestinationURL(
+            typeIdentifier: typeIdentifier,
+            suggestedName: suggestedName,
+            sourceURL: nil,
+            destinationDirectory: destinationDirectory
+        )
+        try data.write(to: destinationURL, options: .atomic)
+        return destinationURL
+    }
+
+    private static func makeDestinationURL(
+        typeIdentifier: String,
+        suggestedName: String?,
+        sourceURL: URL?,
+        destinationDirectory: URL?
+    ) throws -> URL {
+        let directory = try preparedDestinationDirectory(destinationDirectory)
+        let basename = sanitizedBaseName(from: suggestedName)
+        let filenameExtension = preferredFilenameExtension(
+            typeIdentifier: typeIdentifier,
+            suggestedName: suggestedName,
+            sourceURL: sourceURL
+        )
+        return directory.appendingPathComponent("\(basename)-\(UUID().uuidString).\(filenameExtension)")
+    }
+
+    private static func preparedDestinationDirectory(_ destinationDirectory: URL?) throws -> URL {
+        let directory = destinationDirectory ?? FileManager.default.temporaryDirectory.appendingPathComponent("PickyDroppedImages", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    private static func sanitizedBaseName(from suggestedName: String?) -> String {
+        guard let suggestedName = suggestedName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !suggestedName.isEmpty else {
+            return "picky-drop"
+        }
+        let lastPathComponent = (suggestedName as NSString).lastPathComponent
+        let base = (lastPathComponent as NSString).deletingPathExtension
+        let rawBase = base.isEmpty ? lastPathComponent : base
+        let invalidCharacters = CharacterSet(charactersIn: "/\\:\0").union(.newlines)
+        let cleaned = rawBase.components(separatedBy: invalidCharacters).joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return "picky-drop" }
+        return String(cleaned.prefix(80))
+    }
+
+    private static func preferredFilenameExtension(typeIdentifier: String, suggestedName: String?, sourceURL: URL?) -> String {
+        let candidates = [
+            sourceURL?.pathExtension,
+            suggestedName.map { ($0 as NSString).pathExtension },
+            UTType(typeIdentifier)?.preferredFilenameExtension,
+            "png",
+        ]
+        for candidate in candidates {
+            if let sanitizedExtension = sanitizedFilenameExtension(candidate) {
+                return sanitizedExtension
+            }
+        }
+        return "png"
+    }
+
+    private static func sanitizedFilenameExtension(_ filenameExtension: String?) -> String? {
+        guard let filenameExtension = filenameExtension?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !filenameExtension.isEmpty else {
+            return nil
+        }
+        let cleaned = filenameExtension.filter { $0.isLetter || $0.isNumber }
+        guard !cleaned.isEmpty else { return nil }
+        return String(cleaned.prefix(12)).lowercased()
     }
 
     private static func filePath(fromDropString string: String) -> String? {

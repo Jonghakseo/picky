@@ -422,6 +422,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     var steeringMode: PickyQueueMode = .oneAtATime
     var followUpMode: PickyQueueMode = .oneAtATime
     var activitySummary: PickyActivitySummary = .zero
+    var contextUsage: PickyContextUsage? = nil
     var pendingExtensionUiRequest: PickyExtensionUiRequest?
     var notifyMainOnCompletion: Bool? = nil
     var archived: Bool? = nil
@@ -429,7 +430,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id, title, status, cwd, createdAt, updatedAt, lastSummary, thinkingPreview, finalAnswer, logs, tools, artifacts, changedFiles
-        case messages, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary
+        case messages, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary, contextUsage
         case pendingExtensionUiRequest, notifyMainOnCompletion, archived, pinned
     }
 
@@ -453,6 +454,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         steeringMode: PickyQueueMode = .oneAtATime,
         followUpMode: PickyQueueMode = .oneAtATime,
         activitySummary: PickyActivitySummary = .zero,
+        contextUsage: PickyContextUsage? = nil,
         pendingExtensionUiRequest: PickyExtensionUiRequest? = nil,
         notifyMainOnCompletion: Bool? = nil,
         archived: Bool? = nil,
@@ -477,6 +479,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         self.steeringMode = steeringMode
         self.followUpMode = followUpMode
         self.activitySummary = activitySummary
+        self.contextUsage = contextUsage
         self.pendingExtensionUiRequest = pendingExtensionUiRequest
         self.notifyMainOnCompletion = notifyMainOnCompletion
         self.archived = archived
@@ -504,6 +507,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         steeringMode = try container.decodeIfPresent(PickyQueueMode.self, forKey: .steeringMode) ?? .oneAtATime
         followUpMode = try container.decodeIfPresent(PickyQueueMode.self, forKey: .followUpMode) ?? .oneAtATime
         activitySummary = try container.decodeIfPresent(PickyActivitySummary.self, forKey: .activitySummary) ?? .zero
+        contextUsage = try container.decodeIfPresent(PickyContextUsage.self, forKey: .contextUsage)
         pendingExtensionUiRequest = try container.decodeIfPresent(PickyExtensionUiRequest.self, forKey: .pendingExtensionUiRequest)
         notifyMainOnCompletion = try container.decodeIfPresent(Bool.self, forKey: .notifyMainOnCompletion)
         archived = try container.decodeIfPresent(Bool.self, forKey: .archived)
@@ -513,6 +517,12 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
 
 enum PickySessionStatus: String, Codable, Equatable {
     case queued, running, waiting_for_input, blocked, completed, failed, cancelled
+}
+
+struct PickyContextUsage: Codable, Equatable {
+    var tokens: Int?
+    var contextWindow: Int
+    var percent: Double?
 }
 
 struct PickyToolActivity: Codable, Equatable, Identifiable {

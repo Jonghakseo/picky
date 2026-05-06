@@ -9,11 +9,15 @@ import SwiftUI
 
 struct PickyActivitySummaryView: View {
     let summary: PickyActivitySummary
+    var contextUsage: PickyContextUsage? = nil
 
     var body: some View {
         HStack(spacing: 10) {
             ForEach(summary.visibleToolCallItems) { item in
                 activityChip(item.icon, label: item.label, count: item.count, color: item.color)
+            }
+            if let contextUsage, let display = ContextUsageBatteryDisplay(usage: contextUsage) {
+                contextUsageChip(display)
             }
         }
         .padding(.horizontal, 4)
@@ -31,6 +35,56 @@ struct PickyActivitySummaryView: View {
         .font(.system(size: 10.5, weight: .medium, design: .monospaced))
         .foregroundColor(color)
         .lineLimit(1)
+    }
+
+    private func contextUsageChip(_ display: ContextUsageBatteryDisplay) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: display.symbolName)
+                .font(.system(size: 11, weight: .medium))
+            Text(display.label)
+                .fontWeight(.bold)
+        }
+        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+        .foregroundColor(display.color)
+        .lineLimit(1)
+        .help(display.tooltip)
+    }
+}
+
+struct ContextUsageBatteryDisplay {
+    let symbolName: String
+    let label: String
+    let color: Color
+    let tooltip: String
+
+    init?(usage: PickyContextUsage) {
+        guard let percent = usage.percent else { return nil }
+        let clamped = max(0, min(100, percent))
+        self.label = "\(Int(clamped.rounded()))%"
+        switch clamped {
+        // SF Symbols battery glyphs run from 100 (full) down to 0 (empty), so a HIGH context %
+        // maps to a LOW battery glyph (less headroom remaining).
+        case 90...:
+            self.symbolName = "battery.0percent"
+            self.color = DS.Colors.destructive
+        case 75..<90:
+            self.symbolName = "battery.25percent"
+            self.color = DS.Colors.warning
+        case 50..<75:
+            self.symbolName = "battery.50percent"
+            self.color = DS.Colors.info
+        case 25..<50:
+            self.symbolName = "battery.75percent"
+            self.color = DS.Colors.info
+        default:
+            self.symbolName = "battery.100percent"
+            self.color = DS.Colors.success
+        }
+        if let tokens = usage.tokens {
+            self.tooltip = "Context usage: \(tokens.formatted())/\(usage.contextWindow.formatted()) tokens (\(Int(clamped.rounded()))%)"
+        } else {
+            self.tooltip = "Context usage: \(Int(clamped.rounded()))% of \(usage.contextWindow.formatted()) tokens"
+        }
     }
 }
 

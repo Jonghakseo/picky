@@ -22,7 +22,8 @@ export type RuntimeEvent =
   | { type: "status"; status: RuntimeSessionStatus; summary?: string; finalAnswer?: string; noTurnRan?: boolean; assistantRun?: RuntimeAssistantRunMetadata }
   | { type: "tool"; toolCallId: string; name: string; status: "running" | "succeeded" | "failed"; preview?: string }
   | { type: "extension_ui"; request: Record<string, unknown>; waitsForInput: boolean }
-  | { type: "session_info"; name: string };
+  | { type: "session_info"; name: string }
+  | { type: "context_usage"; usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined };
 
 export interface RuntimeSteerResult {
   /**

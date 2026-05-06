@@ -305,7 +305,26 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     this.unsubscribe = session.subscribe((event: unknown) => {
       const runtimeEvent = this.runtimeEventFromPiEvent(event);
       if (runtimeEvent) this.emit(runtimeEvent);
+      // Pi only updates AssistantMessage.usage when a turn ends, so piggyback on status terminal
+      // events to refresh the context usage snapshot. Without this the HUD would only ever see
+      // the value captured at session start.
+      if (runtimeEvent?.type === "status" && ["completed", "failed", "cancelled", "waiting_for_input"].includes(runtimeEvent.status)) {
+        this.emitContextUsageSnapshot();
+      }
     });
+  }
+
+  private emitContextUsageSnapshot(): void {
+    const session = this.runtime.session as unknown as { getContextUsage?: () => { tokens: number | null; contextWindow: number; percent: number | null } | undefined };
+    if (typeof session.getContextUsage !== "function") return;
+    let usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined;
+    try {
+      usage = session.getContextUsage();
+    } catch (error) {
+      logAgentd("context usage read failed", { sessionId: this.id, error: messageOf(error) });
+      return;
+    }
+    this.emit({ type: "context_usage", usage });
   }
 
   reportDiagnostics(): void {

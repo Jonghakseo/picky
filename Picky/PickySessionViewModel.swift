@@ -120,6 +120,7 @@ final class PickySessionListViewModel: ObservableObject {
         var steeringMode: PickyQueueMode
         var followUpMode: PickyQueueMode
         var activitySummary: PickyActivitySummary
+        var contextUsage: PickyContextUsage?
         var pendingExtensionUiRequest: PickyExtensionUiRequest?
         var piSessionFilePath: String?
         var notifyMainOnCompletion: Bool?
@@ -999,6 +1000,7 @@ extension PickySessionListViewModel.SessionCard {
         self.steeringMode = session.steeringMode
         self.followUpMode = session.followUpMode
         self.activitySummary = session.activitySummary
+        self.contextUsage = session.contextUsage
         self.pendingExtensionUiRequest = session.pendingExtensionUiRequest
         self.piSessionFilePath = session.logs.compactMap(Self.piSessionFilePath(fromLogLine:)).last
         self.notifyMainOnCompletion = session.notifyMainOnCompletion

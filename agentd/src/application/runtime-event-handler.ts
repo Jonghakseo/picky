@@ -75,7 +75,14 @@ export class RuntimeEventHandler {
       return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
     }
     if (event.type === "session_info") return this.applySessionInfoEvent(sessionId, event.name);
+    if (event.type === "context_usage") return this.applyContextUsageEvent(sessionId, event.usage);
     return this.applyToolEvent(sessionId, event);
+  }
+
+  private async applyContextUsageEvent(sessionId: string, usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined): Promise<void> {
+    const current = this.dependencies.getSession(sessionId).contextUsage;
+    if (sameContextUsage(current, usage)) return;
+    await this.dependencies.patchSession(sessionId, { contextUsage: usage });
   }
 
   private async applySessionInfoEvent(sessionId: string, name: string): Promise<void> {
@@ -201,6 +208,15 @@ export class RuntimeEventHandler {
     logAgentd("tool activity", { sessionId, tool: event.name, status: event.status, previewChars: event.preview?.length });
     await this.dependencies.patchSession(sessionId, { tools });
   }
+}
+
+function sameContextUsage(
+  a: { tokens: number | null; contextWindow: number; percent: number | null } | undefined,
+  b: { tokens: number | null; contextWindow: number; percent: number | null } | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.tokens === b.tokens && a.contextWindow === b.contextWindow && a.percent === b.percent;
 }
 
 function compactThinkingPreview(value: string): string {

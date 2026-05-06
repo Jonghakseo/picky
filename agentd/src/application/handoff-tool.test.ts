@@ -22,6 +22,31 @@ describe("handoff tools", () => {
     expect(result.details).toMatchObject({ sessionId: "session-1", title: "사이드 조사", cwd: "/tmp/override-project" });
   });
 
+  it("guides main-agent handoffs toward compact delta-first instructions", () => {
+    const tool = createPickyHandoffTool(async (request) => ({ sessionId: "session-1", title: request.title, cwd: request.cwd }));
+    const definition = tool as unknown as { promptGuidelines?: string[]; parameters?: unknown };
+    const guidelines = definition.promptGuidelines?.join("\n") ?? "";
+    const parameters = JSON.stringify(definition.parameters);
+
+    expect(guidelines).toContain("compact, action-oriented brief");
+    expect(guidelines).toContain("Do not paste the full current prompt");
+    expect(guidelines).toContain("picky_side_steer");
+    expect(parameters).toContain("Compact delta-first brief");
+    expect(parameters).toContain("Do not paste full prompts");
+  });
+
+  it("guides side steering toward delta-only messages", () => {
+    const tool = createPickySideSteerTool(async () => makeSession(1));
+    const definition = tool as unknown as { promptGuidelines?: string[]; parameters?: unknown };
+    const guidelines = definition.promptGuidelines?.join("\n") ?? "";
+    const parameters = JSON.stringify(definition.parameters);
+
+    expect(guidelines).toContain("new delta instruction");
+    expect(guidelines).toContain("do not restate the whole task");
+    expect(parameters).toContain("Delta-only steering instruction");
+    expect(parameters).toContain("Do not restate the whole task");
+  });
+
   it("caps side-session list requests to one small page without exposing totals", async () => {
     const sessions = Array.from({ length: 25 }, (_, index) => makeSession(index + 1));
     const tool = createPickySideSessionsTool(() => sessions);

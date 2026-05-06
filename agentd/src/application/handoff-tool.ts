@@ -42,12 +42,15 @@ export function createPickyHandoffTool(onHandoff: (request: PickyHandoffRequest)
     description: "Delegate complex, long-running, tool-heavy, or multi-turn work to a side Pi agent shown in Picky's top-right overlay.",
     promptSnippet: "picky_handoff: delegate complex or long-running work to a side Pi agent in the Picky HUD.",
     promptGuidelines: [
-      "Use picky_handoff when the user's request needs detailed screen analysis, code/repo/file work, web/video extraction, MCPs, or multiple turns.",
+      "Use picky_handoff when the user's request needs new detailed screen analysis, code/repo/file work, web/video extraction, MCPs, or multiple turns.",
+      "Before creating a new handoff for work that may already be delegated, call picky_side_sessions and prefer picky_side_steer for a matching existing side agent.",
+      "Write instructions as a compact, action-oriented brief: goal, essential constraints, known decisions, key paths/URLs/IDs, and expected output.",
+      "Do not paste the full current prompt, captured context, screenshot metadata, prior transcript, or tool logs into instructions; include only deltas and essential references.",
       "After calling picky_handoff, tell the user in Korean that a side agent has been started and progress is visible in the top-right overlay.",
     ],
     parameters: Type.Object({
       title: Type.String({ description: "Short Korean title for the side-agent HUD card." }),
-      instructions: Type.String({ description: "Detailed instructions for the side Pi agent, including what to inspect, what output to produce, and any constraints." }),
+      instructions: Type.String({ description: "Compact delta-first brief for the side Pi agent: goal, essential constraints, key paths/URLs/IDs, known decisions, and expected output. Do not paste full prompts, transcripts, logs, screenshot metadata, or captured context." }),
       userMessage: Type.Optional(Type.String({ description: "Optional short Korean message you intend to tell the user after handoff." })),
       cwd: Type.Optional(Type.String({ description: "Optional absolute working directory for the side Pi agent. Omit to use Picky's configured default cwd." })),
     }),
@@ -116,12 +119,13 @@ export function createPickySideSteerTool(onSteer: (request: PickySideSteerReques
     promptSnippet: "picky_side_steer: steer an existing delegated side Pi agent with additional user instructions.",
     promptGuidelines: [
       "Use picky_side_steer after picky_side_sessions identifies the side agent that should receive the user's new instruction.",
+      "Send only the new delta instruction plus essential references; do not restate the whole task or paste prior transcript/tool logs.",
       "Do not use this for unrelated new work; call picky_handoff for a new delegated task instead.",
       "After calling picky_side_steer, tell the user in Korean that the existing side agent has been steered and progress remains visible in the top-right overlay.",
     ],
     parameters: Type.Object({
       sessionId: Type.String({ description: "ID of the side session to steer, as returned by picky_side_sessions." }),
-      message: Type.String({ description: "Self-contained steering instructions to send to the side Pi agent." }),
+      message: Type.String({ description: "Delta-only steering instruction for the side Pi agent, with only essential references. Do not restate the whole task or paste prior transcript, tool logs, or captured context." }),
     }),
     execute: async (_toolCallId, params) => {
       const session = await onSteer({ sessionId: params.sessionId, message: params.message });

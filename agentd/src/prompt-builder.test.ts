@@ -47,6 +47,16 @@ describe("neutral prompt builder", () => {
     expect(pair.user).toContain("omit it to use Picky's configured default cwd");
   });
 
+  it("puts compact delta-first handoff and steering guidance in the main-agent bootstrap", () => {
+    const pair = buildMainAgentBootstrapPair();
+    const turnPrompt = buildMainAgentPrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")));
+
+    expect(pair.user).toContain("Keep the steer message delta-only");
+    expect(pair.user).toContain("Keep `picky_handoff.instructions` compact and action-oriented");
+    expect(pair.user).toContain("Do not paste the full current prompt, captured context, screenshot metadata, prior transcript, or tool logs");
+    expect(turnPrompt.text).not.toContain("Keep `picky_handoff.instructions` compact and action-oriented");
+  });
+
   it("keeps input modality in each main-agent turn and typed-text handling in bootstrap", () => {
     const context = PickyContextPacketSchema.parse({
       ...readJson("context/plain-text.context.json"),

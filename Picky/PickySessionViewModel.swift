@@ -223,7 +223,6 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var lastOpenedArtifactPath: String?
     @Published private(set) var slashCommandsBySessionID: [String: [PickySlashCommand]] = [:]
-    @Published private(set) var pendingDockPointerSessionID: String?
     @Published private(set) var pendingDoneFlashSessionIDs: Set<String> = []
     @Published private(set) var isLoadingInitialSessionSnapshot = true
 
@@ -247,8 +246,6 @@ final class PickySessionListViewModel: ObservableObject {
     private var voiceFollowUpTargetCancellable: AnyCancellable?
     private var deliveredNotificationKeys = Set<String>()
     private var slashCommandRequestedSessionIDs = Set<String>()
-    private var dockPointerQueuedSessionIDs = Set<String>()
-    private var dockPointerDeliveredSessionIDs = Set<String>()
     private var lastIncrementalSeqBySessionID: [String: Int] = [:]
     private var hasExplicitSelection = false
 
@@ -399,13 +396,6 @@ final class PickySessionListViewModel: ObservableObject {
 
     func hasLoadedSlashCommands(sessionID: String) -> Bool {
         slashCommandsBySessionID[sessionID] != nil
-    }
-
-    func markDockPointerDelivered(sessionID: String) {
-        guard pendingDockPointerSessionID == sessionID else { return }
-        pendingDockPointerSessionID = nil
-        dockPointerQueuedSessionIDs.remove(sessionID)
-        dockPointerDeliveredSessionIDs.insert(sessionID)
     }
 
     func markDoneFlashConsumed(sessionID: String) {
@@ -715,7 +705,6 @@ final class PickySessionListViewModel: ObservableObject {
             for card in cards {
                 PickyGitRepositoryStatus.prefetchIfNeeded(cwd: card.cwd)
             }
-            dockPointerDeliveredSessionIDs.formUnion(cards.filter(\.isMainAgentHandoff).map(\.id))
             pruneSlashCommandCache(knownSessionIDs: Set(cards.map(\.id)))
             syncSelectionAfterSessionListChange()
             syncVoiceFollowUpAfterSessionListChange()
@@ -870,13 +859,8 @@ final class PickySessionListViewModel: ObservableObject {
     private func pruneSlashCommandCache(knownSessionIDs: Set<String>) {
         slashCommandsBySessionID = slashCommandsBySessionID.filter { knownSessionIDs.contains($0.key) }
         slashCommandRequestedSessionIDs = slashCommandRequestedSessionIDs.filter { knownSessionIDs.contains($0) }
-        dockPointerQueuedSessionIDs = dockPointerQueuedSessionIDs.filter { knownSessionIDs.contains($0) }
-        dockPointerDeliveredSessionIDs = dockPointerDeliveredSessionIDs.filter { knownSessionIDs.contains($0) }
         pendingDoneFlashSessionIDs = pendingDoneFlashSessionIDs.filter { knownSessionIDs.contains($0) }
         lastIncrementalSeqBySessionID = lastIncrementalSeqBySessionID.filter { knownSessionIDs.contains($0.key) }
-        if let pendingDockPointerSessionID, !knownSessionIDs.contains(pendingDockPointerSessionID) {
-            self.pendingDockPointerSessionID = nil
-        }
     }
 
     private func effectiveArchivedSessionIDs(for _: [SessionCard]) -> Set<String> {
@@ -910,16 +894,9 @@ final class PickySessionListViewModel: ObservableObject {
         syncVoiceFollowUpAfterSessionListChange()
         syncActiveVoiceFollowUpAfterSessionListChange()
         if !shouldArchive {
-            requestDockPointerIfNeeded(for: incoming)
             requestDoneFlashIfNeeded(previousStatus: previousStatus, incoming: incoming)
             deliverNotificationIfNeeded(for: incoming)
         }
-    }
-
-    private func requestDockPointerIfNeeded(for _: SessionCard) {
-        // Handoff-created side agents already appear in the HUD dock with their
-        // own status/active highlight. Do not fly the Picky cursor to the dock:
-        // that stacks a cursor response bubble, a pointer bubble, and a dock tag.
     }
 
     private func requestDoneFlashIfNeeded(previousStatus: PickySessionStatus?, incoming: SessionCard) {
@@ -942,7 +919,6 @@ final class PickySessionListViewModel: ObservableObject {
             syncSelectionAfterSessionListChange()
             syncVoiceFollowUpAfterSessionListChange()
             syncActiveVoiceFollowUpAfterSessionListChange()
-            requestDockPointerIfNeeded(for: card)
             deliverNotificationIfNeeded(for: card)
             return
         }

@@ -17,10 +17,6 @@ struct PickySettingsView: View {
                 Toggle("Prefer read-only investigation context", isOn: $viewModel.settings.readOnlyInvestigationPreference)
             }
 
-            Section("HUD") {
-                Toggle("Follow cursor across monitors", isOn: $viewModel.settings.followsFocusedScreen)
-            }
-
             Section("Notifications") {
                 Toggle("On success", isOn: $viewModel.settings.notifications.notifyOnCompleted)
                 Toggle("On failure", isOn: $viewModel.settings.notifications.notifyOnFailed)

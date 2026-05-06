@@ -196,7 +196,6 @@ final class CompanionManager: ObservableObject {
     private var shortcutTransitionCancellable: AnyCancellable?
     private var quickInputDoubleTapCancellable: AnyCancellable?
     private var shortcutCaptureObserver: NSObjectProtocol?
-    private var hudDockPointerObserver: NSObjectProtocol?
     /// Tracks how many `ShortcutCaptureRecorder` instances are currently in
     /// capture mode. While > 0 the global PTT monitor and Quick Input
     /// detector are paused so the user can press their existing shortcut to
@@ -282,7 +281,6 @@ final class CompanionManager: ObservableObject {
         wireQuickInputPanel()
         applyShortcutSpecsFromSettings()
         bindShortcutCaptureLifecycle()
-        bindHUDDockPointerRequests()
         refreshAllPermissions()
         print("🔑 Picky start — accessibility: \(hasAccessibilityPermission), screen: \(hasScreenRecordingPermission), mic: \(hasMicrophonePermission), screenContent: \(hasScreenContentPermission)")
         startPermissionPolling()
@@ -349,10 +347,6 @@ final class CompanionManager: ObservableObject {
         if let shortcutCaptureObserver {
             NotificationCenter.default.removeObserver(shortcutCaptureObserver)
             self.shortcutCaptureObserver = nil
-        }
-        if let hudDockPointerObserver {
-            NotificationCenter.default.removeObserver(hudDockPointerObserver)
-            self.hudDockPointerObserver = nil
         }
         activeShortcutCaptureCount = 0
         globalPushToTalkShortcutMonitor.isCapturePaused = false
@@ -560,20 +554,6 @@ final class CompanionManager: ObservableObject {
                 self?.syncDaemonSettings(settings)
                 self?.applyShortcutSpecsFromSettings(settings)
             }
-    }
-
-    private func bindHUDDockPointerRequests() {
-        guard hudDockPointerObserver == nil else { return }
-        hudDockPointerObserver = NotificationCenter.default.addObserver(
-            forName: .pickyPointAtHUDDockSession,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let target = PickyHUDDockPointerTargetNotification.target(from: notification) else { return }
-            Task { @MainActor [weak self] in
-                self?.applyHUDDockPointerTarget(target)
-            }
-        }
     }
 
     /// Pushes the persisted PTT/Quick Input shortcut specs into the live
@@ -1400,36 +1380,6 @@ final class CompanionManager: ObservableObject {
         } catch {
             latestAgentSessionSummary = "Pointer overlay ignored: \(error.localizedDescription)"
         }
-    }
-
-    private func applyHUDDockPointerTarget(_ target: PickyHUDDockPointerTarget) {
-        let screenLocation = target.screenLocation
-        let displayFrame = NSScreen.screens.first { $0.frame.insetBy(dx: -1, dy: -1).contains(screenLocation) }?.frame
-            ?? NSScreen.main?.frame
-            ?? target.screenFrame
-        let pointerID = "hud-\(UUID().uuidString)"
-        detectedElementPointerID = nil
-        detectedElementDisplayFrame = displayFrame
-        detectedElementBubbleText = target.label
-        detectedElementDisplayDuration = target.duration
-        detectedElementTargetFrame = target.screenFrame
-        detectedElementHighlightKind = .hudDockIcon
-        detectedElementScreenLocation = screenLocation
-        detectedElementPointerID = pointerID
-        interactionCoordinator.accept(
-            .pointerRequested(PickyPointerTarget(
-                id: pointerID,
-                source: .hudDock,
-                screenLocation: screenLocation,
-                displayFrame: displayFrame,
-                bubbleText: target.label,
-                duration: target.duration,
-                targetFrame: target.screenFrame,
-                highlightKind: .hudDockIcon
-            )),
-            correlation: PickyInteractionCorrelation(pointerID: pointerID, source: .pointer)
-        )
-        setLocalOverlayReason(.activePointerAnimation, visible: true)
     }
 
     private func updatePassiveAgentSummary(_ summary: String) {

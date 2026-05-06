@@ -137,7 +137,6 @@ struct PickySettings: Codable, Equatable {
     var sttProvider: PickyVoiceProviderSelection
     var ttsProvider: PickyVoiceProviderSelection
     var azureSTTPreferredLanguage: String
-    var followsFocusedScreen: Bool
     var appearance: PickyAppearanceMode
     var notifications: PickyNotificationPreferences
     var fontScales: PickyFontScales
@@ -161,7 +160,6 @@ struct PickySettings: Codable, Equatable {
         sttProvider: PickyVoiceProviderSelection = .automatic,
         ttsProvider: PickyVoiceProviderSelection = .automatic,
         azureSTTPreferredLanguage: String = "",
-        followsFocusedScreen: Bool = true,
         appearance: PickyAppearanceMode = .dark,
         notifications: PickyNotificationPreferences = .defaults,
         fontScales: PickyFontScales = .defaults,
@@ -181,7 +179,6 @@ struct PickySettings: Codable, Equatable {
         self.sttProvider = sttProvider
         self.ttsProvider = ttsProvider
         self.azureSTTPreferredLanguage = azureSTTPreferredLanguage
-        self.followsFocusedScreen = followsFocusedScreen
         self.appearance = appearance
         self.notifications = notifications
         self.fontScales = fontScales
@@ -205,7 +202,6 @@ struct PickySettings: Codable, Equatable {
             sttProvider: .automatic,
             ttsProvider: .automatic,
             azureSTTPreferredLanguage: "",
-            followsFocusedScreen: true,
             appearance: .dark,
             notifications: .defaults,
             fontScales: .defaults,
@@ -239,7 +235,6 @@ struct PickySettings: Codable, Equatable {
         case sttProvider
         case ttsProvider
         case azureSTTPreferredLanguage
-        case followsFocusedScreen
         case appearance
         case notifications
         case fontScales
@@ -264,7 +259,6 @@ struct PickySettings: Codable, Equatable {
         sttProvider = try container.decodeIfPresent(PickyVoiceProviderSelection.self, forKey: .sttProvider) ?? defaults.sttProvider
         ttsProvider = try container.decodeIfPresent(PickyVoiceProviderSelection.self, forKey: .ttsProvider) ?? defaults.ttsProvider
         azureSTTPreferredLanguage = try container.decodeIfPresent(String.self, forKey: .azureSTTPreferredLanguage) ?? defaults.azureSTTPreferredLanguage
-        followsFocusedScreen = try container.decodeIfPresent(Bool.self, forKey: .followsFocusedScreen) ?? defaults.followsFocusedScreen
         appearance = try container.decodeIfPresent(PickyAppearanceMode.self, forKey: .appearance) ?? defaults.appearance
         notifications = try container.decodeIfPresent(PickyNotificationPreferences.self, forKey: .notifications) ?? defaults.notifications
         mainAgentThinkingLevel = try container.decodeIfPresent(PickyMainAgentThinkingLevel.self, forKey: .mainAgentThinkingLevel) ?? defaults.mainAgentThinkingLevel

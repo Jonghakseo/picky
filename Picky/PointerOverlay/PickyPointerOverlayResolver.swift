@@ -10,12 +10,10 @@
 import CoreGraphics
 import Foundation
 
-/// Whether a Picky highlight is over an arbitrary in-screen element
-/// (where Picky should dim the surroundings) or over Picky's own HUD
-/// chrome like the side-agent dock (where dimming would feel intrusive).
+/// Whether a Picky highlight is over an arbitrary in-screen element.
+/// Picky always dims the surroundings to focus attention on the target.
 enum PickyDetectedHighlightKind: String, Codable, Equatable {
     case screenElement
-    case hudDockIcon
 }
 
 struct PickyPointerOverlayRequest: Codable, Equatable, Identifiable {

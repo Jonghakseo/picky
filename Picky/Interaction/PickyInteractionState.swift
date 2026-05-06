@@ -179,7 +179,6 @@ struct PickyPointerTarget: Equatable, Codable, Identifiable {
 
 enum PickyPointerSource: String, Equatable, Codable {
     case agent
-    case hudDock
     case system
 }
 

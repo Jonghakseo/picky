@@ -17,6 +17,7 @@ import SwiftUI
 enum CompanionPanelSettingsSection: CaseIterable, Hashable {
     case workspace
     case notifications
+    case cursor
     case mainAgent
     case voice
     case shortcuts
@@ -30,6 +31,7 @@ enum CompanionPanelSettingsRoute: Hashable {
     case index
     case workspace
     case notifications
+    case cursor
     case mainAgent
     case voice
     case shortcuts
@@ -39,6 +41,7 @@ enum CompanionPanelSettingsRoute: Hashable {
         case .index: nil
         case .workspace: .workspace
         case .notifications: .notifications
+        case .cursor: .cursor
         case .mainAgent: .mainAgent
         case .voice: .voice
         case .shortcuts: .shortcuts
@@ -50,6 +53,7 @@ enum CompanionPanelSettingsRoute: Hashable {
         case .index: "Settings"
         case .workspace: "Workspace"
         case .notifications: "Notifications"
+        case .cursor: "Cursor Buddy"
         case .mainAgent: "Main Agent"
         case .voice: "Voice"
         case .shortcuts: "Shortcuts"
@@ -61,6 +65,7 @@ enum CompanionPanelSettingsRoute: Hashable {
         case .index: nil
         case .workspace: "Default folder for new sessions."
         case .notifications: "Banners for session events."
+        case .cursor: "Pi cursor visibility and small animations."
         case .mainAgent: "Reasoning and captured screen context."
         case .voice: "Speech providers and language."
         case .shortcuts: "Push to Talk and Quick Input bindings."
@@ -73,6 +78,7 @@ enum CompanionPanelSettingsRoute: Hashable {
 private let companionPanelSettingsRouteOrder: [CompanionPanelSettingsRoute] = [
     .workspace,
     .notifications,
+    .cursor,
     .mainAgent,
     .voice,
     .shortcuts
@@ -148,6 +154,9 @@ struct CompanionPanelSettingsView: View {
             // section only. Draft text in other sections remains untouched.
             saveImmediately(for: .notifications)
         }
+        .onChange(of: viewModel.settings.cursor) { _, _ in
+            saveImmediately(for: .cursor)
+        }
     }
 
     @ViewBuilder
@@ -156,6 +165,7 @@ struct CompanionPanelSettingsView: View {
         case .index: indexView
         case .workspace: workspaceSection
         case .notifications: notificationsSection
+        case .cursor: cursorSection
         case .mainAgent: mainAgentSection
         case .voice: voiceSection
         case .shortcuts: shortcutsSection
@@ -261,6 +271,34 @@ struct CompanionPanelSettingsView: View {
                 toggleRow("On success", isOn: $viewModel.settings.notifications.notifyOnCompleted, divider: true)
                 toggleRow("On failure", isOn: $viewModel.settings.notifications.notifyOnFailed, divider: true)
                 toggleRow("On input request", isOn: $viewModel.settings.notifications.notifyOnWaitingForInput, divider: false)
+            }
+        }
+    }
+
+    private var cursorSection: some View {
+        sectionHeader(section: .cursor, title: "Cursor Buddy", subtitle: "Control the Pi cursor overlay and its small motion behaviors.") {
+            VStack(alignment: .leading, spacing: 0) {
+                toggleRow("Show Pi cursor", isOn: $viewModel.settings.cursor.showPiCursor, divider: true)
+                toggleRow(
+                    "Overshoot on stop",
+                    isOn: $viewModel.settings.cursor.enableOvershootReaction,
+                    divider: true,
+                    isEnabled: viewModel.settings.cursor.showPiCursor
+                )
+                toggleRow(
+                    "Idle animations",
+                    isOn: $viewModel.settings.cursor.enableIdleAnimations,
+                    divider: false,
+                    isEnabled: viewModel.settings.cursor.showPiCursor
+                )
+
+                if !viewModel.settings.cursor.showPiCursor {
+                    Text("Overshoot and idle animations are disabled while the Pi cursor is hidden.")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 7)
+                }
             }
         }
     }
@@ -452,17 +490,18 @@ struct CompanionPanelSettingsView: View {
             .foregroundColor(DS.Colors.textTertiary)
     }
 
-    private func toggleRow(_ title: String, isOn: Binding<Bool>, divider: Bool) -> some View {
+    private func toggleRow(_ title: String, isOn: Binding<Bool>, divider: Bool, isEnabled: Bool = true) -> some View {
         VStack(spacing: 0) {
             HStack {
                 Text(title)
                     .font(.system(size: 11.5, weight: .medium))
-                    .foregroundColor(DS.Colors.textPrimary)
+                    .foregroundColor(isEnabled ? DS.Colors.textPrimary : DS.Colors.textTertiary)
                 Spacer(minLength: 8)
                 Toggle(title, isOn: isOn)
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
+                    .disabled(!isEnabled)
             }
             .padding(.vertical, 7)
 
@@ -497,6 +536,8 @@ struct CompanionPanelSettingsView: View {
             commitPathField()
         case .notifications:
             saveImmediately(for: .notifications)
+        case .cursor:
+            saveImmediately(for: .cursor)
         case .mainAgent:
             saveImmediately(for: .mainAgent)
         case .voice:
@@ -574,7 +615,7 @@ struct CompanionPanelSettingsView: View {
         switch section {
         case .workspace:
             pathDraft = viewModel.settings.defaultCwd
-        case .notifications, .mainAgent, .shortcuts:
+        case .notifications, .cursor, .mainAgent, .shortcuts:
             break
         case .voice:
             azureDraft = viewModel.settings.azureSTTPreferredLanguage

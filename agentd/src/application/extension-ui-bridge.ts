@@ -5,6 +5,24 @@ import type { PickyExtensionUiRequest } from "../protocol.js";
 
 export type ExtensionUiMethod = PickyExtensionUiRequest["method"];
 
+/**
+ * Thrown by `ctx.ui.custom` in Picky's extension bridge to signal that the
+ * caller asked for a TUI overlay surface that does not exist in this host.
+ *
+ * The agentd entrypoint has a global `unhandledRejection` handler that
+ * specifically swallows this subclass so a passive extension hook (e.g. an
+ * idle-timer screensaver) cannot tear down the daemon. Real bugs that surface
+ * as unhandled rejections of any other type are still re-thrown.
+ */
+export class PickyOverlayUnsupportedError extends Error {
+  constructor(public readonly sessionId: string) {
+    super(
+      `Custom TUI overlays (ctx.ui.custom) are not supported in Picky (sessionId=${sessionId}). Use a non-overlay alternative such as bash, or run the command in pi's interactive TUI.`,
+    );
+    this.name = "PickyOverlayUnsupportedError";
+  }
+}
+
 export interface ExtensionUiAnswer {
   value?: unknown;
   confirmed?: boolean;
@@ -47,7 +65,6 @@ interface PendingDialog {
 
 export class ExtensionUiBridge extends EventEmitter {
   private pending = new Map<string, PendingDialog>();
-  private warnedAboutCustomOverlay = false;
 
   constructor(private readonly sessionId: string, private readonly options: { disableBlockingDialogs?: boolean } = {}) {
     super();
@@ -69,16 +86,11 @@ export class ExtensionUiBridge extends EventEmitter {
       pasteToEditor: (text) => void this.fireAndForget("set_editor_text", { text }),
       getEditorText: () => "",
       custom: async <T>(): Promise<T> => {
-        // Picky has no TUI overlay surface. Resolve as a silent no-op so passive
-        // extension hooks (e.g. idle-screensaver setTimeout) don't crash the daemon
-        // with an unhandled rejection. Slash commands that rely on `ctx.ui.custom`
-        // are already hidden from autocomplete via extensionRequiresOverlayUi, so
-        // users won't unknowingly invoke them.
-        if (!this.warnedAboutCustomOverlay) {
-          this.warnedAboutCustomOverlay = true;
-          console.warn(`Picky ignored ctx.ui.custom call from extension (sessionId=${this.sessionId}); custom TUI overlays are not supported.`);
-        }
-        return undefined as T;
+        // Picky has no TUI overlay surface. Reject with a named subclass so that
+        // (a) extensions that wrap the call in try/catch keep their explicit error
+        // path and (b) the agentd-level unhandled rejection guard can swallow only
+        // this specific error without masking real daemon bugs.
+        throw new PickyOverlayUnsupportedError(this.sessionId);
       },
       onTerminalInput: () => () => undefined,
       setWorkingMessage: () => undefined,

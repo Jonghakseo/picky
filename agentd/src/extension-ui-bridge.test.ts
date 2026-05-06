@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ExtensionUiBridge } from "./application/extension-ui-bridge.js";
+import { ExtensionUiBridge, PickyOverlayUnsupportedError } from "./application/extension-ui-bridge.js";
 
 describe("ExtensionUiBridge", () => {
   it("resolves confirm requests from app answers", async () => {
@@ -68,6 +68,16 @@ describe("ExtensionUiBridge", () => {
     const input = bridge.createContext().input("Name", "placeholder", { signal: controller.signal });
 
     await expect(Promise.race([input, delay(20).then(() => "timed-out")])).resolves.toBeUndefined();
+  });
+
+  it("rejects ctx.ui.custom with PickyOverlayUnsupportedError tagged with the session id", async () => {
+    const bridge = new ExtensionUiBridge("session-overlay-fail");
+    const context = bridge.createContext();
+    await expect(context.custom(() => ({}) as never)).rejects.toMatchObject({
+      name: "PickyOverlayUnsupportedError",
+      sessionId: "session-overlay-fail",
+    });
+    await expect(context.custom(() => ({}) as never)).rejects.toBeInstanceOf(PickyOverlayUnsupportedError);
   });
 
   it("does not throw later when an answered dialog AbortSignal is aborted", async () => {

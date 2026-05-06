@@ -13,11 +13,12 @@ import SwiftUI
 
 struct CompanionPanelFooterView: View {
     @EnvironmentObject private var appearanceStore: PickyAppearanceStore
+    @State private var isQuitConfirmationPresented = false
 
     var body: some View {
         HStack(spacing: 8) {
             Button(action: {
-                NSApp.terminate(nil)
+                isQuitConfirmationPresented = true
             }) {
                 HStack(spacing: 6) {
                     Image(systemName: "power")
@@ -25,7 +26,7 @@ struct CompanionPanelFooterView: View {
                     Text("Quit Picky")
                         .font(.system(size: 12, weight: .medium))
                 }
-                .foregroundColor(DS.Colors.textTertiary)
+                .foregroundColor(DS.Colors.destructiveText.opacity(0.82))
             }
             .buttonStyle(.plain)
             .pointerCursor()
@@ -33,6 +34,14 @@ struct CompanionPanelFooterView: View {
             Spacer()
 
             CompanionPanelAppearanceToggle()
+        }
+        .alert("Quit Picky?", isPresented: $isQuitConfirmationPresented) {
+            Button("Cancel", role: .cancel) {}
+            Button("Quit Picky", role: .destructive) {
+                NSApp.terminate(nil)
+            }
+        } message: {
+            Text("Picky will stop running in the menu bar and ongoing local sessions may be interrupted.")
         }
     }
 }

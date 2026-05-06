@@ -19,6 +19,7 @@ struct PickyGitRepositoryStatus: Equatable {
     let aheadCount: Int
     let behindCount: Int
     let remoteWebURL: URL?
+    let branchWebURL: URL?
 
     var repositoryDisplayName: String {
         repositoryName
@@ -66,6 +67,7 @@ struct PickyGitRepositoryStatus: Equatable {
         let remoteWebURL = remoteWebURLForOrigin(cwd: trimmedCwd)
         let repositoryName = remoteWebURL.flatMap(remoteRepositoryName(from:)) ?? URL(fileURLWithPath: topLevel).lastPathComponent
         let branchName = currentBranchName(cwd: trimmedCwd)
+        let branchWebURL = remoteWebURL.flatMap { makeBranchWebURL(remoteWebURL: $0, branchName: branchName) }
         let statusOutput = git(["status", "--porcelain"], cwd: trimmedCwd) ?? ""
         let diffStats = parseNumstat(git(["diff", "--numstat", "HEAD", "--"], cwd: trimmedCwd, allowsFailure: true) ?? "")
         let position = parseAheadBehind(git(["rev-list", "--left-right", "--count", "@{upstream}...HEAD"], cwd: trimmedCwd, allowsFailure: true) ?? "")
@@ -78,8 +80,17 @@ struct PickyGitRepositoryStatus: Equatable {
             deletions: diffStats.deletions,
             aheadCount: position.ahead,
             behindCount: position.behind,
-            remoteWebURL: remoteWebURL
+            remoteWebURL: remoteWebURL,
+            branchWebURL: branchWebURL
         )
+    }
+
+    static func makeBranchWebURL(remoteWebURL: URL, branchName: String) -> URL? {
+        let trimmedBranchName = branchName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedBranchName.isEmpty else { return nil }
+        return remoteWebURL
+            .appendingPathComponent("tree", isDirectory: true)
+            .appendingPathComponent(trimmedBranchName, isDirectory: false)
     }
 
     private static func remoteWebURLForOrigin(cwd: String) -> URL? {

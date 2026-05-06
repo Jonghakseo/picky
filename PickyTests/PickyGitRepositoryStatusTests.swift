@@ -53,12 +53,24 @@ struct PickyGitRepositoryStatusTests {
         #expect(status?.deletions == 1)
         #expect(status?.aheadCount == 0)
         #expect(status?.behindCount == 0)
+        #expect(status?.remoteWebURL?.absoluteString == "https://github.com/creatrip/product")
+        #expect(status?.branchWebURL?.absoluteString == "https://github.com/creatrip/product/tree/main")
         #expect(PickyGitRepositoryStatus.cached(cwd: directory.path) == status)
     }
 
     @Test func extractsRepositoryNameFromRemoteWebURL() {
         #expect(PickyGitRepositoryStatus.remoteRepositoryName(from: URL(string: "https://github.com/creatrip/product")!) == "product")
         #expect(PickyGitRepositoryStatus.remoteRepositoryName(from: URL(string: "https://github.com/creatrip/product.git")!) == "product")
+    }
+
+    @Test func buildsBranchWebURLFromRemoteWebURL() {
+        let remoteWebURL = URL(string: "https://github.com/creatrip/product")!
+        let branchURL = PickyGitRepositoryStatus.makeBranchWebURL(
+            remoteWebURL: remoteWebURL,
+            branchName: "docs/nicepay-linepay-implementation-plan"
+        )
+
+        #expect(branchURL?.absoluteString == "https://github.com/creatrip/product/tree/docs/nicepay-linepay-implementation-plan")
     }
 
     @Test func loadKeepsCachedStatusAvailableBetweenRefreshes() async throws {

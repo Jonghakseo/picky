@@ -202,12 +202,12 @@ struct PickyConversationContextLineView: View {
         }
         .contentShape(Rectangle())
 
-        if let url = status.remoteWebURL {
+        if let url = status.branchWebURL {
             Link(destination: url) {
                 content
             }
             .buttonStyle(.plain)
-            .help("Open \(url.absoluteString)")
+            .help("Open branch \(url.absoluteString)")
             .pointerCursor()
         } else {
             content

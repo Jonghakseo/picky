@@ -379,7 +379,7 @@ struct PickyConversationComposerView: View {
         case .cancelled:
             return "Resume this agent with a steer…"
         case .failed:
-            return "Open terminal/logs or start a new task"
+            return "Open terminal or start a new task"
         }
     }
 

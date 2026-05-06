@@ -9,10 +9,9 @@ import SwiftUI
 
 struct PickyErrorBubbleView: View {
     let message: PickySessionMessage
-    // Retry chip intentionally omitted — user retries via the composer
-    // (re-send their own message). Recovery surface stays narrow on purpose.
+    // Keep the recovery surface narrow: failed runs can be inspected or resumed
+    // through the Pi terminal overlay.
     var onOpenTerminal: () -> Void = {}
-    var onOpenLogs: () -> Void = {}
 
     var body: some View {
         HStack {
@@ -21,10 +20,12 @@ struct PickyErrorBubbleView: View {
                     .font(.system(size: 9.5, weight: .bold))
                     .foregroundColor(DS.Colors.destructiveText)
                     .lineLimit(1)
-                Text(title)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundColor(DS.Colors.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let titleText {
+                    Text(titleText)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundColor(DS.Colors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let errorMessage = message.errorMessage, !errorMessage.isEmpty {
                     Text(errorMessage)
                         .font(.system(size: 10.5, design: .monospaced))
@@ -41,8 +42,7 @@ struct PickyErrorBubbleView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(spacing: 6) {
-                    recoveryChip("⌨ Terminal 열기", color: DS.Colors.accentText, action: onOpenTerminal)
-                    recoveryChip("📄 전체 로그", color: DS.Colors.accentText, action: onOpenLogs)
+                    recoveryChip(Self.openTerminalLabel, color: DS.Colors.accentText, action: onOpenTerminal)
                 }
             }
             .padding(.horizontal, 10)
@@ -73,13 +73,17 @@ struct PickyErrorBubbleView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    static let openTerminalLabel = "⌨ Open Terminal"
+
     var recoveryChipLabels: [String] {
-        ["⌨ Terminal 열기", "📄 전체 로그"]
+        [Self.openTerminalLabel]
     }
 
-    private var title: String {
+    var titleText: String? {
         let text = message.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return text.isEmpty ? "Runtime error" : text
+        guard !text.isEmpty else { return nil }
+        guard text.localizedCaseInsensitiveCompare("Runtime error") != .orderedSame else { return nil }
+        return text
     }
 
     private func recoveryChip(_ label: String, color: Color, action: @escaping () -> Void) -> some View {

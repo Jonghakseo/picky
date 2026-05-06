@@ -249,8 +249,17 @@ struct PickyConversationCardViewTests {
 
         #expect(snapshot.errorBubbleCount == 1)
         #expect(!errorBubble.recoveryChipLabels.contains("↻ 다시 시도"))
-        #expect(errorBubble.recoveryChipLabels == ["⌨ Terminal 열기", "📄 전체 로그"])
+        #expect(errorBubble.recoveryChipLabels == ["⌨ Open Terminal"])
+        #expect(errorBubble.titleText == "Command failed")
         #expect(header.statusColorName == "red")
+    }
+
+    @Test func errorBubbleHidesRedundantRuntimeErrorTitle() {
+        let runtimeError = PickyErrorBubbleView(message: message("m-runtime-error", kind: .agentError, text: "Runtime error"))
+        let emptyError = PickyErrorBubbleView(message: message("m-empty-error", kind: .agentError))
+
+        #expect(runtimeError.titleText == nil)
+        #expect(emptyError.titleText == nil)
     }
 
     @Test func composerReturnKeyMappingKeepsShiftReturnForNewlines() {
@@ -319,7 +328,8 @@ struct PickyConversationCardViewTests {
         let failedComposer = PickyConversationComposerView(session: makeConversationSession(status: .failed), viewModel: viewModel)
         #expect(failedComposer.defaultSubmitKind == nil)
         #expect(failedComposer.optionReturnSubmitKind == nil)
-        #expect(failedComposer.placeholderText.contains("Open terminal/logs"))
+        #expect(failedComposer.placeholderText.contains("Open terminal"))
+        #expect(!failedComposer.placeholderText.contains("logs"))
         #expect(!failedComposer.placeholderText.contains("Follow-up"))
     }
 

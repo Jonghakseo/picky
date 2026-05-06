@@ -112,8 +112,7 @@ struct PickyConversationListView: View {
         case .agentError:
             PickyErrorBubbleView(
                 message: message,
-                onOpenTerminal: { viewModel.openTerminalOverlay(sessionID: session.id) },
-                onOpenLogs: { viewModel.openTerminalOverlay(sessionID: session.id) }
+                onOpenTerminal: { viewModel.openTerminalOverlay(sessionID: session.id) }
             )
         case .agentActivity:
             if let snapshot = message.activitySnapshot, !snapshot.visibleToolCallItems.isEmpty {

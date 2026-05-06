@@ -7,6 +7,7 @@
 //  opens a floating panel with companion voice controls.
 //
 
+import AppKit
 import ServiceManagement
 import SwiftUI
 import UserNotifications
@@ -22,6 +23,24 @@ struct PickyApp: App {
             PickySettingsView(viewModel: PickySettingsViewModel())
                 .environmentObject(appDelegate.appearanceStore)
                 .preferredColorScheme(appDelegate.appearanceStore.mode.colorScheme)
+        }
+        .commands {
+            CommandGroup(replacing: .undoRedo) {
+                Button("Undo") {
+                    NSApp.sendAction(Selector(("undo:")), to: nil, from: nil)
+                }
+                .keyboardShortcut("z", modifiers: .command)
+
+                Button("Redo") {
+                    NSApp.sendAction(Selector(("redo:")), to: nil, from: nil)
+                }
+                .keyboardShortcut("Z", modifiers: [.command, .shift])
+
+                Button("Redo") {
+                    NSApp.sendAction(Selector(("redo:")), to: nil, from: nil)
+                }
+                .keyboardShortcut("y", modifiers: .command)
+            }
         }
     }
 }

@@ -126,6 +126,23 @@ struct PickySessionViewModelTests {
         #expect(client.sentCommands.contains { $0.type == .listSessions })
     }
 
+    @Test func hidesDockUntilInitialSessionSnapshotArrives() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+
+        #expect(viewModel.isLoadingInitialSessionSnapshot)
+        viewModel.start()
+        try await settle()
+        #expect(viewModel.isLoadingInitialSessionSnapshot)
+
+        client.emit(.protocolEvent(.fixture(eventJSON: #"""
+        {"id":"snapshot-empty","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":[]}
+        """#)))
+        try await settle()
+
+        #expect(viewModel.isLoadingInitialSessionSnapshot == false)
+    }
+
     @Test func createEmptySideSessionSendsSystemContextWithSelectedCwd() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())

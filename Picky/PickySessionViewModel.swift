@@ -224,6 +224,7 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var lastOpenedArtifactPath: String?
     @Published private(set) var slashCommandsBySessionID: [String: [PickySlashCommand]] = [:]
     @Published private(set) var pendingDockPointerSessionID: String?
+    @Published private(set) var isLoadingInitialSessionSnapshot = true
 
     var selectedSession: SessionCard? {
         guard let selectedSessionID else { return sessions.first }
@@ -664,6 +665,9 @@ final class PickySessionListViewModel: ObservableObject {
         switch event {
         case .connected:
             pickySessionLog("client connected")
+            if sessions.isEmpty && archivedSessions.isEmpty {
+                isLoadingInitialSessionSnapshot = true
+            }
             lastError = nil
             Task { try? await client.send(PickyCommandEnvelope(type: .listSessions)) }
         case .disconnected:
@@ -681,6 +685,7 @@ final class PickySessionListViewModel: ObservableObject {
         switch event {
         case .sessionSnapshot(let snapshot):
             pickySessionLog("snapshot sessions=\(snapshot.count)")
+            isLoadingInitialSessionSnapshot = false
             let previousCardsByID = Dictionary(uniqueKeysWithValues: (sessions + archivedSessions).map { ($0.id, $0) })
             let cards = snapshot.map(SessionCard.fromAgentSession)
             let archivedIDs = effectiveArchivedSessionIDs(for: cards)

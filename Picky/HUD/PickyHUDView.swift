@@ -148,16 +148,18 @@ struct PickyHUDView: View {
                     .transition(.opacity)
             }
 
-            PickyHUDDockRailView(
-                sessions: visibleSessions,
-                activeSessionID: activeSession?.id,
-                pinnedSessionID: pinnedSessionID,
-                onHoverSession: previewDockSession,
-                onPinSession: pinSession,
-                onCreateSideAgent: chooseFolderForEmptySideAgent,
-                onIconScreenFrameChange: recordDockIconScreenFrame
-            )
-            .frame(width: PickyHUDDockLayout.railWidth)
+            if !viewModel.isLoadingInitialSessionSnapshot {
+                PickyHUDDockRailView(
+                    sessions: visibleSessions,
+                    activeSessionID: activeSession?.id,
+                    pinnedSessionID: pinnedSessionID,
+                    onHoverSession: previewDockSession,
+                    onPinSession: pinSession,
+                    onCreateSideAgent: chooseFolderForEmptySideAgent,
+                    onIconScreenFrameChange: recordDockIconScreenFrame
+                )
+                .frame(width: PickyHUDDockLayout.railWidth)
+            }
         }
         .padding(.horizontal, PickyHUDExpansion.outerPadding)
         .padding(.vertical, PickyHUDExpansion.dockShadowVerticalPadding)

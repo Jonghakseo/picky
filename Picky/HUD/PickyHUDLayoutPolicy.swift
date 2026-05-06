@@ -131,6 +131,19 @@ enum PickyHUDDockLayout {
         let maximumY = max(minimumY, visibleFrame.maxY - screenMargin - targetHeight)
         return min(max(anchored, minimumY), maximumY)
     }
+
+    /// Largest panel height that still lets `dockAnchoredPanelY` place the dock anchor at
+    /// `visibleFrame.midY` without hitting the bottom-edge clamp. Beyond this height the
+    /// formula `midY - height + anchor` falls below `minY + screenMargin` and the panel
+    /// origin gets pushed up, dragging the dock with it. The overlay manager caps the
+    /// panel content height at this value so the dock screen position stays fixed even
+    /// for very tall conversation cards.
+    static func dockAnchoredMaxPanelHeight(
+        visibleFrame: CGRect,
+        dockAnchorYFromTop: CGFloat
+    ) -> CGFloat {
+        max(0, (visibleFrame.midY + dockAnchorYFromTop) - (visibleFrame.minY + screenMargin))
+    }
 }
 
 enum PickyHUDExpandedContentPolicy {

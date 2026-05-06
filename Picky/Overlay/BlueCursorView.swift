@@ -201,12 +201,13 @@ struct BlueCursorView: View {
     @State private var idleOffsetY: CGFloat = 0
     @State private var idleRotation: Double = 0
     @State private var idleScale: CGFloat = 1.0
+    @State private var idleShadowMultiplier: CGFloat = 1.0
     @State private var idleScheduleTimer: Timer?
     @State private var idleBehaviorActive: Bool = false
     @State private var lastCursorMoveAt: Date = Date()
 
     private enum IdleBehavior: CaseIterable {
-        case lookAround, yawn, bob, tilt
+        case lookAround, yawn, bob, tilt, shiver, wiggle, pulseGlow
     }
 
     // MARK: - Buddy Navigation State
@@ -385,7 +386,7 @@ struct BlueCursorView: View {
             PiCursorIconView(style: cursorStyleStore.style, tint: moodColor)
                 .shadow(
                     color: moodColor.opacity(cursorStyleStore.style.outerShadowOpacity),
-                    radius: CGFloat(cursorStyleStore.style.outerShadowRadius) + (buddyFlightScale - 1.0) * CGFloat(cursorStyleStore.style.outerShadowFlightMultiplier),
+                    radius: (CGFloat(cursorStyleStore.style.outerShadowRadius) + (buddyFlightScale - 1.0) * CGFloat(cursorStyleStore.style.outerShadowFlightMultiplier)) * idleShadowMultiplier,
                     x: 0,
                     y: 0
                 )
@@ -942,6 +943,7 @@ struct BlueCursorView: View {
             idleOffsetY = 0
             idleRotation = 0
             idleScale = 1.0
+            idleShadowMultiplier = 1.0
         }
     }
 
@@ -959,10 +961,13 @@ struct BlueCursorView: View {
         let behavior = IdleBehavior.allCases.randomElement() ?? .lookAround
         idleBehaviorActive = true
         switch behavior {
-        case .lookAround: runLookAroundBehavior()
-        case .yawn:       runYawnBehavior()
-        case .bob:        runBobBehavior()
-        case .tilt:       runTiltBehavior()
+        case .lookAround:  runLookAroundBehavior()
+        case .yawn:        runYawnBehavior()
+        case .bob:         runBobBehavior()
+        case .tilt:        runTiltBehavior()
+        case .shiver:      runShiverBehavior()
+        case .wiggle:      runWiggleBehavior()
+        case .pulseGlow:   runPulseGlowBehavior()
         }
     }
 
@@ -971,9 +976,82 @@ struct BlueCursorView: View {
             idleOffsetY = 0
             idleRotation = 0
             idleScale = 1.0
+            idleShadowMultiplier = 1.0
         }
         idleBehaviorActive = false
         scheduleNextIdleBehavior(delayRange: 18...40)
+    }
+
+    private func runShiverBehavior() {
+        let tickInterval: TimeInterval = 0.06
+        let totalTicks = 6
+        var tick = 0
+        idleScheduleTimer?.invalidate()
+        idleScheduleTimer = Timer.scheduledTimer(withTimeInterval: tickInterval, repeats: true) { _ in
+            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
+                self.idleScheduleTimer?.invalidate()
+                self.finishIdleBehavior()
+                return
+            }
+            tick += 1
+            if tick >= totalTicks {
+                self.idleScheduleTimer?.invalidate()
+                self.finishIdleBehavior()
+                return
+            }
+            let amp: CGFloat = tick % 2 == 0 ? 1.0 : -1.0
+            withAnimation(.linear(duration: tickInterval)) {
+                self.idleRotation = Double(amp * 2.5)
+                self.idleScale = 1.0 + CGFloat(abs(amp)) * 0.04
+            }
+        }
+    }
+
+    private func runWiggleBehavior() {
+        let steps: [Double] = [10, -10, 7, -7, 4, 0]
+        var index = 0
+        func nextStep() {
+            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
+                self.finishIdleBehavior()
+                return
+            }
+            guard index < steps.count else {
+                self.finishIdleBehavior()
+                return
+            }
+            let rotation = steps[index]
+            index += 1
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.4)) {
+                self.idleRotation = rotation
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.38) {
+                nextStep()
+            }
+        }
+        nextStep()
+    }
+
+    private func runPulseGlowBehavior() {
+        let phases: [CGFloat] = [1.0, 1.25, 1.0, 1.15, 1.0]
+        var index = 0
+        func nextPhase() {
+            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
+                self.finishIdleBehavior()
+                return
+            }
+            guard index < phases.count else {
+                self.finishIdleBehavior()
+                return
+            }
+            withAnimation(.easeInOut(duration: 0.5)) {
+                self.idleShadowMultiplier = phases[index]
+            }
+            index += 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+                nextPhase()
+            }
+        }
+        nextPhase()
     }
 
     private func runLookAroundBehavior() {

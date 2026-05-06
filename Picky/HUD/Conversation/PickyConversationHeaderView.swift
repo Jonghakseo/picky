@@ -46,15 +46,15 @@ struct PickyConversationHeaderView: View {
         HStack(alignment: .center, spacing: 8) {
             if showsHeaderSessionMeta {
                 PickyHeaderSessionMetaPill(assistantRun: latestAssistantRun, contextUsage: session.contextUsage)
-                    .frame(maxWidth: 148, alignment: .trailing)
+                    .frame(width: 184, alignment: .trailing)
             }
             conversationMenuButton
         }
-        .frame(maxWidth: trailingActionsReservedWidth, alignment: .trailing)
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var trailingActionsReservedWidth: CGFloat {
-        showsHeaderSessionMeta ? 166 : 28
+        showsHeaderSessionMeta ? 212 : 28
     }
 
     private var showsHeaderSessionMeta: Bool {
@@ -77,27 +77,34 @@ struct PickyConversationHeaderView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(DS.Colors.textTertiary)
                 .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
         }
+        .frame(width: 18, height: 18)
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .accessibilityLabel("Conversation menu")
     }
 
     private var piBadgeSlot: some View {
-        ZStack {
-            if isVoiceFollowUpTarget {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(DS.Colors.accentSubtle.opacity(0.38))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(DS.Colors.accentText.opacity(0.65), lineWidth: 1.2)
-                    )
+        piBadge
+            .overlay(alignment: .bottomTrailing) {
+                if isVoiceFollowUpTarget {
+                    voiceTargetMicBadge
+                }
             }
-            piBadge
-        }
-        .frame(width: 26, height: 26)
-        .help(piBadgeHelpText)
-        .accessibilityLabel(piBadgeAccessibilityLabel)
+            .frame(width: 26, height: 26)
+            .help(piBadgeHelpText)
+            .accessibilityLabel(piBadgeAccessibilityLabel)
+    }
+
+    private var voiceTargetMicBadge: some View {
+        Image(systemName: "mic.fill")
+            .font(.system(size: 6.8, weight: .bold))
+            .foregroundColor(DS.Colors.accentText)
+            .frame(width: 11, height: 11)
+            .background(Circle().fill(DS.Colors.surface1))
+            .overlay(Circle().stroke(DS.Colors.accentText.opacity(0.65), lineWidth: 0.9))
+            .offset(x: 3, y: 3)
     }
 
     private var piBadge: some View {
@@ -215,55 +222,46 @@ private struct PickyHeaderSessionMetaPill: View {
     let contextUsage: PickyContextUsage?
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            pill(showModel: true, showThinkingLevel: true)
-            pill(showModel: true, showThinkingLevel: false)
-            pill(showModel: false, showThinkingLevel: false)
-        }
-        .help(helpText)
-    }
-
-    private func pill(showModel: Bool, showThinkingLevel: Bool) -> some View {
         HStack(spacing: 4) {
             if let contextDisplay {
                 PickyHeaderContextUsageBar(display: contextDisplay)
                     .frame(width: 24, height: 5)
                 Text(contextDisplay.label)
                     .fontWeight(.bold)
+                if modelText != nil || thinkingLevelText != nil {
+                    separator
+                }
             }
-            if contextDisplay != nil && hasRunText(showModel: showModel, showThinkingLevel: showThinkingLevel) {
-                separator
-            }
-            if showModel, let modelText {
+            if let modelText {
                 Text(modelText)
+                    .frame(maxWidth: 68, alignment: .trailing)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            if showModel, modelText != nil, showThinkingLevel, thinkingLevelText != nil {
+            if modelText != nil, thinkingLevelText != nil {
                 separator
             }
-            if showThinkingLevel, let thinkingLevelText {
+            if let thinkingLevelText {
                 Text(thinkingLevelText)
                     .lineLimit(1)
+                    .layoutPriority(1)
             }
         }
         .font(PickyHUDTypography.metaMonospacedMedium)
         .foregroundColor(tint.opacity(0.92))
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
+        .frame(maxWidth: .infinity, alignment: .trailing)
         .background(Capsule().fill(tint.opacity(contextDisplay == nil ? 0.06 : 0.11)))
         .overlay(Capsule().stroke(tint.opacity(contextDisplay == nil ? 0.16 : 0.26), lineWidth: 0.6))
         .lineLimit(1)
+        .help(helpText)
     }
 
     private var separator: some View {
         Circle()
             .fill(tint.opacity(0.55))
             .frame(width: 3, height: 3)
-    }
-
-    private func hasRunText(showModel: Bool, showThinkingLevel: Bool) -> Bool {
-        (showModel && modelText != nil) || (showThinkingLevel && thinkingLevelText != nil)
     }
 
     private var contextDisplay: PickyHeaderContextUsageDisplay? {

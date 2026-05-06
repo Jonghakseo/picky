@@ -98,7 +98,7 @@ struct PickyConversationCardViewTests {
         #expect(PickyAssistantRunMetadata(model: "anthropic/claude-opus-4-7", thinkingLevel: .xhigh).displayText == "opus-4-7 xhigh")
     }
 
-    @Test func contextUsageRendersBesideAssistantRunMetadataWithoutToolCalls() {
+    @Test func contextUsageNoLongerRendersInsideAssistantBubble() {
         let session = makeConversationSession(
             status: .completed,
             messages: [
@@ -117,7 +117,7 @@ struct PickyConversationCardViewTests {
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
 
         #expect(snapshot.activitySummaryCount == 0)
-        #expect(snapshot.contextUsageFooterCount == 1)
+        #expect(snapshot.contextUsageFooterCount == 0)
     }
 
     @Test func agentResponsePreviewTruncatesAfterEightLinesOrFiveHundredCharacters() {

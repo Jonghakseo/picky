@@ -9,7 +9,6 @@ import SwiftUI
 
 struct PickyAgentBubbleView: View {
     let message: PickySessionMessage
-    var contextUsage: PickyContextUsage? = nil
     var showsOpenAsReportAction = false
     var onOpenAsReport: (() -> Void)?
 
@@ -17,17 +16,9 @@ struct PickyAgentBubbleView: View {
         HStack {
             VStack(alignment: .leading, spacing: 6) {
                 PickyConversationMarkdownText(markdown: previewText, lineLimit: PickyAgentResponsePreview.maxLines)
-                if showsFooter {
+                if showsFooter, showsOpenAsReportAction, let onOpenAsReport {
                     HStack(alignment: .center, spacing: 7) {
-                        if showsOpenAsReportAction, let onOpenAsReport {
-                            PickyOpenAsReportButton(action: onOpenAsReport)
-                        }
-                        if let assistantRunText {
-                            PickyAssistantRunMetadataLabel(text: assistantRunText)
-                            if let contextUsageDisplay {
-                                PickyContextUsageChip(display: contextUsageDisplay)
-                            }
-                        }
+                        PickyOpenAsReportButton(action: onOpenAsReport)
                     }
                 }
             }
@@ -50,16 +41,7 @@ struct PickyAgentBubbleView: View {
     }
 
     private var showsFooter: Bool {
-        (showsOpenAsReportAction && onOpenAsReport != nil) || assistantRunText != nil
-    }
-
-    private var assistantRunText: String? {
-        message.assistantRun?.displayText
-    }
-
-    private var contextUsageDisplay: ContextUsageBatteryDisplay? {
-        guard assistantRunText != nil, let contextUsage else { return nil }
-        return ContextUsageBatteryDisplay(usage: contextUsage)
+        showsOpenAsReportAction && onOpenAsReport != nil
     }
 
     private var previewText: String {
@@ -99,19 +81,6 @@ enum PickyAgentResponsePreview {
 
         guard didTruncate else { return text }
         return candidate.trimmingCharacters(in: .whitespacesAndNewlines) + "..."
-    }
-}
-
-struct PickyAssistantRunMetadataLabel: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(PickyHUDTypography.metaMonospacedMedium)
-            .foregroundColor(DS.Colors.textTertiary.opacity(0.72))
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .help("Model and reasoning level: \(text)")
     }
 }
 

@@ -23,6 +23,19 @@ struct PickySettingsView: View {
                 Toggle("On input request", isOn: $viewModel.settings.notifications.notifyOnWaitingForInput)
             }
 
+            Section("Cursor Buddy") {
+                Toggle("Show Pi cursor", isOn: $viewModel.settings.cursor.showPiCursor)
+                Toggle("Stop overshoot reaction", isOn: $viewModel.settings.cursor.enableOvershootReaction)
+                    .disabled(!viewModel.settings.cursor.showPiCursor)
+                Toggle("Idle animations", isOn: $viewModel.settings.cursor.enableIdleAnimations)
+                    .disabled(!viewModel.settings.cursor.showPiCursor)
+                if !viewModel.settings.cursor.showPiCursor {
+                    Text("Overshoot and idle animations are disabled while the Pi cursor is hidden.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
             Section("Main Agent") {
                 Picker("Reasoning level", selection: $viewModel.settings.mainAgentThinkingLevel) {
                     ForEach(PickyMainAgentThinkingLevel.allCases) { level in

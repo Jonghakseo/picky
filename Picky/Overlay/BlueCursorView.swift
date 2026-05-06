@@ -124,6 +124,27 @@ private final class PickyCursorStyleStore: ObservableObject {
 }
 #endif
 
+@MainActor
+private final class PickyCursorPreferencesStore: ObservableObject {
+    static let shared = PickyCursorPreferencesStore()
+
+    @Published private(set) var preferences: PickyCursorPreferences
+
+    private let settingsStore: PickySettingsStore
+    private var settingsChangeCancellable: AnyCancellable?
+
+    private init(settingsStore: PickySettingsStore = PickySettingsStore()) {
+        self.settingsStore = settingsStore
+        self.preferences = settingsStore.load().cursor
+        settingsChangeCancellable = NotificationCenter.default.publisher(for: .pickySettingsDidSave)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.preferences = self.settingsStore.load().cursor
+            }
+    }
+}
+
 // Pi text cursor buddy icon. The `tint` parameter overrides the base style
 // color so the buddy can shift through mood colors (idle / listening /
 // processing / responding) without swapping in a different shape or asset.
@@ -166,6 +187,7 @@ struct BlueCursorView: View {
     let screenFrame: CGRect
     @ObservedObject var companionManager: CompanionManager
     @ObservedObject private var cursorStyleStore = PickyCursorStyleStore.shared
+    @ObservedObject private var cursorPreferencesStore = PickyCursorPreferencesStore.shared
 
     @State private var cursorPosition: CGPoint
     @State private var isCursorOnThisScreen: Bool
@@ -203,10 +225,9 @@ struct BlueCursorView: View {
 
     // MARK: - Mouse Movement Reactions
 
-    /// Short-lived transform driven only by mouse velocity. This gives the
-    /// buddy a subtle physical feel while keeping semantic behavior LLM-free:
-    /// fast cursor movement makes it lag/lean, then a sudden stop produces one
-    /// tiny overshoot before settling back to the normal cursor-follow target.
+    /// Short-lived transform driven by mouse stop events. Fast cursor movement
+    /// is sampled without adding lag; only a sudden stop produces one tiny
+    /// overshoot before settling back to the normal cursor-follow target.
     @State private var motionOffsetX: CGFloat = 0
     @State private var motionOffsetY: CGFloat = 0
     @State private var motionRotation: Double = 0
@@ -456,6 +477,16 @@ struct BlueCursorView: View {
                 cancelIdleBehavior()
             }
         }
+        .onChange(of: cursorPreferencesStore.preferences) { preferences in
+            if !preferences.showPiCursor || !preferences.enableOvershootReaction {
+                resetMouseMovementReaction(animated: true)
+            }
+            if preferences.showPiCursor && preferences.enableIdleAnimations {
+                scheduleNextIdleBehavior()
+            } else {
+                cancelIdleBehavior()
+            }
+        }
     }
 
     /// Whether the buddy pi icon should be visible on this screen.
@@ -466,7 +497,8 @@ struct BlueCursorView: View {
     /// navigating (detectedElementScreenLocation is set but this screen isn't
     /// the one animating), hide the cursor so only one buddy is ever visible.
     private var buddyIsVisibleOnThisScreen: Bool {
-        guard !companionManager.isQuickInputPanelVisible else { return false }
+        guard cursorPreferencesStore.preferences.showPiCursor,
+              !companionManager.isQuickInputPanelVisible else { return false }
         switch buddyNavigationMode {
         case .followingCursor:
             // If another screen's BlueCursorView is navigating to an element,
@@ -525,7 +557,9 @@ struct BlueCursorView: View {
     private func updateMouseMovementReaction(for targetPosition: CGPoint) {
         let now = ProcessInfo.processInfo.systemUptime
 
-        guard isCursorOnThisScreen,
+        guard cursorPreferencesStore.preferences.showPiCursor,
+              cursorPreferencesStore.preferences.enableOvershootReaction,
+              isCursorOnThisScreen,
               !companionManager.isQuickInputPanelVisible,
               companionManager.voiceState == .idle else {
             resetMouseMovementReaction(animated: true)
@@ -549,36 +583,22 @@ struct BlueCursorView: View {
         let distance = hypot(dx, dy)
         let speed = distance / CGFloat(dt)
 
-        // Pixel/second thresholds tuned to be subtle: normal mouse movement is
-        // unaffected, but quick sweeps make the buddy trail and lean a little.
-        let reactionSpeed: CGFloat = 140
+        // Pixel/second thresholds tuned for stop-only feedback: movement never
+        // adds lag, but a fast sweep followed by a stop creates a tiny overshoot.
+        let movementSpeed: CGFloat = 140
         let fastSpeed: CGFloat = 900
         let stoppedSpeed: CGFloat = 90
 
-        if speed > reactionSpeed, distance > 0.35 {
-            let direction = normalizedVector(dx: dx, dy: dy)
-            let lagDistance = min(max((speed - reactionSpeed) / 170.0, 0), 11)
-            let leanMagnitude = Double(min(speed / 170.0, 8.0))
-            let liftMagnitude = Double(min(speed / 450.0, 2.5))
-            let lean = clamped(Double(direction.dx) * leanMagnitude, min: -9.0, max: 9.0)
-            let lift = clamped(Double(-direction.dy) * liftMagnitude, min: -2.5, max: 2.5)
-            let scale = CGFloat(1.0) + min(speed / 28_000.0, 0.07)
-
+        if speed > movementSpeed, distance > 0.35 {
             if motionOvershootActive {
                 motionReactionGeneration += 1
-            }
-            motionOvershootActive = false
-
-            withAnimation(.easeOut(duration: 0.08)) {
-                motionOffsetX = -direction.dx * lagDistance
-                motionOffsetY = -direction.dy * lagDistance
-                motionRotation = lean + lift
-                motionScale = scale
+                motionOvershootActive = false
+                settleMouseMovementReaction(animated: true)
             }
 
             if speed > fastSpeed {
                 wasCursorMovingFast = true
-                lastFastCursorDirection = direction
+                lastFastCursorDirection = normalizedVector(dx: dx, dy: dy)
             }
         } else if speed < stoppedSpeed {
             if wasCursorMovingFast,
@@ -1090,7 +1110,9 @@ struct BlueCursorView: View {
     /// Whether the buddy is in a state where idle micro-behaviors may run.
     /// Used both to gate scheduling and to short-circuit a behavior mid-step.
     private var isIdleEligibleForScheduling: Bool {
-        companionManager.voiceState == .idle
+        cursorPreferencesStore.preferences.showPiCursor
+            && cursorPreferencesStore.preferences.enableIdleAnimations
+            && companionManager.voiceState == .idle
             && buddyNavigationMode == .followingCursor
             && activePointerID == nil
             && !companionManager.isQuickInputPanelVisible

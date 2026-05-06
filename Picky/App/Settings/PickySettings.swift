@@ -127,6 +127,54 @@ struct PickyNotificationPreferences: Codable, Equatable {
     )
 }
 
+/// User-configurable behavior toggles for the Pi cursor buddy overlay.
+/// Defaults preserve the existing playful behavior for current users.
+struct PickyCursorPreferences: Codable, Equatable {
+    var showPiCursor: Bool
+    var enableOvershootReaction: Bool
+    var enableIdleAnimations: Bool
+
+    static let defaults = PickyCursorPreferences(
+        showPiCursor: true,
+        enableOvershootReaction: true,
+        enableIdleAnimations: true
+    )
+
+    enum CodingKeys: String, CodingKey {
+        case showPiCursor
+        case enableOvershootReaction
+        case enableVelocityReaction
+        case enableIdleAnimations
+    }
+
+    init(
+        showPiCursor: Bool,
+        enableOvershootReaction: Bool,
+        enableIdleAnimations: Bool
+    ) {
+        self.showPiCursor = showPiCursor
+        self.enableOvershootReaction = enableOvershootReaction
+        self.enableIdleAnimations = enableIdleAnimations
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = PickyCursorPreferences.defaults
+        showPiCursor = try container.decodeIfPresent(Bool.self, forKey: .showPiCursor) ?? defaults.showPiCursor
+        enableOvershootReaction = try container.decodeIfPresent(Bool.self, forKey: .enableOvershootReaction)
+            ?? container.decodeIfPresent(Bool.self, forKey: .enableVelocityReaction)
+            ?? defaults.enableOvershootReaction
+        enableIdleAnimations = try container.decodeIfPresent(Bool.self, forKey: .enableIdleAnimations) ?? defaults.enableIdleAnimations
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(showPiCursor, forKey: .showPiCursor)
+        try container.encode(enableOvershootReaction, forKey: .enableOvershootReaction)
+        try container.encode(enableIdleAnimations, forKey: .enableIdleAnimations)
+    }
+}
+
 struct PickySettings: Codable, Equatable {
     var defaultCwd: String
     var worktreeParent: String
@@ -139,6 +187,7 @@ struct PickySettings: Codable, Equatable {
     var azureSTTPreferredLanguage: String
     var appearance: PickyAppearanceMode
     var notifications: PickyNotificationPreferences
+    var cursor: PickyCursorPreferences
     var fontScales: PickyFontScales
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel
     /// Free-form Korean/English instructions appended to every main-agent turn prompt. Lets users
@@ -162,6 +211,7 @@ struct PickySettings: Codable, Equatable {
         azureSTTPreferredLanguage: String = "",
         appearance: PickyAppearanceMode = .dark,
         notifications: PickyNotificationPreferences = .defaults,
+        cursor: PickyCursorPreferences = .defaults,
         fontScales: PickyFontScales = .defaults,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .medium,
         mainAgentExtraInstructions: String = "",
@@ -181,6 +231,7 @@ struct PickySettings: Codable, Equatable {
         self.azureSTTPreferredLanguage = azureSTTPreferredLanguage
         self.appearance = appearance
         self.notifications = notifications
+        self.cursor = cursor
         self.fontScales = fontScales
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
         self.mainAgentExtraInstructions = mainAgentExtraInstructions
@@ -204,6 +255,7 @@ struct PickySettings: Codable, Equatable {
             azureSTTPreferredLanguage: "",
             appearance: .dark,
             notifications: .defaults,
+            cursor: .defaults,
             fontScales: .defaults,
             mainAgentThinkingLevel: .medium,
             mainAgentExtraInstructions: "",
@@ -237,6 +289,7 @@ struct PickySettings: Codable, Equatable {
         case azureSTTPreferredLanguage
         case appearance
         case notifications
+        case cursor
         case fontScales
         case mainAgentThinkingLevel
         case mainAgentExtraInstructions
@@ -261,6 +314,7 @@ struct PickySettings: Codable, Equatable {
         azureSTTPreferredLanguage = try container.decodeIfPresent(String.self, forKey: .azureSTTPreferredLanguage) ?? defaults.azureSTTPreferredLanguage
         appearance = try container.decodeIfPresent(PickyAppearanceMode.self, forKey: .appearance) ?? defaults.appearance
         notifications = try container.decodeIfPresent(PickyNotificationPreferences.self, forKey: .notifications) ?? defaults.notifications
+        cursor = try container.decodeIfPresent(PickyCursorPreferences.self, forKey: .cursor) ?? defaults.cursor
         mainAgentThinkingLevel = try container.decodeIfPresent(PickyMainAgentThinkingLevel.self, forKey: .mainAgentThinkingLevel) ?? defaults.mainAgentThinkingLevel
         mainAgentExtraInstructions = try container.decodeIfPresent(String.self, forKey: .mainAgentExtraInstructions) ?? defaults.mainAgentExtraInstructions
         screenContextScope = try container.decodeIfPresent(PickyScreenContextScope.self, forKey: .screenContextScope) ?? defaults.screenContextScope

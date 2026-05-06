@@ -227,7 +227,7 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
     case "artifactOpened":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, artifactId: event.artifactId };
     case "pointerOverlayRequested":
-      return { eventId: event.id, type: event.type, requestId: event.request.id, screenId: event.request.screenId, screenIndex: event.request.screenIndex };
+      return { eventId: event.id, type: event.type, requestId: event.request.id, screenId: event.request.screenId };
     case "slashCommandsSnapshot":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, commands: event.commands.length };
     case "sessionMessageAppended":

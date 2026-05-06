@@ -384,23 +384,19 @@ describe("SessionSupervisor", () => {
         },
       ],
     };
-    const session = await supervisor.create(pointerContext);
+    await supervisor.create(pointerContext);
     const emitted: unknown[] = [];
     supervisor.on("pointerOverlayRequested", (request) => emitted.push(request));
 
-    const result = await supervisor.requestPointerOverlay({ sourceSessionId: session.id, screenIndex: 1, x: -20, y: 900, label: "target", durationMs: 99_999 });
+    const result = await supervisor.requestPointerOverlay({ x: -20, y: 900, label: "target" });
 
     expect(emitted).toHaveLength(1);
     expect(result.request).toMatchObject({
       contextId: pointerContext.id,
-      sourceSessionId: session.id,
       screenId: "screen1",
-      screenIndex: 1,
       x: 0,
       y: 800,
-      coordinateSpace: "screenshotPixel",
       clamped: true,
-      durationMs: 10_000,
       screenBounds: { x: 100, y: 200, width: 300, height: 400 },
       screenshotSize: { width: 600, height: 800 },
     });
@@ -418,15 +414,14 @@ describe("SessionSupervisor", () => {
     await writeFile(imagePath, jpegHeader);
 
     const supervisor = await makeSupervisor();
-    const session = await supervisor.create({
+    await supervisor.create({
       ...context("point here"),
       screenshots: [{ id: "shot-3", label: "screen 3", path: imagePath, screenId: "screen3", bounds: { x: 0, y: 0, width: 1728, height: 1117 } }],
     });
 
-    const result = await supervisor.requestPointerOverlay({ sourceSessionId: session.id, screenId: "screen3", x: 405, y: 180 });
+    const result = await supervisor.requestPointerOverlay({ screenId: "screen3", x: 405, y: 180 });
 
     expect(result.request).toMatchObject({
-      coordinateSpace: "screenshotPixel",
       x: 405,
       y: 180,
       screenshotSize: { width: 1280, height: 827 },
@@ -434,17 +429,17 @@ describe("SessionSupervisor", () => {
     });
   });
 
-  it("does not append pointer sourceSessionId hints to side-agent handoff prompts", async () => {
+  it("does not append pointer hints to side-agent handoff prompts", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new RecordingRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
 
-    const direct = await supervisor.create(context("direct visual task"));
+    await supervisor.create(context("direct visual task"));
     await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate" });
 
     expect(runtime.creates[0].prompt.text).toContain("## Picky visual pointer overlay");
-    expect(runtime.creates[0].prompt.text).toContain(`sourceSessionId: ${direct.id}`);
+    expect(runtime.creates[0].prompt.text).not.toContain("sourceSessionId");
     expect(runtime.creates[1].prompt.text).toContain("# Picky side-agent task");
     expect(runtime.creates[1].prompt.text).not.toContain("## Picky visual pointer overlay");
     expect(runtime.creates[1].prompt.text).not.toContain("picky_show_pointer");

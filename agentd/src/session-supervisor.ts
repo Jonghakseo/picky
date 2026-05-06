@@ -240,24 +240,22 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async requestPointerOverlay(request: PickyShowPointerRequest): Promise<PickyShowPointerResult> {
-    const context = this.contextForPointerRequest(request);
+    const context = this.contextForPointerRequest();
     if (!context) throw new Error("No captured Picky context is available for pointer overlay validation.");
-    const { screenshot, index } = selectScreenshot(context, request);
+    const screenshot = selectScreenshot(context, request);
     if (!screenshot.bounds) throw new Error(`No display bounds are available for ${screenshot.screenId ?? screenshot.id}.`);
-    const coordinateSpace = request.coordinateSpace ?? "screenshotPixel";
     const screenshotSize = screenshot.screenshotWidthInPixels && screenshot.screenshotHeightInPixels
       ? { width: screenshot.screenshotWidthInPixels, height: screenshot.screenshotHeightInPixels }
       : readImageSize(screenshot.path);
-    if (coordinateSpace === "screenshotPixel" && !screenshotSize) {
+    if (!screenshotSize) {
       throw new Error(`Screenshot pixel coordinates require screenshot dimensions for ${screenshot.screenId ?? screenshot.id}.`);
     }
 
-    const bounded = clampPointerCoordinates(request, coordinateSpace, screenshot.bounds, screenshotSize);
+    const bounded = clampPointerCoordinates(request, screenshotSize);
     const overlayRequest = {
-      ...makePointerOverlayRequest({ ...request, ...bounded, coordinateSpace }, {
+      ...makePointerOverlayRequest({ ...request, ...bounded }, {
         contextId: context.id,
         screenId: screenshot.screenId,
-        screenIndex: index + 1,
         screenBounds: screenshot.bounds,
         screenshotSize,
       }),
@@ -267,9 +265,7 @@ export class SessionSupervisor extends EventEmitter {
     return { request: overlayRequest };
   }
 
-  private contextForPointerRequest(request: PickyShowPointerRequest): PickyContextPacket | undefined {
-    const sourceSessionId = request.sourceSessionId?.trim();
-    if (sourceSessionId) return this.sessionContexts.get(sourceSessionId) ?? this.mainContext;
+  private contextForPointerRequest(): PickyContextPacket | undefined {
     return this.mainContext ?? [...this.sessionContexts.values()].at(-1);
   }
 
@@ -502,7 +498,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.upsert(session);
       logAgentd("session queued", { sessionId: id, titleChars: title.length, cwd: context.cwd });
       this.runtimeEventHandler.resetAssistantDraft(id);
-      const runtimePrompt = options.includePointerToolSessionHint === false ? prompt : withPointerToolSessionHint(prompt, id);
+      const runtimePrompt = options.includePointerToolSessionHint === false ? prompt : withPointerToolSessionHint(prompt);
       const handle = await this.runtime.create(runtimePrompt, { cwd: context.cwd, sessionId: id });
       pendingHandle.resolve(handle);
       await this.attachRuntimeHandle(id, handle);
@@ -1336,35 +1332,24 @@ export class SessionSupervisor extends EventEmitter {
 
 type ScreenshotContext = PickyContextPacket["screenshots"][number];
 
-function selectScreenshot(context: PickyContextPacket, request: PickyShowPointerRequest): { screenshot: ScreenshotContext; index: number } {
+function selectScreenshot(context: PickyContextPacket, request: PickyShowPointerRequest): ScreenshotContext {
   if (context.screenshots.length === 0) throw new Error("No screenshots are available for pointer overlay validation.");
   const requestedScreenId = request.screenId?.trim();
   if (requestedScreenId) {
-    const index = context.screenshots.findIndex((screenshot) => screenshot.screenId === requestedScreenId || screenshot.id === requestedScreenId);
-    if (index < 0) throw new Error(`Unknown pointer overlay screenId: ${requestedScreenId}`);
-    return { screenshot: context.screenshots[index]!, index };
+    const screenshot = context.screenshots.find((candidate) => candidate.screenId === requestedScreenId || candidate.id === requestedScreenId);
+    if (!screenshot) throw new Error(`Unknown pointer overlay screenId: ${requestedScreenId}`);
+    return screenshot;
   }
-  if (Number.isFinite(request.screenIndex)) {
-    const index = Math.max(1, Math.floor(request.screenIndex!)) - 1;
-    const screenshot = context.screenshots[index];
-    if (!screenshot) throw new Error(`Unknown pointer overlay screenIndex: ${request.screenIndex}`);
-    return { screenshot, index };
-  }
-  const cursorIndex = context.screenshots.findIndex((screenshot) => screenshot.isCursorScreen === true || /cursor|primary|focus/i.test(screenshot.label));
-  const index = cursorIndex >= 0 ? cursorIndex : 0;
-  return { screenshot: context.screenshots[index]!, index };
+  const cursorScreenshot = context.screenshots.find((screenshot) => screenshot.isCursorScreen === true || /cursor|primary|focus/i.test(screenshot.label));
+  return cursorScreenshot ?? context.screenshots[0]!;
 }
 
 function clampPointerCoordinates(
   request: PickyShowPointerRequest,
-  coordinateSpace: "screenshotPixel" | "displayPoint",
-  bounds: { width: number; height: number },
-  screenshotSize: { width: number; height: number } | undefined,
+  screenshotSize: { width: number; height: number },
 ): { x: number; y: number; clamped?: boolean } {
-  const width = coordinateSpace === "screenshotPixel" ? screenshotSize!.width : bounds.width;
-  const height = coordinateSpace === "screenshotPixel" ? screenshotSize!.height : bounds.height;
-  const x = clamp(request.x, 0, width);
-  const y = clamp(request.y, 0, height);
+  const x = clamp(request.x, 0, screenshotSize.width);
+  const y = clamp(request.y, 0, screenshotSize.height);
   return { x, y, clamped: x !== request.x || y !== request.y ? true : undefined };
 }
 
@@ -1431,7 +1416,7 @@ function isJpegStartOfFrameMarker(marker: number): boolean {
     && marker !== 0xcc;
 }
 
-function withPointerToolSessionHint(prompt: ReturnType<typeof buildInitialTaskPrompt>, sessionId: string): ReturnType<typeof buildInitialTaskPrompt> {
+function withPointerToolSessionHint(prompt: ReturnType<typeof buildInitialTaskPrompt>): ReturnType<typeof buildInitialTaskPrompt> {
   return {
     ...prompt,
     text: [
@@ -1439,7 +1424,7 @@ function withPointerToolSessionHint(prompt: ReturnType<typeof buildInitialTaskPr
       "",
       "## Picky visual pointer overlay",
       "- Tool available: `picky_show_pointer` shows a click-through visual overlay only; it never moves/clicks/drags/types with the real OS cursor.",
-      `- If you call it from this visible session, pass sourceSessionId: ${sessionId} so Picky validates coordinates against this session's captured screenshots.`,
+      "- Coordinates are always screenshot pixels from the captured screenshot image. Use screenId from the screenshot metadata for secondary displays.",
     ].join("\n"),
   };
 }

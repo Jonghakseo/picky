@@ -18,27 +18,16 @@ enum PickyDetectedHighlightKind: String, Codable, Equatable {
     case hudDockIcon
 }
 
-enum PickyPointerCoordinateSpace: String, Codable, Equatable {
-    /// Pixel coordinates in the captured screenshot image, top-left origin.
-    case screenshotPixel
-    /// Display point coordinates relative to the target display, top-left origin.
-    case displayPoint
-}
-
 struct PickyPointerOverlayRequest: Codable, Equatable, Identifiable {
     let id: String
     let contextId: String?
-    let sourceSessionId: String?
     let screenId: String?
-    let screenIndex: Int?
     let x: Double
     let y: Double
-    let coordinateSpace: PickyPointerCoordinateSpace
     let label: String?
-    let durationMs: Int?
     let clamped: Bool?
     let screenBounds: PickyCGRect
-    let screenshotSize: PickyPointerScreenshotSize?
+    let screenshotSize: PickyPointerScreenshotSize
 }
 
 struct PickyPointerScreenshotSize: Codable, Equatable {
@@ -71,9 +60,7 @@ enum PickyPointerOverlayResolveError: LocalizedError, Equatable {
 }
 
 enum PickyPointerOverlayResolver {
-    static let defaultDuration: TimeInterval = 2.5
-    static let minimumDuration: TimeInterval = 1.0
-    static let maximumDuration: TimeInterval = 10.0
+    static let defaultDuration: TimeInterval = 1.0
 
     static func resolve(_ request: PickyPointerOverlayRequest) throws -> PickyResolvedPointerOverlayTarget {
         guard request.screenBounds.width > 0, request.screenBounds.height > 0 else {
@@ -89,26 +76,15 @@ enum PickyPointerOverlayResolver {
             width: request.screenBounds.width,
             height: request.screenBounds.height
         )
-        let inputWidth: Double
-        let inputHeight: Double
-        switch request.coordinateSpace {
-        case .screenshotPixel:
-            guard let screenshotSize = request.screenshotSize,
-                  screenshotSize.width > 0,
-                  screenshotSize.height > 0 else {
-                throw PickyPointerOverlayResolveError.invalidScreenshotSize
-            }
-            inputWidth = screenshotSize.width
-            inputHeight = screenshotSize.height
-        case .displayPoint:
-            inputWidth = request.screenBounds.width
-            inputHeight = request.screenBounds.height
+        guard request.screenshotSize.width > 0,
+              request.screenshotSize.height > 0 else {
+            throw PickyPointerOverlayResolveError.invalidScreenshotSize
         }
 
-        let clampedX = clamp(request.x, lower: 0, upper: inputWidth)
-        let clampedY = clamp(request.y, lower: 0, upper: inputHeight)
-        let displayX = (clampedX / inputWidth) * request.screenBounds.width
-        let displayYFromTop = (clampedY / inputHeight) * request.screenBounds.height
+        let clampedX = clamp(request.x, lower: 0, upper: request.screenshotSize.width)
+        let clampedY = clamp(request.y, lower: 0, upper: request.screenshotSize.height)
+        let displayX = (clampedX / request.screenshotSize.width) * request.screenBounds.width
+        let displayYFromTop = (clampedY / request.screenshotSize.height) * request.screenBounds.height
         let globalPoint = CGPoint(
             x: request.screenBounds.x + displayX,
             y: request.screenBounds.y + request.screenBounds.height - displayYFromTop
@@ -118,14 +94,8 @@ enum PickyPointerOverlayResolver {
             screenLocation: globalPoint,
             displayFrame: displayFrame,
             bubbleText: normalizedBubbleText(request.label),
-            duration: normalizedDuration(milliseconds: request.durationMs)
+            duration: defaultDuration
         )
-    }
-
-    private static func normalizedDuration(milliseconds: Int?) -> TimeInterval {
-        guard let milliseconds else { return defaultDuration }
-        let seconds = TimeInterval(milliseconds) / 1_000
-        return clamp(seconds, lower: minimumDuration, upper: maximumDuration)
     }
 
     private static func normalizedBubbleText(_ label: String?) -> String? {

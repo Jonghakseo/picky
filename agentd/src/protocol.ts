@@ -187,22 +187,16 @@ export const PickyAgentSessionSchema = z.object({
 export type PickyAgentSessionParsed = z.infer<typeof PickyAgentSessionSchema>;
 export type PickyAgentSession = Omit<PickyAgentSessionParsed, "messages" | "queuedSteers" | "queuedFollowUps" | "steeringMode" | "followUpMode" | "activitySummary"> & Partial<Pick<PickyAgentSessionParsed, "messages" | "queuedSteers" | "queuedFollowUps" | "steeringMode" | "followUpMode" | "activitySummary">>;
 
-export const PointerCoordinateSpaceSchema = z.enum(["screenshotPixel", "displayPoint"]);
-export type PointerCoordinateSpace = z.infer<typeof PointerCoordinateSpaceSchema>;
 export const PickyPointerOverlayRequestSchema = z.object({
   id: z.string().min(1),
   contextId: z.string().optional(),
-  sourceSessionId: z.string().optional(),
   screenId: z.string().optional(),
-  screenIndex: z.number().int().min(1).optional(),
   x: z.number().finite(),
   y: z.number().finite(),
-  coordinateSpace: PointerCoordinateSpaceSchema,
   label: z.string().optional(),
-  durationMs: z.number().int().min(1_000).max(10_000).optional(),
   clamped: z.boolean().optional(),
   screenBounds: BoundsSchema,
-  screenshotSize: z.object({ width: z.number().positive(), height: z.number().positive() }).optional(),
+  screenshotSize: z.object({ width: z.number().positive(), height: z.number().positive() }),
 });
 export type PickyPointerOverlayRequest = z.infer<typeof PickyPointerOverlayRequestSchema>;
 

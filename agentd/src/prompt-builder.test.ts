@@ -90,10 +90,10 @@ describe("neutral prompt builder", () => {
     const prompt = buildMainAgentPrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")));
     const pair = buildMainAgentBootstrapPair();
     expect(pair.user).toContain("call `picky_show_pointer`");
-    expect(pair.user).toContain("coordinateSpace='screenshotPixel'");
+    expect(pair.user).toContain("Coordinates are always screenshot pixels");
     expect(pair.user).toContain("Screenshot coordinates use top-left origin");
     expect(prompt.text).not.toContain("Pointer overlay rules");
-    expect(prompt.text).not.toContain("coordinateSpace='screenshotPixel'");
+    expect(prompt.text).not.toContain("Coordinates are always screenshot pixels");
     expect(prompt.text).not.toContain("[POINT:");
   });
 

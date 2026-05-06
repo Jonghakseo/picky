@@ -11,9 +11,9 @@ const neutralInstruction =
 const pointerOverlayGuidelines = [
   "- When visually indicating a specific button, menu, text field, icon, or screen region would help the user, call `picky_show_pointer` instead of only describing the location.",
   "- Use `picky_show_pointer` for visual indication only. It is click-through and must not be described as moving, clicking, dragging, typing, or controlling the real macOS cursor.",
-  "- Prefer `coordinateSpace='screenshotPixel'` with coordinates from the attached screenshot image. Screenshot coordinates use top-left origin: x increases rightward, y increases downward.",
-  "- Choose `screenId`/`screenIndex` from the screenshot metadata. If omitted, Picky targets the primary cursor/focus screen, so specify the target screen for secondary displays.",
-  "- If the user's wording refers to 'here', 'this', or the mouse position, use the captured cursor metadata when available: displayPoint and screenshotPixel are top-left origin; globalPoint is AppKit bottom-left origin.",
+  "- Coordinates are always screenshot pixels from the attached screenshot image. Screenshot coordinates use top-left origin: x increases rightward, y increases downward.",
+  "- Choose `screenId` from the screenshot metadata. If omitted, Picky targets the primary cursor/focus screen, so specify the target screen for secondary displays.",
+  "- If the user's wording refers to 'here', 'this', or the mouse position, use the captured cursor metadata when available: screenshotPixel is top-left origin; globalPoint is AppKit bottom-left origin.",
 ];
 
 export function buildInitialTaskPrompt(context: PickyContextPacket): BuiltPrompt {

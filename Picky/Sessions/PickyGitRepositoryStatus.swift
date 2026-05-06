@@ -18,6 +18,7 @@ struct PickyGitRepositoryStatus: Equatable {
     let deletions: Int
     let aheadCount: Int
     let behindCount: Int
+    let remoteWebURL: URL?
 
     var repositoryDisplayName: String {
         repositoryName
@@ -67,6 +68,7 @@ struct PickyGitRepositoryStatus: Equatable {
         let statusOutput = git(["status", "--porcelain"], cwd: trimmedCwd) ?? ""
         let diffStats = parseNumstat(git(["diff", "--numstat", "HEAD", "--"], cwd: trimmedCwd, allowsFailure: true) ?? "")
         let position = parseAheadBehind(git(["rev-list", "--left-right", "--count", "@{upstream}...HEAD"], cwd: trimmedCwd, allowsFailure: true) ?? "")
+        let remoteWebURL = remoteWebURLForOrigin(cwd: trimmedCwd)
 
         return PickyGitRepositoryStatus(
             repositoryName: repositoryName,
@@ -75,8 +77,56 @@ struct PickyGitRepositoryStatus: Equatable {
             insertions: diffStats.insertions,
             deletions: diffStats.deletions,
             aheadCount: position.ahead,
-            behindCount: position.behind
+            behindCount: position.behind,
+            remoteWebURL: remoteWebURL
         )
+    }
+
+    private static func remoteWebURLForOrigin(cwd: String) -> URL? {
+        let raw = git(["remote", "get-url", "origin"], cwd: cwd, allowsFailure: true)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !raw.isEmpty else { return nil }
+        return convertRemoteURLToWeb(raw)
+    }
+
+    static func convertRemoteURLToWeb(_ raw: String) -> URL? {
+        var value = raw
+        if value.hasSuffix("/") { value.removeLast() }
+        if value.lowercased().hasSuffix(".git") { value.removeLast(4) }
+        // SSH form: git@host:user/repo or git@host:user/repo.git
+        if let atIndex = value.firstIndex(of: "@"), value.contains(":") {
+            let prefix = value[..<atIndex]
+            // git@ or any user@ — only treat as SSH if the segment after `@` has `:path` form,
+            // not a port number. We detect SSH by `host:path` pattern (path starts with letter).
+            if !prefix.isEmpty {
+                let hostAndPath = value[value.index(after: atIndex)...]
+                if let colonIndex = hostAndPath.firstIndex(of: ":") {
+                    let host = String(hostAndPath[..<colonIndex])
+                    let path = String(hostAndPath[hostAndPath.index(after: colonIndex)...])
+                    let firstPathChar = path.first
+                    if firstPathChar?.isLetter == true || firstPathChar == "_" || firstPathChar == "~" {
+                        return URL(string: "https://\(host)/\(path)")
+                    }
+                }
+            }
+        }
+        // ssh://git@host/path
+        if value.lowercased().hasPrefix("ssh://") {
+            let stripped = value.dropFirst("ssh://".count)
+            let withoutUser = stripped.split(separator: "@", maxSplits: 1).last.map(String.init) ?? String(stripped)
+            return URL(string: "https://\(withoutUser)")
+        }
+        // https://, http://, git://
+        if let url = URL(string: value), let scheme = url.scheme?.lowercased() {
+            if scheme == "https" || scheme == "http" {
+                return url
+            }
+            if scheme == "git" {
+                let stripped = value.dropFirst("git://".count)
+                return URL(string: "https://\(stripped)")
+            }
+        }
+        return nil
     }
 
     static func parseNumstat(_ output: String) -> (insertions: Int, deletions: Int) {

@@ -61,11 +61,7 @@ struct PickyConversationContextLineView: View {
             if let gitStatus {
                 separatorDot
                 HStack(spacing: 4) {
-                    Image(systemName: "point.3.connected.trianglepath.dotted")
-                    Text(gitStatus.branchDisplayName)
-                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    branchLabel(status: gitStatus)
                     if gitStatus.insertions > 0 {
                         gitMetricPill("+\(gitStatus.insertions)", color: DS.Colors.success)
                             .help("Insertions")
@@ -131,6 +127,29 @@ struct PickyConversationContextLineView: View {
         Circle()
             .fill(DS.Colors.textTertiary.opacity(0.55))
             .frame(width: 3, height: 3)
+    }
+
+    @ViewBuilder
+    private func branchLabel(status: PickyGitRepositoryStatus) -> some View {
+        let content = HStack(spacing: 4) {
+            Image(systemName: "point.3.connected.trianglepath.dotted")
+            Text(status.branchDisplayName)
+                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .contentShape(Rectangle())
+
+        if let url = status.remoteWebURL {
+            Link(destination: url) {
+                content
+            }
+            .buttonStyle(.plain)
+            .help("Open \(url.absoluteString)")
+            .pointerCursor()
+        } else {
+            content
+        }
     }
 
     private func linkBadge(_ artifact: PickyArtifact) -> some View {

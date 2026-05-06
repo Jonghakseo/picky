@@ -39,7 +39,7 @@ struct PickyConversationListView: View {
                 }
                 .padding(.vertical, 2)
             }
-            .frame(minHeight: 80, maxHeight: 1050)
+            .frame(minHeight: 80, maxHeight: 780)
             .onAppear {
                 scrollToLatest(proxy: proxy, animated: false)
                 hasAppeared = true

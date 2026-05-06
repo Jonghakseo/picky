@@ -524,7 +524,7 @@ struct PickyConversationComposerView: View {
                 cycleThinkingLevel()
                 return nil
             }
-            if event.charactersIgnoringModifiers?.lowercased() == "p", event.modifierFlags.contains(.control) {
+            if event.keyCode == Self.pKeyCode, event.modifierFlags.contains(.control) {
                 cycleModel(direction: event.modifierFlags.contains(.shift) ? .backward : .forward)
                 return nil
             }
@@ -539,6 +539,7 @@ struct PickyConversationComposerView: View {
     }
 
     private static let tabKeyCode: UInt16 = 48
+    private static let pKeyCode: UInt16 = 35
 
     private func stopIfPossible() {
         guard [.running, .queued, .waiting_for_input].contains(session.status) else { return }

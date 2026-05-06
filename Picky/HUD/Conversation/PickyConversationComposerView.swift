@@ -397,7 +397,16 @@ struct PickyConversationComposerView: View {
 
     @discardableResult
     private func clearQueuedMessages() -> Bool {
-        guard !session.queuedSteers.isEmpty || !session.queuedFollowUps.isEmpty else { return false }
+        let queued = (session.queuedSteers + session.queuedFollowUps).sorted { $0.enqueuedAt < $1.enqueuedAt }
+        guard !queued.isEmpty else { return false }
+        // Move the queued texts back into the composer so option+up acts as 'pop the queue back
+        // into the editor for revision' instead of silently throwing away unsent input. Existing
+        // composer text is preserved by appending the queued payload after it.
+        let merged = queued.map(\.text).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        if !merged.isEmpty {
+            draft = draft.isEmpty ? merged : "\(draft)\n\n\(merged)"
+            isFocused = true
+        }
         Task { try? await viewModel.clearQueue(sessionID: session.id, kind: .all) }
         return true
     }

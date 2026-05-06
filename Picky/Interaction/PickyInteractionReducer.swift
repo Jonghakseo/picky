@@ -228,6 +228,16 @@ enum PickyInteractionReducer {
                 state.lastDisplayMessage = PickyDisplayMessage(id: contextID, contextID: contextID, text: text, source: .suppressed, updatedAt: envelope.occurredAt)
                 record(.stateChanged, "Suppressed side completion quick reply while voice input is active")
             } else if shouldSpeakReply, !hasActiveVoiceInput {
+                // A new speaking output is replacing whatever was there — if the
+                // previous output was itself .speaking, emit an explicit
+                // .stopSpeech(.superseded, oldSpeechID) so the reducer's state
+                // machine, not the effect runner's internal `stopCurrentSpeech`,
+                // owns the handoff. The dispatched .speechFailed for the old
+                // speechID will hit the new .speaking guard and be marked stale
+                // — which is the same outcome as the implicit path, but no
+                // longer depends on runSpeakEffect calling stopCurrentSpeech
+                // before starting the new utterance.
+                preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
                 let speechID = envelope.correlation.speechID ?? envelope.id
                 let displaySource: PickyDisplaySource = replyKind == .sideCompletion ? .sideCompletion : (owner.usesCursorResponsePresentation ? .textReply : .voiceReply)
                 state.output = .speaking(

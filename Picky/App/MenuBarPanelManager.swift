@@ -73,37 +73,27 @@ final class MenuBarPanelManager: NSObject {
         button.target = self
     }
 
-    /// Draws the shared Pi symbol SVG asset as a menu bar template icon so it
-    /// matches the in-app cursor buddy shape.
+    /// Renders the Pi glyph as a menu bar template icon, matching the
+    /// rounded `π` used by the HUD conversation badge.
     private func makePickyMenuBarIcon() -> NSImage {
         let iconSize: CGFloat = 18
-        let image = NSImage(size: NSSize(width: iconSize, height: iconSize))
-        image.lockFocus()
-
-        if let piSymbol = NSImage(named: "PiSymbol") {
-            let symbolSize = iconSize * 0.82
-            let symbolRect = NSRect(
-                x: (iconSize - symbolSize) / 2,
-                y: (iconSize - symbolSize) / 2,
-                width: symbolSize,
-                height: symbolSize
-            )
-            piSymbol.draw(in: symbolRect, from: .zero, operation: .sourceOver, fraction: 1.0)
-        } else {
-            // Fallback for asset-loading failures; the normal path uses the SVG.
+        let image = NSImage(size: NSSize(width: iconSize, height: iconSize), flipped: false) { _ in
+            let baseFont = NSFont.systemFont(ofSize: iconSize * 0.78, weight: .bold)
+            let roundedFont: NSFont = {
+                guard let descriptor = baseFont.fontDescriptor.withDesign(.rounded) else { return baseFont }
+                return NSFont(descriptor: descriptor, size: baseFont.pointSize) ?? baseFont
+            }()
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: iconSize * 0.92, weight: .bold),
+                .font: roundedFont,
                 .foregroundColor: NSColor.black
             ]
-            let fallback = "π" as NSString
-            let textSize = fallback.size(withAttributes: attributes)
-            fallback.draw(
-                at: CGPoint(x: (iconSize - textSize.width) / 2, y: (iconSize - textSize.height) / 2),
-                withAttributes: attributes
-            )
+            let glyph = "π" as NSString
+            let textSize = glyph.size(withAttributes: attributes)
+            let originX = (iconSize - textSize.width) / 2
+            let originY = (iconSize - textSize.height) / 2 - roundedFont.descender / 2
+            glyph.draw(at: CGPoint(x: originX, y: originY), withAttributes: attributes)
+            return true
         }
-
-        image.unlockFocus()
         image.isTemplate = true
         return image
     }

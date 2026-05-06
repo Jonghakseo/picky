@@ -1191,6 +1191,34 @@ describe("SessionSupervisor", () => {
     expect(restored?.logs.some((line) => line.includes("Runtime not attached after daemon restart"))).toBe(false);
   });
 
+  it("reattaches blocked sessions from Pi session files during startup", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "blocked-with-pi-file",
+      title: "Blocked side agent",
+      status: "blocked",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "Previous run was interrupted by daemon restart; send a follow-up or steer message to continue.",
+      logs: ["main-agent handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    });
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+
+    await supervisor.load();
+    const followedUp = await supervisor.followUp("blocked-with-pi-file", "continue after another restart");
+
+    expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/pi-session.jsonl", cwd: "/tmp/project", sessionId: "blocked-with-pi-file" }]);
+    expect(runtime.handle?.followUps[0].text).toContain("continue after another restart");
+    expect(followedUp.status).toBe("running");
+    expect(followedUp.logs).toContain("runtime reattached from pi session: /tmp/pi-session.jsonl");
+  });
+
   it("clears stale extension UI requests on reattach because the previous bridge promise is gone", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);
@@ -2283,6 +2311,47 @@ describe("SessionSupervisor", () => {
 
     await supervisor.syncTerminalSession("terminal-sync-session", "a1");
     expect(supervisor.get("terminal-sync-session")?.messages).toHaveLength(4);
+  });
+
+  it("marks a cancelled session completed when terminal sync imports a recovery answer", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-cancelled-sync-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    await writeFile(piSessionFile, [
+      JSON.stringify({ type: "session", version: 3, id: "pi-session", timestamp: "2026-05-01T00:00:00.000Z", cwd: "/tmp/project" }),
+      JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-05-01T00:00:01.000Z", message: { role: "user", content: "old prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-05-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "old answer" }], timestamp: 0, stopReason: "stop" } }),
+      JSON.stringify({ type: "message", id: "u2", parentId: "a1", timestamp: "2026-05-01T00:00:03.000Z", message: { role: "user", content: "terminal recovery request", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a2", parentId: "u2", timestamp: "2026-05-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: "terminal recovery answer" }], timestamp: 0, stopReason: "stop" } }),
+    ].join("\n"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "cancelled-terminal-sync-session",
+      title: "Cancelled terminal sync",
+      status: "cancelled",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "Cancelled by user",
+      finalAnswer: undefined,
+      logs: [`pi session: ${piSessionFile}`],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [
+        { id: "msg-existing-user", kind: "user_text", createdAt: "2026-05-01T00:00:01.000Z", originatedBy: "user", text: "old prompt" },
+        { id: "msg-system-cancelled", kind: "system", createdAt: "2026-05-01T00:00:02.500Z", text: "Cancelled by user" },
+      ],
+    });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store);
+    await supervisor.load();
+
+    await supervisor.syncTerminalSession("cancelled-terminal-sync-session", "a1");
+
+    const synced = supervisor.get("cancelled-terminal-sync-session");
+    expect(synced?.status).toBe("completed");
+    expect(synced?.lastSummary).toBe("terminal recovery answer");
+    expect(synced?.finalAnswer).toBe("terminal recovery answer");
+    expect(synced?.messages?.map((message) => message.text).filter(Boolean)).toContain("terminal recovery request");
   });
 
   it("preserves persisted messages on daemon restart", async () => {

@@ -156,6 +156,8 @@ export class SessionSupervisor extends EventEmitter {
           this.sessions.set(restored.id, restored);
           await this.store.save(restored);
         }
+      } else if (shouldReattachBlockedSessionOnStartup(session)) {
+        await this.tryResumeRuntimeHandle(session);
       }
     }
   }
@@ -853,7 +855,11 @@ export class SessionSupervisor extends EventEmitter {
       ...(latestAssistantText ? { lastSummary: latestAssistantText, finalAnswer: latestAssistantText } : {}),
       ...(latestUserText ? { logs: appendUniqueLog(this.mustGet(sessionId).logs, `${FOLLOWUP_PREFIX}${latestUserText}`) } : {}),
     };
-    if (latestAssistantText && !["failed", "cancelled"].includes(this.mustGet(sessionId).status)) patch.status = "completed";
+    // A terminal overlay resume can be used as a recovery path for terminal Picky states
+    // (notably `cancelled`). If Pi wrote a new assistant answer after the baseline, the
+    // on-disk Pi transcript is now the source of truth and the HUD card should leave the
+    // stale terminal status instead of continuing to look cancelled/failed.
+    if (latestAssistantText) patch.status = "completed";
     await this.patch(sessionId, patch);
     logAgentd("terminal session synced", { sessionId, importedMessages: messagesToImport.length, activeLastMessageId: result.activeLastMessageId });
     return this.mustGet(sessionId);
@@ -1500,6 +1506,10 @@ function isNonSkillSlashCommand(text: string): boolean {
 
 function piSessionFilePathForSession(session: PickyAgentSession): string | undefined {
   return normalizeOptionalString(session.piSessionFilePath) ?? piSessionFilePathFromLogs(session.logs);
+}
+
+function shouldReattachBlockedSessionOnStartup(session: PickyAgentSession): boolean {
+  return session.status === "blocked" && session.archived !== true && Boolean(piSessionFilePathForSession(session));
 }
 
 function withPiSessionFileFromLogs(session: PickyAgentSession): PickyAgentSession {

@@ -22,7 +22,7 @@ class FakeSession extends EventEmitter {
     model: { api: "anthropic-messages", provider: "anthropic", id: "claude-fake" },
   };
   appendedMessages: Array<Record<string, unknown>> = [];
-  extensionCommands: Array<{ invocationName: string; description?: string }> = [];
+  extensionCommands: Array<{ invocationName: string; description?: string; sourceInfo?: { baseDir?: string; path?: string; source?: string; scope?: string; origin?: string } }> = [];
   promptTemplates: Array<{ name: string; description: string }> = [];
   skills: Array<{ name: string; description: string }> = [];
   extensionRunner = {

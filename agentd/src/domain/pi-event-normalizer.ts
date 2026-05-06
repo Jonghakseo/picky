@@ -94,7 +94,9 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
   if (type === "turn_end") {
     const message = asRecord(piEvent.message);
     const assistantRun = assistantRunMetadata(message, context);
-    const stopReasonStatus = terminalStatusFromStopReason(stringValue(message.stopReason));
+    const stopReason = stringValue(message.stopReason);
+    if (stopReason === "error") return { kind: "none" };
+    const stopReasonStatus = terminalStatusFromStopReason(stopReason);
     if (stopReasonStatus) return withFinalAnswer(stopReasonStatus, assistantTextFromMessage(message), assistantRun);
     if (!hasAssistantText(message) || hasAssistantToolCalls(message) || hasToolResults(piEvent.toolResults)) return { kind: "none" };
     return withFinalAnswer(completionStatusFromContext(context), assistantTextFromMessage(message), assistantRun);

@@ -113,6 +113,8 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private queuedSteeringCount = 0;
   private queuedFollowUpCount = 0;
   private pendingExtensionUiRequestIds = new Set<string>();
+  private pendingTerminalError?: Extract<RuntimeEvent, { type: "status" }>;
+  private pendingTerminalErrorTimer?: ReturnType<typeof setTimeout>;
   // Cache of extension baseDir -> whether any of its source files use ctx.ui.custom. Picky's
   // ExtensionUiBridge throws on custom() so commands from those extensions will always fail in
   // Picky; hiding them from autocomplete keeps users from invoking known-broken slash commands.
@@ -354,6 +356,9 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       return { type: "queue_update", steering, followUp };
     }
 
+    const recoveryEvent = this.runtimeEventFromRecoveryPiEvent(record);
+    if (recoveryEvent) return recoveryEvent;
+
     const runtimeEvent = runtimeEventFromPiEvent(event, {
       hasQueuedSteering: this.queuedSteeringCount > 0,
       hasQueuedFollowUp: this.queuedFollowUpCount > 0,
@@ -367,7 +372,63 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       if (requestId) this.pendingExtensionUiRequestIds.add(requestId);
     }
 
+    if (runtimeEvent?.type === "status") {
+      if (runtimeEvent.status === "failed" && record.type === "agent_end" && lastAssistantStopReason(record.messages) === "error") {
+        this.deferTerminalError(runtimeEvent);
+        return undefined;
+      }
+      this.cancelDeferredTerminalError();
+    }
+
     return runtimeEvent;
+  }
+
+  private runtimeEventFromRecoveryPiEvent(event: Record<string, unknown>): RuntimeEvent | undefined {
+    if (event.type === "auto_retry_start") {
+      this.cancelDeferredTerminalError();
+      const attempt = numberValue(event.attempt);
+      const maxAttempts = numberValue(event.maxAttempts);
+      const summary = attempt && maxAttempts ? `Retrying after transient Pi error (${attempt}/${maxAttempts})…` : "Retrying after transient Pi error…";
+      return { type: "status", status: "running", summary };
+    }
+    if (event.type === "auto_retry_end") {
+      this.cancelDeferredTerminalError();
+      if (event.success === false) return { type: "status", status: "failed", summary: stringValue(event.finalError) ?? "Pi runtime retry failed" };
+      return undefined;
+    }
+    if (event.type === "compaction_start") {
+      this.cancelDeferredTerminalError();
+      const reason = stringValue(event.reason);
+      return { type: "status", status: "running", summary: reason === "overflow" ? "Compacting after context overflow…" : "Compacting session…" };
+    }
+    if (event.type === "compaction_end") {
+      if (event.willRetry === true) {
+        this.cancelDeferredTerminalError();
+        return { type: "status", status: "running", summary: "Compaction completed; retrying…" };
+      }
+      if (stringValue(event.reason) === "overflow" && stringValue(event.errorMessage)) {
+        this.cancelDeferredTerminalError();
+        return { type: "status", status: "failed", summary: stringValue(event.errorMessage) };
+      }
+    }
+    return undefined;
+  }
+
+  private deferTerminalError(event: Extract<RuntimeEvent, { type: "status" }>): void {
+    this.cancelDeferredTerminalError();
+    this.pendingTerminalError = event;
+    this.pendingTerminalErrorTimer = setTimeout(() => {
+      const pending = this.pendingTerminalError;
+      this.pendingTerminalError = undefined;
+      this.pendingTerminalErrorTimer = undefined;
+      if (pending) this.emit(pending);
+    }, 0);
+  }
+
+  private cancelDeferredTerminalError(): void {
+    if (this.pendingTerminalErrorTimer) clearTimeout(this.pendingTerminalErrorTimer);
+    this.pendingTerminalError = undefined;
+    this.pendingTerminalErrorTimer = undefined;
   }
 
   private async promptWithOptions(prompt: BuiltPrompt, streamingBehavior?: "steer" | "followUp"): Promise<boolean> {
@@ -556,6 +617,19 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
+function lastAssistantStopReason(messages: unknown): string | undefined {
+  if (!Array.isArray(messages)) return undefined;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = asRecord(messages[index]);
+    if (message.role === "assistant") return stringValue(message.stopReason);
+  }
+  return undefined;
 }
 
 function currentModelId(session: AgentSession): string | undefined {

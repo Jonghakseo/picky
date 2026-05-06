@@ -58,7 +58,7 @@ describe("normalizePiEvent", () => {
     })).toEqual({ kind: "none" });
   });
 
-  it("maps turn stop reasons to terminal failure and cancellation", () => {
+  it("maps turn stop reasons to cancellation but waits for agent_end before final failure", () => {
     expect(normalizePiEvent({
       type: "turn_end",
       message: { role: "assistant", stopReason: "aborted", content: [{ type: "text", text: "중단됨" }] },
@@ -69,6 +69,11 @@ describe("normalizePiEvent", () => {
       type: "turn_end",
       message: { role: "assistant", stopReason: "error", content: [{ type: "text", text: "오류" }] },
       toolResults: [],
+    })).toEqual({ kind: "none" });
+
+    expect(normalizePiEvent({
+      type: "agent_end",
+      messages: [{ role: "assistant", stopReason: "error", content: [{ type: "text", text: "오류" }] }],
     })).toMatchObject({ kind: "status", status: "failed", finalAnswer: "오류" });
   });
 

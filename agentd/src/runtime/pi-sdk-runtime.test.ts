@@ -318,6 +318,75 @@ describe("PiSdkRuntime", () => {
     expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Completed", finalAnswer: "최종 답변", assistantRun: { model: "claude-fake" } });
   });
 
+  it("defers agent_end errors long enough for Pi auto-retry to recover", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-retry" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "error", errorMessage: "network error", content: [] }, toolResults: [] });
+    fakeSession.emit("event", { type: "agent_end", messages: [{ role: "assistant", stopReason: "error", errorMessage: "network error", content: [] }] });
+    fakeSession.emit("event", { type: "auto_retry_start", attempt: 1, maxAttempts: 3, delayMs: 1, errorMessage: "network error" });
+    await delay(5);
+    fakeSession.emit("event", { type: "auto_retry_end", success: true, attempt: 1 });
+    fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "복구 완료" }] }, toolResults: [] });
+
+    expect(statusEvents(events).some((event) => event.status === "failed")).toBe(false);
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Retrying after transient Pi error (1/3)…" });
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Completed", finalAnswer: "복구 완료", assistantRun: { model: "claude-fake" } });
+  });
+
+  it("defers context overflow errors long enough for Pi compaction retry to recover", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-compaction-retry" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded", content: [] }, toolResults: [] });
+    fakeSession.emit("event", { type: "agent_end", messages: [{ role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded", content: [] }] });
+    fakeSession.emit("event", { type: "compaction_start", reason: "overflow" });
+    fakeSession.emit("event", { type: "compaction_end", reason: "overflow", willRetry: true, aborted: false, result: { summary: "요약" } });
+    await delay(5);
+    fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "컴팩션 후 완료" }] }, toolResults: [] });
+
+    expect(statusEvents(events).some((event) => event.status === "failed")).toBe(false);
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Compacting after context overflow…" });
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Compaction completed; retrying…" });
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Completed", finalAnswer: "컴팩션 후 완료", assistantRun: { model: "claude-fake" } });
+  });
+
+  it("reports final failure when an agent_end error has no retry or compaction recovery", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-final-error" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "error", errorMessage: "fatal provider error", content: [] }, toolResults: [] });
+    fakeSession.emit("event", { type: "agent_end", messages: [{ role: "assistant", stopReason: "error", errorMessage: "fatal provider error", content: [] }] });
+    expect(statusEvents(events).some((event) => event.status === "failed")).toBe(false);
+
+    await delay(5);
+
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "failed", summary: "Agent error", assistantRun: { model: "claude-fake" } });
+  });
+
+  it("reports final failure when overflow compaction cannot recover", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-compaction-failed" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    fakeSession.emit("event", { type: "agent_end", messages: [{ role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded", content: [] }] });
+    fakeSession.emit("event", { type: "compaction_start", reason: "overflow" });
+    fakeSession.emit("event", { type: "compaction_end", reason: "overflow", willRetry: false, errorMessage: "Context overflow recovery failed" });
+
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "failed", summary: "Context overflow recovery failed" });
+  });
+
   it("keeps final turn_end running while Pi reports queued steering or follow-up", async () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);

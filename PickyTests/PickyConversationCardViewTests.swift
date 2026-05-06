@@ -299,11 +299,11 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationComposerView.upArrowKeyAction(for: [.option, .shift]) == .clearQueue)
     }
 
-    @Test func composerEditorHeightStartsCompactAndCapsGrowth() {
-        #expect(PickyConversationComposerView.editorHeight(for: "") == 24)
-        #expect(PickyConversationComposerView.editorHeight(for: "one line") == 24)
-        #expect(PickyConversationComposerView.editorHeight(for: "one\ntwo") == 40)
-        #expect(PickyConversationComposerView.editorHeight(for: "one\ntwo\nthree\nfour") == 48)
+    @Test func composerEditorHeightStartsRoomyAndCapsGrowth() {
+        #expect(PickyConversationComposerView.editorHeight(for: "") == 32)
+        #expect(PickyConversationComposerView.editorHeight(for: "one line") == 32)
+        #expect(PickyConversationComposerView.editorHeight(for: "one\ntwo") == 48)
+        #expect(PickyConversationComposerView.editorHeight(for: "one\ntwo\nthree\nfour") == 72)
     }
 
     @Test func composerDroppedFilePathsAppendAsPlainDraftText() {

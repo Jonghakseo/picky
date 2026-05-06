@@ -66,8 +66,8 @@ struct PickyConversationComposerView: View {
             composerEditor
             sendButton
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .background(composerBackground)
@@ -277,7 +277,7 @@ struct PickyConversationComposerView: View {
 
     static func editorHeight(for text: String) -> CGFloat {
         let lineCount = text.split(separator: "\n", omittingEmptySubsequences: false).count
-        return min(48, max(24, CGFloat(lineCount) * 16 + 8))
+        return min(72, max(32, CGFloat(lineCount) * 18 + 12))
     }
 
     private var sendButton: some View {

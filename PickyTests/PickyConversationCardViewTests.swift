@@ -633,6 +633,25 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.showsActivitySummary)
     }
 
+    @Test func runningSessionShowsLiveActivityWhenOnlyPreviousTurnHasActivitySnapshot() {
+        let session = makeConversationSession(
+            status: .running,
+            messages: [
+                message("u1", kind: .userText, text: "first"),
+                message("a1-act", kind: .agentActivity, activitySnapshot: PickyActivitySummary(edit: 1, bash: 1, thinking: 1, other: 0)),
+                message("a1", kind: .agentText, text: "done"),
+                message("u2", kind: .userText, text: "continue"),
+                message("a2-thinking", kind: .agentThinking, text: "Working…")
+            ],
+            activitySummary: PickyActivitySummary(edit: 0, bash: 3, thinking: 2, other: 0)
+        )
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+
+        #expect(snapshot.activitySummaryCount == 2)
+        #expect(snapshot.showsActivitySummary)
+    }
+
     @Test func completedSessionDoesNotAutoInsertLifetimeActivitySummary() {
         let session = makeConversationSession(
             status: .completed,

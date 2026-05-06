@@ -205,7 +205,7 @@ struct PickyConversationListView: View {
     }
 
     private var hasVisibleActivitySnapshot: Bool {
-        session.messages.contains { message in
+        visibleMessages.contains { message in
             guard message.kind == .agentActivity, let snapshot = message.activitySnapshot else { return false }
             return !snapshot.visibleToolCallItems.isEmpty
         }

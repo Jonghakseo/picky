@@ -58,7 +58,7 @@ struct PickyScreenshotContext: Codable, Equatable, Identifiable {
     let isCursorScreen: Bool?
     /// Physical cursor position at capture time, populated only for the cursor
     /// screen. displayPoint and screenshotPixel use top-left origin to match
-    /// picky_show_pointer coordinate conventions.
+    /// Picky pointer tag coordinate conventions.
     let cursor: PickyCursorContext?
 
     init(

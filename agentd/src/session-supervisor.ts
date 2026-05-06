@@ -10,6 +10,7 @@ import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-m
 import { buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
 import type { EventEnvelope, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
+import { parsePointerTags, type ParsedPointerTags } from "./application/pointer-tag-parser.js";
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
@@ -32,6 +33,7 @@ export interface SessionSupervisorOptions {
 
 type QuickReplyEvent = Extract<EventEnvelope, { type: "quickReply" }>;
 type QuickReplyMetadata = Pick<QuickReplyEvent, "originSource" | "replyKind" | "sessionId" | "inputId">;
+const POINTER_OVERLAY_SEQUENCE_INTERVAL_MS = 1_000;
 
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
@@ -244,31 +246,30 @@ export class SessionSupervisor extends EventEmitter {
   async requestPointerOverlay(request: PickyShowPointerRequest): Promise<PickyShowPointerResult> {
     const context = this.contextForPointerRequest();
     if (!context) throw new Error("No captured Picky context is available for pointer overlay validation.");
-    const screenshot = selectScreenshot(context, request);
-    if (!screenshot.bounds) throw new Error(`No display bounds are available for ${screenshot.screenId ?? screenshot.id}.`);
-    const screenshotSize = screenshot.screenshotWidthInPixels && screenshot.screenshotHeightInPixels
-      ? { width: screenshot.screenshotWidthInPixels, height: screenshot.screenshotHeightInPixels }
-      : readImageSize(screenshot.path);
-    if (!screenshotSize) {
-      throw new Error(`Screenshot pixel coordinates require screenshot dimensions for ${screenshot.screenId ?? screenshot.id}.`);
-    }
-
-    const bounded = clampPointerCoordinates(request, screenshotSize);
-    const overlayRequest = {
-      ...makePointerOverlayRequest({ ...request, ...bounded }, {
-        contextId: context.id,
-        screenId: screenshot.screenId,
-        screenBounds: screenshot.bounds,
-        screenshotSize,
-      }),
-      ...(bounded.clamped ? { clamped: true } : {}),
-    };
+    const overlayRequest = makePointerOverlayRequestForContext(context, request);
     this.emit("pointerOverlayRequested", overlayRequest);
     return { request: overlayRequest };
   }
 
   private contextForPointerRequest(): PickyContextPacket | undefined {
     return this.mainContext ?? [...this.sessionContexts.values()].at(-1);
+  }
+
+  private schedulePointerOverlaysFromTags(parsed: ParsedPointerTags, context: PickyContextPacket | undefined): void {
+    if (!context || parsed.points.length === 0) return;
+    const requests = parsed.points.flatMap((point, index) => {
+      try {
+        return [{ index, request: makePointerOverlayRequestForContext(context, point) }];
+      } catch (error) {
+        logAgentd("main pointer tag ignored", { contextId: context.id, error: error instanceof Error ? error.message : String(error) });
+        return [];
+      }
+    });
+    for (const item of requests) {
+      setTimeout(() => {
+        this.emit("pointerOverlayRequested", item.request);
+      }, item.index * POINTER_OVERLAY_SEQUENCE_INTERVAL_MS);
+    }
   }
 
   async prewarmMainAgent(cwd = process.cwd()): Promise<void> {
@@ -391,7 +392,7 @@ export class SessionSupervisor extends EventEmitter {
     const cwd = normalizeOptionalString(handoff.cwd) ?? context.cwd;
     const handoffContext = cwd ? { ...context, cwd } : context;
     logAgentd("side session create requested", { contextId: context.id, titleChars: handoff.title.length, instructionChars: handoff.instructions.length, cwd: handoffContext.cwd });
-    const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildSideAgentPrompt(handoffContext, handoff), { notifyMainOnCompletion: true, includePointerToolSessionHint: false });
+    const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildSideAgentPrompt(handoffContext, handoff), { notifyMainOnCompletion: true });
     this.sideSessionIds.add(session.id);
     await this.appendLog(session.id, `${HANDOFF_PREFIX}${handoff.instructions}`);
     if (handoffContext.cwd) await this.appendLog(session.id, `main-agent handoff cwd: ${handoffContext.cwd}`);
@@ -568,7 +569,7 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(id);
   }
 
-  private async createVisibleSession(context: PickyContextPacket, title: string, prompt = buildInitialTaskPrompt(context), options: { notifyMainOnCompletion?: boolean; includePointerToolSessionHint?: boolean } = {}): Promise<PickyAgentSession> {
+  private async createVisibleSession(context: PickyContextPacket, title: string, prompt = buildInitialTaskPrompt(context), options: { notifyMainOnCompletion?: boolean } = {}): Promise<PickyAgentSession> {
     const now = new Date().toISOString();
     const id = `session-${randomUUID()}`;
     const session: PickyAgentSession = {
@@ -592,8 +593,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.upsert(session);
       logAgentd("session queued", { sessionId: id, titleChars: title.length, cwd: context.cwd });
       this.runtimeEventHandler.resetAssistantDraft(id);
-      const runtimePrompt = options.includePointerToolSessionHint === false ? prompt : withPointerToolSessionHint(prompt);
-      const handle = await this.runtime.create(runtimePrompt, { cwd: context.cwd, sessionId: id });
+      const handle = await this.runtime.create(prompt, { cwd: context.cwd, sessionId: id });
       pendingHandle.resolve(handle);
       await this.attachRuntimeHandle(id, handle);
       logAgentd("runtime attached", { sessionId: id });
@@ -802,17 +802,23 @@ export class SessionSupervisor extends EventEmitter {
           return;
         }
         logAgentd("main status", { status: event.status, contextId: this.mainReplyContextId, draftChars: draftSnapshot.length });
-        const reply = cleanFinalAnswer(draftSnapshot) ?? (event.status === "failed" ? event.summary : undefined);
+        const rawReply = cleanFinalAnswer(draftSnapshot) ?? (event.status === "failed" ? event.summary : undefined);
         if (this.suppressNextMainReply) {
           this.suppressNextMainReply = false;
-        } else if (reply) {
-          logAgentd("main quick reply", { contextId: this.mainReplyContextId, textChars: reply.length });
-          await this.appendMainMessage("assistant", reply);
-          this.emitQuickReply(this.mainReplyContextId, reply, {
-            originSource: this.mainReplyContextId === this.mainContext?.id ? quickReplyOriginFromContextSource(this.mainContext.source) : "system",
-            replyKind: this.sideSessionIds.has(this.mainReplyContextId) ? "sideCompletion" : "main",
-            sessionId: this.sideSessionIds.has(this.mainReplyContextId) ? this.mainReplyContextId : undefined,
-          });
+        } else if (rawReply) {
+          const pointerContext = this.mainContext;
+          const parsedPointerTags = event.status === "completed" ? parsePointerTags(rawReply) : { text: rawReply, points: [], explicitNone: false };
+          const reply = cleanFinalAnswer(parsedPointerTags.text);
+          if (reply) {
+            logAgentd("main quick reply", { contextId: this.mainReplyContextId, textChars: reply.length, pointerTags: parsedPointerTags.points.length });
+            await this.appendMainMessage("assistant", reply);
+            this.emitQuickReply(this.mainReplyContextId, reply, {
+              originSource: this.mainReplyContextId === this.mainContext?.id ? quickReplyOriginFromContextSource(this.mainContext.source) : "system",
+              replyKind: this.sideSessionIds.has(this.mainReplyContextId) ? "sideCompletion" : "main",
+              sessionId: this.sideSessionIds.has(this.mainReplyContextId) ? this.mainReplyContextId : undefined,
+            });
+          }
+          this.schedulePointerOverlaysFromTags(parsedPointerTags, pointerContext);
         }
         this.scheduleSideCompletionDrain();
       }
@@ -1426,6 +1432,28 @@ export class SessionSupervisor extends EventEmitter {
 
 type ScreenshotContext = PickyContextPacket["screenshots"][number];
 
+function makePointerOverlayRequestForContext(context: PickyContextPacket, request: PickyShowPointerRequest): PickyShowPointerResult["request"] {
+  const screenshot = selectScreenshot(context, request);
+  if (!screenshot.bounds) throw new Error(`No display bounds are available for ${screenshot.screenId ?? screenshot.id}.`);
+  const screenshotSize = screenshot.screenshotWidthInPixels && screenshot.screenshotHeightInPixels
+    ? { width: screenshot.screenshotWidthInPixels, height: screenshot.screenshotHeightInPixels }
+    : readImageSize(screenshot.path);
+  if (!screenshotSize) {
+    throw new Error(`Screenshot pixel coordinates require screenshot dimensions for ${screenshot.screenId ?? screenshot.id}.`);
+  }
+
+  const bounded = clampPointerCoordinates(request, screenshotSize);
+  return {
+    ...makePointerOverlayRequest({ ...request, ...bounded }, {
+      contextId: context.id,
+      screenId: screenshot.screenId,
+      screenBounds: screenshot.bounds,
+      screenshotSize,
+    }),
+    ...(bounded.clamped ? { clamped: true } : {}),
+  };
+}
+
 function selectScreenshot(context: PickyContextPacket, request: PickyShowPointerRequest): ScreenshotContext {
   if (context.screenshots.length === 0) throw new Error("No screenshots are available for pointer overlay validation.");
   const requestedScreenId = request.screenId?.trim();
@@ -1508,19 +1536,6 @@ function isJpegStartOfFrameMarker(marker: number): boolean {
     && marker !== 0xc4
     && marker !== 0xc8
     && marker !== 0xcc;
-}
-
-function withPointerToolSessionHint(prompt: ReturnType<typeof buildInitialTaskPrompt>): ReturnType<typeof buildInitialTaskPrompt> {
-  return {
-    ...prompt,
-    text: [
-      prompt.text,
-      "",
-      "## Picky visual pointer overlay",
-      "- Tool available: `picky_show_pointer` shows a click-through visual overlay only; it never moves/clicks/drags/types with the real OS cursor.",
-      "- Coordinates are always screenshot pixels from the captured screenshot image. Use screenId from the screenshot metadata for secondary displays.",
-    ].join("\n"),
-  };
 }
 
 function normalizeOptionalString(value: string | undefined): string | undefined {

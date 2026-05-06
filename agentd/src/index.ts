@@ -7,8 +7,6 @@ import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyHandoffTool, createPickySideSessionsTool, createPickySideSteerTool } from "./application/handoff-tool.js";
 import { createPickyAskUserQuestionTool } from "./application/ask-user-question-tool.js";
-import { createPickyShowPointerTool } from "./application/pointer-tool.js";
-
 import { removeConnectionInfo, writeConnectionInfo } from "./connection-info-store.js";
 import { PROTOCOL_VERSION, ThinkingLevelSchema } from "./protocol.js";
 import { logAgentd } from "./local-log.js";
@@ -27,9 +25,8 @@ if (!token) {
 const useMockRuntime = process.env.PICKY_AGENTD_RUNTIME === "mock";
 logAgentd("startup", { port, runtime: useMockRuntime ? "mock" : "pi", appSupportDir, defaultCwd, mainAgentThinkingLevel });
 let supervisor: SessionSupervisor;
-const pointerTool = createPickyShowPointerTool(async (request) => supervisor.requestPointerOverlay(request));
 const askUserQuestionTool = createPickyAskUserQuestionTool();
-// pointer/handoff/side-session tools are reserved for the always-on main agent.
+// handoff/side-session tools are reserved for the always-on main agent.
 const runtime = useMockRuntime
   ? new MockRuntime()
   : new PiSdkRuntime({
@@ -45,7 +42,6 @@ const mainRuntime = useMockRuntime
       // calls eagerly so the LLM gets a usable error and can fall back to picky_handoff.
       disableBlockingDialogs: true,
       customTools: [
-        pointerTool,
         createPickyHandoffTool(async (request) => {
           const context = supervisor.currentMainContext();
           if (!context) throw new Error("No active Picky main-agent context to hand off.");

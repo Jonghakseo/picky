@@ -536,7 +536,7 @@ describe("SessionSupervisor", () => {
     });
   });
 
-  it("does not append pointer hints to side-agent handoff prompts", async () => {
+  it("does not append pointer hints to visible side-agent prompts", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new RecordingRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
@@ -545,7 +545,8 @@ describe("SessionSupervisor", () => {
     await supervisor.create(context("direct visual task"));
     await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate" });
 
-    expect(runtime.creates[0].prompt.text).toContain("## Picky visual pointer overlay");
+    expect(runtime.creates[0].prompt.text).not.toContain("## Picky visual pointer overlay");
+    expect(runtime.creates[0].prompt.text).not.toContain("picky_show_pointer");
     expect(runtime.creates[0].prompt.text).not.toContain("sourceSessionId");
     expect(runtime.creates[1].prompt.text).toContain("# Picky side-agent task");
     expect(runtime.creates[1].prompt.text).not.toContain("## Picky visual pointer overlay");
@@ -1597,6 +1598,76 @@ describe("SessionSupervisor", () => {
       { role: "user", text: "안녕" },
       { role: "assistant", text: "안녕하세요. 무엇을 도와드릴까요?" },
     ]);
+  });
+
+  it("strips main-agent point tags and emits pointer overlays sequentially", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const pointerContext: PickyContextPacket = {
+      ...context("어디 눌러?"),
+      screenshots: [
+        {
+          id: "shot-1",
+          label: "screen 1 — cursor is on this screen",
+          path: "/tmp/shot-1.jpg",
+          screenId: "screen1",
+          bounds: { x: 0, y: 0, width: 300, height: 400 },
+          screenshotWidthInPixels: 600,
+          screenshotHeightInPixels: 800,
+          isCursorScreen: true,
+        },
+        {
+          id: "shot-2",
+          label: "screen 2 — secondary screen",
+          path: "/tmp/shot-2.jpg",
+          screenId: "screen2",
+          bounds: { x: 300, y: 0, width: 300, height: 400 },
+          screenshotWidthInPixels: 600,
+          screenshotHeightInPixels: 800,
+        },
+      ],
+    };
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const replies: Array<{ contextId: string; text: string }> = [];
+    const overlays: Array<{ screenId?: string; x: number; y: number; label?: string }> = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+    supervisor.on("pointerOverlayRequested", (request) => overlays.push({ screenId: request.screenId, x: request.x, y: request.y, label: request.label }));
+
+    await supervisor.route(pointerContext);
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "먼저 검색창, 그다음 저장 버튼이에요. [POINT:100,200:검색창:screen1] [POINT:700,900:저장:screen2]" });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(replies).toEqual([{ contextId: "context-어디 눌러?", text: "먼저 검색창, 그다음 저장 버튼이에요." }]);
+    expect(supervisor.listMainMessages().at(-1)).toMatchObject({ role: "assistant", text: "먼저 검색창, 그다음 저장 버튼이에요." });
+    expect(overlays).toEqual([{ screenId: "screen1", x: 100, y: 200, label: "검색창" }]);
+
+    await delay(1_050);
+
+    expect(overlays).toEqual([
+      { screenId: "screen1", x: 100, y: 200, label: "검색창" },
+      { screenId: "screen2", x: 600, y: 800, label: "저장" },
+    ]);
+  });
+
+  it("strips POINT none without emitting pointer overlays", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const replies: Array<{ contextId: string; text: string }> = [];
+    const overlays: unknown[] = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+    supervisor.on("pointerOverlayRequested", (request) => overlays.push(request));
+
+    await supervisor.route(context("HTML이 뭐야?"));
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "HTML은 웹페이지의 구조를 만드는 언어예요. [POINT:none]" });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(replies).toEqual([{ contextId: "context-HTML이 뭐야?", text: "HTML은 웹페이지의 구조를 만드는 언어예요." }]);
+    expect(overlays).toEqual([]);
   });
 
   // Pi emits both `turn_end` and `agent_end` for a single agent run, both of which

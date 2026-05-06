@@ -39,15 +39,15 @@ struct PickyPendingBubbleView: View {
     var body: some View {
         HStack {
             Spacer(minLength: 48)
-            VStack(alignment: .trailing, spacing: 5) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(PickyQueuedInputText.displayText(from: queueItem.text))
                     .font(.system(size: 12))
                     .foregroundColor(DS.Colors.textPrimary)
+                    .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .frame(maxWidth: PickyHUDDockLayout.detailWidth * 0.85, alignment: .trailing)
             .background(
                 UnevenRoundedRectangle(
                     topLeadingRadius: 12,
@@ -68,6 +68,7 @@ struct PickyPendingBubbleView: View {
                 )
                 .stroke(kind.color.opacity(0.48), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
             )
+            .frame(maxWidth: PickyHUDDockLayout.detailWidth * 0.85, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }

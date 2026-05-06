@@ -65,6 +65,12 @@ export interface RuntimeSessionHandle {
    * decide whether a new prompt will be queued by Pi (true) or executed inline (false).
    */
   readonly isStreaming: boolean;
+  /**
+   * Path to the on-disk Pi JSONL transcript backing this runtime session. Returns undefined
+   * for runtimes that do not persist transcripts (e.g. mock). Callers use this to fork an
+   * existing session before any diagnostic `pi session: <path>` log line has surfaced.
+   */
+  getSessionFilePath?(): string | undefined;
   subscribe(listener: (event: RuntimeEvent) => void): () => void;
 }
 

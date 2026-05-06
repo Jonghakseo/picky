@@ -72,6 +72,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case routeTask
     case createTask
     case createEmptySideSession
+    case duplicateSession
     case clearQueue
     case syncTerminalSession
     case followUp

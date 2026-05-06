@@ -306,6 +306,113 @@ describe("SessionSupervisor", () => {
     await expect(supervisor.steerSideSession(regular.id, "wrong target")).rejects.toThrow(/not a Picky side agent/);
   });
 
+  it("duplicates a side session by snapshotting its Pi transcript and resuming the copy", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-duplicate-"));
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const sourceFilePath = join(dir, "source-pi.jsonl");
+    await writeFile(sourceFilePath, '{"type":"user_text","text":"hello"}\n{"type":"agent_text","text":"world"}\n');
+    const source = await supervisor.pinSideSession(contextWithPiSessionFile("original work", sourceFilePath), "Original work");
+
+    const fork = await supervisor.duplicateSideSession(source.id);
+
+    expect(fork.id).not.toBe(source.id);
+    expect(fork.title).toBe("(copy) Original work");
+    expect(fork.status).toBe("waiting_for_input");
+    expect(fork.cwd).toBe("/tmp/project");
+    expect(fork.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });
+    expect(fork.tools).toEqual([]);
+    expect(fork.artifacts).toEqual([]);
+    expect(fork.changedFiles).toEqual([]);
+    expect(supervisor.isSideSession(fork.id)).toBe(true);
+
+    expect(runtime.resumeCalls).toHaveLength(1);
+    const [resume] = runtime.resumeCalls;
+    expect(resume?.sessionId).toBe(fork.id);
+    expect(resume?.cwd).toBe("/tmp/project");
+    expect(resume?.sessionFilePath).not.toBe(sourceFilePath);
+    expect(resume?.sessionFilePath?.endsWith(`${fork.id}.jsonl`)).toBe(true);
+    expect(fork.piSessionFilePath).toBe(resume?.sessionFilePath);
+
+    const copied = await readFile(resume!.sessionFilePath, "utf8");
+    const original = await readFile(sourceFilePath, "utf8");
+    expect(copied).toBe(original);
+  });
+
+  it("copies the source side session's message history and notify-on-completion preference", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-duplicate-history-"));
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const sourceFilePath = join(dir, "history-pi.jsonl");
+    await writeFile(sourceFilePath, '{"hello":1}\n');
+    const source = await supervisor.createSideFromHandoff(
+      context("history source"),
+      { title: "History source", instructions: "Investigate" },
+    );
+    // Emit the diagnostic log Pi normally fires once the runtime binds, so the supervisor
+    // captures piSessionFilePath the same way it would in production.
+    runtime.handle!.emit({ type: "log", line: `pi session: ${sourceFilePath}` });
+    await waitUntil(() => supervisor.get(source.id)?.piSessionFilePath === sourceFilePath);
+    runtime.handle!.emit({ type: "assistant_delta", delta: "step one" });
+    runtime.handle!.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => (supervisor.get(source.id)?.messages ?? []).some((message) => message.kind === "agent_text"));
+    await supervisor.setNotifyMainOnCompletion(source.id, false);
+
+    const fork = await supervisor.duplicateSideSession(source.id);
+
+    const sourceMessages = supervisor.get(source.id)?.messages ?? [];
+    expect(sourceMessages.length).toBeGreaterThan(0);
+    expect((fork.messages ?? []).map((message) => ({ id: message.id, kind: message.kind, text: message.text }))).toEqual(
+      sourceMessages.map((message) => ({ id: message.id, kind: message.kind, text: message.text })),
+    );
+    expect(fork.notifyMainOnCompletion).toBe(false);
+  });
+
+  it("snapshots a streaming source by trimming a partial trailing JSONL line before resuming", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-duplicate-streaming-"));
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const sourceFilePath = join(dir, "streaming-pi.jsonl");
+    // Simulate a Pi JSONL that is being written mid-line: two complete records plus a partial
+    // third line that has not yet flushed its trailing newline.
+    await writeFile(sourceFilePath, '{"line":1}\n{"line":2}\n{"line":3,"partial":');
+    const source = await supervisor.pinSideSession(contextWithPiSessionFile("streaming source", sourceFilePath), "Streaming");
+
+    const fork = await supervisor.duplicateSideSession(source.id);
+
+    const copyPath = runtime.resumeCalls[0]?.sessionFilePath;
+    expect(copyPath).toBeTruthy();
+    const copied = await readFile(copyPath!, "utf8");
+    expect(copied).toBe('{"line":1}\n{"line":2}\n');
+    expect(fork.title).toBe("(copy) Streaming");
+  });
+
+  it("throws when the source side session has no Pi transcript on disk", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-duplicate-missing-"));
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const source = await supervisor.createSideFromHandoff(context("no transcript"), { title: "No transcript", instructions: "Investigate" });
+
+    await expect(supervisor.duplicateSideSession(source.id)).rejects.toThrow(/no Pi session file to duplicate/);
+  });
+
+  it("throws when the runtime cannot resume sessions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-duplicate-no-resume-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const source = await supervisor.createSideFromHandoff(
+      contextWithPiSessionFile("resume unsupported", "/tmp/whatever.jsonl"),
+      { title: "Resume unsupported", instructions: "Investigate" },
+    );
+
+    await expect(supervisor.duplicateSideSession(source.id)).rejects.toThrow(/Runtime cannot duplicate sessions/);
+  });
+
   it("prewarms an empty manual side session and waits for the first instruction", async () => {
     const runtime = new ManualRuntime({ supportsPrewarm: true });
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-empty-side-"));

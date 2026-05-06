@@ -14,6 +14,7 @@ struct PickyConversationMenu: View {
     var canOpenPiTerminal: Bool { session.piSessionFilePath != nil }
     var canOpenReport: Bool { session.canOpenMarkdownReport }
     var canCopyResumeCommand: Bool { session.piSessionFilePath != nil }
+    var canDuplicate: Bool { session.piSessionFilePath != nil }
     var canStop: Bool { !session.status.isTerminal }
 
     var body: some View {
@@ -41,6 +42,11 @@ struct PickyConversationMenu: View {
         }
 
         Section("SESSION") {
+            Button("Duplicate") {
+                Task { try? await viewModel.duplicate(sessionID: session.id) }
+            }
+            .disabled(!canDuplicate)
+
             Button("Stop session") {
                 Task { try? await viewModel.abort(sessionID: session.id) }
             }

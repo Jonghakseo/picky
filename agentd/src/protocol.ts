@@ -205,6 +205,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("routeTask"), context: PickyContextPacketSchema }),
   CommandBaseSchema.extend({ type: z.literal("createTask"), context: PickyContextPacketSchema }),
   CommandBaseSchema.extend({ type: z.literal("createEmptySideSession"), context: PickyContextPacketSchema }),
+  CommandBaseSchema.extend({ type: z.literal("duplicateSession"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("pinSideSession"), context: PickyContextPacketSchema, title: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("setNotifyMainOnCompletion"), sessionId: z.string(), enabled: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("setSessionArchived"), sessionId: z.string(), archived: z.boolean() }),

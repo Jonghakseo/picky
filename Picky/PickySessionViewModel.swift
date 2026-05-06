@@ -347,6 +347,21 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
+    /// Forks the side-agent session at `sessionID` into a brand-new sibling that resumes from a
+    /// snapshot of its Pi transcript. Daemon-side rejects when the source has no Pi session file
+    /// or is not yet attached to a runtime; we surface that error via `lastError` like the rest
+    /// of the lifecycle commands here.
+    func duplicate(sessionID: String) async throws {
+        pickySessionLog("duplicate session=\(sessionID)")
+        do {
+            try await client.send(PickyCommandEnvelope(type: .duplicateSession, sessionId: sessionID))
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
+    }
+
     func beginHoveredVoiceFollowUp(sessionID: String) {
         guard sessions.contains(where: { $0.id == sessionID }) else { return }
         hoveredVoiceFollowUpSessionID = sessionID

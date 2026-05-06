@@ -159,6 +159,19 @@ struct PickySessionViewModelTests {
         #expect(command.context?.warnings == ["manualSideAgent=true"])
     }
 
+    @Test func duplicateSendsDuplicateSessionCommandWithSourceID() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+
+        try await viewModel.duplicate(sessionID: "side-source")
+
+        #expect(client.sentCommands.count == 1)
+        let command = try #require(client.sentCommands.first)
+        #expect(command.type == .duplicateSession)
+        #expect(command.sessionId == "side-source")
+        #expect(viewModel.lastError == nil)
+    }
+
     @Test func eventSequenceDrivesExpectedStatusChanges() async throws {
         let client = FakePickyAgentClient()
         let notifications = PickyNoopNotificationCenter()

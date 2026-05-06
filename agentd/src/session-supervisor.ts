@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, extname, join } from "node:path";
 import { ArtifactStore, extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "./artifact-store.js";
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
@@ -443,6 +445,98 @@ export class SessionSupervisor extends EventEmitter {
     } finally {
       if (this.pendingRuntimeHandles.get(id) === pendingHandle.promise) this.pendingRuntimeHandles.delete(id);
     }
+  }
+
+  /**
+   * Fork an existing side-session into a brand-new sibling session that resumes from a snapshot
+   * of the source's Pi JSONL transcript. The new session inherits cwd, message history, and
+   * notification preference, but starts with empty activity counters / artifacts / changed-files
+   * (per-session usage telemetry should not double-count). Forking is allowed regardless of the
+   * source's status: a running source's JSONL is copied byte-for-byte and trimmed to the last
+   * complete line so the runtime can resume on a non-corrupt transcript even mid-turn.
+   *
+   * The new title is `(copy) <source title>`; Pi will rename the underlying session as soon as
+   * the user runs `/name` (existing `refreshSideSessionTitleFromPi` flow handles the resync).
+   */
+  async duplicateSideSession(sourceSessionId: string): Promise<PickyAgentSession> {
+    if (!this.runtime.resume) throw new Error("Runtime cannot duplicate sessions");
+    const source = this.mustGet(sourceSessionId);
+    const sourceFilePath = this.resolveSourcePiSessionFile(source);
+    if (!sourceFilePath) throw new Error(`Session has no Pi session file to duplicate: ${sourceSessionId}`);
+
+    const now = new Date().toISOString();
+    const id = `session-${randomUUID()}`;
+    const cwd = normalizeOptionalString(source.cwd);
+    const newFilePath = await snapshotPiSessionFile(sourceFilePath, id);
+    const baseTitle = source.title.trim() || "side agent";
+    const sourceMessages = source.messages ?? [];
+    const session: PickyAgentSession = {
+      id,
+      title: `(copy) ${baseTitle}`,
+      status: "waiting_for_input",
+      cwd,
+      createdAt: now,
+      updatedAt: now,
+      lastSummary: "Duplicated from existing side agent",
+      logs: [
+        `duplicated from session: ${source.id}`,
+        ...(cwd ? [`source cwd: ${cwd}`] : []),
+        `pi session: ${newFilePath}`,
+      ],
+      notifyMainOnCompletion: source.notifyMainOnCompletion ?? false,
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      activitySummary: zeroActivitySummary(),
+      messages: sourceMessages.map((message) => ({ ...message })),
+      piSessionFilePath: newFilePath,
+    };
+
+    this.sideSessionIds.add(id);
+    const pendingHandle = createPendingRuntimeHandle();
+    this.pendingRuntimeHandles.set(id, pendingHandle.promise);
+    try {
+      await this.upsert(session);
+      // hydrate AFTER upsert so the in-memory journal exists before the resumed runtime emits
+      // any tool/assistant deltas. Without hydration, the first appendInternal would build a
+      // fresh empty journal and overwrite the persisted message history via syncSessionMessages.
+      this.messageBuilder.hydrateSession(id, session.messages);
+      logAgentd("side session duplicate queued", {
+        sourceSessionId,
+        newSessionId: id,
+        sourceFilePath,
+        newFilePath,
+        messages: session.messages?.length ?? 0,
+        cwd,
+      });
+      const handle = await this.runtime.resume(newFilePath, { cwd, sessionId: id });
+      pendingHandle.resolve(handle);
+      await this.attachRuntimeHandle(id, handle);
+      logAgentd("side session duplicate ready", { sourceSessionId, newSessionId: id });
+      // Pull the freshly-resumed Pi session_info name (when present) so the (copy) prefix is
+      // applied on top of Pi's own name rather than a stale Picky default.
+      void this.refreshSideSessionTitleFromPi(id);
+      return this.mustGet(id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logAgentd("side session duplicate failed", { sourceSessionId, newSessionId: id, error: message });
+      await this.patch(id, {
+        status: "failed",
+        lastSummary: `Failed to duplicate session: ${message}`,
+        logs: [...this.mustGet(id).logs, `Failed to duplicate session: ${message}`],
+      });
+      pendingHandle.reject(error);
+      throw error;
+    } finally {
+      if (this.pendingRuntimeHandles.get(id) === pendingHandle.promise) this.pendingRuntimeHandles.delete(id);
+    }
+  }
+
+  private resolveSourcePiSessionFile(session: PickyAgentSession): string | undefined {
+    const fromSession = piSessionFilePathForSession(session);
+    if (fromSession) return fromSession;
+    const handle = this.runtimeHandles.get(session.id);
+    return handle?.getSessionFilePath?.();
   }
 
   async pinSideSession(context: PickyContextPacket, title?: string): Promise<PickyAgentSession> {
@@ -1612,6 +1706,24 @@ function hasSideSessionMarkerLog(session: PickyAgentSession): boolean {
       || line.startsWith("pi-extension handoff pin:")
       || line.startsWith("manual side agent:"),
   );
+}
+
+/**
+ * Copy `sourcePath` to a sibling file whose basename is `<newSessionId><ext>`. The copy is a
+ * snapshot — bytes are read into memory and the trailing partial line (if any) is dropped before
+ * writing, so a forked transcript never starts with a half-written JSON record even when the
+ * source is being appended to mid-turn. Returns the absolute destination path.
+ */
+async function snapshotPiSessionFile(sourcePath: string, newSessionId: string): Promise<string> {
+  const data = await readFile(sourcePath);
+  const lastNewline = data.lastIndexOf(0x0a /* \n */);
+  const trimmed = lastNewline >= 0 ? data.subarray(0, lastNewline + 1) : data;
+  const directory = dirname(sourcePath);
+  await mkdir(directory, { recursive: true });
+  const extension = extname(sourcePath) || ".jsonl";
+  const destinationPath = join(directory, `${newSessionId}${extension}`);
+  await writeFile(destinationPath, trimmed);
+  return destinationPath;
 }
 
 function titleForEmptySideSession(context: PickyContextPacket): string {

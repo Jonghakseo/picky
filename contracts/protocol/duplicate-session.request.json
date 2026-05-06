@@ -1,0 +1,6 @@
+{
+  "id": "cmd-duplicate-session-001",
+  "protocolVersion": "2026-05-05",
+  "type": "duplicateSession",
+  "sessionId": "session-source-001"
+}

@@ -352,6 +352,10 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
   }
 
+  getSessionFilePath(): string | undefined {
+    return this.runtime.session.sessionFile ?? undefined;
+  }
+
   subscribe(listener: (event: RuntimeEvent) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

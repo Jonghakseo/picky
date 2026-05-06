@@ -10,6 +10,7 @@ import Foundation
 struct PickyGitRepositoryStatus: Equatable {
     private static let statusCacheLock = NSLock()
     private static var statusCache: [String: PickyGitRepositoryStatus] = [:]
+    private static var inFlightPrefetchKeys: Set<String> = []
 
     let repositoryName: String
     let branchName: String
@@ -247,6 +248,35 @@ struct PickyGitRepositoryStatus: Equatable {
                 return GitCommandOutcome(exitCode: exitCode, combinedOutput: combined)
             }
         }.value
+    }
+
+    /// Warm the cache for `cwd` so the HUD can render git context on the very first card paint.
+    /// No-ops when the cache already has a value or when an identical prefetch is in flight.
+    static func prefetchIfNeeded(cwd: String?) {
+        guard let cacheKey = cacheKey(cwd: cwd) else { return }
+        guard claimPrefetchSlot(for: cacheKey) else { return }
+
+        Task.detached(priority: .utility) {
+            let status = loadSynchronously(cwd: cwd)
+            releasePrefetchSlot(for: cacheKey)
+            updateCache(status, for: cacheKey)
+        }
+    }
+
+    private static func claimPrefetchSlot(for cacheKey: String) -> Bool {
+        statusCacheLock.lock()
+        defer { statusCacheLock.unlock() }
+        if statusCache[cacheKey] != nil || inFlightPrefetchKeys.contains(cacheKey) {
+            return false
+        }
+        inFlightPrefetchKeys.insert(cacheKey)
+        return true
+    }
+
+    private static func releasePrefetchSlot(for cacheKey: String) {
+        statusCacheLock.lock()
+        defer { statusCacheLock.unlock() }
+        inFlightPrefetchKeys.remove(cacheKey)
     }
 
     static func invalidateCache(cwd: String?) {

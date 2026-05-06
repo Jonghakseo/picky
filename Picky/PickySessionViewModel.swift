@@ -712,6 +712,9 @@ final class PickySessionListViewModel: ObservableObject {
             lastIncrementalSeqBySessionID = lastIncrementalSeqBySessionID.filter { sessionID, _ in cards.contains { $0.id == sessionID } }
             sessions = cards.filter { !archivedIDs.contains($0.id) }.sortedForHUD()
             archivedSessions = cards.filter { archivedIDs.contains($0.id) }.sortedForHUD()
+            for card in cards {
+                PickyGitRepositoryStatus.prefetchIfNeeded(cwd: card.cwd)
+            }
             dockPointerDeliveredSessionIDs.formUnion(cards.filter(\.isMainAgentHandoff).map(\.id))
             pruneSlashCommandCache(knownSessionIDs: Set(cards.map(\.id)))
             syncSelectionAfterSessionListChange()
@@ -888,6 +891,7 @@ final class PickySessionListViewModel: ObservableObject {
         let archivedIDs = effectiveArchivedSessionIDs(for: [card])
         let shouldArchive = archivedIDs.contains(card.id)
         let previousStatus = (sessions + archivedSessions).first(where: { $0.id == card.id })?.status
+        PickyGitRepositoryStatus.prefetchIfNeeded(cwd: card.cwd)
         var incoming = card
         if let existing = (sessions + archivedSessions).first(where: { $0.id == card.id }) {
             incoming = existing.merged(with: card, preserveConversationState: preserveIncrementalConversationState)

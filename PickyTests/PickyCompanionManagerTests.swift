@@ -460,10 +460,8 @@ struct PickyCompanionManagerTests {
             originSource: .voice,
             replyKind: .main
         )))
-        try await settle()
+        try await waitUntil { manager.latestAgentSessionSummary == "빠른 답변" && manager.voiceState == .responding }
 
-        #expect(manager.latestAgentSessionSummary == "빠른 답변")
-        #expect(manager.voiceState == .responding)
         #expect(speechProvider.spokenUtterances.isEmpty)
 
         manager.updateVoicePresentation(
@@ -492,6 +490,171 @@ struct PickyCompanionManagerTests {
         #expect(manager.voiceState == .responding)
     }
 
+    // MARK: - voiceState lifecycle (safety-net regressions)
+    //
+    // These pin down the rule that the cursor response bubble ("voiceState ==
+    // .responding" + non-empty `latestAgentSessionSummary`) must always clear
+    // when the underlying interaction projection is no longer speaking — even
+    // if the projection moves through a non-`.idle` intermediate state.
+
+    @Test func sideCompletionReplyDrivesSpeakingProjectionAndClearsViaSpeechFinish() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "session-side",
+            text: "사이드 작업이 완료됐어요.",
+            originSource: .system,
+            replyKind: .sideCompletion,
+            sessionId: "session-side"
+        )))
+        try await waitUntil { manager.voiceState == .responding }
+
+        #expect(manager.latestAgentSessionSummary == "사이드 작업이 완료됐어요.")
+        #expect(speechProvider.spokenUtterances == ["사이드 작업이 완료됐어요."])
+
+        // Wait past the minimum-display window so .speechFinished routes
+        // straight to .idle, and let the FakeSpeechProvider close cleanly.
+        try await Task.sleep(nanoseconds: 400_000_000)
+        speechProvider.finishSpeaking()
+        try await waitUntil { manager.voiceState == .idle }
+    }
+
+    @Test func sideCompletionPreemptedByMainTextReplyClearsVoiceStateViaSafetyNet() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+
+        // Side completion → speaking, voiceState = .responding.
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "session-side",
+            text: "사이드 답변",
+            originSource: .system,
+            replyKind: .sideCompletion,
+            sessionId: "session-side"
+        )))
+        try await waitUntil { manager.voiceState == .responding }
+
+        // Before TTS finishes, a system-originated `.main` reply arrives that
+        // routes to `.showingTextReply`. Without the safety net + reducer
+        // preemption fix, the cursor bubble would stay stuck on the side reply
+        // until the user manually triggers another voice interaction.
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "context-typed",
+            text: "추가 안내",
+            originSource: .system,
+            replyKind: .main
+        )))
+        try await waitUntil { manager.voiceState == .idle }
+    }
+
+    @Test func voiceReplyPreemptedByQuickInputSubmissionClearsVoiceStateViaSafetyNet() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator()
+        )
+
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "session-side",
+            text: "답변 중",
+            originSource: .system,
+            replyKind: .sideCompletion,
+            sessionId: "session-side"
+        )))
+        try await waitUntil { manager.voiceState == .responding }
+
+        // Quick-input message preempts the speaking output → waitingForAgent.
+        async let success = manager.sendDirectMessage("추가 요청", source: .quickInput)
+        try await waitUntil { manager.voiceState != .responding }
+
+        // .waitingForAgent + isWaitingForCursorResponse routes voiceState to
+        // .processing, but more importantly it must NOT remain .responding.
+        let didSend = await success
+        #expect(didSend)
+        #expect(manager.voiceState != .responding)
+    }
+
+    @Test func sideCompletionStaysRespondingWhileTtsIsActive() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "session-side",
+            text: "긴 답변 진행 중",
+            originSource: .system,
+            replyKind: .sideCompletion,
+            sessionId: "session-side"
+        )))
+        try await waitUntil { manager.voiceState == .responding }
+
+        // The minimum-display timer fires, producing another projection update
+        // with state.output still .speaking (timerID cleared, no finishPending).
+        // The safety net must NOT mistake this for a stuck-state and clear
+        // voiceState — projection.isSpeaking is still true.
+        try await Task.sleep(nanoseconds: 500_000_000)
+        #expect(manager.voiceState == .responding)
+        #expect(speechProvider.isSpeaking)
+    }
+
+    @Test func systemSpeechPathIsNotClippedBySafetyNetWhenInteractionSpeechIDIsNil() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+
+        // `handleAgentSubmissionAccepted` for the legacy receipt path drives the
+        // non-interaction `speakSystemMessage` flow. interactionSpeechID stays
+        // nil so the safety net must skip the cleanup, otherwise the spoken
+        // status message gets clipped the moment any unrelated projection fires.
+        manager.beginAwaitingAgentResponse()
+        manager.handleAgentSubmissionAccepted(
+            receipt: PickyAgentSubmissionReceipt(sessionID: "created-session", message: "안내 메시지"),
+            source: "voice"
+        )
+        #expect(manager.voiceState == .responding)
+
+        // Drive an unrelated reducer event so the interaction projection ticks.
+        manager.applyAgentEvent(.sessionUpdated(PickyAgentSession(
+            id: "unrelated",
+            title: "Unrelated",
+            status: .running,
+            cwd: nil,
+            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_001),
+            lastSummary: "chugging along",
+            logs: [],
+            tools: [],
+            artifacts: [],
+            changedFiles: []
+        )))
+        try await settle()
+
+        // Still responding because the speak came from the system path, not
+        // through the interaction coordinator's .speaking output.
+        #expect(manager.voiceState == .responding)
+        #expect(speechProvider.spokenUtterances == ["안내 메시지"])
+
+        // When the system speech finishes, voiceState must clear normally.
+        speechProvider.finishSpeaking()
+        try await waitUntil { manager.voiceState == .idle }
+    }
+
     @Test func stripParentheticalsRemovesAsciiAndFullWidthBracketsForSpeech() async throws {
         let asciiInput = "배포는 완료됐어요 (https://example.com/run/123)."
         #expect(stripParentheticalsForSpeech(asciiInput) == "배포는 완료됐어요.")
@@ -513,6 +676,27 @@ struct PickyCompanionManagerTests {
         #expect(stripParentheticalsForSpeech(allParens) == allParens)
     }
 
+    private func fakeContextCaptureCoordinator() -> PickyVoiceContextCaptureCoordinator {
+        PickyVoiceContextCaptureCoordinator(
+            screenCapture: { _ in [] },
+            contextAssembler: { _, source, transcript, _ in
+                PickyContextPacket(
+                    id: "typed-context",
+                    source: source,
+                    capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
+                    transcript: transcript,
+                    selectedText: nil,
+                    cwd: "/tmp/project",
+                    activeApp: nil,
+                    activeWindow: nil,
+                    browser: nil,
+                    screenshots: [],
+                    warnings: []
+                )
+            }
+        )
+    }
+
     private func context(source: String) -> PickyContextPacket {
         PickyContextPacket(
             id: "context-voice",
@@ -531,5 +715,17 @@ struct PickyCompanionManagerTests {
 
     private func settle() async throws {
         try await Task.sleep(nanoseconds: 50_000_000)
+    }
+
+    /// Polls `predicate` up to one second so timing-sensitive expectations stay
+    /// stable when the test runner is under heavy parallel load. Records a
+    /// regular `#expect` failure if the predicate never holds within the
+    /// budget so debugging output points at the actual mismatch.
+    private func waitUntil(_ predicate: @escaping @MainActor () -> Bool) async throws {
+        for _ in 0..<50 {
+            if predicate() { return }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        #expect(predicate())
     }
 }

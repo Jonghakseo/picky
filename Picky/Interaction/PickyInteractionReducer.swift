@@ -91,6 +91,7 @@ enum PickyInteractionReducer {
             }
             state.pendingVoiceInputs[inputID] = nil
             state.input = .idle
+            preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
             state.output = .idle
             state = state.removingOverlayReason(.activeVoiceInput)
             state = state.removingOverlayReason(.waitingForVoiceResponse)
@@ -101,6 +102,7 @@ enum PickyInteractionReducer {
             state.input = .textSubmitting(inputID: inputID, text: text)
             state.pendingTextInputs[inputID] = PickyTextInputState(text: text, source: source)
             if source == .quickInput {
+                preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
                 state.output = .waitingForAgent(inputID: inputID, contextID: nil, promptPreview: text)
                 state = state.addingOverlayReason(.waitingForVoiceResponse)
             }
@@ -116,6 +118,7 @@ enum PickyInteractionReducer {
             state.pendingTextInputs[inputID] = pendingText
             let owner: PickyContextOwner = pendingText.source == .quickInput ? .quickInputText(inputID: inputID) : .text(inputID: inputID)
             state.contextOwnership[context.id] = owner
+            preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
             state.output = .waitingForAgent(inputID: inputID, contextID: context.id, promptPreview: pendingText.text)
             if pendingText.source == .quickInput {
                 state = state.addingOverlayReason(.waitingForVoiceResponse)
@@ -143,6 +146,7 @@ enum PickyInteractionReducer {
             state.pendingTextInputs[inputID] = nil
             if case .textSubmitting(inputID, _) = state.input { state.input = .idle }
             if pendingText.source == .quickInput {
+                preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
                 state.output = .idle
                 state = state.removingOverlayReason(.waitingForVoiceResponse)
             }
@@ -157,6 +161,7 @@ enum PickyInteractionReducer {
             pendingVoice.transcript = transcript
             state.pendingVoiceInputs[inputID] = pendingVoice
             state.contextOwnership[context.id] = .voice(inputID: inputID)
+            preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
             state.output = .waitingForAgent(inputID: inputID, contextID: context.id, promptPreview: transcript)
             effects.append(.recordContextOwnership(inputID: inputID, contextID: context.id, owner: .voice(inputID: inputID)))
             if let targetSessionID {
@@ -193,6 +198,7 @@ enum PickyInteractionReducer {
             let hasActiveVoiceInput = state.hasActiveVoiceInput
             let shouldSpeakReply = owner.isVoiceOwned || owner.usesCursorResponsePresentation || replyKind == .sideCompletion
             if hasActiveVoiceInput, replyKind == .sideCompletion {
+                preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
                 state.output = .suppressedReply(
                     contextID: contextID,
                     text: text,
@@ -222,6 +228,7 @@ enum PickyInteractionReducer {
                 record(.stateChanged, "Voice quick reply is speaking")
             } else {
                 state = state.removingOverlayReason(.waitingForVoiceResponse)
+                preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
                 state.output = .showingTextReply(
                     contextID: contextID,
                     text: text,
@@ -352,6 +359,24 @@ enum PickyInteractionReducer {
         }
 
         return PickyInteractionTransition(state: state, effects: effects, journalRecords: records)
+    }
+
+    /// Cleans up a `.speaking` output when an event must replace it with a non-`.speaking`
+    /// output (text reply, suppressed reply, waiting-for-agent, idle). Without this guard
+    /// the in-flight TTS keeps playing after the projection state has moved on, the
+    /// `.speakingResponse` overlay reason stays asserted, and any subsequent
+    /// `.speechFinished`/`.speechFailed` event becomes stale and never fires the
+    /// `.speaking → .idle` cleanup branch — leaving `voiceState` stuck at `.responding`.
+    /// Idempotent: a no-op when `state.output` is not `.speaking`, and harmless to call
+    /// when the next output will itself be `.speaking` (the new `.speak` effect will run
+    /// after this `.stopSpeech` and replace the playing utterance).
+    private static func preemptSpeakingOutputIfNeeded(
+        state: inout PickyInteractionState,
+        effects: inout [PickyInteractionEffect]
+    ) {
+        guard case .speaking = state.output else { return }
+        effects.append(.stopSpeech(reason: .superseded))
+        state = state.removingOverlayReason(.speakingResponse)
     }
 
     private static func ownerFromMetadata(_ origin: PickyQuickReplyOriginSource?) -> PickyContextOwner {

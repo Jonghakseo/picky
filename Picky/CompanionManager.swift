@@ -219,7 +219,6 @@ final class CompanionManager: ObservableObject {
     private var activeSpeechID: UUID?
     private var interactionSpeechID: UUID?
     private var interactionVoiceInputID: UUID?
-    private var lastInteractionOutput: PickyOutputPhase = .idle
     /// Tracks the physical push-to-talk hold separately from dictation state so
     /// audio stays suppressed even if recording fails before the key is released.
     private var isPushToTalkShortcutHeld = false
@@ -923,8 +922,6 @@ final class CompanionManager: ObservableObject {
     private func applyInteractionProjection(_ projection: PickyInteractionProjection) {
         isSendingDirectMessage = projection.hasPendingTextSubmission
         setInteractionOverlayReasons(from: projection.state.overlay)
-        let previousOutput = lastInteractionOutput
-        lastInteractionOutput = projection.state.output
 
         switch projection.state.output {
         case .showingTextReply:
@@ -942,17 +939,33 @@ final class CompanionManager: ObservableObject {
             voicePromptBubbleState = .hidden
             voiceState = .responding
         case .idle:
-            if case .speaking = previousOutput, voiceState == .responding {
-                voiceState = .idle
-                interactionSpeechID = nil
-                scheduleTransientHideIfNeeded()
-            }
+            break
         case .suppressedReply:
             clearPendingAgentResponseTiming()
         case .waitingForAgent:
             if projection.isWaitingForCursorResponse {
                 voiceState = .processing
             }
+        }
+
+        // Safety net: any path that leaves the cursor in `.responding` while the
+        // projection is no longer speaking must clear the responding state, otherwise
+        // the cursor response bubble lingers indefinitely.
+        //
+        // The reducer cleans up `.speaking` when transitioning to a non-`.speaking`
+        // output (stopSpeech effect + speakingResponse overlay drop), so under normal
+        // flow this guard is paired with the reducer-side preemption. It also catches
+        // edge cases the reducer might miss: the `.speaking → .idle` direct path via
+        // `.speechFinished`, voicePressed-driven cleanup, and any future event that
+        // forgets to call `preemptSpeakingOutputIfNeeded`.
+        //
+        // Gated by `interactionSpeechID != nil` so a `speakSystemMessage` flow (which
+        // sets `voiceState = .responding` without a corresponding `.speaking` projection)
+        // is never clipped by an unrelated projection update.
+        if voiceState == .responding, !projection.isSpeaking, interactionSpeechID != nil {
+            voiceState = .idle
+            interactionSpeechID = nil
+            scheduleTransientHideIfNeeded()
         }
     }
 

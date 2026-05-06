@@ -229,6 +229,37 @@ struct ProtocolContractTests {
         #expect(session.steeringMode == .oneAtATime)
         #expect(session.followUpMode == .oneAtATime)
         #expect(session.activitySummary == .zero)
+        #expect(session.piSessionFilePath == nil)
+    }
+
+    @Test func decodesExplicitPiSessionFilePath() throws {
+        let json = """
+        {
+          "id":"event-session-file",
+          "protocolVersion":"2026-05-05",
+          "timestamp":"2026-05-05T00:00:00.000Z",
+          "type":"sessionUpdated",
+          "session":{
+            "id":"session-with-file",
+            "title":"Session with file",
+            "status":"running",
+            "createdAt":"2026-05-05T00:00:00.000Z",
+            "updatedAt":"2026-05-05T00:00:01.000Z",
+            "piSessionFilePath":"/tmp/explicit-pi-session.jsonl",
+            "logs":[],
+            "tools":[],
+            "artifacts":[],
+            "changedFiles":[]
+          }
+        }
+        """.data(using: .utf8)!
+
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
+        guard case .sessionUpdated(let session) = envelope.event else {
+            Issue.record("Expected sessionUpdated")
+            return
+        }
+        #expect(session.piSessionFilePath == "/tmp/explicit-pi-session.jsonl")
     }
 
     @Test func decodesSessionMessageAppendedEvent() throws {

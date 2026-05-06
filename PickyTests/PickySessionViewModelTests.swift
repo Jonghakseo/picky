@@ -961,6 +961,35 @@ struct PickySessionViewModelTests {
         #expect(viewModel.lastError == nil)
     }
 
+    @Test func openTerminalOverlayUsesExplicitPiSessionFileWhenLogsAreCompacted() async throws {
+        let client = FakePickyAgentClient()
+        let presenter = FakeTerminalOverlayPresenter()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            terminalPresenter: presenter
+        )
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "side-explicit",
+            title: "Side",
+            status: "completed",
+            logs: ["recent compacted log without session path"],
+            piSessionFilePath: "/tmp/explicit-pi-session.jsonl"
+        ))))
+        try await settle()
+
+        viewModel.openTerminalOverlay(sessionID: "side-explicit")
+
+        #expect(presenter.calls == [FakeTerminalOverlayPresenter.Call(
+            sessionID: "side-explicit",
+            title: "Side",
+            sessionFilePath: "/tmp/explicit-pi-session.jsonl",
+            cwd: "/Users/creatrip/Documents/picky"
+        )])
+        #expect(viewModel.lastError == nil)
+    }
+
     @Test func openTerminalOverlayWorksWhileSessionIsActive() async throws {
         // Earlier history pill should stay clickable even while the side-agent is still working
         // (running, queued, waiting_for_input). The overlay launches its own `pi --session` process
@@ -1722,14 +1751,16 @@ private enum EventJSON {
         createdAt: String = "2026-05-01T00:00:00.000Z",
         updatedAt: String = "2026-05-01T00:00:00.000Z",
         logs: [String] = [],
+        piSessionFilePath: String? = nil,
         notifyMainOnCompletion: Bool? = nil,
         pinned: Bool? = nil
     ) -> String {
         let encodedLogs = String(decoding: try! JSONEncoder().encode(logs), as: UTF8.self)
+        let encodedPiSessionFilePath = piSessionFilePath.map { ",\"piSessionFilePath\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))" } ?? ""
         let encodedNotify = notifyMainOnCompletion.map { ",\"notifyMainOnCompletion\":\($0)" } ?? ""
         let encodedPinned = pinned.map { ",\"pinned\":\($0)" } ?? ""
         return """
-        {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-05","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedNotify)\(encodedPinned)}}
+        {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-05","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedNotify)\(encodedPinned)}}
         """
     }
 
@@ -1747,11 +1778,13 @@ private enum EventJSON {
         summary: String = "Started",
         createdAt: String = "2026-05-01T00:00:00.000Z",
         updatedAt: String = "2026-05-01T00:00:00.000Z",
-        logs: [String] = []
+        logs: [String] = [],
+        piSessionFilePath: String? = nil
     ) -> String {
         let encodedLogs = String(decoding: try! JSONEncoder().encode(logs), as: UTF8.self)
+        let encodedPiSessionFilePath = piSessionFilePath.map { ",\"piSessionFilePath\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))" } ?? ""
         return """
-        {"id":"snapshot-\(id)-\(status)","protocolVersion":"2026-05-05","timestamp":"\(updatedAt)","type":"sessionSnapshot","sessions":[{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]}]}
+        {"id":"snapshot-\(id)-\(status)","protocolVersion":"2026-05-05","timestamp":"\(updatedAt)","type":"sessionSnapshot","sessions":[{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)}]}
         """
     }
 

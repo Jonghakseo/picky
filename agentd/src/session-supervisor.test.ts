@@ -793,6 +793,7 @@ describe("SessionSupervisor", () => {
 
     expect(supervisor.isSideSession("cancelled-with-pi-file")).toBe(true);
     expect(supervisor.get("cancelled-with-pi-file")?.status).toBe("cancelled");
+    expect(supervisor.get("cancelled-with-pi-file")?.piSessionFilePath).toBe("/tmp/pi-session.jsonl");
 
     const updated = await supervisor.steerSideSession("cancelled-with-pi-file", "재시작 후 다시 진행");
 
@@ -802,7 +803,23 @@ describe("SessionSupervisor", () => {
     expect(updated.finalAnswer).toBeUndefined();
     expect(updated.lastSummary).toBe("Steering message sent");
     expect(updated.logs).toContain("runtime reattached from pi session: /tmp/pi-session.jsonl");
+    expect(updated.piSessionFilePath).toBe("/tmp/pi-session.jsonl");
     expect(updated.logs).toContain("steer: 재시작 후 다시 진행");
+  });
+
+  it("stores Pi session file paths as explicit session metadata", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("capture pi session metadata"));
+
+    runtime.handle?.emit({ type: "log", line: "pi session: /tmp/explicit-pi-session.jsonl" });
+    await settle();
+
+    const updated = supervisor.get(session.id);
+    expect(updated?.piSessionFilePath).toBe("/tmp/explicit-pi-session.jsonl");
+    expect(updated?.logs).toContain("pi session: /tmp/explicit-pi-session.jsonl");
   });
 
   it("stores only the front of thinking blocks for current work", async () => {
@@ -854,6 +871,7 @@ describe("SessionSupervisor", () => {
     expect(pinned.notifyMainOnCompletion).toBe(false);
     expect(pinned.pinned).toBe(true);
     expect(pinned.logs).toContain("pi session: /tmp/source-pi-session.jsonl");
+    expect(pinned.piSessionFilePath).toBe("/tmp/source-pi-session.jsonl");
     expect(pinned.logs.some((line) => line.startsWith("pi-extension handoff pin:"))).toBe(true);
     expect(supervisor.isSideSession(pinned.id)).toBe(true);
   });

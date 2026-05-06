@@ -157,6 +157,7 @@ export const PickyAgentSessionSchema = z.object({
   title: z.string(),
   status: SessionStatusSchema,
   cwd: z.string().optional(),
+  piSessionFilePath: z.string().optional(),
   createdAt: isoTimestamp,
   updatedAt: isoTimestamp,
   lastSummary: z.string().optional(),

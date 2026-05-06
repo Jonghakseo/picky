@@ -1001,7 +1001,7 @@ extension PickySessionListViewModel.SessionCard {
         self.activitySummary = session.activitySummary
         self.contextUsage = session.contextUsage
         self.pendingExtensionUiRequest = session.pendingExtensionUiRequest
-        self.piSessionFilePath = session.logs.compactMap(Self.piSessionFilePath(fromLogLine:)).last
+        self.piSessionFilePath = session.piSessionFilePath ?? session.logs.compactMap(Self.piSessionFilePath(fromLogLine:)).last
         self.notifyMainOnCompletion = session.notifyMainOnCompletion
         self.pinned = session.pinned ?? false
         self.hasRuntimeDetachedFollowUpRejection = session.logs.contains(where: Self.isRuntimeDetachedFollowUpRejection)
@@ -1059,7 +1059,7 @@ extension PickySessionListViewModel.SessionCard {
     static func piSessionFilePath(fromLogLine line: String) -> String? {
         for candidate in line.components(separatedBy: .newlines) {
             let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
-            for prefix in ["pi session: ", "- Session file: "] {
+            for prefix in ["pi session: ", "runtime reattached from pi session: ", "- Session file: "] {
                 guard trimmed.hasPrefix(prefix) else { continue }
                 let path = String(trimmed.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
                 if isUsablePiSessionFilePath(path) { return path }

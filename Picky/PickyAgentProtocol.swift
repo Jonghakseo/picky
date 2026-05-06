@@ -407,6 +407,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     let title: String
     var status: PickySessionStatus
     var cwd: String?
+    var piSessionFilePath: String? = nil
     let createdAt: Date
     var updatedAt: Date
     var lastSummary: String?
@@ -429,7 +430,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     var pinned: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, title, status, cwd, createdAt, updatedAt, lastSummary, thinkingPreview, finalAnswer, logs, tools, artifacts, changedFiles
+        case id, title, status, cwd, piSessionFilePath, createdAt, updatedAt, lastSummary, thinkingPreview, finalAnswer, logs, tools, artifacts, changedFiles
         case messages, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary, contextUsage
         case pendingExtensionUiRequest, notifyMainOnCompletion, archived, pinned
     }
@@ -439,6 +440,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         title: String,
         status: PickySessionStatus,
         cwd: String? = nil,
+        piSessionFilePath: String? = nil,
         createdAt: Date,
         updatedAt: Date,
         lastSummary: String? = nil,
@@ -464,6 +466,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         self.title = title
         self.status = status
         self.cwd = cwd
+        self.piSessionFilePath = piSessionFilePath
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.lastSummary = lastSummary
@@ -492,6 +495,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         title = try container.decode(String.self, forKey: .title)
         status = try container.decode(PickySessionStatus.self, forKey: .status)
         cwd = try container.decodeIfPresent(String.self, forKey: .cwd)
+        piSessionFilePath = try container.decodeIfPresent(String.self, forKey: .piSessionFilePath)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         lastSummary = try container.decodeIfPresent(String.self, forKey: .lastSummary)

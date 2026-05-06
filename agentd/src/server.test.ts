@@ -106,6 +106,7 @@ describe("AgentdServer", () => {
 
   it("compacts large session payloads for session snapshots", () => {
     const session = makeSession({
+      piSessionFilePath: "/tmp/explicit-picky.jsonl",
       logs: [
         "pi session: /tmp/picky.jsonl",
         "source transcript:\n" + "질문 ".repeat(1_000),
@@ -134,6 +135,7 @@ describe("AgentdServer", () => {
 
     const [compact] = compactSessionsForSnapshot([session]);
 
+    expect(compact.piSessionFilePath).toBe("/tmp/explicit-picky.jsonl");
     expect(compact.logs.length).toBeLessThanOrEqual(24);
     expect(compact.logs).toContain("pi session: /tmp/picky.jsonl");
     expect(compact.logs).toContain("steer: keep this visible in the HUD");

@@ -117,14 +117,15 @@ export class SessionSupervisor extends EventEmitter {
     const persisted = await this.store.loadAll();
     logAgentd("sessions loading", { count: persisted.length });
     for (const persistedSession of persisted) {
-      const isSideSession = hasSideSessionMarkerLog(persistedSession);
-      if (isSideSession) this.sideSessionIds.add(persistedSession.id);
-      const session = isSideSession && persistedSession.notifyMainOnCompletion === undefined
-        ? { ...persistedSession, notifyMainOnCompletion: true }
-        : persistedSession;
+      const migratedSession = withPiSessionFileFromLogs(persistedSession);
+      const isSideSession = hasSideSessionMarkerLog(migratedSession);
+      if (isSideSession) this.sideSessionIds.add(migratedSession.id);
+      const session = isSideSession && migratedSession.notifyMainOnCompletion === undefined
+        ? { ...migratedSession, notifyMainOnCompletion: true }
+        : migratedSession;
       this.sessions.set(session.id, session);
       this.messageBuilder.hydrateSession(session.id, session.messages);
-      if (session !== persistedSession) await this.store.save(session);
+      if (session.piSessionFilePath !== persistedSession.piSessionFilePath || session.notifyMainOnCompletion !== persistedSession.notifyMainOnCompletion) await this.store.save(session);
       if (this.sideSessionIds.has(session.id)) void this.refreshSideSessionTitleFromPi(session.id);
 
       if (!isTerminalStatus(session.status)) {
@@ -430,6 +431,7 @@ export class SessionSupervisor extends EventEmitter {
       lastSummary: "Pinned completed Pi session",
       finalAnswer: "Pinned from an idle Pi session. No Picky side-agent run has been started yet.",
       logs: buildPinnedSideSessionLogs(context),
+      piSessionFilePath: piSessionFilePathFromHandoffTranscript(context.transcript),
       notifyMainOnCompletion: false,
       pinned: true,
       tools: [],
@@ -799,7 +801,7 @@ export class SessionSupervisor extends EventEmitter {
 
   async syncTerminalSession(sessionId: string, baselinePiMessageId?: string): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
-    const sessionFilePath = piSessionFilePathFromLogs(session.logs);
+    const sessionFilePath = piSessionFilePathForSession(session);
     if (!sessionFilePath) throw new Error(`Session has no Pi session file to sync: ${sessionId}`);
     logAgentd("terminal session sync requested", { sessionId, sessionFilePath, baselinePiMessageId });
     const result = await readPiTerminalSessionMessages(sessionFilePath, baselinePiMessageId);
@@ -835,7 +837,7 @@ export class SessionSupervisor extends EventEmitter {
     await this.prepareSideSessionForUserInput(sessionId);
     const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
     if (!handle) {
-      const hasPiSessionFile = Boolean(piSessionFilePathFromLogs(session.logs));
+      const hasPiSessionFile = Boolean(piSessionFilePathForSession(session));
       const reason = this.runtime.resume
         ? hasPiSessionFile
           ? "Runtime session is not attached after daemon restart and automatic Pi session reattach failed; start a new task or open the Pi terminal overlay"
@@ -1018,7 +1020,7 @@ export class SessionSupervisor extends EventEmitter {
 
   private async tryResumeRuntimeHandle(session: PickyAgentSession): Promise<RuntimeSessionHandle | undefined> {
     if (!this.runtime.resume) return undefined;
-    const sessionFilePath = piSessionFilePathFromLogs(session.logs);
+    const sessionFilePath = piSessionFilePathForSession(session);
     if (!sessionFilePath) return undefined;
 
     try {
@@ -1179,7 +1181,8 @@ export class SessionSupervisor extends EventEmitter {
     const changedFiles = mergeChangedFiles(session.changedFiles, extractChangedFilesFromExplicitText(line));
     const linkArtifacts = extractSessionLinkArtifacts(line).filter((artifact) => !session.artifacts.some((existing) => existing.url === artifact.url));
     const artifacts = mergeArtifacts(session.artifacts, linkArtifacts);
-    await this.patch(sessionId, { logs: [...session.logs, line], changedFiles, artifacts });
+    const piSessionFilePath = piSessionFilePathFromLogLine(line);
+    await this.patch(sessionId, { logs: [...session.logs, line], changedFiles, artifacts, ...(piSessionFilePath ? { piSessionFilePath } : {}) });
     this.emit("log", sessionId, line);
     // STEER_PREFIX and FOLLOWUP_PREFIX user_text writes are intentionally NOT recorded here. The
     // supervisor decides per-call whether to recordUserText immediately (Pi will execute inline)
@@ -1190,7 +1193,7 @@ export class SessionSupervisor extends EventEmitter {
     } else if (line.startsWith(HANDOFF_PREFIX)) {
       await this.messageBuilder.recordUserText(sessionId, line.slice(HANDOFF_PREFIX.length), "main_agent");
     }
-    if (piSessionFilePathFromLogLine(line) || /^runtime reattached from pi session:/.test(line)) {
+    if (piSessionFilePath) {
       void this.refreshSideSessionTitleFromPi(sessionId);
     }
   }
@@ -1202,7 +1205,7 @@ export class SessionSupervisor extends EventEmitter {
     if (!this.isSideSession(sessionId)) return;
     const session = this.sessions.get(sessionId);
     if (!session) return;
-    const sessionFilePath = piSessionFilePathFromLogs(session.logs);
+    const sessionFilePath = piSessionFilePathForSession(session);
     if (!sessionFilePath) return;
     try {
       const name = await readPiSessionInfoName(sessionFilePath);
@@ -1455,6 +1458,16 @@ function isNonSkillSlashCommand(text: string): boolean {
   return /^\s*\/[a-zA-Z][\w-]*(\s|$)/.test(text);
 }
 
+function piSessionFilePathForSession(session: PickyAgentSession): string | undefined {
+  return normalizeOptionalString(session.piSessionFilePath) ?? piSessionFilePathFromLogs(session.logs);
+}
+
+function withPiSessionFileFromLogs(session: PickyAgentSession): PickyAgentSession {
+  if (normalizeOptionalString(session.piSessionFilePath)) return session;
+  const piSessionFilePath = piSessionFilePathFromLogs(session.logs);
+  return piSessionFilePath ? { ...session, piSessionFilePath } : session;
+}
+
 function piSessionFilePathFromLogs(logs: string[]): string | undefined {
   for (const line of [...logs].reverse()) {
     const path = piSessionFilePathFromLogLine(line);
@@ -1464,8 +1477,14 @@ function piSessionFilePathFromLogs(logs: string[]): string | undefined {
 }
 
 function piSessionFilePathFromLogLine(line: string): string | undefined {
-  const match = line.match(/^pi session:\s*(.+)$/);
-  return match?.[1]?.trim() || undefined;
+  for (const candidate of line.split(/\r?\n/)) {
+    const match = candidate.match(/^pi session:\s*(.+)$/)
+      ?? candidate.match(/^runtime reattached from pi session:\s*(.+)$/)
+      ?? candidate.match(/^\s*-\s*Session file:\s*(.+)$/);
+    const path = normalizeOptionalString(match?.[1]);
+    if (path && !path.startsWith("(") && path !== "ephemeral" && path !== "unavailable") return path;
+  }
+  return undefined;
 }
 
 function quickReplyOriginFromContextSource(source: string | undefined): QuickReplyMetadata["originSource"] {

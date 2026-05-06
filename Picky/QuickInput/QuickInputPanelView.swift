@@ -11,6 +11,13 @@
 import Combine
 import SwiftUI
 
+enum QuickInputPanelLayout {
+    static let pillWidth: CGFloat = 360
+    static let shadowOutset: CGFloat = 22
+    static let panelWidth: CGFloat = pillWidth + shadowOutset * 2
+    static let estimatedPanelHeight: CGFloat = 44 + shadowOutset * 2
+}
+
 @MainActor
 final class QuickInputPanelViewModel: ObservableObject {
     @Published var draftText: String = ""
@@ -37,7 +44,8 @@ struct QuickInputPanelView: View {
 
     /// Capsule corner radius — matches the reference pill shape.
     private let capsuleHeight: CGFloat = 44
-    private let panelWidth: CGFloat = 360
+    private let pillWidth: CGFloat = QuickInputPanelLayout.pillWidth
+    private let shadowOutset: CGFloat = QuickInputPanelLayout.shadowOutset
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -65,7 +73,8 @@ struct QuickInputPanelView: View {
                         Capsule(style: .continuous)
                             .stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
                     )
-                    .shadow(color: Color.black.opacity(0.32), radius: 18, x: 0, y: 10)
+                    .shadow(color: Color.black.opacity(0.22), radius: 18, x: 0, y: 10)
+                    .shadow(color: Color.black.opacity(0.12), radius: 3, x: 0, y: 1)
             )
 
             if let errorMessage = viewModel.errorMessage {
@@ -76,8 +85,9 @@ struct QuickInputPanelView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .frame(width: panelWidth, alignment: .leading)
-        .padding(.vertical, 4)
+        .frame(width: pillWidth, alignment: .leading)
+        .padding(shadowOutset)
+        .frame(width: QuickInputPanelLayout.panelWidth, alignment: .leading)
         .onAppear { isFieldFocused = true }
     }
 

@@ -21,14 +21,16 @@ private final class QuickInputKeyablePanel: NSPanel {
 
 @MainActor
 final class QuickInputPanelManager {
-    /// Horizontal offset from the cursor to the leading edge of the pill.
+    /// Horizontal offset from the cursor to the leading edge of the visible pill.
     private let cursorOffsetX: CGFloat = 18
-    /// Vertical gap below the cursor before the pill is placed.
+    /// Vertical gap below the cursor before the visible pill is placed.
     private let cursorOffsetY: CGFloat = 12
+    /// Transparent breathing room so the capsule shadow is not clipped into a rectangle.
+    private let shadowOutset: CGFloat = QuickInputPanelLayout.shadowOutset
     /// Estimated rendered height; used for first-frame placement before
     /// SwiftUI reports its actual fitting size.
-    private let estimatedPanelHeight: CGFloat = 56
-    private let panelWidth: CGFloat = 360
+    private let estimatedPanelHeight: CGFloat = QuickInputPanelLayout.estimatedPanelHeight
+    private let panelWidth: CGFloat = QuickInputPanelLayout.panelWidth
 
     private let viewModel = QuickInputPanelViewModel()
     private var panel: QuickInputKeyablePanel?
@@ -157,18 +159,18 @@ final class QuickInputPanelManager {
 
         // AppKit screen coordinates: y grows upward. Place the pill *below*
         // the cursor so the user can keep glancing at the cursor while typing.
-        var originX = cursorLocation.x + cursorOffsetX
-        var originY = cursorLocation.y - cursorOffsetY - panelSize.height
+        var originX = cursorLocation.x + cursorOffsetX - shadowOutset
+        var originY = cursorLocation.y - cursorOffsetY - (panelSize.height - shadowOutset)
 
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(cursorLocation) })
             ?? NSScreen.main {
             let visibleFrame = screen.visibleFrame
 
             if originX + panelSize.width > visibleFrame.maxX {
-                originX = cursorLocation.x - cursorOffsetX - panelSize.width
+                originX = cursorLocation.x - cursorOffsetX - panelSize.width + shadowOutset
             }
             if originY < visibleFrame.minY {
-                originY = cursorLocation.y + cursorOffsetY
+                originY = cursorLocation.y + cursorOffsetY - shadowOutset
             }
             originX = max(visibleFrame.minX, min(originX, visibleFrame.maxX - panelSize.width))
             originY = max(visibleFrame.minY, min(originY, visibleFrame.maxY - panelSize.height))

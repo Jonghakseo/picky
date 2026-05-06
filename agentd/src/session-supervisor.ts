@@ -79,6 +79,12 @@ export class SessionSupervisor extends EventEmitter {
   // user_text journal write until Pi actually dequeues the prompt, so the HUD can render queued
   // items as pending bubbles instead of (incorrectly) hiding them behind a duplicate user bubble.
   private pendingQueueDeliveries = new Map<string, Array<{ text: string; originatedBy: "user" | "main_agent" }>>();
+  // Serialize all session-state writes per session id. Without this, concurrent patch/sync calls
+  // capture stale snapshots in their `{ ...mustGet(), ...patch }` spread and overwrite each
+  // other's in-memory cache + persisted state. The status:running patch and the synthetic
+  // status:completed (from /name interception) racing against session_info/log patches was
+  // observed to revert the session back to 'running' after a /name slash command.
+  private patchChains = new Map<string, Promise<void>>();
 
   constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, artifactStore?: ArtifactStore, private readonly options: SessionSupervisorOptions = {}) {
     super();
@@ -1218,14 +1224,30 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void> {
-    const session = { ...this.mustGet(sessionId), ...patch, updatedAt: new Date().toISOString() };
-    await this.upsert(session);
+    await this.runSessionWrite(sessionId, async () => {
+      const session = { ...this.mustGet(sessionId), ...patch, updatedAt: new Date().toISOString() };
+      await this.upsert(session);
+    });
   }
 
   private async syncSessionMessages(sessionId: string, messages: readonly PickySessionMessage[]): Promise<void> {
-    const session = { ...this.mustGet(sessionId), messages: [...messages], updatedAt: new Date().toISOString() };
-    this.sessions.set(session.id, session);
-    await this.store.save(session);
+    await this.runSessionWrite(sessionId, async () => {
+      const session = { ...this.mustGet(sessionId), messages: [...messages], updatedAt: new Date().toISOString() };
+      this.sessions.set(session.id, session);
+      await this.store.save(session);
+    });
+  }
+
+  private async runSessionWrite(sessionId: string, work: () => Promise<void>): Promise<void> {
+    const previous = this.patchChains.get(sessionId) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(work);
+    const tracked = next.catch(() => undefined);
+    this.patchChains.set(sessionId, tracked);
+    try {
+      await next;
+    } finally {
+      if (this.patchChains.get(sessionId) === tracked) this.patchChains.delete(sessionId);
+    }
   }
 
   private nextSeq(sessionId: string): number {

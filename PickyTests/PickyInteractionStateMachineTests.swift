@@ -76,7 +76,9 @@ struct PickyInteractionStateMachineTests {
         )
         #expect(transition.state.lastDisplayMessage?.source == .textReply)
         #expect(!isSpeakingResponseOverlayActive(transition.state))
-        #expect(transition.effects.contains(.stopSpeech(reason: .superseded)))
+        // The stopSpeech carries the OLD speechID so the late .speechFailed
+        // dispatch hits the now-stale .speaking branch in the reducer guard.
+        #expect(containsStopSpeech(reason: .superseded, speechID: speechA, in: transition.effects))
         #expect(transition.effects.contains(.scheduleMinimumDisplay(
             timerID: timerB, speechID: nil, inputID: nil, delay: PickyInteractionReducer.minimumDisplayDuration
         )))
@@ -117,7 +119,7 @@ struct PickyInteractionStateMachineTests {
         #expect(reason == .activeVoiceInput)
         #expect(outputTimer == timerB)
         #expect(!isSpeakingResponseOverlayActive(transition.state))
-        #expect(transition.effects.contains(.stopSpeech(reason: .superseded)))
+        #expect(containsStopSpeech(reason: .superseded, speechID: speechA, in: transition.effects))
     }
 
     @Test func speakingReplacedByNewSpeakingDoesNotDoubleStopButReplacesUtterance() {
@@ -156,7 +158,7 @@ struct PickyInteractionStateMachineTests {
         #expect(text == "second voice reply")
         #expect(finishPending == false)
         #expect(isSpeakingResponseOverlayActive(transition.state))
-        #expect(!transition.effects.contains(.stopSpeech(reason: .superseded)))
+        #expect(!containsStopSpeech(reason: .superseded, in: transition.effects))
         #expect(transition.effects.contains(.speak(speechID: speechB, text: "second voice reply", contextID: voiceContextID)))
     }
 
@@ -177,7 +179,7 @@ struct PickyInteractionStateMachineTests {
         #expect(inputID == inputB)
         #expect(preview == "follow up")
         #expect(!isSpeakingResponseOverlayActive(transition.state))
-        #expect(transition.effects.contains(.stopSpeech(reason: .superseded)))
+        #expect(containsStopSpeech(reason: .superseded, speechID: speechA, in: transition.effects))
         #expect(transition.effects.contains(.captureTextContext(inputID: inputB, text: "follow up")))
     }
 
@@ -196,7 +198,7 @@ struct PickyInteractionStateMachineTests {
 
         #expect(transition.state.output == initial.output)
         #expect(isSpeakingResponseOverlayActive(transition.state))
-        #expect(!transition.effects.contains(.stopSpeech(reason: .superseded)))
+        #expect(!containsStopSpeech(reason: .superseded, in: transition.effects))
     }
 
     @Test func speakingPreemptedByTextContextCapturedEmitsStopSpeech() {
@@ -214,7 +216,7 @@ struct PickyInteractionStateMachineTests {
         #expect(inputID == inputB)
         #expect(contextID == "captured-context")
         #expect(!isSpeakingResponseOverlayActive(transition.state))
-        #expect(transition.effects.contains(.stopSpeech(reason: .superseded)))
+        #expect(containsStopSpeech(reason: .superseded, speechID: speechA, in: transition.effects))
     }
 
     @Test func speakingPreemptedByVoiceContextCapturedEmitsStopSpeech() {
@@ -234,7 +236,7 @@ struct PickyInteractionStateMachineTests {
             return
         }
         #expect(!isSpeakingResponseOverlayActive(transition.state))
-        #expect(transition.effects.contains(.stopSpeech(reason: .superseded)))
+        #expect(containsStopSpeech(reason: .superseded, speechID: speechA, in: transition.effects))
     }
 
     @Test func speakingPreemptedByTranscriptFailedEmitsStopSpeechAndIdles() {
@@ -251,7 +253,7 @@ struct PickyInteractionStateMachineTests {
 
         #expect(transition.state.output == .idle)
         #expect(!isSpeakingResponseOverlayActive(transition.state))
-        #expect(transition.effects.contains(.stopSpeech(reason: .superseded)))
+        #expect(containsStopSpeech(reason: .superseded, speechID: speechA, in: transition.effects))
     }
 
     @Test func speakingPreemptedByQuickInputTextSubmissionFailedEmitsStopSpeechAndIdles() {
@@ -267,10 +269,10 @@ struct PickyInteractionStateMachineTests {
 
         #expect(transition.state.output == .idle)
         #expect(!isSpeakingResponseOverlayActive(transition.state))
-        #expect(transition.effects.contains(.stopSpeech(reason: .superseded)))
+        #expect(containsStopSpeech(reason: .superseded, speechID: speechA, in: transition.effects))
     }
 
-    @Test func speakingNotPreemptedByPlainTextSubmissionFailedThatLeavesOutputUnchanged() {
+    @Test func speakingPreemptedByPlainTextSubmissionFailedAlsoEmitsStopSpeechAndIdles() {
         var initial = speakingState(contextID: voiceContextID, speechID: speechA, timerID: timerA)
         initial.pendingTextInputs[inputB] = PickyTextInputState(text: "queued", source: .text)
         initial.input = .textSubmitting(inputID: inputB, text: "queued")
@@ -281,11 +283,40 @@ struct PickyInteractionStateMachineTests {
             id: timerB
         )
 
-        // Plain text submissions have no claim on the output phase, so the
-        // running speech must continue.
+        // `failDirectMessage` mutates `latestAgentSessionSummary` directly to
+        // surface the error. If the cursor were still .responding (output
+        // still .speaking) at that moment the bubble would flash the error
+        // text while TTS keeps reading the old utterance — a desync.
+        // Preempting on plain-text failure too keeps the cursor surface
+        // honest at the cost of cutting the in-flight TTS.
+        #expect(transition.state.output == .idle)
+        #expect(!isSpeakingResponseOverlayActive(transition.state))
+        #expect(containsStopSpeech(reason: .superseded, speechID: speechA, in: transition.effects))
+    }
+
+    @Test func nonSpeakingPlainTextSubmissionFailedDoesNotForceOutputToIdle() {
+        var initial = PickyInteractionState()
+        initial.output = .showingTextReply(
+            contextID: "ctx",
+            text: "existing reply",
+            minimumDisplayTimerID: timerA,
+            minimumDisplayUntil: baseDate
+        )
+        initial.pendingTextInputs[inputB] = PickyTextInputState(text: "queued", source: .text)
+        initial.input = .textSubmitting(inputID: inputB, text: "queued")
+
+        let transition = reduce(
+            initial,
+            .textSubmissionFailed(message: "boom", inputID: inputB),
+            id: timerB
+        )
+
+        // Plain-text failure must only collapse output to .idle when it was
+        // genuinely .speaking. An unrelated .showingTextReply (or any other
+        // non-.speaking output) stays put so the failed background submission
+        // doesn't tear down chrome it never raised.
         #expect(transition.state.output == initial.output)
-        #expect(isSpeakingResponseOverlayActive(transition.state))
-        #expect(!transition.effects.contains(.stopSpeech(reason: .superseded)))
+        #expect(!containsStopSpeech(reason: .superseded, in: transition.effects))
     }
 
     @Test func speakingPreemptedByVoicePressedEmitsUserInterruptedStopSpeech() {
@@ -302,8 +333,8 @@ struct PickyInteractionStateMachineTests {
         #expect(!isSpeakingResponseOverlayActive(transition.state))
         // voicePressed semantically encodes a *user* action, so its stop reason
         // stays `.userInterrupted`, not `.superseded`.
-        #expect(transition.effects.contains(.stopSpeech(reason: .userInterrupted)))
-        #expect(!transition.effects.contains(.stopSpeech(reason: .superseded)))
+        #expect(containsStopSpeech(reason: .userInterrupted, speechID: speechA, in: transition.effects))
+        #expect(!containsStopSpeech(reason: .superseded, in: transition.effects))
     }
 
     // MARK: - Group B: `.speechFinished` / `.speechFailed` race & staleness
@@ -588,7 +619,7 @@ struct PickyInteractionStateMachineTests {
         }
         #expect(secondSpeechID != firstSpeechID)
         #expect(secondTransition.effects.contains(.speak(speechID: secondSpeechID, text: "second", contextID: sideSessionID)))
-        #expect(!secondTransition.effects.contains(.stopSpeech(reason: .superseded)))
+        #expect(!containsStopSpeech(reason: .superseded, in: secondTransition.effects))
 
         // Stale finish for the FIRST speechID is ignored.
         let staleFinish = reduce(state, .speechFinished(speechID: firstSpeechID), id: envelopeC, offset: 0.1)
@@ -625,7 +656,7 @@ struct PickyInteractionStateMachineTests {
             offset: 0.05
         )
         state = preempt.state
-        #expect(preempt.effects.contains(.stopSpeech(reason: .superseded)))
+        #expect(containsStopSpeech(reason: .superseded, speechID: speechID, in: preempt.effects))
         #expect(!isSpeakingResponseOverlayActive(state))
 
         // Late `.speechFinished` from the preempted utterance is stale.
@@ -698,7 +729,7 @@ struct PickyInteractionStateMachineTests {
         )
 
         // No `.stopSpeech` effect — there was nothing to preempt.
-        #expect(!transition.effects.contains(.stopSpeech(reason: .superseded)))
+        #expect(!containsStopSpeech(reason: .superseded, in: transition.effects))
     }
 
     @Test func preemptionFromShowingTextReplyStateIsNoOp() {
@@ -716,7 +747,7 @@ struct PickyInteractionStateMachineTests {
             id: envelopeA
         )
 
-        #expect(!transition.effects.contains(.stopSpeech(reason: .superseded)))
+        #expect(!containsStopSpeech(reason: .superseded, in: transition.effects))
     }
 
     // MARK: - Test helpers
@@ -781,6 +812,22 @@ struct PickyInteractionStateMachineTests {
             screenshots: [],
             warnings: []
         )
+    }
+
+    /// Returns true if `effects` contains a `.stopSpeech` for `reason`. When
+    /// `speechID` is supplied, the match also pins the carried speechID so
+    /// tests can lock the reducer's contract that *the preempted utterance*
+    /// is reported — not whatever runs next.
+    private func containsStopSpeech(
+        reason: PickySpeechStopReason,
+        speechID: UUID? = nil,
+        in effects: [PickyInteractionEffect]
+    ) -> Bool {
+        effects.contains { effect in
+            guard case .stopSpeech(let actualReason, let actualSpeechID) = effect else { return false }
+            guard actualReason == reason else { return false }
+            return speechID == nil || actualSpeechID == speechID
+        }
     }
 
     /// Convenience matcher that fails with a descriptive message if `output`

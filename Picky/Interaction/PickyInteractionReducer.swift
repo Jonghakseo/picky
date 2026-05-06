@@ -39,14 +39,16 @@ enum PickyInteractionReducer {
 
         case .voicePressed(let targetSessionID):
             let inputID = envelope.correlation.inputID ?? envelope.id
-            if case .speaking = state.output {
+            var preemptedSpeechID: UUID?
+            if case .speaking(_, let speechID, _, _, _, _) = state.output {
+                preemptedSpeechID = speechID
                 state.output = .idle
                 state = state.removingOverlayReason(.speakingResponse)
             }
             state.input = .voiceListening(inputID: inputID, targetSessionID: targetSessionID)
             state.pendingVoiceInputs[inputID] = PickyVoiceInputState(targetSessionID: targetSessionID)
             state = state.addingOverlayReason(.activeVoiceInput)
-            effects.append(.stopSpeech(reason: .userInterrupted))
+            effects.append(.stopSpeech(reason: .userInterrupted, speechID: preemptedSpeechID))
             effects.append(.cancelPointerAnimation(pointerID: state.pointer.target?.id))
             effects.append(.showOverlay(reason: .activeVoiceInput))
             effects.append(.startDictation(inputID: inputID))
@@ -145,10 +147,26 @@ enum PickyInteractionReducer {
             }
             state.pendingTextInputs[inputID] = nil
             if case .textSubmitting(inputID, _) = state.input { state.input = .idle }
+            // Preempt any in-flight TTS regardless of source so
+            // `failDirectMessage`'s direct mutation of `latestAgentSessionSummary`
+            // doesn't visually clash with a still-playing utterance. We only
+            // collapse the output to .idle if it was actually .speaking before
+            // (or if the failure came from a quickInput submission whose
+            // .waitingForAgent overlay also has to be torn down) — leaving
+            // unrelated outputs (.showingTextReply, .waitingForAgent for
+            // background text, .suppressedReply) untouched.
+            let preemptedSpeaking: Bool
+            if case .speaking = state.output {
+                preemptedSpeaking = true
+            } else {
+                preemptedSpeaking = false
+            }
+            preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
             if pendingText.source == .quickInput {
-                preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
                 state.output = .idle
                 state = state.removingOverlayReason(.waitingForVoiceResponse)
+            } else if preemptedSpeaking {
+                state.output = .idle
             }
             record(.stateChanged, "Text submission failed")
 
@@ -374,8 +392,8 @@ enum PickyInteractionReducer {
         state: inout PickyInteractionState,
         effects: inout [PickyInteractionEffect]
     ) {
-        guard case .speaking = state.output else { return }
-        effects.append(.stopSpeech(reason: .superseded))
+        guard case .speaking(_, let speechID, _, _, _, _) = state.output else { return }
+        effects.append(.stopSpeech(reason: .superseded, speechID: speechID))
         state = state.removingOverlayReason(.speakingResponse)
     }
 

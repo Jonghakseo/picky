@@ -1593,8 +1593,12 @@ final class CompanionManager: ObservableObject {
         speechPlaybackProvider.stopSpeaking()
     }
 
-    fileprivate func stopCurrentInteractionSpeech() {
-        let speechID = interactionSpeechID ?? activeSpeechID
+    fileprivate func stopCurrentInteractionSpeech(speechID requestedSpeechID: UUID?) {
+        // Prefer the speechID the reducer explicitly preempted. Falling back
+        // to interactionSpeechID/activeSpeechID covers legacy call sites that
+        // didn't know which utterance was active (e.g., voicePressed when no
+        // interaction speech was running, just a system status message).
+        let speechID = requestedSpeechID ?? interactionSpeechID ?? activeSpeechID
         stopCurrentSpeech()
         guard let speechID else { return }
         interactionCoordinator.effectCompleted(
@@ -1701,8 +1705,8 @@ private final class CompanionInteractionEffectRunner: PickyInteractionEffectRunn
                 manager?.runMinimumDisplayTimerEffect(timerID: timerID, speechID: speechID, inputID: inputID, delay: delay)
             case .speak(let speechID, let text, let contextID):
                 manager?.runSpeakEffect(speechID: speechID, text: text, contextID: contextID)
-            case .stopSpeech:
-                manager?.stopCurrentInteractionSpeech()
+            case .stopSpeech(_, let speechID):
+                manager?.stopCurrentInteractionSpeech(speechID: speechID)
             case .recordContextOwnership, .startDictation, .stopDictation:
                 break
             case .showOverlay, .scheduleTransientHide, .cancelTransientHide,

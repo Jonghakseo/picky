@@ -44,8 +44,21 @@ struct PickyConversationContextLineView: View {
                         .font(.system(size: 10.5, weight: .medium, design: .monospaced))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    if gitStatus.hasUncommittedChanges {
-                        gitMetricPill("dirty", color: DS.Colors.warningText)
+                    if gitStatus.insertions > 0 {
+                        gitMetricPill("+\(gitStatus.insertions)", color: DS.Colors.success)
+                            .help("Insertions")
+                    }
+                    if gitStatus.deletions > 0 {
+                        gitMetricPill("-\(gitStatus.deletions)", color: DS.Colors.destructiveText)
+                            .help("Deletions")
+                    }
+                    if gitStatus.aheadCount > 0 {
+                        gitMetricPill("↑\(gitStatus.aheadCount)", color: DS.Colors.accentText)
+                            .help("Ahead of upstream")
+                    }
+                    if gitStatus.behindCount > 0 {
+                        gitMetricPill("↓\(gitStatus.behindCount)", color: DS.Colors.warningText)
+                            .help("Behind upstream")
                     }
                 }
                 .layoutPriority(1)
@@ -117,11 +130,8 @@ struct PickyConversationContextLineView: View {
 
     private func gitMetricPill(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+            .font(.system(size: 10, weight: .medium, design: .monospaced))
             .foregroundColor(color.opacity(0.92))
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(Capsule().fill(color.opacity(0.10)))
     }
 }
 

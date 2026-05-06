@@ -98,6 +98,28 @@ struct PickyConversationCardViewTests {
         #expect(PickyAssistantRunMetadata(model: "anthropic/claude-opus-4-7", thinkingLevel: .xhigh).displayText == "opus-4-7 xhigh")
     }
 
+    @Test func contextUsageRendersBesideAssistantRunMetadataWithoutToolCalls() {
+        let session = makeConversationSession(
+            status: .completed,
+            messages: [
+                message("m-user", kind: .userText, text: "answer without tools"),
+                message(
+                    "m-agent",
+                    kind: .agentText,
+                    text: "done",
+                    assistantRun: PickyAssistantRunMetadata(model: "anthropic/claude-opus-4-7", thinkingLevel: .xhigh)
+                )
+            ],
+            activitySummary: .zero,
+            contextUsage: PickyContextUsage(tokens: 9_000, contextWindow: 10_000, percent: 90)
+        )
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+
+        #expect(snapshot.activitySummaryCount == 0)
+        #expect(snapshot.contextUsageFooterCount == 1)
+    }
+
     @Test func agentResponsePreviewTruncatesAfterEightLinesOrFiveHundredCharacters() {
         let exactCharacters = String(repeating: "가", count: 500)
         let longCharacters = exactCharacters + "나다라"
@@ -678,6 +700,7 @@ private func makeConversationSession(
     steeringMode: PickyQueueMode = .oneAtATime,
     followUpMode: PickyQueueMode = .oneAtATime,
     activitySummary: PickyActivitySummary = .zero,
+    contextUsage: PickyContextUsage? = nil,
     pendingExtensionUiRequest: PickyExtensionUiRequest? = nil,
     artifacts: [PickyArtifact] = [],
     logs: [String] = [],
@@ -702,6 +725,7 @@ private func makeConversationSession(
             steeringMode: steeringMode,
             followUpMode: followUpMode,
             activitySummary: activitySummary,
+            contextUsage: contextUsage,
             pendingExtensionUiRequest: pendingExtensionUiRequest,
             notifyMainOnCompletion: notifyMainOnCompletion
         )
@@ -715,6 +739,7 @@ private func message(
     originatedBy: PickyMessageOrigin? = nil,
     question: PickyExtensionUiRequest? = nil,
     activitySnapshot: PickyActivitySummary? = nil,
+    assistantRun: PickyAssistantRunMetadata? = nil,
     errorContext: String? = nil,
     errorMessage: String? = nil
 ) -> PickySessionMessage {
@@ -727,6 +752,7 @@ private func message(
         question: question,
         cancelledAt: nil,
         activitySnapshot: activitySnapshot,
+        assistantRun: assistantRun,
         errorContext: errorContext,
         errorMessage: errorMessage
     )

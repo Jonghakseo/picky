@@ -9,15 +9,11 @@ import SwiftUI
 
 struct PickyActivitySummaryView: View {
     let summary: PickyActivitySummary
-    var contextUsage: PickyContextUsage? = nil
 
     var body: some View {
         HStack(spacing: 10) {
             ForEach(summary.visibleToolCallItems) { item in
                 activityChip(item.icon, label: item.label, count: item.count, color: item.color)
-            }
-            if let contextUsage, let display = ContextUsageBatteryDisplay(usage: contextUsage) {
-                contextUsageChip(display)
             }
         }
         .padding(.horizontal, 4)
@@ -37,16 +33,21 @@ struct PickyActivitySummaryView: View {
         .lineLimit(1)
     }
 
-    private func contextUsageChip(_ display: ContextUsageBatteryDisplay) -> some View {
+}
+
+struct PickyContextUsageChip: View {
+    let display: ContextUsageBatteryDisplay
+
+    var body: some View {
         HStack(spacing: 4) {
             Text("ctx")
             ContextUsageBar(progress: display.fraction, color: display.color)
-                .frame(width: 28, height: 6)
+                .frame(width: 24, height: 5)
             Text(display.label)
                 .fontWeight(.bold)
         }
-        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-        .foregroundColor(display.color)
+        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+        .foregroundColor(display.color.opacity(0.9))
         .lineLimit(1)
         .help(display.tooltip)
     }

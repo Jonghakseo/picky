@@ -9,6 +9,7 @@ import SwiftUI
 
 struct PickyAgentBubbleView: View {
     let message: PickySessionMessage
+    var contextUsage: PickyContextUsage? = nil
     var showsOpenAsReportAction = false
     var onOpenAsReport: (() -> Void)?
 
@@ -23,6 +24,9 @@ struct PickyAgentBubbleView: View {
                         }
                         if let assistantRunText {
                             PickyAssistantRunMetadataLabel(text: assistantRunText)
+                            if let contextUsageDisplay {
+                                PickyContextUsageChip(display: contextUsageDisplay)
+                            }
                         }
                     }
                 }
@@ -51,6 +55,11 @@ struct PickyAgentBubbleView: View {
 
     private var assistantRunText: String? {
         message.assistantRun?.displayText
+    }
+
+    private var contextUsageDisplay: ContextUsageBatteryDisplay? {
+        guard assistantRunText != nil, let contextUsage else { return nil }
+        return ContextUsageBatteryDisplay(usage: contextUsage)
     }
 
     private var previewText: String {

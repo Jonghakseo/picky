@@ -75,6 +75,8 @@ struct PickyConversationListView: View {
                 snapshot.errorBubbleCount += 1
             case .agentActivity where message.activitySnapshot?.visibleToolCallItems.isEmpty == false:
                 snapshot.activitySummaryCount += 1
+            case .agentText where contextUsageDisplay(for: message) != nil:
+                snapshot.contextUsageFooterCount += 1
             default:
                 break
             }
@@ -93,6 +95,7 @@ struct PickyConversationListView: View {
         case .agentText:
             PickyAgentBubbleView(
                 message: message,
+                contextUsage: contextUsage(for: message),
                 showsOpenAsReportAction: showsOpenAsReportAction(for: message),
                 onOpenAsReport: { openReport() }
             )
@@ -123,6 +126,16 @@ struct PickyConversationListView: View {
         case .system:
             PickyAgentBubbleView(message: message)
         }
+    }
+
+    private func contextUsage(for message: PickySessionMessage) -> PickyContextUsage? {
+        guard message.kind == .agentText, message.assistantRun?.displayText != nil else { return nil }
+        return session.contextUsage
+    }
+
+    private func contextUsageDisplay(for message: PickySessionMessage) -> ContextUsageBatteryDisplay? {
+        guard let contextUsage = contextUsage(for: message) else { return nil }
+        return ContextUsageBatteryDisplay(usage: contextUsage)
     }
 
     private func showsOpenAsReportAction(for message: PickySessionMessage) -> Bool {
@@ -285,6 +298,7 @@ struct PickyConversationListRenderSnapshot: Equatable {
     var questionBubbleCount = 0
     var errorBubbleCount = 0
     var activitySummaryCount = 0
+    var contextUsageFooterCount = 0
     var showsActivitySummary = false
 }
 

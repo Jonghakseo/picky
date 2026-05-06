@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import {
@@ -105,6 +106,13 @@ export class PiSdkRuntime implements AgentRuntime {
   }
 }
 
+interface ExpectedInputDelivery {
+  id: string;
+  text: string;
+  originatedBy: "user" | "main_agent" | "internal" | "pi_extension";
+  suppress: boolean;
+}
+
 class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private listeners = new Set<(event: RuntimeEvent) => void>();
   private unsubscribe?: () => void;
@@ -115,6 +123,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private pendingExtensionUiRequestIds = new Set<string>();
   private pendingTerminalError?: Extract<RuntimeEvent, { type: "status" }>;
   private pendingTerminalErrorTimer?: ReturnType<typeof setTimeout>;
+  private expectedInputDeliveries: ExpectedInputDelivery[] = [];
   // Cache of extension baseDir -> whether any of its source files use ctx.ui.custom. Picky's
   // ExtensionUiBridge throws on custom() so commands from those extensions will always fail in
   // Picky; hiding them from autocomplete keeps users from invoking known-broken slash commands.
@@ -130,13 +139,15 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     logAgentd("pi prompt", { sessionId: this.id, promptChars: prompt.text.length, images: prompt.imagePaths?.length ?? 0 });
     if (await this.handleBuiltinSlashCommand(prompt.text)) return;
     const wasStreaming = this.runtime.session.isStreaming;
+    const expected = this.expectInputDelivery(prompt.text);
     try {
       await this.runtime.session.prompt(prompt.text, { images: await imageOptions(prompt.imagePaths), source: "rpc" });
     } catch (error) {
+      this.cancelExpectedInputDelivery(expected.id);
       this.emit({ type: "status", status: "failed", summary: messageOf(error) });
       return;
     }
-    this.maybeEmitImmediateCompletion(wasStreaming);
+    if (this.maybeEmitImmediateCompletion(wasStreaming)) this.cancelExpectedInputDelivery(expected.id);
   }
 
   async followUp(prompt: BuiltPrompt): Promise<void> {
@@ -356,6 +367,9 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       return { type: "queue_update", steering, followUp };
     }
 
+    const inputMessageEvent = this.runtimeEventFromInputMessagePiEvent(record);
+    if (inputMessageEvent) return inputMessageEvent;
+
     const recoveryEvent = this.runtimeEventFromRecoveryPiEvent(record);
     if (recoveryEvent) return recoveryEvent;
 
@@ -381,6 +395,56 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
 
     return runtimeEvent;
+  }
+
+  private runtimeEventFromInputMessagePiEvent(event: Record<string, unknown>): RuntimeEvent | undefined {
+    if (event.type !== "message_start") return undefined;
+    const message = asRecord(event.message);
+    const role = stringValue(message.role);
+    if (role !== "user" && role !== "custom") return undefined;
+
+    const text = textFromPiMessageContent(message.content).trim();
+    if (!text) return undefined;
+
+    if (role === "user") {
+      const expected = this.consumeExpectedInputDelivery(text);
+      if (expected?.suppress !== false) return undefined;
+      return { type: "input_message", role, text, originatedBy: expected.originatedBy };
+    }
+
+    const display = message.display;
+    return {
+      type: "input_message",
+      role,
+      text,
+      originatedBy: "pi_extension",
+      ...(typeof display === "boolean" ? { display } : {}),
+      ...(typeof message.customType === "string" ? { customType: message.customType } : {}),
+    };
+  }
+
+  private expectInputDelivery(text: string, originatedBy: "user" | "main_agent" | "internal" = "internal", suppress = true): ExpectedInputDelivery {
+    const delivery = { id: randomUUID(), text, originatedBy, suppress };
+    this.expectedInputDeliveries.push(delivery);
+    return delivery;
+  }
+
+  private consumeExpectedInputDelivery(text: string): ExpectedInputDelivery {
+    const exactIndex = this.expectedInputDeliveries.findIndex((delivery) => delivery.text === text);
+    if (exactIndex >= 0) return this.expectedInputDeliveries.splice(exactIndex, 1)[0]!;
+    const slashIndex = this.expectedInputDeliveries.findIndex((delivery) => delivery.text.trim().startsWith("/"));
+    if (slashIndex >= 0) return this.expectedInputDeliveries.splice(slashIndex, 1)[0]!;
+    return { id: "pi-extension", text, originatedBy: "pi_extension", suppress: false };
+  }
+
+  private cancelExpectedInputDelivery(id: string): void {
+    const index = this.expectedInputDeliveries.findIndex((delivery) => delivery.id === id);
+    if (index >= 0) this.expectedInputDeliveries.splice(index, 1);
+  }
+
+  private isExpectedInputQueued(text: string): boolean {
+    const session = this.runtime.session as unknown as { getSteeringMessages?: () => readonly string[]; getFollowUpMessages?: () => readonly string[] };
+    return (session.getSteeringMessages?.() ?? []).includes(text) || (session.getFollowUpMessages?.() ?? []).includes(text);
   }
 
   private runtimeEventFromRecoveryPiEvent(event: Record<string, unknown>): RuntimeEvent | undefined {
@@ -515,10 +579,14 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       rejectAccepted(error);
     };
 
+    const expected = this.expectInputDelivery(text);
     const promptPromise = this.runtime.session.prompt(text, {
       ...options,
       preflightResult: (success: boolean) => {
-        if (!success) return;
+        if (!success) {
+          this.cancelExpectedInputDelivery(expected.id);
+          return;
+        }
         accepted = true;
         resolveOnce();
       },
@@ -531,6 +599,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       })
       .catch((error) => {
         promptResolved = true;
+        this.cancelExpectedInputDelivery(expected.id);
         if (accepted) {
           this.emit({ type: "status", status: "failed", summary: messageOf(error) });
           return;
@@ -549,7 +618,9 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     // Yield once to let any already-scheduled `promptPromise.then` microtask run so we can
     // tell synchronous-handle paths apart from agent-turn paths.
     await Promise.resolve();
-    return promptResolved ? this.maybeEmitImmediateCompletion(wasStreaming) : false;
+    const handledSynchronously = promptResolved ? this.maybeEmitImmediateCompletion(wasStreaming) : false;
+    if (handledSynchronously || (promptResolved && !this.isExpectedInputQueued(text))) this.cancelExpectedInputDelivery(expected.id);
+    return handledSynchronously;
   }
 
   // Pi handles `/slash` extension commands and input handlers that return `handled` synchronously
@@ -614,6 +685,21 @@ function mediaTypeFromPath(path: string): string {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function textFromPiMessageContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) {
+    if (content === undefined || content === null) return "";
+    return typeof content === "object" ? JSON.stringify(content) : String(content);
+  }
+  return content
+    .map((block) => {
+      const record = asRecord(block);
+      if (record.type === "text" && typeof record.text === "string") return record.text;
+      return "";
+    })
+    .join("");
 }
 
 function stringValue(value: unknown): string | undefined {

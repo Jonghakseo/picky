@@ -2265,6 +2265,44 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(side.id)?.messages).toMatchObject([{ kind: "user_text", text: "main instructions", originatedBy: "main_agent" }]);
   });
 
+  it("records Pi extension injected user and custom messages as extension-origin user bubbles", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pi-extension-input-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("extension input"));
+
+    runtime.handle?.emit({ type: "input_message", role: "user", text: "subagent finished", originatedBy: "pi_extension" });
+    runtime.handle?.emit({ type: "input_message", role: "custom", text: "custom extension note", originatedBy: "pi_extension" });
+    runtime.handle?.emit({ type: "input_message", role: "custom", text: "hidden custom note", originatedBy: "pi_extension", display: false });
+    await settle();
+
+    expect(supervisor.get(session.id)?.messages?.filter((message) => message.kind === "user_text").map((message) => ({ text: message.text, originatedBy: message.originatedBy }))).toEqual([
+      { text: "subagent finished", originatedBy: "pi_extension" },
+      { text: "custom extension note", originatedBy: "pi_extension" },
+    ]);
+  });
+
+  it("revives a terminal session when a Pi extension triggers a new input turn", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pi-extension-revive-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("extension revive"));
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "old answer" });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed", finalAnswer: "old answer" });
+    await settle();
+    expect(supervisor.get(session.id)?.status).toBe("completed");
+
+    runtime.handle?.emit({ type: "input_message", role: "user", text: "extension follow-up", originatedBy: "pi_extension" });
+    await settle();
+
+    expect(supervisor.get(session.id)?.status).toBe("running");
+    expect(supervisor.get(session.id)?.finalAnswer).toBeUndefined();
+    expect(supervisor.get(session.id)?.messages?.at(-1)).toMatchObject({ kind: "user_text", text: "extension follow-up", originatedBy: "pi_extension" });
+  });
+
   it("defers user_text for queued follow-ups until Pi dequeues them", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-deferred-followup-"));

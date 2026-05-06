@@ -172,6 +172,23 @@ describe("PiSdkRuntime", () => {
     expect(events).toContainEqual({ type: "assistant_delta", delta: "ok" });
   });
 
+  it("mirrors Pi extension injected user and custom messages", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+
+    const handle = await runtime.prewarm!({ cwd: "/tmp/project", sessionId: "session-1" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    fakeSession.emit("event", { type: "message_start", message: { role: "user", content: [{ type: "text", text: "extension follow-up" }] } });
+    fakeSession.emit("event", { type: "message_start", message: { role: "custom", customType: "subagent", content: "custom result", display: true } });
+    fakeSession.emit("event", { type: "message_start", message: { role: "custom", customType: "hidden", content: "hidden result", display: false } });
+
+    expect(events).toContainEqual({ type: "input_message", role: "user", text: "extension follow-up", originatedBy: "pi_extension" });
+    expect(events).toContainEqual({ type: "input_message", role: "custom", text: "custom result", originatedBy: "pi_extension", display: true, customType: "subagent" });
+    expect(events).toContainEqual({ type: "input_message", role: "custom", text: "hidden result", originatedBy: "pi_extension", display: false, customType: "hidden" });
+  });
+
   it("starts an idle Pi turn for follow-up input instead of only queueing it", async () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);

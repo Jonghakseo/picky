@@ -497,10 +497,10 @@ struct PickyConversationCardViewTests {
         #expect(bubble.displayedOriginLabel == "by main agent")
     }
 
-    @Test func userBubbleShowsByPiTerminalLabelWhenPiExtensionOriginated() {
+    @Test func userBubbleShowsPiExtensionLabelWhenPiExtensionOriginated() {
         let bubble = PickyUserBubbleView(message: message("m-pi", kind: .userText, text: "from extension", originatedBy: .piExtension))
 
-        #expect(bubble.displayedOriginLabel == "by Pi terminal")
+        #expect(bubble.displayedOriginLabel == "from Pi extension")
     }
 
     // MARK: - PR11 regression: per-turn agent_activity snapshot

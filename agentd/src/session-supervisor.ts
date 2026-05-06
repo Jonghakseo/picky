@@ -111,6 +111,7 @@ export class SessionSupervisor extends EventEmitter {
       notifySideCompletion: (sessionId) => this.notifyMainOfSideCompletion(sessionId),
       isSideSession: (sessionId) => this.sideSessionIds.has(sessionId),
       emitExtensionUiRequest: (request) => this.emit("extensionUiRequest", request),
+      onInputMessage: (sessionId, event) => this.handleRuntimeInputMessage(sessionId, event),
       messageBuilder: this.messageBuilder,
     });
   }
@@ -1035,6 +1036,11 @@ export class SessionSupervisor extends EventEmitter {
     if (!queueChanged && !modeChanged) return;
     const seq = this.nextSeq(sessionId);
     await this.chainEmit(sessionId, async () => { this.emit("queueUpdated", sessionId, queuedSteers, queuedFollowUps, emittedSteeringMode, emittedFollowUpMode, seq); });
+  }
+
+  private async handleRuntimeInputMessage(sessionId: string, event: Extract<RuntimeEvent, { type: "input_message" }>): Promise<void> {
+    if (event.originatedBy !== "pi_extension") return;
+    await this.prepareSideSessionForUserInput(sessionId);
   }
 
   private async incrementActivity(sessionId: string, category: ToolCategory): Promise<void> {

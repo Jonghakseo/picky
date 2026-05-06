@@ -63,6 +63,7 @@ describe("picky agentd known bugs (failing reproductions)", () => {
         recordExtensionQuestion: async () => {},
         recordError: async () => {},
         recordSystemMessage: async () => {},
+        recordUserText: async () => {},
         appendAssistantDelta: () => {},
         flushAssistantText: async () => {},
         appendThinkingDelta: async () => {},

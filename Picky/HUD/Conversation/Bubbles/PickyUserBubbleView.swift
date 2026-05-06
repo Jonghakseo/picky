@@ -14,10 +14,11 @@ struct PickyUserBubbleView: View {
         HStack {
             Spacer(minLength: 48)
             VStack(alignment: .leading, spacing: 4) {
-                Text(message.text ?? "")
+                Text(displayText)
                     .font(.system(size: 12))
                     .foregroundColor(DS.Colors.textPrimary)
                     .multilineTextAlignment(.leading)
+                    .lineLimit(isPiExtensionMessage ? 4 : nil)
                     .fixedSize(horizontal: false, vertical: true)
                 if let originLabel {
                     Text(originLabel)
@@ -35,7 +36,7 @@ struct PickyUserBubbleView: View {
                     topTrailingRadius: 12,
                     style: .continuous
                 )
-                .fill(DS.Colors.accentSubtle.opacity(0.95))
+                .fill(bubbleFill)
             )
             .frame(maxWidth: PickyHUDDockLayout.detailWidth * 0.85, alignment: .trailing)
         }
@@ -44,12 +45,26 @@ struct PickyUserBubbleView: View {
 
     var displayedOriginLabel: String? { originLabel }
 
+    private var displayText: String {
+        guard isPiExtensionMessage, let text = message.text else { return message.text ?? "" }
+        return PickyAgentResponsePreview.truncatedMarkdown(text, maxLines: 4, maxCharacters: 280)
+    }
+
+    private var isPiExtensionMessage: Bool {
+        message.originatedBy == .piExtension
+    }
+
+    private var bubbleFill: Color {
+        if isPiExtensionMessage { return DS.Colors.surface2.opacity(0.92) }
+        return DS.Colors.accentSubtle.opacity(0.95)
+    }
+
     private var originLabel: String? {
         switch message.originatedBy {
         case .mainAgent:
             return "by main agent"
         case .piExtension:
-            return "by Pi terminal"
+            return "from Pi extension"
         case .user, nil:
             return nil
         }

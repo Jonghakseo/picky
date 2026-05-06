@@ -14,6 +14,7 @@ export interface RuntimeMessageJournal {
   recordExtensionQuestion(sessionId: string, request: PickyExtensionUiRequest): Promise<void>;
   recordError(sessionId: string, errorMessage: string, errorContext?: string): Promise<void>;
   recordSystemMessage(sessionId: string, text: string): Promise<void>;
+  recordUserText(sessionId: string, text: string, originatedBy: "user" | "main_agent" | "pi_extension"): Promise<void>;
   appendAssistantDelta(sessionId: string, delta: string): void;
   flushAssistantText(sessionId: string, assistantRun?: PickyAssistantRunMetadata): Promise<void>;
   appendThinkingDelta(sessionId: string, delta: string): Promise<void>;
@@ -34,6 +35,7 @@ export interface RuntimeEventHandlerDependencies {
   notifySideCompletion(sessionId: string): Promise<void>;
   isSideSession(sessionId: string): boolean;
   emitExtensionUiRequest(request: PickyExtensionUiRequest): void;
+  onInputMessage?(sessionId: string, event: Extract<RuntimeEvent, { type: "input_message" }>): Promise<void>;
   messageBuilder: RuntimeMessageJournal;
 }
 
@@ -57,6 +59,7 @@ export class RuntimeEventHandler {
 
   async handle(sessionId: string, event: RuntimeEvent): Promise<void> {
     if (event.type === "log") return this.dependencies.appendLog(sessionId, event.line);
+    if (event.type === "input_message") return this.applyInputMessageEvent(sessionId, event);
     if (event.type !== "status" && isTerminalStatus(this.dependencies.getSession(sessionId).status)) return;
     if (event.type === "assistant_delta") {
       this.thinkingActive.set(sessionId, false);
@@ -78,6 +81,19 @@ export class RuntimeEventHandler {
     if (event.type === "session_info") return this.applySessionInfoEvent(sessionId, event.name);
     if (event.type === "context_usage") return this.applyContextUsageEvent(sessionId, event.usage);
     return this.applyToolEvent(sessionId, event);
+  }
+
+  private async applyInputMessageEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "input_message" }>): Promise<void> {
+    if (event.originatedBy === "internal" || event.display === false) return;
+    await this.dependencies.onInputMessage?.(sessionId, event);
+    await this.dependencies.messageBuilder.flushAssistantText(sessionId);
+    await this.dependencies.messageBuilder.flushThinking(sessionId);
+    await this.dependencies.commitTurnActivity(sessionId);
+    await this.dependencies.messageBuilder.recordUserText(sessionId, event.text, event.originatedBy === "pi_extension" ? "pi_extension" : event.originatedBy);
+    this.assistantDrafts.set(sessionId, "");
+    this.thinkingDrafts.set(sessionId, "");
+    this.thinkingActive.set(sessionId, false);
+    await this.dependencies.patchSession(sessionId, { status: "running", lastSummary: event.role === "custom" ? "Pi extension message started" : "Pi extension follow-up started", finalAnswer: undefined, thinkingPreview: undefined });
   }
 
   private async applyContextUsageEvent(sessionId: string, usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined): Promise<void> {

@@ -27,7 +27,7 @@ struct PickyTypingBubbleView: View {
                         Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
                             .font(.system(size: 8.5, weight: .bold))
                         Text("⌁ thinking")
-                            .font(.system(size: 9.5, weight: .semibold))
+                            .font(PickyHUDTypography.metaSemibold)
                         HStack(spacing: 3) {
                             ForEach(0..<3, id: \.self) { index in
                                 Circle()

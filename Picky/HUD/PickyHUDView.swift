@@ -479,7 +479,7 @@ private struct PickyHUDDockIconView: View {
             ZStack {
                 dockIconBackground
                 Text("\(index + 1)")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(PickyHUDTypography.supportingMonospacedSemibold)
                     .foregroundColor(isActive ? DS.Colors.textPrimary : DS.Colors.textSecondary)
             }
             .frame(width: 36, height: 36)

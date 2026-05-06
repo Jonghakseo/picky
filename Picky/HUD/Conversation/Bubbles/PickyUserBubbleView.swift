@@ -21,7 +21,7 @@ struct PickyUserBubbleView: View {
                 .multilineTextAlignment(.leading)
                 if let originLabel {
                     Text(originLabel)
-                        .font(.system(size: 9, weight: .medium))
+                        .font(PickyHUDTypography.minimumMedium)
                         .foregroundColor(DS.Colors.textTertiary)
                 }
             }

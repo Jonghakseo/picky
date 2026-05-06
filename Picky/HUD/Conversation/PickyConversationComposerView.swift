@@ -77,14 +77,14 @@ struct PickyConversationComposerView: View {
         ZStack(alignment: .topLeading) {
             if draft.isEmpty {
                 Text(placeholder)
-                    .font(.system(size: 11.5))
+                    .font(PickyHUDTypography.bodyCompact)
                     .foregroundColor(DS.Colors.textTertiary)
                     .padding(.leading, 5)
                     .padding(.top, 4)
                     .allowsHitTesting(false)
             }
             TextEditor(text: $draft)
-                .font(.system(size: 11.5))
+                .font(PickyHUDTypography.bodyCompact)
                 .foregroundColor(DS.Colors.textPrimary)
                 .scrollContentBackground(.hidden)
                 .background(Color.clear)
@@ -172,18 +172,18 @@ struct PickyConversationComposerView: View {
     private func slashCommandRow(_ command: PickySlashCommand, isSelected: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text("/\(command.name)")
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                .font(PickyHUDTypography.labelMonospacedSemibold)
                 .foregroundColor(DS.Colors.accentText)
                 .lineLimit(1)
             Text(command.source.displayName)
-                .font(.system(size: 8.5, weight: .semibold))
+                .font(PickyHUDTypography.minimumSemibold)
                 .foregroundColor(DS.Colors.textTertiary)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 1)
                 .background(Capsule().fill(DS.Colors.surface2.opacity(0.75)))
             if let description = command.description, !description.isEmpty {
                 Text(description)
-                    .font(.system(size: 10))
+                    .font(PickyHUDTypography.status)
                     .foregroundColor(DS.Colors.textSecondary)
                     .lineLimit(1)
             }
@@ -200,7 +200,7 @@ struct PickyConversationComposerView: View {
 
     private func slashCommandStatus(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 10))
+            .font(PickyHUDTypography.status)
             .foregroundColor(DS.Colors.textTertiary)
             .padding(.horizontal, 9)
             .padding(.vertical, 6)

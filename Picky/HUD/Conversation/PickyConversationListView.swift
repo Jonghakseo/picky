@@ -168,17 +168,17 @@ struct PickyConversationListView: View {
     private func queueGroupHeader(items: [PickyQueueItem], kind: PickyPendingQueueKind) -> some View {
         HStack(spacing: 6) {
             Text(kind.label)
-                .font(.system(size: 10, weight: .semibold))
+                .font(PickyHUDTypography.statusSemibold)
                 .foregroundColor(kind.color)
             Text("\(items.count)")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .font(PickyHUDTypography.statusMonospacedMedium)
                 .foregroundColor(DS.Colors.textTertiary)
             Spacer(minLength: 8)
             Button(action: {
                 Task { try? await viewModel.clearQueue(sessionID: session.id, kind: .all) }
             }) {
                 Text("Clear all")
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .font(PickyHUDTypography.metaSemibold)
                     .foregroundColor(DS.Colors.textSecondary)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)
@@ -240,7 +240,7 @@ struct PickyConversationListView: View {
                 Image(systemName: "chevron.up")
                     .font(.system(size: 8, weight: .semibold))
                 Text("Earlier history · \(hiddenHistoryCount) more")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(PickyHUDTypography.statusMedium)
             }
             .foregroundColor(DS.Colors.textTertiary)
             .padding(.horizontal, 9)
@@ -309,7 +309,7 @@ private struct PickyConversationTimeSeparatorView: View {
         HStack(spacing: 8) {
             Rectangle().fill(DS.Colors.borderSubtle.opacity(0.55)).frame(height: 0.5)
             Text(text)
-                .font(.system(size: 9.5, weight: .medium))
+                .font(PickyHUDTypography.metaMedium)
                 .foregroundColor(DS.Colors.textTertiary)
                 .lineLimit(1)
             Rectangle().fill(DS.Colors.borderSubtle.opacity(0.55)).frame(height: 0.5)

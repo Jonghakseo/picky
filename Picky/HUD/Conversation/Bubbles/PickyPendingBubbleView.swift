@@ -41,7 +41,7 @@ struct PickyPendingBubbleView: View {
             Spacer(minLength: 48)
             VStack(alignment: .leading, spacing: 5) {
                 Text(PickyQueuedInputText.displayText(from: queueItem.text))
-                    .font(.system(size: 12))
+                    .font(PickyHUDTypography.body)
                     .foregroundColor(DS.Colors.textPrimary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)

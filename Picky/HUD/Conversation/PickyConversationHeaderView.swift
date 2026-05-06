@@ -30,7 +30,7 @@ struct PickyConversationHeaderView: View {
         HStack(alignment: .center, spacing: 9) {
             piBadge
             Text(session.title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(PickyHUDTypography.title)
                 .foregroundColor(DS.Colors.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -143,7 +143,7 @@ struct PickyConversationHeaderView: View {
 
     private var statusPill: some View {
         Text(statusText)
-            .font(.system(size: 10, weight: .semibold))
+            .font(PickyHUDTypography.statusSemibold)
             .foregroundColor(statusColor)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)

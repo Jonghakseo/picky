@@ -29,24 +29,24 @@ struct PickyQuestionBubbleView: View {
         HStack {
             VStack(alignment: .leading, spacing: 8) {
                 Text("⌑ \(statusLabel) · \(request.method)")
-                    .font(.system(size: 9.5, weight: .bold))
+                    .font(PickyHUDTypography.metaBold)
                     .foregroundColor(isClosed ? DS.Colors.textTertiary : DS.Colors.warning)
                     .lineLimit(1)
                 if let title = request.title, !title.isEmpty {
                     Text(title)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(PickyHUDTypography.bodyCompactMedium)
                         .foregroundColor(DS.Colors.textPrimary)
                 }
                 if let bodyText = PickyQuestionBubbleCopy.bodyText(for: request) {
                     Text(bodyText)
-                        .font(.system(size: 12))
+                        .font(PickyHUDTypography.body)
                         .foregroundColor(DS.Colors.textPrimary)
                         .strikethrough(isCancelled, color: DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let description = request.description, !description.isEmpty {
                     Text(description)
-                        .font(.system(size: 11))
+                        .font(PickyHUDTypography.supporting)
                         .foregroundColor(DS.Colors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -97,12 +97,12 @@ struct PickyQuestionBubbleView: View {
                 Button("Allow") { answer(.bool(true)) }
                 Button("Cancel") { cancel() }
             }
-            .font(.system(size: 11, weight: .medium))
+            .font(PickyHUDTypography.supportingMedium)
         case "select":
             let options = request.options ?? []
             if options.isEmpty {
                 Button("Cancel") { cancel() }
-                    .font(.system(size: 11, weight: .medium))
+                    .font(PickyHUDTypography.supportingMedium)
             } else {
                 HStack(spacing: 6) {
                     ForEach(options, id: \.self) { option in
@@ -110,24 +110,24 @@ struct PickyQuestionBubbleView: View {
                     }
                     Button("Cancel") { cancel() }
                 }
-                .font(.system(size: 11, weight: .medium))
+                .font(PickyHUDTypography.supportingMedium)
             }
         case "input", "editor":
             HStack(spacing: 6) {
                 TextField("Response…", text: $textValue)
                     .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11))
+                    .font(PickyHUDTypography.supporting)
                     .onSubmit { submitText() }
                 Button("Submit") { submitText() }
                     .disabled(textValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 Button("Cancel") { cancel() }
             }
-            .font(.system(size: 11, weight: .medium))
+            .font(PickyHUDTypography.supportingMedium)
         case "askUserQuestion":
             askUserQuestionForm
         default:
             Button("Dismiss") { cancel() }
-                .font(.system(size: 11, weight: .medium))
+                .font(PickyHUDTypography.supportingMedium)
         }
     }
 
@@ -136,7 +136,7 @@ struct PickyQuestionBubbleView: View {
         return VStack(alignment: .leading, spacing: 8) {
             if questions.isEmpty {
                 Text("No questions provided")
-                    .font(.system(size: 11))
+                    .font(PickyHUDTypography.supporting)
                     .foregroundColor(DS.Colors.textSecondary)
             } else {
                 ForEach(Array(questions.enumerated()), id: \.offset) { index, question in
@@ -148,7 +148,7 @@ struct PickyQuestionBubbleView: View {
                     .disabled(!formState.isSubmittable(questions: questions))
                 Button("Cancel") { cancel() }
             }
-            .font(.system(size: 11, weight: .medium))
+            .font(PickyHUDTypography.supportingMedium)
         }
     }
 
@@ -156,7 +156,7 @@ struct PickyQuestionBubbleView: View {
         let key = PickyAskUserQuestionFormState.key(for: question, index: index)
         return VStack(alignment: .leading, spacing: 5) {
             Text(question.prompt ?? question.label ?? key)
-                .font(.system(size: 11, weight: .medium))
+                .font(PickyHUDTypography.supportingMedium)
                 .foregroundColor(DS.Colors.textPrimary)
             switch question.type {
             case .radio:
@@ -172,7 +172,7 @@ struct PickyQuestionBubbleView: View {
                         }
                         TextField("Other…", text: binding($formState.otherValues, key: key))
                             .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 11))
+                            .font(PickyHUDTypography.supporting)
                             .disabled(formState.radioValues[key] != PickyAskUserQuestionFormState.otherSentinel)
                     }
                 }
@@ -186,13 +186,13 @@ struct PickyQuestionBubbleView: View {
                     if question.allowOther ?? true {
                         TextField("Other…", text: binding($formState.otherValues, key: key))
                             .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 11))
+                            .font(PickyHUDTypography.supporting)
                     }
                 }
             case .text:
                 TextField(question.placeholder ?? "Response…", text: binding($formState.textValues, key: key))
                     .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11))
+                    .font(PickyHUDTypography.supporting)
             }
         }
         .padding(.vertical, 2)
@@ -201,10 +201,10 @@ struct PickyQuestionBubbleView: View {
     private func optionButton(label: String, description: String?, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(label).font(.system(size: 11, weight: .medium))
+                Text(label).font(PickyHUDTypography.supportingMedium)
                 if let description, !description.isEmpty {
                     Text(description)
-                        .font(.system(size: 10))
+                        .font(PickyHUDTypography.status)
                         .foregroundColor(DS.Colors.textSecondary)
                         .lineLimit(2)
                 }

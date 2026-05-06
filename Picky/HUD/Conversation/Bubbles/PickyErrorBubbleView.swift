@@ -17,18 +17,18 @@ struct PickyErrorBubbleView: View {
         HStack {
             VStack(alignment: .leading, spacing: 8) {
                 Text("⚠ FAILED · runtime error")
-                    .font(.system(size: 9.5, weight: .bold))
+                    .font(PickyHUDTypography.metaBold)
                     .foregroundColor(DS.Colors.destructiveText)
                     .lineLimit(1)
                 if let titleText {
                     Text(titleText)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(PickyHUDTypography.bodyCompactMedium)
                         .foregroundColor(DS.Colors.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let errorMessage = message.errorMessage, !errorMessage.isEmpty {
                     Text(errorMessage)
-                        .font(.system(size: 10.5, design: .monospaced))
+                        .font(PickyHUDTypography.labelMonospacedMedium)
                         .foregroundColor(DS.Colors.textPrimary)
                         .padding(7)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -37,7 +37,7 @@ struct PickyErrorBubbleView: View {
                 }
                 if let errorContext = message.errorContext, !errorContext.isEmpty {
                     Text(errorContext)
-                        .font(.system(size: 10.5))
+                        .font(PickyHUDTypography.labelMedium)
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -89,7 +89,7 @@ struct PickyErrorBubbleView: View {
     private func recoveryChip(_ label: String, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 10, weight: .semibold))
+                .font(PickyHUDTypography.statusSemibold)
                 .foregroundColor(color)
                 .lineLimit(1)
                 .padding(.horizontal, 7)

@@ -99,6 +99,7 @@ struct PickyConversationContextLineView: View {
         Button(action: { PickyFinderOpenRequest.open(cwd: session.cwd) }) {
             Label {
                 Text(compactCwd)
+                    .font(PickyHUDTypography.labelMedium)
                     .lineLimit(1)
                     .truncationMode(.middle)
             } icon: {
@@ -134,7 +135,7 @@ struct PickyConversationContextLineView: View {
         let content = HStack(spacing: 4) {
             Image(systemName: "chevron.left.forwardslash.chevron.right")
             Text(status.repositoryDisplayName)
-                .font(.system(size: 10.5, weight: .semibold))
+                .font(PickyHUDTypography.labelSemibold)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -195,7 +196,7 @@ struct PickyConversationContextLineView: View {
         let content = HStack(spacing: 4) {
             Image(systemName: "point.3.connected.trianglepath.dotted")
             Text(status.branchDisplayName)
-                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                .font(PickyHUDTypography.labelMonospacedMedium)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -219,7 +220,7 @@ struct PickyConversationContextLineView: View {
                 .font(.system(size: 9.5, weight: .semibold))
             if let text = session.linkBadgeText(for: artifact) {
                 Text(text)
-                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                    .font(PickyHUDTypography.metaMonospacedSemibold)
                     .lineLimit(1)
             }
         }
@@ -244,7 +245,7 @@ struct PickyConversationContextLineView: View {
 
     private func gitMetricPill(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(.system(size: 10, weight: .medium, design: .monospaced))
+            .font(PickyHUDTypography.statusMonospacedMedium)
             .foregroundColor(color.opacity(0.92))
     }
 

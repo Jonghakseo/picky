@@ -33,17 +33,17 @@ struct PickyConversationMarkdownText: View {
                 .fixedSize(horizontal: false, vertical: true)
         case .paragraph(let text):
             Text(renderer.inlineAttributedString(for: text))
-                .font(.system(size: 12, weight: .regular))
+                .font(PickyHUDTypography.body)
                 .foregroundColor(DS.Colors.textPrimary)
                 .lineLimit(lineLimit)
                 .fixedSize(horizontal: false, vertical: true)
         case .bullet(let text):
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("•")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(PickyHUDTypography.bodySemibold)
                     .foregroundColor(DS.Colors.textSecondary)
                 Text(renderer.inlineAttributedString(for: text))
-                    .font(.system(size: 12, weight: .regular))
+                    .font(PickyHUDTypography.body)
                     .foregroundColor(DS.Colors.textPrimary)
                     .lineLimit(lineLimit)
                     .fixedSize(horizontal: false, vertical: true)
@@ -51,11 +51,11 @@ struct PickyConversationMarkdownText: View {
         case .table(let headers, let rows):
             VStack(alignment: .leading, spacing: 4) {
                 Text(headers.joined(separator: " · "))
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(PickyHUDTypography.supportingSemibold)
                     .foregroundColor(DS.Colors.textPrimary)
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     Text(row.joined(separator: " · "))
-                        .font(.system(size: 11, weight: .regular))
+                        .font(PickyHUDTypography.supporting)
                         .foregroundColor(DS.Colors.textPrimary.opacity(0.92))
                 }
             }
@@ -64,7 +64,7 @@ struct PickyConversationMarkdownText: View {
         case .codeBlock(let text):
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(text.isEmpty ? " " : text)
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .font(PickyHUDTypography.supportingMonospaced)
                     .foregroundColor(DS.Colors.codeText)
                     .lineLimit(lineLimit)
                     .padding(8)
@@ -79,10 +79,6 @@ struct PickyConversationMarkdownText: View {
     }
 
     private func font(forHeadingLevel level: Int) -> Font {
-        switch level {
-        case 1: return .system(size: 14, weight: .semibold)
-        case 2: return .system(size: 13, weight: .semibold)
-        default: return .system(size: 12.5, weight: .semibold)
-        }
+        PickyHUDTypography.heading(level: level)
     }
 }

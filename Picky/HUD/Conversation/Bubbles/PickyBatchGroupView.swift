@@ -14,7 +14,7 @@ struct PickyBatchGroupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(kind.batchLabel)
-                .font(.system(size: 9.5, weight: .bold))
+                .font(PickyHUDTypography.metaBold)
                 .foregroundColor(kind.color)
                 .lineLimit(1)
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in

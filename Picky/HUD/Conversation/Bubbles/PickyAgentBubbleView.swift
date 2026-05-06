@@ -107,7 +107,7 @@ struct PickyAssistantRunMetadataLabel: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+            .font(PickyHUDTypography.metaMonospacedMedium)
             .foregroundColor(DS.Colors.textTertiary.opacity(0.72))
             .lineLimit(1)
             .truncationMode(.middle)
@@ -124,9 +124,9 @@ struct PickyOpenAsReportButton: View {
                 Image(systemName: "arrow.up.right.square")
                     .font(.system(size: 8.5, weight: .semibold))
                 Text("Open as report")
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .font(PickyHUDTypography.metaSemibold)
                 Text("⌘R")
-                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                    .font(PickyHUDTypography.minimumMonospacedBold)
                     .foregroundColor(DS.Colors.textTertiary)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)

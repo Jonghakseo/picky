@@ -24,11 +24,13 @@ struct PickyActivitySummaryView: View {
     private func activityChip(_ icon: String, label: String, count: Int, color: Color) -> some View {
         HStack(spacing: 3) {
             Text(icon)
+                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
             Text(label)
+                .font(PickyHUDTypography.labelMonospacedMedium)
             Text("\(count)")
+                .font(PickyHUDTypography.labelMonospacedMedium)
                 .fontWeight(.bold)
         }
-        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
         .foregroundColor(color)
         .lineLimit(1)
     }
@@ -46,7 +48,7 @@ struct PickyContextUsageChip: View {
             Text(display.label)
                 .fontWeight(.bold)
         }
-        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+        .font(PickyHUDTypography.metaMonospacedMedium)
         .foregroundColor(display.color.opacity(0.9))
         .lineLimit(1)
         .help(display.tooltip)

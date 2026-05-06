@@ -72,6 +72,26 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.showsActivitySummary)
     }
 
+    @Test func activityStripShowsEtcWhenOnlyOtherToolsRan() {
+        let summary = PickyActivitySummary(other: 2)
+        let session = makeConversationSession(
+            status: .running,
+            messages: [
+                message("m-user", kind: .userText, text: "open shell"),
+                message("m-activity", kind: .agentActivity, activitySnapshot: summary)
+            ],
+            activitySummary: summary
+        )
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+        let visibleItems = summary.visibleToolCallItems
+
+        #expect(visibleItems.map(\.id) == ["other"])
+        #expect(visibleItems.first?.label == "etc")
+        #expect(snapshot.activitySummaryCount == 1)
+        #expect(snapshot.showsActivitySummary)
+    }
+
     @Test func assistantRunMetadataUsesCompactDimFooterText() {
         #expect(PickyAssistantRunMetadata(model: "openai-codex/gpt-5.5", thinkingLevel: .high).displayText == "gpt-5.5 high")
         #expect(PickyAssistantRunMetadata(model: "anthropic/claude-opus-4-7", thinkingLevel: .xhigh).displayText == "opus-4-7 xhigh")
@@ -425,19 +445,20 @@ struct PickyConversationCardViewTests {
         #expect(!snapshot.showsActivitySummary, "zero-count snapshot should not surface in UI")
     }
 
-    @Test func activitySummaryShowsOnlyCalledReadBashEditWriteTools() {
+    @Test func activitySummaryShowsCalledReadEditAndEtcTools() {
         let items = PickyActivitySummary(edit: 3, bash: 0, thinking: 4, other: 5, read: 2, write: 0).visibleToolCallItems
 
-        #expect(items.map(\.id) == ["read", "edit"])
-        #expect(items.map(\.count) == [2, 3])
+        #expect(items.map(\.id) == ["read", "edit", "other"])
+        #expect(items.map(\.count) == [2, 3, 5])
+        #expect(items.map(\.label) == ["read", "edit", "etc"])
     }
 
-    @Test func activitySnapshotWithOnlyThinkingAndOtherIsHidden() {
+    @Test func activitySnapshotWithOnlyThinkingIsHidden() {
         let session = makeConversationSession(
             status: .running,
             messages: [
                 message("u", kind: .userText, text: "hello"),
-                message("a-act", kind: .agentActivity, activitySnapshot: PickyActivitySummary(thinking: 2, other: 1)),
+                message("a-act", kind: .agentActivity, activitySnapshot: PickyActivitySummary(thinking: 2)),
                 message("a", kind: .agentText, text: "hi")
             ]
         )

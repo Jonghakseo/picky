@@ -32,6 +32,9 @@ final class QuickInputPanelManager {
 
     private let viewModel = QuickInputPanelViewModel()
     private var panel: QuickInputKeyablePanel?
+    /// Tracks whether this manager has hidden the system cursor. `NSCursor.hide()`
+    /// uses a global hide/unhide stack, so only pair calls we own.
+    private var hasHiddenMouseCursor = false
 
     /// Called when the user submits a non-empty message. The host (typically
     /// CompanionManager) is responsible for performing the actual delivery and
@@ -49,6 +52,12 @@ final class QuickInputPanelManager {
         }
     }
 
+    deinit {
+        if hasHiddenMouseCursor {
+            NSCursor.unhide()
+        }
+    }
+
     /// Opens the pill anchored near `cursorLocation` (global AppKit screen
     /// coordinates). If the panel is already visible, it is repositioned and
     /// the field is re-focused.
@@ -60,6 +69,7 @@ final class QuickInputPanelManager {
         positionPanelNearCursor(cursorLocation)
         panel?.makeKeyAndOrderFront(nil)
         panel?.orderFrontRegardless()
+        hideMouseCursorForPanel()
     }
 
     /// Hides the pill and clears any draft text.
@@ -68,6 +78,7 @@ final class QuickInputPanelManager {
         viewModel.errorMessage = nil
         viewModel.isSending = false
         panel?.orderOut(nil)
+        restoreMouseCursorIfNeeded()
     }
 
     /// Called by the host after the submission task finishes. On success the
@@ -88,6 +99,18 @@ final class QuickInputPanelManager {
         viewModel.isSending = true
         viewModel.errorMessage = nil
         onSubmit(text)
+    }
+
+    private func hideMouseCursorForPanel() {
+        guard !hasHiddenMouseCursor else { return }
+        NSCursor.hide()
+        hasHiddenMouseCursor = true
+    }
+
+    private func restoreMouseCursorIfNeeded() {
+        guard hasHiddenMouseCursor else { return }
+        NSCursor.unhide()
+        hasHiddenMouseCursor = false
     }
 
     private func createPanel() {

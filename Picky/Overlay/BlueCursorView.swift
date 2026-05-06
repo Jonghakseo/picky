@@ -925,7 +925,7 @@ struct BlueCursorView: View {
             && isCursorOnThisScreen
     }
 
-    private func scheduleNextIdleBehavior(delayRange: ClosedRange<Double> = 14...28) {
+    private func scheduleNextIdleBehavior(delayRange: ClosedRange<Double> = 5...16) {
         idleScheduleTimer?.invalidate()
         guard isIdleEligibleForScheduling else { return }
         let delay = Double.random(in: delayRange)

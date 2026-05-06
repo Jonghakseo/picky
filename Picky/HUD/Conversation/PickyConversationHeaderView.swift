@@ -57,7 +57,7 @@ struct PickyConversationHeaderView: View {
     }
 
     private var latestAssistantRun: PickyAssistantRunMetadata? {
-        session.messages.reversed().compactMap(\.assistantRun).first
+        session.currentAssistantRun ?? session.messages.reversed().compactMap(\.assistantRun).first
     }
 
     var titleHelpText: String {

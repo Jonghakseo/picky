@@ -1,7 +1,7 @@
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { STEER_PREFIX } from "../domain/log-prefixes.js";
-import type { PickyQueueMode } from "../protocol.js";
-import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult } from "./types.js";
+import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
+import type { AgentRuntime, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
 
 export class MockRuntime implements AgentRuntime {
   private sequence = 0;
@@ -27,6 +27,10 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
   private listeners = new Set<(event: RuntimeEvent) => void>();
   private steering: string[] = [];
   private followUpQueue: string[] = [];
+  private modelIndex = 0;
+  private thinkingIndex = 3;
+  private readonly models = ["mock/gpt-5.5", "mock/opus-4-7"];
+  private readonly thinkingLevels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
   steeringMode: PickyQueueMode = "one-at-a-time";
   followUpMode: PickyQueueMode = "one-at-a-time";
   isStreaming = false;
@@ -49,6 +53,21 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
 
   async abort(): Promise<void> {
     this.emit({ type: "status", status: "cancelled", summary: "Cancelled by app" });
+  }
+
+  cycleThinkingLevel(): RuntimeAssistantRunMetadata {
+    this.thinkingIndex = (this.thinkingIndex + 1) % this.thinkingLevels.length;
+    return this.currentAssistantRunMetadata();
+  }
+
+  async cycleModel(direction: ModelCycleDirection): Promise<RuntimeAssistantRunMetadata | undefined> {
+    const step = direction === "backward" ? -1 : 1;
+    this.modelIndex = (this.modelIndex + step + this.models.length) % this.models.length;
+    return this.currentAssistantRunMetadata();
+  }
+
+  private currentAssistantRunMetadata(): RuntimeAssistantRunMetadata {
+    return { model: this.models[this.modelIndex], thinkingLevel: this.thinkingLevels[this.thinkingIndex] };
   }
 
   clearQueue(): { steering: string[]; followUp: string[] } {

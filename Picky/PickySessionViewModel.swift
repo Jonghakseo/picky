@@ -120,7 +120,8 @@ final class PickySessionListViewModel: ObservableObject {
         var steeringMode: PickyQueueMode
         var followUpMode: PickyQueueMode
         var activitySummary: PickyActivitySummary
-        var contextUsage: PickyContextUsage?
+        var contextUsage: PickyContextUsage? = nil
+        var currentAssistantRun: PickyAssistantRunMetadata? = nil
         var pendingExtensionUiRequest: PickyExtensionUiRequest?
         var piSessionFilePath: String?
         var notifyMainOnCompletion: Bool?
@@ -468,6 +469,28 @@ final class PickySessionListViewModel: ObservableObject {
     func clearQueue(sessionID: String, kind: PickyQueueClearKind) async throws {
         pickySessionLog("clear queue session=\(sessionID) kind=\(kind.rawValue)")
         try await client.send(PickyCommandEnvelope(type: .clearQueue, sessionId: sessionID, kind: kind))
+    }
+
+    func cycleThinkingLevel(sessionID: String) async throws {
+        pickySessionLog("cycle thinking level session=\(sessionID)")
+        do {
+            try await client.send(PickyCommandEnvelope(type: .cycleSessionThinkingLevel, sessionId: sessionID))
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
+    }
+
+    func cycleModel(sessionID: String, direction: PickyModelCycleDirection = .forward) async throws {
+        pickySessionLog("cycle model session=\(sessionID) direction=\(direction.rawValue)")
+        do {
+            try await client.send(PickyCommandEnvelope(type: .cycleSessionModel, sessionId: sessionID, direction: direction))
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
     }
 
     func setNotifyMainOnCompletion(sessionID: String, enabled: Bool) async throws {
@@ -1039,6 +1062,7 @@ extension PickySessionListViewModel.SessionCard {
         self.followUpMode = session.followUpMode
         self.activitySummary = session.activitySummary
         self.contextUsage = session.contextUsage
+        self.currentAssistantRun = session.currentAssistantRun
         self.pendingExtensionUiRequest = session.pendingExtensionUiRequest
         self.piSessionFilePath = session.piSessionFilePath ?? session.logs.compactMap(Self.piSessionFilePath(fromLogLine:)).last
         self.notifyMainOnCompletion = session.notifyMainOnCompletion
@@ -1089,6 +1113,7 @@ extension PickySessionListViewModel.SessionCard {
         // then carries `nil`, and the fallback would restore REQUEST_A, leaving the askUserQuestion
         // form stuck on screen. Trust the incoming value instead.
         if result.piSessionFilePath == nil { result.piSessionFilePath = piSessionFilePath }
+        if result.currentAssistantRun == nil { result.currentAssistantRun = currentAssistantRun }
         if result.notifyMainOnCompletion == nil { result.notifyMainOnCompletion = notifyMainOnCompletion }
         result.hasRuntimeDetachedFollowUpRejection = result.hasRuntimeDetachedFollowUpRejection || hasRuntimeDetachedFollowUpRejection
         result.isMainAgentHandoff = result.isMainAgentHandoff || isMainAgentHandoff

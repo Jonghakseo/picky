@@ -1,5 +1,5 @@
 import type { BuiltPrompt } from "../prompt-builder.js";
-import type { PickyQueueMode } from "../protocol.js";
+import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 export type RuntimeSlashCommandSource = "extension" | "prompt" | "skill" | "builtin";
@@ -54,6 +54,8 @@ export interface RuntimeSessionHandle {
    */
   injectInitialBootstrap?(messages: { user: string; assistant: string }): Promise<void>;
   setThinkingLevel?(level: ThinkingLevel): void;
+  cycleThinkingLevel?(): RuntimeAssistantRunMetadata | undefined;
+  cycleModel?(direction: ModelCycleDirection): Promise<RuntimeAssistantRunMetadata | undefined>;
   listSlashCommands?(): RuntimeSlashCommand[] | Promise<RuntimeSlashCommand[]>;
   clearQueue(): { steering: string[]; followUp: string[] };
   getSteeringMessages(): readonly string[];

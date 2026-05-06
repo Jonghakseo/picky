@@ -103,6 +103,8 @@ export class AgentdServer {
       if (command.type === "pinSideSession") await this.options.supervisor.pinSideSession(command.context, command.title);
       if (command.type === "setNotifyMainOnCompletion") await this.options.supervisor.setNotifyMainOnCompletion(command.sessionId, command.enabled);
       if (command.type === "setSessionArchived") await this.options.supervisor.setSessionArchived(command.sessionId, command.archived);
+      if (command.type === "cycleSessionThinkingLevel") await this.options.supervisor.cycleSessionThinkingLevel(command.sessionId);
+      if (command.type === "cycleSessionModel") await this.options.supervisor.cycleSessionModel(command.sessionId, command.direction);
       if (command.type === "clearQueue") await this.options.supervisor.clearQueue(command.sessionId, command.kind);
       if (command.type === "syncTerminalSession") await this.options.supervisor.syncTerminalSession(command.sessionId, command.baselinePiMessageId);
       if (command.type === "followUp") await this.options.supervisor.followUp(command.sessionId, command.text, command.context);
@@ -179,6 +181,10 @@ function commandLogFields(command: ReturnType<typeof parseCommand>): Record<stri
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, enabled: command.enabled ? 1 : 0 };
     case "setSessionArchived":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, archived: command.archived ? 1 : 0 };
+    case "cycleSessionThinkingLevel":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId };
+    case "cycleSessionModel":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, direction: command.direction };
     case "clearQueue":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, kind: command.kind };
     case "syncTerminalSession":

@@ -16,8 +16,8 @@ import {
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
-import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
-import type { PickyQueueMode } from "../protocol.js";
+import type { AgentRuntime, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
+import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
 import { logAgentd } from "../local-log.js";
 
 // Picky exposes a curated subset of Pi's BUILTIN_SLASH_COMMANDS. Each entry must be backed by a
@@ -204,6 +204,49 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     session.setThinkingLevel(level);
     this.configuredThinkingLevel = level;
     logAgentd("pi thinking level set", { sessionId: this.id, level });
+  }
+
+  cycleThinkingLevel(): RuntimeAssistantRunMetadata | undefined {
+    const session = this.runtime.session as unknown as { cycleThinkingLevel?: () => ThinkingLevel | undefined };
+    if (typeof session.cycleThinkingLevel !== "function") {
+      this.emit({ type: "log", line: "pi thinking level cycle skipped: active session does not support cycleThinkingLevel" });
+      return this.currentAssistantRunMetadata();
+    }
+    const level = session.cycleThinkingLevel();
+    if (!level) {
+      this.emit({ type: "log", line: "pi thinking level cycle skipped: current model does not support thinking" });
+      return this.currentAssistantRunMetadata();
+    }
+    this.configuredThinkingLevel = level;
+    logAgentd("pi thinking level cycled", { sessionId: this.id, level });
+    return this.currentAssistantRunMetadata();
+  }
+
+  async cycleModel(direction: ModelCycleDirection): Promise<RuntimeAssistantRunMetadata | undefined> {
+    const session = this.runtime.session as unknown as { cycleModel?: (direction: ModelCycleDirection) => Promise<{ thinkingLevel?: ThinkingLevel } | undefined> };
+    if (typeof session.cycleModel !== "function") {
+      this.emit({ type: "log", line: "pi model cycle skipped: active session does not support cycleModel" });
+      return this.currentAssistantRunMetadata();
+    }
+    const result = await session.cycleModel(direction);
+    if (!result) {
+      this.emit({ type: "log", line: "pi model cycle skipped: only one model available" });
+      return this.currentAssistantRunMetadata();
+    }
+    if (result.thinkingLevel) this.configuredThinkingLevel = result.thinkingLevel;
+    const metadata = this.currentAssistantRunMetadata();
+    logAgentd("pi model cycled", { sessionId: this.id, direction, model: metadata?.model, thinkingLevel: metadata?.thinkingLevel });
+    return metadata;
+  }
+
+  private currentAssistantRunMetadata(): RuntimeAssistantRunMetadata | undefined {
+    const model = currentModelId(this.runtime.session);
+    const thinkingLevel = currentThinkingLevel(this.runtime.session) ?? this.configuredThinkingLevel;
+    const metadata = {
+      ...(model ? { model } : {}),
+      ...(thinkingLevel ? { thinkingLevel } : {}),
+    };
+    return metadata.model || metadata.thinkingLevel ? metadata : undefined;
   }
 
   async listSlashCommands(): Promise<RuntimeSlashCommand[]> {

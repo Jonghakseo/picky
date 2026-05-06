@@ -8,7 +8,7 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
-import type { EventEnvelope, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
+import type { EventEnvelope, ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { parsePointerTags, type ParsedPointerTags } from "./application/pointer-tag-parser.js";
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
@@ -909,6 +909,33 @@ export class SessionSupervisor extends EventEmitter {
   async setSessionArchived(sessionId: string, archived: boolean): Promise<PickyAgentSession> {
     await this.patch(sessionId, { archived });
     return this.mustGet(sessionId);
+  }
+
+  async cycleSessionThinkingLevel(sessionId: string): Promise<PickyAgentSession> {
+    const handle = await this.runtimeHandleForSessionCommand(sessionId, "cycle thinking level");
+    if (!handle.cycleThinkingLevel) throw new Error("Runtime session does not support cycling thinking level");
+    const currentAssistantRun = handle.cycleThinkingLevel();
+    if (currentAssistantRun) await this.patch(sessionId, { currentAssistantRun });
+    return this.mustGet(sessionId);
+  }
+
+  async cycleSessionModel(sessionId: string, direction: ModelCycleDirection): Promise<PickyAgentSession> {
+    const handle = await this.runtimeHandleForSessionCommand(sessionId, "cycle model");
+    if (!handle.cycleModel) throw new Error("Runtime session does not support cycling models");
+    const currentAssistantRun = await handle.cycleModel(direction);
+    if (currentAssistantRun) await this.patch(sessionId, { currentAssistantRun });
+    return this.mustGet(sessionId);
+  }
+
+  private async runtimeHandleForSessionCommand(sessionId: string, action: string): Promise<RuntimeSessionHandle> {
+    const session = this.mustGet(sessionId);
+    const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
+    if (!handle) {
+      const reason = "Runtime session is not attached";
+      await this.appendLog(sessionId, `${action} rejected: ${reason}`);
+      throw new Error(reason);
+    }
+    return handle;
   }
 
   async steerSideSession(sessionId: string, text: string): Promise<PickyAgentSession> {

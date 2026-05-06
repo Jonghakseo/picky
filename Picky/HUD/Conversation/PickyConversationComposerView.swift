@@ -160,8 +160,17 @@ struct PickyConversationComposerView: View {
                 .onKeyPress(keys: [.downArrow], phases: .down) { _ in
                     moveSlashCommandSelection(.down) ? .handled : .ignored
                 }
-                .onKeyPress(keys: [.tab], phases: .down) { _ in
-                    acceptSelectedSlashCommand() ? .handled : .ignored
+                .onKeyPress(keys: [.tab], phases: .down) { keyPress in
+                    if keyPress.modifiers.contains(.shift) {
+                        cycleThinkingLevel()
+                        return .handled
+                    }
+                    return acceptSelectedSlashCommand() ? .handled : .ignored
+                }
+                .onKeyPress(keys: ["p"], phases: .down) { keyPress in
+                    guard keyPress.modifiers.contains(.control) else { return .ignored }
+                    cycleModel(direction: keyPress.modifiers.contains(.shift) ? .backward : .forward)
+                    return .handled
                 }
                 .onKeyPress(keys: [.escape], phases: .down) { _ in
                     if dismissSlashCommandAutocomplete() {
@@ -491,6 +500,14 @@ struct PickyConversationComposerView: View {
         }
         Task { try? await viewModel.clearQueue(sessionID: session.id, kind: .all) }
         return true
+    }
+
+    private func cycleThinkingLevel() {
+        Task { try? await viewModel.cycleThinkingLevel(sessionID: session.id) }
+    }
+
+    private func cycleModel(direction: PickyModelCycleDirection) {
+        Task { try? await viewModel.cycleModel(sessionID: session.id, direction: direction) }
     }
 
     private func stopIfPossible() {

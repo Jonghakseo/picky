@@ -136,6 +136,7 @@ export class RuntimeEventHandler {
     if (isTerminalStatus(currentSession.status)) return;
 
     const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
+    if (event.assistantRun) patch.currentAssistantRun = event.assistantRun;
     if (terminal || event.status === "waiting_for_input" || finalAnswer) {
       await this.dependencies.messageBuilder.flushAssistantText(sessionId, event.assistantRun);
       if (terminal) {

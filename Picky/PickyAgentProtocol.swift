@@ -22,6 +22,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var enabled: Bool?
     var archived: Bool?
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel?
+    var direction: PickyModelCycleDirection?
     /// User-additional instructions for `setMainAgentExtraInstructions`. Empty string clears the
     /// daemon-side override; nil omits the field for unrelated command types.
     var mainAgentExtraInstructions: String?
@@ -42,6 +43,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         enabled: Bool? = nil,
         archived: Bool? = nil,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel? = nil,
+        direction: PickyModelCycleDirection? = nil,
         mainAgentExtraInstructions: String? = nil,
         kind: PickyQueueClearKind? = nil,
         baselinePiMessageId: String? = nil
@@ -58,6 +60,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.enabled = enabled
         self.archived = archived
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
+        self.direction = direction
         self.mainAgentExtraInstructions = mainAgentExtraInstructions
         self.kind = kind
         self.baselinePiMessageId = baselinePiMessageId
@@ -66,6 +69,10 @@ struct PickyCommandEnvelope: Codable, Equatable {
 
 enum PickyQueueClearKind: String, Codable, Equatable {
     case steering, followUp, all
+}
+
+enum PickyModelCycleDirection: String, Codable, Equatable {
+    case forward, backward
 }
 
 enum PickyCommandType: String, Codable, Equatable {
@@ -84,6 +91,8 @@ enum PickyCommandType: String, Codable, Equatable {
     case abortMainAgent
     case setMainAgentThinkingLevel
     case setMainAgentExtraInstructions
+    case cycleSessionThinkingLevel
+    case cycleSessionModel
     case listSlashCommands
     case getSession
     case answerExtensionUi
@@ -425,6 +434,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
     var followUpMode: PickyQueueMode = .oneAtATime
     var activitySummary: PickyActivitySummary = .zero
     var contextUsage: PickyContextUsage? = nil
+    var currentAssistantRun: PickyAssistantRunMetadata? = nil
     var pendingExtensionUiRequest: PickyExtensionUiRequest?
     var notifyMainOnCompletion: Bool? = nil
     var archived: Bool? = nil
@@ -432,7 +442,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case id, title, status, cwd, piSessionFilePath, createdAt, updatedAt, lastSummary, thinkingPreview, finalAnswer, logs, tools, artifacts, changedFiles
-        case messages, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary, contextUsage
+        case messages, queuedSteers, queuedFollowUps, steeringMode, followUpMode, activitySummary, contextUsage, currentAssistantRun
         case pendingExtensionUiRequest, notifyMainOnCompletion, archived, pinned
     }
 
@@ -458,6 +468,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         followUpMode: PickyQueueMode = .oneAtATime,
         activitySummary: PickyActivitySummary = .zero,
         contextUsage: PickyContextUsage? = nil,
+        currentAssistantRun: PickyAssistantRunMetadata? = nil,
         pendingExtensionUiRequest: PickyExtensionUiRequest? = nil,
         notifyMainOnCompletion: Bool? = nil,
         archived: Bool? = nil,
@@ -484,6 +495,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         self.followUpMode = followUpMode
         self.activitySummary = activitySummary
         self.contextUsage = contextUsage
+        self.currentAssistantRun = currentAssistantRun
         self.pendingExtensionUiRequest = pendingExtensionUiRequest
         self.notifyMainOnCompletion = notifyMainOnCompletion
         self.archived = archived
@@ -513,6 +525,7 @@ struct PickyAgentSession: Codable, Equatable, Identifiable {
         followUpMode = try container.decodeIfPresent(PickyQueueMode.self, forKey: .followUpMode) ?? .oneAtATime
         activitySummary = try container.decodeIfPresent(PickyActivitySummary.self, forKey: .activitySummary) ?? .zero
         contextUsage = try container.decodeIfPresent(PickyContextUsage.self, forKey: .contextUsage)
+        currentAssistantRun = try container.decodeIfPresent(PickyAssistantRunMetadata.self, forKey: .currentAssistantRun)
         pendingExtensionUiRequest = try container.decodeIfPresent(PickyExtensionUiRequest.self, forKey: .pendingExtensionUiRequest)
         notifyMainOnCompletion = try container.decodeIfPresent(Bool.self, forKey: .notifyMainOnCompletion)
         archived = try container.decodeIfPresent(Bool.self, forKey: .archived)

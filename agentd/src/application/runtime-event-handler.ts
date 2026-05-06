@@ -25,6 +25,7 @@ export interface RuntimeMessageJournal {
 export interface RuntimeEventHandlerDependencies {
   getSession(sessionId: string): PickyAgentSession;
   patchSession(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+  consumeNoTurnRanSessionStateRestore?(sessionId: string): Partial<PickyAgentSession> | undefined;
   appendLog(sessionId: string, line: string): Promise<void>;
   materializeTerminalArtifacts(sessionId: string): Promise<void>;
   applyQueueUpdate(sessionId: string, steering: readonly string[], followUp: readonly string[]): Promise<void>;
@@ -105,6 +106,11 @@ export class RuntimeEventHandler {
     const explicitFinalAnswer = cleanFinalAnswer(event.finalAnswer);
     const finalAnswer = explicitFinalAnswer ?? (terminal ? (event.status === "failed" ? undefined : cleanFinalAnswer(this.assistantDrafts.get(sessionId))) : undefined);
     const currentSession = this.dependencies.getSession(sessionId);
+    if (event.noTurnRan && event.preserveSessionState) {
+      const restore = this.dependencies.consumeNoTurnRanSessionStateRestore?.(sessionId);
+      if (restore) await this.dependencies.patchSession(sessionId, restore);
+      return;
+    }
     // Once a session has reached a terminal status, ignore any subsequent runtime status
     // events. Stragglers (delayed agent_start emitting `running` after abort, late
     // `waiting_for_input` from a now-cancelled extension dialog, etc.) would otherwise

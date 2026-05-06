@@ -559,14 +559,14 @@ describe("PiSdkRuntime", () => {
       setSessionNameCalls.push(name);
     };
     const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-name" });
-    const events: Array<{ type: string; status?: string; noTurnRan?: boolean }> = [];
-    handle.subscribe((event) => events.push(event as { type: string; status?: string; noTurnRan?: boolean }));
+    const events: Array<{ type: string; status?: string; noTurnRan?: boolean; preserveSessionState?: boolean }> = [];
+    handle.subscribe((event) => events.push(event as { type: string; status?: string; noTurnRan?: boolean; preserveSessionState?: boolean }));
 
     await handle.followUp({ text: "/name 새 이름", imagePaths: [] });
 
     expect(setSessionNameCalls).toEqual(["새 이름"]);
     expect(fakeSession.prompts).toEqual([]);
-    expect(events.some((event) => event.type === "status" && event.status === "completed" && event.noTurnRan === true)).toBe(true);
+    expect(events.some((event) => event.type === "status" && event.status === "completed" && event.noTurnRan === true && event.preserveSessionState === true)).toBe(true);
   });
 
   it("intercepts /compact and forwards optional instructions to AgentSession.compact", async () => {

@@ -74,6 +74,7 @@ export class SessionSupervisor extends EventEmitter {
   private runtimeEventChains = new Map<string, Promise<void>>();
   private emitChains = new Map<string, Promise<void>>();
   private readonly messageBuilder: SessionMessageBuilder;
+  private noTurnRanSessionStateRestores = new Map<string, Partial<PickyAgentSession>>();
   private lastEmittedSteeringMode = new Map<string, PickyQueueMode>();
   private lastEmittedFollowUpMode = new Map<string, PickyQueueMode>();
   // Track follow-up/steer prompts that Pi has queued but not yet started processing. We defer the
@@ -101,6 +102,7 @@ export class SessionSupervisor extends EventEmitter {
     this.runtimeEventHandler = new RuntimeEventHandler({
       getSession: (sessionId) => this.mustGet(sessionId),
       patchSession: (sessionId, patch) => this.patch(sessionId, patch),
+      consumeNoTurnRanSessionStateRestore: (sessionId) => this.consumeNoTurnRanSessionStateRestore(sessionId),
       appendLog: (sessionId, line) => this.appendLog(sessionId, line),
       materializeTerminalArtifacts: (sessionId) => this.materializeTerminalArtifacts(sessionId),
       applyQueueUpdate: (sessionId, steering, followUp) => this.applyQueueUpdate(sessionId, steering, followUp),
@@ -886,6 +888,7 @@ export class SessionSupervisor extends EventEmitter {
     }
     await this.cancelPendingExtensionUiForUserInput(sessionId, handle);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
+    if (isNameSlashCommand(text)) this.rememberNoTurnRanSessionState(sessionId);
     const prompt: BuiltPrompt = { text, imagePaths: [] };
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id });
     await this.appendLog(sessionId, `${FOLLOWUP_PREFIX}${text}`);
@@ -955,6 +958,21 @@ export class SessionSupervisor extends EventEmitter {
     if (!entry) return;
     if (pending.length === 0) this.pendingQueueDeliveries.delete(sessionId);
     await this.messageBuilder.recordUserText(sessionId, entry.text, entry.originatedBy);
+  }
+
+  private rememberNoTurnRanSessionState(sessionId: string, session = this.mustGet(sessionId)): void {
+    this.noTurnRanSessionStateRestores.set(sessionId, {
+      status: session.status,
+      lastSummary: session.lastSummary,
+      finalAnswer: session.finalAnswer,
+      thinkingPreview: session.thinkingPreview,
+    });
+  }
+
+  private consumeNoTurnRanSessionStateRestore(sessionId: string): Partial<PickyAgentSession> | undefined {
+    const restore = this.noTurnRanSessionStateRestores.get(sessionId);
+    this.noTurnRanSessionStateRestores.delete(sessionId);
+    return restore;
   }
 
   private pushPendingQueueDelivery(sessionId: string, text: string, originatedBy: "user" | "main_agent"): void {
@@ -1104,6 +1122,7 @@ export class SessionSupervisor extends EventEmitter {
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     const prompt = buildSteerPrompt(text, context);
     const previousSession = this.mustGet(sessionId);
+    if (isNameSlashCommand(text)) this.rememberNoTurnRanSessionState(sessionId, previousSession);
     const revivedTerminalSession = isTerminalStatus(previousSession.status);
     if (revivedTerminalSession) {
       await this.patch(sessionId, { status: "running", lastSummary: "Steering message sent", thinkingPreview: undefined });
@@ -1495,6 +1514,10 @@ function piSessionFilePathFromHandoffTranscript(transcript: string | undefined):
     if (path && !path.startsWith("(") && path !== "ephemeral" && path !== "unavailable") return path;
   }
   return undefined;
+}
+
+function isNameSlashCommand(text: string): boolean {
+  return /^\s*\/name(\s|$)/.test(text);
 }
 
 // Matches `/name`, `/name args` where name is an identifier-like token without `/` or `:`.

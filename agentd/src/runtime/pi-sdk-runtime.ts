@@ -452,18 +452,19 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       const name = trimmed.replace(/^\/name\s*/, "").trim();
       if (!name) {
         this.emit({ type: "log", line: "/name requires a name argument (usage: /name <session name>)" });
-        this.emit({ type: "status", status: "completed", summary: "/name: missing argument", noTurnRan: true });
+        this.emit({ type: "status", status: "completed", summary: "/name: missing argument", noTurnRan: true, preserveSessionState: true });
         return true;
       }
       try {
         this.runtime.session.setSessionName(name);
         this.emit({ type: "log", line: `session renamed to "${name}"` });
         // Pi emits session_info_changed internally, so the title flips via the normalized event.
-        this.emit({ type: "status", status: "completed", summary: `Session renamed to ${name}`, noTurnRan: true });
+        this.emit({ type: "status", status: "completed", summary: `Session renamed to ${name}`, noTurnRan: true, preserveSessionState: true });
       } catch (error) {
         const message = messageOf(error);
         logAgentd("slash /name failed", { sessionId: this.id, error: message });
-        this.emit({ type: "status", status: "failed", summary: `/name failed: ${message}` });
+        this.emit({ type: "log", line: `/name failed: ${message}` });
+        this.emit({ type: "status", status: "completed", summary: `/name failed: ${message}`, noTurnRan: true, preserveSessionState: true });
       }
       return true;
     }

@@ -614,6 +614,60 @@ describe("SessionSupervisor", () => {
     expect(updated.logs).toContain("steer: /diff-review");
   });
 
+  it("keeps a running side session running when /name is handled without an agent turn", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "status", status: "running", summary: "Still working" });
+    await settle();
+    expect(supervisor.get(side.id)?.status).toBe("running");
+    expect(supervisor.get(side.id)?.lastSummary).toBe("Still working");
+
+    runtime.handle!.steerOutcome = { handledSynchronously: true };
+    runtime.handle!.onSteer = (handle) => {
+      handle.emit({ type: "session_info", name: "새 세션 이름" });
+      handle.emit({ type: "status", status: "completed", summary: "Session renamed to 새 세션 이름", noTurnRan: true, preserveSessionState: true });
+    };
+
+    const updated = await supervisor.steerSideSession(side.id, "/name 새 세션 이름");
+    await settle();
+
+    expect(updated.status).toBe("running");
+    expect(supervisor.get(side.id)?.status).toBe("running");
+    expect(supervisor.get(side.id)?.title).toBe("새 세션 이름");
+    expect(supervisor.get(side.id)?.lastSummary).toBe("Still working");
+  });
+
+  it("restores the previous terminal state when /name is sent as a follow-up", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "조사 완료입니다." });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+    expect(supervisor.get(side.id)?.status).toBe("completed");
+    expect(supervisor.get(side.id)?.lastSummary).toBe("조사 완료입니다.");
+
+    runtime.handle!.onFollowUp = (handle) => {
+      handle.emit({ type: "session_info", name: "완료 세션 이름" });
+      handle.emit({ type: "status", status: "completed", summary: "Session renamed to 완료 세션 이름", noTurnRan: true, preserveSessionState: true });
+    };
+
+    await supervisor.followUp(side.id, "/name 완료 세션 이름");
+    await settle();
+
+    expect(supervisor.get(side.id)?.status).toBe("completed");
+    expect(supervisor.get(side.id)?.title).toBe("완료 세션 이름");
+    expect(supervisor.get(side.id)?.lastSummary).toBe("조사 완료입니다.");
+    expect(supervisor.get(side.id)?.finalAnswer).toBe("조사 완료입니다.");
+  });
+
   it("preserves synchronous runtime tool events when steering a completed side session", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

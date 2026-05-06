@@ -135,33 +135,18 @@ final class PickyHUDOverlayManager {
     private func targetFrame(forContentSize contentSize: CGSize) -> NSRect? {
         let screen = currentScreen ?? NSScreen.main ?? NSScreen.screens.first
         guard let visibleFrame = screen?.visibleFrame else { return nil }
-        let visibleHeightCap = visibleFrame.height - 160
-        let originY: CGFloat
-        let targetHeight: CGFloat
+        let targetHeight = min(max(contentSize.height, minimumHeight), visibleFrame.height - 160)
         // Pin the dock rail to the screen midpoint when its anchor has been measured;
         // fall back to plain panel centering before the first dock anchor arrives (e.g.
         // initial loading state when the dock rail isn't even rendered yet).
+        let originY: CGFloat
         if let anchor = lastReportedDockAnchorY, anchor.isFinite, anchor > 0 {
-            // Cap the panel height to the largest size that still lets the dock anchor
-            // sit at visibleFrame.midY without clamping the panel origin against the
-            // bottom of the visible frame. Without this cap, a tall conversation card
-            // forces dockAnchoredPanelY to clamp at minimumY which then drags the dock
-            // upward as the panel grows — exactly the regression we're fixing here.
-            // The conversation list inside the card has its own ScrollView so any
-            // overflow scrolls in place rather than being lost.
-            let dockAnchoredHeightCap = PickyHUDDockLayout.dockAnchoredMaxPanelHeight(
-                visibleFrame: visibleFrame,
-                dockAnchorYFromTop: anchor
-            )
-            let cap = min(visibleHeightCap, dockAnchoredHeightCap)
-            targetHeight = max(min(contentSize.height, cap), minimumHeight)
             originY = PickyHUDDockLayout.dockAnchoredPanelY(
                 visibleFrame: visibleFrame,
                 targetHeight: targetHeight,
                 dockAnchorYFromTop: anchor
             )
         } else {
-            targetHeight = max(min(contentSize.height, visibleHeightCap), minimumHeight)
             originY = PickyHUDDockLayout.centeredPanelY(visibleFrame: visibleFrame, targetHeight: targetHeight)
         }
         return NSRect(

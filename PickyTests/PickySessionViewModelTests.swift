@@ -686,41 +686,6 @@ struct PickySessionViewModelTests {
         #expect(originForShortCard + 264 - dockAnchor == visibleFrame.midY)
     }
 
-    @Test func hudDockAnchoredMaxPanelHeightKeepsDockAtMidYWithoutClamping() throws {
-        // The overlay manager caps the panel height at dockAnchoredMaxPanelHeight so that
-        // dockAnchoredPanelY never has to clamp — the regression we're guarding against
-        // is that hitting the bottom-edge clamp pushes the panel origin up, which drags
-        // the dock screen position upward as the conversation card grows.
-        let visibleFrame = CGRect(x: 0, y: 0, width: 1440, height: 900)
-        let dockAnchor: CGFloat = 132
-
-        let cap = PickyHUDDockLayout.dockAnchoredMaxPanelHeight(
-            visibleFrame: visibleFrame,
-            dockAnchorYFromTop: dockAnchor
-        )
-
-        // At exactly the cap, the panel origin equals minY + screenMargin and the dock
-        // anchor lands precisely on visibleFrame.midY.
-        let originAtCap = PickyHUDDockLayout.dockAnchoredPanelY(
-            visibleFrame: visibleFrame,
-            targetHeight: cap,
-            dockAnchorYFromTop: dockAnchor
-        )
-        #expect(originAtCap == visibleFrame.minY + PickyHUDDockLayout.screenMargin)
-        #expect(originAtCap + cap - dockAnchor == visibleFrame.midY)
-
-        // A panel exactly one point shorter still sits at midY (panel origin moves up
-        // instead of clamping). This proves the cap is the largest height where the
-        // anchor formula stays in its non-clamped regime.
-        let shorterHeight = cap - 1
-        let originAtShorter = PickyHUDDockLayout.dockAnchoredPanelY(
-            visibleFrame: visibleFrame,
-            targetHeight: shorterHeight,
-            dockAnchorYFromTop: dockAnchor
-        )
-        #expect(originAtShorter + shorterHeight - dockAnchor == visibleFrame.midY)
-    }
-
     @Test func hudDockAnchoredPanelClampsWithinVisibleFrame() throws {
         // When the dock anchor wants to push the panel above the visible frame top, the
         // policy clamps to (visibleFrame.maxY - screenMargin - targetHeight) so the panel

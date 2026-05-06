@@ -198,6 +198,7 @@ struct BlueCursorView: View {
     /// Transient offset/rotation/scale stacked on top of cursor following so
     /// the buddy can do small idle animations (look around, yawn, bob, tilt)
     /// without disturbing the normal mouse-tracking spring.
+    @State private var idleOffsetX: CGFloat = 0
     @State private var idleOffsetY: CGFloat = 0
     @State private var idleRotation: Double = 0
     @State private var idleScale: CGFloat = 1.0
@@ -207,7 +208,7 @@ struct BlueCursorView: View {
     @State private var lastCursorMoveAt: Date = Date()
 
     private enum IdleBehavior: CaseIterable {
-        case lookAround, yawn, bob, tilt, shiver, wiggle, pulseGlow
+        case lookAround, yawn, bob, tilt, shiver, wiggle, pulseGlow, lazyOrbit, tetheredRoam, figureEight
     }
 
     // MARK: - Buddy Navigation State
@@ -394,7 +395,7 @@ struct BlueCursorView: View {
                 .rotationEffect(.degrees(idleRotation))
                 .opacity(buddyIsVisibleOnThisScreen ? cursorOpacity : 0)
                 .position(cursorPosition)
-                .offset(y: idleOffsetY)
+                .offset(x: idleOffsetX, y: idleOffsetY)
                 .animation(
                     buddyNavigationMode == .followingCursor
                         ? .spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0)
@@ -926,7 +927,7 @@ struct BlueCursorView: View {
             && isCursorOnThisScreen
     }
 
-    private func scheduleNextIdleBehavior(delayRange: ClosedRange<Double> = 5...16) {
+    private func scheduleNextIdleBehavior(delayRange: ClosedRange<Double> = 5...8) {
         idleScheduleTimer?.invalidate()
         guard isIdleEligibleForScheduling else { return }
         let delay = Double.random(in: delayRange)
@@ -940,6 +941,7 @@ struct BlueCursorView: View {
         idleScheduleTimer = nil
         idleBehaviorActive = false
         withAnimation(.easeOut(duration: 0.25)) {
+            idleOffsetX = 0
             idleOffsetY = 0
             idleRotation = 0
             idleScale = 1.0
@@ -968,11 +970,15 @@ struct BlueCursorView: View {
         case .shiver:      runShiverBehavior()
         case .wiggle:      runWiggleBehavior()
         case .pulseGlow:   runPulseGlowBehavior()
+        case .lazyOrbit:   runLazyOrbitBehavior()
+        case .tetheredRoam: runTetheredRoamBehavior()
+        case .figureEight: runFigureEightBehavior()
         }
     }
 
     private func finishIdleBehavior() {
         withAnimation(.easeOut(duration: 0.3)) {
+            idleOffsetX = 0
             idleOffsetY = 0
             idleRotation = 0
             idleScale = 1.0
@@ -1052,6 +1058,97 @@ struct BlueCursorView: View {
             }
         }
         nextPhase()
+    }
+
+    private func runLazyOrbitBehavior() {
+        let steps = 42
+        let interval: TimeInterval = 0.12
+        let radiusX = CGFloat.random(in: 8...14)
+        let radiusY = CGFloat.random(in: 5...10)
+        let direction = Bool.random() ? 1.0 : -1.0
+        var step = 0
+        func nextStep() {
+            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
+                self.finishIdleBehavior()
+                return
+            }
+            guard step < steps else {
+                self.finishIdleBehavior()
+                return
+            }
+            let phase = Double(step) / Double(steps) * 2.0 * Double.pi * direction
+            withAnimation(.easeInOut(duration: interval * 1.4)) {
+                self.idleOffsetX = CGFloat(cos(phase)) * radiusX
+                self.idleOffsetY = CGFloat(sin(phase)) * radiusY
+                self.idleRotation = sin(phase) * 5.0
+            }
+            step += 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + interval) {
+                nextStep()
+            }
+        }
+        nextStep()
+    }
+
+    private func runTetheredRoamBehavior() {
+        let points = (0..<4).map { _ in
+            CGPoint(
+                x: CGFloat.random(in: -18...18),
+                y: CGFloat.random(in: -14...14)
+            )
+        } + [.zero]
+        var index = 0
+        func nextPoint() {
+            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
+                self.finishIdleBehavior()
+                return
+            }
+            guard index < points.count else {
+                self.finishIdleBehavior()
+                return
+            }
+            let point = points[index]
+            let rotation = max(-6, min(6, Double(point.x) * 0.35))
+            index += 1
+            withAnimation(.easeInOut(duration: 0.85)) {
+                self.idleOffsetX = point.x
+                self.idleOffsetY = point.y
+                self.idleRotation = rotation
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.95) {
+                nextPoint()
+            }
+        }
+        nextPoint()
+    }
+
+    private func runFigureEightBehavior() {
+        let steps = 50
+        let interval: TimeInterval = 0.1
+        let radiusX = CGFloat.random(in: 10...16)
+        let radiusY = CGFloat.random(in: 4...8)
+        var step = 0
+        func nextStep() {
+            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
+                self.finishIdleBehavior()
+                return
+            }
+            guard step <= steps else {
+                self.finishIdleBehavior()
+                return
+            }
+            let phase = Double(step) / Double(steps) * 2.0 * Double.pi
+            withAnimation(.easeInOut(duration: interval * 1.5)) {
+                self.idleOffsetX = CGFloat(sin(phase)) * radiusX
+                self.idleOffsetY = CGFloat(sin(phase * 2.0)) * radiusY
+                self.idleRotation = cos(phase) * 4.0
+            }
+            step += 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + interval) {
+                nextStep()
+            }
+        }
+        nextStep()
     }
 
     private func runLookAroundBehavior() {

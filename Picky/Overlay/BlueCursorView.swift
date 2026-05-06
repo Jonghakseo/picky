@@ -179,7 +179,7 @@ struct BlueCursorView: View {
         let mouseLocation = NSEvent.mouseLocation
         let localX = mouseLocation.x - screenFrame.origin.x
         let localY = screenFrame.height - (mouseLocation.y - screenFrame.origin.y)
-        _cursorPosition = State(initialValue: CGPoint(x: localX + 35, y: localY + 25))
+        _cursorPosition = State(initialValue: CGPoint(x: localX + 30, y: localY + 20))
         _isCursorOnThisScreen = State(initialValue: screenFrame.contains(mouseLocation))
     }
     @State private var timer: Timer?
@@ -407,7 +407,7 @@ struct BlueCursorView: View {
             isCursorOnThisScreen = screenFrame.contains(mouseLocation)
 
             let swiftUIPosition = convertScreenPointToSwiftUICoordinates(mouseLocation)
-            self.cursorPosition = CGPoint(x: swiftUIPosition.x + 35, y: swiftUIPosition.y + 25)
+            self.cursorPosition = CGPoint(x: swiftUIPosition.x + 30, y: swiftUIPosition.y + 20)
 
             startTrackingCursor()
             startNavigatingToCurrentPointerTargetIfNeeded()
@@ -478,8 +478,8 @@ struct BlueCursorView: View {
 
             // Normal cursor following
             let swiftUIPosition = self.convertScreenPointToSwiftUICoordinates(mouseLocation)
-            let buddyX = swiftUIPosition.x + 35
-            let buddyY = swiftUIPosition.y + 25
+            let buddyX = swiftUIPosition.x + 30
+            let buddyY = swiftUIPosition.y + 20
             let newPosition = CGPoint(x: buddyX, y: buddyY)
 
             // Detect significant cursor motion to cancel any in-progress idle
@@ -849,7 +849,7 @@ struct BlueCursorView: View {
 
             let mouseLocation = NSEvent.mouseLocation
             let mouseInSwiftUI = self.convertScreenPointToSwiftUICoordinates(mouseLocation)
-            let target = CGPoint(x: mouseInSwiftUI.x + 35, y: mouseInSwiftUI.y + 25)
+            let target = CGPoint(x: mouseInSwiftUI.x + 30, y: mouseInSwiftUI.y + 20)
 
             let dx = target.x - self.cursorPosition.x
             let dy = target.y - self.cursorPosition.y

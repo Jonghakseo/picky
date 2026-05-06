@@ -247,6 +247,7 @@ final class CompanionManager: ObservableObject {
     /// Used by the panel to show accurate status text ("Active" vs "Ready").
     @Published private(set) var isOverlayVisible: Bool = false
     @Published private(set) var overlayVisibilityReasons: Set<PickyOverlayReason> = []
+    @Published private(set) var isQuickInputPanelVisible: Bool = false
 
     private var localOverlayVisibilityReasons: Set<PickyOverlayReason> = []
     private var interactionOverlayVisibilityReasons: Set<PickyOverlayReason> = []
@@ -703,6 +704,9 @@ final class CompanionManager: ObservableObject {
         }
         quickInputPanelManager.onSubmit = { [weak self] text in
             self?.handleQuickInputSubmit(text: text)
+        }
+        quickInputPanelManager.onVisibilityChange = { [weak self] isVisible in
+            self?.isQuickInputPanelVisible = isVisible
         }
     }
 

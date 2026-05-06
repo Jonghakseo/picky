@@ -34,14 +34,12 @@ final class QuickInputPanelManager {
 
     private let viewModel = QuickInputPanelViewModel()
     private var panel: QuickInputKeyablePanel?
-    /// Tracks whether this manager has hidden the system cursor. `NSCursor.hide()`
-    /// uses a global hide/unhide stack, so only pair calls we own.
-    private var hasHiddenMouseCursor = false
 
     /// Called when the user submits a non-empty message. The host (typically
     /// CompanionManager) is responsible for performing the actual delivery and
     /// for calling `panelDidFinishSending(success:errorMessage:)` afterwards.
     var onSubmit: (String) -> Void = { _ in }
+    var onVisibilityChange: (Bool) -> Void = { _ in }
 
     var isPanelVisible: Bool { panel?.isVisible == true }
 
@@ -51,12 +49,6 @@ final class QuickInputPanelManager {
         }
         viewModel.onClose = { [weak self] in
             self?.dismiss()
-        }
-    }
-
-    deinit {
-        if hasHiddenMouseCursor {
-            NSCursor.unhide()
         }
     }
 
@@ -71,7 +63,7 @@ final class QuickInputPanelManager {
         positionPanelNearCursor(cursorLocation)
         panel?.makeKeyAndOrderFront(nil)
         panel?.orderFrontRegardless()
-        hideMouseCursorForPanel()
+        onVisibilityChange(true)
     }
 
     /// Hides the pill and clears any draft text.
@@ -80,7 +72,7 @@ final class QuickInputPanelManager {
         viewModel.errorMessage = nil
         viewModel.isSending = false
         panel?.orderOut(nil)
-        restoreMouseCursorIfNeeded()
+        onVisibilityChange(false)
     }
 
     /// Called by the host after the submission task finishes. On success the
@@ -101,18 +93,6 @@ final class QuickInputPanelManager {
         viewModel.isSending = true
         viewModel.errorMessage = nil
         onSubmit(text)
-    }
-
-    private func hideMouseCursorForPanel() {
-        guard !hasHiddenMouseCursor else { return }
-        NSCursor.hide()
-        hasHiddenMouseCursor = true
-    }
-
-    private func restoreMouseCursorIfNeeded() {
-        guard hasHiddenMouseCursor else { return }
-        NSCursor.unhide()
-        hasHiddenMouseCursor = false
     }
 
     private func createPanel() {

@@ -418,11 +418,13 @@ struct BlueCursorView: View {
 
     /// Whether the buddy pi icon should be visible on this screen.
     /// True when cursor is on this screen during normal following, or
-    /// when navigating/pointing at a target on this screen. When another
-    /// screen is navigating (detectedElementScreenLocation is set but this
-    /// screen isn't the one animating), hide the cursor so only one buddy
-    /// is ever visible at a time.
+    /// when navigating/pointing at a target on this screen. When Quick Input
+    /// is open, the text pill replaces the Pi cursor while the system cursor
+    /// stays visible for normal pointer feedback. When another screen is
+    /// navigating (detectedElementScreenLocation is set but this screen isn't
+    /// the one animating), hide the cursor so only one buddy is ever visible.
     private var buddyIsVisibleOnThisScreen: Bool {
+        guard !companionManager.isQuickInputPanelVisible else { return false }
         switch buddyNavigationMode {
         case .followingCursor:
             // If another screen's BlueCursorView is navigating to an element,

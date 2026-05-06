@@ -57,12 +57,28 @@ export class SessionStore {
   private async loadOne(name: string): Promise<PickyAgentSession | undefined> {
     const filePath = join(this.sessionsDir, name);
     try {
-      return PickyAgentSessionSchema.parse(JSON.parse(await readFile(filePath, "utf8")));
+      const raw = JSON.parse(await readFile(filePath, "utf8"));
+      const migrated = migrateLegacySession(raw);
+      const session = PickyAgentSessionSchema.parse(migrated.value);
+      if (migrated.changed) await this.save(session);
+      return session;
     } catch (error) {
       console.warn(`Skipping unreadable Picky session metadata ${filePath}: ${messageOf(error)}`);
       return undefined;
     }
   }
+}
+
+function migrateLegacySession(value: unknown): { value: unknown; changed: boolean } {
+  if (!value || typeof value !== "object" || !Array.isArray((value as { messages?: unknown }).messages)) return { value, changed: false };
+  let changed = false;
+  const session = value as { messages: unknown[] };
+  const messages = session.messages.map((message) => {
+    if (!message || typeof message !== "object" || (message as { kind?: unknown }).kind !== "agent_report") return message;
+    changed = true;
+    return { ...message, kind: "agent_text" };
+  });
+  return changed ? { value: { ...value, messages }, changed } : { value, changed: false };
 }
 
 function safeName(value: string): string {

@@ -1588,7 +1588,12 @@ function countSystemMessages(session: PickyAgentSession, text: string): number {
 }
 
 function hasSideSessionMarkerLog(session: PickyAgentSession): boolean {
-  return session.logs.some((line) => line.startsWith(HANDOFF_PREFIX.trimEnd()) || line.startsWith("pi-extension handoff pin:") || line.startsWith("manual side agent:"));
+  return session.logs.some(
+    (line) => line.startsWith(HANDOFF_PREFIX.trimEnd())
+      || line.startsWith("main-agent handoff cwd:")
+      || line.startsWith("pi-extension handoff pin:")
+      || line.startsWith("manual side agent:"),
+  );
 }
 
 function titleForEmptySideSession(context: PickyContextPacket): string {

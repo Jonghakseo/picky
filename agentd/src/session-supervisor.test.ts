@@ -856,6 +856,55 @@ describe("SessionSupervisor", () => {
     expect(secondSupervisor.listSideSessions().map((session) => session.id)).toEqual([side.id]);
   });
 
+  it("restores side-session markers from legacy handoff cwd logs", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "legacy-side-cwd-marker",
+      title: "Legacy side",
+      status: "blocked",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      logs: ["pi session: /tmp/pi-session.jsonl", "main-agent handoff cwd: /tmp/project"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    });
+
+    const supervisor = new SessionSupervisor(new MockRuntime(), store);
+    await supervisor.load();
+
+    expect(supervisor.isSideSession("legacy-side-cwd-marker")).toBe(true);
+    expect(supervisor.listSideSessions().map((session) => session.id)).toEqual(["legacy-side-cwd-marker"]);
+  });
+
+  it("migrates legacy agent_report messages instead of skipping persisted sessions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sessionsDir = join(dir, "sessions");
+    await mkdir(sessionsDir, { recursive: true });
+    await writeFile(join(sessionsDir, "legacy-report.json"), JSON.stringify({
+      id: "legacy-report",
+      title: "Legacy report",
+      status: "completed",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      logs: ["main-agent handoff: investigate"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [
+        { id: "report-1", kind: "agent_report", createdAt: "2026-05-01T00:00:05.000Z", text: "legacy report body" },
+      ],
+    }));
+
+    const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+    await supervisor.load();
+
+    expect(supervisor.get("legacy-report")?.messages?.[0]?.kind).toBe("agent_text");
+    expect(supervisor.isSideSession("legacy-report")).toBe(true);
+  });
+
   it("pins an idle Pi handoff as a completed side session without starting runtime", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir));

@@ -201,7 +201,14 @@ struct PickyConversationListView: View {
     }
 
     private var showsLiveActivitySummary: Bool {
-        session.status == .running && !session.activitySummary.visibleToolCallItems.isEmpty && !hasVisibleActivitySnapshot
+        session.status == .running
+            && !session.activitySummary.visibleToolCallItems.isEmpty
+            && hasAgentProgressInVisibleTurn
+            && !hasVisibleActivitySnapshot
+    }
+
+    private var hasAgentProgressInVisibleTurn: Bool {
+        visibleMessages.contains { $0.kind != .userText }
     }
 
     private var hasVisibleActivitySnapshot: Bool {

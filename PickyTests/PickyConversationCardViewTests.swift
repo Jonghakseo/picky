@@ -646,6 +646,21 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.showsActivitySummary)
     }
 
+    @Test func newUserTurnDoesNotShowPreviousLiveActivityBeforeAgentStarts() {
+        let session = makeConversationSession(
+            status: .running,
+            messages: [
+                message("u", kind: .userText, text: "is this backend-only?")
+            ],
+            activitySummary: PickyActivitySummary(edit: 3, bash: 31, thinking: 0, other: 7, read: 15, write: 1)
+        )
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+
+        #expect(snapshot.activitySummaryCount == 0)
+        #expect(!snapshot.showsActivitySummary)
+    }
+
     @Test func runningSessionShowsLiveActivityWhenOnlyPreviousTurnHasActivitySnapshot() {
         let session = makeConversationSession(
             status: .running,

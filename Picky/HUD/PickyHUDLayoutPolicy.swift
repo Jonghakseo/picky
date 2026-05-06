@@ -77,17 +77,17 @@ enum PickyHUDDockLayout {
     static let defaultGitSectionExpanded = true
 
     static func activeSessionID(visibleIDs: [String], pinnedID: String?, previewID: String?) -> String? {
-        if let pinnedID, visibleIDs.contains(pinnedID) { return pinnedID }
         if let previewID, visibleIDs.contains(previewID) { return previewID }
+        if let pinnedID, visibleIDs.contains(pinnedID) { return pinnedID }
         return nil
     }
 
     static func previewSessionIDAfterDockHover(current: String?, sessionID: String, pinnedID: String?) -> String? {
-        pinnedID == nil ? sessionID : current
+        sessionID
     }
 
     static func previewSessionIDAfterCloseTimeout(current: String?, pinnedID: String?, isHUDHovered: Bool) -> String? {
-        pinnedID == nil && !isHUDHovered ? nil : current
+        isHUDHovered ? current : nil
     }
 
     static func pinnedSessionIDAfterClick(current: String?, clicked: String) -> String? {

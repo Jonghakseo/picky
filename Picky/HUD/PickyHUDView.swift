@@ -239,7 +239,6 @@ struct PickyHUDView: View {
     }
 
     private func scheduleCloseIfNeeded() {
-        guard pinnedSessionID == nil else { return }
         closeExpansionTask?.cancel()
         closeExpansionTask = Task {
             do {

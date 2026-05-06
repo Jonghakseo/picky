@@ -560,15 +560,15 @@ struct PickySessionViewModelTests {
     @Test func hudDockPreviewOpensImmediatelyAndClosesAfterTimeout() throws {
         #expect(PickyHUDDockLayout.closeDelay == 0.4)
         #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: nil, sessionID: "a", pinnedID: nil) == "a")
-        #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: "a", sessionID: "b", pinnedID: "a") == "a")
+        #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: "a", sessionID: "b", pinnedID: "a") == "b")
         #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", pinnedID: nil, isHUDHovered: false) == nil)
         #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", pinnedID: nil, isHUDHovered: true) == "a")
-        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", pinnedID: "a", isHUDHovered: false) == "a")
+        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "b", pinnedID: "a", isHUDHovered: false) == nil)
     }
 
-    @Test func hudDockUsesPinnedThenPreviewAndClickTogglesPin() throws {
+    @Test func hudDockUsesPreviewThenPinnedAndClickTogglesPin() throws {
         let visibleIDs = ["first", "pinned", "preview"]
-        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, pinnedID: "pinned", previewID: "preview") == "pinned")
+        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, pinnedID: "pinned", previewID: "preview") == "preview")
         #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, pinnedID: nil, previewID: "preview") == "preview")
         #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, pinnedID: "missing", previewID: nil) == nil)
         #expect(PickyHUDDockLayout.pinnedSessionIDAfterClick(current: "first", clicked: "preview") == "preview")

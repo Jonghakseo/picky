@@ -39,80 +39,18 @@ struct PickyConversationContextLineView: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
-            if let compactCwd = session.compactCwdDescription {
-                Button(action: { PickyFinderOpenRequest.open(cwd: session.cwd) }) {
-                    Label {
-                        Text(compactCwd)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    } icon: {
-                        Image(systemName: "folder")
-                    }
-                    .labelStyle(.titleAndIcon)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .layoutPriority(1)
-                .help("Open working folder in Finder")
-                .pointerCursor()
+        VStack(alignment: .leading, spacing: 4) {
+            if hasPrimaryContext {
+                primaryContextLine
             }
 
             if let gitStatus {
-                separatorDot
-                HStack(spacing: 4) {
-                    branchLabel(status: gitStatus)
-                    if gitStatus.insertions > 0 {
-                        gitMetricPill("+\(gitStatus.insertions)", color: DS.Colors.success)
-                            .help("Insertions")
-                    }
-                    if gitStatus.deletions > 0 {
-                        gitMetricPill("-\(gitStatus.deletions)", color: DS.Colors.destructiveText)
-                            .help("Deletions")
-                    }
-                    if gitStatus.aheadCount > 0 {
-                        Button(action: { runRemoteAction(.push) }) {
-                            gitMetricPill("↑\(gitStatus.aheadCount)", color: DS.Colors.accentText)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(inFlightGitAction != nil)
-                        .opacity(inFlightGitAction == .push ? 0.45 : 1)
-                        .help(inFlightGitAction == .push ? "Pushing…" : "git push (\(gitStatus.aheadCount) ahead of upstream)")
-                        .pointerCursor()
-                    }
-                    if gitStatus.behindCount > 0 {
-                        Button(action: { runRemoteAction(.pull) }) {
-                            gitMetricPill("↓\(gitStatus.behindCount)", color: DS.Colors.warningText)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(inFlightGitAction != nil)
-                        .opacity(inFlightGitAction == .pull ? 0.45 : 1)
-                        .help(inFlightGitAction == .pull ? "Pulling…" : "git pull (\(gitStatus.behindCount) behind upstream)")
-                        .pointerCursor()
-                    }
-                }
-                .layoutPriority(1)
-            }
-
-            if !session.linkBadgeArtifacts.isEmpty {
-                separatorDot
-                HStack(spacing: 4) {
-                    ForEach(session.linkBadgeArtifacts.prefix(3)) { artifact in
-                        if let url = artifact.url {
-                            Link(destination: url) {
-                                linkBadge(artifact)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Open \(artifact.title)")
-                        } else {
-                            linkBadge(artifact)
-                        }
-                    }
-                }
+                gitContextLine(status: gitStatus)
             }
         }
         .font(.system(size: 10.5, weight: .medium))
         .foregroundColor(DS.Colors.textTertiary)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: gitStatusRefreshKey) {
             if let cachedStatus = PickyGitRepositoryStatus.cached(cwd: session.cwd) {
                 gitStatus = cachedStatus
@@ -120,6 +58,129 @@ struct PickyConversationContextLineView: View {
             let loadedStatus = await PickyGitRepositoryStatus.load(cwd: session.cwd)
             guard !Task.isCancelled else { return }
             gitStatus = loadedStatus
+        }
+    }
+
+    private var hasPrimaryContext: Bool {
+        session.compactCwdDescription != nil || !session.linkBadgeArtifacts.isEmpty
+    }
+
+    private var primaryContextLine: some View {
+        HStack(spacing: 6) {
+            if let compactCwd = session.compactCwdDescription {
+                cwdButton(compactCwd)
+            }
+
+            if !session.linkBadgeArtifacts.isEmpty {
+                if session.compactCwdDescription != nil {
+                    separatorDot
+                }
+                linkBadges
+                    .layoutPriority(2)
+            }
+        }
+    }
+
+    private func gitContextLine(status: PickyGitRepositoryStatus) -> some View {
+        HStack(spacing: 6) {
+            repositoryLabel(status: status)
+                .layoutPriority(1)
+            separatorDot
+            branchLabel(status: status)
+                .layoutPriority(1)
+            HStack(spacing: 4) {
+                gitMetrics(status: status)
+            }
+            .layoutPriority(2)
+        }
+    }
+
+    private func cwdButton(_ compactCwd: String) -> some View {
+        Button(action: { PickyFinderOpenRequest.open(cwd: session.cwd) }) {
+            Label {
+                Text(compactCwd)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } icon: {
+                Image(systemName: "folder")
+            }
+            .labelStyle(.titleAndIcon)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .layoutPriority(1)
+        .help("Open working folder in Finder")
+        .pointerCursor()
+    }
+
+    private var linkBadges: some View {
+        HStack(spacing: 4) {
+            ForEach(session.linkBadgeArtifacts.prefix(3)) { artifact in
+                if let url = artifact.url {
+                    Link(destination: url) {
+                        linkBadge(artifact)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open \(artifact.title)")
+                } else {
+                    linkBadge(artifact)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func repositoryLabel(status: PickyGitRepositoryStatus) -> some View {
+        let content = HStack(spacing: 4) {
+            Image(systemName: "chevron.left.forwardslash.chevron.right")
+            Text(status.repositoryDisplayName)
+                .font(.system(size: 10.5, weight: .semibold))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .contentShape(Rectangle())
+
+        if let url = status.remoteWebURL {
+            Link(destination: url) {
+                content
+            }
+            .buttonStyle(.plain)
+            .help("Open \(url.absoluteString)")
+            .pointerCursor()
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    private func gitMetrics(status: PickyGitRepositoryStatus) -> some View {
+        if status.insertions > 0 {
+            gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
+                .help("Insertions")
+        }
+        if status.deletions > 0 {
+            gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
+                .help("Deletions")
+        }
+        if status.aheadCount > 0 {
+            Button(action: { runRemoteAction(.push) }) {
+                gitMetricPill("↑\(status.aheadCount)", color: DS.Colors.accentText)
+            }
+            .buttonStyle(.plain)
+            .disabled(inFlightGitAction != nil)
+            .opacity(inFlightGitAction == .push ? 0.45 : 1)
+            .help(inFlightGitAction == .push ? "Pushing…" : "git push (\(status.aheadCount) ahead of upstream)")
+            .pointerCursor()
+        }
+        if status.behindCount > 0 {
+            Button(action: { runRemoteAction(.pull) }) {
+                gitMetricPill("↓\(status.behindCount)", color: DS.Colors.warningText)
+            }
+            .buttonStyle(.plain)
+            .disabled(inFlightGitAction != nil)
+            .opacity(inFlightGitAction == .pull ? 0.45 : 1)
+            .help(inFlightGitAction == .pull ? "Pulling…" : "git pull (\(status.behindCount) behind upstream)")
+            .pointerCursor()
         }
     }
 

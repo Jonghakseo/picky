@@ -201,6 +201,24 @@ struct BlueCursorView: View {
     @State private var idleBehaviorActive: Bool = false
     @State private var lastCursorMoveAt: Date = Date()
 
+    // MARK: - Mouse Movement Reactions
+
+    /// Short-lived transform driven only by mouse velocity. This gives the
+    /// buddy a subtle physical feel while keeping semantic behavior LLM-free:
+    /// fast cursor movement makes it lag/lean, then a sudden stop produces one
+    /// tiny overshoot before settling back to the normal cursor-follow target.
+    @State private var motionOffsetX: CGFloat = 0
+    @State private var motionOffsetY: CGFloat = 0
+    @State private var motionRotation: Double = 0
+    @State private var motionScale: CGFloat = 1.0
+    @State private var lastCursorSamplePosition: CGPoint?
+    @State private var lastCursorSampleTime: TimeInterval = ProcessInfo.processInfo.systemUptime
+    @State private var lastFastCursorDirection: CGVector = .zero
+    @State private var wasCursorMovingFast: Bool = false
+    @State private var motionOvershootActive: Bool = false
+    @State private var lastOvershootAt: TimeInterval = 0
+    @State private var motionReactionGeneration: Int = 0
+
     private enum IdleBehavior: CaseIterable {
         case lookAround, yawn, bob, tilt, shiver, wiggle, pulseGlow, lazyOrbit, tetheredRoam, figureEight
     }
@@ -385,11 +403,11 @@ struct BlueCursorView: View {
                     x: 0,
                     y: 0
                 )
-                .scaleEffect(buddyFlightScale * idleScale)
-                .rotationEffect(.degrees(idleRotation))
+                .scaleEffect(buddyFlightScale * idleScale * motionScale)
+                .rotationEffect(.degrees(idleRotation + motionRotation))
                 .opacity(buddyIsVisibleOnThisScreen ? cursorOpacity : 0)
                 .position(cursorPosition)
-                .offset(x: idleOffsetX, y: idleOffsetY)
+                .offset(x: idleOffsetX + motionOffsetX, y: idleOffsetY + motionOffsetY)
                 .animation(
                     buddyNavigationMode == .followingCursor
                         ? .spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0)
@@ -419,6 +437,7 @@ struct BlueCursorView: View {
             timer?.invalidate()
             navigationAnimationTimer?.invalidate()
             cancelIdleBehavior()
+            resetMouseMovementReaction(animated: false)
         }
         .onChange(of: companionManager.detectedElementScreenLocation) { newLocation in
             startNavigatingToPointerTargetIfPresent(screenLocation: newLocation)
@@ -473,6 +492,7 @@ struct BlueCursorView: View {
             // already follows the cursor. So during any non-following mode we
             // simply yield position control to the navigation timer.
             if self.buddyNavigationMode != .followingCursor {
+                self.resetMouseMovementReaction(animated: true)
                 return
             }
 
@@ -495,8 +515,162 @@ struct BlueCursorView: View {
                 }
             }
 
+            self.updateMouseMovementReaction(for: newPosition)
             self.cursorPosition = newPosition
         }
+    }
+
+    // MARK: - Mouse Movement Reactions
+
+    private func updateMouseMovementReaction(for targetPosition: CGPoint) {
+        let now = ProcessInfo.processInfo.systemUptime
+
+        guard isCursorOnThisScreen,
+              !companionManager.isQuickInputPanelVisible,
+              companionManager.voiceState == .idle else {
+            resetMouseMovementReaction(animated: true)
+            return
+        }
+
+        guard let previousPosition = lastCursorSamplePosition else {
+            lastCursorSamplePosition = targetPosition
+            lastCursorSampleTime = now
+            return
+        }
+
+        defer {
+            lastCursorSamplePosition = targetPosition
+            lastCursorSampleTime = now
+        }
+
+        let dt = max(now - lastCursorSampleTime, 1.0 / 120.0)
+        let dx = targetPosition.x - previousPosition.x
+        let dy = targetPosition.y - previousPosition.y
+        let distance = hypot(dx, dy)
+        let speed = distance / CGFloat(dt)
+
+        // Pixel/second thresholds tuned to be subtle: normal mouse movement is
+        // unaffected, but quick sweeps make the buddy trail and lean a little.
+        let reactionSpeed: CGFloat = 140
+        let fastSpeed: CGFloat = 900
+        let stoppedSpeed: CGFloat = 90
+
+        if speed > reactionSpeed, distance > 0.35 {
+            let direction = normalizedVector(dx: dx, dy: dy)
+            let lagDistance = min(max((speed - reactionSpeed) / 170.0, 0), 11)
+            let leanMagnitude = Double(min(speed / 170.0, 8.0))
+            let liftMagnitude = Double(min(speed / 450.0, 2.5))
+            let lean = clamped(Double(direction.dx) * leanMagnitude, min: -9.0, max: 9.0)
+            let lift = clamped(Double(-direction.dy) * liftMagnitude, min: -2.5, max: 2.5)
+            let scale = CGFloat(1.0) + min(speed / 28_000.0, 0.07)
+
+            if motionOvershootActive {
+                motionReactionGeneration += 1
+            }
+            motionOvershootActive = false
+
+            withAnimation(.easeOut(duration: 0.08)) {
+                motionOffsetX = -direction.dx * lagDistance
+                motionOffsetY = -direction.dy * lagDistance
+                motionRotation = lean + lift
+                motionScale = scale
+            }
+
+            if speed > fastSpeed {
+                wasCursorMovingFast = true
+                lastFastCursorDirection = direction
+            }
+        } else if speed < stoppedSpeed {
+            if wasCursorMovingFast,
+               !motionOvershootActive,
+               now - lastOvershootAt > 0.22 {
+                runCursorStopOvershoot(now: now)
+            } else if !motionOvershootActive {
+                settleMouseMovementReaction(animated: true)
+                wasCursorMovingFast = false
+            }
+        } else if !motionOvershootActive {
+            settleMouseMovementReaction(animated: true)
+        }
+    }
+
+    private func runCursorStopOvershoot(now: TimeInterval) {
+        let direction = lastFastCursorDirection
+        guard hypot(direction.dx, direction.dy) > 0.01 else {
+            settleMouseMovementReaction(animated: true)
+            wasCursorMovingFast = false
+            return
+        }
+
+        lastOvershootAt = now
+        wasCursorMovingFast = false
+        motionOvershootActive = true
+        motionReactionGeneration += 1
+        let generation = motionReactionGeneration
+
+        let overshootDistance: CGFloat = 6
+        withAnimation(.interpolatingSpring(stiffness: 520, damping: 19)) {
+            motionOffsetX = direction.dx * overshootDistance
+            motionOffsetY = direction.dy * overshootDistance
+            motionRotation = clamped(Double(direction.dx) * 4.0, min: -5.0, max: 5.0)
+            motionScale = 1.035
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.09) {
+            guard self.motionReactionGeneration == generation,
+                  self.motionOvershootActive else { return }
+            self.settleMouseMovementReaction(animated: true)
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
+                guard self.motionReactionGeneration == generation else { return }
+                self.motionOvershootActive = false
+            }
+        }
+    }
+
+    private func settleMouseMovementReaction(animated: Bool) {
+        let changes = {
+            motionOffsetX = 0
+            motionOffsetY = 0
+            motionRotation = 0
+            motionScale = 1.0
+        }
+
+        if animated {
+            withAnimation(.interpolatingSpring(stiffness: 360, damping: 24)) {
+                changes()
+            }
+        } else {
+            changes()
+        }
+    }
+
+    private func resetMouseMovementReaction(animated: Bool) {
+        let hasReactionState = motionOffsetX != 0
+            || motionOffsetY != 0
+            || motionRotation != 0
+            || motionScale != 1.0
+            || motionOvershootActive
+            || wasCursorMovingFast
+            || lastCursorSamplePosition != nil
+            || hypot(lastFastCursorDirection.dx, lastFastCursorDirection.dy) > 0.01
+        guard hasReactionState else { return }
+
+        motionReactionGeneration += 1
+        motionOvershootActive = false
+        wasCursorMovingFast = false
+        lastFastCursorDirection = .zero
+        lastCursorSamplePosition = nil
+        settleMouseMovementReaction(animated: animated)
+    }
+
+    private func normalizedVector(dx: CGFloat, dy: CGFloat) -> CGVector {
+        let length = max(hypot(dx, dy), 0.0001)
+        return CGVector(dx: dx / length, dy: dy / length)
+    }
+
+    private func clamped(_ value: Double, min minValue: Double, max maxValue: Double) -> Double {
+        Swift.min(Swift.max(value, minValue), maxValue)
     }
 
     /// Converts a macOS screen point (AppKit, bottom-left origin) to SwiftUI
@@ -645,6 +819,7 @@ struct BlueCursorView: View {
         buddyNavigationMode = .navigatingToTarget
         isReturningToCursor = false
         cancelIdleBehavior()
+        resetMouseMovementReaction(animated: true)
 
         animateBezierFlightArc(to: clampedTarget, pointerID: pointerID) {
             guard self.buddyNavigationMode == .navigatingToTarget,
@@ -886,6 +1061,7 @@ struct BlueCursorView: View {
         buddyNavigationMode = .followingCursor
         isReturningToCursor = false
         buddyFlightScale = 1.0
+        resetMouseMovementReaction(animated: true)
         navigationBubbleText = ""
         navigationBubbleOpacity = 0.0
         navigationBubbleScale = 1.0

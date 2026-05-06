@@ -1274,6 +1274,79 @@ struct PickySessionViewModelTests {
         #expect(viewModel.pendingDockPointerSessionID == nil)
     }
 
+    @Test func liveTransitionToCompletedQueuesDoneFlash() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "running"))))
+        try await settle()
+        #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        try await settle()
+        #expect(viewModel.pendingDoneFlashSessionIDs.contains("side-1"))
+
+        viewModel.markDoneFlashConsumed(sessionID: "side-1")
+        #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
+
+        // A duplicate .completed update (e.g. a tool/log patch arriving after the terminal
+        // status) must not re-queue the flash within the same completion phase.
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "completed", summary: "Resent", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        try await settle()
+        #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
+    }
+
+    @Test func snapshotHydrationDoesNotQueueDoneFlashForHistoricalCompletedSessions() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(id: "historical", title: "Historical", status: "completed", summary: "Already done"))))
+        try await settle()
+        #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
+
+        // Snapshot already populated previousStatus = .completed for this session, so a follow-up
+        // sessionUpdated still in .completed must not retroactively flash.
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "historical", title: "Historical", status: "completed", summary: "Updated", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        try await settle()
+        #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
+    }
+
+    @Test func firstSightCompletedSessionDoesNotFlash() async throws {
+        // A brand-new session whose first sessionUpdated already carries .completed (e.g. a
+        // synthesized snapshot from the daemon catching up) must not flash, since the user
+        // didn't watch it transition. previousStatus is nil for the first sight.
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "first-sight", title: "First sight", status: "completed"))))
+        try await settle()
+        #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
+    }
+
+    @Test func sessionRunsAgainAndCompletesLiveQueuesNewDoneFlash() async throws {
+        // After a follow-up sends the session back to .running and it completes again, the new
+        // live transition should queue a fresh flash. This mirrors the completion notification
+        // dedupe reset in resetTerminalNotificationKeysIfNeeded.
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "running"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        try await settle()
+        viewModel.markDoneFlashConsumed(sessionID: "side-1")
+        #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "running", summary: "Working", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "completed", summary: "Done again", updatedAt: "2026-05-01T00:00:20.000Z"))))
+        try await settle()
+
+        #expect(viewModel.pendingDoneFlashSessionIDs.contains("side-1"))
+    }
+
     @Test func runtimeDetachedRestoredSessionsStayVisibleAndClearAutoArchiveState() async throws {
         let client = FakePickyAgentClient()
         let archiveStore = FakeArchiveStore()

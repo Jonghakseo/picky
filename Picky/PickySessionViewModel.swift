@@ -224,6 +224,7 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var lastOpenedArtifactPath: String?
     @Published private(set) var slashCommandsBySessionID: [String: [PickySlashCommand]] = [:]
     @Published private(set) var pendingDockPointerSessionID: String?
+    @Published private(set) var pendingDoneFlashSessionIDs: Set<String> = []
     @Published private(set) var isLoadingInitialSessionSnapshot = true
 
     var selectedSession: SessionCard? {
@@ -405,6 +406,10 @@ final class PickySessionListViewModel: ObservableObject {
         pendingDockPointerSessionID = nil
         dockPointerQueuedSessionIDs.remove(sessionID)
         dockPointerDeliveredSessionIDs.insert(sessionID)
+    }
+
+    func markDoneFlashConsumed(sessionID: String) {
+        pendingDoneFlashSessionIDs.remove(sessionID)
     }
 
     func followUp(text: String, sessionID: String? = nil) async throws {
@@ -864,6 +869,7 @@ final class PickySessionListViewModel: ObservableObject {
         slashCommandRequestedSessionIDs = slashCommandRequestedSessionIDs.filter { knownSessionIDs.contains($0) }
         dockPointerQueuedSessionIDs = dockPointerQueuedSessionIDs.filter { knownSessionIDs.contains($0) }
         dockPointerDeliveredSessionIDs = dockPointerDeliveredSessionIDs.filter { knownSessionIDs.contains($0) }
+        pendingDoneFlashSessionIDs = pendingDoneFlashSessionIDs.filter { knownSessionIDs.contains($0) }
         lastIncrementalSeqBySessionID = lastIncrementalSeqBySessionID.filter { knownSessionIDs.contains($0.key) }
         if let pendingDockPointerSessionID, !knownSessionIDs.contains(pendingDockPointerSessionID) {
             self.pendingDockPointerSessionID = nil
@@ -881,6 +887,7 @@ final class PickySessionListViewModel: ObservableObject {
     private func upsert(_ card: SessionCard, preserveIncrementalConversationState: Bool = false) {
         let archivedIDs = effectiveArchivedSessionIDs(for: [card])
         let shouldArchive = archivedIDs.contains(card.id)
+        let previousStatus = (sessions + archivedSessions).first(where: { $0.id == card.id })?.status
         var incoming = card
         if let existing = (sessions + archivedSessions).first(where: { $0.id == card.id }) {
             incoming = existing.merged(with: card, preserveConversationState: preserveIncrementalConversationState)
@@ -900,6 +907,7 @@ final class PickySessionListViewModel: ObservableObject {
         syncActiveVoiceFollowUpAfterSessionListChange()
         if !shouldArchive {
             requestDockPointerIfNeeded(for: incoming)
+            requestDoneFlashIfNeeded(previousStatus: previousStatus, incoming: incoming)
             deliverNotificationIfNeeded(for: incoming)
         }
     }
@@ -908,6 +916,17 @@ final class PickySessionListViewModel: ObservableObject {
         // Handoff-created side agents already appear in the HUD dock with their
         // own status/active highlight. Do not fly the Picky cursor to the dock:
         // that stacks a cursor response bubble, a pointer bubble, and a dock tag.
+    }
+
+    private func requestDoneFlashIfNeeded(previousStatus: PickySessionStatus?, incoming: SessionCard) {
+        // Only celebrate live transitions into completed. nil previousStatus means a brand-new
+        // session arriving already as .completed (e.g. snapshot replay routed through upsert);
+        // the user did not watch it transition so we skip the flash. Snapshot hydration writes
+        // directly to `sessions`/`archivedSessions` without going through upsert, so historical
+        // completed sessions never reach this code path on initial connect.
+        guard incoming.status == .completed else { return }
+        guard let previousStatus, previousStatus != .completed else { return }
+        pendingDoneFlashSessionIDs.insert(incoming.id)
     }
 
     private func update(sessionID: String, mutate: (inout SessionCard) -> Void) {

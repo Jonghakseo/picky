@@ -153,10 +153,12 @@ struct PickyHUDView: View {
                     sessions: visibleSessions,
                     activeSessionID: activeSession?.id,
                     pinnedSessionID: pinnedSessionID,
+                    pendingDoneFlashSessionIDs: viewModel.pendingDoneFlashSessionIDs,
                     onHoverSession: previewDockSession,
                     onPinSession: pinSession,
                     onCreateSideAgent: chooseFolderForEmptySideAgent,
-                    onIconScreenFrameChange: recordDockIconScreenFrame
+                    onIconScreenFrameChange: recordDockIconScreenFrame,
+                    onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:)
                 )
                 .frame(width: PickyHUDDockLayout.railWidth)
             }
@@ -333,10 +335,12 @@ private struct PickyHUDDockRailView: View {
     let sessions: [PickySessionListViewModel.SessionCard]
     let activeSessionID: String?
     let pinnedSessionID: String?
+    let pendingDoneFlashSessionIDs: Set<String>
     let onHoverSession: (String) -> Void
     let onPinSession: (String) -> Void
     let onCreateSideAgent: () -> Void
     let onIconScreenFrameChange: (String, CGRect) -> Void
+    let onDoneFlashConsumed: (String) -> Void
 
     @State private var isAddSlotExpanded = false
 
@@ -353,9 +357,11 @@ private struct PickyHUDDockRailView: View {
                             index: index,
                             isActive: activeSessionID == session.id,
                             isPinned: pinnedSessionID == session.id,
+                            shouldFlashCompletion: pendingDoneFlashSessionIDs.contains(session.id),
                             onHover: { onHoverSession(session.id) },
                             onPin: { onPinSession(session.id) },
-                            onScreenFrameChange: { frame in onIconScreenFrameChange(session.id, frame) }
+                            onScreenFrameChange: { frame in onIconScreenFrameChange(session.id, frame) },
+                            onDoneFlashConsumed: { onDoneFlashConsumed(session.id) }
                         )
                     }
                 }
@@ -470,9 +476,14 @@ private struct PickyHUDDockIconView: View {
     let index: Int
     let isActive: Bool
     let isPinned: Bool
+    let shouldFlashCompletion: Bool
     let onHover: () -> Void
     let onPin: () -> Void
     let onScreenFrameChange: (CGRect) -> Void
+    let onDoneFlashConsumed: () -> Void
+
+    @State private var completionFlashIntensity: Double = 0
+    @State private var completionFlashTask: Task<Void, Never>?
 
     var body: some View {
         Button(action: onPin) {
@@ -503,6 +514,16 @@ private struct PickyHUDDockIconView: View {
         .onHover { isHovering in
             if isHovering { onHover() }
         }
+        .onAppear {
+            if shouldFlashCompletion { runCompletionFlash() }
+        }
+        .onChange(of: shouldFlashCompletion) { _, shouldFlash in
+            if shouldFlash { runCompletionFlash() }
+        }
+        .onDisappear {
+            completionFlashTask?.cancel()
+            completionFlashTask = nil
+        }
         .accessibilityLabel("Preview \(session.title)")
         .accessibilityHint("Click to pin this side agent")
     }
@@ -512,6 +533,9 @@ private struct PickyHUDDockIconView: View {
         // (inactive) faint white film. The stroke is a top-bright / status-tinted
         // bottom gradient so the icon reads as a small piece of glass on the
         // bigger glass capsule rather than a flat fill.
+        // The completion flash temporarily boosts the success-tinted glaze + stroke
+        // and adds an ambient glow so a Done transition feels celebratory without
+        // disturbing the layout.
         RoundedRectangle(cornerRadius: 18, style: .continuous)
             .fill(.ultraThinMaterial)
             .overlay(
@@ -521,6 +545,10 @@ private struct PickyHUDDockIconView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(Color.white.opacity(isActive ? 0.0 : 0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(DS.Colors.success.opacity(0.34 * completionFlashIntensity))
             )
             .overlay {
                 if usesAnimatedStatusBorder {
@@ -538,6 +566,29 @@ private struct PickyHUDDockIconView: View {
                         )
                 }
             }
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(DS.Colors.success.opacity(0.85 * completionFlashIntensity), lineWidth: 1.4)
+            )
+            .shadow(color: DS.Colors.success.opacity(0.55 * completionFlashIntensity), radius: 6, x: 0, y: 0)
+    }
+
+    private func runCompletionFlash() {
+        completionFlashTask?.cancel()
+        onDoneFlashConsumed()
+        let task = Task { @MainActor in
+            // Two pulses: rise quickly, fall slowly. Rough total duration ~1.4s so it lingers
+            // long enough to register but doesn't compete with the dock's animated borders.
+            for _ in 0..<2 {
+                if Task.isCancelled { return }
+                withAnimation(.easeOut(duration: 0.18)) { completionFlashIntensity = 1.0 }
+                try? await Task.sleep(nanoseconds: 220_000_000)
+                if Task.isCancelled { return }
+                withAnimation(.easeIn(duration: 0.45)) { completionFlashIntensity = 0.0 }
+                try? await Task.sleep(nanoseconds: 480_000_000)
+            }
+        }
+        completionFlashTask = task
     }
 
     private var statusDot: some View {

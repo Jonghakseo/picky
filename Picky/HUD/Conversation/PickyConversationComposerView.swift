@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum PickyConversationComposerSubmitKind: Equatable {
     case steer
@@ -29,6 +30,7 @@ struct PickyConversationComposerView: View {
     @State private var draft: String = ""
     @State private var selectedSlashCommandIndex: Int = 0
     @State private var isSlashCommandAutocompleteDismissed: Bool = false
+    @State private var isFileDropTargeted: Bool = false
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -41,16 +43,18 @@ struct PickyConversationComposerView: View {
 
     private var composerRow: some View {
         HStack(alignment: .center, spacing: 8) {
-            Image(systemName: "text.bubble")
+            Image(systemName: isFileDropTargeted ? "doc.badge.plus" : "text.bubble")
                 .font(.system(size: 10.5, weight: .medium))
-                .foregroundColor(DS.Colors.textTertiary)
+                .foregroundColor(isFileDropTargeted ? DS.Colors.accentText : DS.Colors.textTertiary)
             composerEditor
             sendButton
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
         .background(composerBackground)
+        .onDrop(of: [UTType.fileURL.identifier], isTargeted: $isFileDropTargeted, perform: handleFileDrop)
     }
 
     private var composerEditor: some View {
@@ -282,11 +286,92 @@ struct PickyConversationComposerView: View {
 
     private var composerBackground: some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(DS.Colors.surface2.opacity(0.55))
+            .fill(isFileDropTargeted ? DS.Colors.accentSubtle.opacity(0.28) : DS.Colors.surface2.opacity(0.55))
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
+                    .stroke(isFileDropTargeted ? DS.Colors.accentText.opacity(0.85) : DS.Colors.borderSubtle, lineWidth: isFileDropTargeted ? 1 : 0.5)
             )
+    }
+
+    static func draftText(afterAppendingDroppedFilePaths paths: [String], to draft: String) -> String {
+        let normalizedPaths = paths
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !normalizedPaths.isEmpty else { return draft }
+
+        let droppedText = normalizedPaths.joined(separator: "\n")
+        guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return droppedText
+        }
+        if draft.hasSuffix("\n") {
+            return draft + droppedText
+        }
+        return "\(draft)\n\(droppedText)"
+    }
+
+    private func appendDroppedFilePaths(_ paths: [String]) {
+        draft = Self.draftText(afterAppendingDroppedFilePaths: paths, to: draft)
+        if !paths.isEmpty { isFocused = true }
+    }
+
+    private func handleFileDrop(_ providers: [NSItemProvider]) -> Bool {
+        let fileProviders = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
+        guard !fileProviders.isEmpty else { return false }
+
+        Task {
+            let paths = await Self.filePaths(from: fileProviders)
+            guard !paths.isEmpty else { return }
+            await MainActor.run {
+                appendDroppedFilePaths(paths)
+            }
+        }
+        return true
+    }
+
+    private static func filePaths(from providers: [NSItemProvider]) async -> [String] {
+        var paths: [String] = []
+        for provider in providers {
+            if let path = await filePath(from: provider) {
+                paths.append(path)
+            }
+        }
+        return paths
+    }
+
+    private static func filePath(from provider: NSItemProvider) async -> String? {
+        guard provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) else { return nil }
+        return await withCheckedContinuation { continuation in
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, error in
+                guard error == nil else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: filePath(fromDropItem: item))
+            }
+        }
+    }
+
+    private static func filePath(fromDropItem item: Any?) -> String? {
+        if let url = item as? URL, url.isFileURL { return url.path }
+        if let url = item as? NSURL, url.isFileURL { return url.path }
+        if let string = item as? String { return filePath(fromDropString: string) }
+        if let string = item as? NSString { return filePath(fromDropString: string as String) }
+        if let data = item as? Data {
+            if let url = URL(dataRepresentation: data, relativeTo: nil), url.isFileURL {
+                return url.path
+            }
+            if let string = String(data: data, encoding: .utf8) {
+                return filePath(fromDropString: string)
+            }
+        }
+        return nil
+    }
+
+    private static func filePath(fromDropString string: String) -> String? {
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\0")))
+        if let url = URL(string: trimmed), url.isFileURL { return url.path }
+        if trimmed.hasPrefix("/") { return trimmed }
+        return nil
     }
 
     var placeholderText: String { placeholder }
@@ -329,6 +414,7 @@ struct PickyConversationComposerView: View {
     }
 
     private var placeholder: String {
+        if isFileDropTargeted { return "Drop files to insert paths" }
         switch session.status {
         case .running, .queued, .waiting_for_input:
             return "Steer this agent · ⌥↵ Follow-up · esc Stop"

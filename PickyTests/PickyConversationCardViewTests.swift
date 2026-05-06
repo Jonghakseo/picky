@@ -264,6 +264,13 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationComposerView.editorHeight(for: "one\ntwo\nthree\nfour") == 48)
     }
 
+    @Test func composerDroppedFilePathsAppendAsPlainDraftText() {
+        #expect(PickyConversationComposerView.draftText(afterAppendingDroppedFilePaths: ["/tmp/a.png"], to: "") == "/tmp/a.png")
+        #expect(PickyConversationComposerView.draftText(afterAppendingDroppedFilePaths: ["/tmp/a.png", "/tmp/b.txt"], to: "Please inspect") == "Please inspect\n/tmp/a.png\n/tmp/b.txt")
+        #expect(PickyConversationComposerView.draftText(afterAppendingDroppedFilePaths: ["  /tmp/c.log  "], to: "Existing\n") == "Existing\n/tmp/c.log")
+        #expect(PickyConversationComposerView.draftText(afterAppendingDroppedFilePaths: ["", "  "], to: "Existing") == "Existing")
+    }
+
     @Test func composerDefaultSubmitKindAndPlaceholderMatchSessionStatus() {
         let viewModel = makeViewModel()
 

@@ -199,9 +199,7 @@ struct BlueCursorView: View {
         // Seed the cursor position from the current mouse location so the
         // buddy doesn't flash at (0,0) before onAppear fires.
         let mouseLocation = NSEvent.mouseLocation
-        let localX = mouseLocation.x - screenFrame.origin.x
-        let localY = screenFrame.height - (mouseLocation.y - screenFrame.origin.y)
-        _cursorPosition = State(initialValue: CGPoint(x: localX + 30, y: localY + 20))
+        _cursorPosition = State(initialValue: PickyOverlayGeometry.cursorBuddyPosition(for: mouseLocation, in: screenFrame))
         _isCursorOnThisScreen = State(initialValue: screenFrame.contains(mouseLocation))
     }
     @State private var timer: Timer?
@@ -445,8 +443,7 @@ struct BlueCursorView: View {
             let mouseLocation = NSEvent.mouseLocation
             isCursorOnThisScreen = screenFrame.contains(mouseLocation)
 
-            let swiftUIPosition = convertScreenPointToSwiftUICoordinates(mouseLocation)
-            self.cursorPosition = CGPoint(x: swiftUIPosition.x + 30, y: swiftUIPosition.y + 20)
+            self.cursorPosition = PickyOverlayGeometry.cursorBuddyPosition(for: mouseLocation, in: screenFrame)
 
             startTrackingCursor()
             startNavigatingToCurrentPointerTargetIfNeeded()
@@ -529,10 +526,7 @@ struct BlueCursorView: View {
             }
 
             // Normal cursor following
-            let swiftUIPosition = self.convertScreenPointToSwiftUICoordinates(mouseLocation)
-            let buddyX = swiftUIPosition.x + 30
-            let buddyY = swiftUIPosition.y + 20
-            let newPosition = CGPoint(x: buddyX, y: buddyY)
+            let newPosition = PickyOverlayGeometry.cursorBuddyPosition(for: mouseLocation, in: self.screenFrame)
 
             // Detect significant cursor motion to cancel any in-progress idle
             // behavior. The threshold is per-tick (16ms), so this catches user
@@ -577,38 +571,35 @@ struct BlueCursorView: View {
             lastCursorSampleTime = now
         }
 
-        let dt = max(now - lastCursorSampleTime, 1.0 / 120.0)
-        let dx = targetPosition.x - previousPosition.x
-        let dy = targetPosition.y - previousPosition.y
-        let distance = hypot(dx, dy)
-        let speed = distance / CGFloat(dt)
+        let sample = PickyCursorMotionReaction.sample(
+            previousPosition: previousPosition,
+            currentPosition: targetPosition,
+            previousTime: lastCursorSampleTime,
+            currentTime: now
+        )
 
-        // Pixel/second thresholds tuned for stop-only feedback: movement never
-        // adds lag, but a fast sweep followed by a stop creates a tiny overshoot.
-        let movementSpeed: CGFloat = 140
-        let fastSpeed: CGFloat = 900
-        let stoppedSpeed: CGFloat = 90
-
-        if speed > movementSpeed, distance > 0.35 {
+        if PickyCursorMotionReaction.isMeaningfulMovement(sample) {
             if motionOvershootActive {
                 motionReactionGeneration += 1
                 motionOvershootActive = false
                 settleMouseMovementReaction(animated: true)
             }
 
-            if speed > fastSpeed {
+            if PickyCursorMotionReaction.isFastMovement(sample) {
                 wasCursorMovingFast = true
-                lastFastCursorDirection = normalizedVector(dx: dx, dy: dy)
+                lastFastCursorDirection = sample.direction
             }
-        } else if speed < stoppedSpeed {
-            if wasCursorMovingFast,
-               !motionOvershootActive,
-               now - lastOvershootAt > 0.22 {
-                runCursorStopOvershoot(now: now)
-            } else if !motionOvershootActive {
-                settleMouseMovementReaction(animated: true)
-                wasCursorMovingFast = false
-            }
+        } else if PickyCursorMotionReaction.shouldTriggerStopOvershoot(
+            sample: sample,
+            wasCursorMovingFast: wasCursorMovingFast,
+            overshootActive: motionOvershootActive,
+            now: now,
+            lastOvershootAt: lastOvershootAt
+        ) {
+            runCursorStopOvershoot(now: now)
+        } else if sample.speed < PickyCursorMotionReaction.stoppedSpeed, !motionOvershootActive {
+            settleMouseMovementReaction(animated: true)
+            wasCursorMovingFast = false
         } else if !motionOvershootActive {
             settleMouseMovementReaction(animated: true)
         }
@@ -628,11 +619,10 @@ struct BlueCursorView: View {
         motionReactionGeneration += 1
         let generation = motionReactionGeneration
 
-        let overshootDistance: CGFloat = 6
         withAnimation(.interpolatingSpring(stiffness: 520, damping: 19)) {
-            motionOffsetX = direction.dx * overshootDistance
-            motionOffsetY = direction.dy * overshootDistance
-            motionRotation = clamped(Double(direction.dx) * 4.0, min: -5.0, max: 5.0)
+            motionOffsetX = direction.dx * PickyCursorMotionReaction.overshootDistance
+            motionOffsetY = direction.dy * PickyCursorMotionReaction.overshootDistance
+            motionRotation = PickyCursorMotionReaction.overshootRotation(for: direction)
             motionScale = 1.035
         }
 
@@ -684,23 +674,6 @@ struct BlueCursorView: View {
         settleMouseMovementReaction(animated: animated)
     }
 
-    private func normalizedVector(dx: CGFloat, dy: CGFloat) -> CGVector {
-        let length = max(hypot(dx, dy), 0.0001)
-        return CGVector(dx: dx / length, dy: dy / length)
-    }
-
-    private func clamped(_ value: Double, min minValue: Double, max maxValue: Double) -> Double {
-        Swift.min(Swift.max(value, minValue), maxValue)
-    }
-
-    /// Converts a macOS screen point (AppKit, bottom-left origin) to SwiftUI
-    /// coordinates (top-left origin) relative to this screen's overlay window.
-    private func convertScreenPointToSwiftUICoordinates(_ screenPoint: CGPoint) -> CGPoint {
-        let x = screenPoint.x - screenFrame.origin.x
-        let y = (screenFrame.origin.y + screenFrame.height) - screenPoint.y
-        return CGPoint(x: x, y: y)
-    }
-
     /// Picks a bubble center position around the cursor that stays inside the
     /// current screen, falling back through bottom-right → bottom-left →
     /// top-right → top-left before clamping. Returns the bubble's center so
@@ -725,16 +698,14 @@ struct BlueCursorView: View {
 
     private var pointerTargetPosition: CGPoint? {
         guard let screenLocation = companionManager.detectedElementScreenLocation else { return nil }
-        guard pointerTargetBelongsToThisScreen(
+        guard PickyOverlayGeometry.targetBelongsToScreen(
             screenLocation: screenLocation,
-            displayFrame: companionManager.detectedElementDisplayFrame
+            displayFrame: companionManager.detectedElementDisplayFrame,
+            screenFrame: screenFrame
         ) else { return nil }
 
-        let localPoint = convertScreenPointToSwiftUICoordinates(screenLocation)
-        return CGPoint(
-            x: max(0, min(localPoint.x, screenFrame.width)),
-            y: max(0, min(localPoint.y, screenFrame.height))
-        )
+        let localPoint = PickyOverlayGeometry.swiftUICoordinates(for: screenLocation, in: screenFrame)
+        return PickyOverlayGeometry.clamped(localPoint, to: CGSize(width: screenFrame.width, height: screenFrame.height))
     }
 
     /// SwiftUI-space size of the highlighted element's bounding box. When the
@@ -747,25 +718,15 @@ struct BlueCursorView: View {
         return CGSize(width: 28, height: 28)
     }
 
-    private func pointerTargetBelongsToThisScreen(screenLocation: CGPoint, displayFrame: CGRect?) -> Bool {
-        let expandedScreenFrame = screenFrame.insetBy(dx: -1, dy: -1)
-        if expandedScreenFrame.contains(screenLocation) { return true }
-
-        guard let displayFrame else { return false }
-        let displayCenter = CGPoint(x: displayFrame.midX, y: displayFrame.midY)
-        let screenCenter = CGPoint(x: screenFrame.midX, y: screenFrame.midY)
-        return expandedScreenFrame.contains(displayCenter)
-            || displayFrame.insetBy(dx: -1, dy: -1).contains(screenCenter)
-    }
-
     // MARK: - Element Navigation
 
     private func startNavigatingToCurrentPointerTargetIfNeeded() {
         guard buddyNavigationMode == .followingCursor,
               let screenLocation = companionManager.detectedElementScreenLocation,
-              pointerTargetBelongsToThisScreen(
+              PickyOverlayGeometry.targetBelongsToScreen(
                   screenLocation: screenLocation,
-                  displayFrame: companionManager.detectedElementDisplayFrame
+                  displayFrame: companionManager.detectedElementDisplayFrame,
+                  screenFrame: screenFrame
               ) else {
             return
         }
@@ -790,7 +751,11 @@ struct BlueCursorView: View {
         // point as the primary signal because adjacent displays can have
         // negative/non-zero origins and whole-screen frames may differ by a
         // fraction across ScreenCaptureKit/AppKit boundaries.
-        guard pointerTargetBelongsToThisScreen(screenLocation: screenLocation, displayFrame: displayFrame) else {
+        guard PickyOverlayGeometry.targetBelongsToScreen(
+            screenLocation: screenLocation,
+            displayFrame: displayFrame,
+            screenFrame: screenFrame
+        ) else {
             return
         }
 
@@ -819,7 +784,7 @@ struct BlueCursorView: View {
     /// Starts animating the buddy toward a detected UI element location.
     private func startNavigatingToElement(screenLocation: CGPoint, pointerID: String) {
         // Convert the AppKit screen location to SwiftUI coordinates for this screen
-        let targetInSwiftUI = convertScreenPointToSwiftUICoordinates(screenLocation)
+        let targetInSwiftUI = PickyOverlayGeometry.swiftUICoordinates(for: screenLocation, in: screenFrame)
 
         // Offset the target so the buddy sits beside the element rather than
         // directly on top of it — 8px to the right, 12px below.
@@ -1043,8 +1008,7 @@ struct BlueCursorView: View {
             elapsed += frameInterval
 
             let mouseLocation = NSEvent.mouseLocation
-            let mouseInSwiftUI = self.convertScreenPointToSwiftUICoordinates(mouseLocation)
-            let target = CGPoint(x: mouseInSwiftUI.x + 30, y: mouseInSwiftUI.y + 20)
+            let target = PickyOverlayGeometry.cursorBuddyPosition(for: mouseLocation, in: self.screenFrame)
 
             let dx = target.x - self.cursorPosition.x
             let dy = target.y - self.cursorPosition.y
@@ -1440,55 +1404,6 @@ struct BlueCursorView: View {
 }
 
 
-// MARK: - Cursor Bubble Placement
-
-/// Picks a placement for a cursor-anchored bubble that stays within the host
-/// screen. The function tries the four corners around the cursor in priority
-/// order (bottom-right → bottom-left → top-right → top-left) and falls back
-/// to clamping when no candidate fits. Pure logic so it can be unit tested.
-struct PickyCursorBubblePlacement: Equatable {
-    enum Side: Equatable { case bottomRight, bottomLeft, topRight, topLeft }
-    let topLeading: CGPoint
-    let side: Side
-
-    static func compute(
-        cursorPosition: CGPoint,
-        bubbleSize: CGSize,
-        screenSize: CGSize,
-        horizontalGap: CGFloat = 12,
-        verticalGap: CGFloat = 20,
-        edgePadding: CGFloat = 8
-    ) -> PickyCursorBubblePlacement {
-        let candidates: [(Side, CGPoint)] = [
-            (.bottomRight, CGPoint(x: cursorPosition.x + horizontalGap, y: cursorPosition.y + verticalGap)),
-            (.bottomLeft, CGPoint(x: cursorPosition.x - horizontalGap - bubbleSize.width, y: cursorPosition.y + verticalGap)),
-            (.topRight, CGPoint(x: cursorPosition.x + horizontalGap, y: cursorPosition.y - verticalGap - bubbleSize.height)),
-            (.topLeft, CGPoint(x: cursorPosition.x - horizontalGap - bubbleSize.width, y: cursorPosition.y - verticalGap - bubbleSize.height)),
-        ]
-
-        for (side, origin) in candidates {
-            let fitsHorizontally = origin.x >= edgePadding
-                && origin.x + bubbleSize.width + edgePadding <= screenSize.width
-            let fitsVertically = origin.y >= edgePadding
-                && origin.y + bubbleSize.height + edgePadding <= screenSize.height
-            if fitsHorizontally && fitsVertically {
-                return PickyCursorBubblePlacement(topLeading: origin, side: side)
-            }
-        }
-
-        let fallbackSide = candidates[0].0
-        let fallbackOrigin = candidates[0].1
-        let maxX = max(edgePadding, screenSize.width - bubbleSize.width - edgePadding)
-        let maxY = max(edgePadding, screenSize.height - bubbleSize.height - edgePadding)
-        let clampedX = min(max(fallbackOrigin.x, edgePadding), maxX)
-        let clampedY = min(max(fallbackOrigin.y, edgePadding), maxY)
-        return PickyCursorBubblePlacement(
-            topLeading: CGPoint(x: clampedX, y: clampedY),
-            side: fallbackSide
-        )
-    }
-}
-
 // MARK: - Voice Prompt Bubble
 
 private struct VoicePromptCursorBubbleView: View {
@@ -1621,70 +1536,6 @@ private struct PickyHighlightTagSizeKey: PreferenceKey {
     static var defaultValue: CGSize = .zero
     static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
         value = nextValue()
-    }
-}
-
-struct PickyHighlightTagPlacement: Equatable {
-    enum TailEdge { case left, right, top, bottom }
-    let topLeading: CGPoint
-    let tailEdge: TailEdge
-
-    static func compute(
-        targetCenter: CGPoint,
-        ringOuterRadius: CGFloat,
-        tagSize: CGSize,
-        screenSize: CGSize
-    ) -> PickyHighlightTagPlacement {
-        let gap: CGFloat = 12
-        let edgePadding: CGFloat = 8
-        let leftSpace = targetCenter.x - ringOuterRadius - gap
-        let rightSpace = screenSize.width - targetCenter.x - ringOuterRadius - gap
-
-        if rightSpace >= tagSize.width + edgePadding,
-           rightSpace >= leftSpace {
-            let originX = targetCenter.x + ringOuterRadius + gap
-            let originY = targetCenter.y - tagSize.height / 2
-            return PickyHighlightTagPlacement(
-                topLeading: CGPoint(x: originX, y: clampY(originY, height: tagSize.height, screenSize: screenSize)),
-                tailEdge: .left
-            )
-        }
-
-        if leftSpace >= tagSize.width + edgePadding {
-            let originX = targetCenter.x - ringOuterRadius - gap - tagSize.width
-            let originY = targetCenter.y - tagSize.height / 2
-            return PickyHighlightTagPlacement(
-                topLeading: CGPoint(x: originX, y: clampY(originY, height: tagSize.height, screenSize: screenSize)),
-                tailEdge: .right
-            )
-        }
-
-        // Not enough horizontal space — anchor below or above the ring.
-        let belowOrigin = CGPoint(
-            x: clampX(targetCenter.x - tagSize.width / 2, width: tagSize.width, screenSize: screenSize),
-            y: targetCenter.y + ringOuterRadius + gap
-        )
-        let belowFits = belowOrigin.y + tagSize.height + edgePadding <= screenSize.height
-        if belowFits {
-            return PickyHighlightTagPlacement(topLeading: belowOrigin, tailEdge: .top)
-        }
-        let aboveOrigin = CGPoint(
-            x: clampX(targetCenter.x - tagSize.width / 2, width: tagSize.width, screenSize: screenSize),
-            y: targetCenter.y - ringOuterRadius - gap - tagSize.height
-        )
-        return PickyHighlightTagPlacement(topLeading: aboveOrigin, tailEdge: .bottom)
-    }
-
-    private static func clampX(_ x: CGFloat, width: CGFloat, screenSize: CGSize) -> CGFloat {
-        let minX: CGFloat = 8
-        let maxX = max(minX, screenSize.width - width - 8)
-        return min(max(x, minX), maxX)
-    }
-
-    private static func clampY(_ y: CGFloat, height: CGFloat, screenSize: CGSize) -> CGFloat {
-        let minY: CGFloat = 8
-        let maxY = max(minY, screenSize.height - height - 8)
-        return min(max(y, minY), maxY)
     }
 }
 

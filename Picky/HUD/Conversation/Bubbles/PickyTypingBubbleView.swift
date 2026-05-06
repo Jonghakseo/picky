@@ -19,10 +19,10 @@ struct PickyTypingBubbleView: View {
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 6) {
-                Button {
-                    isCollapsed.toggle()
-                } label: {
+            Button {
+                isCollapsed.toggle()
+            } label: {
+                VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 5) {
                         Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
                             .font(.system(size: 8.5, weight: .bold))
@@ -44,35 +44,40 @@ struct PickyTypingBubbleView: View {
                         }
                     }
                     .foregroundColor(DS.Colors.info)
+                    if !isCollapsed, let text = message.text, !text.isEmpty {
+                        PickyConversationMarkdownText(markdown: text)
+                    }
                 }
-                .buttonStyle(.plain)
-                if !isCollapsed, let text = message.text, !text.isEmpty {
-                    PickyConversationMarkdownText(markdown: text)
-                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(maxWidth: PickyHUDDockLayout.detailWidth * 0.85, alignment: .leading)
+                .contentShape(Rectangle())
+                .background(
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: 12,
+                        bottomLeadingRadius: 4,
+                        bottomTrailingRadius: 12,
+                        topTrailingRadius: 12,
+                        style: .continuous
+                    )
+                    .fill(DS.Colors.info.opacity(0.10))
+                )
+                .overlay(
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: 12,
+                        bottomLeadingRadius: 4,
+                        bottomTrailingRadius: 12,
+                        topTrailingRadius: 12,
+                        style: .continuous
+                    )
+                    .stroke(DS.Colors.info.opacity(0.30), lineWidth: 1)
+                )
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(maxWidth: PickyHUDDockLayout.detailWidth * 0.85, alignment: .leading)
-            .background(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 12,
-                    bottomLeadingRadius: 4,
-                    bottomTrailingRadius: 12,
-                    topTrailingRadius: 12,
-                    style: .continuous
-                )
-                .fill(DS.Colors.info.opacity(0.10))
-            )
-            .overlay(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 12,
-                    bottomLeadingRadius: 4,
-                    bottomTrailingRadius: 12,
-                    topTrailingRadius: 12,
-                    style: .continuous
-                )
-                .stroke(DS.Colors.info.opacity(0.30), lineWidth: 1)
-            )
+            .buttonStyle(.plain)
+            .accessibilityLabel("Thinking")
+            .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
+            .help(isCollapsed ? "Expand thinking" : "Collapse thinking")
+            .pointerCursor()
             Spacer(minLength: 48)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

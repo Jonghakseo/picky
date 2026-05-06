@@ -54,6 +54,9 @@ struct PickyInteractionRuntimeTests {
     }
 
     private func envelope(id: UUID, event: PickyInteractionEvent) -> PickyInteractionEnvelope {
-        PickyInteractionEnvelope(id: id, occurredAt: baseDate, event: event, correlation: .init(source: .unknown))
+        // Production callers always tag textSubmitted/voiceSubmitted envelopes
+        // with a real source (.text, .quickInput, .voice, ...). Use .text here
+        // so the reducer's source-aware branch sees realistic input.
+        PickyInteractionEnvelope(id: id, occurredAt: baseDate, event: event, correlation: .init(source: .text))
     }
 }

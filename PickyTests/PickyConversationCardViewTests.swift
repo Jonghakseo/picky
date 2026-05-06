@@ -281,6 +281,17 @@ struct PickyConversationCardViewTests {
         #expect(PickyConversationComposerView.draftText(afterAppendingDroppedFilePaths: ["", "  "], to: "Existing") == "Existing")
     }
 
+    @Test func composerDropTargetPlaceholderMentionsWholeCardDrop() {
+        let composer = PickyConversationComposerView(
+            session: makeConversationSession(status: .running),
+            viewModel: makeViewModel(),
+            isFileDropTargeted: true
+        )
+
+        #expect(composer.placeholderText.contains("anywhere"))
+        #expect(composer.placeholderText.contains("insert paths"))
+    }
+
     @Test func composerDefaultSubmitKindAndPlaceholderMatchSessionStatus() {
         let viewModel = makeViewModel()
 

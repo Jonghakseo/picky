@@ -47,6 +47,7 @@ interface PendingDialog {
 
 export class ExtensionUiBridge extends EventEmitter {
   private pending = new Map<string, PendingDialog>();
+  private warnedAboutCustomOverlay = false;
 
   constructor(private readonly sessionId: string, private readonly options: { disableBlockingDialogs?: boolean } = {}) {
     super();
@@ -68,7 +69,16 @@ export class ExtensionUiBridge extends EventEmitter {
       pasteToEditor: (text) => void this.fireAndForget("set_editor_text", { text }),
       getEditorText: () => "",
       custom: async <T>(): Promise<T> => {
-        throw new Error("Custom TUI overlays (ctx.ui.custom) are not supported in Picky. Use a non-overlay alternative such as bash, or run the command in pi's interactive TUI.");
+        // Picky has no TUI overlay surface. Resolve as a silent no-op so passive
+        // extension hooks (e.g. idle-screensaver setTimeout) don't crash the daemon
+        // with an unhandled rejection. Slash commands that rely on `ctx.ui.custom`
+        // are already hidden from autocomplete via extensionRequiresOverlayUi, so
+        // users won't unknowingly invoke them.
+        if (!this.warnedAboutCustomOverlay) {
+          this.warnedAboutCustomOverlay = true;
+          console.warn(`Picky ignored ctx.ui.custom call from extension (sessionId=${this.sessionId}); custom TUI overlays are not supported.`);
+        }
+        return undefined as T;
       },
       onTerminalInput: () => () => undefined,
       setWorkingMessage: () => undefined,

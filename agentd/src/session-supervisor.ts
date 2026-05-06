@@ -194,12 +194,16 @@ export class SessionSupervisor extends EventEmitter {
     const pendingCommands = await this.listSlashCommandsFromHandle(sessionId, pendingHandle, "pending");
     if (pendingCommands) return pendingCommands;
 
+    const resumedHandle = await this.tryResumeRuntimeHandle(session);
+    const resumedCommands = await this.listSlashCommandsFromHandle(sessionId, resumedHandle, "resumed");
+    if (resumedCommands) return resumedCommands;
+
     const fallbackHandle = await this.slashCommandFallbackHandle(session);
     const fallbackCommands = await this.listSlashCommandsFromHandle(sessionId, fallbackHandle, "main");
     return fallbackCommands ?? [];
   }
 
-  private async listSlashCommandsFromHandle(sessionId: string, handle: RuntimeSessionHandle | undefined, source: "attached" | "pending" | "main"): Promise<RuntimeSlashCommand[] | undefined> {
+  private async listSlashCommandsFromHandle(sessionId: string, handle: RuntimeSessionHandle | undefined, source: "attached" | "pending" | "resumed" | "main"): Promise<RuntimeSlashCommand[] | undefined> {
     if (!handle?.listSlashCommands) {
       logAgentd("slash commands unavailable", { sessionId, source, reason: handle ? "runtime handle unsupported" : "runtime handle missing" });
       return undefined;

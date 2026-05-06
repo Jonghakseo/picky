@@ -2216,6 +2216,36 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
+  it("resumes a persisted side session command catalog before falling back to the main catalog", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "restored-product-session",
+      title: "Restored product session",
+      status: "completed",
+      cwd: "/tmp/product",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      logs: ["main-agent handoff: investigate", "pi session: /tmp/product-pi-session.jsonl"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    });
+    const runtime = new ResumableRuntime([
+      { name: "skill:general-click-event-insight", description: "Product insight", source: "skill" },
+    ]);
+    const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
+    const supervisor = new SessionSupervisor(runtime, store, undefined, { mainRuntime });
+    await supervisor.load();
+    await supervisor.prewarmMainAgent("/tmp/picky");
+    mainRuntime.handle!.slashCommands = [{ name: "skill:context7-cli", description: "Docs", source: "skill" }];
+
+    await expect(supervisor.listSlashCommands("restored-product-session")).resolves.toEqual([
+      { name: "skill:general-click-event-insight", description: "Product insight", source: "skill" },
+    ]);
+    expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/product-pi-session.jsonl", cwd: "/tmp/product", sessionId: "restored-product-session" }]);
+  });
+
   it("falls back to the main runtime command catalog when the session handle is missing", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
@@ -2604,14 +2634,18 @@ class ResumableRuntime implements AgentRuntime {
   handle?: ManualHandle;
   resumeCalls: Array<{ sessionFilePath: string; cwd?: string; sessionId?: string }> = [];
 
+  constructor(private readonly slashCommands: RuntimeSlashCommand[] = []) {}
+
   async create(_prompt: BuiltPrompt, options: { sessionId?: string }): Promise<RuntimeSessionHandle> {
     this.handle = new ManualHandle(options.sessionId ?? "manual");
+    this.handle.slashCommands = [...this.slashCommands];
     return this.handle;
   }
 
   async resume(sessionFilePath: string, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
     this.resumeCalls.push({ sessionFilePath, cwd: options.cwd, sessionId: options.sessionId });
     this.handle = new ManualHandle(options.sessionId ?? "manual");
+    this.handle.slashCommands = [...this.slashCommands];
     return this.handle;
   }
 }

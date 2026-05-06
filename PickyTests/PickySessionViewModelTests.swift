@@ -1390,6 +1390,71 @@ struct PickySessionViewModelTests {
         #expect(PickySlashCommandAutocompletePolicy.completionText(for: viewModel.slashCommandsBySessionID["session-commands"]![0]) == "/deploy ")
     }
 
+    @Test func slashCommandCacheInvalidatesWhenSessionCwdOrPiSessionFileChanges() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "session-commands",
+            cwd: "/tmp/old-product",
+            piSessionFilePath: "/tmp/old-pi.jsonl"
+        ))))
+        viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot())))
+        try await settle()
+        #expect(viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "session-commands",
+            updatedAt: "2026-05-01T00:00:05.000Z",
+            cwd: "/tmp/new-product",
+            piSessionFilePath: "/tmp/old-pi.jsonl"
+        ))))
+        try await settle()
+        #expect(!viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
+        viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
+        try await settle()
+        #expect(client.sentCommands.filter { $0.type == .listSlashCommands }.count == 2)
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot())))
+        try await settle()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "session-commands",
+            updatedAt: "2026-05-01T00:00:10.000Z",
+            cwd: "/tmp/new-product",
+            piSessionFilePath: "/tmp/new-pi.jsonl"
+        ))))
+        try await settle()
+        #expect(!viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
+        viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
+        try await settle()
+        #expect(client.sentCommands.filter { $0.type == .listSlashCommands }.count == 3)
+    }
+
+    @Test func slashCommandCacheInvalidatesWhenRuntimeReattachLogArrives() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands"))))
+        viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot())))
+        try await settle()
+        #expect(viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "session-commands",
+            updatedAt: "2026-05-01T00:00:05.000Z",
+            logs: ["runtime reattached from pi session: /tmp/pi.jsonl"],
+            piSessionFilePath: "/tmp/pi.jsonl"
+        ))))
+        try await settle()
+
+        #expect(!viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
+        viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
+        try await settle()
+        #expect(client.sentCommands.filter { $0.type == .listSlashCommands }.count == 2)
+    }
+
     @Test func slashCommandAutocompleteSelectionWrapsWithArrowNavigation() {
         #expect(PickySlashCommandAutocompletePolicy.clampedSelectionIndex(10, suggestionCount: 3) == 2)
         #expect(PickySlashCommandAutocompletePolicy.clampedSelectionIndex(-2, suggestionCount: 3) == 0)
@@ -1768,16 +1833,18 @@ private enum EventJSON {
         createdAt: String = "2026-05-01T00:00:00.000Z",
         updatedAt: String = "2026-05-01T00:00:00.000Z",
         logs: [String] = [],
+        cwd: String = "/Users/creatrip/Documents/picky",
         piSessionFilePath: String? = nil,
         notifyMainOnCompletion: Bool? = nil,
         pinned: Bool? = nil
     ) -> String {
         let encodedLogs = String(decoding: try! JSONEncoder().encode(logs), as: UTF8.self)
+        let encodedCwd = String(decoding: try! JSONEncoder().encode(cwd), as: UTF8.self)
         let encodedPiSessionFilePath = piSessionFilePath.map { ",\"piSessionFilePath\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))" } ?? ""
         let encodedNotify = notifyMainOnCompletion.map { ",\"notifyMainOnCompletion\":\($0)" } ?? ""
         let encodedPinned = pinned.map { ",\"pinned\":\($0)" } ?? ""
         return """
-        {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-05","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/Users/creatrip/Documents/picky","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedNotify)\(encodedPinned)}}
+        {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-05","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":\(encodedCwd),"createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedNotify)\(encodedPinned)}}
         """
     }
 

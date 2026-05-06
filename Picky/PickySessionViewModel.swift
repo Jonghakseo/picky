@@ -706,12 +706,20 @@ final class PickySessionListViewModel: ObservableObject {
             }
         case .sessionUpdated(let session):
             pickySessionLog("session updated session=\(session.id) status=\(session.status.rawValue)")
+            let incomingCard = SessionCard.fromAgentSession(session)
+            let previousCard = (sessions + archivedSessions).first { $0.id == session.id }
+            if shouldInvalidateSlashCommandCache(previous: previousCard, incoming: incomingCard) {
+                invalidateSlashCommandCache(sessionID: session.id)
+            }
             upsert(
-                SessionCard.fromAgentSession(session),
+                incomingCard,
                 preserveIncrementalConversationState: lastIncrementalSeqBySessionID[session.id] != nil
             )
         case .sessionLogAppended(let sessionId, let line):
             pickySessionLog("session log session=\(sessionId) lineChars=\(line.count)")
+            if SessionCard.piSessionFilePath(fromLogLine: line) != nil || SessionCard.isRuntimeReattachLogLine(line) {
+                invalidateSlashCommandCache(sessionID: sessionId)
+            }
             update(sessionID: sessionId) { card in
                 if SessionCard.isDisplayableLogPreview(line) {
                     card.logPreview = line
@@ -822,6 +830,18 @@ final class PickySessionListViewModel: ObservableObject {
         guard seq > lastSeq else { return false }
         lastIncrementalSeqBySessionID[sessionID] = seq
         return true
+    }
+
+    private func shouldInvalidateSlashCommandCache(previous: SessionCard?, incoming: SessionCard) -> Bool {
+        guard let previous else { return false }
+        return previous.cwd != incoming.cwd
+            || previous.piSessionFilePath != incoming.piSessionFilePath
+            || (SessionCard.isRuntimeReattachLogLine(incoming.logPreview) && previous.logPreview != incoming.logPreview)
+    }
+
+    private func invalidateSlashCommandCache(sessionID: String) {
+        slashCommandsBySessionID[sessionID] = nil
+        slashCommandRequestedSessionIDs.remove(sessionID)
     }
 
     private func pruneSlashCommandCache(knownSessionIDs: Set<String>) {
@@ -1083,6 +1103,12 @@ extension PickySessionListViewModel.SessionCard {
     static func isDisplayableLogPreview(_ line: String) -> Bool {
         let normalized = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return !normalized.hasPrefix("extension ui:") && !normalized.hasPrefix(PickyLogPrefixes.extensionAnswer.trimmingCharacters(in: .whitespaces))
+    }
+
+    static func isRuntimeReattachLogLine(_ line: String) -> Bool {
+        line.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .hasPrefix("runtime reattached from pi session:")
     }
 
     static func isMainAgentHandoffLogLine(_ line: String) -> Bool {

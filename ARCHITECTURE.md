@@ -1,6 +1,6 @@
 # Picky Current Architecture
 
-_Last updated: 2026-05-02_
+_Last updated: 2026-05-06_
 
 ## 1. Product shape
 
@@ -47,7 +47,7 @@ local Pi environment
 
 ### New voice/text task
 
-1. User invokes Picky by `Control+Option` voice or text entry.
+1. User invokes Picky by a configurable push-to-talk shortcut or quick-input shortcut. Defaults are `Control+Option` for voice and double-tap `Control` for text entry.
 2. `Picky.app` captures transcript, active app/window, browser context, selected text, screenshots, cwd, and optional selected session.
 3. App sends `routeTask`/`createTask` to `picky-agentd`.
 4. If main-agent mode is enabled, daemon routes through the always-on main agent. Simple requests can receive `quickReply`; complex work is delegated through `picky_handoff` to a visible side session.
@@ -93,6 +93,12 @@ Picky/
     WindowPositionManager.swift          accessibility/window positioning helpers
     Settings/                            settings model/store/view model/view
 
+  Shortcuts/                             shortcut specs, capture recorder, settings rows
+  QuickInput/                            quick text input panel and double-tap detector
+  Interaction/                           interaction state/effects/reducer/runtime/journal
+  PointerOverlay/                        pointer overlay coordinate validation/resolution
+  Domain/                                shared app-domain helpers such as log prefixes
+
   Context/
     PickyContextPacket.swift             context packet Codable model
     PickyContextPacketAssembler.swift    neutral context assembly
@@ -103,6 +109,9 @@ Picky/
   Companion/
     CompanionPanel*.swift                panel sections/status/permissions/settings
     Dictation/                           shortcut, transcription provider, permissions, audio conversion
+    AzureOpenAI/                         Azure STT/TTS provider and Keychain config
+    ElevenLabs/                          ElevenLabs TTS provider
+    Speech/                              macOS speech playback abstractions
 
   HUD/
     PickyHUDOverlayManager.swift         NSPanel overlay lifecycle and sizing
@@ -110,6 +119,7 @@ Picky/
     PickyHUDView.swift                   session cards, follow-up controls, extension UI rendering
     PickyToolActivityRow.swift           tool row rendering
     PickyArtifactReporter.swift          report generation helpers
+    PickyReportViewer.swift              markdown report viewer
     PickyDiffPreview.swift               diff preview helpers
 
   Overlay/
@@ -122,6 +132,7 @@ Picky/
   Sessions/
     PickySessionSelectionStore.swift     selected/voice-target/archive stores
     PickySessionArchive.swift            archive helpers
+    PickyTerminalOverlay.swift           in-app Pi terminal overlay and resume command builder
 ```
 
 ## 6. picky-agentd responsibility map
@@ -135,6 +146,7 @@ agentd/src/
   connection-info-store.ts              daemon discovery file
   session-supervisor.ts                 app-facing session facade
   session-store.ts                      persisted session metadata
+  session-message-builder.ts            app-facing message journal/source mapping
   artifact-store.ts                     artifact persistence/opening
   log-store.ts                          daemon log storage
   prompt-builder.ts                     neutral task/follow-up/main/side prompts
@@ -143,6 +155,9 @@ agentd/src/
 
   application/
     handoff-tool.ts                     main-agent tools: handoff/list/follow-up side sessions
+    pointer-tool.ts                     main-agent pointer overlay request tool
+    ask-user-question-tool.ts           side-agent ask_user_question bridge
+    pi-session-syncer.ts                Pi session JSONL/history sync helpers
     runtime-event-handler.ts            normalized runtime event state transitions
     artifact-materializer.ts            terminal artifacts/reports/PR extraction
     extension-ui-bridge.ts              Pi extension UI bridge
@@ -152,9 +167,11 @@ agentd/src/
     artifacts.ts                        artifact merge helpers
     changed-files.ts                    changed-file merge helpers
     pi-event-normalizer.ts              Pi event -> normalized event
+    safe-truncate.ts                    bounded string truncation helpers
     session-status.ts                   terminal/status helpers
     session-summary.ts                  final answer/summary helpers
     session-title.ts                    title generation
+    tool-activity.ts                    tool activity merge/summary helpers
 
   runtime/
     types.ts                            runtime handle interfaces
@@ -200,7 +217,7 @@ Important prompt builders:
 
 Picky app support root stores daemon metadata, screenshots, artifacts, reports, logs, and session metadata under `~/Library/Application Support/Picky/`.
 
-Pi session JSONL/history remains in normal Pi storage. Picky metadata points to Pi session files where available so Ghostty/Pi can still resume or inspect sessions.
+Pi session JSONL/history remains in normal Pi storage. Picky metadata points to Pi session files where available so the in-app Pi terminal overlay, copied `pi --session ...` command, or Pi itself can resume or inspect sessions.
 
 ## 10. Build, test, and packaging
 
@@ -209,8 +226,9 @@ Normal development:
 ```bash
 xcodebuild -project Picky.xcodeproj -scheme Picky -destination 'platform=macOS' build
 xcodebuild -project Picky.xcodeproj -scheme Picky -destination 'platform=macOS' test
-cd agentd && npm test
-cd agentd && npm run build
+cd agentd && pnpm install
+cd agentd && pnpm test
+cd agentd && pnpm run build
 ```
 
 Targeted Swift test example:

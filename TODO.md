@@ -14,20 +14,20 @@ The following items remain after removing the neutral fixture/company-domain lea
 - [ ] Move app signing and bundle identifiers out of the Xcode project defaults.
   - Use `.xcconfig` or script overrides for `PRODUCT_BUNDLE_IDENTIFIER` and `DEVELOPMENT_TEAM`.
   - Keep defaults contributor-friendly and team-neutral.
-- [ ] Generalize terminal resume.
-  - Support Terminal.app, iTerm2, Ghostty, and a custom command template.
-  - Add a safe fallback to copy the `pi --session ...` command when no supported terminal is configured.
+- [ ] Generalize external terminal handoff.
+  - Picky now has an in-app Pi terminal overlay and can copy the `pi --session ...` resume command.
+  - Add optional external launch targets for Terminal.app, iTerm2, Ghostty, and a custom command template.
 
 ## Medium priority
 
-- [ ] Make the push-to-talk shortcut user-configurable.
-  - Current default can remain Control+Option, but users need alternatives for conflicts and keyboard layouts.
 - [ ] Revisit speech locale ordering.
   - Prefer current system locale by default, with explicit settings/env override for Korean or other languages.
 - [ ] Make launch-at-login explicit opt-in.
   - Ask during onboarding/settings before calling `SMAppService.register()`.
-- [ ] Expand browser context capture support.
-  - Add common Chromium variants such as Edge, Brave, Vivaldi, and consider Firefox support/fallbacks.
+- [ ] Expand browser context capture support beyond the current partial coverage.
+  - Current AppleScript support covers Safari, Chrome, and Arc.
+  - Current Accessibility fallback covers Safari, Chrome, Arc, Brave, and Edge, with URL extraction for Chrome/Brave/Edge.
+  - Add Vivaldi and Firefox support/fallbacks, and consider AX URL extraction for Safari/Arc.
   - Keep browser target definitions configurable or easy to extend.
 
 ## Low priority

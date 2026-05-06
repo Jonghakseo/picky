@@ -32,24 +32,29 @@ When the user asks about a feature, start here before broad searching:
 - App lifecycle / menu bar / permissions: `Picky/PickyApp.swift`, `Picky/App/`, `Picky/Companion/CompanionPanel*.swift`
 - Settings / default cwd / local paths: `Picky/App/Settings/`, `Picky/App/Settings/PickySettingsStore.swift`
 - Voice / push-to-talk / dictation: `Picky/CompanionManager.swift`, `Picky/BuddyDictationManager.swift`, `Picky/Companion/Dictation/`
-- Global hotkey semantics: `Picky/Companion/Dictation/GlobalPushToTalkShortcutMonitor.swift`, `Picky/Companion/Dictation/BuddyPushToTalkShortcut.swift`
-- Speech transcription provider: `Picky/Companion/Dictation/AppleSpeechTranscriptionProvider.swift`, `Picky/Companion/Dictation/BuddyTranscriptionProvider.swift`
+- Global shortcut semantics/settings: `Picky/Shortcuts/`, `Picky/Companion/Dictation/GlobalPushToTalkShortcutMonitor.swift`, `Picky/Companion/Dictation/BuddyPushToTalkShortcut.swift`, `Picky/QuickInput/QuickInputDoubleTapDetector.swift`
+- Quick text input: `Picky/QuickInput/`
+- Speech transcription/playback providers: `Picky/Companion/Dictation/AppleSpeechTranscriptionProvider.swift`, `Picky/Companion/Dictation/BuddyTranscriptionProvider.swift`, `Picky/Companion/AzureOpenAI/`, `Picky/Companion/ElevenLabs/`, `Picky/Companion/Speech/`
 - Screen/context capture: `Picky/Context/`, `Picky/PickyAdvancedContext.swift`, `Picky/Context/PickyContextPacketAssembler.swift`
 - HUD shell / dock / side-agent container: `Picky/HUD/`, `Picky/HUD/PickyHUDView.swift`, `Picky/PickySessionViewModel.swift`
 - Conversation card UI: `Picky/HUD/Conversation/`, particularly `PickyConversationCardView`, `PickyConversationListView`, `PickyConversationComposerView`, `PickyConversationMenu`
 - Conversation bubble components: `Picky/HUD/Conversation/Bubbles/`
 - Session selection/archive state: `Picky/Sessions/PickySessionSelectionStore.swift`, `Picky/Sessions/`
-- Ghostty resume / terminal handoff: `Picky/PickySessionViewModel.swift`, search `PickyGhosttyResumeLauncher`
+- Pi terminal overlay / resume command: `Picky/Sessions/PickyTerminalOverlay.swift`, `Picky/PickySessionViewModel.swift`, search `openTerminalOverlay` or `copyTerminalResumeCommand`
+- Interaction state/effects: `Picky/Interaction/`
+- Pointer overlay validation/resolution: `Picky/PointerOverlay/`, `agentd/src/application/pointer-tool.ts`
 - App-daemon protocol/client: `Picky/PickyAgentProtocol.swift`, `Picky/PickyAgentClient.swift`, `Picky/PickyAgentDaemonLauncher.swift`
 - agentd entry/composition: `agentd/src/index.ts`
 - agentd WebSocket protocol handling: `agentd/src/server.ts`, `agentd/src/protocol.ts`
 - agentd session lifecycle/orchestration: `agentd/src/session-supervisor.ts`, `agentd/src/session-store.ts`
 - Backend message journal / source mapping: `agentd/src/session-message-builder.ts`, `agentd/src/domain/log-prefixes.ts`
-- Tool categorizer (activity counts): `agentd/src/domain/tool-categorizer.ts`
+- Tool categorizer/activity counts: `agentd/src/domain/tool-categorizer.ts`, `agentd/src/domain/tool-activity.ts`
 - agentd prompt/context construction: `agentd/src/prompt-builder.ts`, `contracts/prompts/`, `contracts/context/`
 - Pi SDK runtime adapter: `agentd/src/runtime/pi-sdk-runtime.ts`, `agentd/src/runtime/types.ts`, `agentd/src/runtime/mock-runtime.ts`
 - Main-agent side-session tools: `agentd/src/application/handoff-tool.ts`
-- Artifacts/reports/changed files: `agentd/src/artifact-store.ts`, `agentd/src/domain/`, `Picky/PickySessionReport.swift`
+- Side-agent interactive input bridge: `agentd/src/application/ask-user-question-tool.ts`, `agentd/src/application/extension-ui-bridge.ts`
+- Pi session sync: `agentd/src/application/pi-session-syncer.ts`
+- Artifacts/reports/changed files: `agentd/src/artifact-store.ts`, `agentd/src/domain/`, `Picky/HUD/PickyArtifactReporter.swift`, `Picky/HUD/PickyReportViewer.swift`
 - Pi extension handoff command: `pi-extensions/picky-handoff/`
 - Tests for Swift UI/session/voice: `PickyTests/PickySessionViewModelTests.swift`, `PickyTests/PickyCompanionManagerTests.swift`, `PickyTests/PickyAgentClientTests.swift`
 - Tests for agentd/session/runtime: `agentd/src/*.test.ts`, especially `session-supervisor.test.ts`, `runtime/pi-sdk-runtime.test.ts`
@@ -68,8 +73,9 @@ When the user asks about a feature, start here before broad searching:
 ```bash
 xcodebuild -project Picky.xcodeproj -scheme Picky -destination 'platform=macOS' build
 xcodebuild -project Picky.xcodeproj -scheme Picky -destination 'platform=macOS' test
-cd agentd && npm test
-cd agentd && npm run build
+cd agentd && pnpm install
+cd agentd && pnpm test
+cd agentd && pnpm run build
 ./scripts/package-signed-app.sh
 ```
 

@@ -8,12 +8,14 @@ Current status: the app captures neutral desktop context, launches/connects to `
 
 - macOS 14.2+
 - Xcode 15+
+- Node.js 22+ and pnpm 10.15+ for local `picky-agentd` development
 
 ## Build and test
 
 ```bash
 xcodebuild -project Picky.xcodeproj -scheme Picky -destination 'platform=macOS' build
 xcodebuild -project Picky.xcodeproj -scheme Picky -destination 'platform=macOS' test
+cd agentd && pnpm install && pnpm test && pnpm run build
 ```
 
 ## Permissions
@@ -22,15 +24,15 @@ Picky asks for the local macOS permissions needed by its shell:
 
 - Microphone — push-to-talk voice capture
 - Speech Recognition — Apple Speech transcription
-- Accessibility — global Control+Option shortcut
+- Accessibility — global push-to-talk and quick-input shortcuts (defaults: Control+Option and double-tap Control)
 - Screen Recording / Screen Content — screenshots for neutral context packets
 
 ## Architecture snapshot
 
-- `Picky/` contains the macOS app shell. Current modules group app/menu bar code, settings, context capture, companion voice/dictation UI, overlay windows, HUD/session UI, and session selection/archive helpers.
+- `Picky/` contains the macOS app shell. Current modules group app/menu bar code, settings, shortcuts, quick input, context capture, companion voice/dictation UI, overlay windows, pointer overlays, HUD/session UI, and session selection/archive helpers.
 - `Picky/PickyAgentProtocol.swift`, `Picky/PickyAgentClient.swift`, and `Picky/PickyAgentDaemonLauncher.swift` define and launch the app-to-daemon boundary.
 - `Picky/Context/` and `Picky/PickyAdvancedContext.swift` build neutral context packets: transcript, app/window metadata, browser URL/title/selection, screenshots, cwd, and selected session.
-- `Picky/HUD/` plus `Picky/PickySessionViewModel.swift` render and manage long-running session cards, follow-ups, archive/search, artifacts, and Ghostty resume.
+- `Picky/HUD/` plus `Picky/PickySessionViewModel.swift` render and manage long-running session cards, follow-ups, archive/search, artifacts, and Pi terminal resume via the in-app terminal overlay or copied `pi --session ...` command.
 - `agentd/` is the TypeScript daemon. It owns WebSocket transport, session supervision, Pi SDK/runtime adapters, event normalization, extension UI bridging, session metadata, and artifacts.
 - `pi-extensions/picky-handoff/` contains the optional Pi slash-command bridge for pinning an idle Pi conversation to Picky as a completed side-agent card.
 - Picky does not hard-code Sentry/Slack/DB routing. It passes context; Pi skills/extensions decide the workflow.

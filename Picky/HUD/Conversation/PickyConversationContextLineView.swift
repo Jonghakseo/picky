@@ -7,13 +7,35 @@
 
 import AppKit
 import SwiftUI
+import UserNotifications
 
 struct PickyConversationContextLineView: View {
     let session: PickySessionListViewModel.SessionCard
     @State private var gitStatus: PickyGitRepositoryStatus?
+    @State private var inFlightGitAction: GitRemoteAction?
+    @State private var manualRefreshTick: Int = 0
+
+    private enum GitRemoteAction: Equatable {
+        case push
+        case pull
+
+        var actionLabel: String {
+            switch self {
+            case .push: return "git push"
+            case .pull: return "git pull"
+            }
+        }
+
+        var arguments: [String] {
+            switch self {
+            case .push: return ["push"]
+            case .pull: return ["pull"]
+            }
+        }
+    }
 
     private var gitStatusRefreshKey: String {
-        "\(session.cwd ?? "")|\(session.updatedAt.timeIntervalSince1970)"
+        "\(session.cwd ?? "")|\(session.updatedAt.timeIntervalSince1970)|\(manualRefreshTick)"
     }
 
     var body: some View {
@@ -53,12 +75,24 @@ struct PickyConversationContextLineView: View {
                             .help("Deletions")
                     }
                     if gitStatus.aheadCount > 0 {
-                        gitMetricPill("↑\(gitStatus.aheadCount)", color: DS.Colors.accentText)
-                            .help("Ahead of upstream")
+                        Button(action: { runRemoteAction(.push) }) {
+                            gitMetricPill("↑\(gitStatus.aheadCount)", color: DS.Colors.accentText)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(inFlightGitAction != nil)
+                        .opacity(inFlightGitAction == .push ? 0.45 : 1)
+                        .help(inFlightGitAction == .push ? "Pushing…" : "git push (\(gitStatus.aheadCount) ahead of upstream)")
+                        .pointerCursor()
                     }
                     if gitStatus.behindCount > 0 {
-                        gitMetricPill("↓\(gitStatus.behindCount)", color: DS.Colors.warningText)
-                            .help("Behind upstream")
+                        Button(action: { runRemoteAction(.pull) }) {
+                            gitMetricPill("↓\(gitStatus.behindCount)", color: DS.Colors.warningText)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(inFlightGitAction != nil)
+                        .opacity(inFlightGitAction == .pull ? 0.45 : 1)
+                        .help(inFlightGitAction == .pull ? "Pulling…" : "git pull (\(gitStatus.behindCount) behind upstream)")
+                        .pointerCursor()
                     }
                 }
                 .layoutPriority(1)
@@ -132,6 +166,34 @@ struct PickyConversationContextLineView: View {
         Text(text)
             .font(.system(size: 10, weight: .medium, design: .monospaced))
             .foregroundColor(color.opacity(0.92))
+    }
+
+    private func runRemoteAction(_ action: GitRemoteAction) {
+        guard inFlightGitAction == nil else { return }
+        guard let cwd = session.cwd?.trimmingCharacters(in: .whitespacesAndNewlines), !cwd.isEmpty else { return }
+        inFlightGitAction = action
+        Task {
+            let outcome = await PickyGitRepositoryStatus.runCommand(action.arguments, cwd: cwd)
+            await MainActor.run {
+                inFlightGitAction = nil
+                PickyGitRepositoryStatus.invalidateCache(cwd: cwd)
+                manualRefreshTick &+= 1
+                if !outcome.isSuccess {
+                    deliverGitFailureNotification(action: action, outcome: outcome)
+                }
+            }
+        }
+    }
+
+    private func deliverGitFailureNotification(action: GitRemoteAction, outcome: PickyGitRepositoryStatus.GitCommandOutcome) {
+        let summary = outcome.combinedOutput.isEmpty ? "exit \(outcome.exitCode)" : outcome.combinedOutput
+        let trimmedSummary = summary.split(whereSeparator: { $0.isNewline }).prefix(4).joined(separator: "\n")
+        let content = UNMutableNotificationContent()
+        content.title = "\(action.actionLabel) failed"
+        content.body = String(trimmedSummary.prefix(280))
+        content.sound = nil
+        let request = UNNotificationRequest(identifier: "picky-git-\(action.actionLabel)-\(UUID().uuidString)", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request) { _ in }
     }
 }
 

@@ -125,6 +125,22 @@ struct PickyGitRepositoryStatus: Equatable {
     }
 
     private static func git(_ arguments: [String], cwd: String, allowsFailure: Bool = false) -> String? {
+        let result = runGitProcess(arguments, cwd: cwd)
+        switch result {
+        case .failure:
+            return nil
+        case .success(let exitCode, let stdout, _):
+            guard exitCode == 0 || allowsFailure else { return nil }
+            return stdout
+        }
+    }
+
+    private enum GitProcessResult {
+        case success(exitCode: Int32, stdout: String, stderr: String)
+        case failure(message: String)
+    }
+
+    private static func runGitProcess(_ arguments: [String], cwd: String) -> GitProcessResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["git", "-C", cwd] + arguments
@@ -138,10 +154,39 @@ struct PickyGitRepositoryStatus: Equatable {
             try process.run()
             process.waitUntilExit()
         } catch {
-            return nil
+            return .failure(message: error.localizedDescription)
         }
 
-        guard process.terminationStatus == 0 || allowsFailure else { return nil }
-        return String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)
+        let stdout = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let stderr = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        return .success(exitCode: process.terminationStatus, stdout: stdout, stderr: stderr)
+    }
+
+    struct GitCommandOutcome: Equatable {
+        let exitCode: Int32
+        let combinedOutput: String
+        var isSuccess: Bool { exitCode == 0 }
+    }
+
+    static func runCommand(_ arguments: [String], cwd: String) async -> GitCommandOutcome {
+        await Task.detached(priority: .userInitiated) {
+            switch runGitProcess(arguments, cwd: cwd) {
+            case .failure(let message):
+                return GitCommandOutcome(exitCode: -1, combinedOutput: message)
+            case .success(let exitCode, let stdout, let stderr):
+                let combined = [stderr, stdout]
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: "\n")
+                return GitCommandOutcome(exitCode: exitCode, combinedOutput: combined)
+            }
+        }.value
+    }
+
+    static func invalidateCache(cwd: String?) {
+        guard let cacheKey = cacheKey(cwd: cwd) else { return }
+        statusCacheLock.lock()
+        defer { statusCacheLock.unlock() }
+        statusCache.removeValue(forKey: cacheKey)
     }
 }

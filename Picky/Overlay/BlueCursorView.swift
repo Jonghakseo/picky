@@ -15,12 +15,12 @@ private struct PickyCursorStyle: Codable, Equatable {
     var listeningColorHex = "#22C2C7"
     var processingColorHex = "#F0B440"
     var respondingColorHex = "#9F77E8"
-    var frameSize = 30.0
+    var frameSize = 39.0
     var glowOpacity = 0.3
     var glowBlur = 0.3
     var glowScale = 1.18
-    var glowSize = 13.0
-    var iconSize = 15.0
+    var glowSize = 16.9
+    var iconSize = 19.5
     var highlightOpacity = 0.12
     var highlightOffsetX = -0.4
     var highlightOffsetY = -0.4

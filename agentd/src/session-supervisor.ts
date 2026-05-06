@@ -1472,7 +1472,7 @@ function normalizeSlashCommands(commands: RuntimeSlashCommand[]): RuntimeSlashCo
     const name = command.name.trim();
     if (!name) continue;
     const source = command.source;
-    if (source !== "extension" && source !== "prompt" && source !== "skill") continue;
+    if (source !== "extension" && source !== "prompt" && source !== "skill" && source !== "builtin") continue;
     const key = `${source}:${name}`;
     if (seen.has(key)) continue;
     seen.add(key);

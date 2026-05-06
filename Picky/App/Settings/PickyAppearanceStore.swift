@@ -62,17 +62,28 @@ struct PickyPreferredColorSchemeModifier: ViewModifier {
 /// They resolve against the panel's `effectiveAppearance`, which AppKit flips for
 /// us when SwiftUI's `.preferredColorScheme(...)` is applied to the hosted root view.
 enum PickyAppearancePanelChrome {
-    /// Background tint behind the markdown report and terminal panels. Intentionally
-    /// a hair darker / lighter than `DS.Colors.background` so the titlebar reads
-    /// as a slightly recessed surface.
+    /// Slack-like dark overlay fill used by the markdown report and terminal panels.
+    /// Kept local to auxiliary windows so the main HUD depth ladder can stay unchanged.
+    static let overlayBackground = Color(light: Color(hex: "#F7F8F8"), dark: Color(hex: "#1A1D21"))
+
+    /// Background tint behind the markdown report and terminal panels. In dark mode
+    /// this avoids a near-black titlebar and matches `overlayBackground`.
     static func windowBackground() -> NSColor {
         NSColor(name: nil) { appearance in
             switch appearance.bestMatch(from: [.darkAqua, .aqua]) {
             case .darkAqua:
-                return NSColor(calibratedWhite: 0.04, alpha: 0.98)
+                return darkOverlayBackground
             default:
                 return NSColor(calibratedWhite: 0.97, alpha: 1.0)
             }
         }
+    }
+
+    static func resolvedOverlayBackground(isDark: Bool) -> NSColor {
+        isDark ? darkOverlayBackground : NSColor(calibratedRed: 0.97, green: 0.97, blue: 0.97, alpha: 1.0)
+    }
+
+    private static var darkOverlayBackground: NSColor {
+        NSColor(calibratedRed: 26.0 / 255.0, green: 29.0 / 255.0, blue: 33.0 / 255.0, alpha: 1.0)
     }
 }

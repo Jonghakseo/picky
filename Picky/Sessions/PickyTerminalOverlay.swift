@@ -366,7 +366,7 @@ struct PickyTerminalOverlayView: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
         }
-        .background(DS.Colors.background)
+        .background(PickyAppearancePanelChrome.overlayBackground)
         .background(zoomKeyboardShortcuts)
     }
 
@@ -483,9 +483,7 @@ final class PickySwiftTermView: LocalProcessTerminalView {
         let foreground = isDark
             ? NSColor(calibratedWhite: 0.90, alpha: 1)
             : NSColor(calibratedWhite: 0.10, alpha: 1)
-        let background = isDark
-            ? NSColor(calibratedRed: 0.02, green: 0.024, blue: 0.03, alpha: 1)
-            : NSColor(calibratedRed: 0.97, green: 0.97, blue: 0.97, alpha: 1)
+        let background = PickyAppearancePanelChrome.resolvedOverlayBackground(isDark: isDark)
         nativeForegroundColor = foreground
         nativeBackgroundColor = background
         layer?.backgroundColor = background.cgColor

@@ -553,7 +553,7 @@ struct PickyReportViewerWindowView: View {
             }
         }
         .onChange(of: model.revision) { _, _ in selectedTab = .answer }
-        .background(DS.Colors.background)
+        .background(PickyAppearancePanelChrome.overlayBackground)
         .background(zoomKeyboardShortcuts)
     }
 

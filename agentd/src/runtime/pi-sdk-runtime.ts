@@ -5,6 +5,7 @@ import {
   type AgentSession,
   type AgentSessionRuntime,
   type CreateAgentSessionRuntimeFactory,
+  type CreateAgentSessionFromServicesOptions,
   type CreateAgentSessionServicesOptions,
   type ToolDefinition,
   createAgentSessionFromServices,
@@ -87,8 +88,9 @@ export class PiSdkRuntime implements AgentRuntime {
 
     const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd: runtimeCwd, sessionManager, sessionStartEvent }) => {
       const services = await createServices({ cwd: runtimeCwd, agentDir, resourceLoaderOptions: this.options.resourceLoaderOptions });
+      const scopedModels = await scopedModelsFromServices(services);
       return {
-        ...(await createSessionFromServices({ services, sessionManager, sessionStartEvent, customTools, thinkingLevel: this.thinkingLevel })),
+        ...(await createSessionFromServices({ services, sessionManager, sessionStartEvent, customTools, thinkingLevel: this.thinkingLevel, scopedModels })),
         services,
         diagnostics: services.diagnostics,
       };
@@ -764,6 +766,67 @@ function lastAssistantStopReason(messages: unknown): string | undefined {
     if (message.role === "assistant") return stringValue(message.stopReason);
   }
   return undefined;
+}
+
+type ScopedModelOption = NonNullable<CreateAgentSessionFromServicesOptions["scopedModels"]>[number];
+
+async function scopedModelsFromServices(services: Awaited<ReturnType<NonNullable<PiSdkRuntimeOptions["createServices"]>>>): Promise<ScopedModelOption[]> {
+  const settingsManager = asRecord(services.settingsManager);
+  const modelRegistry = asRecord(services.modelRegistry);
+  const getEnabledModels = settingsManager.getEnabledModels;
+  const getAvailable = modelRegistry.getAvailable;
+  if (typeof getEnabledModels !== "function" || typeof getAvailable !== "function") return [];
+
+  const patterns = getEnabledModels.call(services.settingsManager);
+  if (!Array.isArray(patterns) || patterns.length === 0) return [];
+
+  const available = await getAvailable.call(services.modelRegistry);
+  if (!Array.isArray(available) || available.length === 0) return [];
+
+  const scoped: ScopedModelOption[] = [];
+  for (const patternValue of patterns) {
+    if (typeof patternValue !== "string") continue;
+    const parsed = parseScopedModelPattern(patternValue);
+    const model = findScopedModel(parsed.modelPattern, available);
+    if (!model || scoped.some((entry) => modelsEqual(entry.model, model))) continue;
+    scoped.push({ model: model as ScopedModelOption["model"], ...(parsed.thinkingLevel ? { thinkingLevel: parsed.thinkingLevel } : {}) });
+  }
+  return scoped;
+}
+
+function parseScopedModelPattern(pattern: string): { modelPattern: string; thinkingLevel?: ThinkingLevel } {
+  const trimmed = pattern.trim();
+  const colonIndex = trimmed.lastIndexOf(":");
+  if (colonIndex === -1) return { modelPattern: trimmed };
+  const suffix = trimmed.slice(colonIndex + 1);
+  const thinkingLevel = parseThinkingLevel(suffix);
+  if (!thinkingLevel) return { modelPattern: trimmed };
+  return { modelPattern: trimmed.slice(0, colonIndex), thinkingLevel };
+}
+
+function findScopedModel(pattern: string, available: unknown[]): unknown | undefined {
+  const normalized = pattern.trim().toLowerCase();
+  if (!normalized) return undefined;
+  const exact = available.find((model) => {
+    const record = asRecord(model);
+    const provider = stringValue(record.provider)?.toLowerCase();
+    const id = stringValue(record.id)?.toLowerCase();
+    return id === normalized || (provider && id && `${provider}/${id}` === normalized);
+  });
+  if (exact) return exact;
+  return available.find((model) => {
+    const record = asRecord(model);
+    const id = stringValue(record.id)?.toLowerCase();
+    const name = stringValue(record.name)?.toLowerCase();
+    return id?.includes(normalized) || name?.includes(normalized);
+  });
+}
+
+function modelsEqual(left: unknown, right: unknown): boolean {
+  const leftRecord = asRecord(left);
+  const rightRecord = asRecord(right);
+  return stringValue(leftRecord.provider) === stringValue(rightRecord.provider)
+    && stringValue(leftRecord.id) === stringValue(rightRecord.id);
 }
 
 function currentModelId(session: AgentSession): string | undefined {

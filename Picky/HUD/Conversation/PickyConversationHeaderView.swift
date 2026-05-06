@@ -44,8 +44,13 @@ struct PickyConversationHeaderView: View {
     private var trailingActions: some View {
         HStack(alignment: .center, spacing: 8) {
             if showsHeaderSessionMeta {
-                PickyHeaderSessionMetaPill(assistantRun: latestAssistantRun, contextUsage: session.contextUsage)
-                    .fixedSize(horizontal: true, vertical: false)
+                PickyHeaderSessionMetaPill(
+                    assistantRun: latestAssistantRun,
+                    contextUsage: session.contextUsage,
+                    onCycleModel: { cycleModel() },
+                    onCycleThinkingLevel: { cycleThinkingLevel() }
+                )
+                .fixedSize(horizontal: true, vertical: false)
             }
             conversationMenuButton
         }
@@ -210,11 +215,21 @@ struct PickyConversationHeaderView: View {
             return DS.Colors.textTertiary
         }
     }
+
+    private func cycleThinkingLevel() {
+        Task { try? await viewModel.cycleThinkingLevel(sessionID: session.id) }
+    }
+
+    private func cycleModel() {
+        Task { try? await viewModel.cycleModel(sessionID: session.id) }
+    }
 }
 
 private struct PickyHeaderSessionMetaPill: View {
     let assistantRun: PickyAssistantRunMetadata?
     let contextUsage: PickyContextUsage?
+    let onCycleModel: () -> Void
+    let onCycleThinkingLevel: () -> Void
 
     var body: some View {
         HStack(spacing: 4) {
@@ -228,17 +243,29 @@ private struct PickyHeaderSessionMetaPill: View {
                 }
             }
             if let modelText {
-                Text(modelText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                Button(action: onCycleModel) {
+                    Text(modelText)
+                        .foregroundColor(tint.opacity(0.92))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .buttonStyle(.plain)
+                .pointerCursor()
+                .help("Cycle scoped model (⌃P)")
             }
             if modelText != nil, thinkingLevelText != nil {
                 separator
             }
             if let thinkingLevelText {
-                Text(thinkingLevelText)
-                    .lineLimit(1)
-                    .layoutPriority(1)
+                Button(action: onCycleThinkingLevel) {
+                    Text(thinkingLevelText)
+                        .foregroundColor(tint.opacity(0.92))
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                }
+                .buttonStyle(.plain)
+                .pointerCursor()
+                .help("Cycle thinking level (⇧Tab)")
             }
         }
         .font(PickyHUDTypography.metaMonospacedMedium)

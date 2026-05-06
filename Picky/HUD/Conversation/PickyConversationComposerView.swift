@@ -5,6 +5,7 @@
 //  Composer for the conversation-style side-agent card.
 //
 
+import AppKit
 import SwiftUI
 
 enum PickyConversationComposerSubmitKind: Equatable {
@@ -31,6 +32,7 @@ struct PickyConversationComposerView: View {
     @State private var draft: String = ""
     @State private var selectedSlashCommandIndex: Int = 0
     @State private var isSlashCommandAutocompleteDismissed: Bool = false
+    @State private var keyDownMonitor: Any?
     @FocusState private var isFocused: Bool
 
     init(
@@ -50,7 +52,11 @@ struct PickyConversationComposerView: View {
             slashCommandAutocomplete
             composerRow
         }
-        .onAppear { viewModel.ensureSlashCommandsLoaded(sessionID: session.id) }
+        .onAppear {
+            viewModel.ensureSlashCommandsLoaded(sessionID: session.id)
+            installKeyDownMonitorIfNeeded()
+        }
+        .onDisappear { removeKeyDownMonitor() }
         .onChange(of: droppedFilePaths) { _, paths in
             guard !paths.isEmpty else { return }
             appendDroppedFilePaths(paths)
@@ -509,6 +515,30 @@ struct PickyConversationComposerView: View {
     private func cycleModel(direction: PickyModelCycleDirection) {
         Task { try? await viewModel.cycleModel(sessionID: session.id, direction: direction) }
     }
+
+    private func installKeyDownMonitorIfNeeded() {
+        guard keyDownMonitor == nil else { return }
+        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard isFocused else { return event }
+            if event.keyCode == Self.tabKeyCode, event.modifierFlags.contains(.shift) {
+                cycleThinkingLevel()
+                return nil
+            }
+            if event.charactersIgnoringModifiers?.lowercased() == "p", event.modifierFlags.contains(.control) {
+                cycleModel(direction: event.modifierFlags.contains(.shift) ? .backward : .forward)
+                return nil
+            }
+            return event
+        }
+    }
+
+    private func removeKeyDownMonitor() {
+        guard let keyDownMonitor else { return }
+        NSEvent.removeMonitor(keyDownMonitor)
+        self.keyDownMonitor = nil
+    }
+
+    private static let tabKeyCode: UInt16 = 48
 
     private func stopIfPossible() {
         guard [.running, .queued, .waiting_for_input].contains(session.status) else { return }

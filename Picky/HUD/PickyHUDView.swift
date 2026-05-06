@@ -12,6 +12,14 @@ extension Notification.Name {
     static let pickyPointAtHUDDockSession = Notification.Name("pickyPointAtHUDDockSession")
 }
 
+struct PickyHUDLayoutReport: Equatable {
+    let size: CGSize
+    /// Dock rail center Y measured top-down in the panel content coordinate space.
+    /// `nil` when the dock rail isn't shown yet (e.g. during the initial loading state),
+    /// in which case the overlay manager falls back to plain center anchoring.
+    let dockAnchorYFromTop: CGFloat?
+}
+
 struct PickyHUDDockPointerTarget: Equatable {
     let sessionID: String
     let title: String
@@ -62,8 +70,10 @@ enum PickyHUDDockPointerTargetNotification {
 }
 
 struct PickyHUDView: View {
+    static let contentCoordinateSpaceName = "picky-hud-content"
+
     @ObservedObject var viewModel: PickySessionListViewModel
-    var onSizeChange: (CGSize) -> Void = { _ in }
+    var onLayoutChange: (PickyHUDLayoutReport) -> Void = { _ in }
     @State private var pinnedSessionID: String?
     @State private var previewSessionID: String?
     @State private var isHUDHovered = false
@@ -71,6 +81,9 @@ struct PickyHUDView: View {
     @State private var dockIconScreenFramesBySessionID: [String: CGRect] = [:]
     @State private var lastReportedHUDSize: CGSize = .zero
     @State private var lastReportedActiveSessionID: String?
+    @State private var measuredHUDSize: CGSize = .zero
+    @State private var measuredDockAnchorY: CGFloat?
+    @State private var lastReportedDockAnchorY: CGFloat?
 
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {
         Array(viewModel.sessions.prefix(PickyHUDDockLayout.visibleSessionLimit).reversed())
@@ -96,38 +109,59 @@ struct PickyHUDView: View {
             // updates can report the already-clipped height and prevent growth.
             .fixedSize(horizontal: false, vertical: true)
             .background(PickyHUDSizeReader())
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            // Establish a coordinate space so the dock rail can report its center Y
+            // relative to the panel content. The overlay manager uses that anchor to
+            // pin the dock to the screen midpoint regardless of how tall the active
+            // conversation card is, so switching between agents no longer slides the
+            // entire HUD up or down around its visual center.
+            .coordinateSpace(name: Self.contentCoordinateSpaceName)
+            // topTrailing keeps the content stuck to the panel top when the panel is
+            // taller than the measured content (e.g. while `shouldHoldHeight` defers a
+            // shrink during an active turn). Center alignment would let the content
+            // float vertically inside the held panel and break the dock anchor math.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             // Animate only expand/collapse. Switching between dock-hovered sessions should
             // swap content immediately; animating every activeSession id change cross-fades
             // different card heights and makes the HUD look like it is stretching/flickering.
             .animation(PickyHUDExpansion.animation, value: activeSession != nil)
-            .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: handleHUDSizeChange)
+            .onPreferenceChange(PickyHUDSizePreferenceKey.self) { size in
+                measuredHUDSize = size
+                reportLayoutIfNeeded()
+            }
+            .onPreferenceChange(PickyHUDDockAnchorPreferenceKey.self) { anchor in
+                measuredDockAnchorY = anchor
+                reportLayoutIfNeeded()
+            }
             .onDisappear {
                 closeExpansionTask?.cancel()
                 closeExpansionTask = nil
             }
     }
 
-    private func handleHUDSizeChange(_ size: CGSize) {
-        guard size.width > 0, size.height > 0 else { return }
+    private func reportLayoutIfNeeded() {
+        guard measuredHUDSize.width > 0, measuredHUDSize.height > 0 else { return }
         let activeID = activeSession?.id
         if activeID != lastReportedActiveSessionID {
             lastReportedActiveSessionID = activeID
-            lastReportedHUDSize = size
-            onSizeChange(size)
+            lastReportedHUDSize = measuredHUDSize
+            lastReportedDockAnchorY = measuredDockAnchorY
+            onLayoutChange(PickyHUDLayoutReport(size: measuredHUDSize, dockAnchorYFromTop: measuredDockAnchorY))
             return
         }
 
         let targetSize = PickyHUDExpansion.reportedHUDSize(
-            measuredSize: size,
+            measuredSize: measuredHUDSize,
             previousReportedSize: lastReportedHUDSize,
             activeSessionChanged: false,
             shouldHoldHeight: shouldHoldPanelHeightDuringActiveTurn
         )
 
-        guard !lastReportedHUDSize.isApproximatelyEqual(to: targetSize) else { return }
+        let sizeChanged = !lastReportedHUDSize.isApproximatelyEqual(to: targetSize)
+        let anchorChanged = !approximatelyEqualOptionalCGFloat(lastReportedDockAnchorY, measuredDockAnchorY)
+        guard sizeChanged || anchorChanged else { return }
         lastReportedHUDSize = targetSize
-        onSizeChange(targetSize)
+        lastReportedDockAnchorY = measuredDockAnchorY
+        onLayoutChange(PickyHUDLayoutReport(size: targetSize, dockAnchorYFromTop: measuredDockAnchorY))
     }
 
     private var shouldHoldPanelHeightDuringActiveTurn: Bool {
@@ -140,7 +174,11 @@ struct PickyHUDView: View {
     }
 
     private var hudContent: some View {
-        HStack(alignment: .center, spacing: PickyHUDDockLayout.panelGap) {
+        // alignment: .top keeps the dock rail anchored to the HStack's top regardless of
+        // how tall the active conversation card is. Combined with `dockAnchoredPanelY` in
+        // the overlay manager, this fixes the dock rail's vertical screen position so
+        // selecting a different side agent no longer shifts the dock up or down.
+        HStack(alignment: .top, spacing: PickyHUDDockLayout.panelGap) {
             if let activeSession {
                 PickyConversationCardView(viewModel: viewModel, session: activeSession)
                     .id(activeSession.id)
@@ -161,6 +199,14 @@ struct PickyHUDView: View {
                     onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:)
                 )
                 .frame(width: PickyHUDDockLayout.railWidth)
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: PickyHUDDockAnchorPreferenceKey.self,
+                            value: proxy.frame(in: .named(PickyHUDView.contentCoordinateSpaceName)).midY
+                        )
+                    }
+                )
             }
         }
         .padding(.horizontal, PickyHUDExpansion.outerPadding)
@@ -272,6 +318,25 @@ private struct PickyHUDSizePreferenceKey: PreferenceKey {
     static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
         let next = nextValue()
         if next != .zero { value = next }
+    }
+}
+
+private struct PickyHUDDockAnchorPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat? = nil
+
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        if let next = nextValue() { value = next }
+    }
+}
+
+private func approximatelyEqualOptionalCGFloat(_ lhs: CGFloat?, _ rhs: CGFloat?, tolerance: CGFloat = 0.5) -> Bool {
+    switch (lhs, rhs) {
+    case (nil, nil):
+        return true
+    case let (lhs?, rhs?):
+        return abs(lhs - rhs) <= tolerance
+    default:
+        return false
     }
 }
 

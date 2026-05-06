@@ -39,6 +39,7 @@ final class PickyHUDOverlayManager {
     private var globalMouseMonitor: Any?
     private var localMouseMonitor: Any?
     private var screenParametersObserver: NSObjectProtocol?
+    private var lastReportedDockAnchorY: CGFloat?
     private let width: CGFloat = PickyHUDDockLayout.panelWidth
     private let collapsedHeight: CGFloat = 180
     private let minimumHeight: CGFloat = 48
@@ -85,11 +86,12 @@ final class PickyHUDOverlayManager {
         hudPanel.isExcludedFromWindowsMenu = true
         hudPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
-        let hudRoot = PickyHUDView(viewModel: viewModel) { [weak self] size in
+        let hudRoot = PickyHUDView(viewModel: viewModel) { [weak self] report in
             // SwiftUI animates the card reveal itself. Grow the transparent NSPanel
             // immediately, but defer shrinking it until the collapse animation has
             // finished so shadows/content aren't clipped by the outer container.
-            self?.resizePanel(toContentSize: size, deferShrink: true)
+            self?.lastReportedDockAnchorY = report.dockAnchorYFromTop
+            self?.resizePanel(toContentSize: report.size, deferShrink: true)
         }
             .frame(width: width)
             .environmentObject(appearanceStore)
@@ -134,9 +136,22 @@ final class PickyHUDOverlayManager {
         let screen = currentScreen ?? NSScreen.main ?? NSScreen.screens.first
         guard let visibleFrame = screen?.visibleFrame else { return nil }
         let targetHeight = min(max(contentSize.height, minimumHeight), visibleFrame.height - 160)
+        // Pin the dock rail to the screen midpoint when its anchor has been measured;
+        // fall back to plain panel centering before the first dock anchor arrives (e.g.
+        // initial loading state when the dock rail isn't even rendered yet).
+        let originY: CGFloat
+        if let anchor = lastReportedDockAnchorY, anchor.isFinite, anchor > 0 {
+            originY = PickyHUDDockLayout.dockAnchoredPanelY(
+                visibleFrame: visibleFrame,
+                targetHeight: targetHeight,
+                dockAnchorYFromTop: anchor
+            )
+        } else {
+            originY = PickyHUDDockLayout.centeredPanelY(visibleFrame: visibleFrame, targetHeight: targetHeight)
+        }
         return NSRect(
             x: visibleFrame.maxX - width - PickyHUDDockLayout.dockRightEdgeMargin,
-            y: PickyHUDDockLayout.centeredPanelY(visibleFrame: visibleFrame, targetHeight: targetHeight),
+            y: originY,
             width: width,
             height: targetHeight
         )

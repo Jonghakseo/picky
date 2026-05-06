@@ -229,21 +229,21 @@ struct PickyConversationCardViewTests {
         #expect(composer.placeholderText.contains("esc Stop"))
     }
 
-    @Test func headerShowsNotifyOnCompletionState() {
+    @Test func composerShowsNotifyOnCompletionState() {
         let viewModel = makeViewModel()
-        let enabledHeader = PickyConversationHeaderView(
-            viewModel: viewModel,
-            session: makeConversationSession(status: .running, notifyMainOnCompletion: true)
+        let enabledComposer = PickyConversationComposerView(
+            session: makeConversationSession(status: .running, notifyMainOnCompletion: true),
+            viewModel: viewModel
         )
-        let disabledHeader = PickyConversationHeaderView(
-            viewModel: viewModel,
-            session: makeConversationSession(status: .running, notifyMainOnCompletion: false)
+        let disabledComposer = PickyConversationComposerView(
+            session: makeConversationSession(status: .running, notifyMainOnCompletion: false),
+            viewModel: viewModel
         )
 
-        #expect(enabledHeader.notifyOnCompletionIconName == "bell.fill")
-        #expect(enabledHeader.notifyOnCompletionHelpText == "Notify main agent on completion")
-        #expect(disabledHeader.notifyOnCompletionIconName == "bell.slash")
-        #expect(disabledHeader.notifyOnCompletionHelpText == "Do not notify main agent on completion")
+        #expect(enabledComposer.notifyOnCompletionIconName == "bell.fill")
+        #expect(enabledComposer.notifyOnCompletionHelpText == "Notify main agent on completion")
+        #expect(disabledComposer.notifyOnCompletionIconName == "bell.slash")
+        #expect(disabledComposer.notifyOnCompletionHelpText == "Do not notify main agent on completion")
     }
 
     @Test func headerTitleTooltipMentionsNameCommand() {

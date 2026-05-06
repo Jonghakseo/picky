@@ -60,9 +60,7 @@ struct PickyConversationComposerView: View {
 
     private var composerRow: some View {
         HStack(alignment: .center, spacing: 8) {
-            Image(systemName: isFileDropTargeted ? "doc.badge.plus" : "text.bubble")
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundColor(isFileDropTargeted ? DS.Colors.accentText : DS.Colors.textTertiary)
+            leadingAccessory
             composerEditor
             sendButton
         }
@@ -71,6 +69,50 @@ struct PickyConversationComposerView: View {
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .background(composerBackground)
+    }
+
+    @ViewBuilder
+    private var leadingAccessory: some View {
+        if isFileDropTargeted {
+            Image(systemName: "doc.badge.plus")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundColor(DS.Colors.accentText)
+                .frame(width: 18, height: 18)
+                .help("Drop files or screenshots anywhere to insert paths")
+                .accessibilityLabel("File drop target")
+        } else {
+            Button {
+                toggleNotifyOnCompletion()
+            } label: {
+                Image(systemName: notifyOnCompletionIconName)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundColor(notifyOnCompletionColor)
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .pointerCursor()
+            .help(notifyOnCompletionHelpText)
+            .accessibilityLabel("Notify on completion")
+            .accessibilityValue(session.notifyMainOnCompletion == true ? "On" : "Off")
+        }
+    }
+
+    var notifyOnCompletionIconName: String {
+        session.notifyMainOnCompletion == true ? "bell.fill" : "bell.slash"
+    }
+
+    var notifyOnCompletionHelpText: String {
+        session.notifyMainOnCompletion == true ? "Notify main agent on completion" : "Do not notify main agent on completion"
+    }
+
+    private var notifyOnCompletionColor: Color {
+        session.notifyMainOnCompletion == true ? DS.Colors.accentText : DS.Colors.textTertiary
+    }
+
+    private func toggleNotifyOnCompletion() {
+        let enabled = !(session.notifyMainOnCompletion == true)
+        Task { try? await viewModel.setNotifyMainOnCompletion(sessionID: session.id, enabled: enabled) }
     }
 
     private var composerEditor: some View {

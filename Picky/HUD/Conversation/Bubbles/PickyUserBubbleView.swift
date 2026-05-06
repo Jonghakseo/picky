@@ -16,7 +16,8 @@ struct PickyUserBubbleView: View {
             VStack(alignment: .leading, spacing: 4) {
                 PickyConversationMarkdownText(
                     markdown: displayedMarkdownPreview,
-                    lineLimit: PickyAgentResponsePreview.maxLines
+                    lineLimit: PickyAgentResponsePreview.maxLines,
+                    fillsAvailableWidth: false
                 )
                 .multilineTextAlignment(.leading)
                 if let originLabel {

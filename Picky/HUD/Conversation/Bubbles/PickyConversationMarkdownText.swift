@@ -10,16 +10,25 @@ import SwiftUI
 struct PickyConversationMarkdownText: View {
     let markdown: String
     var lineLimit: Int? = nil
+    var fillsAvailableWidth = true
 
     private let renderer = PickyReportMarkdownRenderer()
 
     var body: some View {
+        if fillsAvailableWidth {
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 5) {
             ForEach(Array(renderer.blocks(from: markdown).enumerated()), id: \.offset) { _, block in
                 blockView(block)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder

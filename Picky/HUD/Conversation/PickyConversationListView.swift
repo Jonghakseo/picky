@@ -127,7 +127,12 @@ struct PickyConversationListView: View {
     }
 
     private func showsOpenAsReportAction(for message: PickySessionMessage) -> Bool {
-        session.canOpenMarkdownReport && message.id == session.latestOpenAsReportMessage?.id
+        // While the side agent is mid-turn (Working badge), interim bubbles can carry an
+        // openAsReportMarkdown payload but the report itself is not finalized yet. Showing the
+        // action there encourages users to open a half-baked report, so suppress it until the
+        // session leaves the running state.
+        guard session.status != .running else { return false }
+        return session.canOpenMarkdownReport && message.id == session.latestOpenAsReportMessage?.id
     }
 
     private func openReport() {

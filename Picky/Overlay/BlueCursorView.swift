@@ -12,6 +12,9 @@ import SwiftUI
 // Runtime-tweakable style values for the Pi-shaped cursor buddy icon.
 private struct PickyCursorStyle: Codable, Equatable {
     var colorHex = "#3380FF"
+    var listeningColorHex = "#22C2C7"
+    var processingColorHex = "#F0B440"
+    var respondingColorHex = "#9F77E8"
     var frameSize = 30.0
     var glowOpacity = 0.3
     var glowBlur = 0.3
@@ -26,6 +29,9 @@ private struct PickyCursorStyle: Codable, Equatable {
     var outerShadowFlightMultiplier = 90.0
 
     var cursorColor: Color { Color(hex: colorHex) }
+    var listeningColor: Color { Color(hex: listeningColorHex) }
+    var processingColor: Color { Color(hex: processingColorHex) }
+    var respondingColor: Color { Color(hex: respondingColorHex) }
 
     init() {}
 
@@ -33,6 +39,9 @@ private struct PickyCursorStyle: Codable, Equatable {
         let defaults = PickyCursorStyle()
         let container = try decoder.container(keyedBy: CodingKeys.self)
         colorHex = try container.decodeIfPresent(String.self, forKey: .colorHex) ?? defaults.colorHex
+        listeningColorHex = try container.decodeIfPresent(String.self, forKey: .listeningColorHex) ?? defaults.listeningColorHex
+        processingColorHex = try container.decodeIfPresent(String.self, forKey: .processingColorHex) ?? defaults.processingColorHex
+        respondingColorHex = try container.decodeIfPresent(String.self, forKey: .respondingColorHex) ?? defaults.respondingColorHex
         frameSize = try container.decodeIfPresent(Double.self, forKey: .frameSize) ?? defaults.frameSize
         glowOpacity = try container.decodeIfPresent(Double.self, forKey: .glowOpacity) ?? defaults.glowOpacity
         glowBlur = try container.decodeIfPresent(Double.self, forKey: .glowBlur) ?? defaults.glowBlur
@@ -115,9 +124,12 @@ private final class PickyCursorStyleStore: ObservableObject {
 }
 #endif
 
-// Pi-shaped cursor buddy icon.
+// Pi-shaped cursor buddy icon. The `tint` parameter overrides the base style
+// color so the buddy can shift through mood colors (idle / listening /
+// processing / responding) without swapping in a different shape.
 private struct PiCursorIconView: View {
     let style: PickyCursorStyle
+    let tint: Color
 
     var body: some View {
         ZStack {
@@ -125,7 +137,7 @@ private struct PiCursorIconView: View {
                 .resizable()
                 .renderingMode(.template)
                 .scaledToFit()
-                .foregroundColor(style.cursorColor.opacity(style.glowOpacity))
+                .foregroundColor(tint.opacity(style.glowOpacity))
                 .frame(width: CGFloat(style.glowSize), height: CGFloat(style.glowSize))
                 .blur(radius: CGFloat(style.glowBlur))
                 .scaleEffect(CGFloat(style.glowScale))
@@ -134,7 +146,7 @@ private struct PiCursorIconView: View {
                 .resizable()
                 .renderingMode(.template)
                 .scaledToFit()
-                .foregroundColor(style.cursorColor)
+                .foregroundColor(tint)
                 .frame(width: CGFloat(style.iconSize), height: CGFloat(style.iconSize))
 
             Image("PiSymbol")
@@ -180,6 +192,22 @@ struct BlueCursorView: View {
     @State private var responseBubbleSize: CGSize = .zero
     @State private var voicePromptBubbleSize: CGSize = .zero
     @State private var cursorOpacity: Double = 1.0
+
+    // MARK: - Idle Micro-Behaviors
+
+    /// Transient offset/rotation/scale stacked on top of cursor following so
+    /// the buddy can do small idle animations (look around, yawn, bob, tilt)
+    /// without disturbing the normal mouse-tracking spring.
+    @State private var idleOffsetY: CGFloat = 0
+    @State private var idleRotation: Double = 0
+    @State private var idleScale: CGFloat = 1.0
+    @State private var idleScheduleTimer: Timer?
+    @State private var idleBehaviorActive: Bool = false
+    @State private var lastCursorMoveAt: Date = Date()
+
+    private enum IdleBehavior: CaseIterable {
+        case lookAround, yawn, bob, tilt
+    }
 
     // MARK: - Buddy Navigation State
 
@@ -344,45 +372,35 @@ struct BlueCursorView: View {
                     }
             }
 
-            // Blue pi cursor — shown when idle or while TTS is playing (responding).
-            // All three states (pi icon, waveform, spinner) stay in the view tree
-            // permanently and cross-fade via opacity so SwiftUI doesn't remove/re-insert
-            // them (which caused a visible cursor "pop").
+            // Blue pi cursor — shown for ALL voice states. Listening and
+            // processing no longer swap in a separate waveform/spinner: the
+            // icon itself shifts mood color (idle blue / listening cyan /
+            // processing amber / responding purple). Idle micro-behaviors
+            // stack as offset/rotation/scale on top of the cursor-tracking
+            // spring without disturbing it.
             //
             // During cursor following: fast spring animation for snappy tracking.
             // During navigation: NO implicit animation — the frame-by-frame bezier
             // timer controls position directly at 60fps for a smooth arc flight.
-            PiCursorIconView(style: cursorStyleStore.style)
+            PiCursorIconView(style: cursorStyleStore.style, tint: moodColor)
                 .shadow(
-                    color: cursorStyleStore.style.cursorColor.opacity(cursorStyleStore.style.outerShadowOpacity),
+                    color: moodColor.opacity(cursorStyleStore.style.outerShadowOpacity),
                     radius: CGFloat(cursorStyleStore.style.outerShadowRadius) + (buddyFlightScale - 1.0) * CGFloat(cursorStyleStore.style.outerShadowFlightMultiplier),
                     x: 0,
                     y: 0
                 )
-                .scaleEffect(buddyFlightScale)
-                .opacity(buddyIsVisibleOnThisScreen && (companionManager.voiceState == .idle || companionManager.voiceState == .responding) ? cursorOpacity : 0)
+                .scaleEffect(buddyFlightScale * idleScale)
+                .rotationEffect(.degrees(idleRotation))
+                .opacity(buddyIsVisibleOnThisScreen ? cursorOpacity : 0)
                 .position(cursorPosition)
+                .offset(y: idleOffsetY)
                 .animation(
                     buddyNavigationMode == .followingCursor
                         ? .spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0)
                         : nil,
                     value: cursorPosition
                 )
-                .animation(.easeIn(duration: 0.25), value: companionManager.voiceState)
-
-            // Blue waveform — replaces the pi icon while listening
-            BlueCursorWaveformView(audioPowerLevel: companionManager.currentAudioPowerLevel)
-                .opacity(buddyIsVisibleOnThisScreen && companionManager.voiceState == .listening ? cursorOpacity : 0)
-                .position(cursorPosition)
-                .animation(.spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0), value: cursorPosition)
-                .animation(.easeIn(duration: 0.15), value: companionManager.voiceState)
-
-            // Blue spinner — shown while local capture/submission is processing
-            BlueCursorSpinnerView()
-                .opacity(buddyIsVisibleOnThisScreen && companionManager.voiceState == .processing ? cursorOpacity : 0)
-                .position(cursorPosition)
-                .animation(.spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0), value: cursorPosition)
-                .animation(.easeIn(duration: 0.15), value: companionManager.voiceState)
+                .animation(.easeInOut(duration: 0.45), value: companionManager.voiceState)
 
         }
         .frame(width: screenFrame.width, height: screenFrame.height)
@@ -397,12 +415,14 @@ struct BlueCursorView: View {
 
             startTrackingCursor()
             startNavigatingToCurrentPointerTargetIfNeeded()
+            scheduleNextIdleBehavior()
 
             self.cursorOpacity = 1.0
         }
         .onDisappear {
             timer?.invalidate()
             navigationAnimationTimer?.invalidate()
+            cancelIdleBehavior()
         }
         .onChange(of: companionManager.detectedElementScreenLocation) { newLocation in
             startNavigatingToPointerTargetIfPresent(screenLocation: newLocation)
@@ -413,6 +433,13 @@ struct BlueCursorView: View {
                 return
             }
             startNavigatingToPointerTargetIfPresent(screenLocation: companionManager.detectedElementScreenLocation)
+        }
+        .onChange(of: companionManager.voiceState) { newState in
+            if newState == .idle {
+                scheduleNextIdleBehavior()
+            } else {
+                cancelIdleBehavior()
+            }
         }
     }
 
@@ -457,7 +484,22 @@ struct BlueCursorView: View {
             let swiftUIPosition = self.convertScreenPointToSwiftUICoordinates(mouseLocation)
             let buddyX = swiftUIPosition.x + 35
             let buddyY = swiftUIPosition.y + 25
-            self.cursorPosition = CGPoint(x: buddyX, y: buddyY)
+            let newPosition = CGPoint(x: buddyX, y: buddyY)
+
+            // Detect significant cursor motion to cancel any in-progress idle
+            // behavior. The threshold is per-tick (16ms), so this catches user
+            // motion without firing on small spring-settling deltas.
+            let dx = newPosition.x - self.cursorPosition.x
+            let dy = newPosition.y - self.cursorPosition.y
+            if hypot(dx, dy) > 1.0 {
+                self.lastCursorMoveAt = Date()
+                if self.idleBehaviorActive {
+                    self.cancelIdleBehavior()
+                    self.scheduleNextIdleBehavior()
+                }
+            }
+
+            self.cursorPosition = newPosition
         }
     }
 
@@ -581,6 +623,7 @@ struct BlueCursorView: View {
         navigationBubbleText = ""
         navigationBubbleOpacity = 0.0
         navigationBubbleScale = 1.0
+        scheduleNextIdleBehavior()
     }
 
     /// Starts animating the buddy toward a detected UI element location.
@@ -605,6 +648,7 @@ struct BlueCursorView: View {
         activePointerID = pointerID
         buddyNavigationMode = .navigatingToTarget
         isReturningToCursor = false
+        cancelIdleBehavior()
 
         animateBezierFlightArc(to: clampedTarget, pointerID: pointerID) {
             guard self.buddyNavigationMode == .navigatingToTarget,
@@ -851,6 +895,179 @@ struct BlueCursorView: View {
         navigationBubbleScale = 1.0
         activePointerID = nil
         companionManager.clearDetectedElementLocation(pointerID: pointerID)
+        scheduleNextIdleBehavior()
+    }
+
+    // MARK: - Mood Colors
+
+    /// Color the Pi icon takes for the current voice state. Replaces the
+    /// previous waveform/spinner overlays — the icon itself shifts color
+    /// instead of swapping in a different shape.
+    private var moodColor: Color {
+        let style = cursorStyleStore.style
+        switch companionManager.voiceState {
+        case .idle:       return style.cursorColor
+        case .listening:  return style.listeningColor
+        case .processing: return style.processingColor
+        case .responding: return style.respondingColor
+        }
+    }
+
+    // MARK: - Idle Micro-Behaviors
+
+    /// Whether the buddy is in a state where idle micro-behaviors may run.
+    /// Used both to gate scheduling and to short-circuit a behavior mid-step.
+    private var isIdleEligibleForScheduling: Bool {
+        companionManager.voiceState == .idle
+            && buddyNavigationMode == .followingCursor
+            && activePointerID == nil
+            && !companionManager.isQuickInputPanelVisible
+            && isCursorOnThisScreen
+    }
+
+    private func scheduleNextIdleBehavior(delayRange: ClosedRange<Double> = 14...28) {
+        idleScheduleTimer?.invalidate()
+        guard isIdleEligibleForScheduling else { return }
+        let delay = Double.random(in: delayRange)
+        idleScheduleTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { _ in
+            self.runRandomIdleBehaviorIfEligible()
+        }
+    }
+
+    private func cancelIdleBehavior() {
+        idleScheduleTimer?.invalidate()
+        idleScheduleTimer = nil
+        idleBehaviorActive = false
+        withAnimation(.easeOut(duration: 0.25)) {
+            idleOffsetY = 0
+            idleRotation = 0
+            idleScale = 1.0
+        }
+    }
+
+    private func runRandomIdleBehaviorIfEligible() {
+        guard isIdleEligibleForScheduling else {
+            scheduleNextIdleBehavior(delayRange: 6...12)
+            return
+        }
+        // Require the cursor to have been settled for a few seconds so the
+        // behavior doesn't kick in while the user is actively moving the mouse.
+        if Date().timeIntervalSince(lastCursorMoveAt) < 4 {
+            scheduleNextIdleBehavior(delayRange: 4...8)
+            return
+        }
+        let behavior = IdleBehavior.allCases.randomElement() ?? .lookAround
+        idleBehaviorActive = true
+        switch behavior {
+        case .lookAround: runLookAroundBehavior()
+        case .yawn:       runYawnBehavior()
+        case .bob:        runBobBehavior()
+        case .tilt:       runTiltBehavior()
+        }
+    }
+
+    private func finishIdleBehavior() {
+        withAnimation(.easeOut(duration: 0.3)) {
+            idleOffsetY = 0
+            idleRotation = 0
+            idleScale = 1.0
+        }
+        idleBehaviorActive = false
+        scheduleNextIdleBehavior(delayRange: 18...40)
+    }
+
+    private func runLookAroundBehavior() {
+        let steps: [Double] = [-12, 12, -8, 0]
+        var index = 0
+        func nextStep() {
+            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
+                self.finishIdleBehavior()
+                return
+            }
+            guard index < steps.count else {
+                self.finishIdleBehavior()
+                return
+            }
+            let rotation = steps[index]
+            index += 1
+            withAnimation(.easeInOut(duration: 0.4)) {
+                self.idleRotation = rotation
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                nextStep()
+            }
+        }
+        nextStep()
+    }
+
+    private func runYawnBehavior() {
+        guard idleBehaviorActive, isIdleEligibleForScheduling else {
+            finishIdleBehavior()
+            return
+        }
+        withAnimation(.easeInOut(duration: 0.45)) {
+            idleScale = 1.4
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
+                self.finishIdleBehavior()
+                return
+            }
+            withAnimation(.easeOut(duration: 0.35)) {
+                self.idleScale = 1.0
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                self.finishIdleBehavior()
+            }
+        }
+    }
+
+    private func runBobBehavior() {
+        let bobSteps = 5  // up, down, up, down, settle
+        var step = 0
+        func nextStep() {
+            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
+                self.finishIdleBehavior()
+                return
+            }
+            if step >= bobSteps {
+                self.finishIdleBehavior()
+                return
+            }
+            let dy: CGFloat = step == bobSteps - 1 ? 0 : (step % 2 == 0 ? -6 : 6)
+            withAnimation(.easeInOut(duration: 0.45)) {
+                self.idleOffsetY = dy
+            }
+            step += 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                nextStep()
+            }
+        }
+        nextStep()
+    }
+
+    private func runTiltBehavior() {
+        let steps: [Double] = [10, -8, 5, 0]
+        var index = 0
+        func nextStep() {
+            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
+                self.finishIdleBehavior()
+                return
+            }
+            guard index < steps.count else {
+                self.finishIdleBehavior()
+                return
+            }
+            let rotation = steps[index]
+            index += 1
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.5)) {
+                self.idleRotation = rotation
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                nextStep()
+            }
+        }
+        nextStep()
     }
 
 }
@@ -1204,73 +1421,3 @@ private struct PickyHighlightTagShape: Shape {
     }
 }
 
-// MARK: - Blue Cursor Waveform
-
-/// A small blue waveform that replaces the pi cursor while
-/// the user is holding the push-to-talk shortcut and speaking.
-private struct BlueCursorWaveformView: View {
-    let audioPowerLevel: CGFloat
-
-    private let barCount = 5
-    private let listeningBarProfile: [CGFloat] = [0.4, 0.7, 1.0, 0.7, 0.4]
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 36.0)) { timelineContext in
-            HStack(alignment: .center, spacing: 2) {
-                ForEach(0..<barCount, id: \.self) { barIndex in
-                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                        .fill(DS.Colors.overlayCursorBlue)
-                        .frame(
-                            width: 2,
-                            height: barHeight(
-                                for: barIndex,
-                                timelineDate: timelineContext.date
-                            )
-                        )
-                }
-            }
-            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.6), radius: 6, x: 0, y: 0)
-            .animation(.linear(duration: 0.08), value: audioPowerLevel)
-        }
-    }
-
-    private func barHeight(for barIndex: Int, timelineDate: Date) -> CGFloat {
-        let animationPhase = CGFloat(timelineDate.timeIntervalSinceReferenceDate * 3.6) + CGFloat(barIndex) * 0.35
-        let normalizedAudioPowerLevel = max(audioPowerLevel - 0.008, 0)
-        let easedAudioPowerLevel = pow(min(normalizedAudioPowerLevel * 2.85, 1), 0.76)
-        let reactiveHeight = easedAudioPowerLevel * 10 * listeningBarProfile[barIndex]
-        let idlePulse = (sin(animationPhase) + 1) / 2 * 1.5
-        return 3 + reactiveHeight + idlePulse
-    }
-}
-
-// MARK: - Blue Cursor Spinner
-
-/// A small blue spinning indicator that replaces the pi cursor
-/// while the AI is processing a voice input.
-private struct BlueCursorSpinnerView: View {
-    @State private var isSpinning = false
-
-    var body: some View {
-        Circle()
-            .trim(from: 0.15, to: 0.85)
-            .stroke(
-                AngularGradient(
-                    colors: [
-                        DS.Colors.overlayCursorBlue.opacity(0.0),
-                        DS.Colors.overlayCursorBlue
-                    ],
-                    center: .center
-                ),
-                style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
-            )
-            .frame(width: 14, height: 14)
-            .rotationEffect(.degrees(isSpinning ? 360 : 0))
-            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.6), radius: 6, x: 0, y: 0)
-            .onAppear {
-                withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
-                    isSpinning = true
-                }
-            }
-    }
-}

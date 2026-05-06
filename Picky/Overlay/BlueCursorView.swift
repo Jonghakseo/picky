@@ -124,40 +124,34 @@ private final class PickyCursorStyleStore: ObservableObject {
 }
 #endif
 
-// Pi-shaped cursor buddy icon. The `tint` parameter overrides the base style
+// Pi text cursor buddy icon. The `tint` parameter overrides the base style
 // color so the buddy can shift through mood colors (idle / listening /
-// processing / responding) without swapping in a different shape.
+// processing / responding) without swapping in a different shape or asset.
 private struct PiCursorIconView: View {
     let style: PickyCursorStyle
     let tint: Color
 
     var body: some View {
         ZStack {
-            Image("PiSymbol")
-                .resizable()
-                .renderingMode(.template)
-                .scaledToFit()
-                .foregroundColor(tint.opacity(style.glowOpacity))
-                .frame(width: CGFloat(style.glowSize), height: CGFloat(style.glowSize))
+            piGlyph(color: tint.opacity(style.glowOpacity), size: style.glowSize)
                 .blur(radius: CGFloat(style.glowBlur))
                 .scaleEffect(CGFloat(style.glowScale))
 
-            Image("PiSymbol")
-                .resizable()
-                .renderingMode(.template)
-                .scaledToFit()
-                .foregroundColor(tint)
-                .frame(width: CGFloat(style.iconSize), height: CGFloat(style.iconSize))
+            piGlyph(color: tint, size: style.iconSize)
 
-            Image("PiSymbol")
-                .resizable()
-                .renderingMode(.template)
-                .scaledToFit()
-                .foregroundColor(.white.opacity(style.highlightOpacity))
-                .frame(width: CGFloat(style.iconSize), height: CGFloat(style.iconSize))
+            piGlyph(color: .white.opacity(style.highlightOpacity), size: style.iconSize)
                 .offset(x: CGFloat(style.highlightOffsetX), y: CGFloat(style.highlightOffsetY))
         }
         .frame(width: CGFloat(style.frameSize), height: CGFloat(style.frameSize))
+    }
+
+    private func piGlyph(color: Color, size: Double) -> some View {
+        Text("π")
+            .font(.system(size: CGFloat(size), weight: .bold, design: .rounded))
+            .foregroundColor(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
+            .frame(width: CGFloat(size), height: CGFloat(size), alignment: .center)
     }
 }
 

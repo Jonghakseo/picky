@@ -38,9 +38,10 @@ struct PickyActivitySummaryView: View {
     }
 
     private func contextUsageChip(_ display: ContextUsageBatteryDisplay) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: display.symbolName)
-                .font(.system(size: 11, weight: .medium))
+        HStack(spacing: 4) {
+            Text("ctx")
+            ContextUsageBar(progress: display.fraction, color: display.color)
+                .frame(width: 28, height: 6)
             Text(display.label)
                 .fontWeight(.bold)
         }
@@ -51,8 +52,28 @@ struct PickyActivitySummaryView: View {
     }
 }
 
+private struct ContextUsageBar: View {
+    let progress: Double
+    let color: Color
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(DS.Colors.surface2.opacity(0.85))
+                Capsule()
+                    .fill(color)
+                    .frame(width: geometry.size.width * CGFloat(max(0, min(1, progress))))
+            }
+            .overlay(
+                Capsule().stroke(DS.Colors.borderSubtle.opacity(0.5), lineWidth: 0.5)
+            )
+        }
+    }
+}
+
 struct ContextUsageBatteryDisplay {
-    let symbolName: String
+    let fraction: Double
     let label: String
     let color: Color
     let tooltip: String
@@ -60,24 +81,17 @@ struct ContextUsageBatteryDisplay {
     init?(usage: PickyContextUsage) {
         guard let percent = usage.percent else { return nil }
         let clamped = max(0, min(100, percent))
+        self.fraction = clamped / 100
         self.label = "\(Int(clamped.rounded()))%"
+        // Bar is filled left-to-right as usage grows, so high context % = high fill = warmer color.
         switch clamped {
-        // SF Symbols battery glyphs run from 100 (full) down to 0 (empty), so a HIGH context %
-        // maps to a LOW battery glyph (less headroom remaining).
         case 90...:
-            self.symbolName = "battery.0percent"
             self.color = DS.Colors.destructive
         case 75..<90:
-            self.symbolName = "battery.25percent"
             self.color = DS.Colors.warning
         case 50..<75:
-            self.symbolName = "battery.50percent"
-            self.color = DS.Colors.info
-        case 25..<50:
-            self.symbolName = "battery.75percent"
             self.color = DS.Colors.info
         default:
-            self.symbolName = "battery.100percent"
             self.color = DS.Colors.success
         }
         if let tokens = usage.tokens {

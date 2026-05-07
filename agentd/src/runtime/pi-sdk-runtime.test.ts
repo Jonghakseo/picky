@@ -369,9 +369,23 @@ describe("PiSdkRuntime", () => {
     fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "컴팩션 후 완료" }] }, toolResults: [] });
 
     expect(statusEvents(events).some((event) => event.status === "failed")).toBe(false);
-    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Compacting after context overflow…" });
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Compacting after context overflow…", compactionStarted: true, compactionReason: "overflow" });
     expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, compactionReason: "overflow" });
     expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Completed", finalAnswer: "컴팩션 후 완료", assistantRun: { model: "claude-fake" } });
+  });
+
+  it("emits completion for non-retry automatic threshold compaction", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-threshold-compaction" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    fakeSession.emit("event", { type: "compaction_start", reason: "threshold" });
+    fakeSession.emit("event", { type: "compaction_end", reason: "threshold", willRetry: false, aborted: false, result: { summary: "요약" } });
+
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "threshold" });
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "threshold" });
   });
 
   it("reports final failure when an agent_end error has no retry or compaction recovery", async () => {

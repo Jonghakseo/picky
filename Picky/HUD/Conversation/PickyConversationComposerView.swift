@@ -276,7 +276,7 @@ struct PickyConversationComposerView: View {
     }
 
     var slashCommandAutocompleteIsVisible: Bool {
-        PickySlashCommandAutocompletePolicy.query(in: draft) != nil && !isSlashCommandAutocompleteDismissed
+        !isComposerInputDisabled && PickySlashCommandAutocompletePolicy.query(in: draft) != nil && !isSlashCommandAutocompleteDismissed
     }
 
     var slashCommandSuggestions: [PickySlashCommand] {

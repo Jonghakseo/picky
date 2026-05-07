@@ -785,6 +785,50 @@ describe("SessionSupervisor", () => {
     expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted after context overflow")).toBe(true);
   });
 
+  it("surfaces threshold compaction even when it starts after a completed turn", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "완료 답변" });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+    expect(supervisor.get(side.id)?.status).toBe("completed");
+    expect(supervisor.get(side.id)?.lastSummary).toBe("완료 답변");
+
+    runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "threshold" });
+    await settle();
+    expect(supervisor.get(side.id)?.status).toBe("running");
+    expect(supervisor.get(side.id)?.lastSummary).toBe("Compacting session…");
+
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "threshold" });
+    await settle();
+    const updated = supervisor.get(side.id)!;
+    expect(updated.status).toBe("completed");
+    expect(updated.lastSummary).toBe("Session compacted");
+    expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(true);
+  });
+
+  it("does not let late compaction completion resurrect a cancelled session", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+    await settle();
+    expect(supervisor.get(side.id)?.status).toBe("cancelled");
+
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "threshold" });
+    await settle();
+    const updated = supervisor.get(side.id)!;
+    expect(updated.status).toBe("cancelled");
+    expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(false);
+  });
+
   it("does not let a successful /compact restore leak into a later /name", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

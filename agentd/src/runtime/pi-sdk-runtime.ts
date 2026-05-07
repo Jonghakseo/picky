@@ -519,18 +519,27 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     if (event.type === "compaction_start") {
       this.cancelDeferredTerminalError();
       const reason = stringValue(event.reason);
-      return { type: "status", status: "running", summary: reason === "overflow" ? "Compacting after context overflow…" : "Compacting session…" };
+      return { type: "status", status: "running", summary: reason === "overflow" ? "Compacting after context overflow…" : "Compacting session…", compactionStarted: true, ...(reason ? { compactionReason: reason } : {}) };
     }
     if (event.type === "compaction_end") {
       const reason = stringValue(event.reason);
+      const errorMessage = stringValue(event.errorMessage);
       if (event.willRetry === true) {
         this.cancelDeferredTerminalError();
         return { type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, ...(reason ? { compactionReason: reason } : {}) };
       }
-      if (reason === "overflow" && stringValue(event.errorMessage)) {
+      if (reason === "overflow" && errorMessage) {
         this.cancelDeferredTerminalError();
-        return { type: "status", status: "failed", summary: stringValue(event.errorMessage) };
+        return { type: "status", status: "failed", summary: errorMessage };
       }
+      if (errorMessage) {
+        this.cancelDeferredTerminalError();
+        return { type: "status", status: "completed", summary: errorMessage, noTurnRan: true, ...(reason ? { compactionReason: reason } : {}) };
+      }
+      if (event.aborted === true) {
+        return { type: "status", status: "completed", summary: "Compaction cancelled", noTurnRan: true, ...(reason ? { compactionReason: reason } : {}) };
+      }
+      return { type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, ...(reason ? { compactionReason: reason } : {}) };
     }
     return undefined;
   }

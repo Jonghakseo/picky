@@ -132,9 +132,11 @@ export class RuntimeEventHandler {
     // events. Stragglers (delayed agent_start emitting `running` after abort, late
     // `waiting_for_input` from a now-cancelled extension dialog, etc.) would otherwise
     // resurrect the session out of `cancelled`/`failed`/`completed` and re-open the HUD
-    // loading state. The supervisor's steer/followUp paths intentionally bypass this
-    // handler when they want to revive a terminal session.
-    if (isTerminalStatus(currentSession.status)) return;
+    // loading state. Completed sessions are the exception: Pi may auto-compact immediately after a
+    // successful terminal agent_end (threshold compaction), and the HUD should still show that brief state.
+    // Do not allow compaction tail events to resurrect cancelled/failed/blocked sessions.
+    const terminalCompactionUpdate = currentSession.status === "completed" && (event.compactionStarted || event.compactionCompleted);
+    if (isTerminalStatus(currentSession.status) && !terminalCompactionUpdate) return;
 
     if (event.compactionCompleted && !hasLatestCompactCompletionMessage(currentSession)) {
       await this.dependencies.messageBuilder.recordSystemMessage(sessionId, event.compactionReason === "overflow" ? "Session compacted after context overflow" : "Session compacted");

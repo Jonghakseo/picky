@@ -28,6 +28,7 @@ struct PickyHUDView: View {
     @State private var openedSessionID: String?
     @State private var hoverPreviewSessionID: String?
     @State private var suppressedHoverSessionID: String?
+    @State private var isHUDHovered = false
     @State private var isDockHovered = false
     @State private var closeExpansionTask: Task<Void, Never>?
     @State private var lastReportedHUDSize: CGSize = .zero
@@ -159,6 +160,20 @@ struct PickyHUDView: View {
         }
         .padding(.horizontal, PickyHUDExpansion.outerPadding)
         .padding(.vertical, PickyHUDExpansion.dockShadowVerticalPadding)
+        .onHover(perform: handleHUDHover)
+    }
+
+    private var isPointerInsideHUDSurface: Bool {
+        isHUDHovered || isDockHovered
+    }
+
+    private func handleHUDHover(_ isHovering: Bool) {
+        isHUDHovered = isHovering
+        if isHovering {
+            cancelPendingClose()
+        } else {
+            scheduleCloseIfNeeded()
+        }
     }
 
     private func handleDockHover(_ isHovering: Bool) {
@@ -166,7 +181,6 @@ struct PickyHUDView: View {
         if isHovering {
             cancelPendingClose()
         } else {
-            suppressedHoverSessionID = nil
             scheduleCloseIfNeeded()
         }
     }
@@ -221,7 +235,7 @@ struct PickyHUDView: View {
     private func pinSession(_ sessionID: String) {
         cancelPendingClose()
         pinnedSessionID = PickyHUDDockLayout.pinnedSessionIDAfterDoubleClick(current: pinnedSessionID, doubleClicked: sessionID)
-        if isDockHovered && suppressedHoverSessionID != sessionID {
+        if isPointerInsideHUDSurface && suppressedHoverSessionID != sessionID {
             hoverPreviewSessionID = sessionID
         }
     }
@@ -247,12 +261,17 @@ struct PickyHUDView: View {
             }
             guard !Task.isCancelled else { return }
             await MainActor.run {
+                let isStillInsideHUD = isPointerInsideHUDSurface
                 hoverPreviewSessionID = PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(
                     current: hoverPreviewSessionID,
                     pinnedID: pinnedSessionID,
                     isDockHovered: isDockHovered
                 )
-                if !isDockHovered { suppressedHoverSessionID = nil }
+                openedSessionID = PickyHUDDockLayout.openedSessionIDAfterCloseTimeout(
+                    current: openedSessionID,
+                    isHUDHovered: isStillInsideHUD
+                )
+                if !isStillInsideHUD { suppressedHoverSessionID = nil }
                 closeExpansionTask = nil
             }
         }

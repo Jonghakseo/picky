@@ -577,6 +577,8 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", pinnedID: nil, isDockHovered: false) == nil)
         #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", pinnedID: nil, isDockHovered: true) == "a")
         #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "b", pinnedID: "a", isDockHovered: false) == nil)
+        #expect(PickyHUDDockLayout.openedSessionIDAfterCloseTimeout(current: "opened", isHUDHovered: true) == "opened")
+        #expect(PickyHUDDockLayout.openedSessionIDAfterCloseTimeout(current: "opened", isHUDHovered: false) == nil)
     }
 
     @Test func hudDockUsesPreviewThenPinnedAndClickTogglesOpen() throws {

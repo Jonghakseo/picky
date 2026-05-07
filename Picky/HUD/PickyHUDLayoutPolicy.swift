@@ -114,6 +114,10 @@ enum PickyHUDDockLayout {
         isDockHovered ? current : nil
     }
 
+    static func openedSessionIDAfterCloseTimeout(current: String?, isHUDHovered: Bool) -> String? {
+        isHUDHovered ? current : nil
+    }
+
     static func openedSessionIDAfterClick(current: String?, clicked: String) -> String? {
         current == clicked ? nil : clicked
     }

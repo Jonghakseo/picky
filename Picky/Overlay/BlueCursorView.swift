@@ -145,6 +145,27 @@ private final class PickyCursorPreferencesStore: ObservableObject {
     }
 }
 
+@MainActor
+private final class PickyOverlayBubblePreferencesStore: ObservableObject {
+    static let shared = PickyOverlayBubblePreferencesStore()
+
+    @Published private(set) var preferences: PickyOverlayBubblePreferences
+
+    private let settingsStore: PickySettingsStore
+    private var settingsChangeCancellable: AnyCancellable?
+
+    private init(settingsStore: PickySettingsStore = PickySettingsStore()) {
+        self.settingsStore = settingsStore
+        self.preferences = settingsStore.load().overlayBubbles
+        settingsChangeCancellable = NotificationCenter.default.publisher(for: .pickySettingsDidSave)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.preferences = self.settingsStore.load().overlayBubbles
+            }
+    }
+}
+
 // Pi text cursor buddy icon. The `tint` parameter overrides the base style
 // color so the buddy can shift through mood colors (idle / listening /
 // processing / responding) without swapping in a different shape or asset.
@@ -188,6 +209,7 @@ struct BlueCursorView: View {
     @ObservedObject var companionManager: CompanionManager
     @ObservedObject private var cursorStyleStore = PickyCursorStyleStore.shared
     @ObservedObject private var cursorPreferencesStore = PickyCursorPreferencesStore.shared
+    @ObservedObject private var overlayBubblePreferencesStore = PickyOverlayBubblePreferencesStore.shared
 
     @State private var cursorPosition: CGPoint
     @State private var isCursorOnThisScreen: Bool
@@ -311,6 +333,7 @@ struct BlueCursorView: View {
             // keep the recognized user prompt visible while Picky is preparing
             // and waiting for the main agent response.
             if isCursorOnThisScreen,
+               overlayBubblePreferencesStore.preferences.showUserSpeechRecognitionBubble,
                companionManager.voicePromptBubbleState.isVisible {
                 let bubbleText = companionManager.voicePromptBubbleState.displayText
                 let textWidth = PickyBubbleLayout.textWidth(
@@ -337,6 +360,7 @@ struct BlueCursorView: View {
             // Short voice response bubble — mirrors quick TTS replies next to the cursor
             // so simple checks do not require opening the long-running agent HUD.
             if isCursorOnThisScreen,
+               overlayBubblePreferencesStore.preferences.showPickyResponseBubble,
                companionManager.voiceState == .responding,
                let responseText = companionManager.latestAgentSessionSummary,
                !responseText.isEmpty {
@@ -358,7 +382,12 @@ struct BlueCursorView: View {
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(DS.Colors.overlayCursorBlue)
-                            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.5), radius: 8, x: 0, y: 0)
+                            .shadow(color: Color.black.opacity(0.28), radius: 12, x: 0, y: 4)
+                            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.48), radius: 8, x: 0, y: 0)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.white.opacity(0.38), lineWidth: 0.8)
                     )
                     .overlay(
                         GeometryReader { geo in
@@ -1432,8 +1461,8 @@ private struct VoicePromptCursorBubbleView: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundColor(Color.black.opacity(0.82))
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(Color.black.opacity(0.9))
             .multilineTextAlignment(.leading)
             .frame(width: textWidth, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
@@ -1443,11 +1472,12 @@ private struct VoicePromptCursorBubbleView: View {
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(DS.Colors.warning)
-                    .shadow(color: DS.Colors.warning.opacity(0.45), radius: 8, x: 0, y: 0)
+                    .shadow(color: Color.black.opacity(0.22), radius: 10, x: 0, y: 3)
+                    .shadow(color: DS.Colors.warning.opacity(0.5), radius: 8, x: 0, y: 0)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.white.opacity(0.24), lineWidth: 0.6)
+                    .stroke(Color.black.opacity(0.22), lineWidth: 0.8)
             )
     }
 }

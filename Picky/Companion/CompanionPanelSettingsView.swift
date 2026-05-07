@@ -18,6 +18,7 @@ enum CompanionPanelSettingsSection: CaseIterable, Hashable {
     case workspace
     case notifications
     case cursor
+    case overlayBubbles
     case mainAgent
     case voice
     case shortcuts
@@ -32,6 +33,7 @@ enum CompanionPanelSettingsRoute: Hashable {
     case workspace
     case notifications
     case cursor
+    case overlayBubbles
     case mainAgent
     case voice
     case shortcuts
@@ -42,6 +44,7 @@ enum CompanionPanelSettingsRoute: Hashable {
         case .workspace: .workspace
         case .notifications: .notifications
         case .cursor: .cursor
+        case .overlayBubbles: .overlayBubbles
         case .mainAgent: .mainAgent
         case .voice: .voice
         case .shortcuts: .shortcuts
@@ -54,6 +57,7 @@ enum CompanionPanelSettingsRoute: Hashable {
         case .workspace: "Workspace"
         case .notifications: "Notifications"
         case .cursor: "Cursor Buddy"
+        case .overlayBubbles: "Speech Bubbles"
         case .mainAgent: "Main Agent"
         case .voice: "Voice"
         case .shortcuts: "Shortcuts"
@@ -66,6 +70,7 @@ enum CompanionPanelSettingsRoute: Hashable {
         case .workspace: "Default folder for new sessions."
         case .notifications: "Banners for session events."
         case .cursor: "Pi cursor visibility and small animations."
+        case .overlayBubbles: "Toggle cursor-side STT and Picky reply bubbles."
         case .mainAgent: "Reasoning and captured screen context."
         case .voice: "Speech providers and language."
         case .shortcuts: "Push to Talk and Quick Input bindings."
@@ -79,6 +84,7 @@ private let companionPanelSettingsRouteOrder: [CompanionPanelSettingsRoute] = [
     .workspace,
     .notifications,
     .cursor,
+    .overlayBubbles,
     .mainAgent,
     .voice,
     .shortcuts
@@ -159,6 +165,9 @@ struct CompanionPanelSettingsView: View {
         .onChange(of: viewModel.settings.cursor) { _, _ in
             saveImmediately(for: .cursor)
         }
+        .onChange(of: viewModel.settings.overlayBubbles) { _, _ in
+            saveImmediately(for: .overlayBubbles)
+        }
     }
 
     @ViewBuilder
@@ -168,6 +177,7 @@ struct CompanionPanelSettingsView: View {
         case .workspace: workspaceSection
         case .notifications: notificationsSection
         case .cursor: cursorSection
+        case .overlayBubbles: overlayBubblesSection
         case .mainAgent: mainAgentSection
         case .voice: voiceSection
         case .shortcuts: shortcutsSection
@@ -301,6 +311,23 @@ struct CompanionPanelSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 7)
                 }
+            }
+        }
+    }
+
+    private var overlayBubblesSection: some View {
+        sectionHeader(section: .overlayBubbles, title: "Speech Bubbles", subtitle: "Choose which short speech bubbles appear beside the Pi cursor.") {
+            VStack(alignment: .leading, spacing: 0) {
+                toggleRow(
+                    "User STT recognition",
+                    isOn: $viewModel.settings.overlayBubbles.showUserSpeechRecognitionBubble,
+                    divider: true
+                )
+                toggleRow(
+                    "Picky reply text",
+                    isOn: $viewModel.settings.overlayBubbles.showPickyResponseBubble,
+                    divider: false
+                )
             }
         }
     }
@@ -595,6 +622,8 @@ struct CompanionPanelSettingsView: View {
             saveImmediately(for: .notifications)
         case .cursor:
             saveImmediately(for: .cursor)
+        case .overlayBubbles:
+            saveImmediately(for: .overlayBubbles)
         case .mainAgent:
             saveImmediately(for: .mainAgent)
         case .voice:
@@ -674,7 +703,7 @@ struct CompanionPanelSettingsView: View {
         switch section {
         case .workspace:
             pathDraft = viewModel.settings.defaultCwd
-        case .notifications, .cursor, .mainAgent, .shortcuts:
+        case .notifications, .cursor, .overlayBubbles, .mainAgent, .shortcuts:
             break
         case .voice:
             syncAzureDrafts()

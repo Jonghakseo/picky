@@ -175,6 +175,38 @@ struct PickyCursorPreferences: Codable, Equatable {
     }
 }
 
+struct PickyOverlayBubblePreferences: Codable, Equatable {
+    var showUserSpeechRecognitionBubble: Bool
+    var showPickyResponseBubble: Bool
+
+    static let defaults = PickyOverlayBubblePreferences(
+        showUserSpeechRecognitionBubble: true,
+        showPickyResponseBubble: true
+    )
+
+    enum CodingKeys: String, CodingKey {
+        case showUserSpeechRecognitionBubble
+        case showPickyResponseBubble
+    }
+
+    init(
+        showUserSpeechRecognitionBubble: Bool,
+        showPickyResponseBubble: Bool
+    ) {
+        self.showUserSpeechRecognitionBubble = showUserSpeechRecognitionBubble
+        self.showPickyResponseBubble = showPickyResponseBubble
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = PickyOverlayBubblePreferences.defaults
+        showUserSpeechRecognitionBubble = try container.decodeIfPresent(Bool.self, forKey: .showUserSpeechRecognitionBubble)
+            ?? defaults.showUserSpeechRecognitionBubble
+        showPickyResponseBubble = try container.decodeIfPresent(Bool.self, forKey: .showPickyResponseBubble)
+            ?? defaults.showPickyResponseBubble
+    }
+}
+
 struct PickySettings: Codable, Equatable {
     var defaultCwd: String
     var worktreeParent: String
@@ -192,6 +224,7 @@ struct PickySettings: Codable, Equatable {
     var appearance: PickyAppearanceMode
     var notifications: PickyNotificationPreferences
     var cursor: PickyCursorPreferences
+    var overlayBubbles: PickyOverlayBubblePreferences
     var fontScales: PickyFontScales
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel
     /// Free-form Korean/English instructions appended to every main-agent turn prompt. Lets users
@@ -240,6 +273,7 @@ struct PickySettings: Codable, Equatable {
         appearance: PickyAppearanceMode = .dark,
         notifications: PickyNotificationPreferences = .defaults,
         cursor: PickyCursorPreferences = .defaults,
+        overlayBubbles: PickyOverlayBubblePreferences = .defaults,
         fontScales: PickyFontScales = .defaults,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .medium,
         mainAgentExtraInstructions: String = "",
@@ -263,6 +297,7 @@ struct PickySettings: Codable, Equatable {
         self.appearance = appearance
         self.notifications = notifications
         self.cursor = cursor
+        self.overlayBubbles = overlayBubbles
         self.fontScales = fontScales
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
         self.mainAgentExtraInstructions = mainAgentExtraInstructions
@@ -290,6 +325,7 @@ struct PickySettings: Codable, Equatable {
             appearance: .dark,
             notifications: .defaults,
             cursor: .defaults,
+            overlayBubbles: .defaults,
             fontScales: .defaults,
             mainAgentThinkingLevel: .medium,
             mainAgentExtraInstructions: "",
@@ -330,6 +366,7 @@ struct PickySettings: Codable, Equatable {
         case appearance
         case notifications
         case cursor
+        case overlayBubbles
         case fontScales
         case mainAgentThinkingLevel
         case mainAgentExtraInstructions
@@ -358,6 +395,7 @@ struct PickySettings: Codable, Equatable {
         appearance = try container.decodeIfPresent(PickyAppearanceMode.self, forKey: .appearance) ?? defaults.appearance
         notifications = try container.decodeIfPresent(PickyNotificationPreferences.self, forKey: .notifications) ?? defaults.notifications
         cursor = try container.decodeIfPresent(PickyCursorPreferences.self, forKey: .cursor) ?? defaults.cursor
+        overlayBubbles = try container.decodeIfPresent(PickyOverlayBubblePreferences.self, forKey: .overlayBubbles) ?? defaults.overlayBubbles
         mainAgentThinkingLevel = try container.decodeIfPresent(PickyMainAgentThinkingLevel.self, forKey: .mainAgentThinkingLevel) ?? defaults.mainAgentThinkingLevel
         mainAgentExtraInstructions = try container.decodeIfPresent(String.self, forKey: .mainAgentExtraInstructions) ?? defaults.mainAgentExtraInstructions
         screenContextScope = try container.decodeIfPresent(PickyScreenContextScope.self, forKey: .screenContextScope) ?? defaults.screenContextScope

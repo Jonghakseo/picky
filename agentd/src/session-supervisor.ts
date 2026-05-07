@@ -1367,7 +1367,7 @@ export class SessionSupervisor extends EventEmitter {
     const linkArtifacts = extractSessionLinkArtifacts(line).filter((artifact) => !session.artifacts.some((existing) => existing.url === artifact.url));
     const artifacts = mergeArtifacts(session.artifacts, linkArtifacts);
     const piSessionFilePath = piSessionFilePathFromLogLine(line);
-    await this.patch(sessionId, { logs: [...session.logs, line], changedFiles, artifacts, ...(piSessionFilePath ? { piSessionFilePath } : {}) });
+    await this.patch(sessionId, { logs: [...session.logs, line], changedFiles, artifacts, ...(piSessionFilePath ? { piSessionFilePath } : {}) }, { emitSession: false });
     this.emit("log", sessionId, line);
     // STEER_PREFIX and FOLLOWUP_PREFIX user_text writes are intentionally NOT recorded here. The
     // supervisor decides per-call whether to recordUserText immediately (Pi will execute inline)
@@ -1411,10 +1411,10 @@ export class SessionSupervisor extends EventEmitter {
     for (const artifact of materialized.emittedArtifacts) this.emit("artifact", sessionId, artifact);
   }
 
-  private async patch(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void> {
+  private async patch(sessionId: string, patch: Partial<PickyAgentSession>, options: { emitSession?: boolean } = {}): Promise<void> {
     await this.runSessionWrite(sessionId, async () => {
       const session = { ...this.mustGet(sessionId), ...patch, updatedAt: new Date().toISOString() };
-      await this.upsert(session);
+      await this.upsert(session, options);
     });
   }
 
@@ -1444,10 +1444,10 @@ export class SessionSupervisor extends EventEmitter {
     return next;
   }
 
-  private async upsert(session: PickyAgentSession): Promise<void> {
+  private async upsert(session: PickyAgentSession, options: { emitSession?: boolean } = {}): Promise<void> {
     this.sessions.set(session.id, session);
     await this.store.save(session);
-    this.emit("session", session);
+    if (options.emitSession ?? true) this.emit("session", session);
   }
 
   private mustGet(sessionId: string): PickyAgentSession {

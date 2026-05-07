@@ -2234,6 +2234,27 @@ describe("SessionSupervisor", () => {
     expect(sessionEvents).toBe(0);
   });
 
+  it("appends runtime logs without emitting full session updates", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const store = new SessionStore(dir);
+    const supervisor = new SessionSupervisor(runtime, store);
+    const session = await supervisor.create(context("runtime log"));
+    const logEvents: string[] = [];
+    let sessionEvents = 0;
+    supervisor.on("log", (_sessionId, line) => logEvents.push(line));
+    supervisor.on("session", () => { sessionEvents += 1; });
+
+    runtime.handle?.emit({ type: "log", line: "tool output line" });
+    await waitUntil(() => logEvents.length === 1);
+
+    expect(supervisor.get(session.id)?.logs.at(-1)).toBe("tool output line");
+    expect(logEvents).toEqual(["tool output line"]);
+    expect(sessionEvents).toBe(0);
+    const persisted = (await store.loadAll()).find((candidate) => candidate.id === session.id);
+    expect(persisted?.logs.at(-1)).toBe("tool output line");
+  });
+
   it("stores the final assistant answer instead of replacing it with a generic completion label", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

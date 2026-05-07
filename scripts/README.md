@@ -25,6 +25,8 @@ Defaults:
 - zip creation: disabled
 - clean build: disabled, for faster repeated relaunches
 
+For trusted internal alpha sharing, see `docs/alpha-test-build.md`.
+
 ## `package-agentd-runtime.sh` — bundled daemon runtime
 
 Builds `agentd` into a production runtime directory suitable for copying into `Picky.app/Contents/Resources/agentd`:

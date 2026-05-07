@@ -51,6 +51,40 @@ enum PickyAppMenuInstaller {
                 modifiers: .command
             )
         )
+        menu.addItem(.separator())
+        menu.addItem(
+            menuItem(
+                title: "Cut",
+                action: #selector(NSText.cut(_:)),
+                keyEquivalent: "x",
+                modifiers: .command
+            )
+        )
+        menu.addItem(
+            menuItem(
+                title: "Copy",
+                action: #selector(NSText.copy(_:)),
+                keyEquivalent: "c",
+                modifiers: .command
+            )
+        )
+        menu.addItem(
+            menuItem(
+                title: "Paste",
+                action: #selector(NSText.paste(_:)),
+                keyEquivalent: "v",
+                modifiers: .command
+            )
+        )
+        menu.addItem(.separator())
+        menu.addItem(
+            menuItem(
+                title: "Select All",
+                action: #selector(NSStandardKeyBindingResponding.selectAll(_:)),
+                keyEquivalent: "a",
+                modifiers: .command
+            )
+        )
         return menu
     }
 

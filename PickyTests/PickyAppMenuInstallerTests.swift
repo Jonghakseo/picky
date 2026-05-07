@@ -9,7 +9,7 @@ import Testing
 
 @MainActor
 struct PickyAppMenuInstallerTests {
-    @Test func mainMenuContainsUndoRedoAndCloseKeyEquivalents() throws {
+    @Test func mainMenuContainsStandardEditingAndCloseKeyEquivalents() throws {
         let menu = PickyAppMenuInstaller.makeMainMenu(appName: "Picky")
 
         let undo = try #require(menu.findItem(action: Selector(("undo:")), keyEquivalent: "z", modifiers: .command))
@@ -20,6 +20,18 @@ struct PickyAppMenuInstallerTests {
 
         let redoCommandY = try #require(menu.findItem(action: Selector(("redo:")), keyEquivalent: "y", modifiers: .command))
         #expect(redoCommandY.title == "Redo")
+
+        let cut = try #require(menu.findItem(action: #selector(NSText.cut(_:)), keyEquivalent: "x", modifiers: .command))
+        #expect(cut.title == "Cut")
+
+        let copy = try #require(menu.findItem(action: #selector(NSText.copy(_:)), keyEquivalent: "c", modifiers: .command))
+        #expect(copy.title == "Copy")
+
+        let paste = try #require(menu.findItem(action: #selector(NSText.paste(_:)), keyEquivalent: "v", modifiers: .command))
+        #expect(paste.title == "Paste")
+
+        let selectAll = try #require(menu.findItem(action: #selector(NSStandardKeyBindingResponding.selectAll(_:)), keyEquivalent: "a", modifiers: .command))
+        #expect(selectAll.title == "Select All")
 
         let closeWindow = try #require(menu.findItem(action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w", modifiers: .command))
         #expect(closeWindow.title == "Close Window")
@@ -34,6 +46,7 @@ struct PickyAppMenuInstallerTests {
         PickyAppMenuInstaller.install(on: NSApp)
 
         #expect(NSApp.mainMenu?.findItem(action: Selector(("undo:")), keyEquivalent: "z", modifiers: .command) != nil)
+        #expect(NSApp.mainMenu?.findItem(action: #selector(NSText.paste(_:)), keyEquivalent: "v", modifiers: .command) != nil)
         #expect(NSApp.mainMenu?.findItem(action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w", modifiers: .command) != nil)
     }
 }

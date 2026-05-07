@@ -128,6 +128,14 @@ if [[ "${PACKAGE_AGENTD}" == "1" ]]; then
   /usr/bin/ditto "${AGENTD_RUNTIME_DIR}" "${PACKAGED_APP}/Contents/Resources/agentd"
 fi
 
+# Bundle pi-extensions so PickyExtensionInstaller can symlink them into
+# ~/.pi/agent/extensions on first launch. Read-only at runtime; pi loads the
+# .ts source directly so no compile step is required.
+if [[ -d "${ROOT_DIR}/pi-extensions" ]]; then
+  rm -rf "${PACKAGED_APP}/Contents/Resources/pi-extensions"
+  /usr/bin/ditto "${ROOT_DIR}/pi-extensions" "${PACKAGED_APP}/Contents/Resources/pi-extensions"
+fi
+
 # Mutating the bundle after xcodebuild signing invalidates the resource seal.
 # Re-sign the final app exactly as it will be distributed while preserving the
 # entitlements Xcode generated for this configuration/signing identity.
@@ -163,6 +171,7 @@ Signature: ${CODE_SIGN_IDENTITY}
 Configuration: ${CONFIGURATION}
 Build info: ${BUILD_INFO_PATH}
 $(if [[ "${PACKAGE_AGENTD}" == "1" ]]; then printf 'Bundled agentd: %s\n' "${PACKAGED_APP}/Contents/Resources/agentd"; fi)
+$(if [[ -d "${PACKAGED_APP}/Contents/Resources/pi-extensions" ]]; then printf 'Bundled pi-extensions: %s\n' "${PACKAGED_APP}/Contents/Resources/pi-extensions"; fi)
 $(if [[ "${CREATE_ZIP}" == "1" ]]; then printf 'Zip: %s\n' "${ZIP_PATH}"; fi)
 
 Smoke tip:

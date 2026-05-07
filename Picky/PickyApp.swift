@@ -82,6 +82,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         PickyAnalytics.trackAppOpened()
 
         if !Self.isRunningUnitTests {
+            PickyExtensionInstaller.install()
             daemonLauncher.start()
             hudOverlayManager.start()
         }

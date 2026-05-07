@@ -220,6 +220,11 @@ struct BlueCursorView: View {
     @State private var idleScheduleTimer: Timer?
     @State private var idleBehaviorActive: Bool = false
     @State private var lastCursorMoveAt: Date = Date()
+    /// Anchor mouse location for slow-motion detection. Compared cumulatively
+    /// (not per-tick) so slow drag/scroll motion still trips the threshold —
+    /// per-tick delta against `cursorPosition` would miss anything below
+    /// ~62 px/sec because `cursorPosition` is resynced to mouse each tick.
+    @State private var lastStillMouseLocation: CGPoint?
 
     // MARK: - Mouse Movement Reactions
 
@@ -522,23 +527,32 @@ struct BlueCursorView: View {
             // simply yield position control to the navigation timer.
             if self.buddyNavigationMode != .followingCursor {
                 self.resetMouseMovementReaction(animated: true)
+                // Keep the still-anchor in sync during flight so the next
+                // followingCursor tick doesn't see a fake jump as motion.
+                self.lastStillMouseLocation = mouseLocation
                 return
             }
 
             // Normal cursor following
             let newPosition = PickyOverlayGeometry.cursorBuddyPosition(for: mouseLocation, in: self.screenFrame)
 
-            // Detect significant cursor motion to cancel any in-progress idle
-            // behavior. The threshold is per-tick (16ms), so this catches user
-            // motion without firing on small spring-settling deltas.
-            let dx = newPosition.x - self.cursorPosition.x
-            let dy = newPosition.y - self.cursorPosition.y
-            if hypot(dx, dy) > 1.0 {
+            // Detect cursor motion against a fixed anchor (not per-tick) so
+            // slow drag motion accumulates above the threshold. Comparing
+            // per-tick against `cursorPosition` would miss anything below
+            // ~62 px/sec because `cursorPosition` re-syncs to the mouse each
+            // tick, hiding cumulative drift.
+            let anchor = self.lastStillMouseLocation ?? mouseLocation
+            let dx = mouseLocation.x - anchor.x
+            let dy = mouseLocation.y - anchor.y
+            if hypot(dx, dy) > 2.0 {
                 self.lastCursorMoveAt = Date()
+                self.lastStillMouseLocation = mouseLocation
                 if self.idleBehaviorActive {
                     self.cancelIdleBehavior()
                     self.scheduleNextIdleBehavior()
                 }
+            } else if self.lastStillMouseLocation == nil {
+                self.lastStillMouseLocation = mouseLocation
             }
 
             self.updateMouseMovementReaction(for: newPosition)

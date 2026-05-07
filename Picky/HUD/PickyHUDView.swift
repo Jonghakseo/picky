@@ -331,9 +331,8 @@ private struct PickyHUDDockRailView: View {
         // background is opaque, which sidesteps SwiftUI's transparent-view hit-
         // testing quirks: clicks anywhere in the handle's row hit the NSView
         // backing the handle, not the empty space outside an external pill.
-        VStack(spacing: 6) {
+        VStack(spacing: 4) {
             dockAnchorHandle
-            dockHandleDivider
             sessionsAndAddSlot
         }
         .padding(.horizontal, 6)
@@ -369,14 +368,6 @@ private struct PickyHUDDockRailView: View {
         }
     }
 
-    /// Hairline that visually separates the drag handle from the session icons.
-    private var dockHandleDivider: some View {
-        Rectangle()
-            .fill(DS.Colors.borderSubtle.opacity(0.55))
-            .frame(height: 0.5)
-            .padding(.horizontal, 4)
-    }
-
     /// Drag handle that lives inside the dock capsule's top row. Backed by an
     /// `NSViewRepresentable` so AppKit handles hit testing, tracking area, and
     /// cursor rects — the same NSView bounds drive all three, which avoids the
@@ -402,9 +393,13 @@ private struct PickyHUDDockRailView: View {
         .frame(maxWidth: .infinity)
         .frame(height: PickyHUDExpansion.dockHandleAreaHeight)
         .overlay {
+            // Slightly smaller, slightly softer pill than the previous version: the
+            // handle is now wrapped by the dock capsule itself so it doesn't need to
+            // shout for attention. Hover/drag still expands and darkens it for a
+            // clear interaction cue.
             Capsule(style: .continuous)
-                .fill(DS.Colors.textTertiary.opacity(isActive ? 0.85 : 0.45))
-                .frame(width: isActive ? 26 : 22, height: 4)
+                .fill(DS.Colors.textTertiary.opacity(isActive ? 0.75 : 0.32))
+                .frame(width: isActive ? 22 : 18, height: 3)
                 .animation(.easeOut(duration: 0.12), value: isHandleHovered)
                 .animation(.easeOut(duration: 0.12), value: isHandleDragging)
                 .allowsHitTesting(false)

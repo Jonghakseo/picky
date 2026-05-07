@@ -1083,7 +1083,7 @@ struct BlueCursorView: View {
             && isCursorOnThisScreen
     }
 
-    private func scheduleNextIdleBehavior(delayRange: ClosedRange<Double> = 5...8) {
+    private func scheduleNextIdleBehavior(delayRange: ClosedRange<Double> = 2...5) {
         idleScheduleTimer?.invalidate()
         guard isIdleEligibleForScheduling else { return }
         let delay = Double.random(in: delayRange)
@@ -1110,10 +1110,10 @@ struct BlueCursorView: View {
             scheduleNextIdleBehavior(delayRange: 6...12)
             return
         }
-        // Require the cursor to have been settled for a few seconds so the
+        // Require the cursor to have been settled for 3 seconds so the
         // behavior doesn't kick in while the user is actively moving the mouse.
-        if Date().timeIntervalSince(lastCursorMoveAt) < 4 {
-            scheduleNextIdleBehavior(delayRange: 4...8)
+        if Date().timeIntervalSince(lastCursorMoveAt) < 3 {
+            scheduleNextIdleBehavior(delayRange: 3...5)
             return
         }
         let behavior = IdleBehavior.allCases.randomElement() ?? .lookAround

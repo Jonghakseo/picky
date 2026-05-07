@@ -500,8 +500,8 @@ struct CompanionPanelSettingsView: View {
     }
 
     /// Inline autosave indicator. Only renders one of the three states at a time so
-    /// section headers stay quiet when nothing has changed. The `.dirty` state nudges
-    /// the user to hit Return on a text field; toggles never enter `.dirty`.
+    /// section headers stay quiet when nothing has changed. The `.dirty` state renders
+    /// as a distinct action pill so it is not confused with the passive `Saved` label.
     @ViewBuilder
     private func statusIndicator(for section: CompanionPanelSettingsSection) -> some View {
         switch saveStatuses[section] {
@@ -509,16 +509,32 @@ struct CompanionPanelSettingsView: View {
             EmptyView()
         case .saved:
             HStack(spacing: 4) {
-                Circle().fill(DS.Colors.success).frame(width: 5, height: 5)
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(DS.Colors.success)
                 Text("Saved")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(DS.Colors.success)
             }
         case .dirty:
             Button(action: { commitEdits(in: section) }) {
-                Text("Save")
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundColor(DS.Colors.accentText)
+                HStack(spacing: 4) {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.system(size: 9.5, weight: .semibold))
+                    Text("Save changes")
+                        .font(.system(size: 10.5, weight: .bold))
+                }
+                .foregroundColor(DS.Colors.accentText)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(DS.Colors.accentText.opacity(0.14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(DS.Colors.accentText.opacity(0.38), lineWidth: 0.7)
+                        )
+                )
             }
             .buttonStyle(.plain)
             .pointerCursor()

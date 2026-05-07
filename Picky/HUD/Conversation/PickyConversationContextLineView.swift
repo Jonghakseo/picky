@@ -215,31 +215,53 @@ struct PickyConversationContextLineView: View {
     }
 
     private func linkBadge(_ artifact: PickyArtifact) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: linkBadgeIcon(for: artifact))
-                .font(.system(size: 9.5, weight: .semibold))
-            if let text = session.linkBadgeText(for: artifact) {
+        HStack(spacing: linkBadgeText(for: artifact) == nil ? 0 : 4) {
+            linkBadgeIcon(for: artifact)
+            if let text = linkBadgeText(for: artifact) {
                 Text(text)
                     .font(PickyHUDTypography.metaMonospacedSemibold)
                     .lineLimit(1)
             }
         }
         .foregroundColor(DS.Colors.accentText)
-        .padding(.horizontal, 5)
+        .padding(.horizontal, linkBadgeText(for: artifact) == nil ? 4 : 5)
         .padding(.vertical, 2)
         .background(Capsule().fill(DS.Colors.accentSubtle.opacity(0.75)))
     }
 
-    private func linkBadgeIcon(for artifact: PickyArtifact) -> String {
+    private func linkBadgeText(for artifact: PickyArtifact) -> String? {
+        guard artifact.linkBadgeKind == .github else { return nil }
+        return session.linkBadgeText(for: artifact)
+    }
+
+    @ViewBuilder
+    private func linkBadgeIcon(for artifact: PickyArtifact) -> some View {
         switch artifact.linkBadgeKind {
         case .github:
-            return "chevron.left.forwardslash.chevron.right"
+            Image("github-logo")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 11, height: 11)
+                .accessibilityHidden(true)
         case .slack:
-            return "number"
+            Image("slack-logo")
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 11, height: 11)
+                .accessibilityHidden(true)
         case .notion:
-            return "doc.text"
+            Image("notion-logo")
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 11, height: 11)
+                .accessibilityHidden(true)
         case nil:
-            return "link"
+            Image(systemName: "link")
+                .font(.system(size: 9.5, weight: .semibold))
+                .accessibilityHidden(true)
         }
     }
 

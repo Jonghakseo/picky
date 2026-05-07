@@ -133,6 +133,7 @@ struct PickyHUDView: View {
                     sessions: visibleSessions,
                     activeSessionID: activeSession?.id,
                     pinnedSessionID: pinnedSessionID,
+                    openedSessionID: openedSessionID,
                     pendingDoneFlashSessionIDs: viewModel.pendingDoneFlashSessionIDs,
                     onHoverSession: previewDockSession,
                     onOpenSession: toggleOpenSession,
@@ -345,6 +346,7 @@ private struct PickyHUDDockRailView: View {
     let sessions: [PickySessionListViewModel.SessionCard]
     let activeSessionID: String?
     let pinnedSessionID: String?
+    let openedSessionID: String?
     let pendingDoneFlashSessionIDs: Set<String>
     let onHoverSession: (String) -> Void
     let onOpenSession: (String) -> Void
@@ -392,6 +394,7 @@ private struct PickyHUDDockRailView: View {
                         index: index,
                         isActive: activeSessionID == session.id,
                         isPinned: pinnedSessionID == session.id,
+                        isOpened: openedSessionID == session.id,
                         shouldFlashCompletion: pendingDoneFlashSessionIDs.contains(session.id),
                         onHover: { onHoverSession(session.id) },
                         onOpen: { onOpenSession(session.id) },
@@ -544,6 +547,7 @@ private struct PickyHUDDockIconView: View {
     let index: Int
     let isActive: Bool
     let isPinned: Bool
+    let isOpened: Bool
     let shouldFlashCompletion: Bool
     let onHover: () -> Void
     let onOpen: () -> Void
@@ -570,6 +574,13 @@ private struct PickyHUDDockIconView: View {
         .scaleEffect(isArchivePressing ? 0.92 : 1)
         .overlay(alignment: .topTrailing) {
             statusDot.offset(x: -1.3, y: 1.3)
+        }
+        .overlay(alignment: .leading) {
+            if isOpened {
+                openStateMarker
+                    .offset(x: -7)
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+            }
         }
         .overlay(alignment: .bottomTrailing) {
             if isPinned {
@@ -619,6 +630,18 @@ private struct PickyHUDDockIconView: View {
         .accessibilityLabel("Preview \(session.title)")
         .accessibilityHint("Click to open or close. Double-click to pin or unpin. Press and hold for 2 seconds to archive this side agent.")
         .accessibilityAddTraits(.isButton)
+    }
+
+    private var openStateMarker: some View {
+        Capsule(style: .continuous)
+            .fill(DS.Colors.accentText.opacity(isActive ? 0.96 : 0.78))
+            .frame(width: 3, height: 18)
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(DS.Colors.surface1.opacity(0.72), lineWidth: 0.6)
+            )
+            .shadow(color: DS.Colors.accentText.opacity(0.22), radius: 2, x: 0, y: 0)
+            .accessibilityHidden(true)
     }
 
     private var openOrPinGesture: some Gesture {

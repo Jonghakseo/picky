@@ -10,11 +10,10 @@ import SwiftUI
 enum CompanionPanelMetrics {
     static let contentWidth: CGFloat = 360
     static let contentHeight: CGFloat = 480
-    static let shadowPadding: CGFloat = 16
     static let cornerRadius: CGFloat = 18
 
-    static var panelWidth: CGFloat { contentWidth + shadowPadding * 2 }
-    static var panelHeight: CGFloat { contentHeight + shadowPadding * 2 }
+    static var panelWidth: CGFloat { contentWidth }
+    static var panelHeight: CGFloat { contentHeight }
 }
 
 private enum CompanionPanelTab: String, CaseIterable, Identifiable {
@@ -86,9 +85,6 @@ struct CompanionPanelView: View {
         .frame(width: CompanionPanelMetrics.contentWidth, height: CompanionPanelMetrics.contentHeight)
         .background(panelBackground)
         .clipShape(RoundedRectangle(cornerRadius: CompanionPanelMetrics.cornerRadius, style: .continuous))
-        .shadow(color: Color.black.opacity(0.36), radius: 10, x: 0, y: 5)
-        .shadow(color: Color.black.opacity(0.22), radius: 3, x: 0, y: 1)
-        .padding(CompanionPanelMetrics.shadowPadding)
         .frame(width: CompanionPanelMetrics.panelWidth, height: CompanionPanelMetrics.panelHeight)
         .background(Color.clear)
     }

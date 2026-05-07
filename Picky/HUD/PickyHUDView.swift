@@ -25,8 +25,10 @@ struct PickyHUDView: View {
     var onDockHandleDragEnded: () -> Void = { }
     var onArchiveUndoRequested: (_ sessionID: String, _ title: String) -> Void = { _, _ in }
     @State private var pinnedSessionID: String?
-    @State private var previewSessionID: String?
-    @State private var isHUDHovered = false
+    @State private var openedSessionID: String?
+    @State private var hoverPreviewSessionID: String?
+    @State private var suppressedHoverSessionID: String?
+    @State private var isDockHovered = false
     @State private var closeExpansionTask: Task<Void, Never>?
     @State private var lastReportedHUDSize: CGSize = .zero
     @State private var lastReportedActiveSessionID: String?
@@ -39,7 +41,10 @@ struct PickyHUDView: View {
         PickyHUDDockLayout.activeSessionID(
             visibleIDs: visibleSessions.map(\.id),
             pinnedID: pinnedSessionID,
-            previewID: previewSessionID
+            previewID: PickyHUDDockLayout.previewSessionID(
+                hoveredID: hoverPreviewSessionID,
+                openedID: openedSessionID
+            )
         )
     }
 
@@ -129,9 +134,11 @@ struct PickyHUDView: View {
                     pinnedSessionID: pinnedSessionID,
                     pendingDoneFlashSessionIDs: viewModel.pendingDoneFlashSessionIDs,
                     onHoverSession: previewDockSession,
+                    onOpenSession: toggleOpenSession,
                     onPinSession: pinSession,
                     onArchiveSession: archiveSession,
                     onCreateSideAgent: chooseFolderForEmptySideAgent,
+                    onDockHoverChanged: handleDockHover,
                     onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:),
                     onDockHandleDragChanged: onDockHandleDragChanged,
                     onDockHandleDragEnded: onDockHandleDragEnded
@@ -150,14 +157,14 @@ struct PickyHUDView: View {
         }
         .padding(.horizontal, PickyHUDExpansion.outerPadding)
         .padding(.vertical, PickyHUDExpansion.dockShadowVerticalPadding)
-        .onHover(perform: handleHUDHover)
     }
 
-    private func handleHUDHover(_ isHovering: Bool) {
-        isHUDHovered = isHovering
+    private func handleDockHover(_ isHovering: Bool) {
+        isDockHovered = isHovering
         if isHovering {
             cancelPendingClose()
         } else {
+            suppressedHoverSessionID = nil
             scheduleCloseIfNeeded()
         }
     }
@@ -177,21 +184,37 @@ struct PickyHUDView: View {
     }
 
     private func previewDockSession(_ sessionID: String) {
-        isHUDHovered = true
+        isDockHovered = true
         cancelPendingClose()
-        previewSessionID = PickyHUDDockLayout.previewSessionIDAfterDockHover(
-            current: previewSessionID,
+        if suppressedHoverSessionID == sessionID { return }
+        suppressedHoverSessionID = nil
+        hoverPreviewSessionID = PickyHUDDockLayout.previewSessionIDAfterDockHover(
+            current: hoverPreviewSessionID,
             sessionID: sessionID,
             pinnedID: pinnedSessionID
         )
     }
 
+    private func toggleOpenSession(_ sessionID: String) {
+        cancelPendingClose()
+        let nextOpenedSessionID = PickyHUDDockLayout.openedSessionIDAfterClick(
+            current: openedSessionID,
+            clicked: sessionID
+        )
+        openedSessionID = nextOpenedSessionID
+        if nextOpenedSessionID == nil {
+            if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
+            suppressedHoverSessionID = sessionID
+        } else {
+            suppressedHoverSessionID = nil
+        }
+    }
+
     private func pinSession(_ sessionID: String) {
         cancelPendingClose()
-        pinnedSessionID = PickyHUDDockLayout.pinnedSessionIDAfterClick(current: pinnedSessionID, clicked: sessionID)
-        previewSessionID = pinnedSessionID == nil && isHUDHovered ? sessionID : nil
-        if pinnedSessionID == nil && !isHUDHovered {
-            scheduleCloseIfNeeded()
+        pinnedSessionID = PickyHUDDockLayout.pinnedSessionIDAfterDoubleClick(current: pinnedSessionID, doubleClicked: sessionID)
+        if isDockHovered && suppressedHoverSessionID != sessionID {
+            hoverPreviewSessionID = sessionID
         }
     }
 
@@ -200,7 +223,9 @@ struct PickyHUDView: View {
         let title = (visibleSessions + viewModel.sessions).first(where: { $0.id == sessionID })?.title ?? "Side agent"
         viewModel.archive(sessionID: sessionID)
         if pinnedSessionID == sessionID { pinnedSessionID = nil }
-        if previewSessionID == sessionID { previewSessionID = nil }
+        if openedSessionID == sessionID { openedSessionID = nil }
+        if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
+        if suppressedHoverSessionID == sessionID { suppressedHoverSessionID = nil }
         onArchiveUndoRequested(sessionID, title)
     }
 
@@ -214,11 +239,12 @@ struct PickyHUDView: View {
             }
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                previewSessionID = PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(
-                    current: previewSessionID,
+                hoverPreviewSessionID = PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(
+                    current: hoverPreviewSessionID,
                     pinnedID: pinnedSessionID,
-                    isHUDHovered: isHUDHovered
+                    isDockHovered: isDockHovered
                 )
+                if !isDockHovered { suppressedHoverSessionID = nil }
                 closeExpansionTask = nil
             }
         }
@@ -314,9 +340,11 @@ private struct PickyHUDDockRailView: View {
     let pinnedSessionID: String?
     let pendingDoneFlashSessionIDs: Set<String>
     let onHoverSession: (String) -> Void
+    let onOpenSession: (String) -> Void
     let onPinSession: (String) -> Void
     let onArchiveSession: (String) -> Void
     let onCreateSideAgent: () -> Void
+    let onDockHoverChanged: (Bool) -> Void
     let onDoneFlashConsumed: (String) -> Void
     let onDockHandleDragChanged: (CGFloat) -> Void
     let onDockHandleDragEnded: () -> Void
@@ -339,6 +367,7 @@ private struct PickyHUDDockRailView: View {
         .padding(.top, 4)
         .padding(.bottom, 10)
         .background(dockGlassBackground)
+        .onHover(perform: onDockHoverChanged)
     }
 
     @ViewBuilder
@@ -358,6 +387,7 @@ private struct PickyHUDDockRailView: View {
                         isPinned: pinnedSessionID == session.id,
                         shouldFlashCompletion: pendingDoneFlashSessionIDs.contains(session.id),
                         onHover: { onHoverSession(session.id) },
+                        onOpen: { onOpenSession(session.id) },
                         onPin: { onPinSession(session.id) },
                         onArchive: { onArchiveSession(session.id) },
                         onDoneFlashConsumed: { onDoneFlashConsumed(session.id) }
@@ -509,6 +539,7 @@ private struct PickyHUDDockIconView: View {
     let isPinned: Bool
     let shouldFlashCompletion: Bool
     let onHover: () -> Void
+    let onOpen: () -> Void
     let onPin: () -> Void
     let onArchive: () -> Void
     let onDoneFlashConsumed: () -> Void
@@ -554,7 +585,7 @@ private struct PickyHUDDockIconView: View {
             archiveProgressRing
         }
         .contentShape(Circle())
-        .onTapGesture(perform: onPin)
+        .gesture(openOrPinGesture)
         .onLongPressGesture(
             minimumDuration: PickyHUDArchiveHoldPolicy.duration,
             maximumDistance: PickyHUDArchiveHoldPolicy.maximumDistance,
@@ -579,8 +610,14 @@ private struct PickyHUDDockIconView: View {
         }
         .animation(.spring(response: 0.2, dampingFraction: 0.78), value: isArchivePressing)
         .accessibilityLabel("Preview \(session.title)")
-        .accessibilityHint("Click to pin. Press and hold for 2 seconds to archive this side agent.")
+        .accessibilityHint("Click to open or close. Double-click to pin or unpin. Press and hold for 2 seconds to archive this side agent.")
         .accessibilityAddTraits(.isButton)
+    }
+
+    private var openOrPinGesture: some Gesture {
+        TapGesture(count: 2)
+            .onEnded { onPin() }
+            .exclusively(before: TapGesture(count: 1).onEnded { onOpen() })
     }
 
     private var archiveProgressRing: some View {

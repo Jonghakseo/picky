@@ -102,16 +102,24 @@ enum PickyHUDDockLayout {
         return nil
     }
 
+    static func previewSessionID(hoveredID: String?, openedID: String?) -> String? {
+        hoveredID ?? openedID
+    }
+
     static func previewSessionIDAfterDockHover(current: String?, sessionID: String, pinnedID: String?) -> String? {
         sessionID
     }
 
-    static func previewSessionIDAfterCloseTimeout(current: String?, pinnedID: String?, isHUDHovered: Bool) -> String? {
-        isHUDHovered ? current : nil
+    static func previewSessionIDAfterCloseTimeout(current: String?, pinnedID: String?, isDockHovered: Bool) -> String? {
+        isDockHovered ? current : nil
     }
 
-    static func pinnedSessionIDAfterClick(current: String?, clicked: String) -> String? {
+    static func openedSessionIDAfterClick(current: String?, clicked: String) -> String? {
         current == clicked ? nil : clicked
+    }
+
+    static func pinnedSessionIDAfterDoubleClick(current: String?, doubleClicked: String) -> String? {
+        current == doubleClicked ? nil : doubleClicked
     }
 
     static func gitSectionExpansion(sessionID: String, storedValues: [String: Bool]) -> Bool {

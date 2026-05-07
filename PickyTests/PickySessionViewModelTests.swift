@@ -570,22 +570,29 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDExpansion.contentFrameHeight(isExpanded: true, measuredHeight: 0) == nil)
     }
 
-    @Test func hudDockPreviewOpensImmediatelyAndClosesAfterTimeout() throws {
+    @Test func hudDockPreviewOpensImmediatelyAndClosesAfterDockLeaveTimeout() throws {
         #expect(PickyHUDDockLayout.closeDelay == 0.4)
         #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: nil, sessionID: "a", pinnedID: nil) == "a")
         #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: "a", sessionID: "b", pinnedID: "a") == "b")
-        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", pinnedID: nil, isHUDHovered: false) == nil)
-        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", pinnedID: nil, isHUDHovered: true) == "a")
-        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "b", pinnedID: "a", isHUDHovered: false) == nil)
+        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", pinnedID: nil, isDockHovered: false) == nil)
+        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", pinnedID: nil, isDockHovered: true) == "a")
+        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "b", pinnedID: "a", isDockHovered: false) == nil)
     }
 
-    @Test func hudDockUsesPreviewThenPinnedAndClickTogglesPin() throws {
-        let visibleIDs = ["first", "pinned", "preview"]
-        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, pinnedID: "pinned", previewID: "preview") == "preview")
-        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, pinnedID: nil, previewID: "preview") == "preview")
+    @Test func hudDockUsesPreviewThenPinnedAndClickTogglesOpen() throws {
+        let visibleIDs = ["first", "pinned", "opened", "hovered"]
+        #expect(PickyHUDDockLayout.previewSessionID(hoveredID: "hovered", openedID: "opened") == "hovered")
+        #expect(PickyHUDDockLayout.previewSessionID(hoveredID: nil, openedID: "opened") == "opened")
+        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, pinnedID: "pinned", previewID: "hovered") == "hovered")
+        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, pinnedID: "pinned", previewID: "opened") == "opened")
         #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, pinnedID: "missing", previewID: nil) == nil)
-        #expect(PickyHUDDockLayout.pinnedSessionIDAfterClick(current: "first", clicked: "preview") == "preview")
-        #expect(PickyHUDDockLayout.pinnedSessionIDAfterClick(current: "preview", clicked: "preview") == nil)
+        #expect(PickyHUDDockLayout.openedSessionIDAfterClick(current: nil, clicked: "opened") == "opened")
+        #expect(PickyHUDDockLayout.openedSessionIDAfterClick(current: "opened", clicked: "opened") == nil)
+    }
+
+    @Test func hudDockDoubleClickTogglesPin() throws {
+        #expect(PickyHUDDockLayout.pinnedSessionIDAfterDoubleClick(current: "first", doubleClicked: "preview") == "preview")
+        #expect(PickyHUDDockLayout.pinnedSessionIDAfterDoubleClick(current: "preview", doubleClicked: "preview") == nil)
     }
 
     @Test func hudDockKeepsGitSectionExpansionBySessionAcrossHoverClose() throws {
@@ -596,7 +603,7 @@ struct PickySessionViewModelTests {
         #expect(!PickyHUDDockLayout.gitSectionExpansion(sessionID: "agent-a", storedValues: storedValues))
         #expect(PickyHUDDockLayout.gitSectionExpansion(sessionID: "agent-b", storedValues: storedValues))
 
-        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "agent-a", pinnedID: nil, isHUDHovered: false) == nil)
+        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "agent-a", pinnedID: nil, isDockHovered: false) == nil)
         #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: nil, sessionID: "agent-a", pinnedID: nil) == "agent-a")
         #expect(!PickyHUDDockLayout.gitSectionExpansion(sessionID: "agent-a", storedValues: storedValues))
     }

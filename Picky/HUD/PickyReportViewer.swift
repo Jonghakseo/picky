@@ -374,6 +374,14 @@ protocol PickyReportPresenting: AnyObject {
     func openReport(sessionID: String, title: String, fileURL: URL, markdown: String) throws
 }
 
+private extension NSWindow.Level {
+    /// Keep interactive report panels above the cursor buddy's full-screen overlay
+    /// (`OverlayWindow` uses `.screenSaver`). Otherwise the transparent click-through
+    /// overlay can still sit above the report while the buddy follows the cursor,
+    /// which makes titlebar/background dragging unreliable.
+    static let pickyReportPanel = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 1)
+}
+
 /// Window-scoped persistence hook so each open report panel can write its zoom
 /// level back to the shared settings file the moment the user taps ⌘+ / ⌘-.
 /// The presenter wires this to a real `PickySettingsStore`; tests can substitute
@@ -416,6 +424,7 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
         if let existing = records[sessionID] {
             existing.model.update(title: title, fileURL: fileURL, markdown: markdown)
             existing.panel.title = "Picky Report — \(title)"
+            existing.panel.level = .pickyReportPanel
             NSApp.activate(ignoringOtherApps: true)
             existing.panel.orderFrontRegardless()
             existing.panel.makeKey()
@@ -435,7 +444,8 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
             defer: false
         )
         panel.title = "Picky Report — \(title)"
-        panel.level = .statusBar
+        panel.level = .pickyReportPanel
+        panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         panel.isExcludedFromWindowsMenu = true

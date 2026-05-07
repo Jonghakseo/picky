@@ -215,6 +215,16 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
 final class PickyTerminalPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if handlePickyCloseWindowShortcut(event) { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        if handlePickyCloseWindowShortcut(event) { return }
+        super.sendEvent(event)
+    }
 }
 
 final class PickyTerminalPanelDelegate: NSObject, NSWindowDelegate {

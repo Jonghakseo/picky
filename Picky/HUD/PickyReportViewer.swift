@@ -634,6 +634,16 @@ struct PickyReportViewerWindowView: View {
 final class PickyReportPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if handlePickyCloseWindowShortcut(event) { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        if handlePickyCloseWindowShortcut(event) { return }
+        super.sendEvent(event)
+    }
 }
 
 final class PickyReportPanelDelegate: NSObject, NSWindowDelegate {

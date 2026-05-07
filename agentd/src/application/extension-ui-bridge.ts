@@ -6,18 +6,33 @@ import type { PickyExtensionUiRequest } from "../protocol.js";
 export type ExtensionUiMethod = PickyExtensionUiRequest["method"];
 
 /**
+ * Marker base class for errors that originate from Picky's extension UI bridge
+ * surface (e.g. a pi extension calling an API Picky does not implement). The
+ * agentd extension crash guard treats every subclass as expected and swallows
+ * it after detailed logging, instead of letting the daemon die.
+ */
+export class PickyExtensionError extends Error {
+  constructor(message: string, public readonly extensionApi: string, public readonly sessionId?: string) {
+    super(message);
+    this.name = "PickyExtensionError";
+  }
+}
+
+/**
  * Thrown by `ctx.ui.custom` in Picky's extension bridge to signal that the
  * caller asked for a TUI overlay surface that does not exist in this host.
  *
- * The agentd entrypoint has a global `unhandledRejection` handler that
- * specifically swallows this subclass so a passive extension hook (e.g. an
- * idle-timer screensaver) cannot tear down the daemon. Real bugs that surface
- * as unhandled rejections of any other type are still re-thrown.
+ * Picky's extension crash guard recognises this subclass and swallows it so a
+ * passive extension hook (e.g. an idle-timer screensaver) cannot tear down
+ * the daemon. Real bugs that surface as unhandled rejections of an unrelated
+ * type are still re-thrown.
  */
-export class PickyOverlayUnsupportedError extends Error {
-  constructor(public readonly sessionId: string) {
+export class PickyOverlayUnsupportedError extends PickyExtensionError {
+  constructor(sessionId: string) {
     super(
       `Custom TUI overlays (ctx.ui.custom) are not supported in Picky (sessionId=${sessionId}). Use a non-overlay alternative such as bash, or run the command in pi's interactive TUI.`,
+      "ctx.ui.custom",
+      sessionId,
     );
     this.name = "PickyOverlayUnsupportedError";
   }

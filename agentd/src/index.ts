@@ -7,7 +7,7 @@ import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyHandoffTool, createPickySideSessionsTool, createPickySideSteerTool } from "./application/handoff-tool.js";
 import { createPickyAskUserQuestionTool } from "./application/ask-user-question-tool.js";
-import { PickyOverlayUnsupportedError } from "./application/extension-ui-bridge.js";
+import { installExtensionCrashGuard } from "./extension-crash-guard.js";
 import { removeConnectionInfo, writeConnectionInfo } from "./connection-info-store.js";
 import { PROTOCOL_VERSION, ThinkingLevelSchema } from "./protocol.js";
 import { logAgentd } from "./local-log.js";
@@ -23,19 +23,15 @@ if (!token) {
   process.exit(1);
 }
 
-// Picky's extension bridge throws PickyOverlayUnsupportedError when an extension
-// asks for a TUI overlay surface (e.g. pi-extension-idle-screensaver invoking
-// ctx.ui.custom from a setTimeout). Such calls originate inside passive hooks
-// that no caller awaits, so the rejection bubbles up as an unhandled rejection
-// and Node would terminate the daemon. Swallow only this exact subclass; any
-// other unhandled rejection is a real bug and is rethrown so it remains visible.
-process.on("unhandledRejection", (reason) => {
-  if (reason instanceof PickyOverlayUnsupportedError) {
-    logAgentd("extension custom overlay rejected", { sessionId: reason.sessionId });
-    return;
-  }
-  throw reason;
-});
+// pi extensions run in-process inside agentd. A throw from a passive hook
+// (e.g. an idle-timer screensaver calling `ctx.ui.custom`, or an extension
+// referencing a pi TUI API like `theme.fg` that Picky does not expose) would
+// otherwise propagate up the timer/microtask stack and tear the daemon down,
+// taking every running side-agent session with it. The crash guard swallows
+// extension-originated errors after structured logging so the agent (and
+// whoever inspects logs) can recognise unsupported references, while real
+// daemon bugs are still re-thrown.
+installExtensionCrashGuard();
 
 const useMockRuntime = process.env.PICKY_AGENTD_RUNTIME === "mock";
 logAgentd("startup", { port, runtime: useMockRuntime ? "mock" : "pi", appSupportDir, defaultCwd, mainAgentThinkingLevel });

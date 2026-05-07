@@ -749,6 +749,18 @@ extension View {
             }
         }
     }
+
+    /// Attaches an open-hand grab cursor used for draggable handles such as the HUD's
+    /// dock anchor handle. Backed by AppKit cursor rects (same approach as
+    /// `pointerCursor`) so the cursor is reliable even when the SwiftUI .onHover
+    /// tracking misfires.
+    func openHandCursor(isEnabled: Bool = true) -> some View {
+        self.overlay {
+            if isEnabled {
+                OpenHandCursorView()
+            }
+        }
+    }
 }
 
 // MARK: - Buddy Composer Visual Style
@@ -784,6 +796,33 @@ private struct PointerCursorView: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         // Invalidate cursor rects when the view updates (e.g., resizes)
         // so AppKit recalculates the cursor area.
+        nsView.window?.invalidateCursorRects(for: nsView)
+    }
+}
+
+// MARK: - Open Hand Cursor (AppKit Bridge)
+
+/// Shows the macOS open-hand cursor on hover via AppKit cursor rects. While the
+/// SwiftUI .gesture system runs, AppKit automatically swaps to the closed-hand
+/// cursor for the duration of the drag, so we don't need to push/pop a second
+/// cursor explicitly.
+private class OpenHandCursorNSView: NSView {
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .openHand)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        return nil
+    }
+}
+
+private struct OpenHandCursorView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        return OpenHandCursorNSView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
         nsView.window?.invalidateCursorRects(for: nsView)
     }
 }

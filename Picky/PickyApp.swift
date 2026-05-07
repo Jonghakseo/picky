@@ -61,7 +61,8 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                 )
             )
         ),
-        appearanceStore: appearanceStore
+        appearanceStore: appearanceStore,
+        settingsStore: settingsStore
     )
 
     override init() {

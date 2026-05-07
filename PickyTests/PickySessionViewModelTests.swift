@@ -660,6 +660,100 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDDockLayout.centeredPanelY(visibleFrame: visibleFrame, targetHeight: 900) == 108)
     }
 
+    @Test func dockTopAnchorPercentClampsToSupportedRange() throws {
+        #expect(PickySettings.clampedDockTopAnchorPercent(22.0) == 22.0)
+        #expect(PickySettings.clampedDockTopAnchorPercent(0.0) == 5.0)
+        #expect(PickySettings.clampedDockTopAnchorPercent(4.99) == 5.0)
+        #expect(PickySettings.clampedDockTopAnchorPercent(40.0) == 40.0)
+        #expect(PickySettings.clampedDockTopAnchorPercent(120.5) == 40.0)
+        // Non-finite values fall back to the default rather than poisoning the saved settings file.
+        #expect(PickySettings.clampedDockTopAnchorPercent(.nan) == PickySettings.defaultDockTopAnchorPercent)
+        #expect(PickySettings.clampedDockTopAnchorPercent(.infinity) == PickySettings.defaultDockTopAnchorPercent)
+    }
+
+    @Test func dockTopScreenYMatchesAnchorPercentRelativeToVisibleFrameTop() throws {
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1440, height: 876) // 1440x900 minus a 24pt menu bar
+        // 22% from the visible-frame top: 0.22 * 876 = 192.72 below visibleFrame.maxY.
+        let dockTop = PickyHUDDockLayout.dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: 22.0)
+        #expect(abs(dockTop - (visibleFrame.maxY - 192.72)) < 0.01)
+        // Boundary clamps reflect the supported anchor range.
+        let atFloor = PickyHUDDockLayout.dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: 100.0)
+        let at40 = PickyHUDDockLayout.dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: 40.0)
+        #expect(atFloor == at40)
+    }
+
+    @Test func dockTopAnchoredPanelKeepsDockTopAtAnchorWithinSupportedHeight() throws {
+        // For a 1440x900 visible frame minus a 24pt menu bar, 22% anchor places the dock
+        // top at visibleFrame.maxY - 192.72. With topPaddingFromContentTop = 32 (= dock
+        // shadow vertical padding) and a moderate-height panel, the formula returns an
+        // origin Y that lands the dock top exactly on the anchor.
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1440, height: 876)
+        let topPadding: CGFloat = 32
+        let anchor = 22.0
+        let cap = PickyHUDDockLayout.dockTopAnchoredMaxPanelHeight(
+            visibleFrame: visibleFrame,
+            topPaddingFromContentTop: topPadding,
+            anchorPercent: anchor
+        )
+
+        // Within the cap, dock top sits exactly at the requested anchor.
+        let originAtCap = PickyHUDDockLayout.dockTopAnchoredPanelY(
+            visibleFrame: visibleFrame,
+            targetHeight: cap,
+            topPaddingFromContentTop: topPadding,
+            anchorPercent: anchor
+        )
+        let dockTop = originAtCap + cap - topPadding
+        let expectedDockTop = PickyHUDDockLayout.dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: anchor)
+        #expect(abs(dockTop - expectedDockTop) < 0.01)
+
+        let shorter = cap - 200
+        let originShorter = PickyHUDDockLayout.dockTopAnchoredPanelY(
+            visibleFrame: visibleFrame,
+            targetHeight: shorter,
+            topPaddingFromContentTop: topPadding,
+            anchorPercent: anchor
+        )
+        let dockTopShorter = originShorter + shorter - topPadding
+        #expect(abs(dockTopShorter - expectedDockTop) < 0.01)
+    }
+
+    @Test func dockTopAnchoredMaxPanelHeightCapsAtVisibleFrameFloor() throws {
+        // The cap must be exactly the height that places panel.origin.y at
+        // visibleFrame.minY + screenMargin so the conversation card cannot push
+        // through the bottom of the visible frame.
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1440, height: 876)
+        let topPadding: CGFloat = 32
+        let cap = PickyHUDDockLayout.dockTopAnchoredMaxPanelHeight(
+            visibleFrame: visibleFrame,
+            topPaddingFromContentTop: topPadding,
+            anchorPercent: 22.0
+        )
+        let originAtCap = PickyHUDDockLayout.dockTopAnchoredPanelY(
+            visibleFrame: visibleFrame,
+            targetHeight: cap,
+            topPaddingFromContentTop: topPadding,
+            anchorPercent: 22.0
+        )
+        #expect(originAtCap == visibleFrame.minY + PickyHUDDockLayout.screenMargin)
+    }
+
+    @Test func dockTopAnchorPercentSyncsAcrossDifferentVisibleFrameSizes() throws {
+        // Same anchor percent on a tall portrait monitor and a wide laptop screen yields
+        // dock-top screen Ys that are at the same relative offset from each visible
+        // frame's top edge, even though the absolute pixel values differ. This is the
+        // core guarantee of the synced (non-per-monitor) anchor design.
+        let laptop = CGRect(x: 0, y: 0, width: 1440, height: 876)
+        let portrait = CGRect(x: 0, y: 0, width: 1080, height: 1896)
+        let pct = 22.0
+        let laptopDockTop = PickyHUDDockLayout.dockTopScreenY(visibleFrame: laptop, anchorPercent: pct)
+        let portraitDockTop = PickyHUDDockLayout.dockTopScreenY(visibleFrame: portrait, anchorPercent: pct)
+        let laptopRelative = (laptop.maxY - laptopDockTop) / laptop.height
+        let portraitRelative = (portrait.maxY - portraitDockTop) / portrait.height
+        #expect(abs(laptopRelative - portraitRelative) < 0.0001)
+        #expect(abs(laptopRelative - 0.22) < 0.0001)
+    }
+
     @Test func hudExpansionDefersOuterPanelShrinkUntilCollapseFinishes() throws {
         #expect(PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 320, targetHeight: 80, deferShrink: true))
         #expect(!PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 80, targetHeight: 320, deferShrink: true))

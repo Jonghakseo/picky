@@ -11,6 +11,13 @@ import SwiftUI
 struct PickyHUDView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     var onSizeChange: (CGSize) -> Void = { _ in }
+    /// Live delta callback for the dock anchor handle. Argument is the cursor's
+    /// bottom-up screen Y delta from drag start (`NSEvent.mouseLocation` based, so it
+    /// stays correct even though the panel itself moves while we drag). The overlay
+    /// manager converts the delta into a percentage of the dragged display's
+    /// visibleFrame and updates the shared anchor across every panel.
+    var onDockHandleDragChanged: (CGFloat) -> Void = { _ in }
+    var onDockHandleDragEnded: () -> Void = { }
     @State private var pinnedSessionID: String?
     @State private var previewSessionID: String?
     @State private var isHUDHovered = false
@@ -44,7 +51,12 @@ struct PickyHUDView: View {
             // updates can report the already-clipped height and prevent growth.
             .fixedSize(horizontal: false, vertical: true)
             .background(PickyHUDSizeReader())
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            // topTrailing keeps content stuck to the panel's top edge during the
+            // shouldHoldHeight phase. With dock-top-anchored placement we want the
+            // dock to coincide with the panel top (after vertical padding); a default
+            // .center alignment would float the content vertically inside the held
+            // panel and break the dock anchor math.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             .overlay(alignment: .bottomTrailing) {
                 archiveUndoToastOverlay
             }
@@ -93,7 +105,12 @@ struct PickyHUDView: View {
     }
 
     private var hudContent: some View {
-        HStack(alignment: .center, spacing: PickyHUDDockLayout.panelGap) {
+        // alignment: .top so the card and the dock-rail stack both anchor at the HStack
+        // top edge. The dock anchor handle floats above the dock with a small gap (see
+        // PickyHUDDockRailView.dockHandle), so the conversation card's top can sit at the
+        // same Y as the dock's top — keeping the dock's screen position invariant under
+        // changes to the conversation card height.
+        HStack(alignment: .top, spacing: PickyHUDDockLayout.panelGap) {
             if let activeSession {
                 PickyConversationCardView(viewModel: viewModel, session: activeSession)
                     .id(activeSession.id)
@@ -111,7 +128,9 @@ struct PickyHUDView: View {
                     onPinSession: pinSession,
                     onArchiveSession: archiveSessionFromDock,
                     onCreateSideAgent: chooseFolderForEmptySideAgent,
-                    onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:)
+                    onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:),
+                    onDockHandleDragChanged: onDockHandleDragChanged,
+                    onDockHandleDragEnded: onDockHandleDragEnded
                 )
                 .frame(width: PickyHUDDockLayout.railWidth)
             }
@@ -378,11 +397,22 @@ private struct PickyHUDDockRailView: View {
     let onArchiveSession: (String) -> Void
     let onCreateSideAgent: () -> Void
     let onDoneFlashConsumed: (String) -> Void
+    let onDockHandleDragChanged: (CGFloat) -> Void
+    let onDockHandleDragEnded: () -> Void
 
     @State private var isAddSlotExpanded = false
+    @State private var isHandleHovered = false
+    @State private var dragStartMouseScreenY: CGFloat?
+
+    var body: some View {
+        VStack(spacing: 4) {
+            dockAnchorHandle
+            dockBody
+        }
+    }
 
     @ViewBuilder
-    var body: some View {
+    private var dockBody: some View {
         if sessions.isEmpty {
             addAgentSlotButton
         } else {
@@ -410,6 +440,48 @@ private struct PickyHUDDockRailView: View {
             .padding(.bottom, 10)
             .background(dockGlassBackground)
         }
+    }
+
+    /// Small horizontal pill that sits a few points above the dock capsule. Dragging it
+    /// repositions the dock's top edge along the screen Y axis. We pass the cursor's
+    /// screen-bottom-up delta from drag start (NSEvent.mouseLocation based) up to the
+    /// overlay manager which converts it into a percentage of the dragged display's
+    /// visibleFrame height and updates the shared anchor across every monitor.
+    private var dockAnchorHandle: some View {
+        ZStack {
+            Color.clear
+            Capsule(style: .continuous)
+                .fill(DS.Colors.textTertiary.opacity(isHandleHovered || dragStartMouseScreenY != nil ? 0.85 : 0.45))
+                .frame(width: isHandleHovered || dragStartMouseScreenY != nil ? 26 : 22, height: 4)
+                .animation(.easeOut(duration: 0.12), value: isHandleHovered)
+                .animation(.easeOut(duration: 0.12), value: dragStartMouseScreenY != nil)
+        }
+        // Larger frame than the visible pill so the hit area is comfortable; AppKit
+        // cursor rects from .openHandCursor() apply to this whole frame too.
+        .frame(width: 36, height: 14)
+        .contentShape(Rectangle())
+        .openHandCursor()
+        .onHover { hovering in
+            isHandleHovered = hovering
+        }
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    let mouseY = NSEvent.mouseLocation.y
+                    if dragStartMouseScreenY == nil {
+                        dragStartMouseScreenY = mouseY
+                        return
+                    }
+                    let delta = mouseY - (dragStartMouseScreenY ?? mouseY)
+                    onDockHandleDragChanged(delta)
+                }
+                .onEnded { _ in
+                    dragStartMouseScreenY = nil
+                    onDockHandleDragEnded()
+                }
+        )
+        .accessibilityLabel("HUD vertical position")
+        .accessibilityHint("Drag up or down to move the side-agent dock between 5% and 40% of the screen.")
     }
 
     /// Frosted-glass capsule that hosts the dock icons. Uses .ultraThinMaterial

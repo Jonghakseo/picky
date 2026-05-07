@@ -34,6 +34,7 @@ final class PickyHUDPanel: NSPanel {
 final class PickyHUDOverlayManager {
     private let viewModel: PickySessionListViewModel
     private let appearanceStore: PickyAppearanceStore
+    private let settingsStore: PickySettingsStore
     private let width: CGFloat = PickyHUDDockLayout.panelWidth
     private let collapsedHeight: CGFloat = 180
     private let minimumHeight: CGFloat = 48
@@ -51,9 +52,24 @@ final class PickyHUDOverlayManager {
     private var panelsByDisplayID: [CGDirectDisplayID: PanelEntry] = [:]
     private var screenParametersObserver: NSObjectProtocol?
 
-    init(viewModel: PickySessionListViewModel, appearanceStore: PickyAppearanceStore) {
+    /// Live anchor percent (5–40% from the visible frame top to the dock's TOP edge).
+    /// Hydrated from settings on init, updated in real time during a handle drag, and
+    /// persisted back to settings when the drag ends. All connected displays read this
+    /// same value so the dock sits at the same relative position on every monitor.
+    private var currentAnchorPercent: Double
+    private var dragStartAnchorPercent: Double?
+
+    init(
+        viewModel: PickySessionListViewModel,
+        appearanceStore: PickyAppearanceStore,
+        settingsStore: PickySettingsStore
+    ) {
         self.viewModel = viewModel
         self.appearanceStore = appearanceStore
+        self.settingsStore = settingsStore
+        self.currentAnchorPercent = PickySettings.clampedDockTopAnchorPercent(
+            settingsStore.load().hudDockTopAnchorPercent
+        )
     }
 
     func start() {
@@ -112,12 +128,21 @@ final class PickyHUDOverlayManager {
         hudPanel.isExcludedFromWindowsMenu = true
         hudPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
-        let hudRoot = PickyHUDView(viewModel: viewModel) { [weak self] size in
-            // SwiftUI animates the card reveal itself. Grow the transparent NSPanel
-            // immediately, but defer shrinking it until the collapse animation has
-            // finished so shadows/content aren't clipped by the outer container.
-            self?.resizePanel(displayID: displayID, toContentSize: size, deferShrink: true)
-        }
+        let hudRoot = PickyHUDView(
+            viewModel: viewModel,
+            onSizeChange: { [weak self] size in
+                // SwiftUI animates the card reveal itself. Grow the transparent NSPanel
+                // immediately, but defer shrinking it until the collapse animation has
+                // finished so shadows/content aren't clipped by the outer container.
+                self?.resizePanel(displayID: displayID, toContentSize: size, deferShrink: true)
+            },
+            onDockHandleDragChanged: { [weak self] screenDeltaY in
+                self?.handleDockDragChanged(displayID: displayID, screenDeltaY: screenDeltaY)
+            },
+            onDockHandleDragEnded: { [weak self] in
+                self?.handleDockDragEnded()
+            }
+        )
             .frame(width: width)
             .environmentObject(appearanceStore)
             .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
@@ -181,13 +206,70 @@ final class PickyHUDOverlayManager {
     private func targetFrame(for screen: NSScreen, contentSize: CGSize) -> NSRect? {
         let visibleFrame = screen.visibleFrame
         guard visibleFrame.width > 0, visibleFrame.height > 0 else { return nil }
-        let targetHeight = min(max(contentSize.height, minimumHeight), visibleFrame.height - 160)
+        let topPadding = PickyHUDExpansion.dockShadowVerticalPadding
+        // Cap the panel height so dockTopAnchoredPanelY never has to clamp at the
+        // visible-frame floor (which would push the dock top up and break the anchor
+        // guarantee). The conversation list scrolls internally for anything taller.
+        let dockAnchoredCap = PickyHUDDockLayout.dockTopAnchoredMaxPanelHeight(
+            visibleFrame: visibleFrame,
+            topPaddingFromContentTop: topPadding,
+            anchorPercent: currentAnchorPercent
+        )
+        let visibleHeightCap = visibleFrame.height - 160
+        let cap = min(visibleHeightCap, dockAnchoredCap)
+        let targetHeight = max(min(contentSize.height, cap), minimumHeight)
+        let originY = PickyHUDDockLayout.dockTopAnchoredPanelY(
+            visibleFrame: visibleFrame,
+            targetHeight: targetHeight,
+            topPaddingFromContentTop: topPadding,
+            anchorPercent: currentAnchorPercent
+        )
         return NSRect(
             x: visibleFrame.maxX - width - PickyHUDDockLayout.dockRightEdgeMargin,
-            y: PickyHUDDockLayout.centeredPanelY(visibleFrame: visibleFrame, targetHeight: targetHeight),
+            y: originY,
             width: width,
             height: targetHeight
         )
+    }
+
+    // MARK: - Dock handle drag
+
+    private func handleDockDragChanged(displayID: CGDirectDisplayID, screenDeltaY: CGFloat) {
+        guard let screen = screen(for: displayID) else { return }
+        let visibleFrame = screen.visibleFrame
+        guard visibleFrame.height > 0 else { return }
+        if dragStartAnchorPercent == nil {
+            dragStartAnchorPercent = currentAnchorPercent
+        }
+        // `screenDeltaY` is the cursor's bottom-up screen delta from drag start.
+        // Moving the cursor DOWN (screen Y decreasing) should INCREASE anchor%, since
+        // anchor% measures the dock's top edge as a fraction below the visible-frame
+        // top. Negate to get a top-down delta percentage and add to the start value.
+        let dPct = -(Double(screenDeltaY) / Double(visibleFrame.height)) * 100.0
+        let next = PickySettings.clampedDockTopAnchorPercent((dragStartAnchorPercent ?? currentAnchorPercent) + dPct)
+        guard next != currentAnchorPercent else { return }
+        currentAnchorPercent = next
+        repositionAllPanels()
+    }
+
+    private func handleDockDragEnded() {
+        dragStartAnchorPercent = nil
+        var settings = settingsStore.load()
+        let clamped = PickySettings.clampedDockTopAnchorPercent(currentAnchorPercent)
+        guard settings.hudDockTopAnchorPercent != clamped else { return }
+        settings.hudDockTopAnchorPercent = clamped
+        // Settings save throws on directory validation failure (defaultCwd / worktreeParent).
+        // Failing to persist the anchor shouldn't tear down the live drag UX, so swallow the
+        // error here — next launch falls back to the previously saved anchor percent.
+        try? settingsStore.save(settings)
+    }
+
+    private func repositionAllPanels() {
+        for screen in NSScreen.screens {
+            guard let displayID = screen.pickyDisplayID else { continue }
+            guard panelsByDisplayID[displayID] != nil else { continue }
+            positionPanel(on: screen, displayID: displayID)
+        }
     }
 
     private func screen(for displayID: CGDirectDisplayID) -> NSScreen? {

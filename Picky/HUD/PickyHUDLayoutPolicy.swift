@@ -110,6 +110,50 @@ enum PickyHUDDockLayout {
         let centeredY = visibleFrame.midY - (targetHeight / 2)
         return min(max(centeredY, minimumY), maximumY)
     }
+
+    // MARK: - Dock-top anchored placement
+
+    /// Screen Y of the dock's top edge for a given anchor percent (5–40% from the top of
+    /// `visibleFrame`). Returned in NSPanel screen coords (bottom-up).
+    static func dockTopScreenY(visibleFrame: CGRect, anchorPercent: Double) -> CGFloat {
+        let pct = PickySettings.clampedDockTopAnchorPercent(anchorPercent)
+        return visibleFrame.maxY - visibleFrame.height * (pct / 100.0)
+    }
+
+    /// Panel origin Y (NSPanel screen coords, bottom-up) so that the dock's top edge
+    /// sits at `dockTopScreenY`. `topPaddingFromContentTop` is the SwiftUI top-down
+    /// distance from the panel content's top to the dock rail's top edge — with
+    /// `HStack(alignment: .top)` and `.padding(.vertical, P)` wrapping the HStack, that
+    /// distance equals `P` (= `PickyHUDExpansion.dockShadowVerticalPadding`).
+    ///
+    /// Callers should cap `targetHeight` at `dockTopAnchoredMaxPanelHeight(...)` first
+    /// so the formula never has to clamp at the visible-frame floor (which would push
+    /// the dock upward, defeating the anchoring guarantee).
+    static func dockTopAnchoredPanelY(
+        visibleFrame: CGRect,
+        targetHeight: CGFloat,
+        topPaddingFromContentTop: CGFloat,
+        anchorPercent: Double
+    ) -> CGFloat {
+        let dockTopY = dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: anchorPercent)
+        let originY = dockTopY - targetHeight + topPaddingFromContentTop
+        let minimumY = visibleFrame.minY + screenMargin
+        return max(originY, minimumY)
+    }
+
+    /// Largest panel height that still lets `dockTopAnchoredPanelY` keep the dock at
+    /// `dockTopScreenY` without falling through `visibleFrame.minY + screenMargin`.
+    /// The conversation list inside the card has its own ScrollView so anything
+    /// requesting more height scrolls in place rather than overflowing the screen.
+    static func dockTopAnchoredMaxPanelHeight(
+        visibleFrame: CGRect,
+        topPaddingFromContentTop: CGFloat,
+        anchorPercent: Double
+    ) -> CGFloat {
+        let dockTopY = dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: anchorPercent)
+        let bottomFloor = visibleFrame.minY + screenMargin
+        return max(0, dockTopY - bottomFloor + topPaddingFromContentTop)
+    }
 }
 
 enum PickyHUDExpandedContentPolicy {

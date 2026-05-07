@@ -208,6 +208,31 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.batchGroupCount == 0)
     }
 
+    @Test func compactingPhaseShowsOverlayAndBlocksComposer() {
+        let session = makeConversationSession(status: .running, lastSummary: "Compacting after context overflow…")
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+        let composer = PickyConversationComposerView(session: session, viewModel: viewModel)
+
+        #expect(session.isCompacting)
+        #expect(snapshot.compactingOverlayCount == 1)
+        #expect(composer.isComposerInputDisabled)
+        #expect(composer.placeholderText == "Compacting…")
+        #expect(composer.sendHelpText == "Session is compacting")
+    }
+
+    @Test func compactCompletionSystemMessageRendersDedicatedBubble() {
+        let session = makeConversationSession(
+            status: .running,
+            messages: [message("m-compact", kind: .system, text: "Session compacted after context overflow")]
+        )
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+
+        #expect(session.messages.first?.isCompactCompletionMessage == true)
+        #expect(snapshot.compactCompletionBubbleCount == 1)
+    }
+
     @Test func waitingPhaseRendersQuestionBubble() {
         let request = extensionUiRequest()
         let session = makeConversationSession(
@@ -751,7 +776,8 @@ private func makeConversationSession(
     pendingExtensionUiRequest: PickyExtensionUiRequest? = nil,
     artifacts: [PickyArtifact] = [],
     logs: [String] = [],
-    notifyMainOnCompletion: Bool? = nil
+    notifyMainOnCompletion: Bool? = nil,
+    lastSummary: String = "summary"
 ) -> PickySessionListViewModel.SessionCard {
     PickySessionListViewModel.SessionCard.fromAgentSession(
         PickyAgentSession(
@@ -761,7 +787,7 @@ private func makeConversationSession(
             cwd: "/tmp/picky",
             createdAt: baseDate,
             updatedAt: baseDate,
-            lastSummary: "summary",
+            lastSummary: lastSummary,
             logs: logs,
             tools: [],
             artifacts: artifacts,

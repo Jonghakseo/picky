@@ -370,7 +370,7 @@ describe("PiSdkRuntime", () => {
 
     expect(statusEvents(events).some((event) => event.status === "failed")).toBe(false);
     expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Compacting after context overflow…" });
-    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Compaction completed; retrying…" });
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, compactionReason: "overflow" });
     expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Completed", finalAnswer: "컴팩션 후 완료", assistantRun: { model: "claude-fake" } });
   });
 

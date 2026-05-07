@@ -179,6 +179,10 @@ final class PickySessionListViewModel: ObservableObject {
                     || lastSummary.localizedCaseInsensitiveContains("Runtime not attached after daemon restart"))
         }
 
+        var isCompacting: Bool {
+            status == .running && lastSummary.localizedCaseInsensitiveContains("compacting")
+        }
+
         func elapsedDescription(now: Date = Date()) -> String {
             Self.formatElapsed(seconds: max(0, Int(now.timeIntervalSince(createdAt))))
         }

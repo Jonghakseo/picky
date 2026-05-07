@@ -768,6 +768,23 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(side.id)?.lastSummary).toBe("Still working");
   });
 
+  it("records a compact completion system message after automatic overflow compaction", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting after context overflow…" });
+    runtime.handle?.emit({ type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, compactionReason: "overflow" });
+    await settle();
+
+    const updated = supervisor.get(side.id)!;
+    expect(updated.status).toBe("running");
+    expect(updated.lastSummary).toBe("Compaction completed; retrying…");
+    expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted after context overflow")).toBe(true);
+  });
+
   it("does not let a successful /compact restore leak into a later /name", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
@@ -783,7 +800,7 @@ describe("SessionSupervisor", () => {
     runtime.handle!.onFollowUp = (handle, prompt) => {
       if (prompt.text === "/compact") {
         handle.emit({ type: "status", status: "running", summary: "Compacting session…" });
-        handle.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true });
+        handle.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true });
       }
       if (prompt.text.startsWith("/name ")) {
         handle.emit({ type: "session_info", name: "컴팩션 후 이름" });
@@ -795,6 +812,7 @@ describe("SessionSupervisor", () => {
     await settle();
     expect(supervisor.get(side.id)?.status).toBe("completed");
     expect(supervisor.get(side.id)?.lastSummary).toBe("Session compacted");
+    expect((supervisor.get(side.id)?.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(true);
 
     await supervisor.followUp(side.id, "/name 컴팩션 후 이름");
     await settle();

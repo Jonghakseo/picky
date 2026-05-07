@@ -522,11 +522,12 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       return { type: "status", status: "running", summary: reason === "overflow" ? "Compacting after context overflow…" : "Compacting session…" };
     }
     if (event.type === "compaction_end") {
+      const reason = stringValue(event.reason);
       if (event.willRetry === true) {
         this.cancelDeferredTerminalError();
-        return { type: "status", status: "running", summary: "Compaction completed; retrying…" };
+        return { type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, ...(reason ? { compactionReason: reason } : {}) };
       }
-      if (stringValue(event.reason) === "overflow" && stringValue(event.errorMessage)) {
+      if (reason === "overflow" && stringValue(event.errorMessage)) {
         this.cancelDeferredTerminalError();
         return { type: "status", status: "failed", summary: stringValue(event.errorMessage) };
       }
@@ -605,7 +606,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
         await session.compact(instructions);
         this.emitContextUsageSnapshot({ resetAfterCompaction: true });
         this.emit({ type: "log", line: instructions ? `compact completed with instructions: ${instructions}` : "compact completed" });
-        this.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true });
+        this.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true });
       } catch (error) {
         const message = messageOf(error);
         logAgentd("slash /compact failed", { sessionId: this.id, error: message });

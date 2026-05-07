@@ -59,7 +59,9 @@ struct PickyConversationComposerView: View {
         .onDisappear { removeKeyDownMonitor() }
         .onChange(of: droppedFilePaths) { _, paths in
             guard !paths.isEmpty else { return }
-            appendDroppedFilePaths(paths)
+            if !isComposerInputDisabled {
+                appendDroppedFilePaths(paths)
+            }
             droppedFilePaths = []
         }
     }
@@ -133,10 +135,11 @@ struct PickyConversationComposerView: View {
             }
             TextEditor(text: $draft)
                 .font(PickyHUDTypography.bodyCompact)
-                .foregroundColor(DS.Colors.textPrimary)
+                .foregroundColor(isComposerInputDisabled ? DS.Colors.textTertiary : DS.Colors.textPrimary)
                 .scrollContentBackground(.hidden)
                 .background(Color.clear)
                 .focused($isFocused)
+                .disabled(isComposerInputDisabled)
                 .frame(height: editorHeight)
                 .offset(y: 4)
                 .onChange(of: draft) { _, _ in
@@ -349,8 +352,12 @@ struct PickyConversationComposerView: View {
         .help(sendHelpText)
     }
 
+    var isComposerInputDisabled: Bool {
+        session.isCompacting
+    }
+
     private var isSendDisabled: Bool {
-        defaultSubmitKind == nil || !hasDraftText
+        isComposerInputDisabled || defaultSubmitKind == nil || !hasDraftText
     }
 
     private var hasDraftText: Bool {
@@ -359,11 +366,16 @@ struct PickyConversationComposerView: View {
 
     private var composerBackground: some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(isFileDropTargeted ? DS.Colors.accentSubtle.opacity(0.28) : DS.Colors.surface2.opacity(0.55))
+            .fill(composerBackgroundFill)
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(isFileDropTargeted ? DS.Colors.accentText.opacity(0.85) : DS.Colors.borderSubtle, lineWidth: isFileDropTargeted ? 1 : 0.5)
+                    .stroke(isFileDropTargeted && !isComposerInputDisabled ? DS.Colors.accentText.opacity(0.85) : DS.Colors.borderSubtle, lineWidth: isFileDropTargeted && !isComposerInputDisabled ? 1 : 0.5)
             )
+    }
+
+    private var composerBackgroundFill: Color {
+        if isComposerInputDisabled { return DS.Colors.surface2.opacity(0.38) }
+        return isFileDropTargeted ? DS.Colors.accentSubtle.opacity(0.28) : DS.Colors.surface2.opacity(0.55)
     }
 
     static func draftText(afterAppendingDroppedFilePaths paths: [String], to draft: String) -> String {
@@ -425,6 +437,7 @@ struct PickyConversationComposerView: View {
     }
 
     private var placeholder: String {
+        if session.isCompacting { return "Compacting…" }
         if isFileDropTargeted { return "Drop files or screenshots anywhere to insert paths" }
         switch session.status {
         case .running, .queued, .waiting_for_input:
@@ -438,7 +451,10 @@ struct PickyConversationComposerView: View {
         }
     }
 
-    private var sendHelpText: String {
+    var sendHelpText: String {
+        if isComposerInputDisabled {
+            return "Session is compacting"
+        }
         guard defaultSubmitKind != nil else {
             return "This session cannot accept composer input"
         }
@@ -474,6 +490,7 @@ struct PickyConversationComposerView: View {
     }
 
     private func submit(_ kind: PickyConversationComposerSubmitKind?) {
+        guard !isComposerInputDisabled else { return }
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let kind else { return }
         let text = trimmed
@@ -519,7 +536,7 @@ struct PickyConversationComposerView: View {
     private func installKeyDownMonitorIfNeeded() {
         guard keyDownMonitor == nil else { return }
         keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard isFocused else { return event }
+            guard isFocused, !isComposerInputDisabled else { return event }
             if event.keyCode == Self.tabKeyCode, event.modifierFlags.contains(.shift) {
                 cycleThinkingLevel()
                 return nil

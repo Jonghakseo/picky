@@ -136,6 +136,10 @@ export class RuntimeEventHandler {
     // handler when they want to revive a terminal session.
     if (isTerminalStatus(currentSession.status)) return;
 
+    if (event.compactionCompleted && !hasLatestCompactCompletionMessage(currentSession)) {
+      await this.dependencies.messageBuilder.recordSystemMessage(sessionId, event.compactionReason === "overflow" ? "Session compacted after context overflow" : "Session compacted");
+    }
+
     const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
     if (event.assistantRun) patch.currentAssistantRun = event.assistantRun;
     if (terminal || event.status === "waiting_for_input" || finalAnswer) {
@@ -255,6 +259,14 @@ function compactThinkingPreview(value: string): string {
   const compact = value.replace(/\s+/g, " ").trim();
   if (compact.length <= THINKING_PREVIEW_CHAR_LIMIT) return compact;
   return `${sliceUtf16Safe(compact, THINKING_PREVIEW_CHAR_LIMIT - 1)}…`;
+}
+
+function hasLatestCompactCompletionMessage(session: PickyAgentSession): boolean {
+  const messages = session.messages ?? [];
+  const message = messages[messages.length - 1];
+  if (message?.kind !== "system") return false;
+  const normalized = message.text?.trim().toLowerCase();
+  return normalized === "session compacted" || normalized === "session compacted after context overflow";
 }
 
 function terminalToolPreview(status: string): string {

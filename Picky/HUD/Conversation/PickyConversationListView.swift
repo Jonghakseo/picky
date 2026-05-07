@@ -14,30 +14,35 @@ struct PickyConversationListView: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    if hiddenHistoryCount > 0 {
-                        moreHistoryButton
-                    }
-                    if visibleMessages.isEmpty && !hasQueueOrActivity {
-                        Color.clear
-                            .frame(height: 24)
-                    } else {
-                        ForEach(Array(visibleMessages.enumerated()), id: \.element.id) { index, message in
-                            if shouldShowSeparator(before: index) {
-                                PickyConversationTimeSeparatorView(text: separatorText(before: index))
+            ZStack {
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        if hiddenHistoryCount > 0 {
+                            moreHistoryButton
+                        }
+                        if visibleMessages.isEmpty && !hasQueueOrActivity {
+                            Color.clear
+                                .frame(height: 24)
+                        } else {
+                            ForEach(Array(visibleMessages.enumerated()), id: \.element.id) { index, message in
+                                if shouldShowSeparator(before: index) {
+                                    PickyConversationTimeSeparatorView(text: separatorText(before: index))
+                                }
+                                messageView(message)
+                                    .id(message.id)
                             }
-                            messageView(message)
-                                .id(message.id)
-                        }
-                        queueSection(items: visibleQueuedFollowUps, kind: .followUp, mode: session.followUpMode)
-                        queueSection(items: visibleQueuedSteers, kind: .steer, mode: session.steeringMode)
-                        if showsLiveActivitySummary {
-                            PickyActivitySummaryView(summary: session.activitySummary)
+                            queueSection(items: visibleQueuedFollowUps, kind: .followUp, mode: session.followUpMode)
+                            queueSection(items: visibleQueuedSteers, kind: .steer, mode: session.steeringMode)
+                            if showsLiveActivitySummary {
+                                PickyActivitySummaryView(summary: session.activitySummary)
+                            }
                         }
                     }
+                    .padding(.vertical, 2)
                 }
-                .padding(.vertical, 2)
+                if session.isCompacting {
+                    PickyCompactingOverlayView()
+                }
             }
             .frame(minHeight: 80, maxHeight: 640)
             .onAppear {
@@ -82,6 +87,10 @@ struct PickyConversationListView: View {
         if showsLiveActivitySummary {
             snapshot.activitySummaryCount += 1
         }
+        if session.isCompacting {
+            snapshot.compactingOverlayCount = 1
+        }
+        snapshot.compactCompletionBubbleCount = visibleMessages.filter(\.isCompactCompletionMessage).count
         return snapshot
     }
 
@@ -121,7 +130,11 @@ struct PickyConversationListView: View {
                 EmptyView()
             }
         case .system:
-            PickyAgentBubbleView(message: message)
+            if message.isCompactCompletionMessage {
+                PickyCompactCompletionBubbleView()
+            } else {
+                PickyAgentBubbleView(message: message)
+            }
         }
     }
 
@@ -293,6 +306,8 @@ struct PickyConversationListRenderSnapshot: Equatable {
     var errorBubbleCount = 0
     var activitySummaryCount = 0
     var contextUsageFooterCount = 0
+    var compactingOverlayCount = 0
+    var compactCompletionBubbleCount = 0
     var showsActivitySummary = false
 }
 

@@ -45,6 +45,7 @@ final class PickyHUDOverlayManager {
     /// monitor stays connected.
     private struct PanelEntry {
         let panel: PickyHUDPanel
+        let placement: PickyHUDPlacement
         var pendingShrinkTask: Task<Void, Never>?
         var lastContentSize: CGSize
     }
@@ -149,8 +150,10 @@ final class PickyHUDOverlayManager {
         hudPanel.isExcludedFromWindowsMenu = true
         hudPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
+        let placement = PickyHUDPlacement()
         let hudRoot = PickyHUDView(
             viewModel: viewModel,
+            placement: placement,
             onSizeChange: { [weak self] size in
                 // SwiftUI animates the card reveal itself. Grow the transparent NSPanel
                 // immediately, but defer shrinking it until the collapse animation has
@@ -177,6 +180,7 @@ final class PickyHUDOverlayManager {
 
         return PanelEntry(
             panel: hudPanel,
+            placement: placement,
             pendingShrinkTask: nil,
             lastContentSize: CGSize(width: width, height: collapsedHeight)
         )
@@ -184,8 +188,48 @@ final class PickyHUDOverlayManager {
 
     private func positionPanel(on screen: NSScreen, displayID: CGDirectDisplayID) {
         guard let entry = panelsByDisplayID[displayID] else { return }
+        // Refresh the per-panel placement before sizing so the SwiftUI card uses the
+        // latest available height when it computes its natural size. Otherwise the
+        // card might keep the stale 1080 cap on the first frame after a screen
+        // configuration change or an anchor drag.
+        updatePlacement(for: screen, displayID: displayID)
         let contentSize = entry.panel.contentView?.fittingSize ?? entry.lastContentSize
         resizePanel(displayID: displayID, toContentSize: contentSize, deferShrink: false)
+    }
+
+    private func updatePlacement(for screen: NSScreen, displayID: CGDirectDisplayID) {
+        guard let entry = panelsByDisplayID[displayID] else { return }
+        let next = computeAvailableCardMaxHeight(for: screen)
+        // Avoid spamming SwiftUI re-renders with identical values; @Published
+        // publishes on every assignment regardless of equality.
+        if abs(entry.placement.availableCardMaxHeight - next) > 0.5 {
+            entry.placement.availableCardMaxHeight = next
+        }
+    }
+
+    /// Largest height the conversation card may take on the given screen, derived
+    /// from the live anchor percent and the visible frame. Card content beyond this
+    /// scrolls inside `PickyConversationListView` rather than overflowing the panel.
+    private func computeAvailableCardMaxHeight(for screen: NSScreen) -> CGFloat {
+        let visibleFrame = screen.visibleFrame
+        guard visibleFrame.height > 0 else {
+            return PickyHUDPlacement.defaultAvailableCardMaxHeight
+        }
+        let topPadding = PickyHUDExpansion.dockBodyTopOffsetFromContentTop
+        let dockAnchoredCap = PickyHUDDockLayout.dockTopAnchoredMaxPanelHeight(
+            visibleFrame: visibleFrame,
+            topPaddingFromContentTop: topPadding,
+            anchorPercent: currentAnchorPercent
+        )
+        let visibleHeightCap = visibleFrame.height - 160
+        let panelCap = min(dockAnchoredCap, visibleHeightCap)
+        // Subtract the outer vertical padding (top + bottom) and the handle stack
+        // (handle + spacing) above the dock capsule. The card sits at HStack top
+        // alongside the dock-stack VStack, so the card's max usable height is the
+        // panel content height minus the outer vertical padding only — the handle
+        // area only takes vertical space inside the dock-stack column, not the
+        // card column. Use the symmetric outer padding here.
+        return max(0, panelCap - 2 * PickyHUDExpansion.dockShadowVerticalPadding)
     }
 
     // MARK: - Resizing / placement
@@ -230,7 +274,10 @@ final class PickyHUDOverlayManager {
     private func targetFrame(for screen: NSScreen, contentSize: CGSize) -> NSRect? {
         let visibleFrame = screen.visibleFrame
         guard visibleFrame.width > 0, visibleFrame.height > 0 else { return nil }
-        let topPadding = PickyHUDExpansion.dockShadowVerticalPadding
+        // Use the dock CAPSULE's top offset (= padding + handle area + spacing) so
+        // the anchor percent lines up with the visible dock capsule, not the small
+        // handle that floats above it.
+        let topPadding = PickyHUDExpansion.dockBodyTopOffsetFromContentTop
         // Cap the panel height so dockTopAnchoredPanelY never has to clamp at the
         // visible-frame floor (which would push the dock top up and break the anchor
         // guarantee). The conversation list scrolls internally for anything taller.

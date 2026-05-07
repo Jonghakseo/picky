@@ -738,6 +738,56 @@ struct PickySessionViewModelTests {
         #expect(originAtCap == visibleFrame.minY + PickyHUDDockLayout.screenMargin)
     }
 
+    @Test func dockBodyTopOffsetFromContentTopAccountsForHandleAreaAndPadding() throws {
+        // The drag handle and its 4pt spacing live above the dock capsule, so the
+        // distance from the panel content's top to the dock CAPSULE's top edge is
+        // larger than the bare vertical padding. The overlay manager passes this
+        // composite value as `topPaddingFromContentTop` so anchor% lands on the
+        // visible dock capsule, not on the small handle floating above it.
+        #expect(
+            PickyHUDExpansion.dockBodyTopOffsetFromContentTop
+            == PickyHUDExpansion.dockShadowVerticalPadding
+            + PickyHUDExpansion.dockHandleAreaHeight
+            + PickyHUDExpansion.dockHandleToBodySpacing
+        )
+        #expect(PickyHUDExpansion.dockBodyTopOffsetFromContentTop > PickyHUDExpansion.dockShadowVerticalPadding)
+    }
+
+    @Test func dockTopAnchoredPanelUsesCapsuleOffsetSoAnchorMatchesVisibleDockTop() throws {
+        // When the overlay manager passes `dockBodyTopOffsetFromContentTop` as the
+        // top padding, dockTopAnchoredPanelY positions the panel so the dock CAPSULE's
+        // top edge — not the handle's top edge — lands at the user's anchor percent.
+        // Without this, the dock would render permanently below the anchor by exactly
+        // (handle area height + spacing) points.
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1440, height: 876)
+        let anchor = 22.0
+        let topPadding = PickyHUDExpansion.dockBodyTopOffsetFromContentTop
+        let cap = PickyHUDDockLayout.dockTopAnchoredMaxPanelHeight(
+            visibleFrame: visibleFrame,
+            topPaddingFromContentTop: topPadding,
+            anchorPercent: anchor
+        )
+        let originAtCap = PickyHUDDockLayout.dockTopAnchoredPanelY(
+            visibleFrame: visibleFrame,
+            targetHeight: cap,
+            topPaddingFromContentTop: topPadding,
+            anchorPercent: anchor
+        )
+        // Dock capsule top in screen Y = panel.top - dockBodyTopOffsetFromContentTop.
+        let dockCapsuleTopScreenY = originAtCap + cap - topPadding
+        let expected = PickyHUDDockLayout.dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: anchor)
+        #expect(abs(dockCapsuleTopScreenY - expected) < 0.01)
+    }
+
+    @Test func placementDefaultMatchesHistoricalCardCap() throws {
+        // Placement starts at 1080 so the conversation card behaves identically to
+        // before the dynamic-height system was introduced until the overlay manager
+        // hydrates the per-screen value.
+        #expect(PickyHUDPlacement.defaultAvailableCardMaxHeight == 1080)
+        let placement = PickyHUDPlacement()
+        #expect(placement.availableCardMaxHeight == 1080)
+    }
+
     @Test func dockTopAnchorPercentSyncsAcrossDifferentVisibleFrameSizes() throws {
         // Same anchor percent on a tall portrait monitor and a wide laptop screen yields
         // dock-top screen Ys that are at the same relative offset from each visible

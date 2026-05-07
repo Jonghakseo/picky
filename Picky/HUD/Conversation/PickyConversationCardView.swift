@@ -13,6 +13,12 @@ struct PickyConversationCardView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     let session: PickySessionListViewModel.SessionCard
     var onArchiveSession: (String) -> Void = { _ in }
+    /// Max height the card may grow to before its inner ScrollView starts handling
+    /// overflow. Driven by `PickyHUDPlacement.availableCardMaxHeight` so the card
+    /// adapts to whatever space remains below the dock's top edge on this monitor.
+    /// Defaults to the historical fixed cap for previews/tests that don't wire a
+    /// placement provider.
+    var maxHeight: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight
     @State private var droppedFilePaths: [String] = []
     @State private var isFileDropTargeted = false
 
@@ -32,7 +38,12 @@ struct PickyConversationCardView: View {
         .padding(.horizontal, PickyHUDDockLayout.detailHorizontalPadding)
         .padding(.vertical, 12)
         .frame(width: PickyHUDDockLayout.detailWidth)
-        .frame(minHeight: 320, maxHeight: 1080, alignment: .top)
+        // Max height comes from PickyHUDPlacement (per-panel, reactive). When the
+        // user drags the dock anchor the conversation card grows or shrinks within
+        // whatever space remains below the dock's top edge, instead of clipping at
+        // a hardcoded 1080. PickyConversationListView's ScrollView absorbs anything
+        // taller than this cap.
+        .frame(minHeight: 320, maxHeight: maxHeight, alignment: .top)
         .background(cardBackground)
         .background(reportKeyboardShortcut)
         .contentShape(Rectangle())

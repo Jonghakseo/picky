@@ -10,6 +10,11 @@ import SwiftUI
 
 struct PickyHUDView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
+    /// Per-panel reactive placement state. The overlay manager updates
+    /// `placement.availableCardMaxHeight` whenever the dock anchor or the screen
+    /// configuration changes; the conversation card binds to it so it grows or
+    /// shrinks within whatever space remains below the dock's top edge.
+    @ObservedObject var placement: PickyHUDPlacement = PickyHUDPlacement()
     var onSizeChange: (CGSize) -> Void = { _ in }
     /// Live delta callback for the dock anchor handle. Argument is the cursor's
     /// bottom-up screen Y delta from drag start (`NSEvent.mouseLocation` based, so it
@@ -106,7 +111,12 @@ struct PickyHUDView: View {
         // changes to the conversation card height.
         HStack(alignment: .top, spacing: PickyHUDDockLayout.panelGap) {
             if let activeSession {
-                PickyConversationCardView(viewModel: viewModel, session: activeSession, onArchiveSession: archiveSession)
+                PickyConversationCardView(
+                    viewModel: viewModel,
+                    session: activeSession,
+                    onArchiveSession: archiveSession,
+                    maxHeight: placement.availableCardMaxHeight
+                )
                     .id(activeSession.id)
                     .frame(width: PickyHUDDockLayout.detailWidth)
                     .transition(.opacity)
@@ -127,6 +137,15 @@ struct PickyHUDView: View {
                     onDockHandleDragEnded: onDockHandleDragEnded
                 )
                 .frame(width: PickyHUDDockLayout.railWidth)
+                // Suppress the implicit layout animation triggered by the outer body's
+                // `.animation(_:value: activeSession != nil)` for the dock rail. Without
+                // this, the first hover that brings the conversation card in animates
+                // the HStack height interpolation through the dock-rail subtree, which
+                // briefly drops the dock capsule by a few points before the panel
+                // resize settles — the "덜컹" the user reported.
+                .transaction(value: activeSession?.id) { transaction in
+                    transaction.animation = nil
+                }
             }
         }
         .padding(.horizontal, PickyHUDExpansion.outerPadding)

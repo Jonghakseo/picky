@@ -63,7 +63,7 @@ Defaults:
 - configuration: `Release`
 - signing identity: `-` (`Sign to Run Locally` / ad-hoc)
 - output app: `build/package/export/Picky.app`
-- output zip: `build/package/Picky-Release-signed.zip`
+- output zip: `build/package/Picky-<version>-alpha.<build>-<sha>-<timestamp>.zip`
 
 ### Developer ID package
 
@@ -81,10 +81,17 @@ PICKY_DEVELOPMENT_TEAM="TEAMID" \
 | `PICKY_CODE_SIGN_IDENTITY` | `-` | Signing identity. Use Developer ID for distribution. |
 | `PICKY_DEVELOPMENT_TEAM` | empty | Apple team id, required for some identities. |
 | `PICKY_PACKAGE_BUILD_DIR` | `build/package` | Package build output root. |
+| `PICKY_MARKETING_VERSION` | Xcode `MARKETING_VERSION` | Override `CFBundleShortVersionString`. |
+| `PICKY_BUILD_NUMBER` | git commit count | Override `CFBundleVersion`. |
+| `PICKY_RELEASE_CHANNEL` | `alpha` | Build channel used in labels/zip names. |
+| `PICKY_BUILD_LABEL` | `<channel>.<build>-<sha>-<timestamp>` | Human-readable build label. |
+| `PICKY_ZIP_PATH` | versioned zip under `build/package` | Exact zip output path. |
 | `PICKY_CREATE_ZIP` | `1` | Set `0` to skip zip creation. |
 | `PICKY_PACKAGE_AGENTD` | `1` | Set `0` to skip embedding `Contents/Resources/agentd`. |
 | `PICKY_AGENTD_RUNTIME_DIR` | `build/package/agentd-runtime` | Prebuilt/staging agentd runtime directory. |
 | `PICKY_CLEAN` | `1` | Set `0` to reuse package DerivedData. |
+
+Each package writes `PickyBuildInfo.json` into app resources with version, build number, channel, git sha, timestamp, and build label. The final app is re-signed after writing this metadata.
 
 ### Runtime resolution
 

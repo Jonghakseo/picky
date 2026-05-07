@@ -33,12 +33,40 @@ DESTINATION="${PICKY_DESTINATION:-platform=macOS}"
 CREATE_ZIP="${PICKY_CREATE_ZIP:-1}"
 PACKAGE_AGENTD="${PICKY_PACKAGE_AGENTD:-1}"
 AGENTD_RUNTIME_DIR="${PICKY_AGENTD_RUNTIME_DIR:-${BUILD_ROOT}/agentd-runtime}"
+
+read_project_setting() {
+  local key="$1"
+  /usr/bin/awk -v key="${key}" '
+    $1 == key && $2 == "=" {
+      value = $3
+      gsub(/;/, "", value)
+      print value
+      exit
+    }
+  ' "${PROJECT_PATH}/project.pbxproj"
+}
+
+sanitize_version_part() {
+  printf '%s' "$1" | /usr/bin/sed -E 's/[^A-Za-z0-9._-]+/-/g; s/^-+//; s/-+$//'
+}
+
+MARKETING_VERSION="${PICKY_MARKETING_VERSION:-$(read_project_setting MARKETING_VERSION)}"
+MARKETING_VERSION="${MARKETING_VERSION:-1.0}"
+BUILD_NUMBER="${PICKY_BUILD_NUMBER:-$(git -C "${ROOT_DIR}" rev-list --count HEAD 2>/dev/null || true)}"
+BUILD_NUMBER="${BUILD_NUMBER:-$(date -u +%Y%m%d%H%M)}"
+RELEASE_CHANNEL="${PICKY_RELEASE_CHANNEL:-alpha}"
+GIT_SHA="${PICKY_GIT_SHA:-$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null || true)}"
+GIT_SHA="${GIT_SHA:-nogit}"
+BUILD_TIMESTAMP="${PICKY_BUILD_TIMESTAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
+BUILD_LABEL="${PICKY_BUILD_LABEL:-${RELEASE_CHANNEL}.${BUILD_NUMBER}-${GIT_SHA}-${BUILD_TIMESTAMP}}"
+SAFE_BUILD_LABEL="$(sanitize_version_part "${BUILD_LABEL}")"
 ENTITLEMENTS_PLIST="${BUILD_ROOT}/${APP_NAME}-${CONFIGURATION}.entitlements.plist"
 
 APP_PRODUCTS_DIR="${DERIVED_DATA_PATH}/Build/Products/${CONFIGURATION}"
 BUILT_APP="${APP_PRODUCTS_DIR}/${APP_NAME}.app"
 PACKAGED_APP="${EXPORT_DIR}/${APP_NAME}.app"
-ZIP_PATH="${BUILD_ROOT}/${APP_NAME}-${CONFIGURATION}-signed.zip"
+ZIP_PATH="${PICKY_ZIP_PATH:-${BUILD_ROOT}/${APP_NAME}-${MARKETING_VERSION}-${SAFE_BUILD_LABEL}.zip}"
+BUILD_INFO_PATH="${PACKAGED_APP}/Contents/Resources/PickyBuildInfo.json"
 
 if [[ ! -d "${PROJECT_PATH}" ]]; then
   echo "❌ Xcode project not found: ${PROJECT_PATH}" >&2
@@ -68,7 +96,9 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=YES \
   CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY}" \
-  DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM}"
+  DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM}" \
+  MARKETING_VERSION="${MARKETING_VERSION}" \
+  CURRENT_PROJECT_VERSION="${BUILD_NUMBER}"
 
 if [[ ! -d "${BUILT_APP}" ]]; then
   echo "❌ Build succeeded but app bundle was not found: ${BUILT_APP}" >&2
@@ -76,6 +106,17 @@ if [[ ! -d "${BUILT_APP}" ]]; then
 fi
 
 /usr/bin/ditto "${BUILT_APP}" "${PACKAGED_APP}"
+
+/usr/bin/python3 - "${BUILD_INFO_PATH}" "${APP_NAME}" "${MARKETING_VERSION}" "${BUILD_NUMBER}" "${RELEASE_CHANNEL}" "${GIT_SHA}" "${BUILD_TIMESTAMP}" "${BUILD_LABEL}" "${CONFIGURATION}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+keys = ["appName", "marketingVersion", "buildNumber", "releaseChannel", "gitSha", "buildTimestamp", "buildLabel", "configuration"]
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(dict(zip(keys, sys.argv[2:])), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
 
 if [[ "${PACKAGE_AGENTD}" == "1" ]]; then
   PICKY_PACKAGE_BUILD_DIR="${BUILD_ROOT}" \
@@ -85,22 +126,22 @@ if [[ "${PACKAGE_AGENTD}" == "1" ]]; then
   rm -rf "${PACKAGED_APP}/Contents/Resources/agentd"
   mkdir -p "${PACKAGED_APP}/Contents/Resources"
   /usr/bin/ditto "${AGENTD_RUNTIME_DIR}" "${PACKAGED_APP}/Contents/Resources/agentd"
-
-  # Mutating the bundle after xcodebuild signing invalidates the resource seal.
-  # Re-sign the final app exactly as it will be distributed while preserving the
-  # entitlements Xcode generated for this configuration/signing identity.
-  CODESIGN_ARGS=(--force --deep --options runtime --sign "${CODE_SIGN_IDENTITY}")
-  if /usr/bin/codesign -d --entitlements :- "${BUILT_APP}" > "${ENTITLEMENTS_PLIST}" 2>/dev/null \
-    && /usr/bin/grep -q "<plist" "${ENTITLEMENTS_PLIST}"; then
-    CODESIGN_ARGS+=(--entitlements "${ENTITLEMENTS_PLIST}")
-  else
-    rm -f "${ENTITLEMENTS_PLIST}"
-  fi
-  if [[ "${CODE_SIGN_IDENTITY}" == "-" ]]; then
-    CODESIGN_ARGS+=(--timestamp=none)
-  fi
-  /usr/bin/codesign "${CODESIGN_ARGS[@]}" "${PACKAGED_APP}"
 fi
+
+# Mutating the bundle after xcodebuild signing invalidates the resource seal.
+# Re-sign the final app exactly as it will be distributed while preserving the
+# entitlements Xcode generated for this configuration/signing identity.
+CODESIGN_ARGS=(--force --deep --options runtime --sign "${CODE_SIGN_IDENTITY}")
+if /usr/bin/codesign -d --entitlements :- "${BUILT_APP}" > "${ENTITLEMENTS_PLIST}" 2>/dev/null \
+  && /usr/bin/grep -q "<plist" "${ENTITLEMENTS_PLIST}"; then
+  CODESIGN_ARGS+=(--entitlements "${ENTITLEMENTS_PLIST}")
+else
+  rm -f "${ENTITLEMENTS_PLIST}"
+fi
+if [[ "${CODE_SIGN_IDENTITY}" == "-" ]]; then
+  CODESIGN_ARGS+=(--timestamp=none)
+fi
+/usr/bin/codesign "${CODESIGN_ARGS[@]}" "${PACKAGED_APP}"
 
 /usr/bin/codesign --verify --deep --strict --verbose=2 "${PACKAGED_APP}"
 
@@ -116,8 +157,11 @@ cat <<EOF
 ✅ Signed Picky package is ready.
 
 App: ${PACKAGED_APP}
+Version: ${MARKETING_VERSION} (${BUILD_NUMBER})
+Build label: ${BUILD_LABEL}
 Signature: ${CODE_SIGN_IDENTITY}
 Configuration: ${CONFIGURATION}
+Build info: ${BUILD_INFO_PATH}
 $(if [[ "${PACKAGE_AGENTD}" == "1" ]]; then printf 'Bundled agentd: %s\n' "${PACKAGED_APP}/Contents/Resources/agentd"; fi)
 $(if [[ "${CREATE_ZIP}" == "1" ]]; then printf 'Zip: %s\n' "${ZIP_PATH}"; fi)
 

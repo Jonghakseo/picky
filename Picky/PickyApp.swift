@@ -9,51 +9,18 @@
 
 import AppKit
 import ServiceManagement
-import SwiftUI
 import UserNotifications
-
-@main
-struct PickyApp: App {
-    @NSApplicationDelegateAdaptor(CompanionAppDelegate.self) var appDelegate
-
-    var body: some Scene {
-        // The app lives primarily in the menu bar panel managed by the AppDelegate.
-        // A compact Settings scene is kept for local paths and diagnostics.
-        Settings {
-            PickySettingsView(viewModel: PickySettingsViewModel())
-                .environmentObject(appDelegate.appearanceStore)
-                .preferredColorScheme(appDelegate.appearanceStore.mode.colorScheme)
-        }
-        .commands {
-            CommandGroup(replacing: .undoRedo) {
-                Button("Undo") {
-                    NSApp.sendAction(Selector(("undo:")), to: nil, from: nil)
-                }
-                .keyboardShortcut("z", modifiers: .command)
-
-                Button("Redo") {
-                    NSApp.sendAction(Selector(("redo:")), to: nil, from: nil)
-                }
-                .keyboardShortcut("Z", modifiers: [.command, .shift])
-
-                Button("Redo") {
-                    NSApp.sendAction(Selector(("redo:")), to: nil, from: nil)
-                }
-                .keyboardShortcut("y", modifiers: .command)
-            }
-        }
-    }
-}
 
 /// Manages the companion lifecycle: creates the menu bar panel and starts
 /// the companion voice pipeline on launch.
+@main
 @MainActor
 final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarPanelManager: MenuBarPanelManager?
     private let settingsStore = PickySettingsStore()
     /// Single source of truth for the user-selected light/dark mode. Both the menu bar
     /// companion panel and the HUD overlay observe this object so flipping the toggle
-    /// in the companion footer flips the entire UI surface (Settings scene included).
+    /// in the companion footer flips the entire UI surface.
     let appearanceStore: PickyAppearanceStore
     private lazy var daemonConfiguration: PickyAgentDaemonConfiguration = {
         let settings = settingsStore.load().normalizedPaths()
@@ -144,7 +111,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
-
 }
 
 extension CompanionAppDelegate: UNUserNotificationCenterDelegate {

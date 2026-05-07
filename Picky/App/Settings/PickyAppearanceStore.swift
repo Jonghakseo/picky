@@ -4,8 +4,8 @@
 //
 //  ObservableObject that owns the user's selected light/dark mode and persists
 //  it through PickySettingsStore. A single instance lives on the AppDelegate
-//  and is injected as an environment object into the companion panel, the
-//  HUD overlay, and the Settings scene so the entire UI flips together.
+//  and is injected as an environment object into the companion panel and HUD
+//  overlay so the entire UI flips together.
 //
 
 import Combine
@@ -47,8 +47,8 @@ final class PickyAppearanceStore: ObservableObject {
 }
 
 /// Wraps `.preferredColorScheme(...)` so the host view re-renders whenever the
-/// observed `PickyAppearanceStore` publishes a new mode. Used at every NSPanel /
-/// Settings root so the entire hosted SwiftUI tree flips together.
+/// observed `PickyAppearanceStore` publishes a new mode. Used at every NSPanel
+/// root so the entire hosted SwiftUI tree flips together.
 struct PickyPreferredColorSchemeModifier: ViewModifier {
     @ObservedObject var store: PickyAppearanceStore
 

@@ -34,6 +34,14 @@ private struct FakeExecutableChecker: PickyExecutableChecking {
     func executableExists(named name: String, environment: [String: String]) -> Bool { exists }
 }
 
+private final class FakeDaemonClipboardWriter: PickyClipboardWriting {
+    private(set) var copiedTexts: [String] = []
+
+    func copy(_ text: String) {
+        copiedTexts.append(text)
+    }
+}
+
 @MainActor
 struct PickyAgentDaemonLauncherTests {
     @Test func buildsDaemonEnvironmentAndCapturesLogs() throws {
@@ -64,6 +72,140 @@ struct PickyAgentDaemonLauncherTests {
         #expect(runner.launchedConfiguration?.environment["PICKY_AGENTD_RUNTIME"] == "mock")
         #expect(try String(contentsOf: temp.appendingPathComponent("Logs/agentd.stdout.log")).contains("ready"))
         #expect(try String(contentsOf: temp.appendingPathComponent("Logs/agentd.stderr.log")).contains("warn"))
+    }
+
+    @Test func interceptsOSC52ClipboardRequestsFromStdout() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let agentd = temp.appendingPathComponent("agentd", isDirectory: true)
+        try makeAgentdPackage(at: agentd)
+        let runner = FakeProcessRunner()
+        let clipboard = FakeDaemonClipboardWriter()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19012,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: agentd,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["node", "dist/index.js"]
+        )
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs"),
+            clipboardWriter: clipboard
+        )
+
+        launcher.start()
+        let payload = Data("hello from side agent".utf8).base64EncodedString()
+        runner.emitStdout("before\u{001B}]52;c;\(payload)\u{0007}after\n")
+
+        let stdoutLog = try String(contentsOf: temp.appendingPathComponent("Logs/agentd.stdout.log"))
+        #expect(clipboard.copiedTexts == ["hello from side agent"])
+        #expect(stdoutLog.contains("before"))
+        #expect(stdoutLog.contains("after"))
+        #expect(stdoutLog.contains("[Picky intercepted OSC52 clipboard request: 21 chars]"))
+        #expect(!stdoutLog.contains(payload))
+        #expect(!stdoutLog.contains("\u{001B}]52"))
+    }
+
+    @Test func interceptsOSC52ClipboardRequestsSplitAcrossStdoutChunks() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let agentd = temp.appendingPathComponent("agentd", isDirectory: true)
+        try makeAgentdPackage(at: agentd)
+        let runner = FakeProcessRunner()
+        let clipboard = FakeDaemonClipboardWriter()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19013,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: agentd,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["node", "dist/index.js"]
+        )
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs"),
+            clipboardWriter: clipboard
+        )
+
+        launcher.start()
+        let payload = Data("split clipboard".utf8).base64EncodedString()
+        runner.emitStdout("prefix\u{001B}]52;c;")
+        runner.emitStdout(payload)
+        runner.emitStdout("\u{001B}\\suffix")
+
+        let stdoutLog = try String(contentsOf: temp.appendingPathComponent("Logs/agentd.stdout.log"))
+        #expect(clipboard.copiedTexts == ["split clipboard"])
+        #expect(stdoutLog == "prefix[Picky intercepted OSC52 clipboard request: 15 chars]\nsuffix")
+    }
+
+    @Test func interceptsOSC52ClipboardRequestsSplitBetweenEscapeAndBracket() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let agentd = temp.appendingPathComponent("agentd", isDirectory: true)
+        try makeAgentdPackage(at: agentd)
+        let runner = FakeProcessRunner()
+        let clipboard = FakeDaemonClipboardWriter()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19015,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: agentd,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["node", "dist/index.js"]
+        )
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs"),
+            clipboardWriter: clipboard
+        )
+
+        launcher.start()
+        let payload = Data("edge split".utf8).base64EncodedString()
+        runner.emitStdout("prefix\u{001B}")
+        runner.emitStdout("]52;c;\(payload)\u{0007}suffix")
+
+        let stdoutLog = try String(contentsOf: temp.appendingPathComponent("Logs/agentd.stdout.log"))
+        #expect(clipboard.copiedTexts == ["edge split"])
+        #expect(stdoutLog == "prefix[Picky intercepted OSC52 clipboard request: 10 chars]\nsuffix")
+    }
+
+    @Test func stripsNonClipboardOSCSequencesFromStdoutLogs() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let agentd = temp.appendingPathComponent("agentd", isDirectory: true)
+        try makeAgentdPackage(at: agentd)
+        let runner = FakeProcessRunner()
+        let clipboard = FakeDaemonClipboardWriter()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19014,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: agentd,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["node", "dist/index.js"]
+        )
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs"),
+            clipboardWriter: clipboard
+        )
+
+        launcher.start()
+        runner.emitStdout("x\u{001B}]0;secret title\u{0007}y")
+
+        let stdoutLog = try String(contentsOf: temp.appendingPathComponent("Logs/agentd.stdout.log"))
+        #expect(clipboard.copiedTexts.isEmpty)
+        #expect(stdoutLog == "x[Picky stripped terminal OSC sequence: OSC 0]\ny")
     }
 
     @Test func restartsWithBackoffAfterCrash() async throws {

@@ -290,6 +290,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     private let logDirectory: URL
     private let fileManager: FileManager
     private let executableChecker: PickyExecutableChecking
+    private let stdoutInterceptor: PickyTerminalOutputInterceptor
     private var restartTask: Task<Void, Never>?
     private var attempts = 0
     private var intentionallyStopped = false
@@ -299,13 +300,15 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         runner: PickyProcessRunning = FoundationPickyProcessRunner(),
         logDirectory: URL? = nil,
         fileManager: FileManager = .default,
-        executableChecker: PickyExecutableChecking = PATHPickyExecutableChecker()
+        executableChecker: PickyExecutableChecking = PATHPickyExecutableChecker(),
+        clipboardWriter: PickyClipboardWriting = PickyPasteboardClipboardWriter()
     ) {
         self.configuration = configuration
         self.runner = runner
         self.logDirectory = logDirectory ?? configuration.appSupportRoot.appendingPathComponent("Logs", isDirectory: true)
         self.fileManager = fileManager
         self.executableChecker = executableChecker
+        self.stdoutInterceptor = PickyTerminalOutputInterceptor(clipboardWriter: clipboardWriter)
         self.runner.terminationHandler = { [weak self] code in
             Task { @MainActor in self?.processTerminated(exitCode: code) }
         }
@@ -335,7 +338,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             try fileManager.createDirectory(at: logDirectory, withIntermediateDirectories: true)
             try runner.launch(
                 configuration: configuration,
-                stdout: { [weak self] data in self?.append(data, to: "agentd.stdout.log") },
+                stdout: { [weak self] data in self?.appendStdout(data) },
                 stderr: { [weak self] data in self?.append(data, to: "agentd.stderr.log") }
             )
             attempts = 0
@@ -393,6 +396,10 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         }
     }
 
+    private func appendStdout(_ data: Data) {
+        append(stdoutInterceptor.process(data), to: "agentd.stdout.log")
+    }
+
     private func append(_ data: Data, to fileName: String) {
         guard !data.isEmpty else { return }
         let url = logDirectory.appendingPathComponent(fileName)
@@ -403,6 +410,124 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         defer { try? handle.close() }
         try? handle.seekToEnd()
         try? handle.write(contentsOf: data)
+    }
+}
+
+private final class PickyTerminalOutputInterceptor {
+    private static let escapeByte: UInt8 = 0x1B
+    private static let oscByte: UInt8 = 0x5D
+    private static let belByte: UInt8 = 0x07
+    private static let stByte: UInt8 = 0x5C
+    private static let maxBufferedOSCBytes = 2_000_000
+    private static let maxOSC52PayloadBytes = 1_000_000
+
+    private let clipboardWriter: PickyClipboardWriting
+    private var bufferedBytes: [UInt8] = []
+
+    init(clipboardWriter: PickyClipboardWriting) {
+        self.clipboardWriter = clipboardWriter
+    }
+
+    func process(_ data: Data) -> Data {
+        guard !data.isEmpty else { return data }
+        bufferedBytes.append(contentsOf: data)
+
+        var output: [UInt8] = []
+        var cursor = 0
+
+        while cursor < bufferedBytes.count {
+            guard let oscStart = findOSCStart(from: cursor) else {
+                if bufferedBytes.last == Self.escapeByte {
+                    if cursor < bufferedBytes.count - 1 {
+                        output.append(contentsOf: bufferedBytes[cursor..<(bufferedBytes.count - 1)])
+                    }
+                    bufferedBytes = [Self.escapeByte]
+                    return Data(output)
+                }
+                output.append(contentsOf: bufferedBytes[cursor...])
+                bufferedBytes.removeAll(keepingCapacity: true)
+                return Data(output)
+            }
+
+            if oscStart > cursor {
+                output.append(contentsOf: bufferedBytes[cursor..<oscStart])
+            }
+
+            guard let terminator = findOSCTerminator(from: oscStart + 2) else {
+                if bufferedBytes.count - oscStart > Self.maxBufferedOSCBytes {
+                    output.append(contentsOf: Array("[Picky dropped unterminated terminal OSC sequence]\n".utf8))
+                    bufferedBytes.removeAll(keepingCapacity: true)
+                    return Data(output)
+                }
+                bufferedBytes = Array(bufferedBytes[oscStart...])
+                return Data(output)
+            }
+
+            let body = Array(bufferedBytes[(oscStart + 2)..<terminator.start])
+            output.append(contentsOf: Array(replacementText(forOSCBody: body).utf8))
+            cursor = terminator.end
+        }
+
+        bufferedBytes.removeAll(keepingCapacity: true)
+        return Data(output)
+    }
+
+    private func findOSCStart(from start: Int) -> Int? {
+        guard start < bufferedBytes.count else { return nil }
+        var index = start
+        while index + 1 < bufferedBytes.count {
+            if bufferedBytes[index] == Self.escapeByte && bufferedBytes[index + 1] == Self.oscByte { return index }
+            index += 1
+        }
+        return nil
+    }
+
+    private func findOSCTerminator(from start: Int) -> (start: Int, end: Int)? {
+        guard start < bufferedBytes.count else { return nil }
+        var index = start
+        while index < bufferedBytes.count {
+            if bufferedBytes[index] == Self.belByte { return (index, index + 1) }
+            if index + 1 < bufferedBytes.count,
+               bufferedBytes[index] == Self.escapeByte,
+               bufferedBytes[index + 1] == Self.stByte {
+                return (index, index + 2)
+            }
+            index += 1
+        }
+        return nil
+    }
+
+    private func replacementText(forOSCBody body: [UInt8]) -> String {
+        guard let text = String(bytes: body, encoding: .utf8) else {
+            return "[Picky stripped terminal OSC sequence]\n"
+        }
+
+        if text.hasPrefix("52;") {
+            return handleOSC52(text)
+        }
+
+        let command = text.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? "unknown"
+        return "[Picky stripped terminal OSC sequence: OSC \(command)]\n"
+    }
+
+    private func handleOSC52(_ body: String) -> String {
+        let parts = body.split(separator: ";", maxSplits: 2, omittingEmptySubsequences: false)
+        guard parts.count == 3 else {
+            return "[Picky ignored malformed OSC52 clipboard request]\n"
+        }
+
+        let payload = String(parts[2])
+        guard payload.utf8.count <= Self.maxOSC52PayloadBytes else {
+            return "[Picky ignored oversized OSC52 clipboard request: \(payload.utf8.count) bytes]\n"
+        }
+
+        guard let decoded = Data(base64Encoded: payload, options: [.ignoreUnknownCharacters]),
+              let clipboardText = String(data: decoded, encoding: .utf8) else {
+            return "[Picky ignored invalid OSC52 clipboard request]\n"
+        }
+
+        clipboardWriter.copy(clipboardText)
+        return "[Picky intercepted OSC52 clipboard request: \(clipboardText.count) chars]\n"
     }
 }
 

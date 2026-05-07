@@ -936,6 +936,35 @@ struct PickySessionViewModelTests {
         #expect(viewModel.archivedSessions.first(where: { $0.id == "side-1" })?.lastSummary == "Updated")
     }
 
+    @Test func unarchiveRestoresSessionAndClearsManualArchiveState() async throws {
+        let client = FakePickyAgentClient()
+        let archiveStore = FakeArchiveStore()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: archiveStore
+        )
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "completed"))))
+        try await settle()
+
+        viewModel.archive(sessionID: "side-1")
+        try await settle()
+        #expect(viewModel.sessions.isEmpty)
+        #expect(viewModel.archivedSessions.map(\.id) == ["side-1"])
+
+        viewModel.unarchive(sessionID: "side-1")
+        try await settle()
+
+        #expect(archiveStore.archivedSessionIDs.isEmpty)
+        #expect(archiveStore.manuallyArchivedSessionIDs.isEmpty)
+        #expect(viewModel.sessions.map(\.id) == ["side-1"])
+        #expect(viewModel.archivedSessions.isEmpty)
+        let unarchiveCommand = try #require(client.sentCommands.last { $0.type == .setSessionArchived })
+        #expect(unarchiveCommand.sessionId == "side-1")
+        #expect(unarchiveCommand.archived == false)
+    }
+
     @Test func copyTerminalResumeCommandUsesCapturedPiSessionFileAndCwd() async throws {
         let client = FakePickyAgentClient()
         let notifications = PickyNoopNotificationCenter()

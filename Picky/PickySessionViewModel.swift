@@ -678,6 +678,29 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
+    func unarchive(sessionID: String) {
+        pickySessionLog("unarchive session=\(sessionID)")
+        var archivedIDs = archiveStore.archivedSessionIDs
+        archivedIDs.remove(sessionID)
+        archiveStore.archivedSessionIDs = archivedIDs
+
+        var manuallyArchivedIDs = archiveStore.manuallyArchivedSessionIDs
+        manuallyArchivedIDs.remove(sessionID)
+        archiveStore.manuallyArchivedSessionIDs = manuallyArchivedIDs
+
+        Task { try? await client.send(PickyCommandEnvelope(type: .setSessionArchived, sessionId: sessionID, archived: false)) }
+
+        guard let index = archivedSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        let restored = archivedSessions.remove(at: index)
+        if !sessions.contains(where: { $0.id == sessionID }) {
+            sessions.append(restored)
+        }
+        sessions = sessions.sortedForHUD()
+        syncSelectionAfterSessionListChange()
+        syncVoiceFollowUpAfterSessionListChange()
+        syncActiveVoiceFollowUpAfterSessionListChange()
+    }
+
     func searchSessions(query: String) -> [SessionCard] {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let all = sessions + archivedSessions

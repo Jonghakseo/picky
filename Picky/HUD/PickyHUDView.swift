@@ -15,6 +15,8 @@ struct PickyHUDView: View {
     @State private var previewSessionID: String?
     @State private var isHUDHovered = false
     @State private var closeExpansionTask: Task<Void, Never>?
+    @State private var archiveUndoToast: PickyHUDArchiveUndoToast?
+    @State private var archiveUndoDismissTask: Task<Void, Never>?
     @State private var lastReportedHUDSize: CGSize = .zero
     @State private var lastReportedActiveSessionID: String?
 
@@ -51,6 +53,8 @@ struct PickyHUDView: View {
             .onDisappear {
                 closeExpansionTask?.cancel()
                 closeExpansionTask = nil
+                archiveUndoDismissTask?.cancel()
+                archiveUndoDismissTask = nil
             }
     }
 
@@ -102,6 +106,7 @@ struct PickyHUDView: View {
                     pendingDoneFlashSessionIDs: viewModel.pendingDoneFlashSessionIDs,
                     onHoverSession: previewDockSession,
                     onPinSession: pinSession,
+                    onArchiveSession: archiveSessionFromDock,
                     onCreateSideAgent: chooseFolderForEmptySideAgent,
                     onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:)
                 )
@@ -110,7 +115,23 @@ struct PickyHUDView: View {
         }
         .padding(.horizontal, PickyHUDExpansion.outerPadding)
         .padding(.vertical, PickyHUDExpansion.dockShadowVerticalPadding)
+        .overlay(alignment: .bottomTrailing) {
+            archiveUndoToastOverlay
+        }
         .onHover(perform: handleHUDHover)
+    }
+
+    @ViewBuilder
+    private var archiveUndoToastOverlay: some View {
+        if let archiveUndoToast {
+            PickyHUDArchiveUndoToastView(
+                toast: archiveUndoToast,
+                onUndo: { undoArchive(toast: archiveUndoToast) }
+            )
+            .padding(.trailing, PickyHUDDockLayout.railWidth + 8)
+            .padding(.bottom, PickyHUDExpansion.dockShadowVerticalPadding + 2)
+            .transition(.opacity.combined(with: .move(edge: .trailing)))
+        }
     }
 
     private func handleHUDHover(_ isHovering: Bool) {
@@ -152,6 +173,40 @@ struct PickyHUDView: View {
         previewSessionID = pinnedSessionID == nil && isHUDHovered ? sessionID : nil
         if pinnedSessionID == nil && !isHUDHovered {
             scheduleCloseIfNeeded()
+        }
+    }
+
+    private func archiveSessionFromDock(_ sessionID: String) {
+        cancelPendingClose()
+        let title = visibleSessions.first(where: { $0.id == sessionID })?.title ?? "Side agent"
+        viewModel.archive(sessionID: sessionID)
+        if pinnedSessionID == sessionID { pinnedSessionID = nil }
+        if previewSessionID == sessionID { previewSessionID = nil }
+        showArchiveUndoToast(sessionID: sessionID, title: title)
+    }
+
+    private func showArchiveUndoToast(sessionID: String, title: String) {
+        archiveUndoDismissTask?.cancel()
+        let toast = PickyHUDArchiveUndoToast(sessionID: sessionID, title: title)
+        withAnimation(PickyHUDExpansion.animation) {
+            archiveUndoToast = toast
+        }
+        archiveUndoDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: PickyHUDArchiveHoldPolicy.undoToastDurationNanoseconds)
+            guard !Task.isCancelled, archiveUndoToast?.id == toast.id else { return }
+            withAnimation(PickyHUDExpansion.animation) {
+                archiveUndoToast = nil
+            }
+            archiveUndoDismissTask = nil
+        }
+    }
+
+    private func undoArchive(toast: PickyHUDArchiveUndoToast) {
+        archiveUndoDismissTask?.cancel()
+        archiveUndoDismissTask = nil
+        viewModel.unarchive(sessionID: toast.sessionID)
+        withAnimation(PickyHUDExpansion.animation) {
+            archiveUndoToast = nil
         }
     }
 
@@ -246,6 +301,84 @@ private struct PickyHUDCollapsibleContent<Content: View>: View {
     }
 }
 
+private enum PickyHUDArchiveHoldPolicy {
+    static let duration: TimeInterval = 4
+    static let maximumDistance: CGFloat = 10
+    static let almostDoneDelayNanoseconds: UInt64 = 3_000_000_000
+    static let undoToastDurationNanoseconds: UInt64 = 6_000_000_000
+}
+
+private enum PickyHUDArchiveHoldPhase {
+    case holding
+    case almostDone
+
+    var label: String {
+        switch self {
+        case .holding:
+            return "Hold to archive"
+        case .almostDone:
+            return "Archiving…"
+        }
+    }
+}
+
+private struct PickyHUDArchiveUndoToast: Identifiable, Equatable {
+    let id = UUID()
+    let sessionID: String
+    let title: String
+}
+
+private struct PickyHUDArchiveUndoToastView: View {
+    let toast: PickyHUDArchiveUndoToast
+    let onUndo: () -> Void
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "archivebox.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(DS.Colors.warningText)
+                .frame(width: 22, height: 22)
+                .background(Circle().fill(DS.Colors.warning.opacity(0.15)))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Session archived")
+                    .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                    .foregroundColor(DS.Colors.textPrimary)
+                Text(toast.title)
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(maxWidth: 128, alignment: .leading)
+
+            Button("Undo", action: onUndo)
+                .buttonStyle(.plain)
+                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                .foregroundColor(DS.Colors.accentText)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(DS.Colors.accentText.opacity(0.12))
+                        .overlay(Capsule(style: .continuous).strokeBorder(DS.Colors.accentText.opacity(0.24), lineWidth: 0.7))
+                )
+                .pointerCursor()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).fill(DS.Colors.surface1.opacity(0.28)))
+                .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).strokeBorder(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8))
+        )
+        .shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Session archived. Undo available.")
+    }
+}
+
 private struct PickyHUDDockRailView: View {
     let sessions: [PickySessionListViewModel.SessionCard]
     let activeSessionID: String?
@@ -253,6 +386,7 @@ private struct PickyHUDDockRailView: View {
     let pendingDoneFlashSessionIDs: Set<String>
     let onHoverSession: (String) -> Void
     let onPinSession: (String) -> Void
+    let onArchiveSession: (String) -> Void
     let onCreateSideAgent: () -> Void
     let onDoneFlashConsumed: (String) -> Void
 
@@ -274,6 +408,7 @@ private struct PickyHUDDockRailView: View {
                             shouldFlashCompletion: pendingDoneFlashSessionIDs.contains(session.id),
                             onHover: { onHoverSession(session.id) },
                             onPin: { onPinSession(session.id) },
+                            onArchive: { onArchiveSession(session.id) },
                             onDoneFlashConsumed: { onDoneFlashConsumed(session.id) }
                         )
                     }
@@ -392,36 +527,66 @@ private struct PickyHUDDockIconView: View {
     let shouldFlashCompletion: Bool
     let onHover: () -> Void
     let onPin: () -> Void
+    let onArchive: () -> Void
     let onDoneFlashConsumed: () -> Void
 
     @State private var completionFlashIntensity: Double = 0
     @State private var completionFlashTask: Task<Void, Never>?
+    @State private var isArchivePressing = false
+    @State private var archiveProgress: Double = 0
+    @State private var archiveHoldPhase: PickyHUDArchiveHoldPhase = .holding
+    @State private var archiveHoldPhaseTask: Task<Void, Never>?
+    @State private var didCompleteArchiveHold = false
 
     var body: some View {
-        Button(action: onPin) {
-            ZStack {
-                dockIconBackground
-                Text("\(index + 1)")
-                    .font(PickyHUDTypography.supportingMonospacedSemibold)
-                    .foregroundColor(isActive ? DS.Colors.textPrimary : DS.Colors.textSecondary)
-            }
-            .frame(width: 36, height: 36)
-            .overlay(alignment: .topTrailing) {
-                statusDot.offset(x: -1.3, y: 1.3)
-            }
-            .overlay(alignment: .bottomTrailing) {
-                if isPinned {
-                    Image(systemName: "pin.fill")
-                        .font(.system(size: 6.5, weight: .bold))
-                        .foregroundColor(DS.Colors.accentText)
-                        .frame(width: 12, height: 12)
-                        .background(Circle().fill(DS.Colors.surface1.opacity(0.96)))
-                        .offset(x: 5, y: 5)
-                }
-            }
-            .contentShape(Circle())
+        ZStack {
+            dockIconBackground
+            Text("\(index + 1)")
+                .font(PickyHUDTypography.supportingMonospacedSemibold)
+                .foregroundColor(isActive ? DS.Colors.textPrimary : DS.Colors.textSecondary)
+                .opacity(isArchivePressing ? 0.64 : 1)
         }
-        .buttonStyle(.plain)
+        .frame(width: 36, height: 36)
+        .scaleEffect(isArchivePressing ? 0.92 : 1)
+        .overlay(alignment: .topTrailing) {
+            statusDot.offset(x: -1.3, y: 1.3)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 6.5, weight: .bold))
+                    .foregroundColor(DS.Colors.accentText)
+                    .frame(width: 12, height: 12)
+                    .background(Circle().fill(DS.Colors.surface1.opacity(0.96)))
+                    .offset(x: 5, y: 5)
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if isArchivePressing {
+                archiveBadge
+                    .offset(x: -5, y: -5)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .overlay(alignment: .center) {
+            archiveProgressRing
+        }
+        .overlay(alignment: .leading) {
+            if isArchivePressing {
+                archiveHoldPill
+                    .offset(x: -128)
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+            }
+        }
+        .contentShape(Circle())
+        .onTapGesture(perform: onPin)
+        .onLongPressGesture(
+            minimumDuration: PickyHUDArchiveHoldPolicy.duration,
+            maximumDistance: PickyHUDArchiveHoldPolicy.maximumDistance,
+            pressing: handleArchivePressing,
+            perform: completeArchiveHold
+        )
+        .pointerCursor()
         .onHover { isHovering in
             if isHovering { onHover() }
         }
@@ -434,9 +599,59 @@ private struct PickyHUDDockIconView: View {
         .onDisappear {
             completionFlashTask?.cancel()
             completionFlashTask = nil
+            archiveHoldPhaseTask?.cancel()
+            archiveHoldPhaseTask = nil
         }
+        .animation(.spring(response: 0.2, dampingFraction: 0.78), value: isArchivePressing)
         .accessibilityLabel("Preview \(session.title)")
-        .accessibilityHint("Click to pin this side agent")
+        .accessibilityHint("Click to pin. Press and hold for 4 seconds to archive this side agent.")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private var archiveProgressRing: some View {
+        Circle()
+            .trim(from: 0, to: archiveProgress)
+            .stroke(
+                DS.Colors.warning,
+                style: StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round)
+            )
+            .rotationEffect(.degrees(-90))
+            .frame(width: 42, height: 42)
+            .opacity(isArchivePressing || archiveProgress > 0 ? 1 : 0)
+            .shadow(color: DS.Colors.warning.opacity(0.34), radius: 4, x: 0, y: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    private var archiveBadge: some View {
+        Image(systemName: "archivebox.fill")
+            .font(.system(size: 7.5, weight: .bold))
+            .foregroundColor(DS.Colors.warningText)
+            .frame(width: 14, height: 14)
+            .background(Circle().fill(DS.Colors.surface1.opacity(0.96)))
+            .overlay(Circle().stroke(DS.Colors.warning.opacity(0.65), lineWidth: 1))
+            .accessibilityHidden(true)
+    }
+
+    private var archiveHoldPill: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "archivebox.fill")
+                .font(.system(size: 9, weight: .semibold))
+            Text(archiveHoldPhase.label)
+                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+        }
+        .foregroundColor(DS.Colors.warningText)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(
+            Capsule(style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(Capsule(style: .continuous).fill(DS.Colors.warning.opacity(0.14)))
+                .overlay(Capsule(style: .continuous).strokeBorder(DS.Colors.warning.opacity(0.46), lineWidth: 0.8))
+        )
+        .shadow(color: Color.black.opacity(0.18), radius: 8, x: 0, y: 4)
+        .accessibilityHidden(true)
     }
 
     private var dockIconBackground: some View {
@@ -456,6 +671,10 @@ private struct PickyHUDDockIconView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(Color.white.opacity(isActive ? 0.0 : 0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(DS.Colors.warning.opacity(0.20 * archiveProgress))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -479,9 +698,57 @@ private struct PickyHUDDockIconView: View {
             }
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(DS.Colors.warning.opacity(0.76 * archiveProgress), lineWidth: 1.35)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(DS.Colors.success.opacity(0.85 * completionFlashIntensity), lineWidth: 1.4)
             )
+            .shadow(color: DS.Colors.warning.opacity(0.30 * archiveProgress), radius: 5, x: 0, y: 0)
             .shadow(color: DS.Colors.success.opacity(0.55 * completionFlashIntensity), radius: 6, x: 0, y: 0)
+    }
+
+    private func handleArchivePressing(_ isPressing: Bool) {
+        if isPressing {
+            beginArchiveHoldFeedback()
+        } else if !didCompleteArchiveHold {
+            cancelArchiveHoldFeedback()
+        }
+    }
+
+    private func beginArchiveHoldFeedback() {
+        archiveHoldPhaseTask?.cancel()
+        didCompleteArchiveHold = false
+        archiveHoldPhase = .holding
+        archiveProgress = 0
+        isArchivePressing = true
+        withAnimation(.linear(duration: PickyHUDArchiveHoldPolicy.duration)) {
+            archiveProgress = 1
+        }
+        archiveHoldPhaseTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: PickyHUDArchiveHoldPolicy.almostDoneDelayNanoseconds)
+            guard !Task.isCancelled else { return }
+            archiveHoldPhase = .almostDone
+        }
+    }
+
+    private func cancelArchiveHoldFeedback() {
+        archiveHoldPhaseTask?.cancel()
+        archiveHoldPhaseTask = nil
+        isArchivePressing = false
+        archiveHoldPhase = .holding
+        withAnimation(.easeOut(duration: 0.18)) {
+            archiveProgress = 0
+        }
+    }
+
+    private func completeArchiveHold() {
+        didCompleteArchiveHold = true
+        archiveHoldPhaseTask?.cancel()
+        archiveHoldPhaseTask = nil
+        archiveHoldPhase = .almostDone
+        archiveProgress = 1
+        onArchive()
     }
 
     private func runCompletionFlash() {

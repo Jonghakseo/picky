@@ -10,6 +10,7 @@ import SwiftUI
 struct PickyConversationMenu: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
+    var onArchive: (() -> Void)?
 
     var canOpenPiTerminal: Bool { session.piSessionFilePath != nil }
     var canOpenReport: Bool { session.canOpenMarkdownReport }
@@ -53,7 +54,11 @@ struct PickyConversationMenu: View {
             .disabled(!canStop)
 
             Button("Archive") {
-                viewModel.archive(sessionID: session.id)
+                if let onArchive {
+                    onArchive()
+                } else {
+                    viewModel.archive(sessionID: session.id)
+                }
             }
         }
     }

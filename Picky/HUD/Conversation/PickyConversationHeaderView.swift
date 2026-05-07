@@ -10,6 +10,7 @@ import SwiftUI
 struct PickyConversationHeaderView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     let session: PickySessionListViewModel.SessionCard
+    var onArchiveSession: (String) -> Void = { _ in }
 
     private var isVoiceFollowUpTarget: Bool {
         if let activeVoiceFollowUpSessionID = viewModel.activeVoiceFollowUpSessionID {
@@ -71,7 +72,7 @@ struct PickyConversationHeaderView: View {
 
     private var conversationMenuButton: some View {
         Menu {
-            PickyConversationMenu(session: session, viewModel: viewModel)
+            PickyConversationMenu(session: session, viewModel: viewModel, onArchive: { onArchiveSession(session.id) })
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 12, weight: .semibold))

@@ -72,6 +72,17 @@ struct PickyTests {
         #expect(!PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 200, targetHeight: 180, deferShrink: false))
     }
 
+    @Test func archiveUndoToastLayoutPinsToScreenBottomRight() throws {
+        let visibleFrame = CGRect(x: 100, y: 80, width: 1440, height: 900)
+        let panelSize = CGSize(width: 304, height: 78)
+
+        let frame = PickyHUDArchiveUndoToastLayout.panelFrame(visibleFrame: visibleFrame, panelSize: panelSize)
+
+        #expect(frame.origin.x == visibleFrame.maxX - panelSize.width - PickyHUDArchiveUndoToastPolicy.screenMargin)
+        #expect(frame.origin.y == visibleFrame.minY + PickyHUDArchiveUndoToastPolicy.screenMargin)
+        #expect(frame.size == panelSize)
+    }
+
     @Test func pushToTalkShortcutKeepsControlOptionTransitionSemantics() throws {
         let controlOptionFlags: NSEvent.ModifierFlags = [.control, .option]
         let spec = PickyShortcutSpec.defaultPushToTalk

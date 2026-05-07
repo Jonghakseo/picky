@@ -49,7 +49,14 @@ final class PickyHUDOverlayManager {
         var lastContentSize: CGSize
     }
 
+    private struct ArchiveUndoToastEntry {
+        let panel: PickyHUDPanel
+        var dismissTask: Task<Void, Never>?
+        var toast: PickyHUDArchiveUndoToast?
+    }
+
     private var panelsByDisplayID: [CGDirectDisplayID: PanelEntry] = [:]
+    private var archiveUndoToastsByDisplayID: [CGDirectDisplayID: ArchiveUndoToastEntry] = [:]
     private var screenParametersObserver: NSObjectProtocol?
 
     /// Live anchor percent (5–40% from the visible frame top to the dock's TOP edge).
@@ -85,7 +92,12 @@ final class PickyHUDOverlayManager {
             entry.pendingShrinkTask?.cancel()
             entry.panel.orderOut(nil)
         }
+        for (_, entry) in archiveUndoToastsByDisplayID {
+            entry.dismissTask?.cancel()
+            entry.panel.orderOut(nil)
+        }
         panelsByDisplayID.removeAll()
+        archiveUndoToastsByDisplayID.removeAll()
     }
 
     // MARK: - Panel sync
@@ -101,6 +113,12 @@ final class PickyHUDOverlayManager {
                 entry.panel.orderOut(nil)
             }
         }
+        for displayID in archiveUndoToastsByDisplayID.keys where !liveDisplayIDs.contains(displayID) {
+            if let entry = archiveUndoToastsByDisplayID.removeValue(forKey: displayID) {
+                entry.dismissTask?.cancel()
+                entry.panel.orderOut(nil)
+            }
+        }
 
         // Create or reposition for every connected display.
         for screen in screens {
@@ -110,6 +128,9 @@ final class PickyHUDOverlayManager {
                 panelsByDisplayID[displayID]?.panel.orderFrontRegardless()
             }
             positionPanel(on: screen, displayID: displayID)
+        }
+        for displayID in archiveUndoToastsByDisplayID.keys {
+            positionArchiveUndoToast(displayID: displayID)
         }
     }
 
@@ -141,6 +162,9 @@ final class PickyHUDOverlayManager {
             },
             onDockHandleDragEnded: { [weak self] in
                 self?.handleDockDragEnded()
+            },
+            onArchiveUndoRequested: { [weak self] sessionID, title in
+                self?.showArchiveUndoToast(displayID: displayID, sessionID: sessionID, title: title)
             }
         )
             .frame(width: width)
@@ -232,6 +256,97 @@ final class PickyHUDOverlayManager {
         )
     }
 
+    // MARK: - Archive undo toast
+
+    private func showArchiveUndoToast(displayID: CGDirectDisplayID, sessionID: String, title: String) {
+        guard screen(for: displayID) != nil else { return }
+        let toast = PickyHUDArchiveUndoToast(sessionID: sessionID, title: title)
+        var entry = archiveUndoToastsByDisplayID[displayID] ?? makeArchiveUndoToastEntry()
+        entry.dismissTask?.cancel()
+        entry.toast = toast
+        entry.panel.contentView = makeArchiveUndoToastHostingView(displayID: displayID, toast: toast)
+        entry.panel.alphaValue = 0
+        archiveUndoToastsByDisplayID[displayID] = entry
+        positionArchiveUndoToast(displayID: displayID)
+        entry.panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = PickyHUDExpansion.duration
+            entry.panel.animator().alphaValue = 1
+        }
+        entry.dismissTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: PickyHUDArchiveUndoToastPolicy.durationNanoseconds)
+            guard !Task.isCancelled else { return }
+            guard let self, self.archiveUndoToastsByDisplayID[displayID]?.toast?.id == toast.id else { return }
+            self.hideArchiveUndoToast(displayID: displayID, expectedToastID: toast.id)
+        }
+        archiveUndoToastsByDisplayID[displayID] = entry
+    }
+
+    private func makeArchiveUndoToastEntry() -> ArchiveUndoToastEntry {
+        let panel = PickyHUDPanel(
+            contentRect: NSRect(origin: .zero, size: PickyHUDArchiveUndoToastPolicy.panelSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.level = .statusBar
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.hidesOnDeactivate = false
+        panel.isExcludedFromWindowsMenu = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        return ArchiveUndoToastEntry(panel: panel, dismissTask: nil, toast: nil)
+    }
+
+    private func makeArchiveUndoToastHostingView(displayID: CGDirectDisplayID, toast: PickyHUDArchiveUndoToast) -> NSView {
+        let root = PickyHUDArchiveUndoToastPanelRoot(
+            toast: toast,
+            onUndo: { [weak self] in
+                self?.undoArchiveFromToast(displayID: displayID, toast: toast)
+            }
+        )
+        .environmentObject(appearanceStore)
+        .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
+        let hostingView = NSHostingView(rootView: root)
+        hostingView.frame = NSRect(origin: .zero, size: PickyHUDArchiveUndoToastPolicy.panelSize)
+        hostingView.autoresizingMask = [.width, .height]
+        return hostingView
+    }
+
+    private func positionArchiveUndoToast(displayID: CGDirectDisplayID) {
+        guard let screen = screen(for: displayID), let entry = archiveUndoToastsByDisplayID[displayID] else { return }
+        let frame = PickyHUDArchiveUndoToastLayout.panelFrame(visibleFrame: screen.visibleFrame)
+        if entry.panel.frame.integral != frame.integral {
+            entry.panel.setFrame(frame, display: true)
+        }
+    }
+
+    private func undoArchiveFromToast(displayID: CGDirectDisplayID, toast: PickyHUDArchiveUndoToast) {
+        guard archiveUndoToastsByDisplayID[displayID]?.toast?.id == toast.id else { return }
+        viewModel.unarchive(sessionID: toast.sessionID)
+        hideArchiveUndoToast(displayID: displayID, expectedToastID: toast.id)
+    }
+
+    private func hideArchiveUndoToast(displayID: CGDirectDisplayID, expectedToastID: UUID? = nil) {
+        guard var entry = archiveUndoToastsByDisplayID[displayID] else { return }
+        if let expectedToastID, entry.toast?.id != expectedToastID { return }
+        entry.dismissTask?.cancel()
+        entry.dismissTask = nil
+        entry.toast = nil
+        archiveUndoToastsByDisplayID[displayID] = entry
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = PickyHUDExpansion.duration
+            entry.panel.animator().alphaValue = 0
+        } completionHandler: { [weak self, weak panel = entry.panel] in
+            Task { @MainActor in
+                guard let current = self?.archiveUndoToastsByDisplayID[displayID], current.toast == nil else { return }
+                panel?.orderOut(nil)
+                self?.archiveUndoToastsByDisplayID.removeValue(forKey: displayID)
+            }
+        }
+    }
+
     // MARK: - Dock handle drag
 
     private func handleDockDragChanged(displayID: CGDirectDisplayID, screenDeltaY: CGFloat) {
@@ -269,6 +384,9 @@ final class PickyHUDOverlayManager {
             guard let displayID = screen.pickyDisplayID else { continue }
             guard panelsByDisplayID[displayID] != nil else { continue }
             positionPanel(on: screen, displayID: displayID)
+        }
+        for displayID in archiveUndoToastsByDisplayID.keys {
+            positionArchiveUndoToast(displayID: displayID)
         }
     }
 

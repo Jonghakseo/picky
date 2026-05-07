@@ -18,12 +18,11 @@ struct PickyHUDView: View {
     /// visibleFrame and updates the shared anchor across every panel.
     var onDockHandleDragChanged: (CGFloat) -> Void = { _ in }
     var onDockHandleDragEnded: () -> Void = { }
+    var onArchiveUndoRequested: (_ sessionID: String, _ title: String) -> Void = { _, _ in }
     @State private var pinnedSessionID: String?
     @State private var previewSessionID: String?
     @State private var isHUDHovered = false
     @State private var closeExpansionTask: Task<Void, Never>?
-    @State private var archiveUndoToast: PickyHUDArchiveUndoToast?
-    @State private var archiveUndoDismissTask: Task<Void, Never>?
     @State private var lastReportedHUDSize: CGSize = .zero
     @State private var lastReportedActiveSessionID: String?
 
@@ -57,9 +56,6 @@ struct PickyHUDView: View {
             // .center alignment would float the content vertically inside the held
             // panel and break the dock anchor math.
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .overlay(alignment: .bottomTrailing) {
-                archiveUndoToastOverlay
-            }
             // Animate only expand/collapse. Switching between dock-hovered sessions should
             // swap content immediately; animating every activeSession id change cross-fades
             // different card heights and makes the HUD look like it is stretching/flickering.
@@ -68,8 +64,6 @@ struct PickyHUDView: View {
             .onDisappear {
                 closeExpansionTask?.cancel()
                 closeExpansionTask = nil
-                archiveUndoDismissTask?.cancel()
-                archiveUndoDismissTask = nil
             }
     }
 
@@ -112,7 +106,7 @@ struct PickyHUDView: View {
         // changes to the conversation card height.
         HStack(alignment: .top, spacing: PickyHUDDockLayout.panelGap) {
             if let activeSession {
-                PickyConversationCardView(viewModel: viewModel, session: activeSession)
+                PickyConversationCardView(viewModel: viewModel, session: activeSession, onArchiveSession: archiveSession)
                     .id(activeSession.id)
                     .frame(width: PickyHUDDockLayout.detailWidth)
                     .transition(.opacity)
@@ -126,7 +120,7 @@ struct PickyHUDView: View {
                     pendingDoneFlashSessionIDs: viewModel.pendingDoneFlashSessionIDs,
                     onHoverSession: previewDockSession,
                     onPinSession: pinSession,
-                    onArchiveSession: archiveSessionFromDock,
+                    onArchiveSession: archiveSession,
                     onCreateSideAgent: chooseFolderForEmptySideAgent,
                     onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:),
                     onDockHandleDragChanged: onDockHandleDragChanged,
@@ -138,21 +132,6 @@ struct PickyHUDView: View {
         .padding(.horizontal, PickyHUDExpansion.outerPadding)
         .padding(.vertical, PickyHUDExpansion.dockShadowVerticalPadding)
         .onHover(perform: handleHUDHover)
-    }
-
-    @ViewBuilder
-    private var archiveUndoToastOverlay: some View {
-        if let archiveUndoToast {
-            PickyHUDArchiveUndoToastView(
-                toast: archiveUndoToast,
-                onUndo: { undoArchive(toast: archiveUndoToast) }
-            )
-            .padding(.trailing, PickyHUDDockLayout.railWidth + PickyHUDExpansion.outerPadding + 8)
-            .padding(.bottom, PickyHUDExpansion.dockShadowVerticalPadding + 2)
-            .transition(.opacity.combined(with: .move(edge: .trailing)))
-            .allowsHitTesting(true)
-            .zIndex(10)
-        }
     }
 
     private func handleHUDHover(_ isHovering: Bool) {
@@ -197,38 +176,13 @@ struct PickyHUDView: View {
         }
     }
 
-    private func archiveSessionFromDock(_ sessionID: String) {
+    private func archiveSession(_ sessionID: String) {
         cancelPendingClose()
-        let title = visibleSessions.first(where: { $0.id == sessionID })?.title ?? "Side agent"
+        let title = (visibleSessions + viewModel.sessions).first(where: { $0.id == sessionID })?.title ?? "Side agent"
         viewModel.archive(sessionID: sessionID)
         if pinnedSessionID == sessionID { pinnedSessionID = nil }
         if previewSessionID == sessionID { previewSessionID = nil }
-        showArchiveUndoToast(sessionID: sessionID, title: title)
-    }
-
-    private func showArchiveUndoToast(sessionID: String, title: String) {
-        archiveUndoDismissTask?.cancel()
-        let toast = PickyHUDArchiveUndoToast(sessionID: sessionID, title: title)
-        withAnimation(PickyHUDExpansion.animation) {
-            archiveUndoToast = toast
-        }
-        archiveUndoDismissTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: PickyHUDArchiveHoldPolicy.undoToastDurationNanoseconds)
-            guard !Task.isCancelled, archiveUndoToast?.id == toast.id else { return }
-            withAnimation(PickyHUDExpansion.animation) {
-                archiveUndoToast = nil
-            }
-            archiveUndoDismissTask = nil
-        }
-    }
-
-    private func undoArchive(toast: PickyHUDArchiveUndoToast) {
-        archiveUndoDismissTask?.cancel()
-        archiveUndoDismissTask = nil
-        viewModel.unarchive(sessionID: toast.sessionID)
-        withAnimation(PickyHUDExpansion.animation) {
-            archiveUndoToast = nil
-        }
+        onArchiveUndoRequested(sessionID, title)
     }
 
     private func scheduleCloseIfNeeded() {
@@ -327,64 +281,6 @@ private enum PickyHUDArchiveHoldPolicy {
     static let maximumDistance: CGFloat = 10
     static let ringGapStartFraction = 0.22
     static let ringUsableFraction = 0.73
-    static let undoToastDurationNanoseconds: UInt64 = 6_000_000_000
-}
-
-private struct PickyHUDArchiveUndoToast: Identifiable, Equatable {
-    let id = UUID()
-    let sessionID: String
-    let title: String
-}
-
-private struct PickyHUDArchiveUndoToastView: View {
-    let toast: PickyHUDArchiveUndoToast
-    let onUndo: () -> Void
-
-    var body: some View {
-        HStack(spacing: 9) {
-            Image(systemName: "archivebox.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(DS.Colors.warningText)
-                .frame(width: 22, height: 22)
-                .background(Circle().fill(DS.Colors.warning.opacity(0.15)))
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Session archived")
-                    .font(.system(size: 11.5, weight: .semibold, design: .rounded))
-                    .foregroundColor(DS.Colors.textPrimary)
-                Text(toast.title)
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            .frame(maxWidth: 128, alignment: .leading)
-
-            Button("Undo", action: onUndo)
-                .buttonStyle(.plain)
-                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                .foregroundColor(DS.Colors.accentText)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(DS.Colors.accentText.opacity(0.12))
-                        .overlay(Capsule(style: .continuous).strokeBorder(DS.Colors.accentText.opacity(0.24), lineWidth: 0.7))
-                )
-                .pointerCursor()
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).fill(DS.Colors.surface1.opacity(0.28)))
-                .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).strokeBorder(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8))
-        )
-        .shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: 8)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Session archived. Undo available.")
-    }
 }
 
 private struct PickyHUDDockRailView: View {

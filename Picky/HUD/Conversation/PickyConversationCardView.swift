@@ -12,12 +12,13 @@ import UniformTypeIdentifiers
 struct PickyConversationCardView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     let session: PickySessionListViewModel.SessionCard
+    var onArchiveSession: (String) -> Void = { _ in }
     @State private var droppedFilePaths: [String] = []
     @State private var isFileDropTargeted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            PickyConversationHeaderView(viewModel: viewModel, session: session)
+            PickyConversationHeaderView(viewModel: viewModel, session: session, onArchiveSession: onArchiveSession)
             PickyConversationContextLineView(session: session)
             PickyConversationListView(session: session, viewModel: viewModel)
             PickyConversationComposerView(

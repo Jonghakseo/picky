@@ -323,8 +323,7 @@ private struct PickyHUDDockRailView: View {
 
     @State private var isAddSlotExpanded = false
     @State private var isHandleHovered = false
-    @State private var dragStartMouseScreenY: CGFloat?
-    @State private var hasClosedHandCursorPushed = false
+    @State private var isHandleDragging = false
 
     var body: some View {
         VStack(spacing: 4) {
@@ -370,62 +369,41 @@ private struct PickyHUDDockRailView: View {
     /// overlay manager which converts it into a percentage of the dragged display's
     /// visibleFrame height and updates the shared anchor across every monitor.
     ///
-    /// SwiftUI's hit testing for transparent views is delicate: putting opaque content
-    /// in a ZStack underneath a hit-testable wrapper can leave the gesture stuck on
-    /// the inner element even with `.contentShape(Rectangle())` on the outer ZStack.
-    /// The pattern that actually works (per the canonical StackOverflow answer for
-    /// `Color.clear`/`Rectangle().fill(.clear)` gestures) is:
-    ///
-    /// 1. Start from `Color.clear` sized to the desired hit area.
-    /// 2. Apply `.contentShape(Rectangle())` directly on the cleared color so SwiftUI
-    ///    treats the full frame as the gesture target.
-    /// 3. Attach hover, cursor, and gesture modifiers BEFORE adding any visual
-    ///    overlay. This guarantees they bind to the cleared color's hit shape.
-    /// 4. Add the visible pill via `.overlay`, with `.allowsHitTesting(false)` so it
-    ///    stays purely decorative and never claims the hit.
+    /// SwiftUI's hit testing for transparent views overlapping decorative content is
+    /// notoriously fiddly: even `Color.clear + .contentShape(Rectangle())` left the
+    /// drag gesture stuck on the visible 22×4 capsule while `.onHover` and the AppKit
+    /// cursor rect both reacted across the full rail width. After cycling through
+    /// every documented workaround (ZStack with near-zero-opacity backgrounds,
+    /// `.background` of a hit-testable color, `.contentShape(.interaction, ...)`,
+    /// reordering modifiers around `.overlay`) the only approach that reliably gives
+    /// click + hover + cursor the same area is to back the handle with an explicit
+    /// `NSViewRepresentable`. AppKit handles hit testing, tracking area, and cursor
+    /// rects directly on the NSView, so the full frame becomes interactive without
+    /// SwiftUI's transparent-view caveats.
     private var dockAnchorHandle: some View {
-        let isActive = isHandleHovered || dragStartMouseScreenY != nil
-        return Color.clear
-            .frame(width: PickyHUDDockLayout.railWidth, height: PickyHUDExpansion.dockHandleAreaHeight)
-            .contentShape(Rectangle())
-            .openHandCursor()
-            .onHover { hovering in
-                isHandleHovered = hovering
+        let isActive = isHandleHovered || isHandleDragging
+        return PickyHUDDockAnchorHandleHost(
+            onHoverChanged: { hovering in isHandleHovered = hovering },
+            onDragChanged: { delta in
+                if !isHandleDragging { isHandleDragging = true }
+                onDockHandleDragChanged(delta)
+            },
+            onDragEnded: {
+                isHandleDragging = false
+                onDockHandleDragEnded()
             }
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        let mouseY = NSEvent.mouseLocation.y
-                        if !hasClosedHandCursorPushed {
-                            NSCursor.closedHand.push()
-                            hasClosedHandCursorPushed = true
-                        }
-                        if dragStartMouseScreenY == nil {
-                            dragStartMouseScreenY = mouseY
-                            return
-                        }
-                        let delta = mouseY - (dragStartMouseScreenY ?? mouseY)
-                        onDockHandleDragChanged(delta)
-                    }
-                    .onEnded { _ in
-                        if hasClosedHandCursorPushed {
-                            NSCursor.pop()
-                            hasClosedHandCursorPushed = false
-                        }
-                        dragStartMouseScreenY = nil
-                        onDockHandleDragEnded()
-                    }
-            )
-            .overlay {
-                Capsule(style: .continuous)
-                    .fill(DS.Colors.textTertiary.opacity(isActive ? 0.85 : 0.45))
-                    .frame(width: isActive ? 26 : 22, height: 4)
-                    .animation(.easeOut(duration: 0.12), value: isHandleHovered)
-                    .animation(.easeOut(duration: 0.12), value: dragStartMouseScreenY != nil)
-                    .allowsHitTesting(false)
-            }
-            .accessibilityLabel("HUD vertical position")
-            .accessibilityHint("Drag up or down to move the side-agent dock between 2% and 70% of the screen.")
+        )
+        .frame(width: PickyHUDDockLayout.railWidth, height: PickyHUDExpansion.dockHandleAreaHeight)
+        .overlay {
+            Capsule(style: .continuous)
+                .fill(DS.Colors.textTertiary.opacity(isActive ? 0.85 : 0.45))
+                .frame(width: isActive ? 26 : 22, height: 4)
+                .animation(.easeOut(duration: 0.12), value: isHandleHovered)
+                .animation(.easeOut(duration: 0.12), value: isHandleDragging)
+                .allowsHitTesting(false)
+        }
+        .accessibilityLabel("HUD vertical position")
+        .accessibilityHint("Drag up or down to move the side-agent dock between 2% and 70% of the screen.")
     }
 
     /// Frosted-glass capsule that hosts the dock icons. Uses .ultraThinMaterial
@@ -855,4 +833,108 @@ private struct PickyHUDAnimatedStatusBorderView: View {
 
 #Preview("Picky HUD") {
     PickyHUDView(viewModel: PickySessionListViewModel(client: LocalStubPickyAgentClient(), notificationCenter: PickyNoopNotificationCenter()))
+}
+
+// MARK: - Dock anchor handle (AppKit-backed for reliable hit testing)
+
+/// AppKit-backed handle for dragging the HUD dock's vertical anchor. Wrapping an
+/// `NSView` directly avoids SwiftUI's transparent-view hit-testing quirks: AppKit's
+/// `hitTest`, `NSTrackingArea`, and `addCursorRect` all key off the same NSView
+/// bounds, so click + hover + cursor reliably react to the entire frame instead of
+/// just the visible 22×4 capsule that SwiftUI's gesture system kept latching onto.
+private struct PickyHUDDockAnchorHandleHost: NSViewRepresentable {
+    var onHoverChanged: (Bool) -> Void
+    var onDragChanged: (CGFloat) -> Void
+    var onDragEnded: () -> Void
+
+    final class Coordinator {
+        var onHoverChanged: ((Bool) -> Void)?
+        var onDragChanged: ((CGFloat) -> Void)?
+        var onDragEnded: (() -> Void)?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        context.coordinator.onHoverChanged = onHoverChanged
+        context.coordinator.onDragChanged = onDragChanged
+        context.coordinator.onDragEnded = onDragEnded
+        let view = PickyHUDDockAnchorHandleNSView()
+        view.coordinator = context.coordinator
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onHoverChanged = onHoverChanged
+        context.coordinator.onDragChanged = onDragChanged
+        context.coordinator.onDragEnded = onDragEnded
+    }
+}
+
+private final class PickyHUDDockAnchorHandleNSView: NSView {
+    weak var coordinator: PickyHUDDockAnchorHandleHost.Coordinator?
+    private var dragStartScreenY: CGFloat?
+    private var trackingArea: NSTrackingArea?
+    private var hasClosedHandPushed = false
+
+    override var isFlipped: Bool { false }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .openHand)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Capture all hits inside our bounds. Without this, AppKit could fall
+        // through to a sibling/parent view if some subview opts out.
+        return bounds.contains(convert(point, from: superview)) ? self : nil
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        coordinator?.onHoverChanged?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        coordinator?.onHoverChanged?(false)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        dragStartScreenY = NSEvent.mouseLocation.y
+        if !hasClosedHandPushed {
+            NSCursor.closedHand.push()
+            hasClosedHandPushed = true
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let startY = dragStartScreenY else { return }
+        let delta = NSEvent.mouseLocation.y - startY
+        coordinator?.onDragChanged?(delta)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if hasClosedHandPushed {
+            NSCursor.pop()
+            hasClosedHandPushed = false
+        }
+        dragStartScreenY = nil
+        coordinator?.onDragEnded?()
+    }
+
+    override var acceptsFirstResponder: Bool { false }
 }

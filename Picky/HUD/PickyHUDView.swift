@@ -405,6 +405,7 @@ private struct PickyHUDDockRailView: View {
                 }
             }
             collapsibleAddAgentSlot
+                .padding(.top, 9)
         }
     }
 
@@ -523,8 +524,13 @@ private struct PickyHUDDockRailView: View {
                 .opacity(isAddSlotExpanded ? 1 : 0)
 
                 Capsule(style: .continuous)
-                    .fill(DS.Colors.textTertiary.opacity(0.45))
-                    .frame(width: 18, height: 1)
+                    .fill(DS.Colors.textSecondary.opacity(0.92))
+                    .frame(width: 22, height: 2.4)
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(Color.white.opacity(0.36), lineWidth: 0.6)
+                    )
+                    .shadow(color: Color.black.opacity(0.18), radius: 1.5, y: 0.6)
                     .opacity(isAddSlotExpanded ? 0 : 1)
             }
             .frame(width: 36, height: isAddSlotExpanded ? 36 : 14)

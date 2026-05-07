@@ -26,11 +26,12 @@ enum PickyHUDExpansion {
     static let cardShadowRadius: CGFloat = 8
     static let cardShadowYOffset: CGFloat = 4
     /// Drag handle hit area height inside `PickyHUDDockRailView.dockAnchorHandle`.
-    /// Larger than the visible capsule (22×4) so the handle is comfortable to click;
-    /// the visible pill stays centered inside this frame. Combined with the VStack
-    /// spacing below it (`dockHandleToBodySpacing`) and the outer vertical padding,
-    /// this is how far the dock CAPSULE's top edge sits below the panel content top.
-    static let dockHandleAreaHeight: CGFloat = 22
+    /// Significantly larger than the visible 22×4 capsule so the handle is easy to
+    /// click; the visible pill is overlaid centered inside this frame. Combined with
+    /// the VStack spacing below it (`dockHandleToBodySpacing`) and the outer vertical
+    /// padding, this is how far the dock CAPSULE's top edge sits below the panel
+    /// content top.
+    static let dockHandleAreaHeight: CGFloat = 32
     /// VStack spacing between the drag handle and the dock capsule.
     static let dockHandleToBodySpacing: CGFloat = 4
     /// Distance from the panel content's top edge (in SwiftUI top-down coords) down to

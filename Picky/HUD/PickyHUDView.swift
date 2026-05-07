@@ -364,60 +364,61 @@ private struct PickyHUDDockRailView: View {
         }
     }
 
-    /// Small horizontal pill that sits a few points above the dock capsule. Dragging it
-    /// repositions the dock's top edge along the screen Y axis. We pass the cursor's
+    /// Small horizontal pill that sits a few points above the dock capsule. Dragging
+    /// it repositions the dock's top edge along the screen Y axis. We pass the cursor's
     /// screen-bottom-up delta from drag start (NSEvent.mouseLocation based) up to the
     /// overlay manager which converts it into a percentage of the dragged display's
     /// visibleFrame height and updates the shared anchor across every monitor.
+    ///
+    /// Implemented as an explicit `Rectangle().fill(Color.clear)` (rather than
+    /// `ZStack { Color.clear; ... }`) so the hit-test area is unambiguously the entire
+    /// frame: SwiftUI's hover and gesture systems both pick up the rectangle's bounds,
+    /// matching the AppKit cursor rect added by `.openHandCursor()`. The visible 22×4
+    /// pill is overlaid on top, centered, so the visual size stays the same while the
+    /// clickable region spans the full rail width and the full handle-area height.
     private var dockAnchorHandle: some View {
-        ZStack {
-            Color.clear
-            Capsule(style: .continuous)
-                .fill(DS.Colors.textTertiary.opacity(isHandleHovered || dragStartMouseScreenY != nil ? 0.85 : 0.45))
-                .frame(width: isHandleHovered || dragStartMouseScreenY != nil ? 26 : 22, height: 4)
-                .animation(.easeOut(duration: 0.12), value: isHandleHovered)
-                .animation(.easeOut(duration: 0.12), value: dragStartMouseScreenY != nil)
-        }
-        // Larger frame than the visible pill so the hit area is comfortable; AppKit
-        // cursor rects from .openHandCursor() apply to this whole frame too. The
-        // outer width uses the full dock rail width so the handle can be grabbed
-        // anywhere along the top of the rail; the visible capsule above stays small.
-        .frame(width: PickyHUDDockLayout.railWidth - 6, height: PickyHUDExpansion.dockHandleAreaHeight)
-        .contentShape(Rectangle())
-        .openHandCursor()
-        .onHover { hovering in
-            isHandleHovered = hovering
-        }
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    let mouseY = NSEvent.mouseLocation.y
-                    // Swap to the macOS closed-hand grab cursor for the duration of
-                    // the drag. .openHandCursor() keeps the palm cursor active via an
-                    // AppKit cursor rect; pushing closedHand on top wins until we pop
-                    // on drag end. Push only once even if onChanged fires repeatedly.
-                    if !hasClosedHandCursorPushed {
-                        NSCursor.closedHand.push()
-                        hasClosedHandCursorPushed = true
+        let isActive = isHandleHovered || dragStartMouseScreenY != nil
+        return Rectangle()
+            .fill(Color.clear)
+            .frame(width: PickyHUDDockLayout.railWidth, height: PickyHUDExpansion.dockHandleAreaHeight)
+            .overlay {
+                Capsule(style: .continuous)
+                    .fill(DS.Colors.textTertiary.opacity(isActive ? 0.85 : 0.45))
+                    .frame(width: isActive ? 26 : 22, height: 4)
+                    .animation(.easeOut(duration: 0.12), value: isHandleHovered)
+                    .animation(.easeOut(duration: 0.12), value: dragStartMouseScreenY != nil)
+            }
+            .contentShape(Rectangle())
+            .openHandCursor()
+            .onHover { hovering in
+                isHandleHovered = hovering
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        let mouseY = NSEvent.mouseLocation.y
+                        if !hasClosedHandCursorPushed {
+                            NSCursor.closedHand.push()
+                            hasClosedHandCursorPushed = true
+                        }
+                        if dragStartMouseScreenY == nil {
+                            dragStartMouseScreenY = mouseY
+                            return
+                        }
+                        let delta = mouseY - (dragStartMouseScreenY ?? mouseY)
+                        onDockHandleDragChanged(delta)
                     }
-                    if dragStartMouseScreenY == nil {
-                        dragStartMouseScreenY = mouseY
-                        return
+                    .onEnded { _ in
+                        if hasClosedHandCursorPushed {
+                            NSCursor.pop()
+                            hasClosedHandCursorPushed = false
+                        }
+                        dragStartMouseScreenY = nil
+                        onDockHandleDragEnded()
                     }
-                    let delta = mouseY - (dragStartMouseScreenY ?? mouseY)
-                    onDockHandleDragChanged(delta)
-                }
-                .onEnded { _ in
-                    if hasClosedHandCursorPushed {
-                        NSCursor.pop()
-                        hasClosedHandCursorPushed = false
-                    }
-                    dragStartMouseScreenY = nil
-                    onDockHandleDragEnded()
-                }
-        )
-        .accessibilityLabel("HUD vertical position")
-        .accessibilityHint("Drag up or down to move the side-agent dock between 2% and 70% of the screen.")
+            )
+            .accessibilityLabel("HUD vertical position")
+            .accessibilityHint("Drag up or down to move the side-agent dock between 2% and 70% of the screen.")
     }
 
     /// Frosted-glass capsule that hosts the dock icons. Uses .ultraThinMaterial

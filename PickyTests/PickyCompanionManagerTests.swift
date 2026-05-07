@@ -279,6 +279,23 @@ struct PickyCompanionManagerTests {
         #expect(finishes.isEmpty)
     }
 
+    @Test func speechFallbackProviderIsSpeakingReflectsUnderlyingProvidersOnly() async throws {
+        let primary = FakeSpeechPlaybackProvider()
+        let fallback = FakeSpeechPlaybackProvider()
+        let provider = PickyFallbackSpeechPlaybackProvider(primary: primary, fallback: fallback)
+
+        let started = provider.speak("안녕하세요") { _ in }
+        #expect(started)
+        #expect(provider.isSpeaking)
+
+        // Simulate the underlying provider stopping without delivering its
+        // finish callback. The manager's polling safety net must be able to see
+        // that real playback has ended so the cursor response bubble can clear.
+        primary.isSpeaking = false
+
+        #expect(!provider.isSpeaking)
+    }
+
     @Test func voicePresentationKeepsAwaitingAgentStateAfterDictationResetsToIdle() async throws {
         let presentation = CompanionVoicePresentationReducer.reduce(
             currentVoiceState: .processing,

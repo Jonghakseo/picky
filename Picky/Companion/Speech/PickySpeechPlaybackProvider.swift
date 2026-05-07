@@ -92,7 +92,12 @@ final class PickyFallbackSpeechPlaybackProvider: PickySpeechPlaybackProvider {
     let displayName: String
 
     var isSpeaking: Bool {
-        primary.isSpeaking || fallback.isSpeaking || activeSpeechID != nil
+        // Report only real provider playback/request activity. `activeSpeechID`
+        // is an internal callback guard; treating it as speaking means the
+        // manager's polling safety net can never recover when a provider drops
+        // its finish callback after playback has already stopped, leaving the
+        // cursor response bubble stuck in `.responding`.
+        primary.isSpeaking || fallback.isSpeaking
     }
 
     private let primary: any PickySpeechPlaybackProvider

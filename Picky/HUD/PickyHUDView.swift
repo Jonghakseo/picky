@@ -331,7 +331,7 @@ private struct PickyHUDDockRailView: View {
         // background is opaque, which sidesteps SwiftUI's transparent-view hit-
         // testing quirks: clicks anywhere in the handle's row hit the NSView
         // backing the handle, not the empty space outside an external pill.
-        VStack(spacing: 4) {
+        VStack(spacing: 2) {
             dockAnchorHandle
             sessionsAndAddSlot
         }
@@ -393,15 +393,13 @@ private struct PickyHUDDockRailView: View {
         .frame(maxWidth: .infinity)
         .frame(height: PickyHUDExpansion.dockHandleAreaHeight)
         .overlay {
-            // Slightly smaller, slightly softer pill than the previous version: the
-            // handle is now wrapped by the dock capsule itself so it doesn't need to
-            // shout for attention. Hover/drag still expands and darkens it for a
-            // clear interaction cue.
+            // Quiet by default — the pill should hint at draggability without
+            // shouting. Hover and drag expand and darken it for a clear cue.
             Capsule(style: .continuous)
-                .fill(DS.Colors.textTertiary.opacity(isActive ? 0.75 : 0.32))
-                .frame(width: isActive ? 22 : 18, height: 3)
-                .animation(.easeOut(duration: 0.12), value: isHandleHovered)
-                .animation(.easeOut(duration: 0.12), value: isHandleDragging)
+                .fill(DS.Colors.textTertiary.opacity(isActive ? 0.7 : 0.22))
+                .frame(width: isActive ? 24 : 18, height: 3)
+                .animation(.easeOut(duration: 0.14), value: isHandleHovered)
+                .animation(.easeOut(duration: 0.14), value: isHandleDragging)
                 .allowsHitTesting(false)
         }
         .accessibilityLabel("HUD vertical position")

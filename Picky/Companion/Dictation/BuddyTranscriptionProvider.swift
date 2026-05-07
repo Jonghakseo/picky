@@ -34,17 +34,15 @@ enum BuddyTranscriptionProviderFactory {
         settings: PickySettings = PickySettingsStore().load(),
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> any BuddyTranscriptionProvider {
-        let requestedProvider = providerName(from: settings.sttProvider, environment: environment)
+        _ = environment
+        let requestedProvider = providerName(from: settings.sttProvider)
 
         if requestedProvider == "azure" || requestedProvider == "azure-openai" {
             let language = settings.azureSTTPreferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-                ?? AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_STT_LANGUAGE", environment: environment)
-                ?? AzureOpenAIKeychainStore.value(for: "PICKY_STT_LANGUAGE", environment: environment)
             let provider = AzureOpenAITranscriptionProvider(
-                configuration: .fromEnvironment(
-                    deploymentEnvironmentKey: "AZURE_OPENAI_STT_DEPLOYMENT_NAME",
-                    defaultAPIVersion: AzureOpenAITranscriptionProvider.defaultAPIVersion,
-                    environment: environment
+                configuration: .fromTranscriptionEndpointURL(
+                    settings.azureOpenAIEndpoint,
+                    apiKey: settings.azureOpenAIAPIKey
                 ),
                 preferredLanguage: language
             )
@@ -57,16 +55,10 @@ enum BuddyTranscriptionProviderFactory {
         return provider
     }
 
-    private static func providerName(
-        from selection: PickyVoiceProviderSelection,
-        environment: [String: String]
-    ) -> String? {
+    private static func providerName(from selection: PickyVoiceProviderSelection) -> String? {
         switch selection {
         case .automatic:
-            return (AzureOpenAIKeychainStore.value(for: "PICKY_STT_PROVIDER", environment: environment)
-                ?? AzureOpenAIKeychainStore.value(for: "PICKY_TRANSCRIPTION_PROVIDER", environment: environment))?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .lowercased()
+            return nil
         case .local:
             return "local"
         case .azure:

@@ -24,10 +24,7 @@ final class AzureOpenAITranscriptionProvider: BuddyTranscriptionProvider {
     private let urlSession: URLSession
 
     init(
-        configuration: AzureOpenAIAudioConfiguration = .fromEnvironment(
-            deploymentEnvironmentKey: "AZURE_OPENAI_STT_DEPLOYMENT_NAME",
-            defaultAPIVersion: AzureOpenAITranscriptionProvider.defaultAPIVersion
-        ),
+        configuration: AzureOpenAIAudioConfiguration = .fromTranscriptionEndpointURL(nil, apiKey: nil),
         preferredLanguage: String? = nil,
         urlSession: URLSession = .shared
     ) {

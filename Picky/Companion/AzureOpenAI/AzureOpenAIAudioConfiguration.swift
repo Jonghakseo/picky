@@ -2,8 +2,8 @@
 //  AzureOpenAIAudioConfiguration.swift
 //  Picky
 //
-//  Shared configuration for Azure OpenAI audio providers. Default factories can
-//  select these providers when PICKY_STT_PROVIDER/PICKY_TTS_PROVIDER is set.
+//  Shared configuration for Azure OpenAI audio providers. STT settings can be
+//  derived from the full audio/transcriptions URL copied from the Azure portal.
 //
 
 import Foundation
@@ -14,6 +14,12 @@ struct AzureOpenAIAudioConfiguration: Equatable {
     var deploymentName: String?
     var apiVersion: String
     var requestTimeout: TimeInterval
+
+    private struct ParsedTranscriptionEndpoint: Equatable {
+        let endpoint: URL
+        let deploymentName: String
+        let apiVersion: String?
+    }
 
     init(
         endpoint: URL?,
@@ -46,6 +52,80 @@ struct AzureOpenAIAudioConfiguration: Equatable {
         if apiVersion.isEmpty { missing.append("api version") }
 
         return "Azure OpenAI audio provider is missing: \(missing.joined(separator: ", "))."
+    }
+
+    static func fromTranscriptionEndpointURL(
+        _ endpointURLString: String?,
+        apiKey: String?,
+        requestTimeout: TimeInterval = 30
+    ) -> AzureOpenAIAudioConfiguration {
+        let trimmedEndpoint = endpointURLString?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let parsedEndpoint = trimmedEndpoint.flatMap { parseTranscriptionEndpointURL($0) }
+
+        return AzureOpenAIAudioConfiguration(
+            endpoint: parsedEndpoint?.endpoint ?? trimmedEndpoint.flatMap { sanitizedURL(from: $0) },
+            apiKey: apiKey,
+            deploymentName: parsedEndpoint?.deploymentName,
+            apiVersion: parsedEndpoint?.apiVersion ?? "",
+            requestTimeout: requestTimeout
+        )
+    }
+
+    private static func parseTranscriptionEndpointURL(_ rawURLString: String) -> ParsedTranscriptionEndpoint? {
+        guard var components = URLComponents(string: rawURLString),
+              components.scheme != nil,
+              components.host != nil else { return nil }
+
+        let pathParts = components.percentEncodedPath
+            .split(separator: "/", omittingEmptySubsequences: true)
+            .map(String.init)
+
+        guard let openAIIndex = pathParts.firstIndex(where: { $0.caseInsensitiveCompare("openai") == .orderedSame }),
+              pathParts.indices.contains(openAIIndex + 2),
+              pathParts[openAIIndex + 1].caseInsensitiveCompare("deployments") == .orderedSame else {
+            return nil
+        }
+
+        let encodedDeploymentName = pathParts[openAIIndex + 2]
+        guard let deploymentName = (encodedDeploymentName.removingPercentEncoding ?? encodedDeploymentName)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty else {
+            return nil
+        }
+
+        let remainingPath = pathParts.dropFirst(openAIIndex + 3).map { $0.lowercased() }
+        guard remainingPath.count >= 2,
+              remainingPath[0] == "audio",
+              remainingPath[1] == "transcriptions" else {
+            return nil
+        }
+
+        let apiVersion = components.queryItems?
+            .first { $0.name.caseInsensitiveCompare("api-version") == .orderedSame }?
+            .value?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty
+
+        let basePathParts = pathParts.prefix(openAIIndex)
+        components.percentEncodedPath = basePathParts.isEmpty ? "" : "/\(basePathParts.joined(separator: "/"))"
+        components.queryItems = nil
+        components.fragment = nil
+
+        guard let endpoint = components.url else { return nil }
+        return ParsedTranscriptionEndpoint(
+            endpoint: endpoint,
+            deploymentName: deploymentName,
+            apiVersion: apiVersion
+        )
+    }
+
+    private static func sanitizedURL(from rawURLString: String) -> URL? {
+        guard var components = URLComponents(string: rawURLString),
+              components.scheme != nil,
+              components.host != nil else { return nil }
+        components.queryItems = nil
+        components.fragment = nil
+        return components.url
     }
 
     static func fromEnvironment(

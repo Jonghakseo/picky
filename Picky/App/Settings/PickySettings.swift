@@ -184,6 +184,10 @@ struct PickySettings: Codable, Equatable {
     var logPath: String
     var sttProvider: PickyVoiceProviderSelection
     var ttsProvider: PickyVoiceProviderSelection
+    /// Full Azure OpenAI audio/transcriptions URL copied from the Azure portal.
+    /// Picky parses the base endpoint, deployment name, and api-version from it.
+    var azureOpenAIEndpoint: String
+    var azureOpenAIAPIKey: String
     var azureSTTPreferredLanguage: String
     var appearance: PickyAppearanceMode
     var notifications: PickyNotificationPreferences
@@ -208,6 +212,8 @@ struct PickySettings: Codable, Equatable {
         logPath: String,
         sttProvider: PickyVoiceProviderSelection = .automatic,
         ttsProvider: PickyVoiceProviderSelection = .automatic,
+        azureOpenAIEndpoint: String = "",
+        azureOpenAIAPIKey: String = "",
         azureSTTPreferredLanguage: String = "",
         appearance: PickyAppearanceMode = .dark,
         notifications: PickyNotificationPreferences = .defaults,
@@ -228,6 +234,8 @@ struct PickySettings: Codable, Equatable {
         self.logPath = logPath
         self.sttProvider = sttProvider
         self.ttsProvider = ttsProvider
+        self.azureOpenAIEndpoint = azureOpenAIEndpoint
+        self.azureOpenAIAPIKey = azureOpenAIAPIKey
         self.azureSTTPreferredLanguage = azureSTTPreferredLanguage
         self.appearance = appearance
         self.notifications = notifications
@@ -252,6 +260,8 @@ struct PickySettings: Codable, Equatable {
             logPath: appSupportRoot.appendingPathComponent("Logs", isDirectory: true).path,
             sttProvider: .automatic,
             ttsProvider: .automatic,
+            azureOpenAIEndpoint: "",
+            azureOpenAIAPIKey: "",
             azureSTTPreferredLanguage: "",
             appearance: .dark,
             notifications: .defaults,
@@ -272,6 +282,8 @@ struct PickySettings: Codable, Equatable {
         if !worktreeParent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             copy.worktreeParent = NSString(string: worktreeParent).expandingTildeInPath
         }
+        copy.azureOpenAIEndpoint = azureOpenAIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.azureOpenAIAPIKey = azureOpenAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.azureSTTPreferredLanguage = azureSTTPreferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.mainAgentExtraInstructions = mainAgentExtraInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
         return copy
@@ -286,6 +298,8 @@ struct PickySettings: Codable, Equatable {
         case logPath
         case sttProvider
         case ttsProvider
+        case azureOpenAIEndpoint
+        case azureOpenAIAPIKey
         case azureSTTPreferredLanguage
         case appearance
         case notifications
@@ -311,6 +325,8 @@ struct PickySettings: Codable, Equatable {
         logPath = try container.decodeIfPresent(String.self, forKey: .logPath) ?? defaults.logPath
         sttProvider = try container.decodeIfPresent(PickyVoiceProviderSelection.self, forKey: .sttProvider) ?? defaults.sttProvider
         ttsProvider = try container.decodeIfPresent(PickyVoiceProviderSelection.self, forKey: .ttsProvider) ?? defaults.ttsProvider
+        azureOpenAIEndpoint = try container.decodeIfPresent(String.self, forKey: .azureOpenAIEndpoint) ?? defaults.azureOpenAIEndpoint
+        azureOpenAIAPIKey = try container.decodeIfPresent(String.self, forKey: .azureOpenAIAPIKey) ?? defaults.azureOpenAIAPIKey
         azureSTTPreferredLanguage = try container.decodeIfPresent(String.self, forKey: .azureSTTPreferredLanguage) ?? defaults.azureSTTPreferredLanguage
         appearance = try container.decodeIfPresent(PickyAppearanceMode.self, forKey: .appearance) ?? defaults.appearance
         notifications = try container.decodeIfPresent(PickyNotificationPreferences.self, forKey: .notifications) ?? defaults.notifications

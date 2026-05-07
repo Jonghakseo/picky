@@ -26,18 +26,26 @@ struct PickyAgentBubbleView: View {
             .padding(.vertical, 8)
             .frame(maxWidth: PickyHUDDockLayout.detailWidth * 0.85, alignment: .leading)
             .background(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 12,
-                    bottomLeadingRadius: 4,
-                    bottomTrailingRadius: 12,
-                    topTrailingRadius: 12,
-                    style: .continuous
-                )
-                .fill(DS.Colors.surface2.opacity(0.85))
+                agentBubbleShape
+                    .fill(DS.Colors.surface3.opacity(0.84))
+            )
+            .overlay(
+                agentBubbleShape
+                    .stroke(DS.Colors.borderSubtle.opacity(0.72), lineWidth: 0.7)
             )
             Spacer(minLength: 48)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var agentBubbleShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: 12,
+            bottomLeadingRadius: 4,
+            bottomTrailingRadius: 12,
+            topTrailingRadius: 12,
+            style: .continuous
+        )
     }
 
     private var showsFooter: Bool {

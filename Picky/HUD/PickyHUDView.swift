@@ -605,17 +605,16 @@ private struct PickyHUDDockIconView: View {
             archiveProgressRing
         }
         .contentShape(Circle())
-        .gesture(openOrPinGesture)
-        .onLongPressGesture(
-            minimumDuration: PickyHUDArchiveHoldPolicy.duration,
-            maximumDistance: PickyHUDArchiveHoldPolicy.maximumDistance,
-            pressing: handleArchivePressing,
-            perform: completeArchiveHold
-        )
-        .pointerCursor()
-        .onHover { isHovering in
-            if isHovering { onHover() }
+        .overlay {
+            PickyHUDDockIconClickHost(
+                onHover: onHover,
+                onOpen: onOpen,
+                onPin: onPin,
+                onArchivePressing: handleArchivePressing,
+                onArchive: completeArchiveHold
+            )
         }
+        .pointerCursor()
         .onAppear {
             if shouldFlashCompletion { runCompletionFlash() }
         }
@@ -644,12 +643,6 @@ private struct PickyHUDDockIconView: View {
             )
             .shadow(color: DS.Colors.accentText.opacity(0.22), radius: 2, x: 0, y: 0)
             .accessibilityHidden(true)
-    }
-
-    private var openOrPinGesture: some Gesture {
-        TapGesture(count: 2)
-            .onEnded { onPin() }
-            .exclusively(before: TapGesture(count: 1).onEnded { onOpen() })
     }
 
     private var archiveProgressRing: some View {
@@ -902,6 +895,127 @@ private struct PickyHUDAnimatedStatusBorderView: View {
 
 #Preview("Picky HUD") {
     PickyHUDView(viewModel: PickySessionListViewModel(client: LocalStubPickyAgentClient(), notificationCenter: PickyNoopNotificationCenter()))
+}
+
+// MARK: - Dock icon clicks (AppKit-backed for immediate single-click open)
+
+private struct PickyHUDDockIconClickHost: NSViewRepresentable {
+    var onHover: () -> Void
+    var onOpen: () -> Void
+    var onPin: () -> Void
+    var onArchivePressing: (Bool) -> Void
+    var onArchive: () -> Void
+
+    final class Coordinator {
+        var onHover: (() -> Void)?
+        var onOpen: (() -> Void)?
+        var onPin: (() -> Void)?
+        var onArchivePressing: ((Bool) -> Void)?
+        var onArchive: (() -> Void)?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        context.coordinator.onHover = onHover
+        context.coordinator.onOpen = onOpen
+        context.coordinator.onPin = onPin
+        context.coordinator.onArchivePressing = onArchivePressing
+        context.coordinator.onArchive = onArchive
+        let view = PickyHUDDockIconClickNSView()
+        view.coordinator = context.coordinator
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onHover = onHover
+        context.coordinator.onOpen = onOpen
+        context.coordinator.onPin = onPin
+        context.coordinator.onArchivePressing = onArchivePressing
+        context.coordinator.onArchive = onArchive
+    }
+}
+
+private final class PickyHUDDockIconClickNSView: NSView {
+    weak var coordinator: PickyHUDDockIconClickHost.Coordinator?
+    private var trackingArea: NSTrackingArea?
+    private var archiveWorkItem: DispatchWorkItem?
+    private var mouseDownPoint: NSPoint?
+    private var didCompleteArchiveHold = false
+
+    override var isFlipped: Bool { false }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        bounds.contains(convert(point, from: superview)) ? self : nil
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        coordinator?.onHover?()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        mouseDownPoint = convert(event.locationInWindow, from: nil)
+        didCompleteArchiveHold = false
+        guard event.clickCount == 1 else { return }
+        coordinator?.onArchivePressing?(true)
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.didCompleteArchiveHold = true
+            self.coordinator?.onArchive?()
+        }
+        archiveWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + PickyHUDArchiveHoldPolicy.duration, execute: item)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let mouseDownPoint, archiveWorkItem != nil else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        let dx = point.x - mouseDownPoint.x
+        let dy = point.y - mouseDownPoint.y
+        let distance = (dx * dx + dy * dy).squareRoot()
+        if distance > PickyHUDArchiveHoldPolicy.maximumDistance {
+            cancelArchiveHoldFeedback()
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let completedArchive = didCompleteArchiveHold
+        cancelArchiveHoldFeedback()
+        mouseDownPoint = nil
+        didCompleteArchiveHold = false
+        guard !completedArchive else { return }
+        if event.clickCount >= 2 {
+            coordinator?.onPin?()
+        } else {
+            coordinator?.onOpen?()
+        }
+    }
+
+    private func cancelArchiveHoldFeedback() {
+        archiveWorkItem?.cancel()
+        archiveWorkItem = nil
+        coordinator?.onArchivePressing?(false)
+    }
+
+    override var acceptsFirstResponder: Bool { false }
 }
 
 // MARK: - Dock anchor handle (AppKit-backed for reliable hit testing)

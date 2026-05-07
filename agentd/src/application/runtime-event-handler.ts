@@ -167,7 +167,10 @@ export class RuntimeEventHandler {
       // terminal artifacts would overwrite the previous session report with empty content, and
       // notifying the main agent would deliver a bogus "side session finished" message even
       // though nothing actually completed. Skip both for `noTurnRan` events.
-      if (event.noTurnRan) return;
+      if (event.noTurnRan) {
+        this.dependencies.consumeNoTurnRanSessionStateRestore?.(sessionId);
+        return;
+      }
       await this.dependencies.materializeTerminalArtifacts(sessionId);
       if (this.dependencies.isSideSession(sessionId)) await this.dependencies.notifySideCompletion(sessionId);
     }

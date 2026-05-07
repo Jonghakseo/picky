@@ -744,6 +744,66 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(side.id)?.lastSummary).toBe("Still working");
   });
 
+  it("keeps a running side session running when /compact is rejected during an active turn", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "status", status: "running", summary: "Still working" });
+    await settle();
+    expect(supervisor.get(side.id)?.status).toBe("running");
+    expect(supervisor.get(side.id)?.lastSummary).toBe("Still working");
+
+    runtime.handle!.isStreaming = true;
+    runtime.handle!.onFollowUp = (handle) => {
+      handle.emit({ type: "status", status: "completed", summary: "/compact is unavailable while the agent is running", noTurnRan: true, preserveSessionState: true });
+    };
+
+    await supervisor.followUp(side.id, "/compact");
+    await settle();
+
+    expect(supervisor.get(side.id)?.status).toBe("running");
+    expect(supervisor.get(side.id)?.lastSummary).toBe("Still working");
+  });
+
+  it("does not let a successful /compact restore leak into a later /name", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "조사 완료입니다." });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+    expect(supervisor.get(side.id)?.lastSummary).toBe("조사 완료입니다.");
+
+    runtime.handle!.onFollowUp = (handle, prompt) => {
+      if (prompt.text === "/compact") {
+        handle.emit({ type: "status", status: "running", summary: "Compacting session…" });
+        handle.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true });
+      }
+      if (prompt.text.startsWith("/name ")) {
+        handle.emit({ type: "session_info", name: "컴팩션 후 이름" });
+        handle.emit({ type: "status", status: "completed", summary: "Session renamed to 컴팩션 후 이름", noTurnRan: true, preserveSessionState: true });
+      }
+    };
+
+    await supervisor.followUp(side.id, "/compact");
+    await settle();
+    expect(supervisor.get(side.id)?.status).toBe("completed");
+    expect(supervisor.get(side.id)?.lastSummary).toBe("Session compacted");
+
+    await supervisor.followUp(side.id, "/name 컴팩션 후 이름");
+    await settle();
+
+    expect(supervisor.get(side.id)?.status).toBe("completed");
+    expect(supervisor.get(side.id)?.title).toBe("컴팩션 후 이름");
+    expect(supervisor.get(side.id)?.lastSummary).toBe("Session compacted");
+  });
+
   it("restores the previous terminal state when /name is sent as a follow-up", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

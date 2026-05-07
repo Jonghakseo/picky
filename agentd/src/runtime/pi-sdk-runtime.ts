@@ -372,17 +372,24 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     });
   }
 
-  private emitContextUsageSnapshot(): void {
+  private emitContextUsageSnapshot(options: { resetAfterCompaction?: boolean } = {}): void {
     const session = this.runtime.session as unknown as { getContextUsage?: () => { tokens: number | null; contextWindow: number; percent: number | null } | undefined };
-    if (typeof session.getContextUsage !== "function") return;
+    if (typeof session.getContextUsage !== "function") {
+      if (options.resetAfterCompaction) this.emit({ type: "context_usage", usage: undefined });
+      return;
+    }
     let usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined;
     try {
       usage = session.getContextUsage();
     } catch (error) {
       logAgentd("context usage read failed", { sessionId: this.id, error: messageOf(error) });
+      if (options.resetAfterCompaction) this.emit({ type: "context_usage", usage: undefined });
       return;
     }
-    this.emit({ type: "context_usage", usage });
+    this.emit({
+      type: "context_usage",
+      usage: options.resetAfterCompaction && usage ? { ...usage, tokens: null, percent: null } : usage,
+    });
   }
 
   reportDiagnostics(): void {
@@ -583,20 +590,26 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
     if (trimmed === "/compact" || trimmed.startsWith("/compact ")) {
       const instructions = trimmed.replace(/^\/compact\s*/, "").trim() || undefined;
-      const session = this.runtime.session as unknown as { compact?: (instructions?: string) => Promise<unknown> };
+      const session = this.runtime.session as unknown as { compact?: (instructions?: string) => Promise<unknown>; isStreaming?: boolean };
       if (typeof session.compact !== "function") {
-        this.emit({ type: "status", status: "failed", summary: "/compact is not supported by this Pi runtime" });
+        this.emit({ type: "status", status: "failed", summary: "/compact is not supported by this Pi runtime", noTurnRan: true });
+        return true;
+      }
+      if (session.isStreaming === true) {
+        this.emit({ type: "log", line: "/compact rejected: cannot compact while the agent is running" });
+        this.emit({ type: "status", status: "completed", summary: "/compact is unavailable while the agent is running", noTurnRan: true, preserveSessionState: true });
         return true;
       }
       this.emit({ type: "status", status: "running", summary: instructions ? `Compacting (${instructions})…` : "Compacting session…" });
       try {
         await session.compact(instructions);
+        this.emitContextUsageSnapshot({ resetAfterCompaction: true });
         this.emit({ type: "log", line: instructions ? `compact completed with instructions: ${instructions}` : "compact completed" });
         this.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true });
       } catch (error) {
         const message = messageOf(error);
         logAgentd("slash /compact failed", { sessionId: this.id, error: message });
-        this.emit({ type: "status", status: "failed", summary: `/compact failed: ${message}` });
+        this.emit({ type: "status", status: "failed", summary: `/compact failed: ${message}`, noTurnRan: true });
       }
       return true;
     }

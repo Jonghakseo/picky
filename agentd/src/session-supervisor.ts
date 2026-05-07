@@ -1016,7 +1016,7 @@ export class SessionSupervisor extends EventEmitter {
     }
     await this.cancelPendingExtensionUiForUserInput(sessionId, handle);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
-    if (isNameSlashCommand(text)) this.rememberNoTurnRanSessionState(sessionId);
+    if (isNoTurnStateRestoringSlashCommand(text)) this.rememberNoTurnRanSessionState(sessionId);
     const prompt: BuiltPrompt = { text, imagePaths: [] };
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id });
     await this.appendLog(sessionId, `${FOLLOWUP_PREFIX}${text}`);
@@ -1255,7 +1255,7 @@ export class SessionSupervisor extends EventEmitter {
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     const prompt = buildSteerPrompt(text, context);
     const previousSession = this.mustGet(sessionId);
-    if (isNameSlashCommand(text)) this.rememberNoTurnRanSessionState(sessionId, previousSession);
+    if (isNoTurnStateRestoringSlashCommand(text)) this.rememberNoTurnRanSessionState(sessionId, previousSession);
     const revivedTerminalSession = isTerminalStatus(previousSession.status);
     if (revivedTerminalSession) {
       await this.patch(sessionId, { status: "running", lastSummary: "Steering message sent", thinkingPreview: undefined });
@@ -1649,6 +1649,14 @@ function piSessionFilePathFromHandoffTranscript(transcript: string | undefined):
 
 function isNameSlashCommand(text: string): boolean {
   return /^\s*\/name(\s|$)/.test(text);
+}
+
+function isCompactSlashCommand(text: string): boolean {
+  return /^\s*\/compact(\s|$)/.test(text);
+}
+
+function isNoTurnStateRestoringSlashCommand(text: string): boolean {
+  return isNameSlashCommand(text) || isCompactSlashCommand(text);
 }
 
 // Matches `/name`, `/name args` where name is an identifier-like token without `/` or `:`.

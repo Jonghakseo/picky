@@ -586,16 +586,17 @@ describe("PiSdkRuntime", () => {
     expect(events.some((event) => event.type === "status" && event.status === "completed" && event.noTurnRan === true && event.preserveSessionState === true)).toBe(true);
   });
 
-  it("intercepts /compact and forwards optional instructions to AgentSession.compact", async () => {
+  it("intercepts /compact, forwards optional instructions, and resets context usage", async () => {
     const fakeSession = new FakeSession();
     const compactCalls: Array<string | undefined> = [];
     (fakeSession as unknown as { compact: (instructions?: string) => Promise<unknown> }).compact = async (instructions) => {
       compactCalls.push(instructions);
       return {};
     };
+    (fakeSession as unknown as { getContextUsage: () => { tokens: number; contextWindow: number; percent: number } }).getContextUsage = () => ({ tokens: 123_456, contextWindow: 200_000, percent: 62 });
     const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-compact" });
-    const events: Array<{ type: string; status?: string; noTurnRan?: boolean }> = [];
-    handle.subscribe((event) => events.push(event as { type: string; status?: string; noTurnRan?: boolean }));
+    const events: Array<{ type: string; status?: string; noTurnRan?: boolean; usage?: unknown }> = [];
+    handle.subscribe((event) => events.push(event as { type: string; status?: string; noTurnRan?: boolean; usage?: unknown }));
 
     await handle.followUp({ text: "/compact focus on bug area", imagePaths: [] });
 
@@ -604,6 +605,27 @@ describe("PiSdkRuntime", () => {
     const statuses = events.filter((event) => event.type === "status").map((event) => event.status);
     expect(statuses).toContain("running");
     expect(statuses).toContain("completed");
+    expect(events).toContainEqual({ type: "context_usage", usage: { tokens: null, contextWindow: 200_000, percent: null } });
+  });
+
+  it("rejects /compact while the active agent is running", async () => {
+    const fakeSession = new FakeSession();
+    fakeSession.isStreaming = true;
+    const compactCalls: Array<string | undefined> = [];
+    (fakeSession as unknown as { compact: (instructions?: string) => Promise<unknown> }).compact = async (instructions) => {
+      compactCalls.push(instructions);
+      return {};
+    };
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-compact-running" });
+    const events: Array<{ type: string; status?: string; noTurnRan?: boolean; preserveSessionState?: boolean; line?: string }> = [];
+    handle.subscribe((event) => events.push(event as { type: string; status?: string; noTurnRan?: boolean; preserveSessionState?: boolean; line?: string }));
+
+    await handle.followUp({ text: "/compact", imagePaths: [] });
+
+    expect(compactCalls).toEqual([]);
+    expect(fakeSession.prompts).toEqual([]);
+    expect(events).toContainEqual({ type: "log", line: "/compact rejected: cannot compact while the agent is running" });
+    expect(events).toContainEqual({ type: "status", status: "completed", summary: "/compact is unavailable while the agent is running", noTurnRan: true, preserveSessionState: true });
   });
 
   it("updates the active Pi session thinking level", async () => {

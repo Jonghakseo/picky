@@ -19,6 +19,9 @@ struct PickyAgentDaemonConfiguration: Equatable {
     var executableURL: URL
     var arguments: [String]
     var requiredExecutableName: String? = nil
+    var requiredAgentdEntryPoint: String? = nil
+    var missingAgentdPackageMessage: String? = nil
+    var missingAgentdEntryPointMessage: String? = nil
 
     static func development(
         port: Int = 17631,
@@ -26,21 +29,100 @@ struct PickyAgentDaemonConfiguration: Equatable {
         appSupportRoot: URL = PickyAppSupport.defaultRoot(),
         defaultCwd: String = FileManager.default.homeDirectoryForCurrentUser.path,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .medium,
-        filePath: String = #filePath
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundleResourceURL: URL? = Bundle.main.resourceURL,
+        fileManager: FileManager = .default
     ) -> PickyAgentDaemonConfiguration {
-        let agentdRoot = PickyAgentdRootResolver.resolveDevelopmentAgentdRoot(filePath: filePath)
-        return PickyAgentDaemonConfiguration(
+        let location = PickyAgentdRootResolver.resolveRuntimeLocation(
+            environment: environment,
+            bundleResourceURL: bundleResourceURL,
+            fileManager: fileManager
+        )
+        return Self.configuration(
+            for: location,
             port: port,
             token: token,
             appSupportRoot: appSupportRoot,
             defaultCwd: defaultCwd,
             mainAgentThinkingLevel: mainAgentThinkingLevel,
-            runtime: ProcessInfo.processInfo.environment["PICKY_AGENTD_RUNTIME"],
-            workingDirectory: agentdRoot,
-            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-            arguments: ["pnpm", "--dir", agentdRoot.path, "exec", "tsx", "src/index.ts"],
-            requiredExecutableName: "pnpm"
+            runtime: environment["PICKY_AGENTD_RUNTIME"]
         )
+    }
+
+    private static func configuration(
+        for location: PickyAgentdRuntimeLocation,
+        port: Int,
+        token: String,
+        appSupportRoot: URL,
+        defaultCwd: String,
+        mainAgentThinkingLevel: PickyMainAgentThinkingLevel,
+        runtime: String?
+    ) -> PickyAgentDaemonConfiguration {
+        switch location {
+        case .externalSource(let root):
+            return PickyAgentDaemonConfiguration(
+                port: port,
+                token: token,
+                appSupportRoot: appSupportRoot,
+                defaultCwd: defaultCwd,
+                mainAgentThinkingLevel: mainAgentThinkingLevel,
+                runtime: runtime,
+                workingDirectory: root,
+                executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+                arguments: ["pnpm", "--dir", root.path, "exec", "tsx", "src/index.ts"],
+                requiredExecutableName: "pnpm",
+                requiredAgentdEntryPoint: "src/index.ts"
+            )
+        case .externalCompiled(let root), .bundled(let root):
+            let entryPoint = root.appendingPathComponent("dist/index.js").path
+            return PickyAgentDaemonConfiguration(
+                port: port,
+                token: token,
+                appSupportRoot: appSupportRoot,
+                defaultCwd: defaultCwd,
+                mainAgentThinkingLevel: mainAgentThinkingLevel,
+                runtime: runtime,
+                workingDirectory: root,
+                executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+                arguments: ["node", entryPoint],
+                requiredExecutableName: "node",
+                requiredAgentdEntryPoint: "dist/index.js"
+            )
+        case .missingExternal(let root):
+            let message = "PICKY_AGENTD_ROOT does not contain a runnable picky-agentd package at \(root.path). Expected src/index.ts for development or dist/index.js for a compiled runtime."
+            return PickyAgentDaemonConfiguration(
+                port: port,
+                token: token,
+                appSupportRoot: appSupportRoot,
+                defaultCwd: defaultCwd,
+                mainAgentThinkingLevel: mainAgentThinkingLevel,
+                runtime: runtime,
+                workingDirectory: root,
+                executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+                arguments: ["node", root.appendingPathComponent("dist/index.js").path],
+                requiredExecutableName: "node",
+                requiredAgentdEntryPoint: "dist/index.js",
+                missingAgentdPackageMessage: message,
+                missingAgentdEntryPointMessage: message
+            )
+        case .missingBundled(let root):
+            let message = "Bundled picky-agentd was not found in app resources at \(root.path). Package Picky with scripts/package-signed-app.sh or set PICKY_AGENTD_ROOT to a local agentd directory."
+            return PickyAgentDaemonConfiguration(
+                port: port,
+                token: token,
+                appSupportRoot: appSupportRoot,
+                defaultCwd: defaultCwd,
+                mainAgentThinkingLevel: mainAgentThinkingLevel,
+                runtime: runtime,
+                workingDirectory: root,
+                executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+                arguments: ["node", root.appendingPathComponent("dist/index.js").path],
+                requiredExecutableName: "node",
+                requiredAgentdEntryPoint: "dist/index.js",
+                missingAgentdPackageMessage: message,
+                missingAgentdEntryPointMessage: message
+            )
+        }
     }
 
     var environment: [String: String] {
@@ -85,51 +167,57 @@ enum PickyDaemonLifecycleState: Equatable {
     case failedToStart(String)
 }
 
+enum PickyAgentdRuntimeLocation: Equatable {
+    case externalSource(URL)
+    case externalCompiled(URL)
+    case bundled(URL)
+    case missingExternal(URL)
+    case missingBundled(URL)
+}
+
 struct PickyAgentdRootResolver {
-    static func resolveDevelopmentAgentdRoot(
+    static func resolveRuntimeLocation(
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        currentDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true),
-        filePath: String = #filePath,
         bundleResourceURL: URL? = Bundle.main.resourceURL,
         fileManager: FileManager = .default
-    ) -> URL {
-        if let override = environment["PICKY_AGENTD_ROOT"] {
+    ) -> PickyAgentdRuntimeLocation {
+        if let override = environment["PICKY_AGENTD_ROOT"], !override.isEmpty {
             let url = URL(fileURLWithPath: NSString(string: override).expandingTildeInPath, isDirectory: true)
-            if containsAgentdPackage(url, fileManager: fileManager) { return url }
+            if containsSourceAgentdPackage(url, fileManager: fileManager) { return .externalSource(url) }
+            if containsCompiledAgentdPackage(url, fileManager: fileManager) { return .externalCompiled(url) }
+            return .missingExternal(url)
         }
 
-        if let found = searchUpwardForAgentd(from: currentDirectory, fileManager: fileManager) { return found }
-        let sourceURL = URL(fileURLWithPath: filePath).deletingLastPathComponent()
-        if let found = searchUpwardForAgentd(from: sourceURL, fileManager: fileManager) { return found }
-        if let resourceURL = bundleResourceURL?.appendingPathComponent("agentd", isDirectory: true), containsAgentdPackage(resourceURL, fileManager: fileManager) { return resourceURL }
-        return currentDirectory.appendingPathComponent("agentd", isDirectory: true)
+        let resourceURL = bundleResourceURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let bundledRoot = resourceURL.appendingPathComponent("agentd", isDirectory: true)
+        if containsCompiledAgentdPackage(bundledRoot, fileManager: fileManager) { return .bundled(bundledRoot) }
+        return .missingBundled(bundledRoot)
     }
 
     static func containsAgentdPackage(_ url: URL, fileManager: FileManager = .default) -> Bool {
         fileManager.fileExists(atPath: url.appendingPathComponent("package.json").path)
     }
 
-    private static func searchUpwardForAgentd(from start: URL, fileManager: FileManager) -> URL? {
-        var candidate = start.standardizedFileURL
-        while true {
-            let agentd = candidate.appendingPathComponent("agentd", isDirectory: true)
-            if containsAgentdPackage(agentd, fileManager: fileManager) { return agentd }
-            if candidate.path == "/" { return nil }
-            let parent = candidate.deletingLastPathComponent().standardizedFileURL
-            if parent.path == candidate.path { return nil }
-            candidate = parent
-        }
+    static func containsSourceAgentdPackage(_ url: URL, fileManager: FileManager = .default) -> Bool {
+        containsAgentdPackage(url, fileManager: fileManager)
+            && fileManager.fileExists(atPath: url.appendingPathComponent("src/index.ts").path)
+    }
+
+    static func containsCompiledAgentdPackage(_ url: URL, fileManager: FileManager = .default) -> Bool {
+        containsAgentdPackage(url, fileManager: fileManager)
+            && fileManager.fileExists(atPath: url.appendingPathComponent("dist/index.js").path)
     }
 }
 
 enum PickyDaemonLaunchPreflightError: LocalizedError, Equatable {
     case missingAgentdPackage(String)
+    case missingAgentdEntryPoint(String)
     case missingRequiredExecutable(String)
 
     var errorDescription: String? {
         switch self {
-        case .missingAgentdPackage(let path):
-            "picky-agentd was not found at \(path). Set PICKY_AGENTD_ROOT to the local agentd directory or install the bundled daemon."
+        case .missingAgentdPackage(let message), .missingAgentdEntryPoint(let message):
+            message
         case .missingRequiredExecutable(let name):
             "\(name) not found in PATH. Install \(name) or launch Picky with a PATH that includes it."
         }
@@ -265,7 +353,19 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     private func preflightConfiguration() throws {
         let packageURL = configuration.workingDirectory.appendingPathComponent("package.json")
         guard fileManager.fileExists(atPath: packageURL.path) else {
-            throw PickyDaemonLaunchPreflightError.missingAgentdPackage(configuration.workingDirectory.path)
+            throw PickyDaemonLaunchPreflightError.missingAgentdPackage(
+                configuration.missingAgentdPackageMessage
+                    ?? "picky-agentd was not found at \(configuration.workingDirectory.path). Set PICKY_AGENTD_ROOT to a local agentd directory or package the bundled daemon."
+            )
+        }
+        if let requiredAgentdEntryPoint = configuration.requiredAgentdEntryPoint {
+            let entryPointURL = configuration.workingDirectory.appendingPathComponent(requiredAgentdEntryPoint)
+            guard fileManager.fileExists(atPath: entryPointURL.path) else {
+                throw PickyDaemonLaunchPreflightError.missingAgentdEntryPoint(
+                    configuration.missingAgentdEntryPointMessage
+                        ?? "picky-agentd entry point was not found at \(entryPointURL.path)."
+                )
+            }
         }
         if let requiredExecutableName = configuration.requiredExecutableName,
            !executableChecker.executableExists(named: requiredExecutableName, environment: configuration.environment) {

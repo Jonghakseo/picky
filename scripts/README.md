@@ -25,9 +25,25 @@ Defaults:
 - zip creation: disabled
 - clean build: disabled, for faster repeated relaunches
 
+## `package-agentd-runtime.sh` — bundled daemon runtime
+
+Builds `agentd` into a production runtime directory suitable for copying into `Picky.app/Contents/Resources/agentd`:
+
+```bash
+./scripts/package-agentd-runtime.sh
+```
+
+The runtime launches with `node dist/index.js`. It includes production `node_modules`, but excludes the launch-time need for `pnpm`, `tsx`, TypeScript, or the `agentd/src` tree. `node` itself is intentionally **not** bundled; beta users are expected to have Node via Pi.
+
+Default output:
+
+```text
+build/package/agentd-runtime
+```
+
 ## `package-signed-app.sh` — local signed package smoke
 
-Builds `Picky.app` with command-line signing overrides and verifies the result with:
+Builds `Picky.app`, embeds the bundled `agentd` runtime, re-signs the final bundle, and verifies the result with:
 
 ```bash
 codesign --verify --deep --strict --verbose=2
@@ -66,16 +82,24 @@ PICKY_DEVELOPMENT_TEAM="TEAMID" \
 | `PICKY_DEVELOPMENT_TEAM` | empty | Apple team id, required for some identities. |
 | `PICKY_PACKAGE_BUILD_DIR` | `build/package` | Package build output root. |
 | `PICKY_CREATE_ZIP` | `1` | Set `0` to skip zip creation. |
+| `PICKY_PACKAGE_AGENTD` | `1` | Set `0` to skip embedding `Contents/Resources/agentd`. |
+| `PICKY_AGENTD_RUNTIME_DIR` | `build/package/agentd-runtime` | Prebuilt/staging agentd runtime directory. |
 | `PICKY_CLEAN` | `1` | Set `0` to reuse package DerivedData. |
+
+### Runtime resolution
+
+At app launch Picky resolves the daemon in this order:
+
+1. `PICKY_AGENTD_ROOT` if set. Source overrides with `src/index.ts` run via `pnpm exec tsx`; compiled overrides with `dist/index.js` run via `node`.
+2. Bundled `Picky.app/Contents/Resources/agentd/dist/index.js`, run via `node`.
+3. Friendly startup failure. There is no implicit source-tree fallback.
 
 ### Runtime smoke
 
-After packaging, run the signed app against the local daemon source in mock mode:
+After packaging, run the signed app against the bundled daemon in mock mode:
 
 ```bash
-PICKY_AGENTD_RUNTIME=mock \
-PICKY_AGENTD_ROOT="$PWD/agentd" \
-build/package/export/Picky.app/Contents/MacOS/Picky
+env PICKY_AGENTD_RUNTIME=mock build/package/export/Picky.app/Contents/MacOS/Picky
 ```
 
 Expected daemon log:

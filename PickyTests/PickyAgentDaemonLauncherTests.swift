@@ -28,8 +28,6 @@ private final class FakeProcessRunner: PickyProcessRunning {
     func crash(code: Int32) { terminationHandler?(code) }
 }
 
-private struct LaunchFailure: Error {}
-
 private struct FakeExecutableChecker: PickyExecutableChecking {
     var exists: Bool
 
@@ -93,16 +91,16 @@ struct PickyAgentDaemonLauncherTests {
 
     @Test func stopTerminatesWithoutRestart() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
-        let repo = temp.appendingPathComponent("repo", isDirectory: true)
-        let agentd = repo.appendingPathComponent("agentd", isDirectory: true)
-        try makeAgentdPackage(at: agentd)
+        let agentd = temp.appendingPathComponent("agentd", isDirectory: true)
+        try makeAgentdPackage(at: agentd, source: true)
         let runner = FakeProcessRunner()
         let configuration = PickyAgentDaemonConfiguration.development(
             port: 19004,
             token: "token",
             appSupportRoot: temp,
             defaultCwd: "/tmp",
-            filePath: repo.appendingPathComponent("Picky/PickyAgentDaemonLauncher.swift").path
+            environment: ["PICKY_AGENTD_ROOT": agentd.path],
+            bundleResourceURL: nil
         )
         let launcher = PickyAgentDaemonLauncher(
             configuration: configuration,
@@ -118,43 +116,92 @@ struct PickyAgentDaemonLauncherTests {
         #expect(launcher.state == .stopped)
     }
 
-    @Test func developmentLaunchUsesPnpmExecToAvoidNpmLifecyclePrefixPollution() throws {
+    @Test func externalSourceOverrideUsesPnpmExecForDevelopment() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
-        let repo = temp.appendingPathComponent("repo", isDirectory: true)
-        let agentd = repo.appendingPathComponent("agentd", isDirectory: true)
-        try makeAgentdPackage(at: agentd)
+        let agentd = temp.appendingPathComponent("agentd", isDirectory: true)
+        try makeAgentdPackage(at: agentd, source: true, compiled: true)
 
         let configuration = PickyAgentDaemonConfiguration.development(
             appSupportRoot: temp,
-            filePath: repo.appendingPathComponent("Picky/PickyAgentDaemonLauncher.swift").path
+            environment: ["PICKY_AGENTD_ROOT": agentd.path],
+            bundleResourceURL: nil
         )
 
+        #expect(configuration.workingDirectory == agentd)
         #expect(configuration.arguments == ["pnpm", "--dir", agentd.path, "exec", "tsx", "src/index.ts"])
+        #expect(configuration.requiredExecutableName == "pnpm")
+        #expect(configuration.requiredAgentdEntryPoint == "src/index.ts")
     }
 
-    @Test func resolvesAgentdRootFromEnvironmentAndSourceTree() throws {
+    @Test func externalCompiledOverrideUsesNodeRuntime() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
-        let override = temp.appendingPathComponent("override-agentd", isDirectory: true)
-        try makeAgentdPackage(at: override)
+        let agentd = temp.appendingPathComponent("agentd-runtime", isDirectory: true)
+        try makeAgentdPackage(at: agentd, compiled: true)
 
-        let resolvedOverride = PickyAgentdRootResolver.resolveDevelopmentAgentdRoot(
-            environment: ["PICKY_AGENTD_ROOT": override.path],
-            currentDirectory: temp,
-            filePath: temp.appendingPathComponent("missing.swift").path,
+        let configuration = PickyAgentDaemonConfiguration.development(
+            appSupportRoot: temp,
+            environment: ["PICKY_AGENTD_ROOT": agentd.path],
             bundleResourceURL: nil
         )
-        #expect(resolvedOverride == override)
 
-        let repo = temp.appendingPathComponent("repo", isDirectory: true)
-        let sourceAgentd = repo.appendingPathComponent("agentd", isDirectory: true)
-        try makeAgentdPackage(at: sourceAgentd)
-        let resolvedSource = PickyAgentdRootResolver.resolveDevelopmentAgentdRoot(
+        #expect(configuration.workingDirectory == agentd)
+        #expect(configuration.arguments == ["node", agentd.appendingPathComponent("dist/index.js").path])
+        #expect(configuration.requiredExecutableName == "node")
+        #expect(configuration.requiredAgentdEntryPoint == "dist/index.js")
+    }
+
+    @Test func bundledCompiledAgentdUsesNodeWithoutPnpm() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let resources = temp.appendingPathComponent("Resources", isDirectory: true)
+        let bundled = resources.appendingPathComponent("agentd", isDirectory: true)
+        try makeAgentdPackage(at: bundled, compiled: true)
+
+        let configuration = PickyAgentDaemonConfiguration.development(
+            appSupportRoot: temp,
             environment: [:],
-            currentDirectory: temp,
-            filePath: repo.appendingPathComponent("Picky/PickyAgentDaemonLauncher.swift").path,
-            bundleResourceURL: nil
+            bundleResourceURL: resources
         )
-        #expect(resolvedSource == sourceAgentd)
+
+        #expect(configuration.workingDirectory == bundled)
+        #expect(configuration.arguments == ["node", bundled.appendingPathComponent("dist/index.js").path])
+        #expect(configuration.requiredExecutableName == "node")
+        #expect(configuration.requiredAgentdEntryPoint == "dist/index.js")
+    }
+
+    @Test func invalidOverrideDoesNotFallbackToBundledAgentd() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let resources = temp.appendingPathComponent("Resources", isDirectory: true)
+        try makeAgentdPackage(at: resources.appendingPathComponent("agentd", isDirectory: true), compiled: true)
+        let invalidOverride = temp.appendingPathComponent("invalid-agentd", isDirectory: true)
+        try FileManager.default.createDirectory(at: invalidOverride, withIntermediateDirectories: true)
+
+        let location = PickyAgentdRootResolver.resolveRuntimeLocation(
+            environment: ["PICKY_AGENTD_ROOT": invalidOverride.path],
+            bundleResourceURL: resources
+        )
+
+        #expect(location == .missingExternal(invalidOverride))
+    }
+
+    @Test func missingBundledAgentdFailsFriendlyWithoutSourceTreeFallback() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let resources = temp.appendingPathComponent("Resources", isDirectory: true)
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration.development(
+            appSupportRoot: temp,
+            environment: [:],
+            bundleResourceURL: resources
+        )
+        let launcher = PickyAgentDaemonLauncher(configuration: configuration, runner: runner, logDirectory: temp.appendingPathComponent("Logs"))
+
+        launcher.start()
+
+        if case .failedToStart(let message) = launcher.state {
+            #expect(message.contains("Bundled picky-agentd was not found"))
+        } else {
+            Issue.record("Expected friendly failedToStart state")
+        }
+        #expect(runner.launchedConfiguration == nil)
     }
 
     @Test func missingAgentdPackageFailsFriendlyWithoutRestartLoop() throws {
@@ -182,18 +229,36 @@ struct PickyAgentDaemonLauncherTests {
         #expect(runner.launchedConfiguration == nil)
     }
 
-    @Test func rootResolverTerminatesAtFilesystemRoot() throws {
-        let resolved = PickyAgentdRootResolver.resolveDevelopmentAgentdRoot(
-            environment: [:],
-            currentDirectory: URL(fileURLWithPath: "/", isDirectory: true),
-            filePath: "/missing/PickyAgentDaemonLauncher.swift",
-            bundleResourceURL: nil
+    @Test func missingAgentdEntryPointFailsFriendlyWithoutRestartLoop() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let agentd = temp.appendingPathComponent("agentd", isDirectory: true)
+        try makeAgentdPackage(at: agentd)
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19007,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: agentd,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["node", agentd.appendingPathComponent("dist/index.js").path],
+            requiredExecutableName: "node",
+            requiredAgentdEntryPoint: "dist/index.js"
         )
+        let launcher = PickyAgentDaemonLauncher(configuration: configuration, runner: runner, logDirectory: temp.appendingPathComponent("Logs"))
 
-        #expect(resolved.path == "/agentd")
+        launcher.start()
+
+        if case .failedToStart(let message) = launcher.state {
+            #expect(message.contains("entry point was not found"))
+        } else {
+            Issue.record("Expected friendly failedToStart state")
+        }
+        #expect(runner.launchedConfiguration == nil)
     }
 
-    @Test func daemonEnvironmentAugmentsFinderStylePathForPnpm() throws {
+    @Test func daemonEnvironmentAugmentsFinderStylePathForNodeAndPnpm() throws {
         let environment = PickyAgentDaemonConfiguration.augmentedExecutablePATH(from: [
             "HOME": "/Users/example",
             "PATH": "/usr/bin:/bin"
@@ -218,8 +283,8 @@ struct PickyAgentDaemonLauncherTests {
             runtime: nil,
             workingDirectory: temp,
             executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-            arguments: ["pnpm", "dev"],
-            requiredExecutableName: "pnpm"
+            arguments: ["node", "dist/index.js"],
+            requiredExecutableName: "node"
         )
         let launcher = PickyAgentDaemonLauncher(
             configuration: configuration,
@@ -231,7 +296,7 @@ struct PickyAgentDaemonLauncherTests {
         launcher.start()
 
         if case .failedToStart(let message) = launcher.state {
-            #expect(message.contains("pnpm not found"))
+            #expect(message.contains("node not found"))
         } else {
             Issue.record("Expected friendly failedToStart state")
         }
@@ -239,7 +304,19 @@ struct PickyAgentDaemonLauncherTests {
     }
 }
 
-private func makeAgentdPackage(at url: URL) throws {
+private func makeAgentdPackage(at url: URL, source: Bool = false, compiled: Bool = false) throws {
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     try "{}".write(to: url.appendingPathComponent("package.json"), atomically: true, encoding: .utf8)
+
+    if source {
+        let src = url.appendingPathComponent("src", isDirectory: true)
+        try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
+        try "console.log('source');\n".write(to: src.appendingPathComponent("index.ts"), atomically: true, encoding: .utf8)
+    }
+
+    if compiled {
+        let dist = url.appendingPathComponent("dist", isDirectory: true)
+        try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+        try "console.log('compiled');\n".write(to: dist.appendingPathComponent("index.js"), atomically: true, encoding: .utf8)
+    }
 }

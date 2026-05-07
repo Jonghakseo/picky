@@ -370,12 +370,15 @@ private struct PickyHUDDockRailView: View {
     /// overlay manager which converts it into a percentage of the dragged display's
     /// visibleFrame height and updates the shared anchor across every monitor.
     ///
-    /// Implemented as an explicit `Rectangle().fill(Color.clear)` (rather than
-    /// `ZStack { Color.clear; ... }`) so the hit-test area is unambiguously the entire
-    /// frame: SwiftUI's hover and gesture systems both pick up the rectangle's bounds,
-    /// matching the AppKit cursor rect added by `.openHandCursor()`. The visible 22×4
-    /// pill is overlaid on top, centered, so the visual size stays the same while the
-    /// clickable region spans the full rail width and the full handle-area height.
+    /// Implemented as an explicit transparent `Rectangle` whose `.contentShape` covers
+    /// the entire frame, with the visible 22×4 pill overlaid on top using
+    /// `.allowsHitTesting(false)`. Without that modifier, the filled Capsule in the
+    /// overlay registers its own hit area (the pill's narrow capsule shape), and
+    /// SwiftUI prefers it over the underlying invisible rectangle — which is exactly
+    /// the "only the pill responds to clicks" symptom from earlier attempts. Disabling
+    /// hit testing on the pill forces every click in the rail-width frame to flow to
+    /// the underlying rectangle, matching the AppKit cursor rect from
+    /// `.openHandCursor()` and the SwiftUI `.onHover` tracking.
     private var dockAnchorHandle: some View {
         let isActive = isHandleHovered || dragStartMouseScreenY != nil
         return Rectangle()
@@ -387,6 +390,7 @@ private struct PickyHUDDockRailView: View {
                     .frame(width: isActive ? 26 : 22, height: 4)
                     .animation(.easeOut(duration: 0.12), value: isHandleHovered)
                     .animation(.easeOut(duration: 0.12), value: dragStartMouseScreenY != nil)
+                    .allowsHitTesting(false)
             }
             .contentShape(Rectangle())
             .openHandCursor()

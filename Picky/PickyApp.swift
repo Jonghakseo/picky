@@ -75,6 +75,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
 
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 0])
         UNUserNotificationCenter.current().delegate = self
+        PickyAppMenuInstaller.install()
 
         PickyAnalytics.configure()
         PickyAnalytics.trackAppOpened()

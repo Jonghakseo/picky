@@ -1097,10 +1097,16 @@ struct BlueCursorView: View {
             && isCursorOnThisScreen
     }
 
+    /// Arm the next idle behavior fire. When eligibility currently fails (most
+    /// commonly because the cursor isn't on this screen at startup), still arm
+    /// a longer retry timer so this view can recover the moment the cursor
+    /// returns. Without this retry, a BlueCursorView whose `.onAppear` fired
+    /// before the cursor reached its screen would stay silent forever — until
+    /// the user toggled a cursor preference to force a re-schedule.
     private func scheduleNextIdleBehavior(delayRange: ClosedRange<Double> = 2...5) {
         idleScheduleTimer?.invalidate()
-        guard isIdleEligibleForScheduling else { return }
-        let delay = Double.random(in: delayRange)
+        let effectiveRange = isIdleEligibleForScheduling ? delayRange : 6.0...12.0
+        let delay = Double.random(in: effectiveRange)
         idleScheduleTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { _ in
             self.runRandomIdleBehaviorIfEligible()
         }

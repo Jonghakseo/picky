@@ -379,8 +379,10 @@ private struct PickyHUDDockRailView: View {
                 .animation(.easeOut(duration: 0.12), value: dragStartMouseScreenY != nil)
         }
         // Larger frame than the visible pill so the hit area is comfortable; AppKit
-        // cursor rects from .openHandCursor() apply to this whole frame too.
-        .frame(width: 36, height: 14)
+        // cursor rects from .openHandCursor() apply to this whole frame too. The
+        // outer width uses the full dock rail width so the handle can be grabbed
+        // anywhere along the top of the rail; the visible capsule above stays small.
+        .frame(width: PickyHUDDockLayout.railWidth - 6, height: PickyHUDExpansion.dockHandleAreaHeight)
         .contentShape(Rectangle())
         .openHandCursor()
         .onHover { hovering in

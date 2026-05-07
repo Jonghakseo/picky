@@ -60,6 +60,18 @@ describe("ExtensionUiBridge", () => {
     expect(request.prompt).toBe("Saved");
   });
 
+  it("ignores setWidget because Picky has no TUI widget surface", async () => {
+    const bridge = new ExtensionUiBridge("session-1");
+    const requests: unknown[] = [];
+    bridge.on("request", (request) => requests.push(request));
+
+    bridge.createContext().setWidget("spinner", ["tick"]);
+    bridge.createContext().setWidget("spinner", undefined);
+    await delay(20);
+
+    expect(requests).toEqual([]);
+  });
+
   it("cancels a dialog immediately when its AbortSignal is already aborted", async () => {
     const bridge = new ExtensionUiBridge("session-1");
     const controller = new AbortController();

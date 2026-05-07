@@ -2208,11 +2208,16 @@ describe("SessionSupervisor", () => {
     expect(supervisor.list()).toHaveLength(1);
   });
 
-  it("does not turn fire-and-forget extension UI updates into pending input", async () => {
+  it("ignores fire-and-forget setWidget updates", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     const session = await supervisor.create(context("widget update"));
+    const logEvents: string[] = [];
+    let sessionEvents = 0;
+    supervisor.on("log", (_sessionId, line) => logEvents.push(line));
+    supervisor.on("session", () => { sessionEvents += 1; });
+    const logCountBefore = supervisor.get(session.id)?.logs.length ?? 0;
 
     runtime.handle?.emit({
       type: "extension_ui",
@@ -2224,7 +2229,9 @@ describe("SessionSupervisor", () => {
     const updated = supervisor.get(session.id);
     expect(updated?.status).toBe("running");
     expect(updated?.pendingExtensionUiRequest).toBeUndefined();
-    expect(updated?.logs.at(-1)).toMatch(/extension ui: setWidget/);
+    expect(updated?.logs.length).toBe(logCountBefore);
+    expect(logEvents).toEqual([]);
+    expect(sessionEvents).toBe(0);
   });
 
   it("stores the final assistant answer instead of replacing it with a generic completion label", async () => {

@@ -80,7 +80,12 @@ export class ExtensionUiBridge extends EventEmitter {
       ask_user_question: (request: AskUserQuestionRequest, opts?: { signal?: AbortSignal; timeout?: number }) => this.dialog("askUserQuestion", normalizeAskUserQuestionRequest(request, opts?.timeout), opts?.signal) as Promise<Record<string, unknown> | undefined>,
       notify: (message, type) => void this.fireAndForget("notify", { prompt: message, notifyType: type ?? "info" }),
       setStatus: (key, text) => void this.fireAndForget("setStatus", { statusKey: key, statusText: text }),
-      setWidget: (key, content, options) => void this.fireAndForget("setWidget", { widgetKey: key, widgetLines: Array.isArray(content) ? content : undefined, widgetPlacement: options?.placement }),
+      // Picky has no TUI widget surface. High-frequency widgets such as the
+      // subagent spinner can call this every ~150ms; forwarding those no-op
+      // updates through agentd floods logs/session snapshots and makes the HUD
+      // render loop expensive. Keep the API available for extensions, but drop
+      // the update at the host boundary.
+      setWidget: () => undefined,
       setTitle: (title) => void this.fireAndForget("setTitle", { title }),
       setEditorText: (text) => void this.fireAndForget("set_editor_text", { text }),
       pasteToEditor: (text) => void this.fireAndForget("set_editor_text", { text }),

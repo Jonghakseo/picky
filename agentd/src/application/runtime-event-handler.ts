@@ -74,6 +74,7 @@ export class RuntimeEventHandler {
       return this.applyStatusEvent(sessionId, event);
     }
     if (event.type === "extension_ui") {
+      if (isIgnoredFireAndForgetExtensionUi(event)) return;
       this.thinkingActive.set(sessionId, false);
       logAgentd("extension ui event", { sessionId, waitsForInput: event.waitsForInput, method: typeof event.request.method === "string" ? event.request.method : undefined });
       return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
@@ -199,6 +200,7 @@ export class RuntimeEventHandler {
   private async applyExtensionUiEvent(sessionId: string, rawRequest: Record<string, unknown>, waitsForInput: boolean): Promise<void> {
     const request = mapExtensionUiRequest(rawRequest);
     if (!waitsForInput) {
+      if (request.method === "setWidget") return;
       await this.dependencies.appendLog(sessionId, extensionUiLogLine(request));
       return;
     }
@@ -231,6 +233,10 @@ export class RuntimeEventHandler {
     logAgentd("tool activity", { sessionId, tool: event.name, status: event.status, previewChars: event.preview?.length });
     await this.dependencies.patchSession(sessionId, { tools });
   }
+}
+
+function isIgnoredFireAndForgetExtensionUi(event: Extract<RuntimeEvent, { type: "extension_ui" }>): boolean {
+  return !event.waitsForInput && event.request.method === "setWidget";
 }
 
 function sameContextUsage(

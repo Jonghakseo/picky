@@ -120,7 +120,8 @@ struct PickyHUDView: View {
                     viewModel: viewModel,
                     session: activeSession,
                     onArchiveSession: archiveSession,
-                    maxHeight: placement.availableCardMaxHeight
+                    maxHeight: placement.availableCardMaxHeight,
+                    isPreviewMode: isHoverPreviewSession(activeSession.id)
                 )
                     .id(activeSession.id)
                     .frame(width: PickyHUDDockLayout.detailWidth)
@@ -167,6 +168,12 @@ struct PickyHUDView: View {
             suppressedHoverSessionID = nil
             scheduleCloseIfNeeded()
         }
+    }
+
+    private func isHoverPreviewSession(_ sessionID: String) -> Bool {
+        hoverPreviewSessionID == sessionID
+            && openedSessionID != sessionID
+            && pinnedSessionID != sessionID
     }
 
     private func chooseFolderForEmptySideAgent() {

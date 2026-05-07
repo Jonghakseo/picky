@@ -19,6 +19,7 @@ struct PickyConversationCardView: View {
     /// Defaults to the historical fixed cap for previews/tests that don't wire a
     /// placement provider.
     var maxHeight: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight
+    var isPreviewMode = false
     @State private var droppedFilePaths: [String] = []
     @State private var isFileDropTargeted = false
 
@@ -89,16 +90,25 @@ struct PickyConversationCardView: View {
 
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(DS.Colors.surface1.opacity(0.95))
+            .fill(DS.Colors.surface1.opacity(cardBackgroundOpacity))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(cardBorderColor, lineWidth: isFileDropTargeted ? 1.3 : 1)
             )
-            .shadow(color: .black.opacity(PickyHUDExpansion.cardShadowOpacity), radius: PickyHUDExpansion.cardShadowRadius, y: PickyHUDExpansion.cardShadowYOffset)
+            .shadow(color: .black.opacity(cardShadowOpacity), radius: PickyHUDExpansion.cardShadowRadius, y: PickyHUDExpansion.cardShadowYOffset)
+    }
+
+    private var cardBackgroundOpacity: Double {
+        isPreviewMode ? 0.89 : 0.95
+    }
+
+    private var cardShadowOpacity: Double {
+        PickyHUDExpansion.cardShadowOpacity * (isPreviewMode ? 0.55 : 1)
     }
 
     private var cardBorderColor: Color {
-        isFileDropTargeted ? DS.Colors.accentText.opacity(0.85) : statusColor.opacity(0.58)
+        if isFileDropTargeted { return DS.Colors.accentText.opacity(0.85) }
+        return statusColor.opacity(isPreviewMode ? 0.38 : 0.58)
     }
 
     private var statusColor: Color {

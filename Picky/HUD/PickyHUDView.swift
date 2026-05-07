@@ -324,6 +324,7 @@ private struct PickyHUDDockRailView: View {
     @State private var isAddSlotExpanded = false
     @State private var isHandleHovered = false
     @State private var dragStartMouseScreenY: CGFloat?
+    @State private var hasClosedHandCursorPushed = false
 
     var body: some View {
         VStack(spacing: 4) {
@@ -389,6 +390,14 @@ private struct PickyHUDDockRailView: View {
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in
                     let mouseY = NSEvent.mouseLocation.y
+                    // Swap to the macOS closed-hand grab cursor for the duration of
+                    // the drag. .openHandCursor() keeps the palm cursor active via an
+                    // AppKit cursor rect; pushing closedHand on top wins until we pop
+                    // on drag end. Push only once even if onChanged fires repeatedly.
+                    if !hasClosedHandCursorPushed {
+                        NSCursor.closedHand.push()
+                        hasClosedHandCursorPushed = true
+                    }
                     if dragStartMouseScreenY == nil {
                         dragStartMouseScreenY = mouseY
                         return
@@ -397,6 +406,10 @@ private struct PickyHUDDockRailView: View {
                     onDockHandleDragChanged(delta)
                 }
                 .onEnded { _ in
+                    if hasClosedHandCursorPushed {
+                        NSCursor.pop()
+                        hasClosedHandCursorPushed = false
+                    }
                     dragStartMouseScreenY = nil
                     onDockHandleDragEnded()
                 }

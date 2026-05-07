@@ -212,6 +212,27 @@ struct PickyAdvancedContextTests {
         #expect(result.value == nil)
         #expect(result.warnings.isEmpty)
     }
+
+    @Test func appleScriptInstanceCountIgnoresHeadlessPlaywrightChromeArguments() {
+        let arguments = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "--headless",
+            "--user-data-dir=/var/folders/tmp/playwright_chromiumdev_profile-abc123",
+            "--no-startup-window"
+        ]
+
+        #expect(!AppleScriptBrowserContextProvider.shouldCountBrowserInstance(arguments: arguments))
+    }
+
+    @Test func appleScriptInstanceCountKeepsRegularChromeArguments() {
+        let arguments = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "--profile-directory=Default"
+        ]
+
+        #expect(AppleScriptBrowserContextProvider.shouldCountBrowserInstance(arguments: arguments))
+        #expect(AppleScriptBrowserContextProvider.shouldCountBrowserInstance(arguments: nil))
+    }
 }
 
 private final class ScriptCallCounter: @unchecked Sendable {
@@ -329,6 +350,37 @@ struct PickyAccessibilityBrowserContextProviderTests {
         #expect(AccessibilityBrowserContextProvider.defaultURLExtractor(pid: pid, bundleId: "com.apple.Safari") == nil)
         #expect(AccessibilityBrowserContextProvider.defaultURLExtractor(pid: pid, bundleId: "company.thebrowser.Browser") == nil)
         #expect(AccessibilityBrowserContextProvider.defaultURLExtractor(pid: pid, bundleId: "com.example.NotABrowser") == nil)
+    }
+
+    @Test func accessibilityOmniboxHeuristicsRecognizeIdentifierAndLocalizedLabels() throws {
+        let target = try #require(AccessibilityBrowserContextProvider.omniboxTarget(for: "com.google.Chrome"))
+        let identifierSnapshot = AccessibilityBrowserContextProvider.ElementSnapshot(
+            role: kAXTextFieldRole as String,
+            identifier: "AddressAndSearchBar",
+            title: nil,
+            description: nil,
+            placeholder: nil,
+            value: "https://github.com/creatrip/product/pull/2886"
+        )
+        let localizedSnapshot = AccessibilityBrowserContextProvider.ElementSnapshot(
+            role: kAXTextFieldRole as String,
+            identifier: nil,
+            title: nil,
+            description: "주소 및 검색창",
+            placeholder: nil,
+            value: "github.com/creatrip/product/pull/2886"
+        )
+
+        #expect(AccessibilityBrowserContextProvider.isExplicitOmnibox(identifierSnapshot, target: target))
+        #expect(AccessibilityBrowserContextProvider.isExplicitOmnibox(localizedSnapshot, target: target))
+    }
+
+    @Test func accessibilityURLHeuristicsAcceptBrowserURLValuesAndRejectPlainText() {
+        #expect(AccessibilityBrowserContextProvider.looksLikeBrowserURL("https://github.com/creatrip/product/pull/2886"))
+        #expect(AccessibilityBrowserContextProvider.looksLikeBrowserURL("github.com/creatrip/product/pull/2886"))
+        #expect(AccessibilityBrowserContextProvider.looksLikeBrowserURL("localhost:5173/admin"))
+        #expect(!AccessibilityBrowserContextProvider.looksLikeBrowserURL("search query with spaces"))
+        #expect(!AccessibilityBrowserContextProvider.looksLikeBrowserURL("jonghak@example.com"))
     }
 
     @Test func accessibilityProviderReturnsUnavailableWhenNoTitleAndNoURL() {

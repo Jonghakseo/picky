@@ -10,6 +10,7 @@
 import AppKit
 import ApplicationServices
 import CoreGraphics
+import Darwin
 import Foundation
 
 enum PickyContextCaptureResult<Value> {
@@ -79,9 +80,7 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
     }
 
     var frontmostBundleIdProvider: () -> String? = { NSWorkspace.shared.frontmostApplication?.bundleIdentifier }
-    var instanceCountProvider: (String) -> Int = { bundleId in
-        NSWorkspace.shared.runningApplications.filter { $0.bundleIdentifier == bundleId }.count
-    }
+    var instanceCountProvider: (String) -> Int = AppleScriptBrowserContextProvider.visibleBrowserInstanceCount
     var frontmostWindowTitleProvider: () -> String? = {
         CGWindowPickyWindowContextProvider().activeWindowContext()?.title
     }
@@ -91,6 +90,65 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
         let descriptor = script.executeAndReturnError(&error)
         if let error { throw NSError(domain: "PickyAppleScript", code: 1, userInfo: error as? [String: Any]) }
         return descriptor.stringValue ?? ""
+    }
+
+    static func visibleBrowserInstanceCount(bundleId: String) -> Int {
+        NSWorkspace.shared.runningApplications
+            .filter { $0.bundleIdentifier == bundleId }
+            .filter { shouldCountBrowserInstance(arguments: processArguments(forPID: $0.processIdentifier)) }
+            .count
+    }
+
+    static func shouldCountBrowserInstance(arguments: [String]?) -> Bool {
+        guard let arguments else { return true }
+        let lowercased = arguments.map { $0.lowercased() }
+        if lowercased.contains("--headless") || lowercased.contains(where: { $0.hasPrefix("--headless=") }) {
+            return false
+        }
+        if lowercased.contains("--no-startup-window") {
+            return false
+        }
+        if lowercased.contains(where: { $0.contains("playwright_chromiumdev_profile-") }) {
+            return false
+        }
+        if lowercased.contains(where: { $0.contains("/playwright/") || $0.contains("@playwright") }) {
+            return false
+        }
+        return true
+    }
+
+    private static func processArguments(forPID pid: pid_t) -> [String]? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return nil }
+
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, u_int(mib.count), &buffer, &size, nil, 0) == 0 else { return nil }
+        return parseProcessArgumentsBuffer(Array(buffer.prefix(size)))
+    }
+
+    static func parseProcessArgumentsBuffer(_ buffer: [UInt8]) -> [String]? {
+        guard buffer.count > MemoryLayout<Int32>.size else { return nil }
+        let argc = buffer.prefix(MemoryLayout<Int32>.size).enumerated().reduce(Int32(0)) { result, pair in
+            result | (Int32(pair.element) << (pair.offset * 8))
+        }
+        guard argc > 0 else { return [] }
+
+        var index = MemoryLayout<Int32>.size
+        while index < buffer.count, buffer[index] != 0 { index += 1 }
+        while index < buffer.count, buffer[index] == 0 { index += 1 }
+
+        var arguments: [String] = []
+        while index < buffer.count, arguments.count < Int(argc) {
+            let start = index
+            while index < buffer.count, buffer[index] != 0 { index += 1 }
+            if start < index,
+               let argument = String(bytes: buffer[start..<index], encoding: .utf8) {
+                arguments.append(argument)
+            }
+            while index < buffer.count, buffer[index] == 0 { index += 1 }
+        }
+        return arguments.isEmpty ? nil : arguments
     }
 
     /// Each target's script returns four newline-separated fields:

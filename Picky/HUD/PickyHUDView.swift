@@ -276,11 +276,17 @@ private struct PickyHUDCollapsibleContent<Content: View>: View {
     }
 }
 
-private enum PickyHUDArchiveHoldPolicy {
+enum PickyHUDArchiveHoldPolicy {
     static let duration: TimeInterval = 2
+    static let feedbackStartDelay: TimeInterval = 0.2
+    static let feedbackStartDelayNanoseconds: UInt64 = 200_000_000
     static let maximumDistance: CGFloat = 10
     static let ringGapStartFraction = 0.22
     static let ringUsableFraction = 0.73
+
+    static var feedbackAnimationDuration: TimeInterval {
+        max(0, duration - feedbackStartDelay)
+    }
 }
 
 private struct PickyHUDDockRailView: View {
@@ -489,6 +495,7 @@ private struct PickyHUDDockIconView: View {
 
     @State private var completionFlashIntensity: Double = 0
     @State private var completionFlashTask: Task<Void, Never>?
+    @State private var archiveFeedbackStartTask: Task<Void, Never>?
     @State private var isArchivePressing = false
     @State private var archiveProgress: Double = 0
     @State private var didCompleteArchiveHold = false
@@ -547,6 +554,8 @@ private struct PickyHUDDockIconView: View {
         .onDisappear {
             completionFlashTask?.cancel()
             completionFlashTask = nil
+            archiveFeedbackStartTask?.cancel()
+            archiveFeedbackStartTask = nil
         }
         .animation(.spring(response: 0.2, dampingFraction: 0.78), value: isArchivePressing)
         .accessibilityLabel("Preview \(session.title)")
@@ -646,22 +655,34 @@ private struct PickyHUDDockIconView: View {
 
     private func handleArchivePressing(_ isPressing: Bool) {
         if isPressing {
-            beginArchiveHoldFeedback()
+            scheduleArchiveHoldFeedbackStart()
         } else if !didCompleteArchiveHold {
             cancelArchiveHoldFeedback()
         }
     }
 
-    private func beginArchiveHoldFeedback() {
+    private func scheduleArchiveHoldFeedbackStart() {
+        archiveFeedbackStartTask?.cancel()
         didCompleteArchiveHold = false
         archiveProgress = 0
+        archiveFeedbackStartTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: PickyHUDArchiveHoldPolicy.feedbackStartDelayNanoseconds)
+            guard !Task.isCancelled else { return }
+            archiveFeedbackStartTask = nil
+            beginArchiveHoldFeedback()
+        }
+    }
+
+    private func beginArchiveHoldFeedback() {
         isArchivePressing = true
-        withAnimation(.linear(duration: PickyHUDArchiveHoldPolicy.duration)) {
+        withAnimation(.linear(duration: PickyHUDArchiveHoldPolicy.feedbackAnimationDuration)) {
             archiveProgress = 1
         }
     }
 
     private func cancelArchiveHoldFeedback() {
+        archiveFeedbackStartTask?.cancel()
+        archiveFeedbackStartTask = nil
         isArchivePressing = false
         withAnimation(.easeOut(duration: 0.18)) {
             archiveProgress = 0
@@ -669,6 +690,8 @@ private struct PickyHUDDockIconView: View {
     }
 
     private func completeArchiveHold() {
+        archiveFeedbackStartTask?.cancel()
+        archiveFeedbackStartTask = nil
         didCompleteArchiveHold = true
         archiveProgress = 1
         onArchive()

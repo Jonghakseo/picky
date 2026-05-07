@@ -83,6 +83,12 @@ struct PickyTests {
         #expect(frame.size == panelSize)
     }
 
+    @Test func archiveHoldFeedbackStartsAfterShortGracePeriod() throws {
+        #expect(PickyHUDArchiveHoldPolicy.feedbackStartDelay == 0.2)
+        #expect(PickyHUDArchiveHoldPolicy.feedbackStartDelayNanoseconds == 200_000_000)
+        #expect(PickyHUDArchiveHoldPolicy.feedbackAnimationDuration == PickyHUDArchiveHoldPolicy.duration - PickyHUDArchiveHoldPolicy.feedbackStartDelay)
+    }
+
     @Test func pushToTalkShortcutKeepsControlOptionTransitionSemantics() throws {
         let controlOptionFlags: NSEvent.ModifierFlags = [.control, .option]
         let spec = PickyShortcutSpec.defaultPushToTalk

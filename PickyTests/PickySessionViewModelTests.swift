@@ -738,19 +738,16 @@ struct PickySessionViewModelTests {
         #expect(originAtCap == visibleFrame.minY + PickyHUDDockLayout.screenMargin)
     }
 
-    @Test func dockBodyTopOffsetFromContentTopAccountsForHandleAreaAndPadding() throws {
-        // The drag handle and its 4pt spacing live above the dock capsule, so the
-        // distance from the panel content's top to the dock CAPSULE's top edge is
-        // larger than the bare vertical padding. The overlay manager passes this
-        // composite value as `topPaddingFromContentTop` so anchor% lands on the
-        // visible dock capsule, not on the small handle floating above it.
+    @Test func dockBodyTopOffsetEqualsOuterVerticalPadding() throws {
+        // The drag handle now lives INSIDE the dock capsule's top row, so it no
+        // longer pushes the capsule top down. The distance from the panel content's
+        // top edge to the dock CAPSULE's top edge is exactly the outer vertical
+        // padding wrapping the HStack — the anchor percent lands directly on the
+        // visible dock capsule top.
         #expect(
             PickyHUDExpansion.dockBodyTopOffsetFromContentTop
             == PickyHUDExpansion.dockShadowVerticalPadding
-            + PickyHUDExpansion.dockHandleAreaHeight
-            + PickyHUDExpansion.dockHandleToBodySpacing
         )
-        #expect(PickyHUDExpansion.dockBodyTopOffsetFromContentTop > PickyHUDExpansion.dockShadowVerticalPadding)
     }
 
     @Test func dockTopAnchoredPanelUsesCapsuleOffsetSoAnchorMatchesVisibleDockTop() throws {

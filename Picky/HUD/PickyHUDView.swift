@@ -326,60 +326,63 @@ private struct PickyHUDDockRailView: View {
     @State private var isHandleDragging = false
 
     var body: some View {
-        VStack(spacing: 4) {
+        // The handle is the first child INSIDE the dock capsule (after a small top
+        // padding) so the dock body itself acts as the hit target. The capsule
+        // background is opaque, which sidesteps SwiftUI's transparent-view hit-
+        // testing quirks: clicks anywhere in the handle's row hit the NSView
+        // backing the handle, not the empty space outside an external pill.
+        VStack(spacing: 6) {
             dockAnchorHandle
-            dockBody
+            dockHandleDivider
+            sessionsAndAddSlot
         }
+        .padding(.horizontal, 6)
+        .padding(.top, 4)
+        .padding(.bottom, 10)
+        .background(dockGlassBackground)
     }
 
     @ViewBuilder
-    private var dockBody: some View {
+    private var sessionsAndAddSlot: some View {
         if sessions.isEmpty {
+            // Empty state still lives inside the capsule so the handle has somewhere
+            // to anchor visually. Use the full-size add button (not the collapsible
+            // one) since there are no sessions to keep it compact for.
             addAgentSlotButton
         } else {
-            VStack(spacing: 6) {
-                VStack(spacing: 9) {
-                    ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
-                        PickyHUDDockIconView(
-                            session: session,
-                            index: index,
-                            isActive: activeSessionID == session.id,
-                            isPinned: pinnedSessionID == session.id,
-                            shouldFlashCompletion: pendingDoneFlashSessionIDs.contains(session.id),
-                            onHover: { onHoverSession(session.id) },
-                            onPin: { onPinSession(session.id) },
-                            onArchive: { onArchiveSession(session.id) },
-                            onDoneFlashConsumed: { onDoneFlashConsumed(session.id) }
-                        )
-                    }
+            VStack(spacing: 9) {
+                ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
+                    PickyHUDDockIconView(
+                        session: session,
+                        index: index,
+                        isActive: activeSessionID == session.id,
+                        isPinned: pinnedSessionID == session.id,
+                        shouldFlashCompletion: pendingDoneFlashSessionIDs.contains(session.id),
+                        onHover: { onHoverSession(session.id) },
+                        onPin: { onPinSession(session.id) },
+                        onArchive: { onArchiveSession(session.id) },
+                        onDoneFlashConsumed: { onDoneFlashConsumed(session.id) }
+                    )
                 }
-
-                collapsibleAddAgentSlot
             }
-            .padding(.horizontal, 6)
-            .padding(.top, 8)
-            .padding(.bottom, 10)
-            .background(dockGlassBackground)
+            collapsibleAddAgentSlot
         }
     }
 
-    /// Small horizontal pill that sits a few points above the dock capsule. Dragging
-    /// it repositions the dock's top edge along the screen Y axis. We pass the cursor's
-    /// screen-bottom-up delta from drag start (NSEvent.mouseLocation based) up to the
-    /// overlay manager which converts it into a percentage of the dragged display's
-    /// visibleFrame height and updates the shared anchor across every monitor.
-    ///
-    /// SwiftUI's hit testing for transparent views overlapping decorative content is
-    /// notoriously fiddly: even `Color.clear + .contentShape(Rectangle())` left the
-    /// drag gesture stuck on the visible 22×4 capsule while `.onHover` and the AppKit
-    /// cursor rect both reacted across the full rail width. After cycling through
-    /// every documented workaround (ZStack with near-zero-opacity backgrounds,
-    /// `.background` of a hit-testable color, `.contentShape(.interaction, ...)`,
-    /// reordering modifiers around `.overlay`) the only approach that reliably gives
-    /// click + hover + cursor the same area is to back the handle with an explicit
-    /// `NSViewRepresentable`. AppKit handles hit testing, tracking area, and cursor
-    /// rects directly on the NSView, so the full frame becomes interactive without
-    /// SwiftUI's transparent-view caveats.
+    /// Hairline that visually separates the drag handle from the session icons.
+    private var dockHandleDivider: some View {
+        Rectangle()
+            .fill(DS.Colors.borderSubtle.opacity(0.55))
+            .frame(height: 0.5)
+            .padding(.horizontal, 4)
+    }
+
+    /// Drag handle that lives inside the dock capsule's top row. Backed by an
+    /// `NSViewRepresentable` so AppKit handles hit testing, tracking area, and
+    /// cursor rects — the same NSView bounds drive all three, which avoids the
+    /// SwiftUI hit-test quirks that plagued earlier overlay-based attempts.
+    /// The visible 22×4 pill is overlaid with `.allowsHitTesting(false)` so it's
+    /// purely decorative and never claims clicks.
     private var dockAnchorHandle: some View {
         let isActive = isHandleHovered || isHandleDragging
         return PickyHUDDockAnchorHandleHost(
@@ -393,7 +396,11 @@ private struct PickyHUDDockRailView: View {
                 onDockHandleDragEnded()
             }
         )
-        .frame(width: PickyHUDDockLayout.railWidth, height: PickyHUDExpansion.dockHandleAreaHeight)
+        // Fill the capsule's available inner width (railWidth minus the dock's
+        // 6pt horizontal padding on each side) so the handle row spans the
+        // entire top of the capsule.
+        .frame(maxWidth: .infinity)
+        .frame(height: PickyHUDExpansion.dockHandleAreaHeight)
         .overlay {
             Capsule(style: .continuous)
                 .fill(DS.Colors.textTertiary.opacity(isActive ? 0.85 : 0.45))

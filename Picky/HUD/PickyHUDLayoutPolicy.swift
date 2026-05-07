@@ -25,22 +25,19 @@ enum PickyHUDExpansion {
     static let cardShadowOpacity = 0.12
     static let cardShadowRadius: CGFloat = 8
     static let cardShadowYOffset: CGFloat = 4
-    /// Drag handle hit area height inside `PickyHUDDockRailView.dockAnchorHandle`.
-    /// Significantly larger than the visible 22×4 capsule so the handle is easy to
-    /// click; the visible pill is overlaid centered inside this frame. Combined with
-    /// the VStack spacing below it (`dockHandleToBodySpacing`) and the outer vertical
-    /// padding, this is how far the dock CAPSULE's top edge sits below the panel
-    /// content top.
-    static let dockHandleAreaHeight: CGFloat = 32
-    /// VStack spacing between the drag handle and the dock capsule.
-    static let dockHandleToBodySpacing: CGFloat = 4
-    /// Distance from the panel content's top edge (in SwiftUI top-down coords) down to
-    /// the dock CAPSULE's top edge. Equals `dockShadowVerticalPadding + handle area
-    /// height + handle→body spacing`. The overlay manager uses this as
-    /// `topPaddingFromContentTop` so `dockTopScreenY` lands exactly on the visible
-    /// dock capsule top, not on the (smaller, less obvious) handle's top edge.
+    /// Hit area height for the drag handle that now lives INSIDE the dock capsule's
+    /// top row. Comfortably larger than the visible 22×4 pill so the handle is easy
+    /// to grab; the visible pill is overlaid centered inside this frame. Because the
+    /// handle is now a child of the dock capsule, this height does NOT contribute to
+    /// `dockBodyTopOffsetFromContentTop` — it consumes space inside the capsule, not
+    /// above it.
+    static let dockHandleAreaHeight: CGFloat = 18
+    /// Distance from the panel content's top edge (in SwiftUI top-down coords) down
+    /// to the dock CAPSULE's top edge. The handle now lives inside the capsule, so
+    /// the offset is just the outer vertical padding wrapping the HStack — the
+    /// anchor percent maps directly to the visible top of the dock capsule.
     static var dockBodyTopOffsetFromContentTop: CGFloat {
-        dockShadowVerticalPadding + dockHandleAreaHeight + dockHandleToBodySpacing
+        dockShadowVerticalPadding
     }
     /// Slack pixels left below the conversation card so it never sits right at the
     /// dock-anchored panel cap. Sub-pixel layout drift (composer auto-grow, status

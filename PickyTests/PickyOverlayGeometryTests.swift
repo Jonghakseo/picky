@@ -10,6 +10,13 @@ import Testing
 struct PickyOverlayGeometryTests {
     private let screenFrame = CGRect(x: 100, y: 200, width: 1440, height: 900)
 
+    @Test func overlayContentFrameUsesWindowLocalOriginForOffsetScreens() {
+        let frame = PickyOverlayGeometry.overlayContentFrame(for: screenFrame)
+
+        #expect(frame.origin == .zero)
+        #expect(frame.size == screenFrame.size)
+    }
+
     @Test func convertsAppKitScreenPointToSwiftUILocalCoordinates() {
         let point = PickyOverlayGeometry.swiftUICoordinates(
             for: CGPoint(x: 160, y: 980),

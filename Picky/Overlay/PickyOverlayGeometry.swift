@@ -8,6 +8,14 @@
 import CoreGraphics
 
 enum PickyOverlayGeometry {
+    /// Content views inside an overlay window use window-local coordinates, even
+    /// though the window itself is positioned with the screen's global frame.
+    /// Keep the hosting view at zero origin so secondary displays with non-zero
+    /// or negative origins don't shift the SwiftUI overlay out of its window.
+    static func overlayContentFrame(for screenFrame: CGRect) -> CGRect {
+        CGRect(origin: .zero, size: screenFrame.size)
+    }
+
     /// Converts a macOS screen point (AppKit, bottom-left origin) to SwiftUI
     /// coordinates (top-left origin) relative to the overlay window for `screenFrame`.
     static func swiftUICoordinates(for screenPoint: CGPoint, in screenFrame: CGRect) -> CGPoint {

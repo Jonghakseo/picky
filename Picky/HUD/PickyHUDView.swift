@@ -370,28 +370,23 @@ private struct PickyHUDDockRailView: View {
     /// overlay manager which converts it into a percentage of the dragged display's
     /// visibleFrame height and updates the shared anchor across every monitor.
     ///
-    /// Implemented as an explicit transparent `Rectangle` whose `.contentShape` covers
-    /// the entire frame, with the visible 22×4 pill overlaid on top using
-    /// `.allowsHitTesting(false)`. Without that modifier, the filled Capsule in the
-    /// overlay registers its own hit area (the pill's narrow capsule shape), and
-    /// SwiftUI prefers it over the underlying invisible rectangle — which is exactly
-    /// the "only the pill responds to clicks" symptom from earlier attempts. Disabling
-    /// hit testing on the pill forces every click in the rail-width frame to flow to
-    /// the underlying rectangle, matching the AppKit cursor rect from
-    /// `.openHandCursor()` and the SwiftUI `.onHover` tracking.
+    /// SwiftUI's hit testing for transparent views is delicate: putting opaque content
+    /// in a ZStack underneath a hit-testable wrapper can leave the gesture stuck on
+    /// the inner element even with `.contentShape(Rectangle())` on the outer ZStack.
+    /// The pattern that actually works (per the canonical StackOverflow answer for
+    /// `Color.clear`/`Rectangle().fill(.clear)` gestures) is:
+    ///
+    /// 1. Start from `Color.clear` sized to the desired hit area.
+    /// 2. Apply `.contentShape(Rectangle())` directly on the cleared color so SwiftUI
+    ///    treats the full frame as the gesture target.
+    /// 3. Attach hover, cursor, and gesture modifiers BEFORE adding any visual
+    ///    overlay. This guarantees they bind to the cleared color's hit shape.
+    /// 4. Add the visible pill via `.overlay`, with `.allowsHitTesting(false)` so it
+    ///    stays purely decorative and never claims the hit.
     private var dockAnchorHandle: some View {
         let isActive = isHandleHovered || dragStartMouseScreenY != nil
-        return Rectangle()
-            .fill(Color.clear)
+        return Color.clear
             .frame(width: PickyHUDDockLayout.railWidth, height: PickyHUDExpansion.dockHandleAreaHeight)
-            .overlay {
-                Capsule(style: .continuous)
-                    .fill(DS.Colors.textTertiary.opacity(isActive ? 0.85 : 0.45))
-                    .frame(width: isActive ? 26 : 22, height: 4)
-                    .animation(.easeOut(duration: 0.12), value: isHandleHovered)
-                    .animation(.easeOut(duration: 0.12), value: dragStartMouseScreenY != nil)
-                    .allowsHitTesting(false)
-            }
             .contentShape(Rectangle())
             .openHandCursor()
             .onHover { hovering in
@@ -421,6 +416,14 @@ private struct PickyHUDDockRailView: View {
                         onDockHandleDragEnded()
                     }
             )
+            .overlay {
+                Capsule(style: .continuous)
+                    .fill(DS.Colors.textTertiary.opacity(isActive ? 0.85 : 0.45))
+                    .frame(width: isActive ? 26 : 22, height: 4)
+                    .animation(.easeOut(duration: 0.12), value: isHandleHovered)
+                    .animation(.easeOut(duration: 0.12), value: dragStartMouseScreenY != nil)
+                    .allowsHitTesting(false)
+            }
             .accessibilityLabel("HUD vertical position")
             .accessibilityHint("Drag up or down to move the side-agent dock between 2% and 70% of the screen.")
     }

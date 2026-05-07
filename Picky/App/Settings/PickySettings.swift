@@ -208,12 +208,13 @@ struct PickySettings: Codable, Equatable {
     /// relative position on every other display. Persisted in the user's settings file
     /// after the user releases the drag handle.
     ///
-    /// Range: `PickySettings.dockTopAnchorPercentRange` (5%–40%). 5% keeps the dock
-    /// just under the menu bar; 40% lets the dock sit lower without the conversation
-    /// card going off-screen at the bottom.
+    /// Range: `PickySettings.dockTopAnchorPercentRange` (2%–70%). 2% keeps the dock
+    /// just under the menu bar; 70% lets the dock sit far down the screen, with the
+    /// conversation card growing into the remaining space below before its internal
+    /// ScrollView absorbs overflow.
     var hudDockTopAnchorPercent: Double
 
-    static let dockTopAnchorPercentRange: ClosedRange<Double> = 5.0...40.0
+    static let dockTopAnchorPercentRange: ClosedRange<Double> = 2.0...70.0
     static let defaultDockTopAnchorPercent: Double = 22.0
 
     /// Clamp any incoming value (slider, persisted file, programmatic) to the supported

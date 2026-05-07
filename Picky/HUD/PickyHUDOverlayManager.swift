@@ -60,7 +60,7 @@ final class PickyHUDOverlayManager {
     private var archiveUndoToastsByDisplayID: [CGDirectDisplayID: ArchiveUndoToastEntry] = [:]
     private var screenParametersObserver: NSObjectProtocol?
 
-    /// Live anchor percent (5–40% from the visible frame top to the dock's TOP edge).
+    /// Live anchor percent (2–70% from the visible frame top to the dock's TOP edge).
     /// Hydrated from settings on init, updated in real time during a handle drag, and
     /// persisted back to settings when the drag ends. All connected displays read this
     /// same value so the dock sits at the same relative position on every monitor.
@@ -223,13 +223,18 @@ final class PickyHUDOverlayManager {
         )
         let visibleHeightCap = visibleFrame.height - 160
         let panelCap = min(dockAnchoredCap, visibleHeightCap)
-        // Subtract the outer vertical padding (top + bottom) and the handle stack
-        // (handle + spacing) above the dock capsule. The card sits at HStack top
-        // alongside the dock-stack VStack, so the card's max usable height is the
+        // Subtract the outer vertical padding (top + bottom). The card sits at HStack
+        // top alongside the dock-stack VStack, so the card's max usable height is the
         // panel content height minus the outer vertical padding only — the handle
-        // area only takes vertical space inside the dock-stack column, not the
-        // card column. Use the symmetric outer padding here.
-        return max(0, panelCap - 2 * PickyHUDExpansion.dockShadowVerticalPadding)
+        // area only takes vertical space inside the dock-stack column.
+        //
+        // Then leave an extra `cardBreathingRoom` pixels of slack so the conversation
+        // card never sits right at the cap. Without that buffer, sub-pixel layout
+        // measurement drift while the agent streams (composer auto-grow, status pill
+        // text length changes, thinking preview rewrites) can cross the cap by
+        // fractions of a point and trigger a re-clip mid-frame, which the user sees
+        // as a faint twitch on the visible HUD.
+        return max(0, panelCap - 2 * PickyHUDExpansion.dockShadowVerticalPadding - PickyHUDExpansion.cardBreathingRoom)
     }
 
     // MARK: - Resizing / placement

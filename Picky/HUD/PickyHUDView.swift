@@ -402,7 +402,7 @@ private struct PickyHUDDockRailView: View {
                 }
         )
         .accessibilityLabel("HUD vertical position")
-        .accessibilityHint("Drag up or down to move the side-agent dock between 5% and 40% of the screen.")
+        .accessibilityHint("Drag up or down to move the side-agent dock between 2% and 70% of the screen.")
     }
 
     /// Frosted-glass capsule that hosts the dock icons. Uses .ultraThinMaterial

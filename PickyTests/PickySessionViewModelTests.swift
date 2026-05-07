@@ -662,10 +662,10 @@ struct PickySessionViewModelTests {
 
     @Test func dockTopAnchorPercentClampsToSupportedRange() throws {
         #expect(PickySettings.clampedDockTopAnchorPercent(22.0) == 22.0)
-        #expect(PickySettings.clampedDockTopAnchorPercent(0.0) == 5.0)
-        #expect(PickySettings.clampedDockTopAnchorPercent(4.99) == 5.0)
-        #expect(PickySettings.clampedDockTopAnchorPercent(40.0) == 40.0)
-        #expect(PickySettings.clampedDockTopAnchorPercent(120.5) == 40.0)
+        #expect(PickySettings.clampedDockTopAnchorPercent(0.0) == 2.0)
+        #expect(PickySettings.clampedDockTopAnchorPercent(1.99) == 2.0)
+        #expect(PickySettings.clampedDockTopAnchorPercent(70.0) == 70.0)
+        #expect(PickySettings.clampedDockTopAnchorPercent(120.5) == 70.0)
         // Non-finite values fall back to the default rather than poisoning the saved settings file.
         #expect(PickySettings.clampedDockTopAnchorPercent(.nan) == PickySettings.defaultDockTopAnchorPercent)
         #expect(PickySettings.clampedDockTopAnchorPercent(.infinity) == PickySettings.defaultDockTopAnchorPercent)
@@ -678,8 +678,8 @@ struct PickySessionViewModelTests {
         #expect(abs(dockTop - (visibleFrame.maxY - 192.72)) < 0.01)
         // Boundary clamps reflect the supported anchor range.
         let atFloor = PickyHUDDockLayout.dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: 100.0)
-        let at40 = PickyHUDDockLayout.dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: 40.0)
-        #expect(atFloor == at40)
+        let at70 = PickyHUDDockLayout.dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: 70.0)
+        #expect(atFloor == at70)
     }
 
     @Test func dockTopAnchoredPanelKeepsDockTopAtAnchorWithinSupportedHeight() throws {

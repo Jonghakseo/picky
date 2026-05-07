@@ -40,6 +40,11 @@ enum PickyHUDExpansion {
     static var dockBodyTopOffsetFromContentTop: CGFloat {
         dockShadowVerticalPadding + dockHandleAreaHeight + dockHandleToBodySpacing
     }
+    /// Slack pixels left below the conversation card so it never sits right at the
+    /// dock-anchored panel cap. Sub-pixel layout drift (composer auto-grow, status
+    /// pill text length, streaming thinking preview) can otherwise momentarily push
+    /// the card across the cap and trigger a re-clip the user sees as a twitch.
+    static let cardBreathingRoom: CGFloat = 24
 
     static func cardSpacing(isExpanded: Bool) -> CGFloat {
         isExpanded ? 9 : 0
@@ -128,7 +133,7 @@ enum PickyHUDDockLayout {
 
     // MARK: - Dock-top anchored placement
 
-    /// Screen Y of the dock's top edge for a given anchor percent (5–40% from the top of
+    /// Screen Y of the dock's top edge for a given anchor percent (2–70% from the top of
     /// `visibleFrame`). Returned in NSPanel screen coords (bottom-up).
     static func dockTopScreenY(visibleFrame: CGRect, anchorPercent: Double) -> CGFloat {
         let pct = PickySettings.clampedDockTopAnchorPercent(anchorPercent)

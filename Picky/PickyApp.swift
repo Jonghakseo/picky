@@ -11,9 +11,23 @@ import AppKit
 import ServiceManagement
 import UserNotifications
 
+@main
+enum PickyApp {
+    @MainActor
+    private static var delegate: CompanionAppDelegate?
+
+    @MainActor
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = CompanionAppDelegate()
+        Self.delegate = delegate
+        app.delegate = delegate
+        app.run()
+    }
+}
+
 /// Manages the companion lifecycle: creates the menu bar panel and starts
 /// the companion voice pipeline on launch.
-@main
 @MainActor
 final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarPanelManager: MenuBarPanelManager?

@@ -53,6 +53,7 @@ describe("neutral prompt builder", () => {
 
     expect(pair.user).toContain("Keep the steer message delta-only");
     expect(pair.user).toContain("Keep `picky_handoff.instructions` compact and action-oriented");
+    expect(pair.user).toContain("ideally about 300 Korean characters");
     expect(pair.user).toContain("Do not paste the full current prompt, captured context, screenshot metadata, prior transcript, or tool logs");
     expect(turnPrompt.text).not.toContain("Keep `picky_handoff.instructions` compact and action-oriented");
   });
@@ -108,6 +109,16 @@ describe("neutral prompt builder", () => {
     expect(prompt.text).toContain("Investigate without showing overlays");
     expect(prompt.text).not.toContain("picky_show_pointer");
     expect(prompt.text).not.toContain("Pointer overlay rules");
+  });
+
+  it("places the handoff title before side-agent boilerplate so auto-name sees it early", () => {
+    const prompt = buildSideAgentPrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")), {
+      title: "셀렉 결제 프론트·백엔드 원인 조사",
+      instructions: "Investigate payment failure causes.",
+    });
+
+    expect(prompt.text.startsWith("# Picky side-agent task\n\n## Handoff title\n셀렉 결제 프론트·백엔드 원인 조사")).toBe(true);
+    expect(prompt.text.indexOf("## Handoff title")).toBeLessThan(prompt.text.indexOf("You are a side Pi agent spawned"));
   });
 
   it("includes captured cursor coordinates when available", () => {

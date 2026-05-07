@@ -44,13 +44,13 @@ export function createPickyHandoffTool(onHandoff: (request: PickyHandoffRequest)
     promptGuidelines: [
       "Use picky_handoff when the user's request needs new detailed screen analysis, code/repo/file work, web/video extraction, MCPs, or multiple turns.",
       "Before creating a new handoff for work that may already be delegated, call picky_side_sessions and prefer picky_side_steer for a matching existing side agent.",
-      "Write instructions as a compact, action-oriented brief: goal, essential constraints, known decisions, key paths/URLs/IDs, and expected output.",
+      "Write instructions as a compact, action-oriented brief of about 300 Korean characters: goal, essential constraints, known decisions, key paths/URLs/IDs, and expected output.",
       "Do not paste the full current prompt, captured context, screenshot metadata, prior transcript, or tool logs into instructions; include only deltas and essential references.",
       "After calling picky_handoff, tell the user in Korean that a side agent has been started and progress is visible in the top-right overlay.",
     ],
     parameters: Type.Object({
       title: Type.String({ description: "Short Korean title for the side-agent HUD card." }),
-      instructions: Type.String({ description: "Compact delta-first brief for the side Pi agent: goal, essential constraints, key paths/URLs/IDs, known decisions, and expected output. Do not paste full prompts, transcripts, logs, screenshot metadata, or captured context." }),
+      instructions: Type.String({ description: "Compact delta-first brief for the side Pi agent, ideally about 300 Korean characters: goal, essential constraints, key paths/URLs/IDs, known decisions, and expected output. Do not paste full prompts, transcripts, logs, screenshot metadata, or captured context." }),
       userMessage: Type.Optional(Type.String({ description: "Optional short Korean message you intend to tell the user after handoff." })),
       cwd: Type.Optional(Type.String({ description: "Optional absolute working directory for the side Pi agent. Omit to use Picky's configured default cwd." })),
     }),

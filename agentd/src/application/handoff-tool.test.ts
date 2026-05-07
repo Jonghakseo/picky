@@ -29,9 +29,11 @@ describe("handoff tools", () => {
     const parameters = JSON.stringify(definition.parameters);
 
     expect(guidelines).toContain("compact, action-oriented brief");
+    expect(guidelines).toContain("about 300 Korean characters");
     expect(guidelines).toContain("Do not paste the full current prompt");
     expect(guidelines).toContain("picky_side_steer");
     expect(parameters).toContain("Compact delta-first brief");
+    expect(parameters).toContain("about 300 Korean characters");
     expect(parameters).toContain("Do not paste full prompts");
   });
 

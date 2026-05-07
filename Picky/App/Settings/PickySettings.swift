@@ -310,7 +310,8 @@ struct PickySettings: Codable, Equatable {
         copy.azureOpenAIEndpoint = azureOpenAIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.azureOpenAIAPIKey = azureOpenAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.azureSTTPreferredLanguage = azureSTTPreferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
-        copy.mainAgentExtraInstructions = mainAgentExtraInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        // mainAgentExtraInstructions: do not trim here — auto-save runs on every keystroke,
+        // so trimming round-trips would eat trailing spaces while typing. Trim happens at send time.
         return copy
     }
 

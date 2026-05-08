@@ -204,66 +204,6 @@ struct PickyReportMarkdownRenderer {
     }
 }
 
-struct PickyReportDocument: Equatable {
-    let answerMarkdown: String
-    let metadataMarkdown: String
-
-    init(markdown: String) {
-        let lines = markdown.components(separatedBy: .newlines)
-        guard let answerHeadingIndex = lines.firstIndex(where: { normalizedHeading($0) == "final answer" }) else {
-            answerMarkdown = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
-            metadataMarkdown = ""
-            return
-        }
-
-        let metadataStartIndex = lines[(answerHeadingIndex + 1)...].firstIndex { line in
-            guard line.trimmingCharacters(in: .whitespaces).hasPrefix("## ") else { return false }
-            return Self.metadataHeadingTitles.contains(normalizedHeading(line))
-        } ?? lines.endIndex
-
-        answerMarkdown = lines[(answerHeadingIndex + 1)..<metadataStartIndex]
-            .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let leadingMetadata = lines[..<answerHeadingIndex]
-            .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let trailingMetadata = metadataStartIndex < lines.endIndex
-            ? lines[metadataStartIndex...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            : ""
-        metadataMarkdown = [leadingMetadata, trailingMetadata]
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n\n")
-    }
-
-    var hasMetadata: Bool {
-        !metadataMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private static let metadataHeadingTitles = Set(["tool summary", "changed files", "pull requests", "artifacts"])
-}
-
-private func normalizedHeading(_ line: String) -> String {
-    line.trimmingCharacters(in: .whitespacesAndNewlines)
-        .drop(while: { $0 == "#" })
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-        .lowercased()
-}
-
-private enum PickyReportTab: String, CaseIterable, Identifiable {
-    case answer
-    case metadata
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .answer: "Answer"
-        case .metadata: "Metadata"
-        }
-    }
-}
-
 struct PickyMarkdownReportView: View {
     let markdown: String
     /// Multiplier applied to every font size in this view. 1.0 maps to the report's
@@ -561,7 +501,6 @@ final class PickyReportViewerModel: ObservableObject {
     @Published private(set) var title: String
     @Published private(set) var fileURL: URL
     @Published private(set) var markdown: String
-    @Published private(set) var document: PickyReportDocument
     @Published private(set) var revision = UUID()
     /// Live zoom multiplier for the markdown body. Bound to `PickyFontScales.minimum/maximum`
     /// and rounded to one decimal so ⌘+ taps don't drift due to floating-point.
@@ -578,7 +517,6 @@ final class PickyReportViewerModel: ObservableObject {
         self.title = title
         self.fileURL = fileURL
         self.markdown = markdown
-        self.document = PickyReportDocument(markdown: markdown)
         self.fontScalePersister = fontScalePersister
         self.fontScale = PickyFontScales.clamped(fontScalePersister?.load() ?? PickyFontScales.defaults.markdownReport)
     }
@@ -587,7 +525,6 @@ final class PickyReportViewerModel: ObservableObject {
         self.title = title
         self.fileURL = fileURL
         self.markdown = markdown
-        self.document = PickyReportDocument(markdown: markdown)
         self.revision = UUID()
     }
 
@@ -605,7 +542,8 @@ final class PickyReportViewerModel: ObservableObject {
 
 struct PickyReportViewerWindowView: View {
     @ObservedObject var model: PickyReportViewerModel
-    @State private var selectedTab: PickyReportTab = .answer
+    @State private var didCopyMarkdown = false
+    @State private var copyFeedbackTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -616,7 +554,7 @@ struct PickyReportViewerWindowView: View {
                     .padding(EdgeInsets(top: 22, leading: 24, bottom: 28, trailing: 24))
             }
         }
-        .onChange(of: model.revision) { _, _ in selectedTab = .answer }
+        .onChange(of: model.revision) { _, _ in resetCopyFeedback() }
         .background(PickyAppearancePanelChrome.overlayBackground)
         .background(zoomKeyboardShortcuts)
     }
@@ -640,19 +578,10 @@ struct PickyReportViewerWindowView: View {
 
     @ViewBuilder
     private var reportContent: some View {
-        switch selectedTab {
-        case .answer:
-            if model.document.answerMarkdown.isEmpty {
-                emptyState("No final answer captured for this report.")
-            } else {
-                PickyMarkdownReportView(markdown: model.document.answerMarkdown, fontScale: model.fontScale)
-            }
-        case .metadata:
-            if model.document.metadataMarkdown.isEmpty {
-                emptyState("No metadata is available for this report.")
-            } else {
-                PickyMarkdownReportView(markdown: model.document.metadataMarkdown, fontScale: model.fontScale)
-            }
+        if model.markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            emptyState("No content captured for this report.")
+        } else {
+            PickyMarkdownReportView(markdown: model.markdown, fontScale: model.fontScale)
         }
     }
 
@@ -666,25 +595,56 @@ struct PickyReportViewerWindowView: View {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundStyle(DS.Colors.textPrimary)
                     .lineLimit(1)
-                Text(model.fileURL.lastPathComponent)
-                    .font(.system(size: 11.5, weight: .regular, design: .monospaced))
-                    .foregroundStyle(DS.Colors.textTertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                Button(action: openReportFile) {
+                    Text(model.fileURL.lastPathComponent)
+                        .font(.system(size: 11.5, weight: .regular, design: .monospaced))
+                        .foregroundStyle(DS.Colors.textTertiary)
+                        .underline()
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .buttonStyle(.plain)
+                .help("Open \(model.fileURL.path) in Finder")
             }
             Spacer()
-            Picker("Report section", selection: $selectedTab) {
-                ForEach(PickyReportTab.allCases) { tab in
-                    Text(tab.label).tag(tab)
-                }
+            Button(action: copyMarkdownToPasteboard) {
+                Label(
+                    didCopyMarkdown ? "Copied" : "Copy",
+                    systemImage: didCopyMarkdown ? "checkmark" : "doc.on.doc"
+                )
+                .labelStyle(.titleAndIcon)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 210)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(model.markdown.isEmpty)
+            .help("Copy this report's markdown to the clipboard")
         }
         .padding(.horizontal, 18)
         .padding(.top, 14)
         .padding(.bottom, 12)
+    }
+
+    private func openReportFile() {
+        NSWorkspace.shared.open(model.fileURL)
+    }
+
+    private func copyMarkdownToPasteboard() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(model.markdown, forType: .string)
+        copyFeedbackTask?.cancel()
+        didCopyMarkdown = true
+        copyFeedbackTask = Task { @MainActor [weak model] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled, model != nil else { return }
+            didCopyMarkdown = false
+        }
+    }
+
+    private func resetCopyFeedback() {
+        copyFeedbackTask?.cancel()
+        copyFeedbackTask = nil
+        didCopyMarkdown = false
     }
 
     private func emptyState(_ text: String) -> some View {

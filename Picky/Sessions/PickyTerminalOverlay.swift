@@ -168,12 +168,23 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
         hostingView.autoresizingMask = [.width, .height]
         panel.contentView = hostingView
 
+        // Defer the post-overlay sync until pi's child process actually exits so the
+        // session jsonl is fully flushed before the daemon reads it. The model has to
+        // outlive the panel close so SwiftTerm can still deliver `processTerminated`,
+        // so we drop the panel record on the next runloop tick rather than inline.
         let delegate = PickyTerminalPanelDelegate { [weak self, weak model, weak panel] in
-            model?.close()
-            onClose()
-            if let panel {
-                self?.remove(panel: panel)
+            let cleanup: @MainActor () -> Void = { [weak self, weak panel] in
+                onClose()
+                DispatchQueue.main.async {
+                    if let panel { self?.remove(panel: panel) }
+                }
             }
+            guard let model else {
+                cleanup()
+                return
+            }
+            model.scheduleSyncOnExit(cleanup)
+            model.close()
         }
         panel.delegate = delegate
         records[sessionID] = TerminalRecord(panel: panel, model: model, delegate: delegate)
@@ -244,6 +255,59 @@ final class PickyTerminalPanelDelegate: NSObject, NSWindowDelegate {
     }
 }
 
+/// Defers the "sync the session card" callback until the pi child process has
+/// finished writing its session jsonl. Pulled out of `PickyTerminalModel` so the
+/// flush-race fix can be unit-tested without depending on SwiftTerm.
+@MainActor
+final class PickyTerminalExitSyncScheduler {
+    /// Default wait before falling back to firing the sync anyway. Tests pass a
+    /// shorter interval to keep timing-sensitive cases fast.
+    static let defaultFallbackInterval: TimeInterval = 2.0
+
+    private(set) var hasStarted = false
+    private(set) var hasExited = false
+    private var pendingBlock: (@MainActor () -> Void)?
+    private var fallbackTask: Task<Void, Never>?
+    let fallbackInterval: TimeInterval
+
+    init(fallbackInterval: TimeInterval = PickyTerminalExitSyncScheduler.defaultFallbackInterval) {
+        self.fallbackInterval = fallbackInterval
+    }
+
+    func markStarted() {
+        hasStarted = true
+    }
+
+    func markExited() {
+        hasExited = true
+        firePending()
+    }
+
+    func scheduleOnExit(_ block: @escaping @MainActor () -> Void) {
+        if !hasStarted || hasExited {
+            block()
+            return
+        }
+        pendingBlock = block
+        fallbackTask?.cancel()
+        let interval = fallbackInterval
+        fallbackTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(max(0, interval) * 1_000_000_000))
+            self?.firePending()
+        }
+    }
+
+    var hasPendingSync: Bool { pendingBlock != nil }
+
+    private func firePending() {
+        fallbackTask?.cancel()
+        fallbackTask = nil
+        guard let block = pendingBlock else { return }
+        pendingBlock = nil
+        block()
+    }
+}
+
 @MainActor
 final class PickyTerminalModel: ObservableObject {
     @Published private(set) var statusText = "Starting pi --session…"
@@ -258,18 +322,21 @@ final class PickyTerminalModel: ObservableObject {
 
     private weak var terminalView: LocalProcessTerminalView?
     private var didStartProcess = false
+    private let exitSync: PickyTerminalExitSyncScheduler
     private let fontScalePersister: PickyTerminalFontScalePersister?
 
     init(
         title: String,
         sessionFilePath: String,
         cwd: String?,
-        fontScalePersister: PickyTerminalFontScalePersister? = nil
+        fontScalePersister: PickyTerminalFontScalePersister? = nil,
+        exitSync: PickyTerminalExitSyncScheduler? = nil
     ) {
         self.title = title
         self.sessionFilePath = sessionFilePath
         self.cwd = cwd
         self.fontScalePersister = fontScalePersister
+        self.exitSync = exitSync ?? PickyTerminalExitSyncScheduler()
         self.fontScale = PickyFontScales.clamped(fontScalePersister?.load() ?? PickyFontScales.defaults.terminal)
     }
 
@@ -310,6 +377,13 @@ final class PickyTerminalModel: ObservableObject {
         } else {
             statusText = "Pi terminal closed. Close to sync the session card."
         }
+        exitSync.markExited()
+    }
+
+    /// Defers the post-overlay sync until pi reports `processTerminated` so the
+    /// session jsonl is fully flushed before the daemon reads it.
+    func scheduleSyncOnExit(_ block: @escaping @MainActor () -> Void) {
+        exitSync.scheduleOnExit(block)
     }
 
     func updateTerminalTitle(_ terminalTitle: String) {
@@ -320,6 +394,7 @@ final class PickyTerminalModel: ObservableObject {
     private func startProcessIfNeeded(in terminalView: LocalProcessTerminalView) {
         guard !didStartProcess else { return }
         didStartProcess = true
+        exitSync.markStarted()
         let command = PickyPiTerminalCommand.makeOverlayCommand(sessionFilePath: sessionFilePath, cwd: cwd)
         terminalView.startProcess(
             executable: "/bin/zsh",

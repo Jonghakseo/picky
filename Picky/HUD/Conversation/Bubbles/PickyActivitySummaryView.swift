@@ -9,8 +9,22 @@ import SwiftUI
 
 struct PickyActivitySummaryView: View {
     let summary: PickyActivitySummary
+    var onTap: (() -> Void)? = nil
 
     var body: some View {
+        if let onTap {
+            Button(action: onTap) {
+                content
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("View tool history for this session")
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         HStack(spacing: 10) {
             ForEach(summary.visibleToolCallItems) { item in
                 activityChip(item.icon, label: item.label, count: item.count, color: item.color)

@@ -101,9 +101,19 @@ describe("normalizePiEvent", () => {
   });
 
   it("correlates tool events by toolCallId", async () => {
-    expect(normalizePiEvent(await fixture("tool-start.json"))).toMatchObject({ kind: "tool", tool: { toolCallId: "call-1", status: "running" } });
+    const start = normalizePiEvent(await fixture("tool-start.json"));
+    expect(start).toMatchObject({ kind: "tool", tool: { toolCallId: "call-1", status: "running" } });
+    if (start.kind === "tool") {
+      expect(start.tool.argsPreview).toBeTypeOf("string");
+      expect(start.tool.resultPreview).toBeUndefined();
+    }
     expect(normalizePiEvent(await fixture("tool-update.json"))).toMatchObject({ kind: "tool", tool: { toolCallId: "call-1", status: "running" } });
-    expect(normalizePiEvent(await fixture("tool-end-success.json"))).toMatchObject({ kind: "tool", tool: { toolCallId: "call-1", status: "succeeded" } });
+    const end = normalizePiEvent(await fixture("tool-end-success.json"));
+    expect(end).toMatchObject({ kind: "tool", tool: { toolCallId: "call-1", status: "succeeded" } });
+    if (end.kind === "tool") {
+      expect(end.tool.resultPreview).toBeTypeOf("string");
+      expect(end.tool.argsPreview).toBeUndefined();
+    }
     expect(normalizePiEvent(await fixture("tool-end-error.json"))).toMatchObject({ kind: "tool", tool: { toolCallId: "call-2", status: "failed" } });
   });
 

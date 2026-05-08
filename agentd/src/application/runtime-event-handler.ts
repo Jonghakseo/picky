@@ -238,7 +238,17 @@ export class RuntimeEventHandler {
     const session = this.dependencies.getSession(sessionId);
     const previous = session.tools.find((tool) => tool.toolCallId === event.toolCallId);
     const tools = session.tools.filter((tool) => tool.toolCallId !== event.toolCallId);
-    tools.push({ ...previous, toolCallId: event.toolCallId, name: event.name, status: event.status, preview: event.preview, startedAt: previous?.startedAt ?? new Date().toISOString(), endedAt: event.status === "running" ? previous?.endedAt : new Date().toISOString() });
+    tools.push({
+      ...previous,
+      toolCallId: event.toolCallId,
+      name: event.name,
+      status: event.status,
+      preview: event.preview,
+      argsPreview: event.argsPreview ?? previous?.argsPreview,
+      resultPreview: event.resultPreview ?? previous?.resultPreview,
+      startedAt: previous?.startedAt ?? new Date().toISOString(),
+      endedAt: event.status === "running" ? previous?.endedAt : new Date().toISOString(),
+    });
     logAgentd("tool activity", { sessionId, tool: event.name, status: event.status, previewChars: event.preview?.length });
     await this.dependencies.patchSession(sessionId, { tools });
   }

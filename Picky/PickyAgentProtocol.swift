@@ -553,8 +553,21 @@ struct PickyToolActivity: Codable, Equatable, Identifiable {
     let name: String
     let status: String
     let preview: String?
+    let argsPreview: String?
+    let resultPreview: String?
     let startedAt: Date?
     let endedAt: Date?
+
+    init(toolCallId: String, name: String, status: String, preview: String? = nil, argsPreview: String? = nil, resultPreview: String? = nil, startedAt: Date? = nil, endedAt: Date? = nil) {
+        self.toolCallId = toolCallId
+        self.name = name
+        self.status = status
+        self.preview = preview
+        self.argsPreview = argsPreview
+        self.resultPreview = resultPreview
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+    }
 }
 
 struct PickyArtifact: Codable, Equatable, Identifiable {

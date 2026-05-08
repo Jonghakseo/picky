@@ -42,13 +42,15 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
   }
 
   if (type === "tool_execution_start") {
+    const argsPreview = preview(piEvent.args);
     return {
       kind: "tool",
       tool: {
         toolCallId: requiredString(piEvent.toolCallId, "toolCallId"),
         name: requiredString(piEvent.toolName, "toolName"),
         status: "running",
-        preview: preview(piEvent.args),
+        preview: argsPreview,
+        argsPreview,
         startedAt: now,
       },
     };
@@ -68,13 +70,15 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
   }
 
   if (type === "tool_execution_end") {
+    const resultPreview = preview(piEvent.result);
     return {
       kind: "tool",
       tool: {
         toolCallId: requiredString(piEvent.toolCallId, "toolCallId"),
         name: requiredString(piEvent.toolName, "toolName"),
         status: piEvent.isError === true ? "failed" : "succeeded",
-        preview: preview(piEvent.result),
+        preview: resultPreview,
+        resultPreview,
         endedAt: now,
       },
     };
@@ -132,7 +136,7 @@ export function runtimeEventFromPiEvent(event: unknown, context?: PiEventNormali
       ...(normalized.assistantRun ? { assistantRun: normalized.assistantRun } : {}),
     };
   }
-  if (normalized.kind === "tool") return { type: "tool", toolCallId: normalized.tool.toolCallId, name: normalized.tool.name, status: normalized.tool.status, preview: normalized.tool.preview };
+  if (normalized.kind === "tool") return { type: "tool", toolCallId: normalized.tool.toolCallId, name: normalized.tool.name, status: normalized.tool.status, preview: normalized.tool.preview, argsPreview: normalized.tool.argsPreview, resultPreview: normalized.tool.resultPreview };
   if (normalized.kind === "extensionUi") return { type: "extension_ui", request: normalized.request, waitsForInput: normalized.waitsForInput };
   if (normalized.kind === "sessionInfo") return { type: "session_info", name: normalized.name };
   return undefined;

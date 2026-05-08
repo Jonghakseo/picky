@@ -250,6 +250,7 @@ final class PickySessionListViewModel: ObservableObject {
     private let terminalPresenter: PickyTerminalOverlayPresenting
     private let terminalSessionSyncer: PickyTerminalSessionSyncing
     private let reportPresenter: PickyReportPresenting
+    private let toolHistoryPresenter: PickyToolHistoryPresenting
     private let generatedReportDirectory: URL
     private var eventTask: Task<Void, Never>?
     private var voiceFollowUpTargetCancellable: AnyCancellable?
@@ -269,6 +270,7 @@ final class PickySessionListViewModel: ObservableObject {
         terminalPresenter: PickyTerminalOverlayPresenting? = nil,
         terminalSessionSyncer: PickyTerminalSessionSyncing = PickyPiSessionFileSyncer(),
         reportPresenter: PickyReportPresenting? = nil,
+        toolHistoryPresenter: PickyToolHistoryPresenting? = nil,
         generatedReportDirectory: URL = PickyAppSupport.defaultRoot().appendingPathComponent("GeneratedReports", isDirectory: true)
     ) {
         self.client = client
@@ -281,6 +283,7 @@ final class PickySessionListViewModel: ObservableObject {
         self.terminalPresenter = terminalPresenter ?? PickyTerminalOverlayPresenter.shared
         self.terminalSessionSyncer = terminalSessionSyncer
         self.reportPresenter = reportPresenter ?? PickyReportViewerPresenter.shared
+        self.toolHistoryPresenter = toolHistoryPresenter ?? PickyToolHistoryPresenter.shared
         self.generatedReportDirectory = generatedReportDirectory
         self.selectedSessionID = selectionStore.selectedSessionID
         self.hoveredVoiceFollowUpSessionID = selectionStore.hoveredVoiceFollowUpSessionID
@@ -530,6 +533,22 @@ final class PickySessionListViewModel: ObservableObject {
 
     func cancelExtensionUi(sessionID: String, requestID: String) async throws {
         try await answerExtensionUi(sessionID: sessionID, requestID: requestID, value: .object(["cancelled": .bool(true)]))
+    }
+
+    func openToolHistory(sessionID: String) {
+        pickySessionLog("open tool history session=\(sessionID)")
+        let title = sessionTitle(for: sessionID)
+        toolHistoryPresenter.openHistory(sessionID: sessionID, title: title) { [weak self] in
+            self?.toolsForSession(sessionID: sessionID) ?? []
+        }
+    }
+
+    private func sessionTitle(for sessionID: String) -> String {
+        (sessions + archivedSessions).first(where: { $0.id == sessionID })?.title ?? "Session"
+    }
+
+    private func toolsForSession(sessionID: String) -> [PickyToolActivity]? {
+        (sessions + archivedSessions).first(where: { $0.id == sessionID })?.tools
     }
 
     func openReport(sessionID: String, workspace _: NSWorkspace = .shared) async throws {

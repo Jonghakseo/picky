@@ -90,7 +90,7 @@ export type PickySlashCommand = z.infer<typeof PickySlashCommandSchema>;
 export const PickyChangedFileSchema = z.object({ path: z.string(), status: z.string(), summary: z.string().optional() });
 export const PickyArtifactSchema = z.object({ id: z.string(), kind: z.string(), title: z.string(), path: z.string().optional(), url: z.string().url().optional(), updatedAt: isoTimestamp });
 export type PickyArtifact = z.infer<typeof PickyArtifactSchema>;
-export const PickyToolActivitySchema = z.object({ toolCallId: z.string(), name: z.string(), status: z.enum(["running", "succeeded", "failed"]), preview: z.string().optional(), startedAt: isoTimestamp.optional(), endedAt: isoTimestamp.optional() });
+export const PickyToolActivitySchema = z.object({ toolCallId: z.string(), name: z.string(), status: z.enum(["running", "succeeded", "failed"]), preview: z.string().optional(), argsPreview: z.string().optional(), resultPreview: z.string().optional(), startedAt: isoTimestamp.optional(), endedAt: isoTimestamp.optional() });
 export type PickyToolActivity = z.infer<typeof PickyToolActivitySchema>;
 export const PickyExtensionUiQuestionOptionSchema = z.preprocess(
   (option) => typeof option === "string" ? { value: option, label: option } : option,

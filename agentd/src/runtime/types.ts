@@ -21,7 +21,7 @@ export type RuntimeEvent =
   | { type: "queue_update"; steering: readonly string[]; followUp: readonly string[] }
   | { type: "input_message"; role: "user" | "custom"; text: string; originatedBy: "user" | "main_agent" | "pi_extension" | "internal"; display?: boolean; customType?: string }
   | { type: "status"; status: RuntimeSessionStatus; summary?: string; finalAnswer?: string; noTurnRan?: boolean; preserveSessionState?: boolean; assistantRun?: RuntimeAssistantRunMetadata; compactionStarted?: boolean; compactionCompleted?: boolean; compactionReason?: string }
-  | { type: "tool"; toolCallId: string; name: string; status: "running" | "succeeded" | "failed"; preview?: string }
+  | { type: "tool"; toolCallId: string; name: string; status: "running" | "succeeded" | "failed"; preview?: string; argsPreview?: string; resultPreview?: string }
   | { type: "extension_ui"; request: Record<string, unknown>; waitsForInput: boolean }
   | { type: "session_info"; name: string }
   | { type: "context_usage"; usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined };

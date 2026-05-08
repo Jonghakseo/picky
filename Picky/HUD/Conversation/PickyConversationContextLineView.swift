@@ -79,9 +79,10 @@ struct PickyConversationContextLineView: View {
 
     private var linkContextLine: some View {
         HStack(spacing: 6) {
-            Text("Links")
-                .font(PickyHUDTypography.labelMedium)
+            Image(systemName: "link")
+                .font(.system(size: 10.5, weight: .medium))
                 .foregroundColor(DS.Colors.textTertiary.opacity(0.85))
+                .accessibilityLabel("Links")
             linkBadges
                 .layoutPriority(2)
         }

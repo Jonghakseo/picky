@@ -341,14 +341,21 @@ final class PickyInkCaptureController {
 
     private func hideSystemCursorIfNeeded() {
         guard cursorHideBalance == 0 else { return }
-        NSCursor.hide()
+        let error = CGDisplayHideCursor(CGMainDisplayID())
+        guard error == .success else {
+            print("⚠️ Picky ink: couldn't hide system cursor (CGError \(error.rawValue))")
+            return
+        }
         cursorHideBalance = 1
     }
 
     private func restoreSystemCursorIfNeeded() {
         guard cursorHideBalance > 0 else { return }
         for _ in 0..<cursorHideBalance {
-            NSCursor.unhide()
+            let error = CGDisplayShowCursor(CGMainDisplayID())
+            if error != .success {
+                print("⚠️ Picky ink: couldn't restore system cursor (CGError \(error.rawValue))")
+            }
         }
         cursorHideBalance = 0
     }

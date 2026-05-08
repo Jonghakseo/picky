@@ -1346,6 +1346,49 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.first?.lastSummary == "Stored summary")
     }
 
+    @Test func terminalSyncOutcomeWithImportsSetsBannerState() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.terminalSessionSyncOutcome(
+            sessionId: "side-1", baselineFound: true, importedMessageCount: 2
+        ))))
+        try await settle()
+
+        #expect(viewModel.sessions.first?.lastTerminalSyncOutcome?.importedMessageCount == 2)
+    }
+
+    @Test func terminalSyncOutcomeWithBaselineMissingSetsBannerState() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.terminalSessionSyncOutcome(
+            sessionId: "side-1", baselineFound: false, importedMessageCount: 0
+        ))))
+        try await settle()
+
+        let outcome = try #require(viewModel.sessions.first?.lastTerminalSyncOutcome)
+        #expect(outcome.baselineFound == false)
+    }
+
+    @Test func terminalSyncOutcomeWithNothingNewIsSuppressed() async throws {
+        // baselineFound + 0 imports is the silent "nothing changed" case;
+        // suppressing it upstream keeps the HUD from showing a banner that
+        // just confirms what the user already saw when the terminal closed.
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.terminalSessionSyncOutcome(
+            sessionId: "side-1", baselineFound: true, importedMessageCount: 0
+        ))))
+        try await settle()
+
+        #expect(viewModel.sessions.first?.lastTerminalSyncOutcome == nil)
+    }
+
     @Test func terminalCommandShellQuotesPaths() throws {
         let cliCommand = PickyPiTerminalCommand.makeCliResumeCommand(
             sessionFilePath: "/tmp/pi session's.jsonl",
@@ -2150,6 +2193,20 @@ private enum EventJSON {
     static func sessionActivityUpdated(sessionId: String, edit: Int, bash: Int, thinking: Int, other: Int, seq: Int) -> String {
         """
         {"id":"event-activity-\(seq)","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionActivityUpdated","sessionId":"\(sessionId)","activitySummary":{"edit":\(edit),"bash":\(bash),"thinking":\(thinking),"other":\(other)},"seq":\(seq)}
+        """
+    }
+
+    static func terminalSessionSyncOutcome(
+        sessionId: String = "session-1",
+        baselineFound: Bool,
+        importedMessageCount: Int,
+        activeLastMessageId: String? = nil,
+        baselinePiMessageId: String? = nil
+    ) -> String {
+        let active = activeLastMessageId.map { ",\"activeLastMessageId\":\"\($0)\"" } ?? ""
+        let baseline = baselinePiMessageId.map { ",\"baselinePiMessageId\":\"\($0)\"" } ?? ""
+        return """
+        {"id":"event-tso-\(sessionId)-\(importedMessageCount)","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:04.000Z","type":"terminalSessionSyncOutcome","sessionId":"\(sessionId)","baselineFound":\(baselineFound),"importedMessageCount":\(importedMessageCount)\(active)\(baseline)}
         """
     }
 

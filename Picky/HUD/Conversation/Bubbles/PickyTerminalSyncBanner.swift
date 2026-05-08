@@ -9,6 +9,17 @@
 
 import SwiftUI
 
+/// Decides whether a sync outcome is worth surfacing to the user. The
+/// "baseline matched, zero new messages" case is intentionally suppressed
+/// upstream in `PickySessionListViewModel`, so the banner only ever needs
+/// to render the imported-N-messages and baseline-missing variants.
+enum PickyTerminalSyncOutcomePolicy {
+    static func shouldSurfaceBanner(for outcome: PickyTerminalSessionSyncOutcome) -> Bool {
+        if !outcome.baselineFound { return true }
+        return outcome.importedMessageCount > 0
+    }
+}
+
 struct PickyTerminalSyncBanner: View {
     let outcome: PickyTerminalSessionSyncOutcome
     let onDismiss: () -> Void
@@ -52,7 +63,6 @@ struct PickyTerminalSyncBanner: View {
 
     private var severity: Severity {
         if !outcome.baselineFound { return .baselineMissing }
-        if outcome.importedMessageCount == 0 { return .noChanges }
         return .imported(count: outcome.importedMessageCount)
     }
 
@@ -60,8 +70,6 @@ struct PickyTerminalSyncBanner: View {
         switch severity {
         case .baselineMissing:
             return "Pi may have compacted or branched the transcript while the terminal was open. The card was not updated. Open the terminal again or copy the resume command if you need the latest answer."
-        case .noChanges:
-            return "Nothing new to import."
         case .imported(let count):
             return count == 1
                 ? "1 new message was imported from the terminal session."
@@ -71,13 +79,11 @@ struct PickyTerminalSyncBanner: View {
 
     private enum Severity: Equatable {
         case baselineMissing
-        case noChanges
         case imported(count: Int)
 
         var title: String {
             switch self {
             case .baselineMissing: return "Terminal sync skipped"
-            case .noChanges: return "Terminal sync"
             case .imported: return "Terminal sync"
             }
         }
@@ -85,14 +91,13 @@ struct PickyTerminalSyncBanner: View {
         var iconName: String {
             switch self {
             case .baselineMissing: return "exclamationmark.triangle.fill"
-            case .noChanges, .imported: return "arrow.triangle.2.circlepath"
+            case .imported: return "arrow.triangle.2.circlepath"
             }
         }
 
         var tint: Color {
             switch self {
             case .baselineMissing: return DS.Colors.warningText
-            case .noChanges: return DS.Colors.textSecondary
             case .imported: return DS.Colors.accentText
             }
         }
@@ -100,7 +105,6 @@ struct PickyTerminalSyncBanner: View {
         var background: Color {
             switch self {
             case .baselineMissing: return DS.Colors.warning.opacity(0.10)
-            case .noChanges: return DS.Colors.surface2.opacity(0.5)
             case .imported: return DS.Colors.surface2.opacity(0.7)
             }
         }

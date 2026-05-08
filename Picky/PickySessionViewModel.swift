@@ -915,6 +915,12 @@ final class PickySessionListViewModel: ObservableObject {
             pickySessionLog("protocol error code=\(error.code) command=\(error.commandId ?? "none")")
             lastError = error.message
         case .terminalSessionSyncOutcome(let outcome):
+            // Suppress the banner for the "nothing new" outcome — the user already
+            // saw the terminal close cleanly, so a banner that just says "nothing
+            // imported" is noise. The baseline-missing and imported-N-messages
+            // outcomes still surface so the user notices a silent skip or a
+            // successful import.
+            guard PickyTerminalSyncOutcomePolicy.shouldSurfaceBanner(for: outcome) else { break }
             update(sessionID: outcome.sessionId) { card in
                 card.lastTerminalSyncOutcome = outcome
                 card.updatedAt = Date()

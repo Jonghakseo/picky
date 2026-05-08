@@ -142,7 +142,7 @@ final class PickySessionListViewModel: ObservableObject {
         var isTerminal: Bool { status.isTerminal }
 
         var reportArtifact: PickyArtifact? {
-            artifacts.first { $0.kind == "report" || $0.kind == "final_answer" }
+            artifacts.first { $0.kind == "report" }
         }
 
         var latestOpenAsReportMessage: PickySessionMessage? {

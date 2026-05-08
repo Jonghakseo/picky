@@ -79,13 +79,63 @@ if [[ ! -f "${ROOT_DIR}/agentd/package.json" ]]; then
 fi
 
 mkdir -p "${BUILD_ROOT}"
-rm -rf "${EXPORT_DIR}"
 mkdir -p "${EXPORT_DIR}"
 
 if [[ "${PICKY_CLEAN:-1}" == "1" ]]; then
   rm -rf "${DERIVED_DATA_PATH}"
+  rm -rf "${EXPORT_DIR:?}"/*
 fi
 
+# Cache guard: skip the agentd repackage step when nothing relevant changed.
+# The hash covers TS sources, package metadata, and the workspace lockfile.
+agentd_input_hash() {
+  (
+    cd "${ROOT_DIR}"
+    /usr/bin/find \
+      agentd/src \
+      agentd/package.json \
+      agentd/tsconfig.json \
+      pnpm-lock.yaml \
+      -type f -print0 2>/dev/null \
+      | LC_ALL=C sort -z \
+      | /usr/bin/xargs -0 /usr/bin/shasum -a 256 \
+      | /usr/bin/shasum -a 256 \
+      | /usr/bin/awk '{print $1}'
+  )
+}
+
+AGENTD_HASH_FILE="${AGENTD_RUNTIME_DIR}/.picky-agentd-input-hash"
+NEEDS_AGENTD_BUILD=1
+CURRENT_AGENTD_HASH=""
+if [[ "${PACKAGE_AGENTD}" == "1" ]]; then
+  CURRENT_AGENTD_HASH="$(agentd_input_hash || true)"
+  if [[ -n "${CURRENT_AGENTD_HASH}" \
+      && -f "${AGENTD_HASH_FILE}" \
+      && -f "${AGENTD_RUNTIME_DIR}/dist/index.js" \
+      && -d "${AGENTD_RUNTIME_DIR}/node_modules" ]]; then
+    CACHED_AGENTD_HASH="$(/bin/cat "${AGENTD_HASH_FILE}" 2>/dev/null || true)"
+    if [[ "${CURRENT_AGENTD_HASH}" == "${CACHED_AGENTD_HASH}" ]]; then
+      NEEDS_AGENTD_BUILD=0
+      echo "♻️  agentd inputs unchanged; reusing ${AGENTD_RUNTIME_DIR}"
+    fi
+  fi
+fi
+
+# Run agentd packaging in parallel with xcodebuild when a rebuild is needed.
+AGENTD_PID=""
+AGENTD_LOG=""
+if [[ "${PACKAGE_AGENTD}" == "1" && "${NEEDS_AGENTD_BUILD}" == "1" ]]; then
+  AGENTD_LOG="${BUILD_ROOT}/agentd-runtime.log"
+  echo "🛠️  Building picky-agentd runtime in parallel (log: ${AGENTD_LOG})..."
+  (
+    PICKY_PACKAGE_BUILD_DIR="${BUILD_ROOT}" \
+    PICKY_AGENTD_RUNTIME_DIR="${AGENTD_RUNTIME_DIR}" \
+      "${ROOT_DIR}/scripts/package-agentd-runtime.sh"
+  ) >"${AGENTD_LOG}" 2>&1 &
+  AGENTD_PID=$!
+fi
+
+set +e
 xcodebuild \
   -project "${PROJECT_PATH}" \
   -scheme "${SCHEME}" \
@@ -99,13 +149,39 @@ xcodebuild \
   DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM}" \
   MARKETING_VERSION="${MARKETING_VERSION}" \
   CURRENT_PROJECT_VERSION="${BUILD_NUMBER}"
+XCODEBUILD_STATUS=$?
+set -e
+
+if [[ -n "${AGENTD_PID}" ]]; then
+  if ! wait "${AGENTD_PID}"; then
+    echo "❌ picky-agentd runtime build failed. Last 200 lines:" >&2
+    /usr/bin/tail -n 200 "${AGENTD_LOG}" >&2 || true
+    exit 1
+  fi
+  /usr/bin/tail -n 5 "${AGENTD_LOG}" || true
+fi
+
+if [[ "${XCODEBUILD_STATUS}" -ne 0 ]]; then
+  exit "${XCODEBUILD_STATUS}"
+fi
 
 if [[ ! -d "${BUILT_APP}" ]]; then
   echo "❌ Build succeeded but app bundle was not found: ${BUILT_APP}" >&2
   exit 1
 fi
 
-/usr/bin/ditto "${BUILT_APP}" "${PACKAGED_APP}"
+if [[ "${PACKAGE_AGENTD}" == "1" && "${NEEDS_AGENTD_BUILD}" == "1" && -n "${CURRENT_AGENTD_HASH}" ]]; then
+  printf '%s\n' "${CURRENT_AGENTD_HASH}" > "${AGENTD_HASH_FILE}"
+fi
+
+# Sync the freshly built bundle into PACKAGED_APP without wiping cached
+# Resources/agentd or Resources/pi-extensions trees that we plan to update
+# selectively below. rsync's --delete prunes stale Xcode-produced files only.
+mkdir -p "${PACKAGED_APP}"
+/usr/bin/rsync -aX --delete \
+  --exclude '/Contents/Resources/agentd/' \
+  --exclude '/Contents/Resources/pi-extensions/' \
+  "${BUILT_APP}/" "${PACKAGED_APP}/"
 
 /usr/bin/python3 - "${BUILD_INFO_PATH}" "${APP_NAME}" "${MARKETING_VERSION}" "${BUILD_NUMBER}" "${RELEASE_CHANNEL}" "${GIT_SHA}" "${BUILD_TIMESTAMP}" "${BUILD_LABEL}" "${CONFIGURATION}" <<'PY'
 import json
@@ -119,21 +195,18 @@ path.write_text(json.dumps(dict(zip(keys, sys.argv[2:])), indent=2, sort_keys=Tr
 PY
 
 if [[ "${PACKAGE_AGENTD}" == "1" ]]; then
-  PICKY_PACKAGE_BUILD_DIR="${BUILD_ROOT}" \
-  PICKY_AGENTD_RUNTIME_DIR="${AGENTD_RUNTIME_DIR}" \
-    "${ROOT_DIR}/scripts/package-agentd-runtime.sh"
-
-  rm -rf "${PACKAGED_APP}/Contents/Resources/agentd"
-  mkdir -p "${PACKAGED_APP}/Contents/Resources"
-  /usr/bin/ditto "${AGENTD_RUNTIME_DIR}" "${PACKAGED_APP}/Contents/Resources/agentd"
+  mkdir -p "${PACKAGED_APP}/Contents/Resources/agentd"
+  /usr/bin/rsync -aX --delete \
+    "${AGENTD_RUNTIME_DIR}/" "${PACKAGED_APP}/Contents/Resources/agentd/"
 fi
 
 # Bundle pi-extensions so PickyExtensionInstaller can symlink them into
 # ~/.pi/agent/extensions on first launch. Read-only at runtime; pi loads the
 # .ts source directly so no compile step is required.
 if [[ -d "${ROOT_DIR}/pi-extensions" ]]; then
-  rm -rf "${PACKAGED_APP}/Contents/Resources/pi-extensions"
-  /usr/bin/ditto "${ROOT_DIR}/pi-extensions" "${PACKAGED_APP}/Contents/Resources/pi-extensions"
+  mkdir -p "${PACKAGED_APP}/Contents/Resources/pi-extensions"
+  /usr/bin/rsync -aX --delete \
+    "${ROOT_DIR}/pi-extensions/" "${PACKAGED_APP}/Contents/Resources/pi-extensions/"
 fi
 
 # Mutating the bundle after xcodebuild signing invalidates the resource seal.

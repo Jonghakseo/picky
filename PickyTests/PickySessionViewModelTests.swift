@@ -587,6 +587,32 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDExpansion.contentFrameHeight(isExpanded: true, measuredHeight: 0) == nil)
     }
 
+    @Test func hudSizeReporterCoalescesPreferenceBurstsBeforeResizingPanel() async throws {
+        let reporter = PickyHUDSizeReporter(coalescingDelayNanoseconds: 1_000_000)
+        var reports: [CGSize] = []
+
+        reporter.handleMeasuredSize(CGSize(width: 100, height: 100), activeSessionID: "agent-a", shouldHoldHeight: false) { reports.append($0) }
+        reporter.handleMeasuredSize(CGSize(width: 100, height: 120), activeSessionID: "agent-a", shouldHoldHeight: false) { reports.append($0) }
+        reporter.handleMeasuredSize(CGSize(width: 100, height: 140), activeSessionID: "agent-a", shouldHoldHeight: false) { reports.append($0) }
+        try await Task.sleep(nanoseconds: 10_000_000)
+
+        #expect(reports == [CGSize(width: 100, height: 140)])
+    }
+
+    @Test func hudSizeReporterKeepsRunningPanelHeightFromShrinking() async throws {
+        let reporter = PickyHUDSizeReporter(coalescingDelayNanoseconds: 1_000_000)
+        var reports: [CGSize] = []
+
+        reporter.handleMeasuredSize(CGSize(width: 100, height: 200), activeSessionID: "agent-a", shouldHoldHeight: false) { reports.append($0) }
+        try await Task.sleep(nanoseconds: 10_000_000)
+        reports.removeAll()
+
+        reporter.handleMeasuredSize(CGSize(width: 100, height: 120), activeSessionID: "agent-a", shouldHoldHeight: true) { reports.append($0) }
+        try await Task.sleep(nanoseconds: 10_000_000)
+
+        #expect(reports.isEmpty)
+    }
+
     @Test func hudDockPreviewOpensImmediatelyAndClosesAfterDockLeaveTimeout() throws {
         #expect(PickyHUDDockLayout.closeDelay == 0.4)
         #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: nil, sessionID: "a", pinnedID: nil) == "a")

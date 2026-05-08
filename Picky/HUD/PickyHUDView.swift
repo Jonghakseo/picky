@@ -30,8 +30,7 @@ struct PickyHUDView: View {
     @State private var isHUDHovered = false
     @State private var isDockHovered = false
     @State private var closeExpansionTask: Task<Void, Never>?
-    @State private var lastReportedHUDSize: CGSize = .zero
-    @State private var lastReportedActiveSessionID: String?
+    @State private var sizeReporter = PickyHUDSizeReporter()
 
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {
         Array(viewModel.sessions.prefix(PickyHUDDockLayout.visibleSessionLimit).reversed())
@@ -84,29 +83,17 @@ struct PickyHUDView: View {
             .onDisappear {
                 closeExpansionTask?.cancel()
                 closeExpansionTask = nil
+                sizeReporter.cancelPendingReport()
             }
     }
 
     private func handleHUDSizeChange(_ size: CGSize) {
-        guard size.width > 0, size.height > 0 else { return }
-        let activeID = activeSession?.id
-        if activeID != lastReportedActiveSessionID {
-            lastReportedActiveSessionID = activeID
-            lastReportedHUDSize = size
-            onSizeChange(size)
-            return
-        }
-
-        let targetSize = PickyHUDExpansion.reportedHUDSize(
-            measuredSize: size,
-            previousReportedSize: lastReportedHUDSize,
-            activeSessionChanged: false,
-            shouldHoldHeight: shouldHoldPanelHeightDuringActiveTurn
+        sizeReporter.handleMeasuredSize(
+            size,
+            activeSessionID: activeSession?.id,
+            shouldHoldHeight: shouldHoldPanelHeightDuringActiveTurn,
+            onSizeChange: onSizeChange
         )
-
-        guard !lastReportedHUDSize.isApproximatelyEqual(to: targetSize) else { return }
-        lastReportedHUDSize = targetSize
-        onSizeChange(targetSize)
     }
 
     private var shouldHoldPanelHeightDuringActiveTurn: Bool {
@@ -286,6 +273,69 @@ struct PickyHUDView: View {
     private func cancelPendingClose() {
         closeExpansionTask?.cancel()
         closeExpansionTask = nil
+    }
+}
+
+@MainActor
+final class PickyHUDSizeReporter {
+    private let coalescingDelayNanoseconds: UInt64
+
+    private var lastReportedHUDSize: CGSize = .zero
+    private var lastReportedActiveSessionID: String?
+    private var pendingReportTask: Task<Void, Never>?
+    private var pendingReportedSize: CGSize?
+    private var pendingOnSizeChange: ((CGSize) -> Void)?
+
+    init(coalescingDelayNanoseconds: UInt64 = 16_000_000) {
+        self.coalescingDelayNanoseconds = coalescingDelayNanoseconds
+    }
+
+    func handleMeasuredSize(
+        _ measuredSize: CGSize,
+        activeSessionID: String?,
+        shouldHoldHeight: Bool,
+        onSizeChange: @escaping (CGSize) -> Void
+    ) {
+        guard measuredSize.width > 0, measuredSize.height > 0 else { return }
+
+        let activeSessionChanged = activeSessionID != lastReportedActiveSessionID
+        if activeSessionChanged {
+            lastReportedActiveSessionID = activeSessionID
+        }
+
+        let targetSize = PickyHUDExpansion.reportedHUDSize(
+            measuredSize: measuredSize,
+            previousReportedSize: lastReportedHUDSize,
+            activeSessionChanged: activeSessionChanged,
+            shouldHoldHeight: shouldHoldHeight
+        )
+
+        guard activeSessionChanged || !lastReportedHUDSize.isApproximatelyEqual(to: targetSize) else { return }
+        lastReportedHUDSize = targetSize
+        scheduleReport(targetSize, onSizeChange: onSizeChange)
+    }
+
+    func cancelPendingReport() {
+        pendingReportTask?.cancel()
+        pendingReportTask = nil
+        pendingReportedSize = nil
+        pendingOnSizeChange = nil
+    }
+
+    private func scheduleReport(_ size: CGSize, onSizeChange: @escaping (CGSize) -> Void) {
+        pendingReportedSize = size
+        pendingOnSizeChange = onSizeChange
+        pendingReportTask?.cancel()
+        pendingReportTask = Task { @MainActor [weak self] in
+            guard let delay = self?.coalescingDelayNanoseconds else { return }
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled, let self else { return }
+            guard let reportedSize = self.pendingReportedSize, let onSizeChange = self.pendingOnSizeChange else { return }
+            self.pendingReportTask = nil
+            self.pendingReportedSize = nil
+            self.pendingOnSizeChange = nil
+            onSizeChange(reportedSize)
+        }
     }
 }
 

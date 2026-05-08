@@ -11,6 +11,9 @@ struct PickyAgentBubbleView: View {
     let message: PickySessionMessage
     var showsOpenAsReportAction = false
     var onOpenAsReport: (() -> Void)?
+    /// Per-message opener used by the hover icon. Distinct from `onOpenAsReport`,
+    /// which drives the latest-reply footer chip and is session-scoped.
+    var onOpenMessageAsReport: (() -> Void)? = nil
 
     var body: some View {
         HStack {
@@ -32,6 +35,13 @@ struct PickyAgentBubbleView: View {
             .overlay(
                 agentBubbleShape
                     .stroke(DS.Colors.borderSubtle.opacity(0.72), lineWidth: 0.7)
+            )
+            // Suppress the hover icon when the latest-reply footer chip is
+            // already visible — they would target the same action and stacking
+            // both feels redundant.
+            .openAsReportHoverIcon(
+                onOpen: showsOpenAsReportAction ? nil : onOpenMessageAsReport,
+                alignment: .topTrailing
             )
             Spacer(minLength: 48)
         }

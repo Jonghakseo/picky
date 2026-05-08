@@ -98,12 +98,16 @@ struct PickyConversationListView: View {
     private func messageView(_ message: PickySessionMessage) -> some View {
         switch message.kind {
         case .userText:
-            PickyUserBubbleView(message: message)
+            PickyUserBubbleView(
+                message: message,
+                onOpenAsReport: openMessageReportAction(for: message)
+            )
         case .agentText:
             PickyAgentBubbleView(
                 message: message,
                 showsOpenAsReportAction: showsOpenAsReportAction(for: message),
-                onOpenAsReport: { openReport() }
+                onOpenAsReport: { openReport() },
+                onOpenMessageAsReport: openMessageReportAction(for: message)
             )
         case .agentThinking:
             PickyTypingBubbleView(message: message, initiallyCollapsed: PickyPiSettingsReader.hideThinkingBlock(cwd: session.cwd))
@@ -133,8 +137,23 @@ struct PickyConversationListView: View {
             if message.isCompactCompletionMessage {
                 PickyCompactCompletionBubbleView()
             } else {
-                PickyAgentBubbleView(message: message)
+                PickyAgentBubbleView(
+                    message: message,
+                    onOpenMessageAsReport: openMessageReportAction(for: message)
+                )
             }
+        }
+    }
+
+    /// Returns a closure that opens this specific message in the report viewer,
+    /// or `nil` when the message has no markdown content to expand. Used by the
+    /// per-bubble hover-icon affordance.
+    private func openMessageReportAction(for message: PickySessionMessage) -> (() -> Void)? {
+        guard message.openAsReportMarkdown != nil else { return nil }
+        let sessionID = session.id
+        let messageID = message.id
+        return { [weak viewModel] in
+            Task { try? await viewModel?.openReport(sessionID: sessionID, messageID: messageID) }
         }
     }
 

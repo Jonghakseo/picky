@@ -9,6 +9,7 @@ import SwiftUI
 
 struct PickyUserBubbleView: View {
     let message: PickySessionMessage
+    var onOpenAsReport: (() -> Void)? = nil
 
     var body: some View {
         HStack {
@@ -38,6 +39,10 @@ struct PickyUserBubbleView: View {
                 )
                 .fill(bubbleFill)
             )
+            // User bubble is right-aligned; show the hover icon on the OUTWARD
+            // (leading) corner so it floats toward the agent side rather than
+            // pinning against the card edge.
+            .openAsReportHoverIcon(onOpen: onOpenAsReport, alignment: .topLeading)
             .frame(maxWidth: PickyHUDDockLayout.detailWidth * 0.85, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)

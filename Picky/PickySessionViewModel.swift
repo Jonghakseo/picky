@@ -564,6 +564,46 @@ final class PickySessionListViewModel: ObservableObject {
         throw PickySessionListViewModelError.missingReport
     }
 
+    /// Opens a specific message's text content in the markdown report viewer.
+    /// Used by the per-bubble hover-icon affordance so the user can expand any
+    /// user request or agent reply (not just the latest one) into the full viewer.
+    func openReport(sessionID: String, messageID: String) async throws {
+        pickySessionLog("open report session=\(sessionID) message=\(messageID)")
+        guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
+              let message = session.messages.first(where: { $0.id == messageID }),
+              let markdown = message.openAsReportMarkdown else {
+            lastError = "Message is not available as a report"
+            throw PickySessionListViewModelError.missingReport
+        }
+        let titleSuffix: String
+        let fileNamePrefix: String
+        switch message.kind {
+        case .userText:
+            titleSuffix = "Request"
+            fileNamePrefix = "request"
+        case .agentText:
+            titleSuffix = "Response"
+            fileNamePrefix = "response"
+        case .system:
+            titleSuffix = "System message"
+            fileNamePrefix = "system"
+        default:
+            titleSuffix = "Message"
+            fileNamePrefix = "message"
+        }
+        do {
+            try openGeneratedReport(
+                windowKey: "\(sessionID):message:\(messageID)",
+                title: "\(session.title) \u{2014} \(titleSuffix)",
+                fileName: "\(fileNamePrefix)-\(sanitizedReportFileComponent(messageID)).md",
+                markdown: markdown
+            )
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
+    }
+
     private func openReportFile(sessionID: String, path: String) throws {
         let url = try artifactPathValidator.validateReadableFile(path: path)
         let markdown = try String(contentsOf: url, encoding: .utf8)

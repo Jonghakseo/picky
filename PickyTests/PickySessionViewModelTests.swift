@@ -1874,6 +1874,57 @@ struct PickySessionViewModelTests {
         #expect(!client.sentCommands.contains { $0.type == .openArtifact })
     }
 
+    @Test func openReportByMessageIDOpensThatSpecificMessageNotJustTheLatest() async throws {
+        // The HUD bubble's hover icon needs to be able to expand any message in
+        // the conversation, not just the most recent agent reply. Verify that
+        // passing a specific messageID opens that message (here: the first of
+        // two appended replies) and uses a per-message file name + title.
+        let generatedRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-msg-report-\(UUID().uuidString)", isDirectory: true)
+        let presenter = FakeReportPresenter()
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            reportPresenter: presenter,
+            generatedReportDirectory: generatedRoot
+        )
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "msg-session", title: "Multi reply", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "msg-session", messageId: "msg-1", text: "# First", seq: 1))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "msg-session", messageId: "msg-2", text: "# Second", seq: 2))))
+        try await settle()
+
+        try await viewModel.openReport(sessionID: "msg-session", messageID: "msg-1")
+
+        let call = try #require(presenter.calls.first)
+        #expect(call.sessionID == "msg-session:message:msg-1")
+        #expect(call.title == "Multi reply \u{2014} Response")
+        #expect(call.fileURL.lastPathComponent == "response-msg-1.md")
+        #expect(call.markdown == "# First")
+        #expect(FileManager.default.fileExists(atPath: call.fileURL.path))
+    }
+
+    @Test func openReportByMessageIDThrowsWhenMessageHasNoMarkdownContent() async throws {
+        // Activity-only or empty messages shouldn't be openable as reports. The
+        // hover icon avoids invoking this path for such messages, but the API
+        // itself should still fail safely if called.
+        let presenter = FakeReportPresenter()
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            reportPresenter: presenter
+        )
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "empty-msg-session", title: "Empty", status: "completed"))))
+        try await settle()
+
+        await #expect(throws: PickySessionListViewModelError.missingReport) {
+            try await viewModel.openReport(sessionID: "empty-msg-session", messageID: "non-existent")
+        }
+        #expect(presenter.calls.isEmpty)
+    }
+
     @Test func openReportFallsBackToLatestAgentResponseInInternalViewer() async throws {
         let generatedRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-generated-report-\(UUID().uuidString)", isDirectory: true)
         let presenter = FakeReportPresenter()

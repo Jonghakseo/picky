@@ -401,9 +401,13 @@ struct PickySessionMessage: Codable, Equatable, Identifiable {
 }
 
 extension PickySessionMessage {
+    /// Markdown content that the user can pop open in the report viewer. Originally
+    /// limited to `.agentText` (the latest agent reply), this now also covers user
+    /// requests and system messages so any text-bearing bubble can be expanded into
+    /// the larger markdown view from the conversation card.
     var openAsReportMarkdown: String? {
         switch kind {
-        case .agentText:
+        case .agentText, .userText, .system:
             let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return trimmed.isEmpty ? nil : trimmed
         default:

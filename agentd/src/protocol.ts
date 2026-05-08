@@ -240,7 +240,6 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("listSlashCommands"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("getSession"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("answerExtensionUi"), sessionId: z.string(), requestId: z.string(), value: z.unknown().optional() }),
-  CommandBaseSchema.extend({ type: z.literal("openArtifact"), sessionId: z.string(), artifactId: z.string() }),
 ]);
 
 export type CommandEnvelope = z.infer<typeof CommandEnvelopeSchema>;
@@ -268,7 +267,6 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("toolActivityUpdated"), sessionId: z.string(), tool: PickyToolActivitySchema }),
   EventBaseSchema.extend({ type: z.literal("extensionUiRequest"), request: PickyExtensionUiRequestSchema }),
   EventBaseSchema.extend({ type: z.literal("artifactUpdated"), sessionId: z.string(), artifact: PickyArtifactSchema }),
-  EventBaseSchema.extend({ type: z.literal("artifactOpened"), sessionId: z.string(), artifactId: z.string(), path: z.string() }),
   EventBaseSchema.extend({ type: z.literal("pointerOverlayRequested"), request: PickyPointerOverlayRequestSchema }),
   EventBaseSchema.extend({ type: z.literal("slashCommandsSnapshot"), sessionId: z.string(), commands: z.array(PickySlashCommandSchema) }),
   EventBaseSchema.extend({ type: z.literal("sessionMessageAppended"), sessionId: z.string(), message: PickySessionMessageSchema, seq: z.number().int() }),

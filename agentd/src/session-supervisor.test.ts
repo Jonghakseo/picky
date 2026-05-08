@@ -2,7 +2,6 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ArtifactStore } from "./artifact-store.js";
 import type { PickyAgentSession, PickyContextPacket } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { BuiltPrompt } from "./prompt-builder.js";
@@ -1211,7 +1210,7 @@ describe("SessionSupervisor", () => {
   it("does not notify the main agent when a local Pi session is pinned", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
-    const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir), { mainRuntime });
     const replies: Array<{ contextId: string; text: string }> = [];
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
     await supervisor.load();
@@ -1227,7 +1226,7 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
-    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
     await supervisor.load();
     const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate" });
 
@@ -1296,7 +1295,7 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
-    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
     await supervisor.load();
     const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate" });
 
@@ -1444,18 +1443,21 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.messages?.filter((message) => message.kind === "system" && message.text === "Cancelled by user")).toHaveLength(1);
   });
 
-  it("writes report and PR artifacts when a terminal status is observed", async () => {
+  it("writes link and changed-file artifacts when a terminal status is observed", async () => {
+    // Session report file generation was removed; only link extraction and
+    // changed-file detection remain in the terminal materialize step. Verify
+    // those still run end-to-end on terminal status.
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new MockRuntime();
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), new ArtifactStore(dir));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
     const session = await supervisor.create(context("terminal report"));
     await supervisor.followUp(session.id, "Changed file: M Picky/App.swift - HUD follow-up\nhttps://github.com/acme/repo/pull/42");
     await supervisor.abort(session.id);
 
     const updated = supervisor.get(session.id)!;
-    expect(updated.artifacts.some((artifact) => artifact.kind === "report" && /report-.*\.md$/.test(artifact.path ?? ""))).toBe(true);
     expect(updated.artifacts.some((artifact) => artifact.kind === "github" && artifact.title === "#42" && artifact.url === "https://github.com/acme/repo/pull/42")).toBe(true);
+    expect(updated.artifacts.some((artifact) => artifact.kind === "report")).toBe(false);
     expect(updated.changedFiles).toEqual([{ status: "M", path: "Picky/App.swift", summary: "HUD follow-up" }]);
   });
 
@@ -1690,7 +1692,7 @@ describe("SessionSupervisor", () => {
 
   it("routes simple requests as quick replies without creating agent sessions", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
-    const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir), undefined, { taskRouter: new StaticTaskRouter({ route: "quick_reply", reply: "바로 답변" }) });
+    const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir), { taskRouter: new StaticTaskRouter({ route: "quick_reply", reply: "바로 답변" }) });
     const replies: Array<{ contextId: string; text: string }> = [];
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
 
@@ -1705,7 +1707,7 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
     const replies: Array<{ contextId: string; text: string }> = [];
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
 
@@ -1751,7 +1753,7 @@ describe("SessionSupervisor", () => {
         },
       ],
     };
-    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
     const replies: Array<{ contextId: string; text: string }> = [];
     const overlays: Array<{ screenId?: string; x: number; y: number; label?: string }> = [];
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
@@ -1778,7 +1780,7 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
     const replies: Array<{ contextId: string; text: string }> = [];
     const overlays: unknown[] = [];
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
@@ -1805,7 +1807,7 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
     const replies: Array<{ contextId: string; text: string }> = [];
     const broadcastedMainMessages: Array<{ role: string; text: string }> = [];
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
@@ -1850,7 +1852,7 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(new ManualRuntime(), store, undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store, { mainRuntime });
 
     await supervisor.route(context("이전 질문"));
     const previousHandle = mainRuntime.handle;
@@ -1879,7 +1881,7 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(new ManualRuntime(), store, undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store, { mainRuntime });
     const replies: Array<{ contextId: string; text: string }> = [];
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
 
@@ -1919,7 +1921,7 @@ describe("SessionSupervisor", () => {
   it("aborts a pending prewarmed main-agent handle after voice input cancels it", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new DeferredPrewarmRuntime();
-    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
 
     const prewarm = supervisor.prewarmMainAgent("/tmp/project");
     await settle();
@@ -1945,7 +1947,7 @@ describe("SessionSupervisor", () => {
   it("keeps only the latest 100 main-agent user and assistant messages", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
 
     for (let index = 0; index < 101; index += 1) {
       await supervisor.route(context(`메시지 ${index}`));
@@ -1964,7 +1966,7 @@ describe("SessionSupervisor", () => {
     const store = new SessionStore(dir);
     await store.saveMainAgentState({ sessionFilePath: "/tmp/main-pi-session.jsonl", cwd: "/tmp/project", messages: [] });
     const mainRuntime = new ResumableRuntime();
-    const supervisor = new SessionSupervisor(new ManualRuntime(), store, undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store, { mainRuntime });
     await supervisor.load();
 
     await supervisor.route(context("재시작 후 질문"));
@@ -1978,7 +1980,7 @@ describe("SessionSupervisor", () => {
   it("reuses the same main agent handle for later voice turns", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
 
     await supervisor.route(context("첫 번째"));
     mainRuntime.handle?.emit({ type: "assistant_delta", delta: "첫 응답" });
@@ -1994,7 +1996,7 @@ describe("SessionSupervisor", () => {
   it("interrupts the active main-agent turn when newer voice input arrives", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
-    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
     const replies: Array<{ contextId: string; text: string }> = [];
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
 
@@ -2015,7 +2017,7 @@ describe("SessionSupervisor", () => {
   it("prewarms the main agent without creating a visible session", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
-    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
 
     await supervisor.prewarmMainAgent("/tmp/project");
     const prewarmedHandle = mainRuntime.handle;
@@ -2032,7 +2034,7 @@ describe("SessionSupervisor", () => {
   it("applies configured thinking level to a future prewarmed main runtime", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
-    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
 
     await supervisor.setMainAgentThinkingLevel("high");
     await supervisor.prewarmMainAgent("/tmp/project");
@@ -2044,7 +2046,7 @@ describe("SessionSupervisor", () => {
   it("bakes the configured main-agent extra instructions into the bootstrap pair, not per-turn prompts", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-extra-instructions-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
-    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
 
     supervisor.setMainAgentExtraInstructions("  항상 존대말로 답해주세요  ");
     await supervisor.prewarmMainAgent("/tmp/project");
@@ -2065,7 +2067,7 @@ describe("SessionSupervisor", () => {
   it("applies configured thinking level to the active main runtime", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
-    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
 
     await supervisor.prewarmMainAgent("/tmp/project");
     const handle = mainRuntime.handle!;
@@ -2078,7 +2080,7 @@ describe("SessionSupervisor", () => {
   it("injects the main-agent bootstrap pair on a fresh prewarm so the rules ride the first turn", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
-    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
 
     await supervisor.prewarmMainAgent("/tmp/project");
     expect(mainRuntime.handle?.bootstrapInjections).toHaveLength(1);
@@ -2092,7 +2094,7 @@ describe("SessionSupervisor", () => {
     const store = new SessionStore(dir);
     await store.saveMainAgentState({ sessionFilePath: "/tmp/main-pi-session.jsonl", cwd: "/tmp/project", messages: [] });
     const mainRuntime = new ResumableRuntime();
-    const supervisor = new SessionSupervisor(new ManualRuntime(), store, undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store, { mainRuntime });
     await supervisor.load();
 
     await supervisor.route(context("재시작 후 질문"));
@@ -2103,7 +2105,7 @@ describe("SessionSupervisor", () => {
   it("injects the bootstrap pair when the main runtime cannot prewarm and goes straight to create", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
 
     await supervisor.route(context("첫 창을연 텍스트"));
 
@@ -2115,7 +2117,7 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
     const replies: Array<{ contextId: string; text: string }> = [];
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
 
@@ -2177,7 +2179,7 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
 
     const userCtx = context("사이드 시작");
     await supervisor.route(userCtx);
@@ -2198,7 +2200,7 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
     const replies: Array<{ contextId: string; text: string }> = [];
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
 
@@ -2232,7 +2234,7 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
 
     const userCtx = context("조용히 진행");
     await supervisor.route(userCtx);
@@ -2257,7 +2259,7 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
 
     const userCtx = context("긴 작업");
     await supervisor.route(userCtx);
@@ -2294,7 +2296,7 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
     const replies: Array<{ contextId: string; text: string }> = [];
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
 
@@ -2323,7 +2325,7 @@ describe("SessionSupervisor", () => {
 
   it("routes complex requests to the long-running runtime", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
-    const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir), undefined, { taskRouter: new StaticTaskRouter({ route: "handoff", reason: "needs tools" }) });
+    const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir), { taskRouter: new StaticTaskRouter({ route: "handoff", reason: "needs tools" }) });
 
     const session = await supervisor.route(context("코드 수정해줘"));
 
@@ -2381,7 +2383,7 @@ describe("SessionSupervisor", () => {
   it("stores the final assistant answer instead of replacing it with a generic completion label", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), new ArtifactStore(dir));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     const session = await supervisor.create(context("summarize video"));
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "영상 요약입니다.\n\n핵심 내용은 agentic engineering입니다." });
@@ -2392,30 +2394,33 @@ describe("SessionSupervisor", () => {
     expect(updated.status).toBe("completed");
     expect(updated.finalAnswer).toBe("영상 요약입니다.\n\n핵심 내용은 agentic engineering입니다.");
     expect(updated.lastSummary).toBe("영상 요약입니다.");
-    const reportPath = updated.artifacts.find((artifact) => artifact.id === "report")?.path;
-    expect(reportPath).toBeTruthy();
-    const markdown = await readFile(reportPath!, "utf8");
-    expect(markdown).toContain("핵심 내용은 agentic engineering입니다.");
-    expect(markdown).not.toContain("## Final answer\nCompleted");
+    expect(updated.artifacts.some((artifact) => artifact.id === "report")).toBe(false);
   });
 
   it("emits terminal session update before terminal artifacts", async () => {
+    // Use a link in the final answer so the materializer emits a github
+    // artifact at terminal status — this is the only artifact type produced
+    // automatically now that session report file generation is gone.
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), new ArtifactStore(dir));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     const events: string[] = [];
     supervisor.on("session", (updated) => {
       if (updated.status === "completed") events.push("session:completed");
     });
     supervisor.on("artifact", (_sessionId, artifact) => events.push(`artifact:${artifact.kind}`));
+    // Emit the GitHub URL inside the assistant's final answer so it shows up in
+    // session.finalAnswer when the materializer runs at terminal status — not in
+    // the initial context (which would emit the artifact at create time, before
+    // session:completed).
     const session = await supervisor.create(context("ordering terminal"));
 
-    runtime.handle?.emit({ type: "assistant_delta", delta: "Done" });
+    runtime.handle?.emit({ type: "assistant_delta", delta: "Done. PR: https://github.com/acme/repo/pull/99" });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
     expect(events.indexOf("session:completed")).toBeGreaterThanOrEqual(0);
-    expect(events.indexOf("artifact:report")).toBeGreaterThan(events.indexOf("session:completed"));
+    expect(events.indexOf("artifact:github")).toBeGreaterThan(events.indexOf("session:completed"));
     expect(supervisor.get(session.id)?.status).toBe("completed");
   });
 
@@ -2521,7 +2526,7 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), { mainRuntime });
     await supervisor.load();
     const session = await supervisor.create({ ...context("slash command race"), cwd: "/tmp/product" });
     await supervisor.prewarmMainAgent("/tmp/picky");
@@ -2559,7 +2564,7 @@ describe("SessionSupervisor", () => {
       { name: "skill:general-click-event-insight", description: "Product insight", source: "skill" },
     ]);
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
-    const supervisor = new SessionSupervisor(runtime, store, undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(runtime, store, { mainRuntime });
     await supervisor.load();
     await supervisor.prewarmMainAgent("/tmp/picky");
     mainRuntime.handle!.slashCommands = [{ name: "skill:context7-cli", description: "Docs", source: "skill" }];
@@ -2574,7 +2579,7 @@ describe("SessionSupervisor", () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
-    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), undefined, { mainRuntime });
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), { mainRuntime });
     await supervisor.load();
     const session = await supervisor.create(context("slash commands"));
     await supervisor.prewarmMainAgent("/tmp/project");

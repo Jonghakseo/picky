@@ -2,101 +2,10 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ArtifactStore, extractChangedFilesFromExplicitText, extractGithubPullRequestUrls, extractSessionLinkArtifacts, extractSessionLinks, githubPullRequestTitle, renderSessionReport, timestampedReportFileName } from "./artifact-store.js";
+import { extractChangedFilesFromExplicitText, extractGithubPullRequestUrls, extractSessionLinkArtifacts, extractSessionLinks, githubPullRequestTitle } from "./artifact-store.js";
 import { LogStore } from "./log-store.js";
 
-describe("ArtifactStore", () => {
-  it("writes, reads, and lists artifacts under injected app support root", async () => {
-    const root = await mkdtemp(join(tmpdir(), "picky-artifacts-"));
-    const store = new ArtifactStore(root);
-    const artifact = await store.write("session-1", { id: "report", kind: "report", title: "Report", fileName: "report.md", content: "# Done" });
-
-    expect(artifact.path).toContain(root);
-    await expect(store.read("session-1", "report.md")).resolves.toEqual(Buffer.from("# Done"));
-    await expect(store.list("session-1")).resolves.toEqual(["report.md"]);
-  });
-
-  it("writes timestamped report versions while keeping the HUD artifact id stable", async () => {
-    const root = await mkdtemp(join(tmpdir(), "picky-artifacts-"));
-    const store = new ArtifactStore(root);
-    const baseSession = {
-      id: "session-versions",
-      title: "Versioned report",
-      status: "completed" as const,
-      cwd: "/tmp/project",
-      createdAt: "2026-05-01T00:00:00.000Z",
-      logs: [],
-      tools: [],
-      artifacts: [],
-      changedFiles: [],
-    };
-
-    const first = await store.writeSessionReport({ ...baseSession, updatedAt: "2026-05-01T00:00:01.123Z", finalAnswer: "first answer" });
-    const second = await store.writeSessionReport({ ...baseSession, updatedAt: "2026-05-01T00:00:02.456Z", finalAnswer: "second answer" });
-
-    expect(first).toMatchObject({ id: "report", kind: "report", title: "Session report" });
-    expect(second).toMatchObject({ id: "report", kind: "report", title: "Session report" });
-    expect(first.path).toContain("report-2026-05-01T00-00-01-123Z.md");
-    expect(second.path).toContain("report-2026-05-01T00-00-02-456Z.md");
-    expect(first.path).not.toBe(second.path);
-    expect((await store.list("session-versions")).sort()).toEqual([
-      "report-2026-05-01T00-00-01-123Z.md",
-      "report-2026-05-01T00-00-02-456Z.md",
-    ]);
-    expect((await store.read("session-versions", "report-2026-05-01T00-00-01-123Z.md")).toString("utf8")).toContain("first answer");
-    expect((await store.read("session-versions", "report-2026-05-01T00-00-02-456Z.md")).toString("utf8")).toContain("second answer");
-  });
-
-  it("sanitizes report timestamps for safe artifact filenames", () => {
-    expect(timestampedReportFileName("2026-05-01T00:00:01.123Z")).toBe("report-2026-05-01T00-00-01-123Z.md");
-  });
-
-  it("generates neutral terminal reports for completed, failed, and cancelled sessions", async () => {
-    for (const status of ["completed", "failed", "cancelled"] as const) {
-      const markdown = renderSessionReport({
-        id: `session-${status}`,
-        title: "Final task",
-        status,
-        cwd: "/tmp/project",
-        createdAt: "2026-05-01T00:00:00.000Z",
-        updatedAt: "2026-05-01T00:00:01.000Z",
-        lastSummary: "Final answer. PR: https://github.com/acme/repo/pull/42",
-        logs: [],
-        tools: [{ toolCallId: "tool-1", name: "bash", status: "succeeded", preview: "tests passed" }],
-        artifacts: [],
-        changedFiles: [],
-      });
-      expect(markdown).toContain(`Status: \`${status}\``);
-      expect(markdown).toContain("Final answer");
-      expect(markdown).not.toContain("Verification passed");
-    }
-  });
-
-  it("renders tool summary as tool call counts only", () => {
-    const markdown = renderSessionReport({
-      id: "session-tools",
-      title: "Tool task",
-      status: "completed",
-      cwd: "/tmp/project",
-      createdAt: "2026-05-01T00:00:00.000Z",
-      updatedAt: "2026-05-01T00:00:01.000Z",
-      logs: [],
-      tools: [
-        { toolCallId: "tool-1", name: "bash", status: "succeeded", preview: "tests passed" },
-        { toolCallId: "tool-2", name: "bash", status: "failed", preview: "error output" },
-        { toolCallId: "tool-3", name: "read", status: "succeeded", preview: "file contents" },
-      ],
-      artifacts: [],
-      changedFiles: [],
-    });
-
-    expect(markdown).toContain("## Tool summary\n- `bash`: 2\n- `read`: 1");
-    expect(markdown).not.toContain("tests passed");
-    expect(markdown).not.toContain("error output");
-    expect(markdown).not.toContain("succeeded");
-    expect(markdown).not.toContain("failed");
-  });
-
+describe("session link extraction", () => {
   it("extracts known work links and changed files only from explicit output", () => {
     expect(extractGithubPullRequestUrls("Created https://github.com/acme/repo/pull/42")).toEqual(["https://github.com/acme/repo/pull/42"]);
     expect(githubPullRequestTitle("https://github.com/acme/repo/issues/2777")).toBe("#2777");
@@ -131,12 +40,6 @@ describe("ArtifactStore", () => {
     expect(extractSessionLinkArtifacts("https://github.com/acme/repo/pull/42", "2026-05-01T00:00:00.000Z")[0]).toMatchObject({ kind: "github", title: "#42", url: "https://github.com/acme/repo/pull/42" });
     expect(extractGithubPullRequestUrls("I will open a PR later")).toEqual([]);
     expect(extractChangedFilesFromExplicitText("Changed file: M Picky/App.swift - updated HUD")).toEqual([{ status: "M", path: "Picky/App.swift", summary: "updated HUD" }]);
-  });
-
-  it("rejects path traversal artifact names and unsafe session ids", async () => {
-    const store = new ArtifactStore(await mkdtemp(join(tmpdir(), "picky-artifacts-")));
-    await expect(store.write("session-1", { id: "evil", kind: "report", title: "Evil", fileName: "../evil", content: "no" })).rejects.toThrow(/Unsafe artifact path/);
-    await expect(store.write("../session", { id: "evil", kind: "report", title: "Evil", fileName: "ok.md", content: "no" })).rejects.toThrow(/Unsafe path segment/);
   });
 });
 

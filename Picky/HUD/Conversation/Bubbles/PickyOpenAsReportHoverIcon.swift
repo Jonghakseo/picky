@@ -11,9 +11,12 @@
 import SwiftUI
 
 /// Compact icon button that floats at the corner of a message bubble. The
-/// button itself is small (~18pt) and uses the same arrow-square glyph as the
-/// existing footer chip (`PickyOpenAsReportButton`) so the affordance stays
-/// recognizable across both surfaces.
+/// button itself is small (~20pt) and uses the SF Symbol arrow-square glyph
+/// commonly associated with "open in a separate window/view".
+///
+/// This is the only "open as report" affordance in the conversation card after
+/// the latest-reply footer chip was removed; every text-bearing message uses
+/// it to expand into the full markdown viewer.
 struct PickyOpenAsReportHoverIcon: View {
     let action: () -> Void
 

@@ -473,25 +473,15 @@ struct PickyConversationCardViewTests {
         let viewModel = makeViewModel()
         let activeWithPiSession = makeConversationSession(status: .running, logs: ["pi session: /tmp/picky.pi-session"])
         let terminalWithoutPiSession = makeConversationSession(status: .completed)
-        let terminalWithReportArtifact = makeConversationSession(
-            status: .completed,
-            artifacts: [PickyArtifact(id: "a-report", kind: "report", title: "Report", path: "/tmp/report.md", url: nil, updatedAt: baseDate)]
-        )
         let activeMenu = PickyConversationMenu(session: activeWithPiSession, viewModel: viewModel)
         #expect(activeMenu.canOpenPiTerminal)
         #expect(activeMenu.canCopyResumeCommand)
-        #expect(!activeMenu.canOpenReport)
         #expect(activeMenu.canStop)
 
         let noPiMenu = PickyConversationMenu(session: terminalWithoutPiSession, viewModel: viewModel)
         #expect(!noPiMenu.canOpenPiTerminal)
         #expect(!noPiMenu.canCopyResumeCommand)
-        #expect(!noPiMenu.canOpenReport)
         #expect(!noPiMenu.canStop)
-
-        let reportArtifactMenu = PickyConversationMenu(session: terminalWithReportArtifact, viewModel: viewModel)
-        #expect(reportArtifactMenu.canOpenReport)
-
     }
 
     @Test func cardHoverSeedsVoiceFollowUpTargetForPushToTalk() async throws {
@@ -746,23 +736,6 @@ struct PickyConversationCardViewTests {
         #expect(!snapshot.showsActivitySummary)
     }
 
-    @Test func latestAgentResponseShowsOpenAsReportAction() {
-        let session = makeConversationSession(
-            status: .completed,
-            messages: [
-                message("u1", kind: .userText, text: "first"),
-                message("a1", kind: .agentText, text: "older response"),
-                message("u2", kind: .userText, text: "latest"),
-                message("a2", kind: .agentText, text: "latest response")
-            ]
-        )
-        let viewModel = makeViewModel()
-        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
-
-        #expect(session.canOpenMarkdownReport)
-        #expect(session.latestOpenAsReportMessage?.id == "a2")
-        #expect(snapshot.openAsReportActionCount == 1)
-    }
 }
 
 private let baseDate = Date(timeIntervalSince1970: 1_777_777_777)

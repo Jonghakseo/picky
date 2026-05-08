@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
-import { ArtifactStore, extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "./artifact-store.js";
+import { extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "./artifact-store.js";
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
@@ -92,9 +92,9 @@ export class SessionSupervisor extends EventEmitter {
   // observed to revert the session back to 'running' after a /name slash command.
   private patchChains = new Map<string, Promise<void>>();
 
-  constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, artifactStore?: ArtifactStore, private readonly options: SessionSupervisorOptions = {}) {
+  constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, private readonly options: SessionSupervisorOptions = {}) {
     super();
-    this.artifactMaterializer = new ArtifactMaterializer(artifactStore);
+    this.artifactMaterializer = new ArtifactMaterializer();
     this.messageBuilder = new SessionMessageBuilder({
       emitAppended: async (sessionId, message, seq) => { await this.chainEmit(sessionId, async () => { this.emit("messageAppended", sessionId, message, seq); }); },
       emitReplaced: async (sessionId, messageId, message, seq) => { await this.chainEmit(sessionId, async () => { this.emit("messageReplaced", sessionId, messageId, message, seq); }); },
@@ -1321,13 +1321,6 @@ export class SessionSupervisor extends EventEmitter {
       await this.patch(sessionId, { pendingExtensionUiRequest: undefined, status: "running", lastSummary: "Extension UI answered", thinkingPreview: undefined });
     }
     return this.mustGet(sessionId);
-  }
-
-  async openArtifact(sessionId: string, artifactId: string): Promise<string> {
-    const session = this.mustGet(sessionId);
-    const artifact = session.artifacts.find((candidate) => candidate.id === artifactId);
-    if (!artifact?.path && !artifact?.url) throw new Error(`Unknown artifact: ${artifactId}`);
-    return artifact.path ?? artifact.url!;
   }
 
   private async attachRuntimeHandle(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {

@@ -111,10 +111,6 @@ export class AgentdServer {
       if (command.type === "steer") await this.options.supervisor.steer(command.sessionId, command.text, command.context);
       if (command.type === "abort") await this.options.supervisor.abort(command.sessionId);
       if (command.type === "answerExtensionUi") await this.options.supervisor.answerExtensionUi(command.sessionId, command.requestId, command.value);
-      if (command.type === "openArtifact") {
-        const path = await this.options.supervisor.openArtifact(command.sessionId, command.artifactId);
-        this.send(ws, { type: "artifactOpened", sessionId: command.sessionId, artifactId: command.artifactId, path });
-      }
     } catch (error) {
       const commandId = typeof parsed === "object" && parsed && "id" in parsed ? String((parsed as { id: unknown }).id) : undefined;
       logAgentd("command failed", { commandId, error: error instanceof Error ? error.message : String(error) });
@@ -196,8 +192,6 @@ function commandLogFields(command: ReturnType<typeof parseCommand>): Record<stri
       return { commandId: command.id, type: command.type, sessionId: command.sessionId };
     case "answerExtensionUi":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, requestId: command.requestId };
-    case "openArtifact":
-      return { commandId: command.id, type: command.type, sessionId: command.sessionId, artifactId: command.artifactId };
     case "listSessions":
     case "listMainMessages":
     case "resetMainAgent":
@@ -232,8 +226,6 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.request.sessionId, requestId: event.request.id, method: event.request.method };
     case "artifactUpdated":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, artifactId: event.artifact.id, kind: event.artifact.kind };
-    case "artifactOpened":
-      return { eventId: event.id, type: event.type, sessionId: event.sessionId, artifactId: event.artifactId };
     case "pointerOverlayRequested":
       return { eventId: event.id, type: event.type, requestId: event.request.id, screenId: event.request.screenId };
     case "slashCommandsSnapshot":

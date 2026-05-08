@@ -1,5 +1,5 @@
 import { AgentdServer } from "./server.js";
-import { ArtifactStore, defaultAppSupportRoot } from "./artifact-store.js";
+import { defaultAppSupportRoot } from "./artifact-store.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
@@ -75,7 +75,7 @@ const mainRuntime = useMockRuntime
         }),
       ],
     });
-supervisor = new SessionSupervisor(runtime, new SessionStore(appSupportDir), new ArtifactStore(appSupportDir), {
+supervisor = new SessionSupervisor(runtime, new SessionStore(appSupportDir), {
   taskRouter: useMockRuntime ? new ConservativeMockTaskRouter() : undefined,
   mainRuntime,
 });

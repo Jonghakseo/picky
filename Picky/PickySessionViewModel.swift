@@ -141,18 +141,6 @@ final class PickySessionListViewModel: ObservableObject {
 
         var isTerminal: Bool { status.isTerminal }
 
-        var reportArtifact: PickyArtifact? {
-            artifacts.first { $0.kind == "report" }
-        }
-
-        var latestOpenAsReportMessage: PickySessionMessage? {
-            messages.reversed().first { $0.openAsReportMarkdown != nil }
-        }
-
-        var canOpenMarkdownReport: Bool {
-            reportArtifact != nil || latestOpenAsReportMessage != nil
-        }
-
         var linkBadgeArtifacts: [PickyArtifact] {
             artifacts.filter(\.isHUDLinkBadge)
         }
@@ -577,38 +565,6 @@ final class PickySessionListViewModel: ObservableObject {
         return .dateRange(start: priorUserText?.createdAt, end: activity.createdAt)
     }
 
-    func openReport(sessionID: String, workspace _: NSWorkspace = .shared) async throws {
-        pickySessionLog("open report session=\(sessionID)")
-        guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }) else {
-            lastError = "Report is not available yet"
-            throw PickySessionListViewModelError.missingReport
-        }
-        if let artifact = session.reportArtifact {
-            if let path = artifact.path {
-                do {
-                    try openReportFile(sessionID: sessionID, path: path)
-                } catch {
-                    lastError = error.localizedDescription
-                    throw error
-                }
-            } else {
-                try await client.send(PickyCommandEnvelope(type: .openArtifact, sessionId: sessionID, artifactId: artifact.id))
-            }
-            return
-        }
-        if let message = session.latestOpenAsReportMessage, let markdown = message.openAsReportMarkdown {
-            try openGeneratedReport(
-                windowKey: "\(sessionID):message:\(message.id)",
-                title: "\(session.title) — Response",
-                fileName: "response-\(sanitizedReportFileComponent(message.id)).md",
-                markdown: markdown
-            )
-            return
-        }
-        lastError = "Report is not available yet"
-        throw PickySessionListViewModelError.missingReport
-    }
-
     /// Opens a specific message's text content in the markdown report viewer.
     /// Used by the per-bubble hover-icon affordance so the user can expand any
     /// user request or agent reply (not just the latest one) into the full viewer.
@@ -647,14 +603,6 @@ final class PickySessionListViewModel: ObservableObject {
             lastError = error.localizedDescription
             throw error
         }
-    }
-
-    private func openReportFile(sessionID: String, path: String) throws {
-        let url = try artifactPathValidator.validateReadableFile(path: path)
-        let markdown = try String(contentsOf: url, encoding: .utf8)
-        let title = (sessions + archivedSessions).first(where: { $0.id == sessionID })?.title ?? "Session report"
-        lastOpenedArtifactPath = url.path
-        try reportPresenter.openReport(sessionID: sessionID, title: title, fileURL: url, markdown: markdown)
     }
 
     private func openGeneratedReport(windowKey: String, title: String, fileName: String, markdown: String) throws {
@@ -920,12 +868,6 @@ final class PickySessionListViewModel: ObservableObject {
                     card.artifacts.append(artifact)
                 }
                 card.updatedAt = artifact.updatedAt
-            }
-        case .artifactOpened(let sessionId, _, let path):
-            do {
-                try openReportFile(sessionID: sessionId, path: path)
-            } catch {
-                lastError = error.localizedDescription
             }
         case .slashCommandsSnapshot(let sessionId, let commands):
             pickySessionLog("slash commands snapshot session=\(sessionId) commands=\(commands.count)")

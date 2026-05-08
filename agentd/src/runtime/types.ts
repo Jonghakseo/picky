@@ -45,7 +45,6 @@ export interface RuntimeSessionHandle {
   steer(prompt: BuiltPrompt): Promise<RuntimeSteerResult>;
   abort(): Promise<void>;
   answerExtensionUi?(requestId: string, value: unknown): Promise<void>;
-  openArtifact?(artifactId: string): Promise<string>;
   /**
    * Append a synthetic user/assistant pair to the start of a fresh session
    * transcript without invoking the model. No-op when the session already has

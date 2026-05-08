@@ -68,8 +68,6 @@ struct PickyConversationListView: View {
         snapshot.pendingBubbleCount += session.followUpMode == .all ? 0 : followUps.count
         snapshot.pendingBubbleCount += session.steeringMode == .all ? 0 : steers.count
 
-        snapshot.openAsReportActionCount = visibleMessages.filter { showsOpenAsReportAction(for: $0) }.count
-
         for message in session.messages {
             switch message.kind {
             case .agentThinking:
@@ -105,9 +103,7 @@ struct PickyConversationListView: View {
         case .agentText:
             PickyAgentBubbleView(
                 message: message,
-                showsOpenAsReportAction: showsOpenAsReportAction(for: message),
-                onOpenAsReport: { openReport() },
-                onOpenMessageAsReport: openMessageReportAction(for: message)
+                onOpenAsReport: openMessageReportAction(for: message)
             )
         case .agentThinking:
             PickyTypingBubbleView(message: message, initiallyCollapsed: PickyPiSettingsReader.hideThinkingBlock(cwd: session.cwd))
@@ -139,7 +135,7 @@ struct PickyConversationListView: View {
             } else {
                 PickyAgentBubbleView(
                     message: message,
-                    onOpenMessageAsReport: openMessageReportAction(for: message)
+                    onOpenAsReport: openMessageReportAction(for: message)
                 )
             }
         }
@@ -155,19 +151,6 @@ struct PickyConversationListView: View {
         return { [weak viewModel] in
             Task { try? await viewModel?.openReport(sessionID: sessionID, messageID: messageID) }
         }
-    }
-
-    private func showsOpenAsReportAction(for message: PickySessionMessage) -> Bool {
-        // While the side agent is mid-turn (Working badge), interim bubbles can carry an
-        // openAsReportMarkdown payload but the report itself is not finalized yet. Showing the
-        // action there encourages users to open a half-baked report, so suppress it until the
-        // session leaves the running state.
-        guard session.status != .running else { return false }
-        return session.canOpenMarkdownReport && message.id == session.latestOpenAsReportMessage?.id
-    }
-
-    private func openReport() {
-        Task { try? await viewModel.openReport(sessionID: session.id) }
     }
 
     private func openCurrentTurnToolHistory() {
@@ -342,7 +325,6 @@ struct PickyConversationListRenderSnapshot: Equatable {
     var typingBubbleCount = 0
     var batchGroupCount = 0
     var pendingBubbleCount = 0
-    var openAsReportActionCount = 0
     var questionBubbleCount = 0
     var errorBubbleCount = 0
     var activitySummaryCount = 0

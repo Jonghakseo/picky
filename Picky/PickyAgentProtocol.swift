@@ -96,7 +96,6 @@ enum PickyCommandType: String, Codable, Equatable {
     case listSlashCommands
     case getSession
     case answerExtensionUi
-    case openArtifact
     case setNotifyMainOnCompletion
     case setSessionArchived
 }
@@ -130,7 +129,6 @@ enum PickyEvent: Equatable {
     case toolActivityUpdated(sessionId: String, tool: PickyToolActivity)
     case extensionUiRequest(PickyExtensionUiRequest)
     case artifactUpdated(sessionId: String, artifact: PickyArtifact)
-    case artifactOpened(sessionId: String, artifactId: String, path: String)
     case pointerOverlayRequested(PickyPointerOverlayRequest)
     case slashCommandsSnapshot(sessionId: String, commands: [PickySlashCommand])
     case sessionMessageAppended(sessionId: String, message: PickySessionMessage, seq: Int)
@@ -142,7 +140,7 @@ enum PickyEvent: Equatable {
     case unknown(type: String)
 
     private enum CodingKeys: String, CodingKey {
-        case sessions, session, sessionId, line, tool, request, artifact, artifactId, path, contextId, text, messages, message, commands
+        case sessions, session, sessionId, line, tool, request, artifact, contextId, text, messages, message, commands
         case messageId, seq, steering, followUp, steeringMode, followUpMode, activitySummary, originSource, replyKind, inputId
     }
 
@@ -175,9 +173,6 @@ enum PickyEvent: Equatable {
         case "artifactUpdated":
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self = .artifactUpdated(sessionId: try c.decode(String.self, forKey: .sessionId), artifact: try c.decode(PickyArtifact.self, forKey: .artifact))
-        case "artifactOpened":
-            let c = try decoder.container(keyedBy: CodingKeys.self)
-            self = .artifactOpened(sessionId: try c.decode(String.self, forKey: .sessionId), artifactId: try c.decode(String.self, forKey: .artifactId), path: try c.decode(String.self, forKey: .path))
         case "pointerOverlayRequested":
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self = .pointerOverlayRequested(try c.decode(PickyPointerOverlayRequest.self, forKey: .request))

@@ -9,21 +9,12 @@ import SwiftUI
 
 struct PickyAgentBubbleView: View {
     let message: PickySessionMessage
-    var showsOpenAsReportAction = false
-    var onOpenAsReport: (() -> Void)?
-    /// Per-message opener used by the hover icon. Distinct from `onOpenAsReport`,
-    /// which drives the latest-reply footer chip and is session-scoped.
-    var onOpenMessageAsReport: (() -> Void)? = nil
+    var onOpenAsReport: (() -> Void)? = nil
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 6) {
                 PickyConversationMarkdownText(markdown: previewText, lineLimit: PickyAgentResponsePreview.maxLines)
-                if showsFooter, showsOpenAsReportAction, let onOpenAsReport {
-                    HStack(alignment: .center, spacing: 7) {
-                        PickyOpenAsReportButton(action: onOpenAsReport)
-                    }
-                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -36,13 +27,7 @@ struct PickyAgentBubbleView: View {
                 agentBubbleShape
                     .stroke(DS.Colors.borderSubtle.opacity(0.72), lineWidth: 0.7)
             )
-            // Suppress the hover icon when the latest-reply footer chip is
-            // already visible — they would target the same action and stacking
-            // both feels redundant.
-            .openAsReportHoverIcon(
-                onOpen: showsOpenAsReportAction ? nil : onOpenMessageAsReport,
-                alignment: .topTrailing
-            )
+            .openAsReportHoverIcon(onOpen: onOpenAsReport, alignment: .topTrailing)
             Spacer(minLength: 48)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -56,10 +41,6 @@ struct PickyAgentBubbleView: View {
             topTrailingRadius: 12,
             style: .continuous
         )
-    }
-
-    private var showsFooter: Bool {
-        showsOpenAsReportAction && onOpenAsReport != nil
     }
 
     private var previewText: String {
@@ -99,34 +80,5 @@ enum PickyAgentResponsePreview {
 
         guard didTruncate else { return text }
         return candidate.trimmingCharacters(in: .whitespacesAndNewlines) + "..."
-    }
-}
-
-struct PickyOpenAsReportButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: "arrow.up.right.square")
-                    .font(.system(size: 8.5, weight: .semibold))
-                Text("Open as report")
-                    .font(PickyHUDTypography.metaSemibold)
-                Text("⌘R")
-                    .font(PickyHUDTypography.minimumMonospacedBold)
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(Capsule().fill(DS.Colors.surface1.opacity(0.9)))
-            }
-            .foregroundColor(DS.Colors.accentText)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(Capsule().fill(DS.Colors.accentSubtle.opacity(0.28)))
-            .overlay(Capsule().stroke(DS.Colors.accentText.opacity(0.24), lineWidth: 0.5))
-        }
-        .buttonStyle(.plain)
-        .help("Open this response in the report viewer (⌘R)")
-        .pointerCursor()
     }
 }

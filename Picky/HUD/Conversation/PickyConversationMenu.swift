@@ -13,7 +13,6 @@ struct PickyConversationMenu: View {
     var onArchive: (() -> Void)?
 
     var canOpenPiTerminal: Bool { session.piSessionFilePath != nil }
-    var canOpenReport: Bool { session.canOpenMarkdownReport }
     var canCopyResumeCommand: Bool { session.piSessionFilePath != nil }
     var canDuplicate: Bool { session.piSessionFilePath != nil }
     var canStop: Bool { !session.status.isTerminal }
@@ -25,12 +24,6 @@ struct PickyConversationMenu: View {
             }
             .keyboardShortcut("t", modifiers: .command)
             .disabled(!canOpenPiTerminal)
-
-            Button("Open report") {
-                Task { try? await viewModel.openReport(sessionID: session.id) }
-            }
-            .keyboardShortcut("r", modifiers: .command)
-            .disabled(!canOpenReport)
 
             Button("Copy resume command") {
                 viewModel.copyTerminalResumeCommand(sessionID: session.id)

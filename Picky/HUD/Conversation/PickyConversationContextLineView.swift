@@ -16,6 +16,17 @@ struct PickyConversationContextLineView: View {
     @State private var inFlightGitAction: GitRemoteAction?
     @State private var manualRefreshTick: Int = 0
 
+    init(session: PickySessionListViewModel.SessionCard) {
+        self.session = session
+        // Seed @State synchronously from process-wide caches so the very first paint after a
+        // session switch already has git/PR data — eliminates the staircase of layout shifts
+        // that otherwise happens as each .task fires asynchronously.
+        let cachedGit = PickyGitRepositoryStatus.cached(cwd: session.cwd)
+        _gitStatus = State(initialValue: cachedGit)
+        let cachedPR = PickyGitHubPullRequestStatus.cached(cwd: session.cwd, branch: cachedGit?.branchName)
+        _pullRequestStatus = State(initialValue: cachedPR?.status ?? nil)
+    }
+
     private enum GitRemoteAction: Equatable {
         case push
         case pull
@@ -35,12 +46,8 @@ struct PickyConversationContextLineView: View {
         }
     }
 
-    private var gitStatusRefreshKey: String {
+    private var contextRefreshKey: String {
         "\(session.cwd ?? "")|\(session.updatedAt.timeIntervalSince1970)|\(manualRefreshTick)"
-    }
-
-    private var pullRequestRefreshKey: String {
-        "\(session.cwd ?? "")|\(gitStatus?.branchName ?? "")|\(manualRefreshTick)"
     }
 
     var body: some View {
@@ -60,26 +67,28 @@ struct PickyConversationContextLineView: View {
         .font(.system(size: 10.5, weight: .medium))
         .foregroundColor(DS.Colors.textTertiary)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .task(id: gitStatusRefreshKey) {
-            if let cachedStatus = PickyGitRepositoryStatus.cached(cwd: session.cwd) {
+        .task(id: contextRefreshKey) {
+            // SWR step 1: hydrate from cache in case cwd became valid after init seeding.
+            if gitStatus == nil, let cachedStatus = PickyGitRepositoryStatus.cached(cwd: session.cwd) {
                 gitStatus = cachedStatus
             }
-            let loadedStatus = await PickyGitRepositoryStatus.load(cwd: session.cwd)
+
+            // SWR step 2: revalidate git (cheap, always run so insertions/ahead-behind stay accurate).
+            let freshGit = await PickyGitRepositoryStatus.load(cwd: session.cwd)
             guard !Task.isCancelled else { return }
-            gitStatus = loadedStatus
-        }
-        .task(id: pullRequestRefreshKey) {
-            let branch = gitStatus?.branchName
-            let cachedEntry = PickyGitHubPullRequestStatus.cached(cwd: session.cwd, branch: branch)
-            if let cachedEntry {
-                // SWR: paint the cached value first so the badge stays visible during revalidation.
-                pullRequestStatus = cachedEntry.status
+            gitStatus = freshGit
+
+            // SWR step 3: PR — paint cached value, only hit `gh` if cache is missing or stale.
+            let branch = freshGit?.branchName
+            let cachedPR = PickyGitHubPullRequestStatus.cached(cwd: session.cwd, branch: branch)
+            if let cachedPR {
+                pullRequestStatus = cachedPR.status
             }
-            let needsFetch = cachedEntry == nil || cachedEntry?.isStale() == true
-            guard needsFetch else { return }
-            let loadedStatus = await PickyGitHubPullRequestStatus.load(cwd: session.cwd, branch: branch)
+            let needsPRFetch = cachedPR == nil || cachedPR?.isStale() == true
+            guard needsPRFetch else { return }
+            let freshPR = await PickyGitHubPullRequestStatus.load(cwd: session.cwd, branch: branch)
             guard !Task.isCancelled else { return }
-            pullRequestStatus = loadedStatus
+            pullRequestStatus = freshPR
         }
     }
 

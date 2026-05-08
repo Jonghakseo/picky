@@ -114,6 +114,19 @@ struct PickyGitHubPullRequestStatus: Equatable {
         }
     }
 
+    /// Prefetch the PR by first resolving the current branch from `cwd` synchronously.
+    /// Used by the session list so that a never-visited session can paint the PR badge
+    /// from cache on the very first HUD render after the session loads.
+    static func prefetchIfNeeded(cwd: String?) {
+        let trimmedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmedCwd.isEmpty else { return }
+
+        Task.detached(priority: .utility) {
+            guard let git = PickyGitRepositoryStatus.loadSynchronously(cwd: trimmedCwd) else { return }
+            prefetchIfNeeded(cwd: trimmedCwd, branch: git.branchName)
+        }
+    }
+
     static func invalidateCache(cwd: String?, branch: String?) {
         guard let key = cacheKey(cwd: cwd, branch: branch) else { return }
         cacheLock.lock()

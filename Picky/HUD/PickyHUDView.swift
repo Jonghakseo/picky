@@ -24,8 +24,7 @@ struct PickyHUDView: View {
     var onDockHandleDragChanged: (CGFloat) -> Void = { _ in }
     var onDockHandleDragEnded: () -> Void = { }
     var onArchiveUndoRequested: (_ sessionID: String, _ title: String) -> Void = { _, _ in }
-    @State private var pinnedSessionID: String?
-    @State private var openedSessionID: String?
+    @State private var heldSession: PickyHUDDockHold?
     @State private var hoverPreviewSessionID: String?
     @State private var suppressedHoverSessionID: String?
     @State private var isHUDHovered = false
@@ -41,12 +40,22 @@ struct PickyHUDView: View {
     private var activeSessionID: String? {
         PickyHUDDockLayout.activeSessionID(
             visibleIDs: visibleSessions.map(\.id),
-            pinnedID: pinnedSessionID,
+            held: heldSession,
             previewID: PickyHUDDockLayout.previewSessionID(
                 hoveredID: hoverPreviewSessionID,
-                openedID: openedSessionID
+                heldID: heldSession?.sessionID
             )
         )
+    }
+
+    private var pinnedSessionID: String? {
+        if case let .pinned(sessionID) = heldSession { return sessionID }
+        return nil
+    }
+
+    private var openedSessionID: String? {
+        if case let .open(sessionID) = heldSession { return sessionID }
+        return nil
     }
 
     private var activeSession: PickySessionListViewModel.SessionCard? {
@@ -186,9 +195,7 @@ struct PickyHUDView: View {
     }
 
     private func isHoverPreviewSession(_ sessionID: String) -> Bool {
-        hoverPreviewSessionID == sessionID
-            && openedSessionID != sessionID
-            && pinnedSessionID != sessionID
+        hoverPreviewSessionID == sessionID && heldSession?.sessionID != sessionID
     }
 
     private func chooseFolderForEmptySideAgent() {
@@ -219,12 +226,12 @@ struct PickyHUDView: View {
 
     private func toggleOpenSession(_ sessionID: String) {
         cancelPendingClose()
-        let nextOpenedSessionID = PickyHUDDockLayout.openedSessionIDAfterClick(
-            current: openedSessionID,
+        let nextHeldSession = PickyHUDDockLayout.heldSessionAfterClick(
+            current: heldSession,
             clicked: sessionID
         )
-        openedSessionID = nextOpenedSessionID
-        if nextOpenedSessionID == nil {
+        heldSession = nextHeldSession
+        if nextHeldSession == nil {
             if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
             suppressedHoverSessionID = sessionID
         } else {
@@ -234,7 +241,7 @@ struct PickyHUDView: View {
 
     private func pinSession(_ sessionID: String) {
         cancelPendingClose()
-        pinnedSessionID = PickyHUDDockLayout.pinnedSessionIDAfterDoubleClick(current: pinnedSessionID, doubleClicked: sessionID)
+        heldSession = PickyHUDDockLayout.heldSessionAfterDoubleClick(current: heldSession, doubleClicked: sessionID)
         if isPointerInsideHUDSurface && suppressedHoverSessionID != sessionID {
             hoverPreviewSessionID = sessionID
         }
@@ -244,8 +251,7 @@ struct PickyHUDView: View {
         cancelPendingClose()
         let title = (visibleSessions + viewModel.sessions).first(where: { $0.id == sessionID })?.title ?? "Side agent"
         viewModel.archive(sessionID: sessionID)
-        if pinnedSessionID == sessionID { pinnedSessionID = nil }
-        if openedSessionID == sessionID { openedSessionID = nil }
+        if heldSession?.sessionID == sessionID { heldSession = nil }
         if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
         if suppressedHoverSessionID == sessionID { suppressedHoverSessionID = nil }
         onArchiveUndoRequested(sessionID, title)
@@ -267,8 +273,8 @@ struct PickyHUDView: View {
                     pinnedID: pinnedSessionID,
                     isDockHovered: isDockHovered
                 )
-                openedSessionID = PickyHUDDockLayout.openedSessionIDAfterCloseTimeout(
-                    current: openedSessionID,
+                heldSession = PickyHUDDockLayout.heldSessionAfterCloseTimeout(
+                    current: heldSession,
                     isHUDHovered: isStillInsideHUD
                 )
                 if !isStillInsideHUD { suppressedHoverSessionID = nil }

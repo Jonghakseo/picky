@@ -577,24 +577,34 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", pinnedID: nil, isDockHovered: false) == nil)
         #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", pinnedID: nil, isDockHovered: true) == "a")
         #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "b", pinnedID: "a", isDockHovered: false) == nil)
-        #expect(PickyHUDDockLayout.openedSessionIDAfterCloseTimeout(current: "opened", isHUDHovered: true) == "opened")
-        #expect(PickyHUDDockLayout.openedSessionIDAfterCloseTimeout(current: "opened", isHUDHovered: false) == nil)
+        #expect(PickyHUDDockLayout.heldSessionAfterCloseTimeout(current: .open("opened"), isHUDHovered: true) == .open("opened"))
+        #expect(PickyHUDDockLayout.heldSessionAfterCloseTimeout(current: .open("opened"), isHUDHovered: false) == nil)
     }
 
-    @Test func hudDockUsesPreviewThenPinnedAndClickTogglesOpen() throws {
+    @Test func hudDockUsesPreviewThenHeldSession() throws {
         let visibleIDs = ["first", "pinned", "opened", "hovered"]
-        #expect(PickyHUDDockLayout.previewSessionID(hoveredID: "hovered", openedID: "opened") == "hovered")
-        #expect(PickyHUDDockLayout.previewSessionID(hoveredID: nil, openedID: "opened") == "opened")
-        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, pinnedID: "pinned", previewID: "hovered") == "hovered")
-        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, pinnedID: "pinned", previewID: "opened") == "opened")
-        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, pinnedID: "missing", previewID: nil) == nil)
-        #expect(PickyHUDDockLayout.openedSessionIDAfterClick(current: nil, clicked: "opened") == "opened")
-        #expect(PickyHUDDockLayout.openedSessionIDAfterClick(current: "opened", clicked: "opened") == nil)
+        #expect(PickyHUDDockLayout.previewSessionID(hoveredID: "hovered", heldID: "opened") == "hovered")
+        #expect(PickyHUDDockLayout.previewSessionID(hoveredID: nil, heldID: "opened") == "opened")
+        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, held: .pinned("pinned"), previewID: "hovered") == "hovered")
+        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, held: .pinned("pinned"), previewID: "opened") == "opened")
+        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, held: .pinned("missing"), previewID: nil) == nil)
     }
 
-    @Test func hudDockDoubleClickTogglesPin() throws {
-        #expect(PickyHUDDockLayout.pinnedSessionIDAfterDoubleClick(current: "first", doubleClicked: "preview") == "preview")
-        #expect(PickyHUDDockLayout.pinnedSessionIDAfterDoubleClick(current: "preview", doubleClicked: "preview") == nil)
+    @Test func hudDockHeldStateIsExclusiveAcrossClickAndDoubleClick() throws {
+        #expect(PickyHUDDockLayout.heldSessionAfterClick(current: nil, clicked: "agent-a") == .open("agent-a"))
+        #expect(PickyHUDDockLayout.heldSessionAfterClick(current: .open("agent-a"), clicked: "agent-a") == nil)
+        #expect(PickyHUDDockLayout.heldSessionAfterClick(current: .open("agent-a"), clicked: "agent-b") == .open("agent-b"))
+        #expect(PickyHUDDockLayout.heldSessionAfterClick(current: .pinned("agent-a"), clicked: "agent-a") == nil)
+        #expect(PickyHUDDockLayout.heldSessionAfterClick(current: .pinned("agent-a"), clicked: "agent-b") == .open("agent-b"))
+        #expect(PickyHUDDockLayout.heldSessionAfterDoubleClick(current: nil, doubleClicked: "agent-a") == .pinned("agent-a"))
+        #expect(PickyHUDDockLayout.heldSessionAfterDoubleClick(current: .open("agent-a"), doubleClicked: "agent-a") == .pinned("agent-a"))
+        #expect(PickyHUDDockLayout.heldSessionAfterDoubleClick(current: .pinned("agent-a"), doubleClicked: "agent-b") == .pinned("agent-b"))
+    }
+
+    @Test func hudDockCloseTimeoutOnlyClearsOpenHold() throws {
+        #expect(PickyHUDDockLayout.heldSessionAfterCloseTimeout(current: .open("opened"), isHUDHovered: true) == .open("opened"))
+        #expect(PickyHUDDockLayout.heldSessionAfterCloseTimeout(current: .open("opened"), isHUDHovered: false) == nil)
+        #expect(PickyHUDDockLayout.heldSessionAfterCloseTimeout(current: .pinned("pinned"), isHUDHovered: false) == .pinned("pinned"))
     }
 
     @Test func hudDockKeepsGitSectionExpansionBySessionAcrossHoverClose() throws {

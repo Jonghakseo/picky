@@ -80,6 +80,26 @@ enum PickyHUDExpansion {
     }
 }
 
+enum PickyHUDDockHold: Equatable {
+    case open(String)
+    case pinned(String)
+
+    var sessionID: String {
+        switch self {
+        case let .open(sessionID), let .pinned(sessionID):
+            return sessionID
+        }
+    }
+
+    func isOpen(sessionID: String) -> Bool {
+        self == .open(sessionID)
+    }
+
+    func isPinned(sessionID: String) -> Bool {
+        self == .pinned(sessionID)
+    }
+}
+
 enum PickyHUDDockLayout {
     static let visibleSessionLimit = 12
     static let panelWidth: CGFloat = 540
@@ -96,14 +116,14 @@ enum PickyHUDDockLayout {
     static let closeDelayNanoseconds: UInt64 = 400_000_000
     static let defaultGitSectionExpanded = true
 
-    static func activeSessionID(visibleIDs: [String], pinnedID: String?, previewID: String?) -> String? {
+    static func activeSessionID(visibleIDs: [String], held: PickyHUDDockHold?, previewID: String?) -> String? {
         if let previewID, visibleIDs.contains(previewID) { return previewID }
-        if let pinnedID, visibleIDs.contains(pinnedID) { return pinnedID }
+        if let held, visibleIDs.contains(held.sessionID) { return held.sessionID }
         return nil
     }
 
-    static func previewSessionID(hoveredID: String?, openedID: String?) -> String? {
-        hoveredID ?? openedID
+    static func previewSessionID(hoveredID: String?, heldID: String?) -> String? {
+        hoveredID ?? heldID
     }
 
     static func previewSessionIDAfterDockHover(current: String?, sessionID: String, pinnedID: String?) -> String? {
@@ -114,16 +134,31 @@ enum PickyHUDDockLayout {
         isDockHovered ? current : nil
     }
 
-    static func openedSessionIDAfterCloseTimeout(current: String?, isHUDHovered: Bool) -> String? {
-        isHUDHovered ? current : nil
+    static func heldSessionAfterCloseTimeout(current: PickyHUDDockHold?, isHUDHovered: Bool) -> PickyHUDDockHold? {
+        switch current {
+        case .open:
+            return isHUDHovered ? current : nil
+        case .pinned, nil:
+            return current
+        }
     }
 
-    static func openedSessionIDAfterClick(current: String?, clicked: String) -> String? {
-        current == clicked ? nil : clicked
+    static func heldSessionAfterClick(current: PickyHUDDockHold?, clicked: String) -> PickyHUDDockHold? {
+        switch current {
+        case .open(clicked), .pinned(clicked):
+            return nil
+        case .open, .pinned, nil:
+            return .open(clicked)
+        }
     }
 
-    static func pinnedSessionIDAfterDoubleClick(current: String?, doubleClicked: String) -> String? {
-        current == doubleClicked ? nil : doubleClicked
+    static func heldSessionAfterDoubleClick(current: PickyHUDDockHold?, doubleClicked: String) -> PickyHUDDockHold? {
+        switch current {
+        case .pinned(doubleClicked):
+            return nil
+        case .open, .pinned, nil:
+            return .pinned(doubleClicked)
+        }
     }
 
     static func gitSectionExpansion(sessionID: String, storedValues: [String: Bool]) -> Bool {

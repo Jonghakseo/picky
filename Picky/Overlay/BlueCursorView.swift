@@ -1163,9 +1163,9 @@ struct BlueCursorView: View {
     /// returns. Without this retry, a BlueCursorView whose `.onAppear` fired
     /// before the cursor reached its screen would stay silent forever — until
     /// the user toggled a cursor preference to force a re-schedule.
-    private func scheduleNextIdleBehavior(delayRange: ClosedRange<Double> = 2...5) {
+    private func scheduleNextIdleBehavior(delayRange: ClosedRange<Double> = 4...10) {
         idleScheduleTimer?.invalidate()
-        let effectiveRange = isIdleEligibleForScheduling ? delayRange : 6.0...12.0
+        let effectiveRange = isIdleEligibleForScheduling ? delayRange : 12.0...24.0
         let delay = Double.random(in: effectiveRange)
         idleScheduleTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { _ in
             self.runRandomIdleBehaviorIfEligible()
@@ -1187,13 +1187,13 @@ struct BlueCursorView: View {
 
     private func runRandomIdleBehaviorIfEligible() {
         guard isIdleEligibleForScheduling else {
-            scheduleNextIdleBehavior(delayRange: 6...12)
+            scheduleNextIdleBehavior(delayRange: 12...24)
             return
         }
-        // Require the cursor to have been settled for 3 seconds so the
+        // Require the cursor to have been settled for 6 seconds so the
         // behavior doesn't kick in while the user is actively moving the mouse.
-        if Date().timeIntervalSince(lastCursorMoveAt) < 3 {
-            scheduleNextIdleBehavior(delayRange: 3...5)
+        if Date().timeIntervalSince(lastCursorMoveAt) < 6 {
+            scheduleNextIdleBehavior(delayRange: 6...10)
             return
         }
         let behavior = IdleBehavior.allCases.randomElement() ?? .lookAround

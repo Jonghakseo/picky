@@ -331,11 +331,12 @@ struct PickyMarkdownReportView: View {
     }
 
     private func tableView(headers: [String], rows: [[String]]) -> some View {
-        ScrollView(.horizontal, showsIndicators: true) {
+        let widths = tableColumnWidths(columnCount: headers.count, firstHeader: headers.first ?? "")
+        return ScrollView(.horizontal, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 0) {
-                tableRow(headers, isHeader: true)
+                tableRow(headers, widths: widths, isHeader: true)
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                    tableRow(row, isHeader: false)
+                    tableRow(row, widths: widths, isHeader: false)
                 }
             }
             .background(DS.Colors.surface1, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -347,9 +348,8 @@ struct PickyMarkdownReportView: View {
         }
     }
 
-    private func tableRow(_ cells: [String], isHeader: Bool) -> some View {
-        let widths = tableColumnWidths(columnCount: cells.count)
-        return HStack(alignment: .top, spacing: 0) {
+    private func tableRow(_ cells: [String], widths: [CGFloat], isHeader: Bool) -> some View {
+        HStack(alignment: .top, spacing: 0) {
             ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
                 Text(renderer.inlineAttributedString(for: cell.isEmpty ? " " : cell))
                     .font(.system(size: scaled(Self.bodyBaseSize - 1), weight: isHeader ? .semibold : .regular, design: .default))
@@ -375,8 +375,17 @@ struct PickyMarkdownReportView: View {
         }
     }
 
-    private func tableColumnWidths(columnCount: Int) -> [CGFloat] {
-        (0..<columnCount).map { tableColumnWidth(index: $0, columnCount: columnCount) }
+    private func tableColumnWidths(columnCount: Int, firstHeader: String) -> [CGFloat] {
+        let firstIsIndex = isIndexColumnHeader(firstHeader)
+        return (0..<columnCount).map {
+            tableColumnWidth(index: $0, columnCount: columnCount, firstIsIndex: firstIsIndex)
+        }
+    }
+
+    private func isIndexColumnHeader(_ header: String) -> Bool {
+        let trimmed = header.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if trimmed.isEmpty { return true }
+        return ["#", "no", "no.", "번호", "순번", "idx", "index"].contains(trimmed)
     }
 
     private func tableSeparatorOffsets(widths: [CGFloat]) -> [CGFloat] {
@@ -389,8 +398,8 @@ struct PickyMarkdownReportView: View {
         return offsets
     }
 
-    private func tableColumnWidth(index: Int, columnCount: Int) -> CGFloat {
-        if index == 0 && columnCount > 2 { return scaled(52) }
+    private func tableColumnWidth(index: Int, columnCount: Int, firstIsIndex: Bool) -> CGFloat {
+        if index == 0 && columnCount > 2 && firstIsIndex { return scaled(52) }
         if columnCount >= 5 {
             if index == 1 { return scaled(120) }
             if index == columnCount - 1 { return scaled(300) }

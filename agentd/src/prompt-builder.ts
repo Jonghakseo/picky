@@ -124,7 +124,7 @@ export function buildMainAgentBootstrapPair(extraInstructions?: string): MainAge
     "- For screen-understanding requests with multiple screenshots, inspect all screenshots and distinguish the primary cursor/focus screen from secondary screens.",
     "- For visual navigation/help, use the pointer overlay rules below and append `[POINT:...]` tags when a concrete on-screen location would help.",
     "- When the user mentions, asks about, or needs help understanding something on screen, prefer appending pointer tags when there is a concrete on-screen location to indicate.",
-    "- When you hand off, tell the user in Korean that you are delegating to a side agent and that progress is visible in the right-middle screen overlay.",
+    "- When you hand off, tell the user in Korean that you are delegating to a side agent and that progress is visible in the screen-edge side-agent HUD overlay.",
     "- When a side-agent completion message is provided later, summarize the result briefly in Korean and tell the user to open the side-agent card for details.",
     "- If the captured context Source is `text`, treat the request text as deliberate typed input, not speech recognition or STT output. Do not say the text was misrecognized; if it is unclear, ask them to retype or clarify.",
     "- Do not expose internal tool logs. Do not hard-code workflows from URLs or app names; use the user's intent and context.",

@@ -23,6 +23,7 @@ struct PickyHUDView: View {
     /// visibleFrame and updates the shared anchor across every panel.
     var onDockHandleDragChanged: (CGFloat) -> Void = { _ in }
     var onDockHandleDragEnded: () -> Void = { }
+    var onDockHandleDoubleClick: () -> Void = { }
     var onArchiveUndoRequested: (_ sessionID: String, _ title: String) -> Void = { _, _ in }
     @State private var heldSession: PickyHUDDockHold?
     @State private var hoverPreviewSessionID: String?
@@ -69,12 +70,16 @@ struct PickyHUDView: View {
             // updates can report the already-clipped height and prevent growth.
             .fixedSize(horizontal: false, vertical: true)
             .background(PickyHUDSizeReader())
-            // topTrailing keeps content stuck to the panel's top edge during the
-            // shouldHoldHeight phase. With dock-top-anchored placement we want the
-            // dock to coincide with the panel top (after vertical padding); a default
-            // .center alignment would float the content vertically inside the held
-            // panel and break the dock anchor math.
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            // Keep content stuck to the dock edge during the shouldHoldHeight phase.
+            // With dock-top-anchored placement we want the dock to coincide with the
+            // panel top (after vertical padding); a default .center alignment would
+            // float the content vertically inside the held panel and break the dock
+            // anchor math. Horizontal alignment mirrors when the dock is on the left.
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: .infinity,
+                alignment: placement.dockSide == .left ? .topLeading : .topTrailing
+            )
             // Animate only expand/collapse. Switching between dock-hovered sessions should
             // swap content immediately; animating every activeSession id change cross-fades
             // different card heights and makes the HUD look like it is stretching/flickering.
@@ -107,56 +112,69 @@ struct PickyHUDView: View {
 
     private var hudContent: some View {
         // alignment: .top so the card and the dock-rail stack both anchor at the HStack
-        // top edge. The dock anchor handle floats above the dock with a small gap (see
-        // PickyHUDDockRailView.dockHandle), so the conversation card's top can sit at the
-        // same Y as the dock's top — keeping the dock's screen position invariant under
-        // changes to the conversation card height.
+        // top edge. The conversation card sits inward from the dock side, keeping the
+        // rail pinned to the chosen screen edge whether the dock is left or right.
         HStack(alignment: .top, spacing: PickyHUDDockLayout.panelGap) {
-            if let activeSession {
-                PickyConversationCardView(
-                    viewModel: viewModel,
-                    session: activeSession,
-                    onArchiveSession: archiveSession,
-                    maxHeight: placement.availableCardMaxHeight,
-                    isPreviewMode: isHoverPreviewSession(activeSession.id)
-                )
-                    .id(activeSession.id)
-                    .frame(width: PickyHUDDockLayout.detailWidth)
-                    .transition(.opacity)
-            }
-
-            if !viewModel.isLoadingInitialSessionSnapshot {
-                PickyHUDDockRailView(
-                    sessions: visibleSessions,
-                    activeSessionID: activeSession?.id,
-                    pinnedSessionID: pinnedSessionID,
-                    openedSessionID: openedSessionID,
-                    pendingDoneFlashSessionIDs: viewModel.pendingDoneFlashSessionIDs,
-                    onHoverSession: previewDockSession,
-                    onOpenSession: toggleOpenSession,
-                    onPinSession: pinSession,
-                    onArchiveSession: archiveSession,
-                    onCreateSideAgent: chooseFolderForEmptySideAgent,
-                    onDockHoverChanged: handleDockHover,
-                    onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:),
-                    onDockHandleDragChanged: onDockHandleDragChanged,
-                    onDockHandleDragEnded: onDockHandleDragEnded
-                )
-                .frame(width: PickyHUDDockLayout.railWidth)
-                // Suppress the implicit layout animation triggered by the outer body's
-                // `.animation(_:value: activeSession != nil)` for the dock rail. Without
-                // this, the first hover that brings the conversation card in animates
-                // the HStack height interpolation through the dock-rail subtree, which
-                // briefly drops the dock capsule by a few points before the panel
-                // resize settles — the "덜컹" the user reported.
-                .transaction(value: activeSession?.id) { transaction in
-                    transaction.animation = nil
-                }
+            if placement.dockSide == .left {
+                dockRail
+                conversationCard
+            } else {
+                conversationCard
+                dockRail
             }
         }
         .padding(.horizontal, PickyHUDExpansion.outerPadding)
         .padding(.vertical, PickyHUDExpansion.dockShadowVerticalPadding)
         .onHover(perform: handleHUDHover)
+    }
+
+    @ViewBuilder
+    private var conversationCard: some View {
+        if let activeSession {
+            PickyConversationCardView(
+                viewModel: viewModel,
+                session: activeSession,
+                onArchiveSession: archiveSession,
+                maxHeight: placement.availableCardMaxHeight,
+                isPreviewMode: isHoverPreviewSession(activeSession.id)
+            )
+            .id(activeSession.id)
+            .frame(width: PickyHUDDockLayout.detailWidth)
+            .transition(.opacity)
+        }
+    }
+
+    @ViewBuilder
+    private var dockRail: some View {
+        if !viewModel.isLoadingInitialSessionSnapshot {
+            PickyHUDDockRailView(
+                sessions: visibleSessions,
+                activeSessionID: activeSession?.id,
+                pinnedSessionID: pinnedSessionID,
+                openedSessionID: openedSessionID,
+                pendingDoneFlashSessionIDs: viewModel.pendingDoneFlashSessionIDs,
+                onHoverSession: previewDockSession,
+                onOpenSession: toggleOpenSession,
+                onPinSession: pinSession,
+                onArchiveSession: archiveSession,
+                onCreateSideAgent: chooseFolderForEmptySideAgent,
+                onDockHoverChanged: handleDockHover,
+                onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:),
+                onDockHandleDragChanged: onDockHandleDragChanged,
+                onDockHandleDragEnded: onDockHandleDragEnded,
+                onDockHandleDoubleClick: onDockHandleDoubleClick
+            )
+            .frame(width: PickyHUDDockLayout.railWidth)
+            // Suppress the implicit layout animation triggered by the outer body's
+            // `.animation(_:value: activeSession != nil)` for the dock rail. Without
+            // this, the first hover that brings the conversation card in animates
+            // the HStack height interpolation through the dock-rail subtree, which
+            // briefly drops the dock capsule by a few points before the panel
+            // resize settles — the "덜컹" the user reported.
+            .transaction(value: activeSession?.id) { transaction in
+                transaction.animation = nil
+            }
+        }
     }
 
     private var isPointerInsideHUDSurface: Bool {
@@ -432,6 +450,7 @@ private struct PickyHUDDockRailView: View {
     let onDoneFlashConsumed: (String) -> Void
     let onDockHandleDragChanged: (CGFloat) -> Void
     let onDockHandleDragEnded: () -> Void
+    let onDockHandleDoubleClick: () -> Void
 
     @State private var isAddSlotExpanded = false
     @State private var isHandleHovered = false
@@ -501,7 +520,8 @@ private struct PickyHUDDockRailView: View {
             onDragEnded: {
                 isHandleDragging = false
                 onDockHandleDragEnded()
-            }
+            },
+            onDoubleClick: onDockHandleDoubleClick
         )
         // Fill the capsule's available inner width (railWidth minus the dock's
         // 6pt horizontal padding on each side) so the handle row spans the
@@ -518,8 +538,8 @@ private struct PickyHUDDockRailView: View {
                 .animation(.easeOut(duration: 0.14), value: isHandleDragging)
                 .allowsHitTesting(false)
         }
-        .accessibilityLabel("HUD vertical position")
-        .accessibilityHint("Drag up or down to move the side-agent dock between 2% and 70% of the screen.")
+        .accessibilityLabel("HUD dock handle")
+        .accessibilityHint("Drag up or down to move the side-agent dock between 2% and 70% of the screen. Double-click to switch the dock between the left and right screen edges.")
     }
 
     /// Frosted-glass capsule that hosts the dock icons. Uses .ultraThinMaterial
@@ -1104,11 +1124,13 @@ private struct PickyHUDDockAnchorHandleHost: NSViewRepresentable {
     var onHoverChanged: (Bool) -> Void
     var onDragChanged: (CGFloat) -> Void
     var onDragEnded: () -> Void
+    var onDoubleClick: () -> Void
 
     final class Coordinator {
         var onHoverChanged: ((Bool) -> Void)?
         var onDragChanged: ((CGFloat) -> Void)?
         var onDragEnded: (() -> Void)?
+        var onDoubleClick: (() -> Void)?
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -1117,6 +1139,7 @@ private struct PickyHUDDockAnchorHandleHost: NSViewRepresentable {
         context.coordinator.onHoverChanged = onHoverChanged
         context.coordinator.onDragChanged = onDragChanged
         context.coordinator.onDragEnded = onDragEnded
+        context.coordinator.onDoubleClick = onDoubleClick
         let view = PickyHUDDockAnchorHandleNSView()
         view.coordinator = context.coordinator
         return view
@@ -1126,6 +1149,7 @@ private struct PickyHUDDockAnchorHandleHost: NSViewRepresentable {
         context.coordinator.onHoverChanged = onHoverChanged
         context.coordinator.onDragChanged = onDragChanged
         context.coordinator.onDragEnded = onDragEnded
+        context.coordinator.onDoubleClick = onDoubleClick
     }
 }
 
@@ -1172,6 +1196,11 @@ private final class PickyHUDDockAnchorHandleNSView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        if event.clickCount >= 2 {
+            dragStartScreenY = nil
+            coordinator?.onDoubleClick?()
+            return
+        }
         dragStartScreenY = NSEvent.mouseLocation.y
         if !hasClosedHandPushed {
             NSCursor.closedHand.push()
@@ -1186,12 +1215,15 @@ private final class PickyHUDDockAnchorHandleNSView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        let wasDragging = dragStartScreenY != nil
         if hasClosedHandPushed {
             NSCursor.pop()
             hasClosedHandPushed = false
         }
         dragStartScreenY = nil
-        coordinator?.onDragEnded?()
+        if wasDragging {
+            coordinator?.onDragEnded?()
+        }
     }
 
     override var acceptsFirstResponder: Bool { false }

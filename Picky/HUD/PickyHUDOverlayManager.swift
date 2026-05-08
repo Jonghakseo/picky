@@ -2,7 +2,7 @@
 //  PickyHUDOverlayManager.swift
 //  Picky
 //
-//  Right-side HUD panel lifecycle and placement. One panel per attached
+//  Screen-edge HUD panel lifecycle and placement. One panel per attached
 //  display so the dock is always visible on every monitor; per-screen UI
 //  state (hover, pin, preview) lives inside each PickyHUDView's @State while
 //  the shared session model drives every panel in lockstep.
@@ -65,6 +65,7 @@ final class PickyHUDOverlayManager {
     /// persisted back to settings when the drag ends. All connected displays read this
     /// same value so the dock sits at the same relative position on every monitor.
     private var currentAnchorPercent: Double
+    private var currentDockSide: PickyHUDDockSide
     private var dragStartAnchorPercent: Double?
 
     init(
@@ -75,9 +76,11 @@ final class PickyHUDOverlayManager {
         self.viewModel = viewModel
         self.appearanceStore = appearanceStore
         self.settingsStore = settingsStore
+        let settings = settingsStore.load()
         self.currentAnchorPercent = PickySettings.clampedDockTopAnchorPercent(
-            settingsStore.load().hudDockTopAnchorPercent
+            settings.hudDockTopAnchorPercent
         )
+        self.currentDockSide = settings.hudDockSide
     }
 
     func start() {
@@ -150,7 +153,7 @@ final class PickyHUDOverlayManager {
         hudPanel.isExcludedFromWindowsMenu = true
         hudPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
-        let placement = PickyHUDPlacement()
+        let placement = PickyHUDPlacement(dockSide: currentDockSide)
         let hudRoot = PickyHUDView(
             viewModel: viewModel,
             placement: placement,
@@ -165,6 +168,9 @@ final class PickyHUDOverlayManager {
             },
             onDockHandleDragEnded: { [weak self] in
                 self?.handleDockDragEnded()
+            },
+            onDockHandleDoubleClick: { [weak self] in
+                self?.handleDockHandleDoubleClick()
             },
             onArchiveUndoRequested: { [weak self] sessionID, title in
                 self?.showArchiveUndoToast(displayID: displayID, sessionID: sessionID, title: title)
@@ -204,6 +210,9 @@ final class PickyHUDOverlayManager {
         // publishes on every assignment regardless of equality.
         if abs(entry.placement.availableCardMaxHeight - next) > 0.5 {
             entry.placement.availableCardMaxHeight = next
+        }
+        if entry.placement.dockSide != currentDockSide {
+            entry.placement.dockSide = currentDockSide
         }
     }
 
@@ -301,7 +310,11 @@ final class PickyHUDOverlayManager {
             anchorPercent: currentAnchorPercent
         )
         return NSRect(
-            x: visibleFrame.maxX - width - PickyHUDDockLayout.dockRightEdgeMargin,
+            x: PickyHUDDockLayout.panelX(
+                visibleFrame: visibleFrame,
+                panelWidth: width,
+                dockSide: currentDockSide
+            ),
             y: originY,
             width: width,
             height: targetHeight
@@ -399,7 +412,23 @@ final class PickyHUDOverlayManager {
         }
     }
 
-    // MARK: - Dock handle drag
+    // MARK: - Dock handle drag / side toggle
+
+    private func handleDockHandleDoubleClick() {
+        dragStartAnchorPercent = nil
+        currentDockSide = currentDockSide.toggled
+        for (_, entry) in panelsByDisplayID {
+            entry.placement.dockSide = currentDockSide
+        }
+        repositionAllPanels()
+
+        var settings = settingsStore.load()
+        guard settings.hudDockSide != currentDockSide else { return }
+        settings.hudDockSide = currentDockSide
+        // Settings save can fail on unrelated directory validation. Keep the live
+        // toggle responsive even if persistence falls back to the previous launch value.
+        try? settingsStore.save(settings)
+    }
 
     private func handleDockDragChanged(displayID: CGDirectDisplayID, screenDeltaY: CGFloat) {
         guard let screen = screen(for: displayID) else { return }

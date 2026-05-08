@@ -109,9 +109,12 @@ enum PickyHUDDockLayout {
     static let railWidth: CGFloat = 56
     static let panelGap: CGFloat = 10
     static let screenMargin: CGFloat = 8
-    /// Distance kept between the dock capsule and the screen's right edge.
+    /// Distance kept between the dock capsule and the screen edge.
     /// Tighter than `screenMargin` so the dock visually anchors to the bezel.
-    static let dockRightEdgeMargin: CGFloat = 4
+    static let dockEdgeMargin: CGFloat = 4
+    /// Backward-compatible name for callers/tests that describe the default right edge.
+    static let dockRightEdgeMargin: CGFloat = dockEdgeMargin
+    static let dockLeftEdgeMargin: CGFloat = dockEdgeMargin
     static let closeDelay: TimeInterval = 0.4
     static let closeDelayNanoseconds: UInt64 = 400_000_000
     static let defaultGitSectionExpanded = true
@@ -176,6 +179,15 @@ enum PickyHUDDockLayout {
         let maximumY = max(minimumY, visibleFrame.maxY - screenMargin - targetHeight)
         let centeredY = visibleFrame.midY - (targetHeight / 2)
         return min(max(centeredY, minimumY), maximumY)
+    }
+
+    static func panelX(visibleFrame: CGRect, panelWidth: CGFloat, dockSide: PickyHUDDockSide) -> CGFloat {
+        switch dockSide {
+        case .right:
+            return visibleFrame.maxX - panelWidth - dockRightEdgeMargin
+        case .left:
+            return visibleFrame.minX + dockLeftEdgeMargin
+        }
     }
 
     // MARK: - Dock-top anchored placement

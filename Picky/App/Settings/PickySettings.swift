@@ -91,6 +91,23 @@ enum PickyScreenContextScope: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// Horizontal screen edge where the side-agent HUD dock is anchored.
+/// Defaults to `.right` to preserve existing behavior for users without the key
+/// in their settings file. The dock handle double-click toggles this value.
+enum PickyHUDDockSide: String, Codable, CaseIterable, Identifiable {
+    case right
+    case left
+
+    var id: String { rawValue }
+
+    var toggled: PickyHUDDockSide {
+        switch self {
+        case .right: .left
+        case .left: .right
+        }
+    }
+}
+
 /// User zoom level for the markdown report viewer and the Pi terminal overlay.
 /// Each surface keeps its own multiplier so increasing terminal cell density does not
 /// also blow up the markdown body. Bounded by `PickyFontScales.minimum`/`.maximum`
@@ -246,6 +263,9 @@ struct PickySettings: Codable, Equatable {
     /// conversation card growing into the remaining space below before its internal
     /// ScrollView absorbs overflow.
     var hudDockTopAnchorPercent: Double
+    /// Horizontal side for the HUD dock. The conversation card opens inward from
+    /// this edge, and the value persists across app launches.
+    var hudDockSide: PickyHUDDockSide
 
     static let dockTopAnchorPercentRange: ClosedRange<Double> = 2.0...70.0
     static let defaultDockTopAnchorPercent: Double = 22.0
@@ -281,7 +301,8 @@ struct PickySettings: Codable, Equatable {
         useConversationCard: Bool = true,
         pushToTalkShortcut: PickyShortcutSpec = .defaultPushToTalk,
         quickInputShortcut: PickyShortcutSpec = .defaultQuickInput,
-        hudDockTopAnchorPercent: Double = PickySettings.defaultDockTopAnchorPercent
+        hudDockTopAnchorPercent: Double = PickySettings.defaultDockTopAnchorPercent,
+        hudDockSide: PickyHUDDockSide = .right
     ) {
         self.defaultCwd = defaultCwd
         self.worktreeParent = worktreeParent
@@ -306,6 +327,7 @@ struct PickySettings: Codable, Equatable {
         self.pushToTalkShortcut = pushToTalkShortcut
         self.quickInputShortcut = quickInputShortcut
         self.hudDockTopAnchorPercent = PickySettings.clampedDockTopAnchorPercent(hudDockTopAnchorPercent)
+        self.hudDockSide = hudDockSide
     }
 
     static func defaults(appSupportRoot: URL = PickyAppSupport.defaultRoot()) -> PickySettings {
@@ -333,7 +355,8 @@ struct PickySettings: Codable, Equatable {
             useConversationCard: true,
             pushToTalkShortcut: .defaultPushToTalk,
             quickInputShortcut: .defaultQuickInput,
-            hudDockTopAnchorPercent: PickySettings.defaultDockTopAnchorPercent
+            hudDockTopAnchorPercent: PickySettings.defaultDockTopAnchorPercent,
+            hudDockSide: .right
         )
     }
 
@@ -375,6 +398,7 @@ struct PickySettings: Codable, Equatable {
         case pushToTalkShortcut
         case quickInputShortcut
         case hudDockTopAnchorPercent
+        case hudDockSide
     }
 
     init(from decoder: Decoder) throws {
@@ -414,6 +438,7 @@ struct PickySettings: Codable, Equatable {
         quickInputShortcut = (storedQuickInput?.isValid == true) ? storedQuickInput! : defaults.quickInputShortcut
         let storedAnchor = try container.decodeIfPresent(Double.self, forKey: .hudDockTopAnchorPercent) ?? defaults.hudDockTopAnchorPercent
         hudDockTopAnchorPercent = PickySettings.clampedDockTopAnchorPercent(storedAnchor)
+        hudDockSide = try container.decodeIfPresent(PickyHUDDockSide.self, forKey: .hudDockSide) ?? defaults.hudDockSide
     }
 }
 

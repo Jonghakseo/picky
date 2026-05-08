@@ -39,14 +39,14 @@ export function createPickyHandoffTool(onHandoff: (request: PickyHandoffRequest)
   return defineTool({
     name: "picky_handoff",
     label: "Picky handoff",
-    description: "Delegate complex, long-running, tool-heavy, or multi-turn work to a side Pi agent shown in Picky's top-right overlay.",
+    description: "Delegate complex, long-running, tool-heavy, or multi-turn work to a side Pi agent shown in Picky's screen-edge HUD overlay.",
     promptSnippet: "picky_handoff: delegate complex or long-running work to a side Pi agent in the Picky HUD.",
     promptGuidelines: [
       "Use picky_handoff when the user's request needs new detailed screen analysis, code/repo/file work, web/video extraction, MCPs, or multiple turns.",
       "Before creating a new handoff for work that may already be delegated, call picky_side_sessions and prefer picky_side_steer for a matching existing side agent.",
       "Write instructions as a compact, action-oriented brief of about 300 Korean characters: goal, essential constraints, known decisions, key paths/URLs/IDs, and expected output.",
       "Do not paste the full current prompt, captured context, screenshot metadata, prior transcript, or tool logs into instructions; include only deltas and essential references.",
-      "After calling picky_handoff, tell the user in Korean that a side agent has been started and progress is visible in the top-right overlay.",
+      "After calling picky_handoff, tell the user in Korean that a side agent has been started and progress is visible in the screen-edge HUD overlay.",
     ],
     parameters: Type.Object({
       title: Type.String({ description: "Short Korean title for the side-agent HUD card." }),
@@ -65,7 +65,7 @@ export function createPickyHandoffTool(onHandoff: (request: PickyHandoffRequest)
         content: [
           {
             type: "text",
-            text: `Side agent started: ${session.title} (${session.sessionId}). Now tell the user in Korean that you delegated this work and that they can watch progress in the top-right overlay.`,
+            text: `Side agent started: ${session.title} (${session.sessionId}). Now tell the user in Korean that you delegated this work and that they can watch progress in the screen-edge HUD overlay.`,
           },
         ],
         details: session,
@@ -121,7 +121,7 @@ export function createPickySideSteerTool(onSteer: (request: PickySideSteerReques
       "Use picky_side_steer after picky_side_sessions identifies the side agent that should receive the user's new instruction.",
       "Send only the new delta instruction plus essential references; do not restate the whole task or paste prior transcript/tool logs.",
       "Do not use this for unrelated new work; call picky_handoff for a new delegated task instead.",
-      "After calling picky_side_steer, tell the user in Korean that the existing side agent has been steered and progress remains visible in the top-right overlay.",
+      "After calling picky_side_steer, tell the user in Korean that the existing side agent has been steered and progress remains visible in the screen-edge HUD overlay.",
     ],
     parameters: Type.Object({
       sessionId: Type.String({ description: "ID of the side session to steer, as returned by picky_side_sessions." }),
@@ -134,7 +134,7 @@ export function createPickySideSteerTool(onSteer: (request: PickySideSteerReques
         content: [
           {
             type: "text",
-            text: `Steering sent to side agent: ${session.title} (${session.id}). Status is ${session.status}. Now tell the user in Korean that the existing side agent was steered and progress is visible in the top-right overlay.`,
+            text: `Steering sent to side agent: ${session.title} (${session.id}). Status is ${session.status}. Now tell the user in Korean that the existing side agent was steered and progress is visible in the screen-edge HUD overlay.`,
           },
         ],
         details: { session: summary },

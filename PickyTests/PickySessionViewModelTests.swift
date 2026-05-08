@@ -722,6 +722,24 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDDockLayout.centeredPanelY(visibleFrame: visibleFrame, targetHeight: 900) == 108)
     }
 
+    @Test func hudDockSideTogglesBetweenScreenEdges() throws {
+        #expect(PickyHUDDockSide.right.toggled == .left)
+        #expect(PickyHUDDockSide.left.toggled == .right)
+    }
+
+    @Test func hudDockPanelXMirrorsBetweenLeftAndRightEdges() throws {
+        let visibleFrame = CGRect(x: 100, y: 80, width: 1200, height: 800)
+        let panelWidth: CGFloat = 540
+
+        #expect(PickyHUDDockLayout.panelX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .left) == visibleFrame.minX + PickyHUDDockLayout.dockLeftEdgeMargin)
+        #expect(PickyHUDDockLayout.panelX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .right) == visibleFrame.maxX - panelWidth - PickyHUDDockLayout.dockRightEdgeMargin)
+    }
+
+    @Test func hudDockSideDefaultsToRightWhenMissingFromSettings() throws {
+        let settings = try JSONDecoder().decode(PickySettings.self, from: Data("{}".utf8))
+        #expect(settings.hudDockSide == .right)
+    }
+
     @Test func dockTopAnchorPercentClampsToSupportedRange() throws {
         #expect(PickySettings.clampedDockTopAnchorPercent(22.0) == 22.0)
         #expect(PickySettings.clampedDockTopAnchorPercent(0.0) == 2.0)

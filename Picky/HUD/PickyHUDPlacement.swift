@@ -3,9 +3,8 @@
 //  Picky
 //
 //  Per-panel reactive placement state shared between PickyHUDOverlayManager and the
-//  SwiftUI HUD view. Currently exposes the max card height the conversation card may
-//  grow to, which is derived from the live dock anchor percent and the screen's
-//  visible frame so the HUD adapts to wherever the user has dragged the dock.
+//  SwiftUI HUD view. Exposes the max card height and horizontal dock side so the
+//  HUD adapts to wherever the user has dragged or toggled the dock.
 //
 
 import Combine
@@ -20,6 +19,10 @@ final class PickyHUDPlacement: ObservableObject {
     /// optionally clamped by the visible-frame breathing-room cap. Updated whenever
     /// the user drags the dock anchor or the screen configuration changes.
     @Published var availableCardMaxHeight: CGFloat
+    /// Horizontal edge where the dock is anchored. Updated immediately when the user
+    /// double-clicks the handle so SwiftUI can mirror the card/dock order without
+    /// rebuilding the hosting view.
+    @Published var dockSide: PickyHUDDockSide
 
     /// Default fallback used while the placement hasn't been hydrated yet (e.g. during
     /// the brief window between panel creation and the first `syncPanelsForCurrentScreens`
@@ -27,7 +30,11 @@ final class PickyHUDPlacement: ObservableObject {
     /// the prior behavior.
     static let defaultAvailableCardMaxHeight: CGFloat = 1080
 
-    init(availableCardMaxHeight: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight) {
+    init(
+        availableCardMaxHeight: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight,
+        dockSide: PickyHUDDockSide = .right
+    ) {
         self.availableCardMaxHeight = availableCardMaxHeight
+        self.dockSide = dockSide
     }
 }

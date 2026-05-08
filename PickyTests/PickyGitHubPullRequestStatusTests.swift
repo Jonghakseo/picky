@@ -41,4 +41,13 @@ struct PickyGitHubPullRequestStatusTests {
         #expect(PickyGitHubPullRequestStatus.parse(json: "") == nil)
         #expect(PickyGitHubPullRequestStatus.parse(json: "{\"number\":1}") == nil)
     }
+
+    @Test func cachedEntryIsStaleAfterTtl() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let fresh = PickyGitHubPullRequestStatus.CachedEntry(status: nil, fetchedAt: now.addingTimeInterval(-60))
+        let stale = PickyGitHubPullRequestStatus.CachedEntry(status: nil, fetchedAt: now.addingTimeInterval(-301))
+
+        #expect(fresh.isStale(now: now) == false)
+        #expect(stale.isStale(now: now) == true)
+    }
 }

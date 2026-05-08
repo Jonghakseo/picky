@@ -20,18 +20,26 @@ struct PickyGitHubPullRequestStatus: Equatable {
     let url: URL
     let state: State
 
+    static let staleAfter: TimeInterval = 300
+
+    struct CachedEntry: Equatable {
+        let status: PickyGitHubPullRequestStatus?
+        let fetchedAt: Date
+
+        func isStale(now: Date = Date(), ttl: TimeInterval = PickyGitHubPullRequestStatus.staleAfter) -> Bool {
+            now.timeIntervalSince(fetchedAt) > ttl
+        }
+    }
+
     private static let cacheLock = NSLock()
-    private static var cache: [String: PickyGitHubPullRequestStatus?] = [:]
+    private static var cache: [String: CachedEntry] = [:]
     private static var inFlightPrefetchKeys: Set<String> = []
 
-    static func cached(cwd: String?, branch: String?) -> PickyGitHubPullRequestStatus?? {
+    static func cached(cwd: String?, branch: String?) -> CachedEntry? {
         guard let key = cacheKey(cwd: cwd, branch: branch) else { return nil }
         cacheLock.lock()
         defer { cacheLock.unlock() }
-        if let entry = cache[key] {
-            return .some(entry)
-        }
-        return nil
+        return cache[key]
     }
 
     static func load(cwd: String?, branch: String?) async -> PickyGitHubPullRequestStatus? {
@@ -117,7 +125,7 @@ struct PickyGitHubPullRequestStatus: Equatable {
         guard let key else { return }
         cacheLock.lock()
         defer { cacheLock.unlock() }
-        cache[key] = status
+        cache[key] = CachedEntry(status: status, fetchedAt: Date())
     }
 
     private static func cacheKey(cwd: String?, branch: String?) -> String? {

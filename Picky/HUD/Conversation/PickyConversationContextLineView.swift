@@ -70,9 +70,13 @@ struct PickyConversationContextLineView: View {
         }
         .task(id: pullRequestRefreshKey) {
             let branch = gitStatus?.branchName
-            if let cachedEntry = PickyGitHubPullRequestStatus.cached(cwd: session.cwd, branch: branch) {
-                pullRequestStatus = cachedEntry
+            let cachedEntry = PickyGitHubPullRequestStatus.cached(cwd: session.cwd, branch: branch)
+            if let cachedEntry {
+                // SWR: paint the cached value first so the badge stays visible during revalidation.
+                pullRequestStatus = cachedEntry.status
             }
+            let needsFetch = cachedEntry == nil || cachedEntry?.isStale() == true
+            guard needsFetch else { return }
             let loadedStatus = await PickyGitHubPullRequestStatus.load(cwd: session.cwd, branch: branch)
             guard !Task.isCancelled else { return }
             pullRequestStatus = loadedStatus

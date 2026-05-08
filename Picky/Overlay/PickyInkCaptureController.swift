@@ -2,10 +2,9 @@
 //  PickyInkCaptureController.swift
 //  Picky
 //
-//  Captures mouse motion as suppressed, Picky-owned ink while a voice or text
-//  input mode is active. The underlying app never receives mouse input during
-//  capture; small movements stay as cursor motion only until the threshold is
-//  crossed.
+//  Captures suppressed, Picky-owned ink while a voice or text input mode is
+//  active. The underlying app never receives mouse input during capture; only
+//  left click + drag beyond the threshold becomes context ink.
 //
 
 import AppKit
@@ -21,11 +20,12 @@ final class PickyInkCaptureController {
         let id: String
         let source: PickyInkCaptureSource
         let startedAt: Date
-        let origin: CGPoint
         var virtualCursor: CGPoint
+        var activeStrokeOrigin: CGPoint?
+        var activeStrokePoints: [CGPoint] = []
+        var completedStrokes: [[CGPoint]] = []
         var didCrossThreshold = false
         var thresholdFeedbackPoint: CGPoint?
-        var strokePoints: [CGPoint] = []
         var lastAcceptedPoint: CGPoint?
     }
 
@@ -64,7 +64,6 @@ final class PickyInkCaptureController {
             id: "ink-\(UUID().uuidString)",
             source: source,
             startedAt: Date(),
-            origin: origin,
             virtualCursor: origin
         )
         guard startEventTapIfNeeded() else {
@@ -87,21 +86,23 @@ final class PickyInkCaptureController {
         }
         publishState()
 
-        guard finishedSession.didCrossThreshold,
-              finishedSession.strokePoints.count >= 2 else { return nil }
-        let stroke = PickyInkCaptureStroke(
-            id: "\(finishedSession.id)-stroke-1",
-            source: finishedSession.source,
-            points: finishedSession.strokePoints.map(PickyCGPoint.init),
-            strokeWidth: Double(strokeWidth),
-            opacity: strokeOpacity
-        )
+        let capturedPointLists = capturedStrokePointLists(for: finishedSession)
+        guard !capturedPointLists.isEmpty else { return nil }
+        let strokes = capturedPointLists.enumerated().map { index, points in
+            PickyInkCaptureStroke(
+                id: "\(finishedSession.id)-stroke-\(index + 1)",
+                source: finishedSession.source,
+                points: points.map(PickyCGPoint.init),
+                strokeWidth: Double(strokeWidth),
+                opacity: strokeOpacity
+            )
+        }
         return PickyInkCapture(
             id: finishedSession.id,
             source: finishedSession.source,
             startedAt: finishedSession.startedAt,
             endedAt: Date(),
-            strokes: [stroke]
+            strokes: strokes
         )
     }
 
@@ -186,11 +187,17 @@ final class PickyInkCaptureController {
 
         guard session != nil else { return Unmanaged.passUnretained(event) }
 
+        let point = appKitPoint(for: event) ?? NSEvent.mouseLocation
         switch eventType {
-        case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
-            updateVirtualCursor(to: appKitPoint(for: event) ?? NSEvent.mouseLocation)
-        case .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp:
-            updateVirtualCursor(to: appKitPoint(for: event) ?? NSEvent.mouseLocation)
+        case .mouseMoved, .rightMouseDragged, .otherMouseDragged,
+             .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp:
+            moveVirtualCursor(to: point)
+        case .leftMouseDown:
+            beginPotentialStroke(at: point)
+        case .leftMouseDragged:
+            updatePotentialStroke(to: point)
+        case .leftMouseUp:
+            finishPotentialStroke(at: point)
         default:
             break
         }
@@ -217,12 +224,36 @@ final class PickyInkCaptureController {
         return nil
     }
 
-    private func updateVirtualCursor(to point: CGPoint) {
+    private func moveVirtualCursor(to point: CGPoint) {
         guard var current = session else { return }
         current.virtualCursor = point
+        session = current
+        publishState()
+    }
 
-        let distanceFromOrigin = hypot(point.x - current.origin.x, point.y - current.origin.y)
-        if !current.didCrossThreshold {
+    private func beginPotentialStroke(at point: CGPoint) {
+        guard var current = session else { return }
+        current.virtualCursor = point
+        current.activeStrokeOrigin = point
+        current.activeStrokePoints = []
+        current.lastAcceptedPoint = nil
+        current.didCrossThreshold = false
+        current.thresholdFeedbackPoint = nil
+        session = current
+        publishState()
+    }
+
+    private func updatePotentialStroke(to point: CGPoint) {
+        guard var current = session else { return }
+        current.virtualCursor = point
+        guard let origin = current.activeStrokeOrigin else {
+            session = current
+            publishState()
+            return
+        }
+
+        if current.activeStrokePoints.isEmpty {
+            let distanceFromOrigin = hypot(point.x - origin.x, point.y - origin.y)
             guard distanceFromOrigin >= thresholdDistance else {
                 session = current
                 publishState()
@@ -230,7 +261,7 @@ final class PickyInkCaptureController {
             }
             current.didCrossThreshold = true
             current.thresholdFeedbackPoint = point
-            current.strokePoints = [current.origin, point]
+            current.activeStrokePoints = [origin, point]
             current.lastAcceptedPoint = point
             session = current
             publishState()
@@ -245,8 +276,34 @@ final class PickyInkCaptureController {
                 return
             }
         }
-        current.strokePoints.append(point)
+        current.activeStrokePoints.append(point)
         current.lastAcceptedPoint = point
+        session = current
+        publishState()
+    }
+
+    private func finishPotentialStroke(at point: CGPoint) {
+        guard var current = session else { return }
+        current.virtualCursor = point
+        if let origin = current.activeStrokeOrigin, current.activeStrokePoints.isEmpty {
+            let distanceFromOrigin = hypot(point.x - origin.x, point.y - origin.y)
+            if distanceFromOrigin >= thresholdDistance {
+                current.activeStrokePoints = [origin, point]
+            }
+        } else if current.activeStrokePoints.count >= 2,
+                  let lastAcceptedPoint = current.lastAcceptedPoint,
+                  hypot(point.x - lastAcceptedPoint.x, point.y - lastAcceptedPoint.y) >= minimumPointDistance {
+            current.activeStrokePoints.append(point)
+        }
+
+        if current.activeStrokePoints.count >= 2 {
+            current.completedStrokes.append(current.activeStrokePoints)
+        }
+        current.activeStrokeOrigin = nil
+        current.activeStrokePoints = []
+        current.lastAcceptedPoint = nil
+        current.didCrossThreshold = false
+        current.thresholdFeedbackPoint = nil
         session = current
         publishState()
     }
@@ -256,25 +313,30 @@ final class PickyInkCaptureController {
             onStateChange(.inactive)
             return
         }
-        let stroke: PickyInkOverlayStroke?
-        if session.didCrossThreshold, session.strokePoints.count >= 2 {
-            stroke = PickyInkOverlayStroke(
-                id: "\(session.id)-stroke-1",
-                points: session.strokePoints,
+        let strokes = capturedStrokePointLists(for: session).enumerated().map { index, points in
+            PickyInkOverlayStroke(
+                id: "\(session.id)-stroke-\(index + 1)",
+                points: points,
                 strokeWidth: strokeWidth,
                 opacity: strokeOpacity
             )
-        } else {
-            stroke = nil
         }
         onStateChange(PickyInkOverlayState(
             isActive: true,
             source: session.source,
             virtualCursorGlobalPoint: session.virtualCursor,
-            strokes: stroke.map { [$0] } ?? [],
+            strokes: strokes,
             didCrossThreshold: session.didCrossThreshold,
             thresholdFeedbackGlobalPoint: session.thresholdFeedbackPoint
         ))
+    }
+
+    private func capturedStrokePointLists(for session: Session) -> [[CGPoint]] {
+        var pointLists = session.completedStrokes.filter { $0.count >= 2 }
+        if session.activeStrokePoints.count >= 2 {
+            pointLists.append(session.activeStrokePoints)
+        }
+        return pointLists
     }
 
     private func hideSystemCursorIfNeeded() {

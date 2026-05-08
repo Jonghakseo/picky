@@ -12,6 +12,7 @@ import UserNotifications
 struct PickyConversationContextLineView: View {
     let session: PickySessionListViewModel.SessionCard
     @State private var gitStatus: PickyGitRepositoryStatus?
+    @State private var pullRequestStatus: PickyGitHubPullRequestStatus?
     @State private var inFlightGitAction: GitRemoteAction?
     @State private var manualRefreshTick: Int = 0
 
@@ -38,6 +39,10 @@ struct PickyConversationContextLineView: View {
         "\(session.cwd ?? "")|\(session.updatedAt.timeIntervalSince1970)|\(manualRefreshTick)"
     }
 
+    private var pullRequestRefreshKey: String {
+        "\(session.cwd ?? "")|\(gitStatus?.branchName ?? "")|\(manualRefreshTick)"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if hasPrimaryContext {
@@ -48,7 +53,7 @@ struct PickyConversationContextLineView: View {
                 gitContextLine(status: gitStatus)
             }
 
-            if !session.linkBadgeArtifacts.isEmpty {
+            if hasLinkContext {
                 linkContextLine
             }
         }
@@ -63,6 +68,19 @@ struct PickyConversationContextLineView: View {
             guard !Task.isCancelled else { return }
             gitStatus = loadedStatus
         }
+        .task(id: pullRequestRefreshKey) {
+            let branch = gitStatus?.branchName
+            if let cachedEntry = PickyGitHubPullRequestStatus.cached(cwd: session.cwd, branch: branch) {
+                pullRequestStatus = cachedEntry
+            }
+            let loadedStatus = await PickyGitHubPullRequestStatus.load(cwd: session.cwd, branch: branch)
+            guard !Task.isCancelled else { return }
+            pullRequestStatus = loadedStatus
+        }
+    }
+
+    private var hasLinkContext: Bool {
+        !session.linkBadgeArtifacts.isEmpty || pullRequestStatus != nil
     }
 
     private var hasPrimaryContext: Bool {
@@ -123,6 +141,14 @@ struct PickyConversationContextLineView: View {
 
     private var linkBadges: some View {
         HStack(spacing: 4) {
+            if let pullRequestStatus {
+                Link(destination: pullRequestStatus.url) {
+                    pullRequestBadge(status: pullRequestStatus)
+                }
+                .buttonStyle(.plain)
+                .help("Open PR #\(pullRequestStatus.number) — \(pullRequestStatus.title) [\(pullRequestStatus.state.rawValue)]")
+                .pointerCursor()
+            }
             ForEach(session.linkBadgeArtifacts.prefix(6)) { artifact in
                 if let url = artifact.url {
                     Link(destination: url) {
@@ -138,6 +164,38 @@ struct PickyConversationContextLineView: View {
             if remainingCount > 0 {
                 moreLinksBadge(count: remainingCount)
             }
+        }
+    }
+
+    private func pullRequestBadge(status: PickyGitHubPullRequestStatus) -> some View {
+        HStack(spacing: 4) {
+            Image("github-logo")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 11, height: 11)
+                .accessibilityHidden(true)
+            Text("PR")
+                .font(PickyHUDTypography.metaMonospacedSemibold)
+                .lineLimit(1)
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background(Capsule().fill(Self.pullRequestBackground(for: status.state)))
+    }
+
+    static func pullRequestBackground(for state: PickyGitHubPullRequestStatus.State) -> Color {
+        // GitHub Primer state-emphasis tokens.
+        switch state {
+        case .open:
+            return Color(hex: "#1F883D")
+        case .merged:
+            return Color(hex: "#8250DF")
+        case .closed:
+            return Color(hex: "#CF222E")
+        case .draft:
+            return Color(hex: "#6E7781")
         }
     }
 

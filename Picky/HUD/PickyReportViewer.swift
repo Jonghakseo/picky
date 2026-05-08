@@ -20,6 +20,16 @@ struct PickyReportMarkdownRenderer {
     }
 
     func blocks(from markdown: String) -> [Block] {
+        let key = markdown as NSString
+        if let cached = Self.blockCache.object(forKey: key) {
+            return cached.blocks
+        }
+        let computed = computeBlocks(from: markdown)
+        Self.blockCache.setObject(BlockCacheEntry(blocks: computed), forKey: key, cost: markdown.utf8.count)
+        return computed
+    }
+
+    private func computeBlocks(from markdown: String) -> [Block] {
         var blocks: [Block] = []
         var paragraphLines: [String] = []
         var codeLines: [String] = []
@@ -94,6 +104,16 @@ struct PickyReportMarkdownRenderer {
     }
 
     func inlineAttributedString(for markdown: String) -> AttributedString {
+        let key = markdown as NSString
+        if let cached = Self.inlineCache.object(forKey: key) {
+            return cached.value
+        }
+        let value = computeInlineAttributedString(for: markdown)
+        Self.inlineCache.setObject(InlineCacheEntry(value: value), forKey: key, cost: markdown.utf8.count)
+        return value
+    }
+
+    private func computeInlineAttributedString(for markdown: String) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         if let attributed = try? AttributedString(markdown: markdown, options: options) {
             return attributed
@@ -156,6 +176,31 @@ struct PickyReportMarkdownRenderer {
         let text = remainder.dropFirst().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         return .heading(level: markerCount, text: text)
+    }
+
+    // Shared across all renderer instances. NSCache is thread-safe and evicts under memory pressure.
+    private static let blockCache: NSCache<NSString, BlockCacheEntry> = {
+        let cache = NSCache<NSString, BlockCacheEntry>()
+        cache.countLimit = 256
+        cache.totalCostLimit = 2 * 1024 * 1024
+        return cache
+    }()
+
+    private static let inlineCache: NSCache<NSString, InlineCacheEntry> = {
+        let cache = NSCache<NSString, InlineCacheEntry>()
+        cache.countLimit = 1024
+        cache.totalCostLimit = 1 * 1024 * 1024
+        return cache
+    }()
+
+    private final class BlockCacheEntry {
+        let blocks: [Block]
+        init(blocks: [Block]) { self.blocks = blocks }
+    }
+
+    private final class InlineCacheEntry {
+        let value: AttributedString
+        init(value: AttributedString) { self.value = value }
     }
 }
 

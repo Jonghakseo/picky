@@ -41,8 +41,10 @@ struct PickyUserBubbleView: View {
             )
             // User bubble is right-aligned; show the hover icon on the OUTWARD
             // (leading) corner so it floats toward the agent side rather than
-            // pinning against the card edge.
-            .openAsReportHoverIcon(onOpen: onOpenAsReport, alignment: .topLeading)
+            // pinning against the card edge. Only show when the source text is
+            // long enough to be truncated by the preview — short messages don't
+            // need an "expand" affordance.
+            .openAsReportHoverIcon(onOpen: hoverIconAction, alignment: .topLeading)
             .frame(maxWidth: PickyHUDDockLayout.detailWidth * 0.85, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -51,6 +53,11 @@ struct PickyUserBubbleView: View {
     var displayedOriginLabel: String? { originLabel }
     var displayedMarkdownPreview: String {
         PickyAgentResponsePreview.truncatedMarkdown(message.text ?? "")
+    }
+
+    private var hoverIconAction: (() -> Void)? {
+        guard let onOpenAsReport, PickyAgentResponsePreview.isTruncated(message.text ?? "") else { return nil }
+        return onOpenAsReport
     }
 
     private var isPiExtensionMessage: Bool {

@@ -27,7 +27,7 @@ struct PickyAgentBubbleView: View {
                 agentBubbleShape
                     .stroke(DS.Colors.borderSubtle.opacity(0.72), lineWidth: 0.7)
             )
-            .openAsReportHoverIcon(onOpen: onOpenAsReport, alignment: .topTrailing)
+            .openAsReportHoverIcon(onOpen: hoverIconAction, alignment: .topTrailing)
             Spacer(minLength: 48)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -47,6 +47,14 @@ struct PickyAgentBubbleView: View {
         let text = displayText
         guard message.kind == .agentText else { return text }
         return PickyAgentResponsePreview.truncatedMarkdown(text)
+    }
+
+    /// Only expose the hover icon when the bubble's full text wouldn't fit in
+    /// the card preview — i.e., the user is currently looking at a truncated
+    /// view and might want to open the message in the markdown viewer.
+    private var hoverIconAction: (() -> Void)? {
+        guard let onOpenAsReport, PickyAgentResponsePreview.isTruncated(displayText) else { return nil }
+        return onOpenAsReport
     }
 
     private var displayText: String {
@@ -80,5 +88,15 @@ enum PickyAgentResponsePreview {
 
         guard didTruncate else { return text }
         return candidate.trimmingCharacters(in: .whitespacesAndNewlines) + "..."
+    }
+
+    /// Whether the given source text would be truncated at the standard preview
+    /// limits (line count or character count). Used by message bubbles to gate
+    /// the hover-revealed open-as-report icon — short messages that fit fully
+    /// in the card don't need an "expand" affordance.
+    static func isTruncated(_ text: String, maxLines: Int = maxLines, maxCharacters: Int = maxCharacters) -> Bool {
+        guard maxLines > 0, maxCharacters > 0 else { return false }
+        if text.count > maxCharacters { return true }
+        return text.split(separator: "\n", omittingEmptySubsequences: false).count > maxLines
     }
 }

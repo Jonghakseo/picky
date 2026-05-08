@@ -134,6 +134,25 @@ struct PickyConversationCardViewTests {
         #expect(PickyAgentResponsePreview.truncatedMarkdown(nineLines) == eightLines + "...")
     }
 
+    @Test func agentResponsePreviewIsTruncatedMatchesTruncatedMarkdown() {
+        // The hover icon's gate uses isTruncated to decide whether to expose an
+        // expand affordance. Verify it stays in lockstep with the truncation
+        // performed by truncatedMarkdown so the icon never appears for messages
+        // that are already shown in full.
+        let shortText = "hi"
+        let exactCharacters = String(repeating: "가", count: 500)
+        let longCharacters = exactCharacters + "나다라"
+        let eightLines = (1...8).map { "line \($0)" }.joined(separator: "\n")
+        let nineLines = eightLines + "\nline 9"
+
+        #expect(!PickyAgentResponsePreview.isTruncated(""))
+        #expect(!PickyAgentResponsePreview.isTruncated(shortText))
+        #expect(!PickyAgentResponsePreview.isTruncated(exactCharacters))
+        #expect(PickyAgentResponsePreview.isTruncated(longCharacters))
+        #expect(!PickyAgentResponsePreview.isTruncated(eightLines))
+        #expect(PickyAgentResponsePreview.isTruncated(nineLines))
+    }
+
     @Test func finderOpenRequestOnlyResolvesExistingCwdDirectories() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

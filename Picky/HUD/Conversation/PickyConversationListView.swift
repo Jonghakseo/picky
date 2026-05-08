@@ -56,20 +56,16 @@ struct PickyConversationListView: View {
                 }
             }
             .frame(minHeight: 80, maxHeight: 640)
-            .onAppear {
-                // Two attempts: first deferred to the next runloop tick (covers most
-                // cases), second after a short delay to catch the rare path where
-                // LazyVStack hasn't laid out the anchor yet on the first attempt.
+            .task(id: session.id) {
+                // One frame of latency so the LazyVStack has a chance to lay out
+                // the bottom anchor before we ask the proxy to scroll. Two
+                // chained DispatchQueue dispatches caused a visible second jump
+                // because the first attempt could land at the top before the
+                // anchor was materialized; a single scroll after one frame
+                // lands cleanly.
+                try? await Task.sleep(nanoseconds: 16_000_000)
                 scrollToBottom(proxy: proxy, animated: false)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    scrollToBottom(proxy: proxy, animated: false)
-                }
                 hasAppeared = true
-            }
-            .onChange(of: session.id) { _, _ in
-                // Reset to the bottom whenever the user swaps to a different session
-                // through the dock, so the new card opens at its latest reply.
-                scrollToBottom(proxy: proxy, animated: false)
             }
             .onChange(of: session.messages.last?.id) { _, _ in
                 scrollToBottom(proxy: proxy, animated: hasAppeared)

@@ -15,47 +15,49 @@ struct PickyQuestionBubbleView: View {
     @State private var textValue = ""
     @State private var formState = PickyAskUserQuestionFormState()
     @State private var seededFormRequestID: String?
+    @State private var isCollapsed: Bool = false
+    @State private var didInitCollapse: Bool = false
 
     private var isCancelled: Bool { cancelledAt != nil }
     private var isClosed: Bool { isCancelled || !isActiveRequest }
+    private var isCollapsedDisplay: Bool { isClosed && isCollapsed }
 
     private var statusLabel: String {
         if isCancelled { return "INPUT CANCELLED" }
-        if !isActiveRequest { return "INPUT CLOSED" }
+        if !isActiveRequest { return "INPUT ANSWERED" }
         return "INPUT NEEDED"
     }
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 8) {
-                Text("⌑ \(statusLabel) · \(request.method)")
-                    .font(PickyHUDTypography.metaBold)
-                    .foregroundColor(isClosed ? DS.Colors.textTertiary : DS.Colors.warning)
-                    .lineLimit(1)
-                if let title = request.title, !title.isEmpty {
-                    Text(title)
-                        .font(PickyHUDTypography.bodyCompactMedium)
-                        .foregroundColor(DS.Colors.textPrimary)
+                headerRow
+                if !isCollapsedDisplay {
+                    if let title = request.title, !title.isEmpty {
+                        Text(title)
+                            .font(PickyHUDTypography.bodyCompactMedium)
+                            .foregroundColor(DS.Colors.textPrimary)
+                    }
+                    if let bodyText = PickyQuestionBubbleCopy.bodyText(for: request) {
+                        Text(bodyText)
+                            .font(PickyHUDTypography.body)
+                            .foregroundColor(DS.Colors.textPrimary)
+                            .strikethrough(isCancelled, color: DS.Colors.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let description = request.description, !description.isEmpty {
+                        Text(description)
+                            .font(PickyHUDTypography.supporting)
+                            .foregroundColor(DS.Colors.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    controls
+                        .disabled(isClosed)
+                        .opacity(isClosed ? 0.48 : 1)
                 }
-                if let bodyText = PickyQuestionBubbleCopy.bodyText(for: request) {
-                    Text(bodyText)
-                        .font(PickyHUDTypography.body)
-                        .foregroundColor(DS.Colors.textPrimary)
-                        .strikethrough(isCancelled, color: DS.Colors.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if let description = request.description, !description.isEmpty {
-                    Text(description)
-                        .font(PickyHUDTypography.supporting)
-                        .foregroundColor(DS.Colors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                controls
-                    .disabled(isClosed)
-                    .opacity(isClosed ? 0.48 : 1)
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 9)
+            .padding(.vertical, isCollapsedDisplay ? 6 : 9)
             .frame(maxWidth: PickyHUDDockLayout.detailWidth * 0.88, alignment: .leading)
             .background(
                 UnevenRoundedRectangle(
@@ -80,13 +82,63 @@ struct PickyQuestionBubbleView: View {
             Spacer(minLength: 36)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onAppear { seedFormDefaultsIfNeeded() }
+        .onAppear {
+            seedFormDefaultsIfNeeded()
+            if !didInitCollapse {
+                isCollapsed = isClosed
+                didInitCollapse = true
+            }
+        }
         .onChange(of: request.id) { _, _ in
             textValue = ""
             formState = PickyAskUserQuestionFormState()
             seededFormRequestID = nil
             seedFormDefaultsIfNeeded()
+            isCollapsed = isClosed
         }
+        .onChange(of: isActiveRequest) { _, _ in autoCollapseIfClosed() }
+        .onChange(of: cancelledAt) { _, _ in autoCollapseIfClosed() }
+    }
+
+    @ViewBuilder
+    private var headerRow: some View {
+        let label = HStack(spacing: 6) {
+            if isClosed {
+                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 8.5, weight: .bold))
+                    .foregroundColor(DS.Colors.textTertiary)
+            }
+            Text("⌑ \(statusLabel) · \(request.method)")
+                .font(PickyHUDTypography.metaBold)
+                .foregroundColor(isClosed ? DS.Colors.textTertiary : DS.Colors.warning)
+                .lineLimit(1)
+            if isCollapsedDisplay, let title = request.title, !title.isEmpty {
+                Text("· \(title)")
+                    .font(PickyHUDTypography.metaBold)
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        if isClosed {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { isCollapsed.toggle() }
+            } label: {
+                label.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .pointerCursor()
+            .help(isCollapsed ? "Expand question details" : "Collapse question details")
+            .accessibilityLabel("Question \(statusLabel)")
+            .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
+        } else {
+            label
+        }
+    }
+
+    private func autoCollapseIfClosed() {
+        guard isClosed, !isCollapsed else { return }
+        withAnimation(.easeInOut(duration: 0.18)) { isCollapsed = true }
     }
 
     @ViewBuilder

@@ -41,7 +41,8 @@ describe("protocol contract fixtures", () => {
           capturedAt: "2026-05-02T00:00:00.000Z",
           transcript: "Pin this completed Pi session",
           screenshots: [],
-          warnings: [],
+          inkMarks: [],
+  warnings: [],
         },
       }),
     ).not.toThrow();
@@ -78,7 +79,8 @@ describe("protocol contract fixtures", () => {
         capturedAt: "2026-05-05T00:00:00.000Z",
         transcript: "look at this screenshot",
         screenshots: [{ id: "shot-1", label: "Main", path: "/tmp/shot.png" }],
-        warnings: [],
+        inkMarks: [],
+  warnings: [],
       },
     });
 

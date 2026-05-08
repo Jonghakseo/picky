@@ -32,16 +32,19 @@ struct AdvancedBrowserContextProviderAdapter: PickyBrowserContextProviding {
 
 struct StaticPickyScreenContextProvider: PickyScreenContextProviding {
     let captures: [CompanionScreenCapture]
+    var inkCapture: PickyInkCapture?
 
     func screenContexts() -> [PickyScreenContext] {
-        captures.map { capture in
-            PickyScreenContext(
+        captures.enumerated().map { index, capture in
+            let screenId = "screen\(index + 1)"
+            return PickyScreenContext(
                 label: capture.label,
                 frame: PickyCGRect(capture.displayFrame),
                 screenshotWidthInPixels: capture.screenshotWidthInPixels,
                 screenshotHeightInPixels: capture.screenshotHeightInPixels,
                 isCursorScreen: capture.isCursorScreen,
                 cursor: capture.cursor,
+                inkMarks: PickyInkMarkMapper.map(capture: inkCapture, to: capture, screenId: screenId),
                 imageData: capture.imageData
             )
         }
@@ -66,6 +69,7 @@ struct PickyContextPacketAssembler {
         let screenshots = try screens.enumerated().map { index, screen in
             try screenshotStore.store(screen, contextID: contextID, index: index)
         }
+        let inkMarks = screens.flatMap(\.inkMarks)
         var warnings = selectedSessionId.map { ["selectedSessionId=\($0)"] } ?? []
         let browser: PickyBrowserContext?
         if let advancedBrowserProvider {
@@ -90,6 +94,7 @@ struct PickyContextPacketAssembler {
             activeWindow: windowProvider.activeWindowContext(),
             browser: browser,
             screenshots: screenshots,
+            inkMarks: inkMarks,
             warnings: warnings
         )
     }

@@ -175,6 +175,11 @@ final class CompanionManager: ObservableObject {
         self.buddyDictationManager = buddyDictationManager ?? BuddyDictationManager()
         self.speechPlaybackProvider = speechPlaybackProvider ?? PickySpeechPlaybackProviderFactory.makeDefaultProvider()
         self.voiceContextCaptureCoordinator = voiceContextCaptureCoordinator ?? PickyVoiceContextCaptureCoordinator()
+        self.inkCaptureController.onStateChange = { [weak self] state in
+            Task { @MainActor [weak self] in
+                self?.inkOverlayState = state
+            }
+        }
     }
 
     /// The currently running AI response task, if any. Cancelled when the user
@@ -182,6 +187,8 @@ final class CompanionManager: ObservableObject {
     private var currentResponseTask: Task<Void, Never>?
     private var agentEventTask: Task<Void, Never>?
     private var directMessageContinuations: [UUID: CheckedContinuation<Bool, Never>] = [:]
+    private let inkCaptureController = PickyInkCaptureController()
+    private var pendingInkCapturesByInputID: [UUID: PickyInkCapture] = [:]
     private lazy var interactionCoordinator: PickyInteractionCoordinator = {
         let coordinator = PickyInteractionCoordinator(
             envelopeMaker: PickyInteractionStaticEnvelopeMaker(),
@@ -246,6 +253,7 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var isOverlayVisible: Bool = false
     @Published private(set) var overlayVisibilityReasons: Set<PickyOverlayReason> = []
     @Published private(set) var isQuickInputPanelVisible: Bool = false
+    @Published private(set) var inkOverlayState: PickyInkOverlayState = .inactive
 
     private var localOverlayVisibilityReasons: Set<PickyOverlayReason> = []
     private var interactionOverlayVisibilityReasons: Set<PickyOverlayReason> = []
@@ -323,6 +331,7 @@ final class CompanionManager: ObservableObject {
         globalPushToTalkShortcutMonitor.rawEventForwarder = nil
         quickInputDoubleTapDetector.reset()
         quickInputPanelManager.dismiss()
+        cancelInkCapture()
         buddyDictationManager.cancelCurrentDictation()
         overlayWindowManager.hideOverlay()
         transientHideTask?.cancel()
@@ -461,6 +470,36 @@ final class CompanionManager: ObservableObject {
         syncOverlayVisibility()
     }
 
+    private func beginInkCapture(source: PickyInkCaptureSource) {
+        setLocalOverlayReason(.activeInkCapture, visible: true)
+        if !inkCaptureController.begin(source: source) {
+            setLocalOverlayReason(.activeInkCapture, visible: false)
+        }
+    }
+
+    private func finishInkCapture(inputID: UUID?) {
+        let capture = inkCaptureController.finish()
+        if let inputID, let capture, capture.hasVisibleInk {
+            pendingInkCapturesByInputID[inputID] = capture
+        }
+        setLocalOverlayReason(.activeInkCapture, visible: false)
+    }
+
+    private func finishInkCaptureForDeferredTextSubmission() -> PickyInkCapture? {
+        let capture = inkCaptureController.finish()
+        setLocalOverlayReason(.activeInkCapture, visible: false)
+        return capture?.hasVisibleInk == true ? capture : nil
+    }
+
+    private func cancelInkCapture() {
+        inkCaptureController.cancel()
+        setLocalOverlayReason(.activeInkCapture, visible: false)
+    }
+
+    private func consumePendingInkCapture(inputID: UUID) -> PickyInkCapture? {
+        pendingInkCapturesByInputID.removeValue(forKey: inputID)
+    }
+
     private func setInteractionOverlayReasons(from phase: PickyOverlayPhase) {
         switch phase {
         case .hidden:
@@ -499,7 +538,7 @@ final class CompanionManager: ObservableObject {
     }
 
     private var hasActiveTransientOverlayBlocker: Bool {
-        let blockers: Set<PickyOverlayReason> = [.activeVoiceInput, .waitingForVoiceResponse, .speakingResponse, .activePointerAnimation]
+        let blockers: Set<PickyOverlayReason> = [.activeVoiceInput, .waitingForVoiceResponse, .speakingResponse, .activePointerAnimation, .activeInkCapture]
         return !overlayVisibilityReasons.intersection(blockers).isEmpty
     }
 
@@ -686,6 +725,9 @@ final class CompanionManager: ObservableObject {
         }
         quickInputPanelManager.onVisibilityChange = { [weak self] isVisible in
             self?.isQuickInputPanelVisible = isVisible
+            if !isVisible, self?.inkOverlayState.source == .text {
+                self?.cancelInkCapture()
+            }
         }
     }
 
@@ -705,6 +747,9 @@ final class CompanionManager: ObservableObject {
         guard activeShortcutCaptureCount == 0,
               !isPushToTalkShortcutHeld,
               !buddyDictationManager.isDictationInProgress else { return }
+        if !quickInputPanelManager.isPanelVisible {
+            beginInkCapture(source: .text)
+        }
         quickInputPanelManager.presentPanel(near: event.mouseLocation)
     }
 
@@ -744,7 +789,8 @@ final class CompanionManager: ObservableObject {
     private func handleQuickInputSubmit(text: String) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let success = await self.sendDirectMessage(text, source: .quickInput)
+            let inkCapture = self.finishInkCaptureForDeferredTextSubmission()
+            let success = await self.sendDirectMessage(text, source: .quickInput, inkCapture: inkCapture)
             self.quickInputPanelManager.panelDidFinishSending(
                 success: success,
                 errorMessage: success ? nil : self.directMessageError
@@ -768,6 +814,7 @@ final class CompanionManager: ObservableObject {
             let targetSessionID = normalizedVoiceFollowUpSessionID(selectionStore.hoveredVoiceFollowUpSessionID)
             let inputID = UUID()
             interactionVoiceInputID = inputID
+            beginInkCapture(source: .voice)
             print("🎙️ Picky voice route — PTT pressed; storeHover=\(selectionStore.hoveredVoiceFollowUpSessionID ?? "<nil>") prevTask=\(currentResponseTask != nil)")
             setVoiceFollowUpSessionIDForCurrentUtterance(targetSessionID, caller: "PTT-pressed")
             interactionCoordinator.accept(
@@ -822,10 +869,13 @@ final class CompanionManager: ObservableObject {
             pendingKeyboardShortcutStartTask?.cancel()
             pendingKeyboardShortcutStartTask = nil
             if let interactionVoiceInputID {
+                finishInkCapture(inputID: interactionVoiceInputID)
                 interactionCoordinator.accept(
                     .voiceReleased(inputID: interactionVoiceInputID),
                     correlation: PickyInteractionCorrelation(inputID: interactionVoiceInputID, source: .voice)
                 )
+            } else {
+                finishInkCapture(inputID: nil)
             }
             buddyDictationManager.stopPushToTalkFromKeyboardShortcut()
             if !buddyDictationManager.isDictationInProgress {
@@ -904,12 +954,15 @@ final class CompanionManager: ObservableObject {
     }
 
     @discardableResult
-    func sendDirectMessage(_ text: String, source: PickyInteractionSource = .text) async -> Bool {
+    func sendDirectMessage(_ text: String, source: PickyInteractionSource = .text, inkCapture: PickyInkCapture? = nil) async -> Bool {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return false }
 
         directMessageError = nil
         let inputID = UUID()
+        if let inkCapture, inkCapture.hasVisibleInk {
+            pendingInkCapturesByInputID[inputID] = inkCapture
+        }
         return await withCheckedContinuation { continuation in
             directMessageContinuations[inputID] = continuation
             interactionCoordinator.accept(
@@ -1002,7 +1055,8 @@ final class CompanionManager: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(transcript: text, source: "text") else {
+                let inkCapture = consumePendingInkCapture(inputID: inputID)
+                guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(transcript: text, source: "text", inkCapture: inkCapture) else {
                     interactionCoordinator.effectCompleted(
                         .textSubmissionFailed(message: "Context capture returned no packet.", inputID: inputID),
                         correlation: PickyInteractionCorrelation(inputID: inputID, source: .text)
@@ -1051,9 +1105,11 @@ final class CompanionManager: ObservableObject {
         currentResponseTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
+                let inkCapture = consumePendingInkCapture(inputID: inputID)
                 guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
                     transcript: transcript,
-                    voiceFollowUpSessionID: targetSessionID
+                    voiceFollowUpSessionID: targetSessionID,
+                    inkCapture: inkCapture
                 ) else {
                     guard !Task.isCancelled else { return }
                     interactionCoordinator.effectCompleted(

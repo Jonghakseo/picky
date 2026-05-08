@@ -24,6 +24,17 @@ const CursorContextSchema = z.object({
   screenshotPixel: PointSchema,
 });
 
+const InkMarkSchema = z.object({
+  id: z.string().min(1),
+  source: z.enum(["voice", "text"]),
+  kind: z.string().default("freehand-highlight"),
+  screenId: z.string().optional(),
+  points: z.array(PointSchema).min(2),
+  bounds: BoundsSchema,
+  strokeWidth: z.number().positive(),
+  opacity: z.number().min(0).max(1),
+});
+
 export const ScreenshotSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
@@ -57,6 +68,7 @@ export const PickyContextPacketSchema = z.object({
     .optional(),
   browser: BrowserMetadataSchema.optional(),
   screenshots: z.array(ScreenshotSchema).default([]),
+  inkMarks: z.array(InkMarkSchema).default([]),
   warnings: z.array(z.string()).default([]),
 });
 

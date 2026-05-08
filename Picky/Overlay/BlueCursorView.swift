@@ -313,6 +313,11 @@ struct BlueCursorView: View {
             // Nearly transparent background (helps with compositing)
             Color.black.opacity(0.001)
 
+            if companionManager.inkOverlayState.isActive || !companionManager.inkOverlayState.strokes.isEmpty {
+                PickyInkOverlayView(screenFrame: screenFrame, state: companionManager.inkOverlayState)
+                    .allowsHitTesting(false)
+            }
+
             // Fixed target highlight — independent of the cursor buddy animation so
             // pointer requests remain visible even on another display or while
             // the buddy is flying in/out.
@@ -456,7 +461,7 @@ struct BlueCursorView: View {
                     x: 0,
                     y: 0
                 )
-                .scaleEffect(buddyFlightScale * idleScale * motionScale)
+                .scaleEffect(buddyFlightScale * idleScale * motionScale * inkCursorScale)
                 .rotationEffect(.degrees(idleRotation + motionRotation))
                 .opacity(buddyIsVisibleOnThisScreen ? cursorOpacity : 0)
                 .position(cursorPosition)
@@ -474,10 +479,10 @@ struct BlueCursorView: View {
         .ignoresSafeArea()
         .onAppear {
             // Set initial cursor position immediately before starting animation
-            let mouseLocation = NSEvent.mouseLocation
+            let mouseLocation = effectiveCursorGlobalPoint
             isCursorOnThisScreen = screenFrame.contains(mouseLocation)
 
-            self.cursorPosition = PickyOverlayGeometry.cursorBuddyPosition(for: mouseLocation, in: screenFrame)
+            self.cursorPosition = cursorBuddyPosition(for: mouseLocation)
 
             startTrackingCursor()
             startNavigatingToCurrentPointerTargetIfNeeded()
@@ -520,6 +525,21 @@ struct BlueCursorView: View {
         }
     }
 
+    private var effectiveCursorGlobalPoint: CGPoint {
+        companionManager.inkOverlayState.virtualCursorGlobalPoint ?? NSEvent.mouseLocation
+    }
+
+    private var inkCursorScale: CGFloat {
+        companionManager.inkOverlayState.isActive ? 2.0 : 1.0
+    }
+
+    private func cursorBuddyPosition(for screenPoint: CGPoint) -> CGPoint {
+        if companionManager.inkOverlayState.isActive {
+            return PickyOverlayGeometry.swiftUICoordinates(for: screenPoint, in: screenFrame)
+        }
+        return PickyOverlayGeometry.cursorBuddyPosition(for: screenPoint, in: screenFrame)
+    }
+
     /// Whether the buddy pi icon should be visible on this screen.
     /// True when cursor is on this screen during normal following, or
     /// when navigating/pointing at a target on this screen. When Quick Input
@@ -528,8 +548,8 @@ struct BlueCursorView: View {
     /// navigating (detectedElementScreenLocation is set but this screen isn't
     /// the one animating), hide the cursor so only one buddy is ever visible.
     private var buddyIsVisibleOnThisScreen: Bool {
-        guard cursorPreferencesStore.preferences.showPiCursor,
-              !companionManager.isQuickInputPanelVisible else { return false }
+        guard cursorPreferencesStore.preferences.showPiCursor || companionManager.inkOverlayState.isActive else { return false }
+        if companionManager.isQuickInputPanelVisible && !companionManager.inkOverlayState.isActive { return false }
         switch buddyNavigationMode {
         case .followingCursor:
             // If another screen's BlueCursorView is navigating to an element,
@@ -547,7 +567,7 @@ struct BlueCursorView: View {
 
     private func startTrackingCursor() {
         timer = Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { _ in
-            let mouseLocation = NSEvent.mouseLocation
+            let mouseLocation = self.effectiveCursorGlobalPoint
             self.isCursorOnThisScreen = self.screenFrame.contains(mouseLocation)
 
             // The buddy is never interrupted by mouse movement: fly-out runs to
@@ -563,7 +583,7 @@ struct BlueCursorView: View {
             }
 
             // Normal cursor following
-            let newPosition = PickyOverlayGeometry.cursorBuddyPosition(for: mouseLocation, in: self.screenFrame)
+            let newPosition = self.cursorBuddyPosition(for: mouseLocation)
 
             // Detect cursor motion against a fixed anchor (not per-tick) so
             // slow drag motion accumulates above the threshold. Comparing
@@ -598,6 +618,7 @@ struct BlueCursorView: View {
               cursorPreferencesStore.preferences.enableOvershootReaction,
               isCursorOnThisScreen,
               !companionManager.isQuickInputPanelVisible,
+              !companionManager.inkOverlayState.isActive,
               companionManager.voiceState == .idle else {
             resetMouseMovementReaction(animated: true)
             return
@@ -1050,8 +1071,8 @@ struct BlueCursorView: View {
             }
             elapsed += frameInterval
 
-            let mouseLocation = NSEvent.mouseLocation
-            let target = PickyOverlayGeometry.cursorBuddyPosition(for: mouseLocation, in: self.screenFrame)
+            let mouseLocation = self.effectiveCursorGlobalPoint
+            let target = self.cursorBuddyPosition(for: mouseLocation)
 
             let dx = target.x - self.cursorPosition.x
             let dy = target.y - self.cursorPosition.y

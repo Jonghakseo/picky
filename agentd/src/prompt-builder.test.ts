@@ -121,6 +121,43 @@ describe("neutral prompt builder", () => {
     expect(prompt.text.indexOf("## Handoff title")).toBeLessThan(prompt.text.indexOf("You are a side Pi agent spawned"));
   });
 
+  it("includes user-drawn ink marks as screen-region context", () => {
+    const context = PickyContextPacketSchema.parse({
+      ...readJson("context/plain-text.context.json"),
+      screenshots: [
+        {
+          id: "shot-ink",
+          label: "cursor screen",
+          path: "/tmp/picky/ink.jpg",
+          screenId: "screen1",
+          bounds: { x: 0, y: 0, width: 1512, height: 982 },
+          screenshotWidthInPixels: 3024,
+          screenshotHeightInPixels: 1964,
+          isCursorScreen: true,
+        },
+      ],
+      inkMarks: [
+        {
+          id: "ink-1-stroke-1",
+          source: "voice",
+          kind: "freehand-highlight",
+          screenId: "screen1",
+          points: [{ x: 20, y: 30 }, { x: 40, y: 50 }, { x: 60, y: 70 }],
+          bounds: { x: 20, y: 30, width: 40, height: 40 },
+          strokeWidth: 12.5,
+          opacity: 0.34,
+        },
+      ],
+    });
+
+    const prompt = buildInitialTaskPrompt(context);
+
+    expect(prompt.text).toContain("## User-marked screen regions");
+    expect(prompt.text).toContain("semi-transparent Picky highlighter strokes");
+    expect(prompt.text).toContain("mark1 on screen1: freehand-highlight; bbox=20,30,40x40; strokeWidth=12.50; opacity=0.34");
+    expect(prompt.text).toContain("points=20,30 -> 40,50 -> 60,70 (3 points)");
+  });
+
   it("includes captured cursor coordinates when available", () => {
     const context = PickyContextPacketSchema.parse({
       ...readJson("context/plain-text.context.json"),

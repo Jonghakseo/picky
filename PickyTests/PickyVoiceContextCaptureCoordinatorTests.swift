@@ -18,7 +18,7 @@ struct PickyVoiceContextCaptureCoordinatorTests {
                 }
                 return []
             },
-            contextAssembler: { _, _, _, _ in
+            contextAssembler: { _, _, _, _, _ in
                 didAssemble = true
                 return PickyContextPacket(
                     id: "context-cancelled",
@@ -54,7 +54,7 @@ struct PickyVoiceContextCaptureCoordinatorTests {
                 return []
             },
             settingsProvider: { settings },
-            contextAssembler: { _, source, transcript, _ in
+            contextAssembler: { _, source, transcript, _, _ in
                 PickyContextPacket(
                     id: "context-focused-screen",
                     source: source,

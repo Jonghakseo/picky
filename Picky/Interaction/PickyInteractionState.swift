@@ -203,6 +203,7 @@ enum PickyOverlayReason: String, Equatable, Codable, Hashable {
     case waitingForVoiceResponse
     case speakingResponse
     case activePointerAnimation
+    case activeInkCapture
     case transientPointerDisplay
 }
 

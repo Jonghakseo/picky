@@ -190,6 +190,17 @@ function appendContext(lines: string[], context: PickyContextPacket): void {
       lines.push(`- ${screenshot.label}${screen}${focus}${bounds}${pixelSize}${cursor}: ${screenshot.path}`);
     }
   }
+  if (context.inkMarks.length > 0) {
+    lines.push("", "## User-marked screen regions");
+    lines.push("The user drew these semi-transparent Picky highlighter strokes during input. The attached screenshot files are annotated with matching blue strokes and number badges.");
+    for (const [index, mark] of context.inkMarks.entries()) {
+      const screen = mark.screenId ? ` on ${mark.screenId}` : "";
+      const bounds = `${formatCoordinate(mark.bounds.x)},${formatCoordinate(mark.bounds.y)},${formatCoordinate(mark.bounds.width)}x${formatCoordinate(mark.bounds.height)}`;
+      const samplePoints = mark.points.slice(0, 8).map(formatPoint).join(" -> ");
+      const suffix = mark.points.length > 8 ? ` -> … (${mark.points.length} points)` : ` (${mark.points.length} points)`;
+      lines.push(`- mark${index + 1}${screen}: ${mark.kind}; bbox=${bounds}; strokeWidth=${formatCoordinate(mark.strokeWidth)}; opacity=${formatCoordinate(mark.opacity)}; points=${samplePoints}${suffix}`);
+    }
+  }
   if (context.warnings.length > 0) {
     lines.push("", "## Capture warnings", ...context.warnings.map((warning) => `- ${warning}`));
   }

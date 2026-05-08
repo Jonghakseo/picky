@@ -100,6 +100,56 @@ struct PickyContextPacketTests {
         }
     }
 
+    @Test func assemblesInkMarksIntoScreenshotPixelContext() throws {
+        let appSupport = FileManager.default.temporaryDirectory.appendingPathComponent("picky-ink-context-\(UUID().uuidString)", isDirectory: true)
+        let capture = CompanionScreenCapture(
+            imageData: Data("jpeg".utf8),
+            label: "focused screen — cursor is on this screen (primary focus)",
+            isCursorScreen: true,
+            displayWidthInPoints: 100,
+            displayHeightInPoints: 100,
+            displayFrame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            screenshotWidthInPixels: 200,
+            screenshotHeightInPixels: 200,
+            cursor: nil
+        )
+        let inkCapture = PickyInkCapture(
+            id: "ink-test",
+            source: .voice,
+            startedAt: Date(timeIntervalSince1970: 1_800_000_000),
+            endedAt: Date(timeIntervalSince1970: 1_800_000_001),
+            strokes: [
+                PickyInkCaptureStroke(
+                    id: "ink-test-stroke-1",
+                    source: .voice,
+                    points: [PickyCGPoint(x: 10, y: 10), PickyCGPoint(x: 30, y: 30), PickyCGPoint(x: 40, y: 20)],
+                    strokeWidth: 8,
+                    opacity: 0.34
+                )
+            ]
+        )
+        let assembler = PickyContextPacketAssembler(
+            appProvider: FakeAppProvider(),
+            screenProvider: StaticPickyScreenContextProvider(captures: [capture], inkCapture: inkCapture),
+            screenshotStore: PickyAppSupportScreenshotStore(appSupportRoot: appSupport),
+            defaultCwd: nil,
+            idGenerator: { "context-ink-001" }
+        )
+
+        let packet = try assembler.assemble(source: "voice", transcript: "여기 봐줘")
+
+        #expect(packet.inkMarks.count == 1)
+        #expect(packet.inkMarks.first?.screenId == "screen1")
+        #expect(packet.inkMarks.first?.points == [
+            PickyCGPoint(x: 20, y: 180),
+            PickyCGPoint(x: 60, y: 140),
+            PickyCGPoint(x: 80, y: 160)
+        ])
+        #expect(packet.inkMarks.first?.bounds == PickyCGRect(x: 20, y: 140, width: 60, height: 40))
+        #expect(packet.inkMarks.first?.strokeWidth == 16)
+        #expect(packet.inkMarks.first?.opacity == 0.34)
+    }
+
     @Test func agentClientStubReturnsLocalReceiptWithoutRouting() async throws {
         let packet = PickyContextPacket(
             id: "context-test-001",

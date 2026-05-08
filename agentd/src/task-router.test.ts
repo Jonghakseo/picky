@@ -9,6 +9,7 @@ const context = (transcript: string, screenshots = 0): PickyContextPacket => ({
   transcript,
   cwd: "/tmp/project",
   screenshots: Array.from({ length: screenshots }, (_, index) => ({ id: `shot-${index + 1}`, label: `screen ${index + 1}`, path: `/tmp/shot-${index + 1}.jpg` })),
+  inkMarks: [],
   warnings: [],
 });
 

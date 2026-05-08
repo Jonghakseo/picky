@@ -126,7 +126,7 @@ struct PickyCompanionDirectMessageTests {
     private func fakeDirectMessageContextCaptureCoordinator() -> PickyVoiceContextCaptureCoordinator {
         PickyVoiceContextCaptureCoordinator(
             screenCapture: { _ in [] },
-            contextAssembler: { _, source, transcript, _ in
+            contextAssembler: { _, source, transcript, _, _ in
                 PickyContextPacket(
                     id: "typed-context",
                     source: source,

@@ -198,6 +198,7 @@ function context(text: string): PickyContextPacket {
     transcript: text,
     cwd: "/tmp/project",
     screenshots: [],
-    warnings: [],
+    inkMarks: [],
+  warnings: [],
   };
 }

@@ -21,7 +21,56 @@ struct PickyContextPacket: Codable, Equatable, Identifiable {
     let activeWindow: PickyWindowContext?
     let browser: PickyBrowserContext?
     let screenshots: [PickyScreenshotContext]
+    let inkMarks: [PickyInkMarkContext]
     let warnings: [String]
+
+    init(
+        id: String,
+        source: String,
+        capturedAt: Date,
+        transcript: String?,
+        selectedText: String?,
+        cwd: String?,
+        activeApp: PickyApplicationContext?,
+        activeWindow: PickyWindowContext?,
+        browser: PickyBrowserContext?,
+        screenshots: [PickyScreenshotContext],
+        inkMarks: [PickyInkMarkContext] = [],
+        warnings: [String]
+    ) {
+        self.id = id
+        self.source = source
+        self.capturedAt = capturedAt
+        self.transcript = transcript
+        self.selectedText = selectedText
+        self.cwd = cwd
+        self.activeApp = activeApp
+        self.activeWindow = activeWindow
+        self.browser = browser
+        self.screenshots = screenshots
+        self.inkMarks = inkMarks
+        self.warnings = warnings
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, source, capturedAt, transcript, selectedText, cwd, activeApp, activeWindow, browser, screenshots, inkMarks, warnings
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        source = try container.decode(String.self, forKey: .source)
+        capturedAt = try container.decode(Date.self, forKey: .capturedAt)
+        transcript = try container.decodeIfPresent(String.self, forKey: .transcript)
+        selectedText = try container.decodeIfPresent(String.self, forKey: .selectedText)
+        cwd = try container.decodeIfPresent(String.self, forKey: .cwd)
+        activeApp = try container.decodeIfPresent(PickyApplicationContext.self, forKey: .activeApp)
+        activeWindow = try container.decodeIfPresent(PickyWindowContext.self, forKey: .activeWindow)
+        browser = try container.decodeIfPresent(PickyBrowserContext.self, forKey: .browser)
+        screenshots = try container.decodeIfPresent([PickyScreenshotContext].self, forKey: .screenshots) ?? []
+        inkMarks = try container.decodeIfPresent([PickyInkMarkContext].self, forKey: .inkMarks) ?? []
+        warnings = try container.decodeIfPresent([String].self, forKey: .warnings) ?? []
+    }
 }
 
 struct PickyApplicationContext: Codable, Equatable {
@@ -100,7 +149,28 @@ struct PickyScreenContext: Equatable {
     let screenshotHeightInPixels: Int
     let isCursorScreen: Bool
     let cursor: PickyCursorContext?
+    let inkMarks: [PickyInkMarkContext]
     let imageData: Data?
+
+    init(
+        label: String,
+        frame: PickyCGRect,
+        screenshotWidthInPixels: Int,
+        screenshotHeightInPixels: Int,
+        isCursorScreen: Bool,
+        cursor: PickyCursorContext?,
+        inkMarks: [PickyInkMarkContext] = [],
+        imageData: Data?
+    ) {
+        self.label = label
+        self.frame = frame
+        self.screenshotWidthInPixels = screenshotWidthInPixels
+        self.screenshotHeightInPixels = screenshotHeightInPixels
+        self.isCursorScreen = isCursorScreen
+        self.cursor = cursor
+        self.inkMarks = inkMarks
+        self.imageData = imageData
+    }
 }
 
 struct PickyCGPoint: Codable, Equatable {

@@ -242,13 +242,21 @@ struct PickyConversationContextLineView: View {
 
     @ViewBuilder
     private func gitMetrics(status: PickyGitRepositoryStatus) -> some View {
-        if status.insertions > 0 {
-            gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
-                .help("Insertions")
-        }
-        if status.deletions > 0 {
-            gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
-                .help("Deletions")
+        if status.insertions > 0 || status.deletions > 0 {
+            Button(action: { openDiffReview() }) {
+                HStack(spacing: 4) {
+                    if status.insertions > 0 {
+                        gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
+                    }
+                    if status.deletions > 0 {
+                        gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Open changed files diff review")
+            .pointerCursor()
         }
         if status.aheadCount > 0 {
             Button(action: { runRemoteAction(.push) }) {
@@ -397,6 +405,10 @@ struct PickyConversationContextLineView: View {
         Text(text)
             .font(PickyHUDTypography.statusMonospacedMedium)
             .foregroundColor(color.opacity(0.92))
+    }
+
+    private func openDiffReview() {
+        PickyDiffReviewWindowPresenter.shared.open(cwd: session.cwd)
     }
 
     private func runRemoteAction(_ action: GitRemoteAction) {

@@ -274,6 +274,14 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("sessionMessageRemoved"), sessionId: z.string(), messageId: z.string(), seq: z.number().int() }),
   EventBaseSchema.extend({ type: z.literal("sessionQueueUpdated"), sessionId: z.string(), steering: z.array(PickyQueueItemSchema), followUp: z.array(PickyQueueItemSchema), steeringMode: PickyQueueModeSchema.optional(), followUpMode: PickyQueueModeSchema.optional(), seq: z.number().int() }),
   EventBaseSchema.extend({ type: z.literal("sessionActivityUpdated"), sessionId: z.string(), activitySummary: PickyActivitySummarySchema, seq: z.number().int() }),
+  EventBaseSchema.extend({
+    type: z.literal("terminalSessionSyncOutcome"),
+    sessionId: z.string(),
+    baselineFound: z.boolean(),
+    importedMessageCount: z.number().int().nonnegative(),
+    activeLastMessageId: z.string().optional(),
+    baselinePiMessageId: z.string().optional(),
+  }),
   EventBaseSchema.extend({ type: z.literal("error"), code: z.string(), message: z.string(), commandId: z.string().optional() }),
 ]);
 

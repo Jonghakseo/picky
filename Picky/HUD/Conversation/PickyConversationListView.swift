@@ -17,6 +17,11 @@ struct PickyConversationListView: View {
             ZStack {
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 8) {
+                        if let outcome = session.lastTerminalSyncOutcome {
+                            PickyTerminalSyncBanner(outcome: outcome) {
+                                viewModel.dismissTerminalSyncOutcome(sessionID: session.id)
+                            }
+                        }
                         if hiddenHistoryCount > 0 {
                             moreHistoryButton
                         }

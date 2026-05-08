@@ -120,6 +120,7 @@ final class PickySessionListViewModel: ObservableObject {
         var steeringMode: PickyQueueMode
         var followUpMode: PickyQueueMode
         var activitySummary: PickyActivitySummary
+        var lastTerminalSyncOutcome: PickyTerminalSessionSyncOutcome? = nil
         var contextUsage: PickyContextUsage? = nil
         var currentAssistantRun: PickyAssistantRunMetadata? = nil
         var pendingExtensionUiRequest: PickyExtensionUiRequest?
@@ -913,8 +914,19 @@ final class PickySessionListViewModel: ObservableObject {
         case .error(let error):
             pickySessionLog("protocol error code=\(error.code) command=\(error.commandId ?? "none")")
             lastError = error.message
+        case .terminalSessionSyncOutcome(let outcome):
+            update(sessionID: outcome.sessionId) { card in
+                card.lastTerminalSyncOutcome = outcome
+                card.updatedAt = Date()
+            }
         case .quickReply, .mainMessagesSnapshot, .mainMessageAppended, .pointerOverlayRequested, .hello, .unknown:
             break
+        }
+    }
+
+    func dismissTerminalSyncOutcome(sessionID: String) {
+        update(sessionID: sessionID) { card in
+            card.lastTerminalSyncOutcome = nil
         }
     }
 

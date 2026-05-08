@@ -2797,6 +2797,8 @@ describe("SessionSupervisor", () => {
     });
     const supervisor = new SessionSupervisor(new ManualRuntime(), store);
     await supervisor.load();
+    const outcomes: Array<unknown> = [];
+    supervisor.on("terminalSessionSyncOutcome", (_sessionId, outcome) => outcomes.push(outcome));
 
     await supervisor.syncTerminalSession("terminal-sync-session", "a1");
 
@@ -2808,9 +2810,44 @@ describe("SessionSupervisor", () => {
     ]);
     expect(supervisor.get("terminal-sync-session")?.lastSummary).toBe("terminal reply");
     expect(supervisor.get("terminal-sync-session")?.finalAnswer).toBe("terminal reply");
+    expect(outcomes).toEqual([{ baselineFound: true, importedMessageCount: 2, activeLastMessageId: "a2", baselinePiMessageId: "a1" }]);
 
     await supervisor.syncTerminalSession("terminal-sync-session", "a1");
     expect(supervisor.get("terminal-sync-session")?.messages).toHaveLength(4);
+    expect(outcomes.at(-1)).toEqual({ baselineFound: true, importedMessageCount: 0, activeLastMessageId: "a2", baselinePiMessageId: "a1" });
+  });
+
+  it("emits a baseline-not-found terminalSessionSyncOutcome when the baseline is no longer on the active path", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-baseline-miss-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    await writeFile(piSessionFile, [
+      JSON.stringify({ type: "session", version: 3, id: "pi-session", timestamp: "2026-05-01T00:00:00.000Z", cwd: "/tmp/project" }),
+      JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-05-01T00:00:01.000Z", message: { role: "user", content: "only entry", timestamp: 0 } }),
+    ].join("\n"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "baseline-miss-session",
+      title: "Baseline miss",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "prev",
+      finalAnswer: "prev",
+      logs: [`pi session: ${piSessionFile}`],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [],
+    });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store);
+    await supervisor.load();
+    const outcomes: Array<unknown> = [];
+    supervisor.on("terminalSessionSyncOutcome", (_sessionId, outcome) => outcomes.push(outcome));
+
+    await supervisor.syncTerminalSession("baseline-miss-session", "unknown-baseline-id");
+
+    expect(outcomes).toEqual([{ baselineFound: false, importedMessageCount: 0, activeLastMessageId: "u1", baselinePiMessageId: "unknown-baseline-id" }]);
   });
 
   it("marks a cancelled session completed when terminal sync imports a recovery answer", async () => {

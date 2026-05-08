@@ -136,12 +136,14 @@ enum PickyEvent: Equatable {
     case sessionMessageRemoved(sessionId: String, messageId: String, seq: Int)
     case sessionQueueUpdated(sessionId: String, steering: [PickyQueueItem], followUp: [PickyQueueItem], steeringMode: PickyQueueMode?, followUpMode: PickyQueueMode?, seq: Int)
     case sessionActivityUpdated(sessionId: String, activitySummary: PickyActivitySummary, seq: Int)
+    case terminalSessionSyncOutcome(PickyTerminalSessionSyncOutcome)
     case error(PickyErrorEvent)
     case unknown(type: String)
 
     private enum CodingKeys: String, CodingKey {
         case sessions, session, sessionId, line, tool, request, artifact, contextId, text, messages, message, commands
         case messageId, seq, steering, followUp, steeringMode, followUpMode, activitySummary, originSource, replyKind, inputId
+        case baselineFound, importedMessageCount, activeLastMessageId, baselinePiMessageId
     }
 
     init(type: String, decoder: Decoder) throws {
@@ -204,6 +206,15 @@ enum PickyEvent: Equatable {
         case "sessionActivityUpdated":
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self = .sessionActivityUpdated(sessionId: try c.decode(String.self, forKey: .sessionId), activitySummary: try c.decode(PickyActivitySummary.self, forKey: .activitySummary), seq: try c.decode(Int.self, forKey: .seq))
+        case "terminalSessionSyncOutcome":
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self = .terminalSessionSyncOutcome(PickyTerminalSessionSyncOutcome(
+                sessionId: try c.decode(String.self, forKey: .sessionId),
+                baselineFound: try c.decode(Bool.self, forKey: .baselineFound),
+                importedMessageCount: try c.decode(Int.self, forKey: .importedMessageCount),
+                activeLastMessageId: try c.decodeIfPresent(String.self, forKey: .activeLastMessageId),
+                baselinePiMessageId: try c.decodeIfPresent(String.self, forKey: .baselinePiMessageId)
+            ))
         case "error": self = .error(try PickyErrorEvent(from: decoder))
         default: self = .unknown(type: type)
         }
@@ -262,6 +273,14 @@ struct PickyErrorEvent: Decodable, Equatable {
     let code: String
     let message: String
     let commandId: String?
+}
+
+struct PickyTerminalSessionSyncOutcome: Decodable, Equatable {
+    let sessionId: String
+    let baselineFound: Bool
+    let importedMessageCount: Int
+    let activeLastMessageId: String?
+    let baselinePiMessageId: String?
 }
 
 enum PickySlashCommandSource: String, Codable, Equatable {

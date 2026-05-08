@@ -47,6 +47,14 @@ export class AgentdServer {
     this.options.supervisor.on("mainMessage", (message) => this.broadcast({ type: "mainMessageAppended", message }));
     this.options.supervisor.on("pointerOverlayRequested", (request) => this.broadcast({ type: "pointerOverlayRequested", request }));
     this.options.supervisor.on("artifact", (sessionId, artifact) => this.broadcast({ type: "artifactUpdated", sessionId, artifact }));
+    this.options.supervisor.on("terminalSessionSyncOutcome", (sessionId, outcome) => this.broadcast({
+      type: "terminalSessionSyncOutcome",
+      sessionId,
+      baselineFound: outcome.baselineFound,
+      importedMessageCount: outcome.importedMessageCount,
+      activeLastMessageId: outcome.activeLastMessageId,
+      baselinePiMessageId: outcome.baselinePiMessageId,
+    }));
 
     await new Promise<void>((resolve) => this.httpServer!.listen(this.options.port, "127.0.0.1", resolve));
     const address = this.httpServer.address();
@@ -236,6 +244,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
     case "sessionQueueUpdated":
     case "sessionActivityUpdated":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, seq: event.seq };
+    case "terminalSessionSyncOutcome":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, baselineFound: event.baselineFound ? 1 : 0, importedMessageCount: event.importedMessageCount };
     case "error":
       return { eventId: event.id, type: event.type, commandId: event.commandId, code: event.code };
   }

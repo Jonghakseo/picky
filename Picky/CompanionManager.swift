@@ -1418,7 +1418,7 @@ final class CompanionManager: ObservableObject {
         case .error(let error):
             finishAwaitingAgentResponse(visibleText: error.message, spokenText: nil)
         case .hello, .sessionSnapshot, .artifactUpdated, .slashCommandsSnapshot, .unknown,
-             .sessionMessageAppended, .sessionMessageReplaced, .sessionMessageRemoved, .sessionQueueUpdated, .sessionActivityUpdated:
+             .sessionMessageAppended, .sessionMessageReplaced, .sessionMessageRemoved, .sessionQueueUpdated, .sessionActivityUpdated, .terminalSessionSyncOutcome:
             break
         }
     }

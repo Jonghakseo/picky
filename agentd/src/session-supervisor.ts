@@ -967,6 +967,7 @@ export class SessionSupervisor extends EventEmitter {
     const result = await readPiTerminalSessionMessages(sessionFilePath, baselinePiMessageId);
     if (!result.baselineFound) {
       logAgentd("terminal session sync skipped", { sessionId, reason: "baseline pi message not found", baselinePiMessageId, activeLastMessageId: result.activeLastMessageId });
+      this.emitTerminalSessionSyncOutcome(sessionId, { baselineFound: false, importedMessageCount: 0, activeLastMessageId: result.activeLastMessageId, baselinePiMessageId });
       return this.mustGet(sessionId);
     }
 
@@ -974,6 +975,7 @@ export class SessionSupervisor extends EventEmitter {
     const messagesToImport = result.messages.filter((message) => !existingIds.has(message.id));
     if (messagesToImport.length === 0) {
       logAgentd("terminal session sync noop", { sessionId, activeLastMessageId: result.activeLastMessageId });
+      this.emitTerminalSessionSyncOutcome(sessionId, { baselineFound: true, importedMessageCount: 0, activeLastMessageId: result.activeLastMessageId, baselinePiMessageId });
       return this.mustGet(sessionId);
     }
 
@@ -992,7 +994,15 @@ export class SessionSupervisor extends EventEmitter {
     if (latestAssistantText) patch.status = "completed";
     await this.patch(sessionId, patch);
     logAgentd("terminal session synced", { sessionId, importedMessages: messagesToImport.length, activeLastMessageId: result.activeLastMessageId });
+    this.emitTerminalSessionSyncOutcome(sessionId, { baselineFound: true, importedMessageCount: messagesToImport.length, activeLastMessageId: result.activeLastMessageId, baselinePiMessageId });
     return this.mustGet(sessionId);
+  }
+
+  private emitTerminalSessionSyncOutcome(
+    sessionId: string,
+    outcome: { baselineFound: boolean; importedMessageCount: number; activeLastMessageId?: string; baselinePiMessageId?: string },
+  ): void {
+    this.emit("terminalSessionSyncOutcome", sessionId, outcome);
   }
 
   async followUp(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {

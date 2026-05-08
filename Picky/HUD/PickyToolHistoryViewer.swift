@@ -12,7 +12,7 @@ import SwiftUI
 
 @MainActor
 protocol PickyToolHistoryPresenting: AnyObject {
-    func openHistory(sessionID: String, title: String, toolsProvider: @escaping () -> [PickyToolActivity])
+    func openHistory(sessionID: String, title: String, scope: PickyToolHistoryScope, toolsProvider: @escaping () -> [PickyToolActivity])
 }
 
 @MainActor
@@ -34,10 +34,10 @@ final class PickyToolHistoryPresenter: PickyToolHistoryPresenting {
         self.appearanceStore = appearanceStore
     }
 
-    func openHistory(sessionID: String, title: String, toolsProvider: @escaping () -> [PickyToolActivity]) {
+    func openHistory(sessionID: String, title: String, scope: PickyToolHistoryScope, toolsProvider: @escaping () -> [PickyToolActivity]) {
         if let existing = records[sessionID] {
-            existing.model.update(title: title, tools: toolsProvider())
             existing.model.refresh = toolsProvider
+            existing.model.update(title: title, tools: toolsProvider(), scope: scope)
             existing.panel.title = "Tool history — \(title)"
             NSApp.activate(ignoringOtherApps: true)
             existing.panel.orderFrontRegardless()
@@ -45,7 +45,7 @@ final class PickyToolHistoryPresenter: PickyToolHistoryPresenting {
             return
         }
 
-        let model = PickyToolHistoryViewerModel(title: title, tools: toolsProvider(), refresh: toolsProvider)
+        let model = PickyToolHistoryViewerModel(title: title, tools: toolsProvider(), scope: scope, refresh: toolsProvider)
         let panel = PickyReportPanel(
             contentRect: targetFrame(),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
@@ -102,29 +102,43 @@ final class PickyToolHistoryPresenter: PickyToolHistoryPresenting {
 final class PickyToolHistoryViewerModel: ObservableObject {
     @Published private(set) var title: String
     @Published private(set) var tools: [PickyToolActivity]
+    @Published private(set) var scope: PickyToolHistoryScope
     @Published private(set) var entries: [PickyToolHistoryEntry]
     @Published private(set) var summary: PickyToolHistorySummary
+    let initialScope: PickyToolHistoryScope
     var refresh: () -> [PickyToolActivity]
 
-    init(title: String, tools: [PickyToolActivity], refresh: @escaping () -> [PickyToolActivity]) {
+    init(title: String, tools: [PickyToolActivity], scope: PickyToolHistoryScope, refresh: @escaping () -> [PickyToolActivity]) {
         self.title = title
         self.tools = tools
-        let entries = PickyToolHistoryRenderer.entries(from: tools)
+        self.scope = scope
+        self.initialScope = scope
+        let entries = PickyToolHistoryRenderer.entries(from: tools, scope: scope)
         self.entries = entries
         self.summary = PickyToolHistorySummary(entries: entries)
         self.refresh = refresh
     }
 
-    func update(title: String, tools: [PickyToolActivity]) {
+    func update(title: String, tools: [PickyToolActivity], scope: PickyToolHistoryScope? = nil) {
         self.title = title
         self.tools = tools
-        let entries = PickyToolHistoryRenderer.entries(from: tools)
-        self.entries = entries
-        self.summary = PickyToolHistorySummary(entries: entries)
+        if let scope { self.scope = scope }
+        recompute()
+    }
+
+    func setScope(_ newScope: PickyToolHistoryScope) {
+        scope = newScope
+        recompute()
     }
 
     func reload() {
         update(title: title, tools: refresh())
+    }
+
+    private func recompute() {
+        let entries = PickyToolHistoryRenderer.entries(from: tools, scope: scope)
+        self.entries = entries
+        self.summary = PickyToolHistorySummary(entries: entries)
     }
 }
 
@@ -164,6 +178,7 @@ struct PickyToolHistoryViewerWindowView: View {
                 summaryStrip
             }
             Spacer()
+            scopeToggle
             Button {
                 model.reload()
             } label: {
@@ -176,6 +191,37 @@ struct PickyToolHistoryViewerWindowView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
+    }
+
+    @ViewBuilder
+    private var scopeToggle: some View {
+        if model.initialScope.isWholeSession {
+            EmptyView()
+        } else {
+            HStack(spacing: 0) {
+                scopeButton(label: "This turn", isActive: !model.scope.isWholeSession) {
+                    model.setScope(model.initialScope)
+                }
+                scopeButton(label: "Whole session", isActive: model.scope.isWholeSession) {
+                    model.setScope(.session)
+                }
+            }
+            .background(Capsule().fill(DS.Colors.surface2.opacity(0.5)))
+            .overlay(Capsule().stroke(DS.Colors.borderSubtle.opacity(0.5), lineWidth: 0.5))
+            .clipShape(Capsule())
+        }
+    }
+
+    private func scopeButton(label: String, isActive: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 11, weight: isActive ? .semibold : .medium))
+                .foregroundStyle(isActive ? DS.Colors.textPrimary : DS.Colors.textSecondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(isActive ? DS.Colors.surface3.opacity(0.9) : Color.clear))
+        }
+        .buttonStyle(.plain)
     }
 
     private var summaryStrip: some View {
@@ -287,10 +333,11 @@ struct PickyToolHistoryEntryView: View {
             keyValueRow("file", value: file.map { AnyView(monospaceLink($0)) })
             keyValueRow("range", value: range.map { AnyView(monospaceText($0)) })
             keyValueRow("result", value: summary.map { AnyView(secondaryText($0)) })
-        case let .bash(command, title, output):
-            keyValueRow("title", value: title.map { AnyView(secondaryText($0)) })
+        case let .bash(command, output):
             if let command {
                 keyValueBlock("$") { codeBlock(command) }
+            } else {
+                keyValueRow("$", value: AnyView(secondaryText("(command not captured)")))
             }
             if let output {
                 keyValueBlock("output") { outputBlock(output) }

@@ -34,7 +34,7 @@ struct PickyConversationListView: View {
                             queueSection(items: visibleQueuedFollowUps, kind: .followUp, mode: session.followUpMode)
                             queueSection(items: visibleQueuedSteers, kind: .steer, mode: session.steeringMode)
                             if showsLiveActivitySummary {
-                                PickyActivitySummaryView(summary: session.activitySummary, onTap: openToolHistory)
+                                PickyActivitySummaryView(summary: session.activitySummary, onTap: openCurrentTurnToolHistory)
                             }
                         }
                     }
@@ -129,7 +129,7 @@ struct PickyConversationListView: View {
             )
         case .agentActivity:
             if let snapshot = message.activitySnapshot, !snapshot.visibleToolCallItems.isEmpty {
-                PickyActivitySummaryView(summary: snapshot, onTap: openToolHistory)
+                PickyActivitySummaryView(summary: snapshot, onTap: { openToolHistory(forAgentActivityID: message.id) })
             } else {
                 EmptyView()
             }
@@ -170,8 +170,12 @@ struct PickyConversationListView: View {
         Task { try? await viewModel.openReport(sessionID: session.id) }
     }
 
-    private func openToolHistory() {
-        viewModel.openToolHistory(sessionID: session.id)
+    private func openCurrentTurnToolHistory() {
+        viewModel.openToolHistoryForCurrentTurn(sessionID: session.id)
+    }
+
+    private func openToolHistory(forAgentActivityID messageID: String) {
+        viewModel.openToolHistoryForAgentActivity(sessionID: session.id, messageID: messageID)
     }
 
     @ViewBuilder

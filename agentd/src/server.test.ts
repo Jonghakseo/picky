@@ -114,7 +114,7 @@ describe("AgentdServer", () => {
         ...Array.from({ length: 80 }, (_, index) => `extension ui: setWidget ${index}`),
         "latest useful log",
       ],
-      tools: Array.from({ length: 80 }, (_, index) => ({
+      tools: Array.from({ length: 320 }, (_, index) => ({
         toolCallId: `tool-${index}`,
         name: "bash",
         status: "succeeded" as const,
@@ -141,7 +141,8 @@ describe("AgentdServer", () => {
     expect(compact.logs).toContain("pi session: /tmp/picky.jsonl");
     expect(compact.logs).toContain("steer: keep this visible in the HUD");
     expect(compact.logs.at(-1)).toBe("latest useful log");
-    expect(compact.tools.length).toBeLessThanOrEqual(12);
+    expect(compact.tools.length).toBeLessThanOrEqual(200);
+    expect(compact.tools.length).toBeGreaterThan(12);
     expect(compact.tools.at(-1)?.preview?.length).toBeLessThanOrEqual(241);
     expect(compact.changedFiles.length).toBeLessThanOrEqual(20);
     expect(compact.changedFiles.at(-1)?.summary?.length).toBeLessThanOrEqual(241);
@@ -149,7 +150,7 @@ describe("AgentdServer", () => {
     expect(compact.messages?.length).toBeLessThanOrEqual(12);
     expect(compact.messages?.[0]?.id).toBe("msg-68");
     expect(compact.messages?.at(-1)?.text?.length).toBeLessThanOrEqual(701);
-    expect(JSON.stringify(compact).length).toBeLessThan(40_000);
+    expect(JSON.stringify(compact).length).toBeLessThan(120_000);
   });
 });
 

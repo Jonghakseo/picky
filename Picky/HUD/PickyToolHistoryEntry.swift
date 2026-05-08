@@ -23,7 +23,7 @@ struct PickyToolHistoryEditChange: Equatable {
 
 enum PickyToolHistoryDetail: Equatable {
     case read(file: String?, range: String?, resultSummary: String?)
-    case bash(command: String?, title: String?, output: String?)
+    case bash(command: String?, output: String?)
     case edit(file: String?, changes: [PickyToolHistoryEditChange])
     case write(file: String?, content: String?)
     case generic(argsJSON: String?, result: String?)
@@ -36,12 +36,35 @@ struct PickyToolHistoryEntry: Identifiable, Equatable {
     let category: PickyToolHistoryCategory
     let status: PickyToolHistoryStatus
     let durationMs: Int?
+    let startedAt: Date?
     let detail: PickyToolHistoryDetail
 }
 
+enum PickyToolHistoryScope: Equatable {
+    case session
+    case dateRange(start: Date?, end: Date?)
+
+    var isWholeSession: Bool { self == .session }
+}
+
 enum PickyToolHistoryRenderer {
-    static func entries(from tools: [PickyToolActivity]) -> [PickyToolHistoryEntry] {
-        tools.enumerated().map { index, tool in entry(from: tool, index: index + 1) }
+    static func entries(from tools: [PickyToolActivity], scope: PickyToolHistoryScope = .session) -> [PickyToolHistoryEntry] {
+        let filtered = tools.filter { matches(scope: scope, tool: $0) }
+        return filtered.enumerated().map { index, tool in entry(from: tool, index: index + 1) }
+    }
+
+    static func matches(scope: PickyToolHistoryScope, tool: PickyToolActivity) -> Bool {
+        switch scope {
+        case .session:
+            return true
+        case let .dateRange(start, end):
+            // Tools without a startedAt are shown only when the scope is fully open
+            // because we cannot decide which turn they belong to.
+            guard let started = tool.startedAt else { return start == nil && end == nil }
+            if let start, started < start { return false }
+            if let end, started >= end { return false }
+            return true
+        }
     }
 
     static func entry(from tool: PickyToolActivity, index: Int) -> PickyToolHistoryEntry {
@@ -57,6 +80,7 @@ enum PickyToolHistoryRenderer {
             category: category,
             status: status,
             durationMs: durationMs(start: tool.startedAt, end: tool.endedAt),
+            startedAt: tool.startedAt,
             detail: detail
         )
     }
@@ -95,9 +119,8 @@ enum PickyToolHistoryRenderer {
             let resultSummary = result.map { summarizeReadResult($0) }
             return .read(file: file, range: range, resultSummary: resultSummary)
         case .bash:
-            let command = stringValue(args, keys: ["command", "cmd", "script"])
-            let title = stringValue(args, keys: ["title", "description"])
-            return .bash(command: command, title: title, output: result)
+            let command = stringValue(args, keys: ["command", "cmd", "script"]) ?? recoverStringValue(from: argsJSON, key: "command")
+            return .bash(command: command, output: result)
         case .edit:
             let file = stringValue(args, keys: ["path", "file", "file_path", "filePath"])
             return .edit(file: file, changes: editChanges(args))
@@ -114,6 +137,25 @@ enum PickyToolHistoryRenderer {
         guard let json, let data = json.data(using: .utf8) else { return [:] }
         let object = try? JSONSerialization.jsonObject(with: data, options: [])
         return (object as? [String: Any]) ?? [:]
+    }
+
+    /// Recovers a string value from possibly truncated JSON like `{"command":"long command...`.
+    /// Falls back to a regex-based scrape so a 500-char preview that cuts mid-string still
+    /// surfaces the readable head of the value instead of nothing.
+    static func recoverStringValue(from json: String?, key: String) -> String? {
+        guard let json else { return nil }
+        let pattern = #"\"\#(NSRegularExpression.escapedPattern(for: key))\"\s*:\s*\"((?:\\.|[^\"])*)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: json, range: NSRange(json.startIndex..., in: json)),
+              match.numberOfRanges >= 2,
+              let range = Range(match.range(at: 1), in: json) else { return nil }
+        let raw = String(json[range])
+        let unescaped = raw
+            .replacingOccurrences(of: #"\\n"#, with: "\n")
+            .replacingOccurrences(of: #"\\t"#, with: "\t")
+            .replacingOccurrences(of: #"\\\""#, with: "\"")
+            .replacingOccurrences(of: #"\\\\"#, with: "\\")
+        return unescaped.isEmpty ? nil : unescaped
     }
 
     private static func stringValue(_ args: [String: Any], keys: [String]) -> String? {

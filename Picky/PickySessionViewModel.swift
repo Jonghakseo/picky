@@ -535,12 +535,22 @@ final class PickySessionListViewModel: ObservableObject {
         try await answerExtensionUi(sessionID: sessionID, requestID: requestID, value: .object(["cancelled": .bool(true)]))
     }
 
-    func openToolHistory(sessionID: String) {
-        pickySessionLog("open tool history session=\(sessionID)")
+    func openToolHistory(sessionID: String, scope: PickyToolHistoryScope = .session) {
+        pickySessionLog("open tool history session=\(sessionID) scope=\(scope)")
         let title = sessionTitle(for: sessionID)
-        toolHistoryPresenter.openHistory(sessionID: sessionID, title: title) { [weak self] in
+        toolHistoryPresenter.openHistory(sessionID: sessionID, title: title, scope: scope) { [weak self] in
             self?.toolsForSession(sessionID: sessionID) ?? []
         }
+    }
+
+    func openToolHistoryForCurrentTurn(sessionID: String) {
+        let scope = currentTurnScope(for: sessionID)
+        openToolHistory(sessionID: sessionID, scope: scope)
+    }
+
+    func openToolHistoryForAgentActivity(sessionID: String, messageID: String) {
+        let scope = agentActivityScope(for: sessionID, messageID: messageID)
+        openToolHistory(sessionID: sessionID, scope: scope)
     }
 
     private func sessionTitle(for sessionID: String) -> String {
@@ -549,6 +559,22 @@ final class PickySessionListViewModel: ObservableObject {
 
     private func toolsForSession(sessionID: String) -> [PickyToolActivity]? {
         (sessions + archivedSessions).first(where: { $0.id == sessionID })?.tools
+    }
+
+    private func currentTurnScope(for sessionID: String) -> PickyToolHistoryScope {
+        guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }) else { return .session }
+        let lastUserText = session.messages.last(where: { $0.kind == .userText })
+        return .dateRange(start: lastUserText?.createdAt, end: nil)
+    }
+
+    private func agentActivityScope(for sessionID: String, messageID: String) -> PickyToolHistoryScope {
+        guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
+              let activityIndex = session.messages.firstIndex(where: { $0.id == messageID && $0.kind == .agentActivity })
+        else { return .session }
+        let activity = session.messages[activityIndex]
+        let priorMessages = session.messages.prefix(activityIndex)
+        let priorUserText = priorMessages.last(where: { $0.kind == .userText })
+        return .dateRange(start: priorUserText?.createdAt, end: activity.createdAt)
     }
 
     func openReport(sessionID: String, workspace _: NSWorkspace = .shared) async throws {

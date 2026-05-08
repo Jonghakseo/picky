@@ -46,18 +46,34 @@ struct PickyToolHistoryEntryTests {
             name: "bash",
             status: "succeeded",
             preview: nil,
-            argsPreview: #"{"command":"pnpm test","title":"테스트 실행"}"#,
+            argsPreview: #"{"command":"pnpm test"}"#,
             resultPreview: "Tests 316 passed"
         )
         let entry = PickyToolHistoryRenderer.entry(from: tool, index: 2)
         #expect(entry.category == .bash)
-        guard case let .bash(command, title, output) = entry.detail else {
+        guard case let .bash(command, output) = entry.detail else {
             Issue.record("Expected bash detail")
             return
         }
         #expect(command == "pnpm test")
-        #expect(title == "테스트 실행")
         #expect(output == "Tests 316 passed")
+    }
+
+    @Test func bashEntryRecoversCommandFromTruncatedJson() {
+        let truncatedArgs = #"{"command":"xcodebuild -project Picky.xcodeproj -scheme Picky -destination 'platform=macOS' test -only-testing:PickyTests/Foo""# // missing closing quote/brace
+        let tool = PickyToolActivity(
+            toolCallId: "call-2b",
+            name: "bash",
+            status: "running",
+            argsPreview: truncatedArgs
+        )
+        let entry = PickyToolHistoryRenderer.entry(from: tool, index: 1)
+        guard case let .bash(command, _) = entry.detail else {
+            Issue.record("Expected bash detail")
+            return
+        }
+        #expect(command?.contains("xcodebuild") == true)
+        #expect(command?.contains("only-testing") == true)
     }
 
     @Test func editEntryParsesEditsArrayAndKeyAliases() {
@@ -127,6 +143,24 @@ struct PickyToolHistoryEntryTests {
         )
         let entry = PickyToolHistoryRenderer.entry(from: tool, index: 6)
         #expect(entry.durationMs == 350)
+    }
+
+    @Test func scopeFiltersToolsByStartedAt() {
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        let tools: [PickyToolActivity] = [
+            PickyToolActivity(toolCallId: "t1", name: "bash", status: "succeeded", argsPreview: #"{"command":"a"}"#, startedAt: base),
+            PickyToolActivity(toolCallId: "t2", name: "bash", status: "succeeded", argsPreview: #"{"command":"b"}"#, startedAt: base.addingTimeInterval(60)),
+            PickyToolActivity(toolCallId: "t3", name: "bash", status: "succeeded", argsPreview: #"{"command":"c"}"#, startedAt: base.addingTimeInterval(120)),
+        ]
+        let sessionEntries = PickyToolHistoryRenderer.entries(from: tools, scope: .session)
+        #expect(sessionEntries.map(\.id) == ["t1", "t2", "t3"])
+        let middle = PickyToolHistoryRenderer.entries(from: tools, scope: .dateRange(start: base.addingTimeInterval(30), end: base.addingTimeInterval(90)))
+        #expect(middle.map(\.id) == ["t2"])
+        let openEnded = PickyToolHistoryRenderer.entries(from: tools, scope: .dateRange(start: base.addingTimeInterval(60), end: nil))
+        #expect(openEnded.map(\.id) == ["t2", "t3"])
+        let toolWithoutStart = PickyToolActivity(toolCallId: "t4", name: "bash", status: "succeeded", argsPreview: #"{"command":"d"}"#)
+        let mixed = PickyToolHistoryRenderer.entries(from: [toolWithoutStart] + tools, scope: .dateRange(start: base, end: nil))
+        #expect(mixed.map(\.id) == ["t1", "t2", "t3"]) // tool without startedAt is excluded under bounded range
     }
 
     @Test func summaryAggregatesCounts() {

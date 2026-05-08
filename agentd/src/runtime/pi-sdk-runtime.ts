@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { readFile, readdir, stat } from "node:fs/promises";
-import { dirname, extname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { extname } from "node:path";
 import {
   type AgentSession,
   type AgentSessionRuntime,
@@ -126,10 +126,6 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private pendingTerminalError?: Extract<RuntimeEvent, { type: "status" }>;
   private pendingTerminalErrorTimer?: ReturnType<typeof setTimeout>;
   private expectedInputDeliveries: ExpectedInputDelivery[] = [];
-  // Cache of extension baseDir -> whether any of its source files use ctx.ui.custom. Picky's
-  // ExtensionUiBridge throws on custom() so commands from those extensions will always fail in
-  // Picky; hiding them from autocomplete keeps users from invoking known-broken slash commands.
-  private readonly extensionOverlayUiCache = new Map<string, Promise<boolean>>();
 
   constructor(readonly id: string, private readonly runtime: AgentSessionRuntime, private configuredThinkingLevel?: ThinkingLevel, private readonly bridgeOptions: { disableBlockingDialogs?: boolean } = {}) {
     this.uiBridge = this.createBridge();
@@ -255,12 +251,24 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     const commands: RuntimeSlashCommand[] = [
       ...PICKY_BUILTIN_SLASH_COMMANDS.map((command) => ({ ...command, source: "builtin" as const })),
     ];
+    // Trade-off: we expose every extension command in autocomplete instead of trying to
+    // filter out ones that depend on Pi TUI surfaces Picky does not implement.
+    //
+    // Why we don't filter:
+    //   - Pi SDK assigns the agentDir itself (e.g. ~/.pi/agent) as the baseDir for every
+    //     auto-discovered local extension under ~/.pi/agent/extensions/*. A directory-level
+    //     `ui.custom` scan therefore flags ALL local extensions if any single sibling uses it,
+    //     producing false positives for clean extensions like /github:pr-merge.
+    //   - ExtensionUiBridge already implements the common surfaces (notify/confirm/select/
+    //     input/editor/askUserQuestion/setStatus/setTitle/...) and silently no-ops the
+    //     overlay-only ones (setWidget/setHeader/setFooter/addAutocompleteProvider/...).
+    //   - The only hard failure is `ui.custom`, which throws PickyOverlayUnsupportedError.
+    //     extension-crash-guard.ts swallows that (and any extension TypeError such as a missing
+    //     `theme.fg`) so daemon stays alive; the user just sees the command no-op or error.
+    //
+    // Cost we accept: a few overlay-heavy commands (e.g. /widgets, /sub:peek, /subagents) show
+    // up in autocomplete but produce only an error or empty effect when invoked.
     for (const command of this.runtime.session.extensionRunner.getRegisteredCommands()) {
-      const baseDir = extensionBaseDir(command);
-      if (baseDir && (await this.extensionRequiresOverlayUi(baseDir))) {
-        logAgentd("slash command hidden (requires overlay UI)", { name: command.invocationName, baseDir });
-        continue;
-      }
       commands.push({ name: command.invocationName, description: command.description, source: "extension" });
     }
     for (const template of this.runtime.session.promptTemplates) {
@@ -721,17 +729,6 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     return bridge;
   }
 
-  private extensionRequiresOverlayUi(baseDir: string): Promise<boolean> {
-    const cached = this.extensionOverlayUiCache.get(baseDir);
-    if (cached) return cached;
-    const promise = scanForUiCustom(baseDir).catch((error) => {
-      logAgentd("extension overlay ui scan failed", { baseDir, error: messageOf(error) });
-      return false;
-    });
-    this.extensionOverlayUiCache.set(baseDir, promise);
-    return promise;
-  }
-
   private emit(event: RuntimeEvent): void {
     for (const listener of this.listeners) listener(event);
   }
@@ -950,47 +947,6 @@ function normalizeAnswer(value: unknown): { value?: unknown; confirmed?: boolean
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function extensionBaseDir(command: { sourceInfo?: { baseDir?: string; path?: string } }): string | undefined {
-  const info = command.sourceInfo;
-  if (!info) return undefined;
-  if (info.baseDir) return info.baseDir;
-  // Some Pi sources only carry a file path. Strip the filename so the directory scan starts at
-  // the extension root.
-  return info.path ? dirname(info.path) : undefined;
-}
-
-async function scanForUiCustom(dir: string): Promise<boolean> {
-  let stats;
-  try {
-    stats = await stat(dir);
-  } catch {
-    return false;
-  }
-  if (!stats.isDirectory()) return false;
-
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return false;
-  }
-  for (const entry of entries) {
-    if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
-    const next = join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (await scanForUiCustom(next)) return true;
-      continue;
-    }
-    if (!entry.isFile()) continue;
-    if (!/\.(ts|js|mjs|cjs)$/.test(entry.name)) continue;
-    try {
-      const text = await readFile(next, "utf8");
-      if (/\bui\.custom\b/.test(text)) return true;
-    } catch {}
-  }
-  return false;
 }
 
 export type { AgentSession, AgentSessionRuntime };

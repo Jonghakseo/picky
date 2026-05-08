@@ -559,28 +559,23 @@ describe("PiSdkRuntime", () => {
     ]);
   });
 
-  it("hides slash commands from extensions whose source files reference ctx.ui.custom", async () => {
-    const fs = await import("node:fs/promises");
-    const os = await import("node:os");
-    const path = await import("node:path");
-    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "picky-pi-overlay-"));
-    const overlayExtensionDir = path.join(tmp, "overlay-ext");
-    const safeExtensionDir = path.join(tmp, "safe-ext");
-    await fs.mkdir(overlayExtensionDir, { recursive: true });
-    await fs.mkdir(safeExtensionDir, { recursive: true });
-    await fs.writeFile(path.join(overlayExtensionDir, "index.ts"), "export const handler = (ctx) => ctx.ui.custom(() => null, { overlay: true });");
-    await fs.writeFile(path.join(safeExtensionDir, "index.ts"), "export const handler = (ctx) => ctx.ui.notify('hello');");
+  // We intentionally surface every extension command, including overlay-only ones. Pi SDK
+  // gives auto-discovered local extensions a shared baseDir (the agent root), which makes any
+  // directory-level `ui.custom` scan a false-positive trap that hides clean siblings. Picky's
+  // ExtensionUiBridge no-ops the unsupported overlay surface and the crash guard swallows the
+  // remaining throws, so we let users see and try the command instead of pre-filtering.
+  it("surfaces every extension command, including ones that depend on overlay UI", async () => {
     const fakeSession = new FakeSession();
     fakeSession.extensionCommands = [
-      { invocationName: "diff", description: "Diff overlay", sourceInfo: { baseDir: overlayExtensionDir, path: overlayExtensionDir, source: "local", scope: "user", origin: "top-level" } },
-      { invocationName: "settings", description: "Toggle setting", sourceInfo: { baseDir: safeExtensionDir, path: safeExtensionDir, source: "local", scope: "user", origin: "top-level" } },
+      { invocationName: "diff", description: "Diff overlay", sourceInfo: { baseDir: "/tmp/overlay-ext", path: "/tmp/overlay-ext", source: "local", scope: "user", origin: "top-level" } },
+      { invocationName: "settings", description: "Toggle setting", sourceInfo: { baseDir: "/tmp/safe-ext", path: "/tmp/safe-ext", source: "local", scope: "user", origin: "top-level" } },
     ];
     const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-overlay" });
 
     const commands = await handle.listSlashCommands!();
     const names = commands.map((command) => command.name);
     expect(names).toContain("settings");
-    expect(names).not.toContain("diff");
+    expect(names).toContain("diff");
   });
 
   it("intercepts /name as a built-in slash command and renames the underlying Pi session", async () => {

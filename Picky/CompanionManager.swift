@@ -180,6 +180,10 @@ final class CompanionManager: ObservableObject {
                 self?.inkOverlayState = state
             }
         }
+        self.inkCaptureController.shouldPassThroughMouseEvent = { [weak self] point, source in
+            guard source == .text else { return false }
+            return self?.quickInputPanelManager.containsInteractiveGlobalPoint(point) == true
+        }
     }
 
     /// The currently running AI response task, if any. Cancelled when the user

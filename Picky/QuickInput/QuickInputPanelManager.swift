@@ -43,6 +43,14 @@ final class QuickInputPanelManager {
 
     var isPanelVisible: Bool { panel?.isVisible == true }
 
+    func containsInteractiveGlobalPoint(_ point: CGPoint) -> Bool {
+        guard let panel, panel.isVisible else { return false }
+        return panel.frame
+            .insetBy(dx: shadowOutset, dy: shadowOutset)
+            .insetBy(dx: -8, dy: -8)
+            .contains(point)
+    }
+
     init() {
         viewModel.onSubmit = { [weak self] text in
             self?.handleSubmit(text)

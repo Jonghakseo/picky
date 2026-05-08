@@ -13,6 +13,7 @@ import Foundation
 
 final class PickyInkCaptureController {
     var onStateChange: (PickyInkOverlayState) -> Void = { _ in }
+    var shouldPassThroughMouseEvent: (_ point: CGPoint, _ source: PickyInkCaptureSource) -> Bool = { _, _ in false }
 
     var isActive: Bool { session != nil }
 
@@ -185,9 +186,15 @@ final class PickyInkCaptureController {
             return nil
         }
 
-        guard session != nil else { return Unmanaged.passUnretained(event) }
+        guard let currentSession = session else { return Unmanaged.passUnretained(event) }
 
         let point = appKitPoint(for: event) ?? NSEvent.mouseLocation
+        if currentSession.activeStrokeOrigin == nil,
+           shouldPassThroughMouseEvent(point, currentSession.source) {
+            moveVirtualCursor(to: point)
+            return Unmanaged.passUnretained(event)
+        }
+
         switch eventType {
         case .mouseMoved, .rightMouseDragged, .otherMouseDragged,
              .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp:

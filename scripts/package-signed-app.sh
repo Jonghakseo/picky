@@ -178,7 +178,10 @@ fi
 # Resources/agentd or Resources/pi-extensions trees that we plan to update
 # selectively below. rsync's --delete prunes stale Xcode-produced files only.
 mkdir -p "${PACKAGED_APP}"
-/usr/bin/rsync -aX --delete \
+# macOS /usr/bin/rsync is openrsync, which does not accept the GNU short flag
+# -X. Use --extended-attributes (supported by both openrsync and Apple rsync
+# 2.6.9) so com.apple.* xattrs survive the copy; codesign will re-seal anyway.
+/usr/bin/rsync -a --extended-attributes --delete \
   --exclude '/Contents/Resources/agentd/' \
   --exclude '/Contents/Resources/pi-extensions/' \
   "${BUILT_APP}/" "${PACKAGED_APP}/"
@@ -196,7 +199,7 @@ PY
 
 if [[ "${PACKAGE_AGENTD}" == "1" ]]; then
   mkdir -p "${PACKAGED_APP}/Contents/Resources/agentd"
-  /usr/bin/rsync -aX --delete \
+  /usr/bin/rsync -a --extended-attributes --delete \
     "${AGENTD_RUNTIME_DIR}/" "${PACKAGED_APP}/Contents/Resources/agentd/"
 fi
 
@@ -205,7 +208,7 @@ fi
 # .ts source directly so no compile step is required.
 if [[ -d "${ROOT_DIR}/pi-extensions" ]]; then
   mkdir -p "${PACKAGED_APP}/Contents/Resources/pi-extensions"
-  /usr/bin/rsync -aX --delete \
+  /usr/bin/rsync -a --extended-attributes --delete \
     "${ROOT_DIR}/pi-extensions/" "${PACKAGED_APP}/Contents/Resources/pi-extensions/"
 fi
 

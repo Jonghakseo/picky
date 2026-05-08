@@ -7,6 +7,15 @@
 
 import AppKit
 
+extension NSWindow.Level {
+    /// Keep the Picky cursor overlay above the markdown report panel
+    /// (`PickyReportPanel` uses `.screenSaver + 1`). The overlay window sets
+    /// `ignoresMouseEvents = true`, so click/drag events still pass through
+    /// to the report panel below — only the z-order is bumped here so the
+    /// blue cursor stays visible while a report is open.
+    static let pickyCursorOverlay = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 2)
+}
+
 class OverlayWindow: NSWindow {
     init(screen: NSScreen) {
         // Create window covering entire screen
@@ -20,7 +29,7 @@ class OverlayWindow: NSWindow {
         // Make window transparent and non-interactive
         self.isOpaque = false
         self.backgroundColor = .clear
-        self.level = .screenSaver  // Always on top, above submenus and popups
+        self.level = .pickyCursorOverlay  // Above report panels and submenus/popups
         self.ignoresMouseEvents = true  // Click-through
         self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         self.isReleasedWhenClosed = false

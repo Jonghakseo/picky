@@ -151,7 +151,7 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
             defer: false
         )
         panel.title = "Pi Terminal — \(title)"
-        panel.level = .statusBar
+        panel.level = .normal
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         panel.isExcludedFromWindowsMenu = true

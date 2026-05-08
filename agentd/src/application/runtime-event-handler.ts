@@ -237,6 +237,14 @@ export class RuntimeEventHandler {
 
     const session = this.dependencies.getSession(sessionId);
     const previous = session.tools.find((tool) => tool.toolCallId === event.toolCallId);
+    // Defensive: a late `running` event for an already-settled tool would otherwise downgrade
+    // the terminal status back to `running`, where settleActiveTools later flips it to `failed`.
+    // The runtime chain in session-supervisor serializes events so this should not happen, but
+    // keep the guard for resumed sessions or other replay paths.
+    if (event.status === "running" && previous && (previous.status === "succeeded" || previous.status === "failed")) {
+      logAgentd("tool activity (late running ignored)", { sessionId, tool: event.name, previousStatus: previous.status });
+      return;
+    }
     const tools = session.tools.filter((tool) => tool.toolCallId !== event.toolCallId);
     tools.push({
       ...previous,

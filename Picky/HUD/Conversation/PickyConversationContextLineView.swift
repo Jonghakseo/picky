@@ -152,8 +152,13 @@ struct PickyConversationContextLineView: View {
         .pointerCursor()
     }
 
+    private var visibleLinkArtifacts: [PickyArtifact] {
+        session.linkBadgeArtifacts(suppressingPullRequest: pullRequestStatus)
+    }
+
     private var linkBadges: some View {
-        HStack(spacing: 4) {
+        let artifacts = visibleLinkArtifacts
+        return HStack(spacing: 4) {
             if let pullRequestStatus {
                 Link(destination: pullRequestStatus.url) {
                     pullRequestBadge(status: pullRequestStatus)
@@ -162,7 +167,7 @@ struct PickyConversationContextLineView: View {
                 .help("Open PR #\(pullRequestStatus.number) — \(pullRequestStatus.title) [\(pullRequestStatus.state.rawValue)]")
                 .pointerCursor()
             }
-            ForEach(session.linkBadgeArtifacts.prefix(6)) { artifact in
+            ForEach(artifacts.prefix(6)) { artifact in
                 if let url = artifact.url {
                     Link(destination: url) {
                         linkBadge(artifact)
@@ -173,7 +178,7 @@ struct PickyConversationContextLineView: View {
                     linkBadge(artifact)
                 }
             }
-            let remainingCount = session.linkBadgeArtifacts.count - min(session.linkBadgeArtifacts.count, 6)
+            let remainingCount = artifacts.count - min(artifacts.count, 6)
             if remainingCount > 0 {
                 moreLinksBadge(count: remainingCount)
             }

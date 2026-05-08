@@ -155,6 +155,33 @@ final class PickySessionListViewModel: ObservableObject {
             linkBadgeArtifacts.filter { $0.linkBadgeKind == .github }
         }
 
+        /// Filtered link badges for the HUD: drop any GitHub artifact whose URL points to
+        /// the PR we already render as a dedicated PR badge, so the same pull request does
+        /// not show up twice in the row.
+        func linkBadgeArtifacts(suppressingPullRequest pullRequest: PickyGitHubPullRequestStatus?) -> [PickyArtifact] {
+            guard let pullRequest else { return linkBadgeArtifacts }
+            let prRepoPath = Self.githubRepositoryPath(of: pullRequest.url)
+            let prNumber = String(pullRequest.number)
+            return linkBadgeArtifacts.filter { artifact in
+                guard artifact.linkBadgeKind == .github,
+                      let url = artifact.url,
+                      // Only suppress PR-shaped URLs; an issue with the same number must stay visible.
+                      url.pathComponents.contains("pull"),
+                      Self.githubRepositoryPath(of: url) == prRepoPath,
+                      artifact.githubIssueOrPullRequestNumber == prNumber else {
+                    return true
+                }
+                return false
+            }
+        }
+
+        static func githubRepositoryPath(of url: URL) -> String? {
+            guard url.host?.lowercased() == "github.com" else { return nil }
+            let components = url.pathComponents.filter { $0 != "/" }
+            guard components.count >= 2 else { return nil }
+            return "\(components[0])/\(components[1])".lowercased()
+        }
+
         func linkBadgeText(for artifact: PickyArtifact) -> String? {
             guard let kind = artifact.linkBadgeKind else { return artifact.title }
             switch kind {

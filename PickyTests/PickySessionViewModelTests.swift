@@ -993,6 +993,36 @@ struct PickySessionViewModelTests {
         #expect(card.linkBadgeText(for: notion2) == "#2")
     }
 
+    @Test func sessionCardSuppressesGitHubArtifactsThatDuplicateTheCurrentBranchPR() throws {
+        let prURL = URL(string: "https://github.com/acme/repo/pull/42")!
+        let prArtifact = PickyArtifact(id: "a", kind: "pr", title: "#42", path: nil, url: prURL, updatedAt: Date())
+        let issueArtifact = PickyArtifact(id: "b", kind: "github", title: "#42 issue", path: nil, url: URL(string: "https://github.com/acme/repo/issues/42")!, updatedAt: Date())
+        let differentRepoPR = PickyArtifact(id: "c", kind: "pr", title: "#42", path: nil, url: URL(string: "https://github.com/other/proj/pull/42")!, updatedAt: Date())
+        let differentNumberPR = PickyArtifact(id: "d", kind: "pr", title: "#43", path: nil, url: URL(string: "https://github.com/acme/repo/pull/43")!, updatedAt: Date())
+        let slackArtifact = PickyArtifact(id: "e", kind: "slack", title: "Slack", path: nil, url: URL(string: "https://creatrip.slack.com/archives/C012/p1")!, updatedAt: Date())
+        let card = PickySessionListViewModel.SessionCard.fixture(
+            artifacts: [prArtifact, issueArtifact, differentRepoPR, differentNumberPR, slackArtifact]
+        )
+
+        let pr = PickyGitHubPullRequestStatus(number: 42, title: "Fix", url: prURL, state: .open)
+        let visible = card.linkBadgeArtifacts(suppressingPullRequest: pr)
+        let visibleIDs = visible.map(\.id)
+
+        // The artifact pointing at the same PR is hidden; everything else stays.
+        #expect(visibleIDs == ["b", "c", "d", "e"])
+
+        // No PR: every link badge artifact remains.
+        #expect(card.linkBadgeArtifacts(suppressingPullRequest: nil).map(\.id) == ["a", "b", "c", "d", "e"])
+    }
+
+    @Test func githubRepositoryPathExtractsOwnerAndRepo() throws {
+        let card = PickySessionListViewModel.SessionCard.self
+        #expect(card.githubRepositoryPath(of: URL(string: "https://github.com/Acme/Repo/pull/1")!) == "acme/repo")
+        #expect(card.githubRepositoryPath(of: URL(string: "https://github.com/owner/repo")!) == "owner/repo")
+        #expect(card.githubRepositoryPath(of: URL(string: "https://gitlab.com/owner/repo/pull/1")!) == nil)
+        #expect(card.githubRepositoryPath(of: URL(string: "https://github.com/owner")!) == nil)
+    }
+
     @Test func hudPanelCanBecomeKeyForFollowUpTextInput() throws {
         let panel = PickyHUDPanel(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),

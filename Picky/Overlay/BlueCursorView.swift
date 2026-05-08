@@ -318,12 +318,6 @@ struct BlueCursorView: View {
                     .allowsHitTesting(false)
             }
 
-            if let highlighterPosition = inkHighlighterPosition {
-                PickyHighlighterCursorView()
-                    .position(highlighterPosition)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
 
             // Fixed target highlight — independent of the cursor buddy animation so
             // pointer requests remain visible even on another display or while
@@ -538,16 +532,6 @@ struct BlueCursorView: View {
 
     private func cursorBuddyPosition(for screenPoint: CGPoint) -> CGPoint {
         PickyOverlayGeometry.cursorBuddyPosition(for: screenPoint, in: screenFrame)
-    }
-
-    /// Position (in this screen's SwiftUI coordinates) where the highlighter
-    /// pen icon should sit while ink capture is active. Returns nil when the
-    /// virtual cursor is on a different display.
-    private var inkHighlighterPosition: CGPoint? {
-        guard companionManager.inkOverlayState.isActive,
-              let global = companionManager.inkOverlayState.virtualCursorGlobalPoint,
-              screenFrame.insetBy(dx: -1, dy: -1).contains(global) else { return nil }
-        return PickyOverlayGeometry.swiftUICoordinates(for: global, in: screenFrame)
     }
 
     /// Whether the buddy pi icon should be visible on this screen.

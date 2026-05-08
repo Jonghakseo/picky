@@ -10,25 +10,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
-
-// MARK: - Private CoreGraphics cursor bridge
-//
-// `CGDisplayHideCursor` only takes effect while the calling process is the
-// active app. Picky lives in the menu bar and isn't frontmost when ink mode
-// engages, so the documented call silently no-ops. Reach into the
-// SkyLight/CGS connection instead — these symbols have been stable for years
-// and are how most menu-bar utilities (e.g. MonitorControl, Loop) hide the
-// cursor without stealing focus.
-private typealias PickyCGSConnectionID = UInt32
-
-@_silgen_name("_CGSDefaultConnection")
-private func _PickyCGSDefaultConnection() -> PickyCGSConnectionID
-
-@_silgen_name("CGSHideCursor")
-private func _PickyCGSHideCursor(_ connectionID: PickyCGSConnectionID) -> CGError
-
-@_silgen_name("CGSShowCursor")
-private func _PickyCGSShowCursor(_ connectionID: PickyCGSConnectionID) -> CGError
+import QuartzCore
 
 final class PickyInkCaptureController {
     var onStateChange: (PickyInkOverlayState) -> Void = { _ in }
@@ -56,7 +38,20 @@ final class PickyInkCaptureController {
     private var session: Session?
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
-    private var cursorHideBalance = 0
+
+    /// Sliding window of recent virtual-cursor positions painted as a fading
+    /// blue ink trail behind the system pointer to signal "drawing mode".
+    /// Filled only while the user is *not* actively dragging an ink stroke,
+    /// so the trail never visually competes with the real ink they're drawing.
+    private var cursorTrailPoints: [PickyInkCursorTrailPoint] = []
+    /// Approx. lifetime in seconds for any single trail entry. The renderer
+    /// uses it to compute fade; the controller uses it to drop expired entries
+    /// during garbage-collection passes.
+    private let trailLifetime: TimeInterval = 0.45
+    /// Skip points that landed within this many AppKit points of the previous
+    /// trail entry. Avoids spamming the array on every micro-jitter.
+    private let trailMinPointDistance: CGFloat = 1.5
+
 
     init(
         thresholdDistance: CGFloat = 28,
@@ -72,7 +67,6 @@ final class PickyInkCaptureController {
 
     deinit {
         stopEventTap()
-        restoreSystemCursorIfNeeded()
     }
 
     @discardableResult
@@ -91,7 +85,6 @@ final class PickyInkCaptureController {
             publishState()
             return false
         }
-        hideSystemCursorIfNeeded()
         publishState()
         return true
     }
@@ -100,7 +93,6 @@ final class PickyInkCaptureController {
         guard let finishedSession = session else { return nil }
         session = nil
         stopEventTap()
-        restoreSystemCursorIfNeeded()
         if warpSystemCursor {
             warpSystemCursorToAppKitPoint(finishedSession.virtualCursor)
         }
@@ -130,7 +122,6 @@ final class PickyInkCaptureController {
         guard session != nil else { return }
         session = nil
         stopEventTap()
-        restoreSystemCursorIfNeeded()
         publishState()
     }
 
@@ -253,6 +244,9 @@ final class PickyInkCaptureController {
     private func moveVirtualCursor(to point: CGPoint) {
         guard var current = session else { return }
         current.virtualCursor = point
+        if current.activeStrokeOrigin == nil {
+            appendCursorTrailPoint(point)
+        }
         session = current
         publishState()
     }
@@ -265,6 +259,8 @@ final class PickyInkCaptureController {
         current.lastAcceptedPoint = nil
         current.didCrossThreshold = false
         current.thresholdFeedbackPoint = nil
+        // Don't let the trail bleed into the real stroke about to be drawn.
+        cursorTrailPoints.removeAll(keepingCapacity: true)
         session = current
         publishState()
     }
@@ -336,6 +332,7 @@ final class PickyInkCaptureController {
 
     private func publishState() {
         guard let session else {
+            cursorTrailPoints.removeAll(keepingCapacity: false)
             onStateChange(.inactive)
             return
         }
@@ -347,14 +344,35 @@ final class PickyInkCaptureController {
                 opacity: strokeOpacity
             )
         }
+        // Hide the trail entirely while the user is mid-stroke — the real
+        // ink is being drawn at the same coordinates and would clash.
+        let trail = session.activeStrokeOrigin == nil ? cursorTrailPoints : []
         onStateChange(PickyInkOverlayState(
             isActive: true,
             source: session.source,
             virtualCursorGlobalPoint: session.virtualCursor,
             strokes: strokes,
             didCrossThreshold: session.didCrossThreshold,
-            thresholdFeedbackGlobalPoint: session.thresholdFeedbackPoint
+            thresholdFeedbackGlobalPoint: session.thresholdFeedbackPoint,
+            cursorTrailPoints: trail
         ))
+    }
+
+    private func appendCursorTrailPoint(_ point: CGPoint) {
+        let now = CACurrentMediaTime()
+        if let last = cursorTrailPoints.last,
+           hypot(point.x - last.point.x, point.y - last.point.y) < trailMinPointDistance {
+            return
+        }
+        cursorTrailPoints.append(
+            PickyInkCursorTrailPoint(id: UUID(), point: point, capturedAt: now)
+        )
+        // GC: drop entries past their lifetime so the array doesn't grow
+        // unbounded if the user idles the mouse for a long time.
+        let cutoff = now - trailLifetime
+        if let firstFresh = cursorTrailPoints.firstIndex(where: { $0.capturedAt >= cutoff }), firstFresh > 0 {
+            cursorTrailPoints.removeFirst(firstFresh)
+        }
     }
 
     private func capturedStrokePointLists(for session: Session) -> [[CGPoint]] {
@@ -363,40 +381,6 @@ final class PickyInkCaptureController {
             pointLists.append(session.activeStrokePoints)
         }
         return pointLists
-    }
-
-    private func hideSystemCursorIfNeeded() {
-        guard cursorHideBalance == 0 else { return }
-        // Public API first (works when Picky happens to be foreground).
-        let publicError = CGDisplayHideCursor(CGMainDisplayID())
-        if publicError != .success {
-            print("⚠️ Picky ink: CGDisplayHideCursor failed (CGError \(publicError.rawValue))")
-        }
-        // Private CGS path covers the common case: Picky is a menu-bar app
-        // and isn't frontmost while ink mode is active, so the public call
-        // is queued but doesn't actually hide the cursor.
-        let cid = _PickyCGSDefaultConnection()
-        let privateError = _PickyCGSHideCursor(cid)
-        if privateError != .success {
-            print("⚠️ Picky ink: CGSHideCursor failed (CGError \(privateError.rawValue))")
-        }
-        cursorHideBalance = 1
-    }
-
-    private func restoreSystemCursorIfNeeded() {
-        guard cursorHideBalance > 0 else { return }
-        for _ in 0..<cursorHideBalance {
-            let publicError = CGDisplayShowCursor(CGMainDisplayID())
-            if publicError != .success {
-                print("⚠️ Picky ink: CGDisplayShowCursor failed (CGError \(publicError.rawValue))")
-            }
-            let cid = _PickyCGSDefaultConnection()
-            let privateError = _PickyCGSShowCursor(cid)
-            if privateError != .success {
-                print("⚠️ Picky ink: CGSShowCursor failed (CGError \(privateError.rawValue))")
-            }
-        }
-        cursorHideBalance = 0
     }
 
     private func warpSystemCursorToAppKitPoint(_ point: CGPoint) {

@@ -43,7 +43,8 @@ struct PickyInkOverlayState: Equatable {
         virtualCursorGlobalPoint: nil,
         strokes: [],
         didCrossThreshold: false,
-        thresholdFeedbackGlobalPoint: nil
+        thresholdFeedbackGlobalPoint: nil,
+        cursorTrailPoints: []
     )
 
     let isActive: Bool
@@ -53,6 +54,10 @@ struct PickyInkOverlayState: Equatable {
     let strokes: [PickyInkOverlayStroke]
     let didCrossThreshold: Bool
     let thresholdFeedbackGlobalPoint: CGPoint?
+    /// Recent virtual-cursor positions used to paint a fading ink trail behind
+    /// the system pointer. The view filters expired entries against the live
+    /// clock; the controller only appends + clears, never expires.
+    let cursorTrailPoints: [PickyInkCursorTrailPoint]
 }
 
 struct PickyInkOverlayStroke: Equatable, Identifiable {
@@ -60,6 +65,14 @@ struct PickyInkOverlayStroke: Equatable, Identifiable {
     let points: [CGPoint]
     let strokeWidth: CGFloat
     let opacity: Double
+}
+
+struct PickyInkCursorTrailPoint: Equatable, Identifiable {
+    let id: UUID
+    /// Global AppKit screen point.
+    let point: CGPoint
+    /// `CACurrentMediaTime` at capture, used by the renderer to compute fade.
+    let capturedAt: TimeInterval
 }
 
 struct PickyInkMarkContext: Codable, Equatable, Identifiable {

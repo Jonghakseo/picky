@@ -80,6 +80,7 @@ interface PendingDialog {
 
 export class ExtensionUiBridge extends EventEmitter {
   private pending = new Map<string, PendingDialog>();
+  private editorText = "";
 
   constructor(private readonly sessionId: string, private readonly options: { disableBlockingDialogs?: boolean } = {}) {
     super();
@@ -102,9 +103,9 @@ export class ExtensionUiBridge extends EventEmitter {
       // the update at the host boundary.
       setWidget: () => undefined,
       setTitle: (title) => void this.fireAndForget("setTitle", { title }),
-      setEditorText: (text) => void this.fireAndForget("set_editor_text", { text }),
-      pasteToEditor: (text) => void this.fireAndForget("set_editor_text", { text }),
-      getEditorText: () => "",
+      setEditorText: (text) => this.replaceEditorText(text),
+      pasteToEditor: (text) => this.appendEditorText(text),
+      getEditorText: () => this.editorText,
       custom: async <T>(): Promise<T> => {
         // Picky has no TUI overlay surface. Reject with a named subclass so that
         // (a) extensions that wrap the call in try/catch keep their explicit error
@@ -174,6 +175,15 @@ export class ExtensionUiBridge extends EventEmitter {
     this.emit("request", this.request(`ext-ui-${randomUUID()}`, method, payload), false);
   }
 
+  private replaceEditorText(text: unknown): void {
+    this.editorText = editorTextValue(text);
+    this.fireAndForget("set_editor_text", { text: this.editorText });
+  }
+
+  private appendEditorText(text: unknown): void {
+    this.replaceEditorText(`${this.editorText}${editorTextValue(text)}`);
+  }
+
   private request(id: string, method: ExtensionUiMethod, payload: Record<string, unknown>): PickyExtensionUiRequest {
     return {
       id,
@@ -184,6 +194,7 @@ export class ExtensionUiBridge extends EventEmitter {
       description: typeof payload.description === "string" ? payload.description : undefined,
       options: Array.isArray(payload.options) ? payload.options.filter((option): option is string => typeof option === "string") : undefined,
       questions: Array.isArray(payload.questions) ? payload.questions : undefined,
+      text: typeof payload.text === "string" ? payload.text : undefined,
       createdAt: new Date().toISOString(),
       payload,
     } as PickyExtensionUiRequest;
@@ -194,6 +205,12 @@ export class ExtensionUiBridge extends EventEmitter {
     if (method === "confirm") return answer.confirmed ?? Boolean(answer.value);
     return answer.value;
   }
+}
+
+function editorTextValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value === undefined || value === null) return "";
+  return String(value);
 }
 
 function normalizeAskUserQuestionRequest(request: AskUserQuestionRequest, timeout?: number): Record<string, unknown> {

@@ -129,6 +129,7 @@ export const PickyExtensionUiRequestSchema = z.object({
   description: z.string().optional(),
   options: z.array(z.string()).optional(),
   questions: z.array(PickyExtensionUiQuestionSchema).optional(),
+  text: z.string().optional(),
   createdAt: isoTimestamp,
 });
 export type PickyExtensionUiRequest = z.infer<typeof PickyExtensionUiRequestSchema>;

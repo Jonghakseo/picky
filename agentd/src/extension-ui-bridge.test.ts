@@ -60,6 +60,25 @@ describe("ExtensionUiBridge", () => {
     expect(request.prompt).toBe("Saved");
   });
 
+  it("mirrors editor text updates into set_editor_text requests", async () => {
+    const bridge = new ExtensionUiBridge("session-1");
+    const context = bridge.createContext();
+
+    const setRequestPromise = nextRequest(bridge);
+    context.setEditorText("review comments");
+    const setRequest = await setRequestPromise;
+    expect(setRequest.method).toBe("set_editor_text");
+    expect(setRequest.text).toBe("review comments");
+    expect(context.getEditorText()).toBe("review comments");
+
+    const pasteRequestPromise = nextRequest(bridge);
+    context.pasteToEditor("\nmore");
+    const pasteRequest = await pasteRequestPromise;
+    expect(pasteRequest.method).toBe("set_editor_text");
+    expect(pasteRequest.text).toBe("review comments\nmore");
+    expect(context.getEditorText()).toBe("review comments\nmore");
+  });
+
   it("ignores setWidget because Picky has no TUI widget surface", async () => {
     const bridge = new ExtensionUiBridge("session-1");
     const requests: unknown[] = [];
@@ -105,7 +124,7 @@ describe("ExtensionUiBridge", () => {
   });
 });
 
-function nextRequest(bridge: ExtensionUiBridge): Promise<{ id: string; sessionId: string; method: string; prompt?: string; questions?: Array<{ id?: string; options?: Array<{ value: string; label: string }> }> }> {
+function nextRequest(bridge: ExtensionUiBridge): Promise<{ id: string; sessionId: string; method: string; prompt?: string; text?: string; questions?: Array<{ id?: string; options?: Array<{ value: string; label: string }> }> }> {
   return new Promise((resolve) => bridge.once("request", (request) => resolve(request)));
 }
 

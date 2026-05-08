@@ -94,6 +94,11 @@ struct PickyPasteboardClipboardWriter: PickyClipboardWriting {
     }
 }
 
+struct PickyComposerDraftRequest: Equatable, Identifiable {
+    let id: String
+    let text: String
+}
+
 @MainActor
 final class PickySessionListViewModel: ObservableObject {
     struct SessionCard: Equatable, Identifiable {
@@ -221,6 +226,7 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var lastOpenedArtifactPath: String?
     @Published private(set) var slashCommandsBySessionID: [String: [PickySlashCommand]] = [:]
+    @Published private(set) var composerDraftRequestsBySessionID: [String: PickyComposerDraftRequest] = [:]
     @Published private(set) var pendingDoneFlashSessionIDs: Set<String> = []
     @Published private(set) var isLoadingInitialSessionSnapshot = true
 
@@ -397,6 +403,15 @@ final class PickySessionListViewModel: ObservableObject {
 
     func hasLoadedSlashCommands(sessionID: String) -> Bool {
         slashCommandsBySessionID[sessionID] != nil
+    }
+
+    func composerDraftRequest(for sessionID: String) -> PickyComposerDraftRequest? {
+        composerDraftRequestsBySessionID[sessionID]
+    }
+
+    func consumeComposerDraftRequest(sessionID: String, requestID: String) {
+        guard composerDraftRequestsBySessionID[sessionID]?.id == requestID else { return }
+        composerDraftRequestsBySessionID[sessionID] = nil
     }
 
     func markDoneFlashConsumed(sessionID: String) {
@@ -854,6 +869,7 @@ final class PickySessionListViewModel: ObservableObject {
             }
         case .extensionUiRequest(let request):
             pickySessionLog("extension-ui request session=\(request.sessionId) request=\(request.id) method=\(request.method)")
+            if handleFireAndForgetExtensionUiRequest(request) { return }
             update(sessionID: request.sessionId) { card in
                 card.status = .waiting_for_input
                 card.pendingExtensionUiRequest = request
@@ -936,6 +952,18 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
+    private func handleFireAndForgetExtensionUiRequest(_ request: PickyExtensionUiRequest) -> Bool {
+        switch request.method {
+        case "set_editor_text":
+            composerDraftRequestsBySessionID[request.sessionId] = PickyComposerDraftRequest(id: request.id, text: request.text ?? request.prompt ?? "")
+            return true
+        case "notify", "setStatus", "setWidget", "setTitle":
+            return true
+        default:
+            return false
+        }
+    }
+
     private func acceptIncrementalEvent(sessionID: String, seq: Int) -> Bool {
         let lastSeq = lastIncrementalSeqBySessionID[sessionID] ?? 0
         guard seq > lastSeq else { return false }
@@ -957,6 +985,7 @@ final class PickySessionListViewModel: ObservableObject {
 
     private func pruneSlashCommandCache(knownSessionIDs: Set<String>) {
         slashCommandsBySessionID = slashCommandsBySessionID.filter { knownSessionIDs.contains($0.key) }
+        composerDraftRequestsBySessionID = composerDraftRequestsBySessionID.filter { knownSessionIDs.contains($0.key) }
         slashCommandRequestedSessionIDs = slashCommandRequestedSessionIDs.filter { knownSessionIDs.contains($0) }
         pendingDoneFlashSessionIDs = pendingDoneFlashSessionIDs.filter { knownSessionIDs.contains($0) }
         lastIncrementalSeqBySessionID = lastIncrementalSeqBySessionID.filter { knownSessionIDs.contains($0.key) }

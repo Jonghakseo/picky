@@ -211,6 +211,7 @@ export class RuntimeEventHandler {
     if (!waitsForInput) {
       if (request.method === "setWidget") return;
       await this.dependencies.appendLog(sessionId, extensionUiLogLine(request));
+      if (request.method === "set_editor_text") this.dependencies.emitExtensionUiRequest(request);
       return;
     }
     await this.dependencies.messageBuilder.flushAssistantText(sessionId);

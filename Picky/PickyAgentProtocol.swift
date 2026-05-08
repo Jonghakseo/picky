@@ -609,6 +609,31 @@ struct PickyExtensionUiRequest: Codable, Equatable, Identifiable {
     let options: [String]?
     let questions: [PickyExtensionUiQuestion]?
     let createdAt: Date
+    let text: String?
+
+    init(
+        id: String,
+        sessionId: String,
+        method: String,
+        title: String? = nil,
+        prompt: String? = nil,
+        description: String? = nil,
+        options: [String]? = nil,
+        questions: [PickyExtensionUiQuestion]? = nil,
+        createdAt: Date,
+        text: String? = nil
+    ) {
+        self.id = id
+        self.sessionId = sessionId
+        self.method = method
+        self.title = title
+        self.prompt = prompt
+        self.description = description
+        self.options = options
+        self.questions = questions
+        self.createdAt = createdAt
+        self.text = text
+    }
 }
 
 struct PickyExtensionUiQuestion: Codable, Equatable, Identifiable {

@@ -2504,6 +2504,27 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.pendingExtensionUiRequest?.id).toBe("question-1");
   });
 
+  it("forwards non-blocking editor text requests without entering waiting_for_input", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const requests: Array<{ id: string; method: string; text?: string }> = [];
+    supervisor.on("extensionUiRequest", (request) => requests.push({ id: request.id, method: request.method, text: request.text }));
+    const session = await supervisor.create(context("editor text"));
+
+    runtime.handle?.emit({
+      type: "extension_ui",
+      waitsForInput: false,
+      request: { id: "editor-1", sessionId: session.id, method: "set_editor_text", createdAt: "2026-05-01T00:00:00.000Z", text: "review comments" },
+    });
+    await settle();
+
+    expect(requests).toEqual([{ id: "editor-1", method: "set_editor_text", text: "review comments" }]);
+    expect(supervisor.get(session.id)?.status).not.toBe("waiting_for_input");
+    expect(supervisor.get(session.id)?.pendingExtensionUiRequest).toBeUndefined();
+    expect(supervisor.get(session.id)?.logs).toContain("extension ui: set_editor_text");
+  });
+
   it("lists slash commands from the attached runtime handle", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

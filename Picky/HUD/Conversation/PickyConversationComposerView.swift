@@ -32,6 +32,7 @@ struct PickyConversationComposerView: View {
     @State private var draft: String = ""
     @State private var selectedSlashCommandIndex: Int = 0
     @State private var isSlashCommandAutocompleteDismissed: Bool = false
+    @State private var appliedComposerDraftRequestID: String?
     @State private var keyDownMonitor: Any?
     @FocusState private var isFocused: Bool
 
@@ -55,8 +56,12 @@ struct PickyConversationComposerView: View {
         .onAppear {
             viewModel.ensureSlashCommandsLoaded(sessionID: session.id)
             installKeyDownMonitorIfNeeded()
+            applyComposerDraftRequestIfNeeded(viewModel.composerDraftRequest(for: session.id))
         }
         .onDisappear { removeKeyDownMonitor() }
+        .onChange(of: viewModel.composerDraftRequest(for: session.id)) { _, request in
+            applyComposerDraftRequestIfNeeded(request)
+        }
         .onChange(of: droppedFilePaths) { _, paths in
             guard !paths.isEmpty else { return }
             if !isComposerInputDisabled {
@@ -399,6 +404,16 @@ struct PickyConversationComposerView: View {
         if !paths.isEmpty { isFocused = true }
     }
 
+    private func applyComposerDraftRequestIfNeeded(_ request: PickyComposerDraftRequest?) {
+        guard let request, appliedComposerDraftRequestID != request.id else { return }
+        draft = request.text
+        selectedSlashCommandIndex = 0
+        isSlashCommandAutocompleteDismissed = true
+        appliedComposerDraftRequestID = request.id
+        isFocused = true
+        viewModel.consumeComposerDraftRequest(sessionID: session.id, requestID: request.id)
+    }
+
     var placeholderText: String { placeholder }
     var defaultSubmitKind: PickyConversationComposerSubmitKind? {
         switch session.status {
@@ -502,7 +517,9 @@ struct PickyConversationComposerView: View {
                 case .followUp:
                     try await viewModel.followUp(text: text, sessionID: session.id)
                 }
-                draft = ""
+                if draft.trimmingCharacters(in: .whitespacesAndNewlines) == text {
+                    draft = ""
+                }
             } catch {
                 // PickySessionListViewModel surfaces command failures through lastError.
             }

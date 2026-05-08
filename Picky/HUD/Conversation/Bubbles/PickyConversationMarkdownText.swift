@@ -29,6 +29,7 @@ struct PickyConversationMarkdownText: View {
                 blockView(block)
             }
         }
+        .textSelection(.enabled)
     }
 
     @ViewBuilder

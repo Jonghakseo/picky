@@ -267,6 +267,23 @@ struct PickySessionViewModelTests {
         #expect(answers.last?.value == .object(["cancelled": .bool(true)]))
     }
 
+    @Test func setEditorTextRequestPrimesComposerDraftWithoutWaitingState() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Started"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.setEditorTextRequest(text: "review comments"))))
+        try await settle()
+
+        let draftRequest = try #require(viewModel.composerDraftRequest(for: "session-1"))
+        #expect(draftRequest.text == "review comments")
+        #expect(viewModel.sessions.first?.status == .running)
+        #expect(viewModel.sessions.first?.pendingExtensionUiRequest == nil)
+
+        viewModel.consumeComposerDraftRequest(sessionID: "session-1", requestID: draftRequest.id)
+        #expect(viewModel.composerDraftRequest(for: "session-1") == nil)
+    }
+
     @Test func askUserQuestionRequestStoresQuestionsAndSendsCompositeAnswer() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
@@ -2126,6 +2143,13 @@ private enum EventJSON {
     static func askUserQuestionRequest() -> String {
         """
         {"id":"event-ui-form","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-form","sessionId":"session-1","method":"askUserQuestion","title":"Confirm memory","description":"Pick what to save","questions":[{"id":"scope","type":"radio","prompt":"Scope?","options":[{"value":"user","label":"User"},{"value":"project","label":"Project"}],"default":"project"},{"id":"items","type":"checkbox","prompt":"Items?","options":[{"value":"rule","label":"Rule"}],"default":["rule"],"allowOther":true},{"id":"note","type":"text","prompt":"Note","required":false}],"createdAt":"2026-05-01T00:00:02.000Z"}}
+        """
+    }
+
+    static func setEditorTextRequest(text: String) -> String {
+        let encodedText = String(decoding: try! JSONEncoder().encode(text), as: UTF8.self)
+        return """
+        {"id":"event-ui-editor-text","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:02.000Z","type":"extensionUiRequest","request":{"id":"ui-editor-text","sessionId":"session-1","method":"set_editor_text","text":\(encodedText),"createdAt":"2026-05-01T00:00:02.000Z"}}
         """
     }
 

@@ -197,19 +197,38 @@ path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(json.dumps(dict(zip(keys, sys.argv[2:])), indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
 
+# Bundle picky-agentd. The runtime tree contains ~17k node_modules files, so
+# rsync's per-file stat compare costs ~8s even on a no-op pass. Two-stage
+# optimization:
+#   1) If the deployed bundle's hash marker matches CURRENT_AGENTD_HASH, skip
+#      the copy entirely.
+#   2) Otherwise replace the directory with `cp -Rc`, which uses APFS
+#      clonefile and finishes in ~2-3s for the same tree.
 if [[ "${PACKAGE_AGENTD}" == "1" ]]; then
-  mkdir -p "${PACKAGED_APP}/Contents/Resources/agentd"
-  /usr/bin/rsync -a --extended-attributes --delete \
-    "${AGENTD_RUNTIME_DIR}/" "${PACKAGED_APP}/Contents/Resources/agentd/"
+  PACKAGED_AGENTD_DIR="${PACKAGED_APP}/Contents/Resources/agentd"
+  PACKAGED_AGENTD_HASH_FILE="${PACKAGED_AGENTD_DIR}/.picky-agentd-input-hash"
+  AGENTD_DEPLOYED_HASH=""
+  if [[ -f "${PACKAGED_AGENTD_HASH_FILE}" ]]; then
+    AGENTD_DEPLOYED_HASH="$(/bin/cat "${PACKAGED_AGENTD_HASH_FILE}" 2>/dev/null || true)"
+  fi
+  if [[ -n "${CURRENT_AGENTD_HASH}" \
+      && "${CURRENT_AGENTD_HASH}" == "${AGENTD_DEPLOYED_HASH}" \
+      && -f "${PACKAGED_AGENTD_DIR}/dist/index.js" ]]; then
+    echo "♻️  Bundled agentd matches input hash; skipping copy"
+  else
+    rm -rf "${PACKAGED_AGENTD_DIR}"
+    mkdir -p "${PACKAGED_APP}/Contents/Resources"
+    /bin/cp -Rc "${AGENTD_RUNTIME_DIR}" "${PACKAGED_AGENTD_DIR}"
+  fi
 fi
 
 # Bundle pi-extensions so PickyExtensionInstaller can symlink them into
-# ~/.pi/agent/extensions on first launch. Read-only at runtime; pi loads the
-# .ts source directly so no compile step is required.
+# ~/.pi/agent/extensions on first launch. The tree is small (~tens of files),
+# so a fresh `cp -Rc` is effectively free; no separate cache marker needed.
 if [[ -d "${ROOT_DIR}/pi-extensions" ]]; then
-  mkdir -p "${PACKAGED_APP}/Contents/Resources/pi-extensions"
-  /usr/bin/rsync -a --extended-attributes --delete \
-    "${ROOT_DIR}/pi-extensions/" "${PACKAGED_APP}/Contents/Resources/pi-extensions/"
+  rm -rf "${PACKAGED_APP}/Contents/Resources/pi-extensions"
+  mkdir -p "${PACKAGED_APP}/Contents/Resources"
+  /bin/cp -Rc "${ROOT_DIR}/pi-extensions" "${PACKAGED_APP}/Contents/Resources/pi-extensions"
 fi
 
 # Mutating the bundle after xcodebuild signing invalidates the resource seal.

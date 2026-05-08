@@ -10,12 +10,12 @@
 import SwiftUI
 
 struct PickyHighlighterCursorView: View {
-    private let frameSize: CGFloat = 36
+    private let frameSize: CGFloat = 30
 
     /// 1 source unit = `pixelsPerUnit` points. The marker geometry is sourced
     /// from the design mock at unit scale; this multiplier turns it into a
-    /// crisp ~28×10 cursor.
-    private let pixelsPerUnit: CGFloat = 2.0
+    /// crisp ~24×8 cursor.
+    private let pixelsPerUnit: CGFloat = 1.7
 
     /// Counter-clockwise tilt that makes the marker read as "held in the right
     /// hand", matching the design mock.
@@ -60,9 +60,9 @@ struct PickyHighlighterCursorView: View {
         .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.45), radius: 4, x: 0, y: 0)
         // Anchor the wedge tip onto the host's `.position(_:)` point. The
         // tip sits at (-7 source units, 0) before rotation, which after a
-        // -22° tilt lands at roughly (-13, +5) points. Shifting the frame
-        // by (+13, -5) moves the geometric center off-cursor so the tip
-        // itself sits exactly on the cursor anchor.
-        .offset(x: 13, y: -5)
+        // -22° tilt lands at roughly (-11, +4.5) points at the current scale.
+        // Shifting the frame by (+11, -5) moves the geometric center off-cursor
+        // so the tip itself sits exactly on the cursor anchor.
+        .offset(x: 11, y: -5)
     }
 }

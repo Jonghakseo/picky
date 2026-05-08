@@ -11,6 +11,25 @@ import AppKit
 import CoreGraphics
 import Foundation
 
+// MARK: - Private CoreGraphics cursor bridge
+//
+// `CGDisplayHideCursor` only takes effect while the calling process is the
+// active app. Picky lives in the menu bar and isn't frontmost when ink mode
+// engages, so the documented call silently no-ops. Reach into the
+// SkyLight/CGS connection instead — these symbols have been stable for years
+// and are how most menu-bar utilities (e.g. MonitorControl, Loop) hide the
+// cursor without stealing focus.
+private typealias PickyCGSConnectionID = UInt32
+
+@_silgen_name("_CGSDefaultConnection")
+private func _PickyCGSDefaultConnection() -> PickyCGSConnectionID
+
+@_silgen_name("CGSHideCursor")
+private func _PickyCGSHideCursor(_ connectionID: PickyCGSConnectionID) -> CGError
+
+@_silgen_name("CGSShowCursor")
+private func _PickyCGSShowCursor(_ connectionID: PickyCGSConnectionID) -> CGError
+
 final class PickyInkCaptureController {
     var onStateChange: (PickyInkOverlayState) -> Void = { _ in }
     var shouldPassThroughMouseEvent: (_ point: CGPoint, _ source: PickyInkCaptureSource) -> Bool = { _, _ in false }
@@ -348,10 +367,18 @@ final class PickyInkCaptureController {
 
     private func hideSystemCursorIfNeeded() {
         guard cursorHideBalance == 0 else { return }
-        let error = CGDisplayHideCursor(CGMainDisplayID())
-        guard error == .success else {
-            print("⚠️ Picky ink: couldn't hide system cursor (CGError \(error.rawValue))")
-            return
+        // Public API first (works when Picky happens to be foreground).
+        let publicError = CGDisplayHideCursor(CGMainDisplayID())
+        if publicError != .success {
+            print("⚠️ Picky ink: CGDisplayHideCursor failed (CGError \(publicError.rawValue))")
+        }
+        // Private CGS path covers the common case: Picky is a menu-bar app
+        // and isn't frontmost while ink mode is active, so the public call
+        // is queued but doesn't actually hide the cursor.
+        let cid = _PickyCGSDefaultConnection()
+        let privateError = _PickyCGSHideCursor(cid)
+        if privateError != .success {
+            print("⚠️ Picky ink: CGSHideCursor failed (CGError \(privateError.rawValue))")
         }
         cursorHideBalance = 1
     }
@@ -359,9 +386,14 @@ final class PickyInkCaptureController {
     private func restoreSystemCursorIfNeeded() {
         guard cursorHideBalance > 0 else { return }
         for _ in 0..<cursorHideBalance {
-            let error = CGDisplayShowCursor(CGMainDisplayID())
-            if error != .success {
-                print("⚠️ Picky ink: couldn't restore system cursor (CGError \(error.rawValue))")
+            let publicError = CGDisplayShowCursor(CGMainDisplayID())
+            if publicError != .success {
+                print("⚠️ Picky ink: CGDisplayShowCursor failed (CGError \(publicError.rawValue))")
+            }
+            let cid = _PickyCGSDefaultConnection()
+            let privateError = _PickyCGSShowCursor(cid)
+            if privateError != .success {
+                print("⚠️ Picky ink: CGSShowCursor failed (CGError \(privateError.rawValue))")
             }
         }
         cursorHideBalance = 0

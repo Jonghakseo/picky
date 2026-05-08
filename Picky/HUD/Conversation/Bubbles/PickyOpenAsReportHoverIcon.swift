@@ -10,7 +10,7 @@
 
 import SwiftUI
 
-/// Compact icon button that floats just outside the corner of a message bubble.
+/// Compact icon button that sits just inside the corner of a message bubble.
 /// The button itself is small (~20pt) and uses the SF Symbol arrow-square glyph
 /// commonly associated with "open in a separate window/view".
 ///
@@ -42,7 +42,7 @@ struct PickyOpenAsReportHoverIcon: View {
 }
 
 extension View {
-    /// Reveals a small "open as report" icon just OUTSIDE the bubble's specified
+    /// Reveals a small "open as report" icon just INSIDE the bubble's specified
     /// corner while the user hovers over either the bubble or the icon itself.
     /// Pass `nil` for `onOpen` to disable the affordance (e.g. for messages
     /// whose preview isn't truncated and so don't need an expand action).
@@ -58,10 +58,10 @@ private struct PickyOpenAsReportHoverIconModifier: ViewModifier {
     let onOpen: (() -> Void)?
     let alignment: Alignment
 
-    /// Two separate hover trackers because the icon sits OUTSIDE the bubble's
-    /// frame via `.offset`, so cursor moves between bubble → icon would
-    /// otherwise see a brief gap where neither view is hovered. ORing both
-    /// keeps the icon visible while the cursor is over either surface.
+    /// Two separate hover trackers because the icon sits inside the corner
+    /// via `.offset` and SwiftUI's overlay can briefly report no-hover during
+    /// rapid pointer transitions between bubble and icon. ORing both keeps
+    /// the icon visible while the cursor is over either surface.
     @State private var isBubbleHovered = false
     @State private var isIconHovered = false
 
@@ -81,17 +81,18 @@ private struct PickyOpenAsReportHoverIconModifier: ViewModifier {
             .animation(.easeOut(duration: 0.12), value: shouldShowIcon)
     }
 
-    /// Pushes the icon a few points beyond the bubble's edge so it visibly
-    /// sits OUTSIDE the corner rather than overlapping the bubble's painted
-    /// area. The vertical nudge is matched on both sides so the icon's
-    /// vertical centerline lines up with the bubble's top edge regardless of
-    /// which corner alignment was requested.
+    /// Inset the icon so it sits visibly INSIDE the bubble's corner with a
+    /// small margin. Previously the icon was nudged OUTSIDE the bubble which
+    /// made it both visually disconnected and easy to miss with the cursor.
+    /// Inset values are negative on the trailing axis (move left from the
+    /// trailing edge) and positive on the vertical axis (move down from the
+    /// top edge) so the icon hugs the corner without crossing it.
     private var iconOffset: CGSize {
         switch alignment {
         case .topLeading:
-            return CGSize(width: -12, height: -12)
+            return CGSize(width: 4, height: 4)
         case .topTrailing:
-            return CGSize(width: 12, height: -12)
+            return CGSize(width: -4, height: 4)
         default:
             return .zero
         }

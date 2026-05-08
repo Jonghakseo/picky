@@ -889,7 +889,7 @@ struct PickySessionViewModelTests {
         ) == nil)
     }
 
-    @Test func linkBadgeArtifactsClassifyGitHubSlackAndNotionURLs() throws {
+    @Test func linkBadgeArtifactsClassifyKnownWorkURLs() throws {
         let pullRequest = PickyArtifact(
             id: "pr-1",
             kind: "pr",
@@ -922,6 +922,14 @@ struct PickySessionViewModelTests {
             url: URL(string: "https://www.notion.so/creatrip/355d62c6956180cf8695dcdf5c4ff226")!,
             updatedAt: Date()
         )
+        let jira = PickyArtifact(id: "jira-1", kind: "jira", title: "COM-123", path: nil, url: URL(string: "https://creatrip.atlassian.net/browse/COM-123")!, updatedAt: Date())
+        let sentry = PickyArtifact(id: "sentry-1", kind: "sentry", title: "Sentry", path: nil, url: URL(string: "https://creatrip.sentry.io/issues/1234567890/")!, updatedAt: Date())
+        let linear = PickyArtifact(id: "linear-1", kind: "linear", title: "ENG-456", path: nil, url: URL(string: "https://linear.app/acme/issue/ENG-456/fix-checkout")!, updatedAt: Date())
+        let figma = PickyArtifact(id: "figma-1", kind: "figma", title: "Figma", path: nil, url: URL(string: "https://www.figma.com/design/abc123/Product")!, updatedAt: Date())
+        let docs = PickyArtifact(id: "docs-1", kind: "googleDocs", title: "Docs", path: nil, url: URL(string: "https://docs.google.com/document/d/doc123/edit")!, updatedAt: Date())
+        let sheets = PickyArtifact(id: "sheets-1", kind: "googleSheets", title: "Sheets", path: nil, url: URL(string: "https://docs.google.com/spreadsheets/d/sheet123/edit")!, updatedAt: Date())
+        let slides = PickyArtifact(id: "slides-1", kind: "googleSlides", title: "Slides", path: nil, url: URL(string: "https://docs.google.com/presentation/d/slide123/edit")!, updatedAt: Date())
+        let drive = PickyArtifact(id: "drive-1", kind: "googleDrive", title: "Drive", path: nil, url: URL(string: "https://drive.google.com/file/d/file123/view")!, updatedAt: Date())
 
         #expect(pullRequest.linkBadgeKind == .github)
         #expect(pullRequest.githubIssueOrPullRequestNumber == "42")
@@ -929,16 +937,30 @@ struct PickySessionViewModelTests {
         #expect(issue.githubIssueOrPullRequestNumber == "2777")
         #expect(slack.linkBadgeKind == .slack)
         #expect(notion.linkBadgeKind == .notion)
+        #expect(jira.linkBadgeKind == .jira)
+        #expect(jira.jiraIssueKey == "COM-123")
+        #expect(sentry.linkBadgeKind == .sentry)
+        #expect(linear.linkBadgeKind == .linear)
+        #expect(linear.linearIssueKey == "ENG-456")
+        #expect(figma.linkBadgeKind == .figma)
+        #expect(docs.linkBadgeKind == .googleDocs)
+        #expect(sheets.linkBadgeKind == .googleSheets)
+        #expect(slides.linkBadgeKind == .googleSlides)
+        #expect(drive.linkBadgeKind == .googleDrive)
     }
 
-    @Test func sessionCardOmitsSingleSlackAndNotionLinkIndexes() throws {
+    @Test func sessionCardShowsMeaningfulLinkTextOnlyOrDuplicateIndexes() throws {
         let github = PickyArtifact(id: "github-1", kind: "github", title: "#42", path: nil, url: URL(string: "https://github.com/acme/repo/pull/42")!, updatedAt: Date())
+        let jira = PickyArtifact(id: "jira-1", kind: "jira", title: "COM-123", path: nil, url: URL(string: "https://creatrip.atlassian.net/browse/COM-123")!, updatedAt: Date())
+        let linear = PickyArtifact(id: "linear-1", kind: "linear", title: "ENG-456", path: nil, url: URL(string: "https://linear.app/acme/issue/ENG-456/fix-checkout")!, updatedAt: Date())
         let slack = PickyArtifact(id: "slack-1", kind: "slack", title: "Slack", path: nil, url: URL(string: "https://creatrip.slack.com/archives/C012ZMHLPDW/p1777763920621249")!, updatedAt: Date())
         let notion1 = PickyArtifact(id: "notion-1", kind: "notion", title: "Notion", path: nil, url: URL(string: "https://www.notion.so/creatrip/355d62c6956180cf8695dcdf5c4ff226")!, updatedAt: Date())
         let notion2 = PickyArtifact(id: "notion-2", kind: "notion", title: "Notion", path: nil, url: URL(string: "https://app.notion.com/p/351d62c6956180498d13e3494b488192")!, updatedAt: Date())
-        let card = PickySessionListViewModel.SessionCard.fixture(artifacts: [github, slack, notion1, notion2])
+        let card = PickySessionListViewModel.SessionCard.fixture(artifacts: [github, jira, linear, slack, notion1, notion2])
 
         #expect(card.linkBadgeText(for: github) == "#42")
+        #expect(card.linkBadgeText(for: jira) == "COM-123")
+        #expect(card.linkBadgeText(for: linear) == "ENG-456")
         #expect(card.linkBadgeText(for: slack) == nil)
         #expect(card.linkBadgeText(for: notion1) == "#1")
         #expect(card.linkBadgeText(for: notion2) == "#2")

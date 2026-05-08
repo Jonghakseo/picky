@@ -47,6 +47,10 @@ struct PickyConversationContextLineView: View {
             if let gitStatus {
                 gitContextLine(status: gitStatus)
             }
+
+            if !session.linkBadgeArtifacts.isEmpty {
+                linkContextLine
+            }
         }
         .font(.system(size: 10.5, weight: .medium))
         .foregroundColor(DS.Colors.textTertiary)
@@ -62,7 +66,7 @@ struct PickyConversationContextLineView: View {
     }
 
     private var hasPrimaryContext: Bool {
-        session.compactCwdDescription != nil || !session.linkBadgeArtifacts.isEmpty
+        session.compactCwdDescription != nil
     }
 
     private var primaryContextLine: some View {
@@ -70,14 +74,16 @@ struct PickyConversationContextLineView: View {
             if let compactCwd = session.compactCwdDescription {
                 cwdButton(compactCwd)
             }
+        }
+    }
 
-            if !session.linkBadgeArtifacts.isEmpty {
-                if session.compactCwdDescription != nil {
-                    separatorDot
-                }
-                linkBadges
-                    .layoutPriority(2)
-            }
+    private var linkContextLine: some View {
+        HStack(spacing: 6) {
+            Text("Links")
+                .font(PickyHUDTypography.labelMedium)
+                .foregroundColor(DS.Colors.textTertiary.opacity(0.85))
+            linkBadges
+                .layoutPriority(2)
         }
     }
 
@@ -116,7 +122,7 @@ struct PickyConversationContextLineView: View {
 
     private var linkBadges: some View {
         HStack(spacing: 4) {
-            ForEach(session.linkBadgeArtifacts.prefix(3)) { artifact in
+            ForEach(session.linkBadgeArtifacts.prefix(6)) { artifact in
                 if let url = artifact.url {
                     Link(destination: url) {
                         linkBadge(artifact)
@@ -126,6 +132,10 @@ struct PickyConversationContextLineView: View {
                 } else {
                     linkBadge(artifact)
                 }
+            }
+            let remainingCount = session.linkBadgeArtifacts.count - min(session.linkBadgeArtifacts.count, 6)
+            if remainingCount > 0 {
+                moreLinksBadge(count: remainingCount)
             }
         }
     }
@@ -230,8 +240,7 @@ struct PickyConversationContextLineView: View {
     }
 
     private func linkBadgeText(for artifact: PickyArtifact) -> String? {
-        guard artifact.linkBadgeKind == .github else { return nil }
-        return session.linkBadgeText(for: artifact)
+        session.linkBadgeText(for: artifact)
     }
 
     @ViewBuilder
@@ -258,11 +267,53 @@ struct PickyConversationContextLineView: View {
                 .scaledToFit()
                 .frame(width: 11, height: 11)
                 .accessibilityHidden(true)
+        case .jira:
+            Image(systemName: "checklist")
+                .font(.system(size: 9.5, weight: .semibold))
+                .accessibilityHidden(true)
+        case .sentry:
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 9.5, weight: .semibold))
+                .accessibilityHidden(true)
+        case .linear:
+            Image(systemName: "line.3.horizontal.decrease")
+                .font(.system(size: 9.5, weight: .semibold))
+                .accessibilityHidden(true)
+        case .figma:
+            Image(systemName: "pencil.and.outline")
+                .font(.system(size: 9.5, weight: .semibold))
+                .accessibilityHidden(true)
+        case .googleDocs:
+            Image(systemName: "doc.text")
+                .font(.system(size: 9.5, weight: .semibold))
+                .accessibilityHidden(true)
+        case .googleSheets:
+            Image(systemName: "tablecells")
+                .font(.system(size: 9.5, weight: .semibold))
+                .accessibilityHidden(true)
+        case .googleSlides:
+            Image(systemName: "play.rectangle")
+                .font(.system(size: 9.5, weight: .semibold))
+                .accessibilityHidden(true)
+        case .googleDrive:
+            Image(systemName: "externaldrive")
+                .font(.system(size: 9.5, weight: .semibold))
+                .accessibilityHidden(true)
         case nil:
             Image(systemName: "link")
                 .font(.system(size: 9.5, weight: .semibold))
                 .accessibilityHidden(true)
         }
+    }
+
+    private func moreLinksBadge(count: Int) -> some View {
+        Text("+\(count)")
+            .font(PickyHUDTypography.metaMonospacedSemibold)
+            .foregroundColor(DS.Colors.accentText)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(DS.Colors.accentSubtle.opacity(0.75)))
+            .help("\(count) more links")
     }
 
     private func gitMetricPill(_ text: String, color: Color) -> some View {

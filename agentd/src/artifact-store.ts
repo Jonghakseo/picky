@@ -123,7 +123,7 @@ export function githubPullRequestTitle(url: string): string {
   return number ? `#${number}` : "GitHub";
 }
 
-export type SessionLinkKind = "github" | "slack" | "notion";
+export type SessionLinkKind = "github" | "slack" | "notion" | "jira" | "sentry" | "linear" | "figma" | "googleDocs" | "googleSheets" | "googleSlides" | "googleDrive";
 
 export interface ExtractedSessionLink {
   kind: SessionLinkKind;
@@ -132,7 +132,7 @@ export interface ExtractedSessionLink {
 }
 
 export function extractSessionLinks(text: string): ExtractedSessionLink[] {
-  const regex = /https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/(?:pull|issues)\/[0-9]+(?:[?#][^\s<>)\]]*)?|https:\/\/[A-Za-z0-9-]+\.slack\.com\/archives\/[A-Z0-9]+\/p[0-9]+(?:[?#][^\s<>)\]]*)?|https:\/\/(?:(?:www\.)?notion\.so|app\.notion\.com)\/[^\s<>)\]]+/g;
+  const regex = /https:\/\/[^\s<>)\]]+/g;
   const links: ExtractedSessionLink[] = [];
   const seen = new Set<string>();
   for (const match of text.matchAll(regex)) {
@@ -163,17 +163,43 @@ function sessionLinkKind(url: string): SessionLinkKind | undefined {
   if (host === "github.com" && /\/[^/]+\/[^/]+\/(?:pull|issues)\/[0-9]+$/.test(parsed.pathname)) return "github";
   if (host.endsWith(".slack.com") && /\/archives\/[A-Z0-9]+\/p[0-9]+$/.test(parsed.pathname)) return "slack";
   if (["notion.so", "www.notion.so", "app.notion.com"].includes(host)) return "notion";
+  if (host.endsWith(".atlassian.net") && jiraIssueKey(url)) return "jira";
+  if (host.endsWith(".sentry.io") && /\/issues\/[0-9]+\/?$/.test(parsed.pathname)) return "sentry";
+  if (host === "linear.app" && linearIssueKey(url)) return "linear";
+  if ((host === "figma.com" || host.endsWith(".figma.com")) && /^\/(file|design|proto|board)\/[A-Za-z0-9_-]+(?:\/|$)/.test(parsed.pathname)) return "figma";
+  if (host === "docs.google.com") {
+    if (/^\/document\/d\/[^/]+/.test(parsed.pathname)) return "googleDocs";
+    if (/^\/spreadsheets\/d\/[^/]+/.test(parsed.pathname)) return "googleSheets";
+    if (/^\/presentation\/d\/[^/]+/.test(parsed.pathname)) return "googleSlides";
+  }
+  if (host === "drive.google.com" && (/^\/file\/d\/[^/]+/.test(parsed.pathname) || /^\/drive\//.test(parsed.pathname))) return "googleDrive";
   return undefined;
 }
 
 function sessionLinkTitle(kind: SessionLinkKind, url: string): string {
   if (kind === "github") return githubPullRequestTitle(url);
+  if (kind === "jira") return jiraIssueKey(url) ?? "Jira";
+  if (kind === "linear") return linearIssueKey(url) ?? "Linear";
   if (kind === "slack") return "Slack";
-  return "Notion";
+  if (kind === "notion") return "Notion";
+  if (kind === "sentry") return "Sentry";
+  if (kind === "figma") return "Figma";
+  if (kind === "googleDocs") return "Docs";
+  if (kind === "googleSheets") return "Sheets";
+  if (kind === "googleSlides") return "Slides";
+  return "Drive";
 }
 
 function githubIssueOrPullRequestNumber(url: string): string | undefined {
   return url.match(/\/(?:pull|issues)\/([0-9]+)(?:$|[?#])/)?.[1];
+}
+
+function jiraIssueKey(url: string): string | undefined {
+  return url.match(/\/browse\/([A-Z][A-Z0-9]+-[0-9]+)(?:$|[?#])/)?.[1];
+}
+
+function linearIssueKey(url: string): string | undefined {
+  return url.match(/\/issue\/([A-Z][A-Z0-9]+-[0-9]+)(?:\/|$|[?#])/)?.[1];
 }
 
 function normalizeLinkUrl(rawUrl: string): string | undefined {

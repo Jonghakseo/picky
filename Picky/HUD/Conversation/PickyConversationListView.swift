@@ -208,14 +208,25 @@ struct PickyConversationListView: View {
     }
 
     private var hasAgentProgressInVisibleTurn: Bool {
-        visibleMessages.contains { $0.kind != .userText }
+        currentTurnMessages.contains { $0.kind != .userText }
     }
 
     private var hasVisibleActivitySnapshot: Bool {
-        visibleMessages.contains { message in
+        currentTurnMessages.contains { message in
             guard message.kind == .agentActivity, let snapshot = message.activitySnapshot else { return false }
             return !snapshot.visibleToolCallItems.isEmpty
         }
+    }
+
+    /// `visibleMessages`에서 "현재 턴"(마지막 user_text 이후) 만 잘라낸 슬라이스.
+    /// 2턴 노출로 이전 턴의 activity snapshot이 보여도, "현재 턴에 이미
+    /// snapshot이 렌더링되었는가" 같은 시점 판단은 현재 턴만 보도록 유지.
+    private var currentTurnMessages: ArraySlice<PickySessionMessage> {
+        let visible = visibleMessages
+        guard let lastUserIndex = visible.lastIndex(where: { $0.kind == .userText }) else {
+            return ArraySlice(visible)
+        }
+        return visible[lastUserIndex...]
     }
 
     private var visibleQueuedFollowUps: [PickyQueueItem] {
@@ -226,13 +237,16 @@ struct PickyConversationListView: View {
         session.queuedSteers
     }
 
-    /// 카드 안에는 "마지막 user_text → 끝" 한 쌍만 노출. 히스토리 전체는 "Earlier history" 버튼 → terminal.
+    /// 카드 안에는 "마지막 user_text 두 개 → 끝" 범위를 노출 (직전 턴까지 함께 보이게).
+    /// 그 앞 히스토리는 "Earlier history" 버튼 → 터미널 오버레이로 풀 히스토리 확인.
+    /// user_text가 0–1개일 때는 전체를 그대로 노출 (slice 시작점이 0과 동일).
     var visibleMessages: [PickySessionMessage] {
         let messages = session.messages
-        guard let lastUserIndex = messages.lastIndex(where: { $0.kind == .userText }) else {
+        let userIndices = messages.indices.filter { messages[$0].kind == .userText }
+        guard let firstVisibleUserIndex = userIndices.suffix(2).first else {
             return messages
         }
-        return Array(messages[lastUserIndex...])
+        return Array(messages[firstVisibleUserIndex...])
     }
 
     var hiddenHistoryCount: Int {

@@ -607,7 +607,9 @@ struct PickyConversationCardViewTests {
 
     // MARK: - Last turn-only visibility (Earlier history)
 
-    @Test func visibleMessagesContainsOnlyLastUserTextOnward() {
+    @Test func visibleMessagesContainsLastTwoUserTurnsOnward() {
+        // With exactly two user turns, both turns (and everything after) stay
+        // visible — nothing gets pushed into "Earlier history".
         let session = makeConversationSession(
             status: .running,
             messages: [
@@ -621,7 +623,30 @@ struct PickyConversationCardViewTests {
         let viewModel = makeViewModel()
         let list = PickyConversationListView(session: session, viewModel: viewModel)
 
-        #expect(list.visibleMessages.map(\.id) == ["u2", "a2-act", "a2"])
+        #expect(list.visibleMessages.map(\.id) == ["u1", "a1", "u2", "a2-act", "a2"])
+        #expect(list.hiddenHistoryCount == 0)
+    }
+
+    @Test func visibleMessagesShowsLastTwoUserTurnsWhenMoreExist() {
+        // With three or more user turns, only the last two turns (from the second-to-last
+        // user_text to the end of the message list) stay visible. Earlier turns collapse
+        // behind the "Earlier history" pill.
+        let session = makeConversationSession(
+            status: .running,
+            messages: [
+                message("u1", kind: .userText, text: "first"),
+                message("a1", kind: .agentText, text: "reply 1"),
+                message("u2", kind: .userText, text: "second"),
+                message("a2", kind: .agentText, text: "reply 2"),
+                message("u3", kind: .userText, text: "third"),
+                message("a3-act", kind: .agentActivity, activitySnapshot: PickyActivitySummary(edit: 1, bash: 0, thinking: 0, other: 0)),
+                message("a3", kind: .agentText, text: "reply 3")
+            ]
+        )
+        let viewModel = makeViewModel()
+        let list = PickyConversationListView(session: session, viewModel: viewModel)
+
+        #expect(list.visibleMessages.map(\.id) == ["u2", "a2", "u3", "a3-act", "a3"])
         #expect(list.hiddenHistoryCount == 2)
     }
 

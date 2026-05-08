@@ -41,6 +41,13 @@ struct PickyConversationListView: View {
                                 PickyActivitySummaryView(summary: session.activitySummary, onTap: openCurrentTurnToolHistory)
                             }
                         }
+                        // Sentinel anchor pinned to the very end of the list. Scrolling
+                        // to a real message id is fragile because turn cards collapse
+                        // their body and `agentActivity` messages render no view, so a
+                        // dedicated always-rendered anchor is the only reliable target.
+                        Color.clear
+                            .frame(height: 1)
+                            .id(Self.bottomAnchorID)
                     }
                     .padding(.vertical, 2)
                 }
@@ -50,11 +57,22 @@ struct PickyConversationListView: View {
             }
             .frame(minHeight: 80, maxHeight: 640)
             .onAppear {
-                scrollToLatest(proxy: proxy, animated: false)
+                // Two attempts: first deferred to the next runloop tick (covers most
+                // cases), second after a short delay to catch the rare path where
+                // LazyVStack hasn't laid out the anchor yet on the first attempt.
+                scrollToBottom(proxy: proxy, animated: false)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    scrollToBottom(proxy: proxy, animated: false)
+                }
                 hasAppeared = true
             }
+            .onChange(of: session.id) { _, _ in
+                // Reset to the bottom whenever the user swaps to a different session
+                // through the dock, so the new card opens at its latest reply.
+                scrollToBottom(proxy: proxy, animated: false)
+            }
             .onChange(of: session.messages.last?.id) { _, _ in
-                scrollToLatest(proxy: proxy, animated: hasAppeared)
+                scrollToBottom(proxy: proxy, animated: hasAppeared)
             }
         }
     }
@@ -349,18 +367,19 @@ struct PickyConversationListView: View {
         return "\(hours)h \(minutes % 60)m later"
     }
 
-    private func scrollToLatest(proxy: ScrollViewProxy, animated: Bool) {
-        guard let latestID = session.messages.last?.id else { return }
+    private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool) {
         DispatchQueue.main.async {
             if animated {
                 withAnimation(.easeOut(duration: 0.18)) {
-                    proxy.scrollTo(latestID, anchor: .bottom)
+                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
                 }
             } else {
-                proxy.scrollTo(latestID, anchor: .bottom)
+                proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
             }
         }
     }
+
+    private static let bottomAnchorID = "__picky_conversation_bottom_anchor__"
 }
 
 struct PickyConversationListRenderSnapshot: Equatable {

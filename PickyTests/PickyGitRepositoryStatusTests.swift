@@ -73,6 +73,60 @@ struct PickyGitRepositoryStatusTests {
         #expect(branchURL?.absoluteString == "https://github.com/creatrip/product/tree/docs/nicepay-linepay-implementation-plan")
     }
 
+    @Test func loadCountsUntrackedTextFilesAsInsertionsAndSkipsBinaries() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try runGit(["init", "-b", "main"], cwd: directory)
+        try runGit(["config", "user.email", "picky@example.com"], cwd: directory)
+        try runGit(["config", "user.name", "Picky Tests"], cwd: directory)
+        try runGit(["config", "commit.gpgsign", "false"], cwd: directory)
+        let seedURL = directory.appendingPathComponent("seed.txt")
+        try "seed\n".write(to: seedURL, atomically: true, encoding: .utf8)
+        try runGit(["add", "seed.txt"], cwd: directory)
+        try runGit(["commit", "-m", "initial"], cwd: directory)
+
+        // 3-line text file with trailing newline.
+        try "alpha\nbeta\ngamma\n".write(
+            to: directory.appendingPathComponent("notes.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        // 2-line text file WITHOUT trailing newline — git counts the dangling line.
+        try "one\ntwo".write(
+            to: directory.appendingPathComponent("snippet.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        // Binary blob — should be skipped.
+        try Data([0x00, 0x01, 0x02, 0x00, 0xFF]).write(to: directory.appendingPathComponent("blob.bin"))
+
+        let status = await PickyGitRepositoryStatus.load(cwd: directory.path)
+
+        #expect(status?.insertions == 5) // 3 + 2, blob skipped
+        #expect(status?.deletions == 0)
+        #expect(status?.hasUncommittedChanges == true)
+    }
+
+    @Test func textFileLineCountReturnsNilForBinaryAndCountsLinesWithoutTrailingNewline() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let textWithTrailing = directory.appendingPathComponent("a.txt")
+        try "x\ny\nz\n".write(to: textWithTrailing, atomically: true, encoding: .utf8)
+        let textWithoutTrailing = directory.appendingPathComponent("b.txt")
+        try "x\ny\nz".write(to: textWithoutTrailing, atomically: true, encoding: .utf8)
+        let binary = directory.appendingPathComponent("c.bin")
+        try Data([0x42, 0x00, 0x42]).write(to: binary)
+        let empty = directory.appendingPathComponent("d.txt")
+        try Data().write(to: empty)
+
+        #expect(PickyGitRepositoryStatus.textFileLineCount(at: textWithTrailing.path) == 3)
+        #expect(PickyGitRepositoryStatus.textFileLineCount(at: textWithoutTrailing.path) == 3)
+        #expect(PickyGitRepositoryStatus.textFileLineCount(at: binary.path) == nil)
+        #expect(PickyGitRepositoryStatus.textFileLineCount(at: empty.path) == 0)
+    }
+
     @Test func loadKeepsCachedStatusAvailableBetweenRefreshes() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

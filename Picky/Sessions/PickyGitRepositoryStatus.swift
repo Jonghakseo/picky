@@ -71,19 +71,77 @@ struct PickyGitRepositoryStatus: Equatable {
         let branchWebURL = remoteWebURL.flatMap { makeBranchWebURL(remoteWebURL: $0, branchName: branchName) }
         let statusOutput = git(["status", "--porcelain"], cwd: trimmedCwd) ?? ""
         let diffStats = parseNumstat(git(["diff", "--numstat", "HEAD", "--"], cwd: trimmedCwd, allowsFailure: true) ?? "")
+        let untrackedInsertions = countUntrackedTextLines(cwd: trimmedCwd, topLevel: topLevel)
         let position = parseAheadBehind(git(["rev-list", "--left-right", "--count", "@{upstream}...HEAD"], cwd: trimmedCwd, allowsFailure: true) ?? "")
 
         return PickyGitRepositoryStatus(
             repositoryName: repositoryName,
             branchName: branchName,
             hasUncommittedChanges: !statusOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            insertions: diffStats.insertions,
+            insertions: diffStats.insertions + untrackedInsertions,
             deletions: diffStats.deletions,
             aheadCount: position.ahead,
             behindCount: position.behind,
             remoteWebURL: remoteWebURL,
             branchWebURL: branchWebURL
         )
+    }
+
+    /// Maximum number of untracked files to scan per `loadSynchronously` call. Above this we
+    /// silently truncate so a worktree with thousands of stray build artifacts does not block
+    /// the HUD git refresh.
+    static let maxUntrackedFilesScanned = 500
+
+    /// Cap each untracked file read at 1 MB. Anything larger is skipped — these are
+    /// almost always generated/binary content and not what the +/- pill is trying to surface.
+    static let maxUntrackedFileBytes = 1 * 1024 * 1024
+
+    static func countUntrackedTextLines(cwd: String, topLevel: String) -> Int {
+        let raw = git(["ls-files", "--others", "--exclude-standard", "-z"], cwd: cwd, allowsFailure: true) ?? ""
+        let paths = parseNullSeparatedPaths(raw).prefix(maxUntrackedFilesScanned)
+        var total = 0
+        for relativePath in paths {
+            let absolute = (topLevel as NSString).appendingPathComponent(relativePath)
+            if let count = textFileLineCount(at: absolute) {
+                total += count
+            }
+        }
+        return total
+    }
+
+    static func parseNullSeparatedPaths(_ output: String) -> [String] {
+        output.split(separator: "\0", omittingEmptySubsequences: true).map(String.init)
+    }
+
+    /// Returns the number of lines in `path` matching `git diff --numstat` semantics, or
+    /// `nil` when the file is binary, unreadable, or exceeds `maxUntrackedFileBytes`.
+    static func textFileLineCount(at path: String) -> Int? {
+        let url = URL(fileURLWithPath: path)
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+
+        var newlineCount = 0
+        var lastByte: UInt8 = 0
+        var hasContent = false
+        var totalBytes = 0
+
+        while totalBytes < maxUntrackedFileBytes,
+              let chunk = try? handle.read(upToCount: 64 * 1024), !chunk.isEmpty {
+            if chunk.contains(0) { return nil }
+            hasContent = true
+            totalBytes += chunk.count
+            for byte in chunk where byte == 0x0A {
+                newlineCount += 1
+            }
+            if let last = chunk.last { lastByte = last }
+        }
+
+        // Treat a trailing line without a newline as a line, matching how git counts
+        // additions for files lacking a final newline.
+        if hasContent && lastByte != 0x0A {
+            newlineCount += 1
+        }
+        return newlineCount
     }
 
     static func makeBranchWebURL(remoteWebURL: URL, branchName: String) -> URL? {

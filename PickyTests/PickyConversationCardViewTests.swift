@@ -755,6 +755,64 @@ struct PickyConversationCardViewTests {
         #expect(!snapshot.showsActivitySummary)
     }
 
+    // MARK: - Turn card grouping
+
+    @Test func turnGroupsExposeOneCardPerVisibleUserText() {
+        // visibleMessages 정책 (마지막 두 user_text 부터) 과 turn 그룹화가 함께
+        // 동작해 두 개의 turn card 가 생기는지 검증.
+        let session = makeConversationSession(
+            status: .running,
+            messages: [
+                message("u1", kind: .userText, text: "first"),
+                message("a1", kind: .agentText, text: "reply 1"),
+                message("u2", kind: .userText, text: "second"),
+                message("a2-act", kind: .agentActivity, activitySnapshot: PickyActivitySummary(bash: 1)),
+                message("a2", kind: .agentText, text: "reply 2"),
+                message("u3", kind: .userText, text: "third"),
+                message("a3", kind: .agentText, text: "reply 3")
+            ]
+        )
+        let viewModel = makeViewModel()
+        let list = PickyConversationListView(session: session, viewModel: viewModel)
+        let snapshot = list.renderSnapshot
+
+        #expect(list.turnGroups.map(\.id) == ["u2", "u3"])
+        #expect(list.turnGroups.map(\.isCurrent) == [false, true])
+        #expect(snapshot.turnCardCount == 2)
+    }
+
+    @Test func turnCardCountIsZeroWhenNoUserTextExists() {
+        // user_text 가 없는 슬라이스는 pre-turn 그룹으로 나오고 turn card 가 생기지 않는다.
+        let session = makeConversationSession(
+            status: .running,
+            messages: [
+                message("a1", kind: .agentText, text: "hello"),
+                message("a2", kind: .agentThinking, text: "thinking")
+            ]
+        )
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+
+        #expect(snapshot.turnCardCount == 0)
+    }
+
+    @Test func completedSessionMarksAllTurnsAsNonCurrent() {
+        // 완료된 세션은 마지막 turn 까지 collapsed 정책의 대상 (isCurrent == false).
+        let session = makeConversationSession(
+            status: .completed,
+            messages: [
+                message("u1", kind: .userText, text: "first"),
+                message("a1", kind: .agentText, text: "reply 1"),
+                message("u2", kind: .userText, text: "second"),
+                message("a2", kind: .agentText, text: "reply 2")
+            ]
+        )
+        let viewModel = makeViewModel()
+        let list = PickyConversationListView(session: session, viewModel: viewModel)
+
+        #expect(list.turnGroups.map(\.isCurrent) == [false, false])
+    }
+
 }
 
 private let baseDate = Date(timeIntervalSince1970: 1_777_777_777)

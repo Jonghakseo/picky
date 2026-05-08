@@ -29,12 +29,11 @@ struct PickyConversationListView: View {
                             Color.clear
                                 .frame(height: 24)
                         } else {
-                            ForEach(Array(visibleMessages.enumerated()), id: \.element.id) { index, message in
-                                if shouldShowSeparator(before: index) {
-                                    PickyConversationTimeSeparatorView(text: separatorText(before: index))
+                            ForEach(Array(turnGroups.enumerated()), id: \.element.id) { index, group in
+                                if shouldShowTurnSeparator(before: index) {
+                                    PickyConversationTimeSeparatorView(text: turnSeparatorText(before: index))
                                 }
-                                messageView(message)
-                                    .id(message.id)
+                                turnGroupView(group)
                             }
                             queueSection(items: visibleQueuedFollowUps, kind: .followUp, mode: session.followUpMode)
                             queueSection(items: visibleQueuedSteers, kind: .steer, mode: session.steeringMode)
@@ -94,7 +93,36 @@ struct PickyConversationListView: View {
             snapshot.compactingOverlayCount = 1
         }
         snapshot.compactCompletionBubbleCount = visibleMessages.filter(\.isCompactCompletionMessage).count
+        snapshot.turnCardCount = turnGroups.filter(\.hasUserMessage).count
         return snapshot
+    }
+
+    /// `visibleMessages` 를 turn boundary(=`userText`) 기준으로 그룹화한 결과.
+    /// 마지막 그룹은 session 이 active 상태일 때 자동 expanded(`isCurrent = true`).
+    var turnGroups: [PickyTurnGroup] {
+        PickyTurnGrouper.groups(from: visibleMessages, sessionStatus: session.status)
+    }
+
+    @ViewBuilder
+    private func turnGroupView(_ group: PickyTurnGroup) -> some View {
+        if let user = group.userMessage {
+            PickyUserBubbleView(
+                message: user,
+                onOpenAsReport: openMessageReportAction(for: user)
+            )
+            .id(user.id)
+            PickyTurnCardView(group: group) { message in
+                messageView(message)
+                    .id(message.id)
+            }
+        } else {
+            // Pre-turn slice: messages that arrived before the first user_text
+            // (e.g., session bootstrap notes). Render flat without card chrome.
+            ForEach(group.bodyMessages, id: \.id) { message in
+                messageView(message)
+                    .id(message.id)
+            }
+        }
     }
 
     @ViewBuilder
@@ -290,17 +318,26 @@ struct PickyConversationListView: View {
         .help("Open terminal to see full session history")
     }
 
-    private func shouldShowSeparator(before index: Int) -> Bool {
+    /// Time separator between two adjacent turn cards. Inside a turn card,
+    /// individual message timing is summarized by the chip in the header so
+    /// per-message separators inside the body would be redundant.
+    private func shouldShowTurnSeparator(before index: Int) -> Bool {
         guard index > 0 else { return false }
-        let previous = visibleMessages[index - 1].createdAt
-        let current = visibleMessages[index].createdAt
+        let groups = turnGroups
+        guard let previous = groups[index - 1].bodyMessages.last?.createdAt
+            ?? groups[index - 1].userMessage?.createdAt else { return false }
+        guard let current = groups[index].userMessage?.createdAt
+            ?? groups[index].bodyMessages.first?.createdAt else { return false }
         return current.timeIntervalSince(previous) >= 60
     }
 
-    private func separatorText(before index: Int) -> String {
+    private func turnSeparatorText(before index: Int) -> String {
         guard index > 0 else { return "now" }
-        let previous = visibleMessages[index - 1].createdAt
-        let current = visibleMessages[index].createdAt
+        let groups = turnGroups
+        guard let previous = groups[index - 1].bodyMessages.last?.createdAt
+            ?? groups[index - 1].userMessage?.createdAt,
+            let current = groups[index].userMessage?.createdAt
+                ?? groups[index].bodyMessages.first?.createdAt else { return "now" }
         return elapsedText(seconds: max(0, Int(current.timeIntervalSince(previous))))
     }
 
@@ -336,6 +373,7 @@ struct PickyConversationListRenderSnapshot: Equatable {
     var contextUsageFooterCount = 0
     var compactingOverlayCount = 0
     var compactCompletionBubbleCount = 0
+    var turnCardCount = 0
     var showsActivitySummary = false
 }
 

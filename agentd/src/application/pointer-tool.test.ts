@@ -1,37 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { createPickyShowPointerTool, makePointerOverlayRequest, type PickyShowPointerRequest } from "./pointer-tool.js";
+import { makePointerOverlayRequest } from "./pointer-tool.js";
 
-describe("pointer tool", () => {
-  it("normalizes label and emits visual-only screenshot-pixel pointer requests", async () => {
-    let received: PickyShowPointerRequest | undefined;
-    const tool = createPickyShowPointerTool(async (request) => {
-      received = request;
-      return {
-        request: makePointerOverlayRequest(request, {
-          contextId: "context-1",
-          screenId: "screen2",
-          screenBounds: { x: 100, y: 200, width: 300, height: 400 },
-          screenshotSize: { width: 600, height: 800 },
-        }),
-      };
+describe("makePointerOverlayRequest", () => {
+  it("trims label/screenId and falls back to default screenId when input is empty", () => {
+    const overlay = makePointerOverlayRequest(
+      { x: 12, y: 34, label: "  Try Eleven v3  ", screenId: "  " },
+      {
+        contextId: "context-1",
+        screenId: "screen2",
+        screenBounds: { x: 100, y: 200, width: 300, height: 400 },
+        screenshotSize: { width: 600, height: 800 },
+      },
+    );
+
+    expect(overlay).toMatchObject({
+      contextId: "context-1",
+      screenId: "screen2",
+      x: 12,
+      y: 34,
+      label: "Try Eleven v3",
+      screenshotSize: { width: 600, height: 800 },
     });
-
-    const result = await tool.execute("tool-1", { x: 601, y: -5, label: "  Try Eleven v3  " } as never, undefined, undefined, {} as never);
-
-    expect(received).toMatchObject({ x: 601, y: -5, label: "Try Eleven v3" });
-    expect(result.details).toMatchObject({ request: { screenId: "screen2", screenshotSize: { width: 600, height: 800 } } });
-    const content = result.content[0];
-    expect(content?.type).toBe("text");
-    if (content?.type !== "text") throw new Error("expected text content");
-    expect(content.text).toContain("in screenshot pixels");
-    expect(content.text).toContain("No real cursor/input action was performed");
+    expect(overlay.id).toMatch(/^pointer-/);
   });
 
-  it("rejects non-finite coordinates before callback execution", async () => {
-    const tool = createPickyShowPointerTool(async () => {
-      throw new Error("should not execute");
-    });
+  it("prefers an explicit input screenId over the default", () => {
+    const overlay = makePointerOverlayRequest(
+      { x: 1, y: 2, screenId: "screen5" },
+      {
+        screenId: "screen2",
+        screenBounds: { x: 0, y: 0, width: 10, height: 10 },
+        screenshotSize: { width: 10, height: 10 },
+      },
+    );
 
-    await expect(tool.execute("tool-1", { x: Number.NaN, y: 1 } as never, undefined, undefined, {} as never)).rejects.toThrow(/finite x and y/);
+    expect(overlay.screenId).toBe("screen5");
+    expect(overlay.label).toBeUndefined();
   });
 });

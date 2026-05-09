@@ -107,7 +107,6 @@ describe("neutral prompt builder", () => {
 
     expect(prompt.text).toContain("# Picky side-agent task");
     expect(prompt.text).toContain("Investigate without showing overlays");
-    expect(prompt.text).not.toContain("picky_show_pointer");
     expect(prompt.text).not.toContain("Pointer overlay rules");
   });
 

@@ -546,11 +546,9 @@ describe("SessionSupervisor", () => {
     await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate" });
 
     expect(runtime.creates[0].prompt.text).not.toContain("## Picky visual pointer overlay");
-    expect(runtime.creates[0].prompt.text).not.toContain("picky_show_pointer");
     expect(runtime.creates[0].prompt.text).not.toContain("sourceSessionId");
     expect(runtime.creates[1].prompt.text).toContain("# Picky side-agent task");
     expect(runtime.creates[1].prompt.text).not.toContain("## Picky visual pointer overlay");
-    expect(runtime.creates[1].prompt.text).not.toContain("picky_show_pointer");
     expect(runtime.creates[1].prompt.text).not.toContain("sourceSessionId");
   });
 

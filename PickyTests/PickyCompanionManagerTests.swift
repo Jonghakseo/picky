@@ -224,6 +224,13 @@ struct PickyCompanionManagerTests {
         #expect(speechProvider.spokenUtterances == ["열어볼게요."])
     }
 
+    @Test @MainActor func realtimePlaybackStopBeforeFirstAudioIsSafe() {
+        let engine = OpenAIRealtimeAudioPlaybackEngine()
+
+        #expect(engine.stopAndReturnPlayedAudioMs() == 0)
+        #expect(engine.playedAudioMs == 0)
+    }
+
     @Test func realtimeTranscriptEventsDoNotTriggerExistingSpeechProvider() async throws {
         let speechProvider = FakeSpeechPlaybackProvider()
         let manager = CompanionManager(

@@ -51,6 +51,11 @@ final class OpenAIRealtimeAudioPlaybackEngine {
     }
 
     var playedAudioMs: Double {
+        // AVAudioPlayerNode throws an Objective-C exception when `lastRenderTime`
+        // is queried before the node has been attached to an engine. PTT can call
+        // cancel/interrupt before any Realtime audio has ever been played, so guard
+        // the attachment state first instead of relying on optional nil behavior.
+        guard isAttached, audioEngine.isRunning else { return 0 }
         guard let nodeTime = playerNode.lastRenderTime,
               let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else {
             return 0

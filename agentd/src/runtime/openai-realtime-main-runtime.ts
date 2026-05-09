@@ -329,27 +329,33 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     if (!config || this.ws?.readyState !== OPENAI_WS_READY_STATE_OPEN) return;
     this.sendClientEvent({
       type: "session.update",
-      session: {
-        type: "realtime",
-        model: config.modelOrDeployment,
-        output_modalities: ["audio"],
-        audio: {
-          input: {
-            format: { type: "audio/pcm", rate: 24000 },
-            transcription: buildInputTranscriptionConfig(config),
-            turn_detection: null,
+      session: this.usesAzurePreviewProtocol()
+        ? buildAzurePreviewSessionUpdate(config)
+        : {
+            type: "realtime",
+            model: config.modelOrDeployment,
+            output_modalities: ["audio"],
+            audio: {
+              input: {
+                format: { type: "audio/pcm", rate: 24000 },
+                transcription: buildInputTranscriptionConfig(config),
+                turn_detection: null,
+              },
+              output: {
+                format: { type: "audio/pcm", rate: 24000 },
+                voice: config.voice || DEFAULT_VOICE,
+              },
+            },
+            reasoning: { effort: mapReasoningEffort(this.thinkingLevel, config.reasoningEffort) },
+            instructions: buildRealtimeInstructions(),
+            tools: realtimeTools(),
+            tool_choice: "auto",
           },
-          output: {
-            format: { type: "audio/pcm", rate: 24000 },
-            voice: config.voice || DEFAULT_VOICE,
-          },
-        },
-        reasoning: { effort: mapReasoningEffort(this.thinkingLevel, config.reasoningEffort) },
-        instructions: buildRealtimeInstructions(),
-        tools: realtimeTools(),
-        tool_choice: "auto",
-      },
     });
+  }
+
+  private usesAzurePreviewProtocol(): boolean {
+    return this.config?.provider === "azure_openai" && this.config.azure?.apiShape === "preview";
   }
 
   private async sendContextForRealtimeVoice(context: PickyContextPacket): Promise<void> {
@@ -362,9 +368,13 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
 
   private async sendPromptAsConversationItem(prompt: BuiltPrompt): Promise<void> {
     const content: Array<Record<string, unknown>> = [{ type: "input_text", text: prompt.text }];
-    for (const imagePath of prompt.imagePaths) {
-      const imageUrl = await imagePathToDataUrl(imagePath);
-      if (imageUrl) content.push({ type: "input_image", image_url: imageUrl });
+    if (!this.usesAzurePreviewProtocol()) {
+      for (const imagePath of prompt.imagePaths) {
+        const imageUrl = await imagePathToDataUrl(imagePath);
+        if (imageUrl) content.push({ type: "input_image", image_url: imageUrl });
+      }
+    } else if (prompt.imagePaths.length > 0) {
+      logAgentd("main realtime images omitted", { reason: "azure-preview-no-input-image", images: prompt.imagePaths.length });
     }
     this.sendClientEvent({
       type: "conversation.item.create",
@@ -373,7 +383,12 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   }
 
   private sendResponseCreate(): void {
-    this.sendClientEvent({ type: "response.create", response: { output_modalities: ["audio"] } });
+    this.sendClientEvent({
+      type: "response.create",
+      response: this.usesAzurePreviewProtocol()
+        ? { modalities: ["text", "audio"] }
+        : { output_modalities: ["audio"] },
+    });
   }
 
   private handleRawServerEvent(data: RawData): void {
@@ -701,6 +716,27 @@ function buildInputTranscriptionConfig(config: OpenAIRealtimeAuthConfig): Record
     model: "gpt-4o-mini-transcribe",
     ...(language ? { language } : {}),
   };
+}
+
+function buildAzurePreviewSessionUpdate(config: OpenAIRealtimeAuthConfig): Record<string, unknown> {
+  return {
+    modalities: ["text", "audio"],
+    instructions: buildRealtimeInstructions(),
+    voice: azurePreviewVoice(config.voice),
+    input_audio_format: "pcm16",
+    output_audio_format: "pcm16",
+    input_audio_transcription: buildInputTranscriptionConfig(config),
+    turn_detection: null,
+    tools: realtimeTools(),
+    tool_choice: "auto",
+    max_response_output_tokens: "inf",
+  };
+}
+
+function azurePreviewVoice(voice: string | undefined): string {
+  const normalized = voice?.trim();
+  const supported = new Set(["alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"]);
+  return normalized && supported.has(normalized) ? normalized : "verse";
 }
 
 function mapReasoningEffort(level: ThinkingLevel, fallback: OpenAIRealtimeAuthConfig["reasoningEffort"]): "low" | "medium" | "high" {

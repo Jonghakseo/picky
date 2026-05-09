@@ -274,7 +274,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ -d \"${SRCROOT}/pi-extensions\" ]; then\n  rm -rf \"${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}/Contents/Resources/pi-extensions\"\n  /bin/cp -R \"${SRCROOT}/pi-extensions\" \"${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}/Contents/Resources/pi-extensions\"\nfi\n";
+			shellScript = "# pi-extensions are bundled by scripts/package-signed-app.sh outside Xcode's user-script sandbox.\n: \"${SRCROOT}/pi-extensions\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

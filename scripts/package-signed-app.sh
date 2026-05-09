@@ -184,6 +184,7 @@ mkdir -p "${PACKAGED_APP}"
 # 2.6.9) so com.apple.* xattrs survive the copy; codesign will re-seal anyway.
 /usr/bin/rsync -a --extended-attributes --delete \
   --exclude '/Contents/Resources/agentd/' \
+  --exclude '/Contents/Resources/pi-extensions/' \
   "${BUILT_APP}/" "${PACKAGED_APP}/"
 
 /usr/bin/python3 - "${BUILD_INFO_PATH}" "${APP_NAME}" "${MARKETING_VERSION}" "${BUILD_NUMBER}" "${RELEASE_CHANNEL}" "${GIT_SHA}" "${BUILD_TIMESTAMP}" "${BUILD_LABEL}" "${CONFIGURATION}" "${REALTIME_OPT_IN}" <<'PY'
@@ -220,6 +221,16 @@ if [[ "${PACKAGE_AGENTD}" == "1" ]]; then
     mkdir -p "${PACKAGED_APP}/Contents/Resources"
     /bin/cp -Rc "${AGENTD_RUNTIME_DIR}" "${PACKAGED_AGENTD_DIR}"
   fi
+fi
+
+# Bundle pi-extensions so PickyExtensionInstaller can symlink them into
+# ~/.pi/agent/extensions on first launch. Run outside Xcode's user-script
+# sandbox because recursive directory writes under Resources are restricted
+# when declared as a single script output directory.
+if [[ -d "${ROOT_DIR}/pi-extensions" ]]; then
+  rm -rf "${PACKAGED_APP}/Contents/Resources/pi-extensions"
+  mkdir -p "${PACKAGED_APP}/Contents/Resources"
+  /bin/cp -Rc "${ROOT_DIR}/pi-extensions" "${PACKAGED_APP}/Contents/Resources/pi-extensions"
 fi
 
 # Mutating the bundle after xcodebuild signing invalidates the resource seal.

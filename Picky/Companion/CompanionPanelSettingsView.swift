@@ -336,28 +336,32 @@ struct CompanionPanelSettingsView: View {
     private var mainAgentSection: some View {
         sectionHeader(section: .mainAgent, title: "Main Agent", subtitle: "Runtime, reasoning, captured screens, and standing instructions.") {
             VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 5) {
-                    fieldLabel("Runtime")
-                    Picker("Runtime", selection: $viewModel.settings.mainAgentRuntimeMode) {
-                        ForEach(PickyMainAgentRuntimeMode.allCases) { mode in
-                            Text(mode.displayName).tag(mode)
+                if AppBundleConfiguration.realtimeOptIn {
+                    VStack(alignment: .leading, spacing: 5) {
+                        fieldLabel("Runtime")
+                        Picker("Runtime", selection: $viewModel.settings.mainAgentRuntimeMode) {
+                            ForEach(PickyMainAgentRuntimeMode.allCases) { mode in
+                                Text(mode.displayName).tag(mode)
+                            }
                         }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .onChange(of: viewModel.settings.mainAgentRuntimeMode) { _, _ in saveImmediately(for: .mainAgent) }
+
+                        Text(viewModel.settings.mainAgentRuntimeMode == .openAIRealtime
+                             ? "Main-agent voice uses OpenAI/Azure Realtime audio. Side-hover voice follow-ups still go directly to side Pi agents."
+                             : "Default local Pi main-agent flow. Existing STT/TTS providers are unchanged.")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(DS.Colors.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .onChange(of: viewModel.settings.mainAgentRuntimeMode) { _, _ in saveImmediately(for: .mainAgent) }
 
-                    Text(viewModel.settings.mainAgentRuntimeMode == .openAIRealtime
-                         ? "Main-agent voice uses OpenAI/Azure Realtime audio. Side-hover voice follow-ups still go directly to side Pi agents."
-                         : "Default local Pi main-agent flow. Existing STT/TTS providers are unchanged.")
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if viewModel.settings.mainAgentRuntimeMode == .openAIRealtime {
-                    realtimeSettingsFields
+                    if viewModel.settings.mainAgentRuntimeMode == .openAIRealtime {
+                        realtimeSettingsFields
+                    } else {
+                        piMainAgentModelPicker
+                    }
                 } else {
                     piMainAgentModelPicker
                 }

@@ -25,4 +25,14 @@ enum AppBundleConfiguration {
         let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedValue.isEmpty ? nil : trimmedValue
     }
+
+    static var realtimeOptIn: Bool {
+        guard let buildInfoPath = Bundle.main.path(forResource: "PickyBuildInfo", ofType: "json"),
+              let data = try? Data(contentsOf: URL(fileURLWithPath: buildInfoPath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return false
+        }
+        let raw = json["realtimeOptIn"] as? String ?? ""
+        return raw == "1" || raw.lowercased() == "true"
+    }
 }

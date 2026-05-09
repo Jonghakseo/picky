@@ -165,10 +165,13 @@ final class PickyHUDOverlayManager {
         hudPanel.hidesOnDeactivate = false
         hudPanel.isExcludedFromWindowsMenu = true
         hudPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        let panelIdentifier = NSUserInterfaceItemIdentifier("picky-hud-\(displayID)")
+        hudPanel.identifier = panelIdentifier
 
         let placement = PickyHUDPlacement(dockSide: position(for: displayID).side)
         let hudRoot = PickyHUDView(
             viewModel: viewModel,
+            panelIdentifier: panelIdentifier,
             placement: placement,
             onSizeChange: { [weak self] size in
                 // SwiftUI animates the card reveal itself. Grow the transparent NSPanel

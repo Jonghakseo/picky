@@ -654,6 +654,20 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDDockLayout.heldSessionAfterDoubleClick(current: .pinned("agent-a"), doubleClicked: "agent-b") == .pinned("agent-b"))
     }
 
+    @Test func hudDockKeyboardShortcutsOpenNumberedSessionsAndCycle() throws {
+        let visibleIDs = ["agent-a", "agent-b", "agent-c"]
+        #expect(PickyHUDDockLayout.heldSessionAfterNumberShortcut(visibleIDs: visibleIDs, number: 1) == .open("agent-a"))
+        #expect(PickyHUDDockLayout.heldSessionAfterNumberShortcut(visibleIDs: visibleIDs, number: 3) == .open("agent-c"))
+        #expect(PickyHUDDockLayout.heldSessionAfterNumberShortcut(visibleIDs: visibleIDs, number: 4) == nil)
+        #expect(PickyHUDDockLayout.heldSessionAfterCycleShortcut(current: nil, visibleIDs: visibleIDs, direction: 1) == .open("agent-a"))
+        #expect(PickyHUDDockLayout.heldSessionAfterCycleShortcut(current: .open("agent-a"), visibleIDs: visibleIDs, direction: 1) == .open("agent-b"))
+        #expect(PickyHUDDockLayout.heldSessionAfterCycleShortcut(current: .open("agent-c"), visibleIDs: visibleIDs, direction: 1) == .open("agent-a"))
+        #expect(PickyHUDDockLayout.heldSessionAfterCycleShortcut(current: .open("agent-a"), visibleIDs: visibleIDs, direction: -1) == .open("agent-c"))
+        #expect(PickyHUDDockLayout.heldSessionAfterCycleShortcut(current: .pinned("agent-b"), visibleIDs: visibleIDs, direction: -1) == .open("agent-a"))
+        #expect(PickyHUDDockLayout.heldSessionAfterCycleShortcut(current: .open("missing"), visibleIDs: visibleIDs, direction: 1) == .open("agent-a"))
+        #expect(PickyHUDDockLayout.heldSessionAfterCycleShortcut(current: .open("agent-a"), visibleIDs: [], direction: 1) == .open("agent-a"))
+    }
+
     @Test func hudDockCloseTimeoutKeepsOpenAndPinnedHolds() throws {
         #expect(PickyHUDDockLayout.heldSessionAfterCloseTimeout(current: .open("opened"), isHUDHovered: true) == .open("opened"))
         #expect(PickyHUDDockLayout.heldSessionAfterCloseTimeout(current: .open("opened"), isHUDHovered: false) == .open("opened"))

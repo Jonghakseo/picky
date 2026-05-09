@@ -10,6 +10,7 @@ import SwiftUI
 
 struct PickyHUDView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
+    var panelIdentifier: NSUserInterfaceItemIdentifier?
     /// Per-panel reactive placement state. The overlay manager updates
     /// `placement.availableCardMaxHeight` whenever the dock anchor or the screen
     /// configuration changes; the conversation card binds to it so it grows or
@@ -311,16 +312,46 @@ struct PickyHUDView: View {
     private func installCloseShortcutMonitor() {
         guard keyDownMonitor == nil else { return }
         keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            guard NSApp.keyWindow is PickyHUDPanel,
-                  flags.contains(.command),
-                  event.keyCode == Self.wKeyCode,
-                  heldSession != nil else {
-                return event
-            }
-            closeHeldSession()
+            guard handleKeyboardShortcut(event) else { return event }
             return nil
         }
+    }
+
+    private func handleKeyboardShortcut(_ event: NSEvent) -> Bool {
+        guard let keyWindow = NSApp.keyWindow as? PickyHUDPanel else { return false }
+        if let panelIdentifier, keyWindow.identifier != panelIdentifier { return false }
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        let visibleIDs = visibleSessions.map(\.id)
+
+        if flags == .command, event.keyCode == Self.wKeyCode, heldSession != nil {
+            closeHeldSession()
+            return true
+        }
+
+        if flags == [], event.keyCode == Self.escapeKeyCode, heldSession != nil, !Self.isTextInputFocused(in: keyWindow) {
+            closeHeldSession()
+            return true
+        }
+
+        if flags == .command, let number = Self.numberShortcutValue(for: event), let next = PickyHUDDockLayout.heldSessionAfterNumberShortcut(visibleIDs: visibleIDs, number: number) {
+            openHeldSession(next)
+            return true
+        }
+
+        if flags == [.command, .shift], let direction = Self.cycleDirection(for: event) {
+            let next = PickyHUDDockLayout.heldSessionAfterCycleShortcut(current: heldSession, visibleIDs: visibleIDs, direction: direction)
+            if let next { openHeldSession(next) }
+            return next != nil
+        }
+
+        return false
+    }
+
+    private func openHeldSession(_ next: PickyHUDDockHold) {
+        cancelPendingClose()
+        heldSession = next
+        hoverPreviewSessionID = nil
+        suppressedHoverSessionID = nil
     }
 
     private func uninstallCloseShortcutMonitor() {
@@ -334,7 +365,42 @@ struct PickyHUDView: View {
         closeExpansionTask = nil
     }
 
+    private static func numberShortcutValue(for event: NSEvent) -> Int? {
+        switch event.keyCode {
+        case 18: return 1
+        case 19: return 2
+        case 20: return 3
+        case 21: return 4
+        case 23: return 5
+        case 22: return 6
+        case 26: return 7
+        case 28: return 8
+        case 25: return 9
+        default: return nil
+        }
+    }
+
+    private static func cycleDirection(for event: NSEvent) -> Int? {
+        switch event.charactersIgnoringModifiers {
+        case "[": return -1
+        case "]": return 1
+        default: return nil
+        }
+    }
+
+    private static func isTextInputFocused(in window: NSWindow) -> Bool {
+        guard let responder = window.firstResponder else { return false }
+        if responder is NSTextView || responder is NSTextField || responder is NSSearchField || responder is NSComboBox {
+            return true
+        }
+        if let fieldEditor = window.fieldEditor(false, for: nil), responder === fieldEditor {
+            return true
+        }
+        return false
+    }
+
     private static let wKeyCode: UInt16 = 13
+    private static let escapeKeyCode: UInt16 = 53
 }
 
 private struct PickyHUDMiniPreviewCardView: View {

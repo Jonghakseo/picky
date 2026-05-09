@@ -180,6 +180,19 @@ enum PickyHUDDockLayout {
         }
     }
 
+    static func heldSessionAfterNumberShortcut(visibleIDs: [String], number: Int) -> PickyHUDDockHold? {
+        guard number >= 1, number <= visibleIDs.count else { return nil }
+        return .open(visibleIDs[number - 1])
+    }
+
+    static func heldSessionAfterCycleShortcut(current: PickyHUDDockHold?, visibleIDs: [String], direction: Int) -> PickyHUDDockHold? {
+        guard !visibleIDs.isEmpty else { return current }
+        let currentIndex = current.flatMap { held in visibleIDs.firstIndex(of: held.sessionID) }
+        let baseIndex = currentIndex ?? (direction >= 0 ? -1 : 0)
+        let nextIndex = (baseIndex + direction + visibleIDs.count) % visibleIDs.count
+        return .open(visibleIDs[nextIndex])
+    }
+
     static func gitSectionExpansion(sessionID: String, storedValues: [String: Bool]) -> Bool {
         storedValues[sessionID] ?? defaultGitSectionExpanded
     }

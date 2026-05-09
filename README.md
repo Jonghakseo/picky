@@ -2,7 +2,7 @@
 
 Picky is a local-first macOS command center for Pi sessions. It provides a macOS shell for menu bar presence, global push-to-talk, permission handling, screen capture, overlay windows, and long-running HUD sessions while routing captured context to a local `picky-agentd` daemon backed by the Pi SDK.
 
-Current status: the app captures neutral desktop context, launches/connects to `picky-agentd` over a local WebSocket protocol, supervises long-running Pi sessions, and shows session state through the top-right HUD. A mock daemon runtime remains available for local UI development and tests.
+Current status: the app captures neutral desktop context, launches/connects to `picky-agentd` over a local WebSocket protocol, supervises long-running Pi sessions, and shows session state through the Picky dock. A mock daemon runtime remains available for local UI development and tests.
 
 ## Requirements
 

@@ -4,7 +4,7 @@ _Last updated: 2026-05-06_
 
 ## 1. Product shape
 
-Picky is a local-first macOS command center for Pi sessions. It is not a generic chat app and it should not become a workflow router. The app captures neutral desktop context, sends it to local Pi through `picky-agentd`, and renders long-running side agents in a compact top-right HUD.
+Picky is a local-first macOS command center for Pi sessions. It is not a generic chat app and it should not become a workflow router. The app captures neutral desktop context, sends it to local Pi through `picky-agentd`, and renders long-running side agents in the Picky dock.
 
 Core principle:
 

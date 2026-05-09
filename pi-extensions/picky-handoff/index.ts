@@ -159,7 +159,7 @@ function buildTranscript(input: { goal: string; title: string; cwd?: string; ses
   const lines = [
     input.title,
     "",
-    "A Pi extension command pinned this idle/completed task to Picky as a completed side-agent card in the top-right HUD.",
+    "A Pi extension command pinned this idle/completed task to Picky as a completed side-agent card in the Picky dock.",
     "No new Picky agent run has been started by this handoff. Treat the source Pi session as context for a future follow-up, not as an instruction to skip verification.",
     "",
     "## User handoff request",

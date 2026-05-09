@@ -70,7 +70,7 @@ const piMainRuntime = useMockRuntime
           logAgentd("handoff requested", { contextId: context.id, titleChars: request.title.length, instructionChars: request.instructions.length, cwd });
           supervisor.announceMainHandoff(
             context.id,
-            request.userMessage?.trim() || "복잡한 작업이라 사이드 에이전트에 위임하겠습니다. 진행 상황은 화면 가장자리 HUD에서 볼 수 있어요.",
+            request.userMessage?.trim() || "복잡한 작업이라 사이드 에이전트에 위임하겠습니다. 진행 상황은 Picky dock에서 확인할 수 있어요.",
           );
           const session = await supervisor.createSideFromHandoff(context, { title: request.title, instructions: request.instructions, cwd });
           logAgentd("handoff started", { contextId: context.id, sessionId: session.id, titleChars: session.title.length, cwd: session.cwd });
@@ -97,7 +97,7 @@ const realtimeMainRuntime = useMockRuntime
           logAgentd("handoff requested", { contextId: context.id, titleChars: request.title.length, instructionChars: request.instructions.length, cwd });
           supervisor.announceMainHandoff(
             context.id,
-            request.userMessage?.trim() || "복잡한 작업이라 사이드 에이전트에 위임하겠습니다. 진행 상황은 화면 가장자리 HUD에서 볼 수 있어요.",
+            request.userMessage?.trim() || "복잡한 작업이라 사이드 에이전트에 위임하겠습니다. 진행 상황은 Picky dock에서 확인할 수 있어요.",
           );
           const session = await supervisor.createSideFromHandoff(context, { title: request.title, instructions: request.instructions, cwd });
           logAgentd("handoff started", { contextId: context.id, sessionId: session.id, titleChars: session.title.length, cwd: session.cwd });

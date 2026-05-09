@@ -1212,22 +1212,24 @@ extension PickySessionListViewModel.SessionCard {
     func merged(with incoming: Self, preserveConversationState: Bool = false) -> Self {
         var result = incoming
         let didReplacePiSession = incoming.piSessionFilePath != nil && incoming.piSessionFilePath != piSessionFilePath
-        if !didReplacePiSession && !status.canTransition(to: incoming.status) {
+        let didResetPiSession = incoming.representsFreshPiSessionReset(comparedTo: self)
+        let shouldCarryPreviousSessionState = !didReplacePiSession && !didResetPiSession
+        if shouldCarryPreviousSessionState && !status.canTransition(to: incoming.status) {
             result.status = status
         }
-        if !didReplacePiSession && result.logPreview.isEmpty { result.logPreview = logPreview }
-        if !didReplacePiSession && result.lastSummary.isEmpty { result.lastSummary = lastSummary }
+        if shouldCarryPreviousSessionState && result.logPreview.isEmpty { result.logPreview = logPreview }
+        if shouldCarryPreviousSessionState && result.lastSummary.isEmpty { result.lastSummary = lastSummary }
         // thinkingPreview is daemon-authoritative just like pendingExtensionUiRequest: the daemon
         // explicitly drops it (`patch.thinkingPreview = undefined`) on terminal status transitions
         // and on extension UI answer, so an incoming `nil` means "thinking is over". Falling back
         // to the existing value would pin the previous "Thinking: ..." text to the card and let
         // it briefly flash again the next time the session re-enters `.running` after a follow-up.
-        if !didReplacePiSession && result.lastRequestText == nil { result.lastRequestText = lastRequestText }
-        if !didReplacePiSession && result.lastRequestAt == nil { result.lastRequestAt = lastRequestAt }
-        if !didReplacePiSession && result.tools.isEmpty { result.tools = tools }
-        if !didReplacePiSession && result.artifacts.isEmpty { result.artifacts = artifacts }
-        if !didReplacePiSession && result.changedFiles.isEmpty { result.changedFiles = changedFiles }
-        if preserveConversationState && !didReplacePiSession {
+        if shouldCarryPreviousSessionState && result.lastRequestText == nil { result.lastRequestText = lastRequestText }
+        if shouldCarryPreviousSessionState && result.lastRequestAt == nil { result.lastRequestAt = lastRequestAt }
+        if shouldCarryPreviousSessionState && result.tools.isEmpty { result.tools = tools }
+        if shouldCarryPreviousSessionState && result.artifacts.isEmpty { result.artifacts = artifacts }
+        if shouldCarryPreviousSessionState && result.changedFiles.isEmpty { result.changedFiles = changedFiles }
+        if preserveConversationState && shouldCarryPreviousSessionState {
             // After the daemon starts sending granular conversation events, intermediate
             // sessionUpdated snapshots are still emitted for status/log/tool patches. Those
             // snapshots can legitimately represent a transient state between queue removal,
@@ -1257,6 +1259,23 @@ extension PickySessionListViewModel.SessionCard {
         result.hasRuntimeDetachedFollowUpRejection = result.hasRuntimeDetachedFollowUpRejection || hasRuntimeDetachedFollowUpRejection
         result.isMainAgentHandoff = result.isMainAgentHandoff || isMainAgentHandoff
         return result
+    }
+
+    private func representsFreshPiSessionReset(comparedTo previous: Self) -> Bool {
+        guard piSessionFilePath != nil else { return false }
+        guard status == .waiting_for_input else { return false }
+        guard lastSummary == "Ready for instructions" else { return false }
+        guard pendingExtensionUiRequest == nil else { return false }
+        guard messages.isEmpty, queuedSteers.isEmpty, queuedFollowUps.isEmpty else { return false }
+        guard tools.isEmpty, artifacts.isEmpty, changedFiles.isEmpty else { return false }
+        return !previous.messages.isEmpty
+            || !previous.queuedSteers.isEmpty
+            || !previous.queuedFollowUps.isEmpty
+            || !previous.tools.isEmpty
+            || !previous.artifacts.isEmpty
+            || !previous.changedFiles.isEmpty
+            || previous.lastRequestText != nil
+            || !previous.logPreview.isEmpty
     }
 
     static func piSessionFilePath(fromLogLine line: String) -> String? {

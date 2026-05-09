@@ -261,8 +261,8 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     const result = await this.runtime.newSession();
     if (result.cancelled) return result;
     await this.bindCurrentSession();
-    this.reportDiagnostics();
     this.emit({ type: "session_replaced", reason: "new", cwd: this.runtime.cwd, sessionFilePath: this.getSessionFilePath() });
+    this.reportDiagnostics();
     this.emit({ type: "status", status: "completed", summary: "New session started", noTurnRan: true, preserveSessionState: true });
     return result;
   }

@@ -638,8 +638,8 @@ describe("PiSdkRuntime", () => {
   it("intercepts /new as a built-in slash command and replaces the underlying Pi session", async () => {
     const fakeSession = new FakeSession();
     const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-new" });
-    const events: Array<{ type: string; status?: string; noTurnRan?: boolean; preserveSessionState?: boolean; reason?: string; cwd?: string; sessionFilePath?: string; summary?: string }> = [];
-    handle.subscribe((event) => events.push(event as { type: string; status?: string; noTurnRan?: boolean; preserveSessionState?: boolean; reason?: string; cwd?: string; sessionFilePath?: string; summary?: string }));
+    const events: Array<{ type: string; status?: string; noTurnRan?: boolean; preserveSessionState?: boolean; reason?: string; cwd?: string; sessionFilePath?: string; summary?: string; line?: string }> = [];
+    handle.subscribe((event) => events.push(event as { type: string; status?: string; noTurnRan?: boolean; preserveSessionState?: boolean; reason?: string; cwd?: string; sessionFilePath?: string; summary?: string; line?: string }));
 
     await handle.followUp({ text: "/new", imagePaths: [] });
 
@@ -647,6 +647,10 @@ describe("PiSdkRuntime", () => {
     expect(fakeSession.prompts).toEqual([]);
     expect(events).toContainEqual({ type: "session_replaced", reason: "new", cwd: "/tmp/project", sessionFilePath: "/tmp/fake-session.jsonl" });
     expect(events).toContainEqual({ type: "status", status: "completed", summary: "New session started", noTurnRan: true, preserveSessionState: true });
+    const replacementIndex = events.findIndex((event) => event.type === "session_replaced");
+    const diagnosticIndex = events.findIndex((event) => event.type === "log" && event.line === "pi session: /tmp/fake-session.jsonl");
+    expect(replacementIndex).toBeGreaterThanOrEqual(0);
+    expect(diagnosticIndex).toBeGreaterThan(replacementIndex);
   });
 
   it("intercepts /name as a built-in slash command and renames the underlying Pi session", async () => {

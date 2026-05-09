@@ -121,9 +121,8 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        try await settle()
 
-        #expect(client.sentCommands.contains { $0.type == .listSessions })
+        try await waitForCommand(.listSessions, in: client)
     }
 
     @Test func hidesDockUntilInitialSessionSnapshotArrives() async throws {
@@ -2300,6 +2299,14 @@ struct PickySessionViewModelTests {
         #expect(command.sessionId == "queue-session")
         #expect(command.kind == .all)
     }
+}
+
+private func waitForCommand(_ type: PickyCommandType, in client: FakePickyAgentClient) async throws {
+    for _ in 0..<20 {
+        if client.sentCommands.contains(where: { $0.type == type }) { return }
+        try await Task.sleep(nanoseconds: 100_000_000)
+    }
+    #expect(client.sentCommands.contains { $0.type == type })
 }
 
 private func settle() async throws {

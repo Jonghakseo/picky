@@ -1,6 +1,6 @@
 {
   "id": "cmd-get-001",
-  "protocolVersion": "2026-05-05",
+  "protocolVersion": "2026-05-09",
   "type": "getSession",
   "sessionId": "session-001"
 }

@@ -27,7 +27,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-future-001",
-          "protocolVersion":"2026-05-05",
+          "protocolVersion":"2026-05-09",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"sessionLogAppended",
           "sessionId":"session-001",
@@ -44,7 +44,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-future-002",
-          "protocolVersion":"2026-05-05",
+          "protocolVersion":"2026-05-09",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"newFutureEvent",
           "details":"kept recoverable"
@@ -78,11 +78,59 @@ struct ProtocolContractTests {
         #expect(decoded.context?.id == "context-test-001")
     }
 
+    @Test func decodesRealtimeProtocolEvents() throws {
+        let audioJSON = """
+        {
+          "id":"event-realtime-audio",
+          "protocolVersion":"2026-05-09",
+          "timestamp":"2026-05-09T00:00:00.000Z",
+          "type":"mainRealtimeOutputAudioDelta",
+          "inputId":"00000000-0000-0000-0000-000000000001",
+          "audioBase64":"AAAA"
+        }
+        """.data(using: .utf8)!
+        let doneJSON = """
+        {
+          "id":"event-realtime-done",
+          "protocolVersion":"2026-05-09",
+          "timestamp":"2026-05-09T00:00:01.000Z",
+          "type":"mainRealtimeTurnDone",
+          "inputId":"00000000-0000-0000-0000-000000000001",
+          "status":"completed",
+          "finalTranscript":"완료했어요"
+        }
+        """.data(using: .utf8)!
+
+        let audio = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: audioJSON)
+        let done = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: doneJSON)
+
+        #expect(audio.event == .mainRealtimeOutputAudioDelta(inputId: UUID(uuidString: "00000000-0000-0000-0000-000000000001"), audioBase64: "AAAA"))
+        #expect(done.event == .mainRealtimeTurnDone(PickyMainRealtimeTurnDoneEvent(inputId: UUID(uuidString: "00000000-0000-0000-0000-000000000001"), status: .completed, finalTranscript: "완료했어요")))
+    }
+
+    @Test func encodesRealtimeProtocolCommandsWithoutDroppingSecretFields() throws {
+        let command = PickyCommandEnvelope(
+            id: "cmd-realtime-auth",
+            type: .configureMainRealtimeAuth,
+            provider: "openai",
+            apiKey: "sk-test",
+            modelOrDeployment: "gpt-realtime-1.5",
+            voice: "marin",
+            reasoningEffort: "medium"
+        )
+        let data = try JSONEncoder.pickyAgentProtocolEncoder().encode(command)
+        let decoded = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyCommandEnvelope.self, from: data)
+
+        #expect(decoded.type == .configureMainRealtimeAuth)
+        #expect(decoded.apiKey == "sk-test")
+        #expect(decoded.modelOrDeployment == "gpt-realtime-1.5")
+    }
+
     @Test func decodesQuickReplyEvent() throws {
         let json = """
         {
           "id":"event-quick-001",
-          "protocolVersion":"2026-05-05",
+          "protocolVersion":"2026-05-09",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"quickReply",
           "contextId":"context-1",
@@ -98,7 +146,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-quick-002",
-          "protocolVersion":"2026-05-05",
+          "protocolVersion":"2026-05-09",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"quickReply",
           "contextId":"session-1",
@@ -123,7 +171,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-quick-003",
-          "protocolVersion":"2026-05-05",
+          "protocolVersion":"2026-05-09",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"quickReply",
           "contextId":"context-1",
@@ -148,7 +196,7 @@ struct ProtocolContractTests {
         let snapshotJSON = """
         {
           "id":"event-main-messages-001",
-          "protocolVersion":"2026-05-05",
+          "protocolVersion":"2026-05-09",
           "timestamp":"2026-05-01T00:00:00.000Z",
           "type":"mainMessagesSnapshot",
           "messages":[{"role":"user","text":"안녕","createdAt":"2026-05-01T00:00:00.000Z"}]
@@ -157,7 +205,7 @@ struct ProtocolContractTests {
         let appendedJSON = """
         {
           "id":"event-main-message-001",
-          "protocolVersion":"2026-05-05",
+          "protocolVersion":"2026-05-09",
           "timestamp":"2026-05-01T00:00:01.000Z",
           "type":"mainMessageAppended",
           "message":{"role":"assistant","text":"바로 답변","createdAt":"2026-05-01T00:00:01.000Z"}
@@ -201,7 +249,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-legacy-session",
-          "protocolVersion":"2026-05-05",
+          "protocolVersion":"2026-05-09",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionUpdated",
           "session":{
@@ -236,7 +284,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-session-file",
-          "protocolVersion":"2026-05-05",
+          "protocolVersion":"2026-05-09",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionUpdated",
           "session":{
@@ -266,7 +314,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-message-appended",
-          "protocolVersion":"2026-05-05",
+          "protocolVersion":"2026-05-09",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionMessageAppended",
           "sessionId":"session-001",
@@ -300,7 +348,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-activity-message",
-          "protocolVersion":"2026-05-05",
+          "protocolVersion":"2026-05-09",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionMessageAppended",
           "sessionId":"session-001",
@@ -328,7 +376,7 @@ struct ProtocolContractTests {
         let json = """
         {
           "id":"event-queue-updated",
-          "protocolVersion":"2026-05-05",
+          "protocolVersion":"2026-05-09",
           "timestamp":"2026-05-05T00:00:00.000Z",
           "type":"sessionQueueUpdated",
           "sessionId":"session-001",

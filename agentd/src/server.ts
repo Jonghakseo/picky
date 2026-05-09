@@ -45,6 +45,14 @@ export class AgentdServer {
     this.options.supervisor.on("messageRemoved", (sessionId, messageId, seq) => this.broadcast({ type: "sessionMessageRemoved", sessionId, messageId, seq }));
     this.options.supervisor.on("quickReply", (contextId, text, metadata = {}) => this.broadcast({ type: "quickReply", contextId, text, ...metadata }));
     this.options.supervisor.on("mainMessage", (message) => this.broadcast({ type: "mainMessageAppended", message }));
+    this.options.supervisor.on("mainRealtimeStateChanged", (state, message) => this.broadcast({ type: "mainRealtimeStateChanged", state, ...(message ? { message } : {}) }));
+    this.options.supervisor.on("mainRealtimeInputTranscriptDelta", (inputId, delta) => this.broadcast({ type: "mainRealtimeInputTranscriptDelta", inputId, delta }));
+    this.options.supervisor.on("mainRealtimeInputTranscriptCompleted", (inputId, transcript) => this.broadcast({ type: "mainRealtimeInputTranscriptCompleted", inputId, transcript }));
+    this.options.supervisor.on("mainRealtimeOutputAudioDelta", (inputId, audioBase64) => this.broadcast({ type: "mainRealtimeOutputAudioDelta", ...(inputId ? { inputId } : {}), audioBase64 }));
+    this.options.supervisor.on("mainRealtimeOutputAudioDone", (inputId) => this.broadcast({ type: "mainRealtimeOutputAudioDone", ...(inputId ? { inputId } : {}) }));
+    this.options.supervisor.on("mainRealtimeOutputTranscriptDelta", (inputId, delta) => this.broadcast({ type: "mainRealtimeOutputTranscriptDelta", ...(inputId ? { inputId } : {}), delta }));
+    this.options.supervisor.on("mainRealtimeOutputTranscriptCompleted", (inputId, transcript) => this.broadcast({ type: "mainRealtimeOutputTranscriptCompleted", ...(inputId ? { inputId } : {}), transcript }));
+    this.options.supervisor.on("mainRealtimeTurnDone", (inputId, status, finalTranscript) => this.broadcast({ type: "mainRealtimeTurnDone", ...(inputId ? { inputId } : {}), status, ...(finalTranscript ? { finalTranscript } : {}) }));
     this.options.supervisor.on("pointerOverlayRequested", (request) => this.broadcast({ type: "pointerOverlayRequested", request }));
     this.options.supervisor.on("artifact", (sessionId, artifact) => this.broadcast({ type: "artifactUpdated", sessionId, artifact }));
     this.options.supervisor.on("terminalSessionSyncOutcome", (sessionId, outcome) => this.broadcast({
@@ -88,6 +96,12 @@ export class AgentdServer {
       logAgentd("command received", commandLogFields(command));
       if (command.type === "listSessions") this.send(ws, { type: "sessionSnapshot", sessions: compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession) });
       if (command.type === "listMainMessages") this.send(ws, { type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() });
+      if (command.type === "setMainAgentRuntimeMode") await this.options.supervisor.setMainAgentRuntimeMode(command.mode);
+      if (command.type === "configureMainRealtimeAuth") await this.options.supervisor.configureMainRealtimeAuth(command);
+      if (command.type === "beginMainRealtimeVoiceTurn") await this.options.supervisor.beginMainRealtimeVoiceTurn(command.inputId, command.context);
+      if (command.type === "appendMainRealtimeInputAudio") await this.options.supervisor.appendMainRealtimeInputAudio(command.inputId, command.audioBase64);
+      if (command.type === "commitMainRealtimeVoiceTurn") await this.options.supervisor.commitMainRealtimeVoiceTurn(command.inputId, command.context);
+      if (command.type === "cancelMainRealtimeVoiceTurn") await this.options.supervisor.cancelMainRealtimeVoiceTurn(command.inputId, command.playedAudioMs);
       if (command.type === "resetMainAgent") {
         await this.options.supervisor.resetMainAgent();
         this.broadcast({ type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() });
@@ -171,7 +185,7 @@ function repairLoneSurrogates(value: string): string {
   return result;
 }
 
-function commandLogFields(command: ReturnType<typeof parseCommand>): Record<string, string | number | undefined> {
+export function commandLogFields(command: ReturnType<typeof parseCommand>): Record<string, string | number | undefined> {
   switch (command.type) {
     case "routeTask":
     case "createTask":
@@ -200,6 +214,18 @@ function commandLogFields(command: ReturnType<typeof parseCommand>): Record<stri
       return { commandId: command.id, type: command.type, sessionId: command.sessionId };
     case "answerExtensionUi":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, requestId: command.requestId };
+    case "setMainAgentRuntimeMode":
+      return { commandId: command.id, type: command.type, mode: command.mode };
+    case "configureMainRealtimeAuth":
+      return { commandId: command.id, type: command.type, provider: command.provider, modelOrDeployment: command.modelOrDeployment, voice: command.voice, keyPresent: command.apiKey ? 1 : 0, endpointHost: endpointHostForLog(command.azure?.resourceEndpoint) };
+    case "beginMainRealtimeVoiceTurn":
+      return { commandId: command.id, type: command.type, inputId: command.inputId, contextId: command.context.id, source: command.context.source, screenshots: command.context.screenshots.length };
+    case "appendMainRealtimeInputAudio":
+      return { commandId: command.id, type: command.type, inputId: command.inputId, audioBytesBase64Chars: command.audioBase64.length };
+    case "commitMainRealtimeVoiceTurn":
+      return { commandId: command.id, type: command.type, inputId: command.inputId, contextId: command.context?.id, screenshots: command.context?.screenshots.length, inkMarks: command.context?.inkMarks.length };
+    case "cancelMainRealtimeVoiceTurn":
+      return { commandId: command.id, type: command.type, inputId: command.inputId, playedAudioMs: command.playedAudioMs };
     case "listSessions":
     case "listMainMessages":
     case "resetMainAgent":
@@ -209,6 +235,22 @@ function commandLogFields(command: ReturnType<typeof parseCommand>): Record<stri
       return { commandId: command.id, type: command.type, mainAgentThinkingLevel: command.mainAgentThinkingLevel };
     case "setMainAgentExtraInstructions":
       return { commandId: command.id, type: command.type, instructionChars: command.mainAgentExtraInstructions.length };
+  }
+}
+
+function endpointHostForLog(endpoint: string | undefined): string | undefined {
+  if (!endpoint) return undefined;
+  const trimmed = endpoint.trim();
+  if (!trimmed) return undefined;
+  const candidate = /^wss?:\/\//i.test(trimmed)
+    ? trimmed.replace(/^wss:/i, "https:").replace(/^ws:/i, "http:")
+    : /^https?:\/\//i.test(trimmed)
+      ? trimmed
+      : `https://${trimmed}`;
+  try {
+    return new URL(candidate).host;
+  } catch {
+    return "<invalid>";
   }
 }
 
@@ -222,6 +264,21 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, messages: event.messages.length };
     case "mainMessageAppended":
       return { eventId: event.id, type: event.type, role: event.message.role, textChars: event.message.text.length };
+    case "mainRealtimeStateChanged":
+      return { eventId: event.id, type: event.type, state: event.state, messageChars: event.message?.length };
+    case "mainRealtimeInputTranscriptDelta":
+    case "mainRealtimeOutputTranscriptDelta":
+      return { eventId: event.id, type: event.type, inputId: event.inputId, deltaChars: event.delta.length };
+    case "mainRealtimeInputTranscriptCompleted":
+      return { eventId: event.id, type: event.type, inputId: event.inputId, transcriptChars: event.transcript.length };
+    case "mainRealtimeOutputTranscriptCompleted":
+      return { eventId: event.id, type: event.type, inputId: event.inputId, transcriptChars: event.transcript.length };
+    case "mainRealtimeOutputAudioDelta":
+      return { eventId: event.id, type: event.type, inputId: event.inputId, audioBase64Chars: event.audioBase64.length };
+    case "mainRealtimeOutputAudioDone":
+      return { eventId: event.id, type: event.type, inputId: event.inputId };
+    case "mainRealtimeTurnDone":
+      return { eventId: event.id, type: event.type, inputId: event.inputId, status: event.status, finalTranscriptChars: event.finalTranscript?.length };
     case "sessionSnapshot":
       return { eventId: event.id, type: event.type, sessions: event.sessions.length };
     case "sessionUpdated":

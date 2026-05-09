@@ -1,6 +1,6 @@
 {
   "id": "event-quick-reply-001",
-  "protocolVersion": "2026-05-05",
+  "protocolVersion": "2026-05-09",
   "timestamp": "2026-05-01T00:00:00.000Z",
   "type": "quickReply",
   "contextId": "context-route-001",

@@ -205,8 +205,13 @@ enum PickyInteractionReducer {
             }
             if let inputID, let pendingVoice = state.pendingVoiceInputs[inputID] {
                 state.pendingVoiceInputs[inputID] = nil
-                if case .voiceSubmitting(inputID, _, _) = state.input {
+                switch state.input {
+                case .voiceSubmitting(let currentInputID, _, _) where currentInputID == inputID,
+                     .voiceFinalizing(let currentInputID, _, _) where currentInputID == inputID,
+                     .voiceListening(let currentInputID, _) where currentInputID == inputID:
                     state.input = .idle
+                default:
+                    break
                 }
                 state = state.removingOverlayReason(.activeVoiceInput)
                 if pendingVoice.targetSessionID != nil {

@@ -1,6 +1,6 @@
 {
   "id": "cmd-list-slash-commands-001",
-  "protocolVersion": "2026-05-05",
+  "protocolVersion": "2026-05-09",
   "type": "listSlashCommands",
   "sessionId": "session-001"
 }

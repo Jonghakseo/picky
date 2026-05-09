@@ -495,7 +495,7 @@ private struct PickyHUDDockRailView: View {
             // one) since there are no sessions to keep it compact for.
             addAgentSlotButton
         } else {
-            VStack(spacing: 9) {
+            VStack(spacing: 7) {
                 ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
                     PickyHUDDockIconView(
                         session: session,
@@ -513,7 +513,7 @@ private struct PickyHUDDockRailView: View {
                 }
             }
             collapsibleAddAgentSlot
-                .padding(.top, 9)
+                .padding(.top, 7)
         }
     }
 
@@ -672,17 +672,29 @@ private struct PickyHUDDockIconView: View {
     @State private var isArchivePressing = false
     @State private var archiveProgress: Double = 0
     @State private var didCompleteArchiveHold = false
+    @State private var isHovered = false
 
     var body: some View {
         ZStack {
             dockIconBackground
-            Text("\(index + 1)")
-                .font(PickyHUDTypography.supportingMonospacedSemibold)
+            Text(initials)
+                .font(labelFont)
                 .foregroundColor(isActive ? DS.Colors.textPrimary : DS.Colors.textSecondary)
                 .opacity(isArchivePressing ? 0.64 : 1)
+            HStack(spacing: 0) {
+                Capsule(style: .continuous)
+                    .fill(statusColor)
+                    .frame(width: 2, height: 18)
+                Spacer()
+            }
+            .padding(.leading, 3)
+            .allowsHitTesting(false)
         }
         .frame(width: 36, height: 36)
-        .scaleEffect(isArchivePressing ? 0.92 : 1)
+        .opacity(session.status == .cancelled ? 0.55 : 1)
+        .scaleEffect(tileScale)
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.16), value: isHovered)
         .overlay(alignment: .topTrailing) {
             statusDot.offset(x: -1.3, y: 1.3)
         }
@@ -950,6 +962,33 @@ private struct PickyHUDDockIconView: View {
         case .cancelled:
             return DS.Colors.textTertiary
         }
+    }
+
+    private var initials: String {
+        let trimmedTitle = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cwdLeaf = (session.cwd ?? "")
+            .split(separator: "/")
+            .last
+            .map(String.init) ?? ""
+        let source = trimmedTitle.isEmpty ? cwdLeaf : trimmedTitle
+        guard !source.isEmpty else { return "··" }
+        let prefix = String(source.prefix(2))
+        return Self.containsHangul(prefix) ? prefix : prefix.uppercased()
+    }
+
+    private var labelFont: Font {
+        Self.containsHangul(initials)
+            ? .system(size: PickyHUDTypography.Size.status, weight: .semibold)
+            : .system(size: PickyHUDTypography.Size.status, weight: .semibold, design: .monospaced)
+    }
+
+    private var tileScale: CGFloat {
+        if isArchivePressing { return 0.92 }
+        return isHovered ? 1.03 : 1.0
+    }
+
+    private static func containsHangul(_ string: String) -> Bool {
+        string.unicodeScalars.contains { 0xAC00...0xD7A3 ~= $0.value }
     }
 }
 

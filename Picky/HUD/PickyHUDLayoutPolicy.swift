@@ -106,7 +106,7 @@ enum PickyHUDDockLayout {
     static let detailWidth: CGFloat = 446
     static let detailHorizontalPadding: CGFloat = 12
     static var detailContentWidth: CGFloat { max(0, detailWidth - (detailHorizontalPadding * 2)) }
-    static let railWidth: CGFloat = 56
+    static let railWidth: CGFloat = 50
     static let panelGap: CGFloat = 10
     static let screenMargin: CGFloat = 8
     /// Distance kept between the dock capsule and the screen edge.

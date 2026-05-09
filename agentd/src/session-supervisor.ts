@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import { extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from "./artifact-store.js";
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
@@ -19,6 +19,7 @@ import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
+import { sliceUtf16Safe } from "./domain/safe-truncate.js";
 import { cleanFinalAnswer } from "./domain/session-summary.js";
 import { settleActiveTools } from "./domain/tool-activity.js";
 import { titleFromContext } from "./domain/session-title.js";
@@ -288,7 +289,7 @@ export class SessionSupervisor extends EventEmitter {
     const currentHandle = this.mainHandle;
     const pendingHandlePromise = this.mainHandlePromise;
     this.detachMainHandleForInterruption();
-    await this.patchMainState({ messages: [], sessionFilePath: undefined, cwd: undefined });
+    await this.patchMainState({ messages: [], sessionFilePath: undefined, cwd: undefined, compactSummary: undefined, epochStartedAt: undefined, epochTurnCount: undefined, lastRolloverAt: undefined, lastRolloverReason: undefined, contextUsage: undefined });
 
     if (currentHandle) await this.abortResetMainHandle(currentHandle, "current");
     if (pendingHandlePromise) {
@@ -297,7 +298,7 @@ export class SessionSupervisor extends EventEmitter {
           if (pendingHandle !== currentHandle) await this.abortResetMainHandle(pendingHandle, "pending");
           if (this.mainHandle === pendingHandle) {
             this.detachMainHandleForInterruption();
-            await this.patchMainState({ sessionFilePath: undefined, cwd: undefined });
+            await this.patchMainState({ sessionFilePath: undefined, cwd: undefined, compactSummary: undefined, epochStartedAt: undefined, epochTurnCount: undefined, lastRolloverAt: undefined, lastRolloverReason: undefined, contextUsage: undefined });
           }
         })
         .catch((error) => {
@@ -702,6 +703,7 @@ export class SessionSupervisor extends EventEmitter {
 
   private async routeThroughMainAgent(context: PickyContextPacket): Promise<void> {
     logAgentd("main route requested", { contextId: context.id, source: context.source, transcriptChars: context.transcript?.length });
+    await this.maybeRolloverMainAgent(context);
     const generation = this.mainHandleGeneration;
     this.mainContext = context;
     this.mainReplyContextId = context.id;
@@ -721,6 +723,90 @@ export class SessionSupervisor extends EventEmitter {
       return;
     }
     await this.deliverMainPrompt(this.mainHandle, prompt);
+  }
+
+  private async maybeRolloverMainAgent(context: PickyContextPacket): Promise<void> {
+    if (!this.options.mainRuntime || this.mainIsProcessing) return;
+    if (this.options.mainRuntime.getMainAgentRuntimeMode?.() === "openai-realtime") return;
+    const reason = await this.mainRolloverReason();
+    if (!reason) return;
+
+    const currentHandle = this.mainHandle;
+    const pendingHandlePromise = this.mainHandlePromise;
+    const summary = this.buildMainAgentRolloverSummary(reason);
+    const now = new Date().toISOString();
+    logAgentd("main rollover", { reason, messages: this.mainState.messages.length, turns: this.mainState.epochTurnCount ?? 0, summaryChars: summary.length });
+    this.detachMainHandleForInterruption();
+    await this.patchMainState({
+      sessionFilePath: undefined,
+      cwd: context.cwd ?? this.mainState.cwd,
+      compactSummary: summary,
+      epochStartedAt: now,
+      epochTurnCount: 0,
+      lastRolloverAt: now,
+      lastRolloverReason: reason,
+      contextUsage: undefined,
+    });
+
+    if (currentHandle) await this.abortResetMainHandle(currentHandle, "main-rollover");
+    if (pendingHandlePromise) {
+      void pendingHandlePromise
+        .then(async (pendingHandle) => {
+          if (pendingHandle !== currentHandle) await this.abortResetMainHandle(pendingHandle, "main-rollover-pending");
+        })
+        .catch((error) => {
+          logAgentd("main rollover pending handle failed", { error: error instanceof Error ? error.message : String(error) });
+        });
+    }
+  }
+
+  private async mainRolloverReason(): Promise<string | undefined> {
+    const turns = this.mainState.epochTurnCount ?? 0;
+    if (turns >= MAIN_AGENT_ROLLOVER_TURN_LIMIT) return `turn-limit:${turns}`;
+    const percent = this.mainState.contextUsage?.percent;
+    if (typeof percent === "number" && Number.isFinite(percent) && percent >= MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT) return `context:${Math.round(percent)}%`;
+    const sessionFilePath = this.mainState.sessionFilePath?.trim();
+    if (sessionFilePath) {
+      try {
+        const stats = await stat(sessionFilePath);
+        if (stats.size >= MAIN_AGENT_ROLLOVER_SESSION_BYTES) return `session-file:${stats.size}`;
+      } catch (error) {
+        logAgentd("main rollover session file stat failed", { sessionFilePath, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return undefined;
+  }
+
+  private buildMainAgentRolloverSummary(reason: string): string {
+    const lines = [
+      `Rollover reason: ${reason}`,
+      `Previous epoch turns: ${this.mainState.epochTurnCount ?? 0}`,
+    ];
+    const previousSummary = this.mainState.compactSummary?.trim();
+    if (previousSummary) {
+      lines.push("", "Prior rollover summary:", truncateMainSummaryText(previousSummary, 1_200));
+    }
+    const recentMessages = this.mainState.messages.slice(-MAIN_AGENT_SUMMARY_MESSAGE_LIMIT);
+    if (recentMessages.length > 0) {
+      lines.push("", "Recent visible main-agent messages:");
+      for (const message of recentMessages) {
+        const role = message.role === "user" ? "User" : "Picky";
+        lines.push(`- ${role}: ${truncateMainSummaryText(message.text, 360)}`);
+      }
+    }
+    const sideSessions = [...this.sideSessionIds]
+      .map((sessionId) => this.sessions.get(sessionId))
+      .filter((session): session is PickyAgentSession => Boolean(session))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, MAIN_AGENT_SUMMARY_SIDE_SESSION_LIMIT);
+    if (sideSessions.length > 0) {
+      lines.push("", "Recent side-agent sessions:");
+      for (const session of sideSessions) {
+        const summary = session.finalAnswer ?? session.lastSummary;
+        lines.push(`- ${session.id} | ${session.title} | status=${session.status}${summary ? ` | ${truncateMainSummaryText(summary, 240)}` : ""}`);
+      }
+    }
+    return truncateMainSummaryText(lines.join("\n"), MAIN_AGENT_COMPACT_SUMMARY_LIMIT);
   }
 
   private async deliverMainPrompt(handle: RuntimeSessionHandle, prompt: ReturnType<typeof buildMainAgentPrompt>): Promise<void> {
@@ -787,7 +873,7 @@ export class SessionSupervisor extends EventEmitter {
       // Bake the user's extra instructions into the standing bootstrap turn instead of every
       // per-turn prompt: it costs zero tokens beyond the first turn, mirrors the "standing
       // instructions" mental model, and makes changes opt-in via main-agent reset.
-      await handle.injectInitialBootstrap(buildMainAgentBootstrapPair(this.mainExtraInstructions));
+      await handle.injectInitialBootstrap(buildMainAgentBootstrapPair(this.mainExtraInstructions, this.mainState.compactSummary));
     } catch (error) {
       logAgentd("main bootstrap inject failed", { error: error instanceof Error ? error.message : String(error) });
     }
@@ -839,8 +925,14 @@ export class SessionSupervisor extends EventEmitter {
   private async appendMainMessage(role: PickyMainAgentMessage["role"], text: string): Promise<void> {
     const trimmed = text.trim();
     if (!trimmed) return;
-    const message: PickyMainAgentMessage = { role, text: trimmed, createdAt: new Date().toISOString() };
-    await this.patchMainState({ messages: [...this.mainState.messages, message].slice(-MAIN_AGENT_MESSAGE_LIMIT) });
+    const createdAt = new Date().toISOString();
+    const message: PickyMainAgentMessage = { role, text: trimmed, createdAt };
+    const patch: Partial<PickyMainAgentState> = { messages: [...this.mainState.messages, message].slice(-MAIN_AGENT_MESSAGE_LIMIT) };
+    if (role === "user") {
+      patch.epochTurnCount = (this.mainState.epochTurnCount ?? 0) + 1;
+      patch.epochStartedAt = this.mainState.epochStartedAt ?? createdAt;
+    }
+    await this.patchMainState(patch);
     this.emit("mainMessage", message);
   }
 
@@ -897,6 +989,10 @@ export class SessionSupervisor extends EventEmitter {
       if (sessionFilePath) await this.patchMainState({ sessionFilePath });
       return;
     }
+    if (event.type === "context_usage") {
+      await this.patchMainState({ contextUsage: event.usage });
+      return;
+    }
     if (event.type === "assistant_delta") {
       // A new delta means a new turn has started. Re-arm the terminal guard even
       // if the runtime did not emit an explicit `status:"running"` between turns
@@ -911,6 +1007,9 @@ export class SessionSupervisor extends EventEmitter {
       if (event.status === "running") {
         this.mainIsProcessing = true;
         this.mainTerminalProcessed = false;
+      }
+      if (event.compactionCompleted) {
+        await this.patchMainState({ contextUsage: undefined });
       }
       if (["completed", "failed", "cancelled"].includes(event.status)) {
         this.mainIsProcessing = false;
@@ -1892,9 +1991,22 @@ function normalizeSlashCommands(commands: RuntimeSlashCommand[]): RuntimeSlashCo
 }
 
 const MAIN_AGENT_MESSAGE_LIMIT = 100;
+const MAIN_AGENT_ROLLOVER_TURN_LIMIT = 40;
+const MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT = 70;
+const MAIN_AGENT_ROLLOVER_SESSION_BYTES = 2_000_000;
+const MAIN_AGENT_COMPACT_SUMMARY_LIMIT = 4_000;
+const MAIN_AGENT_SUMMARY_MESSAGE_LIMIT = 16;
+const MAIN_AGENT_SUMMARY_SIDE_SESSION_LIMIT = 10;
 
 function normalizeMainAgentState(state: PickyMainAgentState): PickyMainAgentState {
-  return { ...state, messages: state.messages.slice(-MAIN_AGENT_MESSAGE_LIMIT) };
+  const compactSummary = state.compactSummary ? truncateMainSummaryText(state.compactSummary, MAIN_AGENT_COMPACT_SUMMARY_LIMIT) : undefined;
+  return { ...state, messages: state.messages.slice(-MAIN_AGENT_MESSAGE_LIMIT), ...(compactSummary ? { compactSummary } : { compactSummary: undefined }) };
+}
+
+function truncateMainSummaryText(value: string, maxChars: number): string {
+  const normalized = value.replace(/[\t ]+\n/g, "\n").trim();
+  if (normalized.length <= maxChars) return normalized;
+  return `${sliceUtf16Safe(normalized, Math.max(0, maxChars - 1))}…`;
 }
 
 function appendUniqueLog(logs: string[], line: string): string[] {

@@ -80,10 +80,21 @@ export const PickyMainAgentMessageSchema = z.object({
   createdAt: isoTimestamp,
 });
 export type PickyMainAgentMessage = z.infer<typeof PickyMainAgentMessageSchema>;
+export const PickyMainAgentContextUsageSchema = z.object({
+  tokens: z.number().nullable(),
+  contextWindow: z.number(),
+  percent: z.number().nullable(),
+});
 export const PickyMainAgentStateSchema = z.object({
   sessionFilePath: z.string().optional(),
   cwd: z.string().optional(),
   messages: z.array(PickyMainAgentMessageSchema).default([]),
+  compactSummary: z.string().optional(),
+  epochStartedAt: isoTimestamp.optional(),
+  epochTurnCount: z.number().int().nonnegative().optional(),
+  lastRolloverAt: isoTimestamp.optional(),
+  lastRolloverReason: z.string().optional(),
+  contextUsage: PickyMainAgentContextUsageSchema.optional(),
 });
 export type PickyMainAgentState = z.infer<typeof PickyMainAgentStateSchema>;
 

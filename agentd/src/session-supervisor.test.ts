@@ -1989,6 +1989,47 @@ describe("SessionSupervisor", () => {
     expect(messages.at(-1)).toMatchObject({ role: "user", text: "메시지 100" });
   });
 
+  it("rolls over the main Pi session after the bounded epoch turn limit and carries a compact summary", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-rollover-turns-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+
+    for (let index = 0; index < 40; index += 1) {
+      await supervisor.route(context(`질문 ${index}`));
+      mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+      await settle();
+    }
+    const previousHandle = mainRuntime.handle;
+
+    await supervisor.route(context("롤오버 후 질문"));
+
+    expect(previousHandle?.aborts).toBe(1);
+    expect(mainRuntime.createCalls).toBe(2);
+    expect(mainRuntime.handle).not.toBe(previousHandle);
+    expect(mainRuntime.handle?.bootstrapInjections.at(-1)?.user).toContain("Previous main-agent epoch summary");
+    expect(mainRuntime.handle?.bootstrapInjections.at(-1)?.user).toContain("질문 39");
+    expect(supervisor.listMainMessages().at(-1)).toMatchObject({ role: "user", text: "롤오버 후 질문" });
+  });
+
+  it("rolls over the main Pi session when context usage crosses the proactive threshold", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-rollover-context-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+
+    await supervisor.route(context("첫 질문"));
+    const previousHandle = mainRuntime.handle;
+    previousHandle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    previousHandle?.emit({ type: "context_usage", usage: { tokens: 150_000, contextWindow: 200_000, percent: 75 } });
+    await settle();
+
+    await supervisor.route(context("다음 질문"));
+
+    expect(previousHandle?.aborts).toBe(1);
+    expect(mainRuntime.createCalls).toBe(2);
+    expect(mainRuntime.handle).not.toBe(previousHandle);
+    expect(mainRuntime.handle?.bootstrapInjections.at(-1)?.user).toContain("context:75%");
+  });
+
   it("resumes the persisted main-agent Pi session after daemon restart", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);

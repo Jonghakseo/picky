@@ -104,8 +104,9 @@ export interface MainAgentBootstrapPair {
  * spoken playback, so detail like URLs or paths can be safely placed inside
  * `(...)` for the visible transcript without being read aloud.
  */
-export function buildMainAgentBootstrapPair(extraInstructions?: string): MainAgentBootstrapPair {
+export function buildMainAgentBootstrapPair(extraInstructions?: string, compactSummary?: string): MainAgentBootstrapPair {
   const trimmedExtra = extraInstructions?.trim();
+  const trimmedSummary = compactSummary?.trim();
   const user = [
     "이 메시지는 사용자가 보낸 것이 아니라 Picky agentd가 메인 에이전트 세션 시작 시 한 번 주입하는 부트스트랩 안내입니다.",
     "앞으로 들어오는 `# Picky main-agent turn` 메시지는 매 턴의 사용자 요청과 캡처 컨텍스트만 담습니다. 아래 상시 지침을 세션 내내 유지하세요.",
@@ -139,6 +140,16 @@ export function buildMainAgentBootstrapPair(extraInstructions?: string): MainAge
     "3. 한 번에 1~3 문장으로 짧게 답하고, 사용자가 더 묻지 않는 한 추가 설명을 길게 늘어뜨리지 않습니다.",
     "4. 사이드 에이전트로 위임하거나 도구를 호출해야 하는 상황에서는 위의 도구 사용 규칙을 그대로 따르고, 이 답변 스타일 규칙은 사용자에게 직접 말하는 텍스트 답변에만 적용합니다.",
     "",
+    ...(trimmedSummary
+      ? [
+          "",
+          "## Previous main-agent epoch summary",
+          "",
+          "아래 요약은 Picky가 긴 메인 에이전트 세션을 새 Pi 세션으로 롤오버하면서 전달한 이전 대화 메모입니다. 참고만 하고, 사용자가 기존 위임 작업/진행 상황을 물으면 반드시 picky_side_sessions로 최신 상태를 확인하세요.",
+          "",
+          trimmedSummary,
+        ]
+      : []),
     ...(trimmedExtra
       ? [
           "",

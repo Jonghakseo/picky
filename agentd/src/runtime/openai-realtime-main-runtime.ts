@@ -247,7 +247,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     const currentInputId = this.activeInputId;
     try {
       if (this.ws?.readyState === OPENAI_WS_READY_STATE_OPEN) {
-        this.sendClientEvent({ type: "response.cancel" });
+        if (this.activeResponseId || this.activeAssistantAudioItem) this.sendClientEvent({ type: "response.cancel" });
         if (this.activeAssistantAudioItem && typeof playedAudioMs === "number") {
           this.sendClientEvent({
             type: "conversation.item.truncate",

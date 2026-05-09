@@ -123,6 +123,32 @@ describe("OpenAIRealtimeMainRuntime Azure preview protocol", () => {
     expect(sessionUpdate.session.voice).toBe("verse");
     expect(responseCreate.response).toEqual({ modalities: ["text", "audio"] });
   });
+
+  it("does not send response.cancel when cancelling before a response exists", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "azure_openai",
+        apiKey: "azure-key",
+        modelOrDeployment: "gpt-realtime-1.5",
+        voice: "verse",
+        azure: {
+          resourceEndpoint: "https://x.openai.azure.com/openai/realtime?api-version=2024-10-01-preview&deployment=gpt-realtime-1.5",
+          apiShape: "preview",
+          apiVersion: "2024-10-01-preview",
+        },
+      },
+      webSocketFactory: () => socket,
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    await runtime.cancelMainRealtimeVoiceTurn("input-1");
+
+    const sentTypes = socket.sent.map((raw) => JSON.parse(raw).type);
+    expect(sentTypes).not.toContain("response.cancel");
+    expect(sentTypes).toContain("input_audio_buffer.clear");
+  });
 });
 
 describe("SelectableMainRuntime", () => {

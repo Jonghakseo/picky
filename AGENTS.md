@@ -67,6 +67,7 @@ When the user asks about a feature, start here before broad searching:
 4. For voice behavior, check the hotkey snapshot moment in `CompanionManager` and the routing method that sends `followUp` vs `submit`.
 5. For daemon behavior, trace `server.ts -> session-supervisor.ts -> runtime/* -> prompt-builder.ts`.
 6. Before editing, run `git status --short` and protect unrelated user changes.
+7. For daemon debugging, check `~/Library/Application Support/Picky/Logs/agentd.stdout.log` and `agentd.stderr.log`; launcher lifecycle messages are printed to the app console with `Picky agentd launcher`.
 
 ## Build, test, package
 

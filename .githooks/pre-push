@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+DESTINATION="platform=macOS"
+
+echo "🔎 pre-push: verifying Picky app build..."
+xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" build
+
+echo "🧪 pre-push: running Picky test suite..."
+xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" test
+
+echo "✅ pre-push: build and tests passed."

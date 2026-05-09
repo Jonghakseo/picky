@@ -126,8 +126,7 @@ struct PickyHUDView: View {
                 conversationCard
             }
         }
-        .padding(.horizontal, PickyHUDExpansion.outerPadding)
-        .padding(.vertical, PickyHUDExpansion.dockShadowVerticalPadding)
+        .padding(PickyHUDExpansion.dockShadowInsets)
         .onHover(perform: handleHUDHover)
     }
 

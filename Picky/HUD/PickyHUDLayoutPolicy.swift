@@ -11,13 +11,34 @@ enum PickyHUDExpansion {
     static let duration: TimeInterval = 0.22
     static let panelShrinkDelay: TimeInterval = duration + 0.03
     static let animation = Animation.easeInOut(duration: duration)
-    static let outerPadding: CGFloat = 12
+    static let outerPadding: CGFloat = 16
     static let dockShadowOpacity = 0.20
     static let dockShadowRadius: CGFloat = 12
     static let dockShadowYOffset: CGFloat = 10
-    static let dockShadowExtraBleed: CGFloat = 4
+    // SwiftUI shadows are drawn outside layout bounds. Give the transparent NSPanel
+    // explicit chrome bleed so the dock's blur tail is not clipped at the hosting
+    // view edge. Vertical bleed is asymmetric because the main shadow is offset down.
+    static let dockShadowHorizontalExtraBleed: CGFloat = 4
+    static let dockShadowVerticalExtraBleed: CGFloat = 8
+    static var dockShadowHorizontalPadding: CGFloat {
+        dockShadowRadius + dockShadowHorizontalExtraBleed
+    }
+    static var dockShadowTopPadding: CGFloat {
+        dockShadowRadius + max(0, -dockShadowYOffset) + dockShadowVerticalExtraBleed
+    }
+    static var dockShadowBottomPadding: CGFloat {
+        dockShadowRadius + max(0, dockShadowYOffset) + dockShadowVerticalExtraBleed
+    }
+    static var dockShadowInsets: EdgeInsets {
+        EdgeInsets(
+            top: dockShadowTopPadding,
+            leading: dockShadowHorizontalPadding,
+            bottom: dockShadowBottomPadding,
+            trailing: dockShadowHorizontalPadding
+        )
+    }
     static var dockShadowVerticalPadding: CGFloat {
-        dockShadowRadius + abs(dockShadowYOffset) + dockShadowExtraBleed
+        dockShadowTopPadding + dockShadowBottomPadding
     }
     static let dockTightShadowOpacity = 0.10
     static let dockTightShadowRadius: CGFloat = 3
@@ -35,10 +56,10 @@ enum PickyHUDExpansion {
     static let dockHandleAreaHeight: CGFloat = 14
     /// Distance from the panel content's top edge (in SwiftUI top-down coords) down
     /// to the dock CAPSULE's top edge. The handle now lives inside the capsule, so
-    /// the offset is just the outer vertical padding wrapping the HStack — the
-    /// anchor percent maps directly to the visible top of the dock capsule.
+    /// the offset is just the top shadow bleed wrapping the HStack — the anchor
+    /// percent maps directly to the visible top of the dock capsule.
     static var dockBodyTopOffsetFromContentTop: CGFloat {
-        dockShadowVerticalPadding
+        dockShadowTopPadding
     }
     /// Slack pixels left below the conversation card so it never sits right at the
     /// dock-anchored panel cap. Sub-pixel layout drift (composer auto-grow, status
@@ -315,8 +336,8 @@ enum PickyHUDDockLayout {
     /// Panel origin Y (NSPanel screen coords, bottom-up) so that the dock's top edge
     /// sits at `dockTopScreenY`. `topPaddingFromContentTop` is the SwiftUI top-down
     /// distance from the panel content's top to the dock rail's top edge — with
-    /// `HStack(alignment: .top)` and `.padding(.vertical, P)` wrapping the HStack, that
-    /// distance equals `P` (= `PickyHUDExpansion.dockShadowVerticalPadding`).
+    /// `HStack(alignment: .top)` and `dockShadowInsets` wrapping the HStack, that
+    /// distance equals the top inset (`PickyHUDExpansion.dockShadowTopPadding`).
     ///
     /// Callers should cap `targetHeight` at `dockTopAnchoredMaxPanelHeight(...)` first
     /// so the formula never has to clamp at the visible-frame floor (which would push

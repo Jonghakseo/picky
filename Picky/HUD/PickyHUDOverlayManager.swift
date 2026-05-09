@@ -257,7 +257,7 @@ final class PickyHUDOverlayManager {
         // text length changes, thinking preview rewrites) can cross the cap by
         // fractions of a point and trigger a re-clip mid-frame, which the user sees
         // as a faint twitch on the visible HUD.
-        return max(0, panelCap - 2 * PickyHUDExpansion.dockShadowVerticalPadding - PickyHUDExpansion.cardBreathingRoom)
+        return max(0, panelCap - PickyHUDExpansion.dockShadowVerticalPadding - PickyHUDExpansion.cardBreathingRoom)
     }
 
     // MARK: - Resizing / placement

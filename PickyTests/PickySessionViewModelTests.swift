@@ -1056,15 +1056,15 @@ struct PickySessionViewModelTests {
         #expect(originAtCap == bottomFloor)
     }
 
-    @Test func dockBodyTopOffsetEqualsOuterVerticalPadding() throws {
+    @Test func dockBodyTopOffsetEqualsTopShadowPadding() throws {
         // The drag handle now lives INSIDE the dock capsule's top row, so it no
         // longer pushes the capsule top down. The distance from the panel content's
-        // top edge to the dock CAPSULE's top edge is exactly the outer vertical
-        // padding wrapping the HStack — the anchor percent lands directly on the
-        // visible dock capsule top.
+        // top edge to the dock CAPSULE's top edge is exactly the top shadow padding
+        // wrapping the HStack — the anchor percent lands directly on the visible dock
+        // capsule top while bottom padding can be larger for the downward shadow.
         #expect(
             PickyHUDExpansion.dockBodyTopOffsetFromContentTop
-            == PickyHUDExpansion.dockShadowVerticalPadding
+            == PickyHUDExpansion.dockShadowTopPadding
         )
     }
 
@@ -1152,9 +1152,13 @@ struct PickySessionViewModelTests {
     }
 
     @Test func hudChromeUsesSoftShadowWithShadowBleedPadding() throws {
-        #expect(PickyHUDExpansion.outerPadding == 12)
-        #expect(PickyHUDExpansion.dockShadowVerticalPadding > PickyHUDExpansion.outerPadding)
-        #expect(PickyHUDExpansion.dockShadowVerticalPadding == PickyHUDExpansion.dockShadowRadius + abs(PickyHUDExpansion.dockShadowYOffset) + PickyHUDExpansion.dockShadowExtraBleed)
+        #expect(PickyHUDExpansion.outerPadding == PickyHUDExpansion.dockShadowHorizontalPadding)
+        #expect(PickyHUDExpansion.dockShadowHorizontalPadding == PickyHUDExpansion.dockShadowRadius + PickyHUDExpansion.dockShadowHorizontalExtraBleed)
+        #expect(PickyHUDExpansion.dockShadowTopPadding == PickyHUDExpansion.dockShadowRadius + PickyHUDExpansion.dockShadowVerticalExtraBleed)
+        #expect(PickyHUDExpansion.dockShadowBottomPadding == PickyHUDExpansion.dockShadowRadius + PickyHUDExpansion.dockShadowYOffset + PickyHUDExpansion.dockShadowVerticalExtraBleed)
+        #expect(PickyHUDExpansion.dockShadowBottomPadding > PickyHUDExpansion.dockShadowTopPadding)
+        #expect(PickyHUDExpansion.dockShadowVerticalPadding == PickyHUDExpansion.dockShadowTopPadding + PickyHUDExpansion.dockShadowBottomPadding)
+        #expect(PickyHUDDockLayout.detailWidth + PickyHUDDockLayout.panelGap + PickyHUDDockLayout.railWidth + 2 * PickyHUDExpansion.outerPadding <= PickyHUDDockLayout.panelWidth)
         #expect(PickyHUDExpansion.cardShadowOpacity < 0.2)
         #expect(PickyHUDExpansion.cardShadowRadius <= 8)
         #expect(PickyHUDExpansion.cardShadowYOffset <= 4)

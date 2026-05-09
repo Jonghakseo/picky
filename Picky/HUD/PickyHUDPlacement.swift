@@ -15,7 +15,7 @@ import SwiftUI
 final class PickyHUDPlacement: ObservableObject {
     /// Largest height the conversation card may take before its internal ScrollView
     /// (`PickyConversationListView`) starts handling overflow. Computed by the overlay
-    /// manager from `dockTopAnchoredMaxPanelHeight - 2 * dockShadowVerticalPadding`,
+    /// manager from `dockTopAnchoredMaxPanelHeight - dockShadowVerticalPadding`,
     /// optionally clamped by the visible-frame breathing-room cap. Updated whenever
     /// the user drags the dock anchor or the screen configuration changes.
     @Published var availableCardMaxHeight: CGFloat

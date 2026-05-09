@@ -72,6 +72,16 @@ struct PickyTests {
         #expect(!PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 200, targetHeight: 180, deferShrink: false))
     }
 
+    @Test func quickInputPanelUsesCompactShadowOutset() throws {
+        #expect(QuickInputPanelLayout.mainShadowRadius == 9)
+        #expect(QuickInputPanelLayout.mainShadowYOffset == 5)
+        #expect(QuickInputPanelLayout.tightShadowRadius == 1.5)
+        #expect(QuickInputPanelLayout.tightShadowYOffset == 0.5)
+        #expect(QuickInputPanelLayout.shadowOutset == QuickInputPanelLayout.mainShadowRadius + abs(QuickInputPanelLayout.mainShadowYOffset))
+        #expect(QuickInputPanelLayout.panelWidth == QuickInputPanelLayout.pillWidth + QuickInputPanelLayout.shadowOutset * 2)
+        #expect(QuickInputPanelLayout.estimatedPanelHeight == QuickInputPanelLayout.capsuleHeight + QuickInputPanelLayout.shadowOutset * 2)
+    }
+
     @Test func archiveUndoToastLayoutPinsToScreenBottomRight() throws {
         let visibleFrame = CGRect(x: 100, y: 80, width: 1440, height: 900)
         let panelSize = CGSize(width: 304, height: 78)

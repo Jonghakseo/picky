@@ -13,9 +13,16 @@ import SwiftUI
 
 enum QuickInputPanelLayout {
     static let pillWidth: CGFloat = 360
-    static let shadowOutset: CGFloat = 28
+    static let capsuleHeight: CGFloat = 44
+    static let mainShadowRadius: CGFloat = 9
+    static let mainShadowYOffset: CGFloat = 5
+    static let tightShadowRadius: CGFloat = 1.5
+    static let tightShadowYOffset: CGFloat = 0.5
+    static var shadowOutset: CGFloat {
+        mainShadowRadius + abs(mainShadowYOffset)
+    }
     static let panelWidth: CGFloat = pillWidth + shadowOutset * 2
-    static let estimatedPanelHeight: CGFloat = 44 + shadowOutset * 2
+    static let estimatedPanelHeight: CGFloat = capsuleHeight + shadowOutset * 2
 }
 
 @MainActor
@@ -42,8 +49,8 @@ struct QuickInputPanelView: View {
     @ObservedObject var viewModel: QuickInputPanelViewModel
     @FocusState private var isFieldFocused: Bool
 
-    /// Capsule corner radius — matches the reference pill shape.
-    private let capsuleHeight: CGFloat = 44
+    /// Capsule height — matches the reference pill shape.
+    private let capsuleHeight: CGFloat = QuickInputPanelLayout.capsuleHeight
     private let pillWidth: CGFloat = QuickInputPanelLayout.pillWidth
     private let shadowOutset: CGFloat = QuickInputPanelLayout.shadowOutset
 
@@ -73,8 +80,18 @@ struct QuickInputPanelView: View {
                         Capsule(style: .continuous)
                             .stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
                     )
-                    .shadow(color: Color.black.opacity(0.15), radius: 18, x: 0, y: 10)
-                    .shadow(color: Color.black.opacity(0.08), radius: 3, x: 0, y: 1)
+                    .shadow(
+                        color: Color.black.opacity(0.15),
+                        radius: QuickInputPanelLayout.mainShadowRadius,
+                        x: 0,
+                        y: QuickInputPanelLayout.mainShadowYOffset
+                    )
+                    .shadow(
+                        color: Color.black.opacity(0.08),
+                        radius: QuickInputPanelLayout.tightShadowRadius,
+                        x: 0,
+                        y: QuickInputPanelLayout.tightShadowYOffset
+                    )
             )
 
             if let errorMessage = viewModel.errorMessage {

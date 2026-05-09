@@ -13,7 +13,7 @@ import SwiftUI
 
 enum QuickInputPanelLayout {
     static let pillWidth: CGFloat = 360
-    static let shadowOutset: CGFloat = 22
+    static let shadowOutset: CGFloat = 28
     static let panelWidth: CGFloat = pillWidth + shadowOutset * 2
     static let estimatedPanelHeight: CGFloat = 44 + shadowOutset * 2
 }
@@ -50,7 +50,7 @@ struct QuickInputPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                TextField("Picky에 메시지…", text: $viewModel.draftText, axis: .horizontal)
+                TextField("Message Picky…", text: $viewModel.draftText, axis: .horizontal)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13.5, weight: .medium))
                     .foregroundColor(DS.Colors.textPrimary)
@@ -73,8 +73,8 @@ struct QuickInputPanelView: View {
                         Capsule(style: .continuous)
                             .stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
                     )
-                    .shadow(color: Color.black.opacity(0.22), radius: 18, x: 0, y: 10)
-                    .shadow(color: Color.black.opacity(0.12), radius: 3, x: 0, y: 1)
+                    .shadow(color: Color.black.opacity(0.15), radius: 18, x: 0, y: 10)
+                    .shadow(color: Color.black.opacity(0.08), radius: 3, x: 0, y: 1)
             )
 
             if let errorMessage = viewModel.errorMessage {

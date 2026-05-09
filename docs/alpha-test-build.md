@@ -132,6 +132,8 @@ Switch to Developer ID signing + notarization when:
 - You need a public download link.
 - You want to avoid Gatekeeper rejection.
 
+Follow the beta distribution flow in [`docs/beta-test-build.md`](./beta-test-build.md).
+
 References:
 
 - Apple notarization: <https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution>

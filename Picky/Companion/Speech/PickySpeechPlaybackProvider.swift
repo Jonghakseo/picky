@@ -30,14 +30,8 @@ enum PickySpeechPlaybackProviderFactory {
 
         if requestedProvider == "azure" || requestedProvider == "azure-openai" {
             let provider = AzureOpenAISpeechPlaybackProvider(
-                configuration: .fromEnvironment(
-                    deploymentEnvironmentKey: "AZURE_OPENAI_TTS_DEPLOYMENT_NAME",
-                    defaultAPIVersion: AzureOpenAISpeechPlaybackProvider.defaultAPIVersion,
-                    environment: environment
-                ),
-                voice: AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_TTS_VOICE", environment: environment)
-                    ?? AzureOpenAIKeychainStore.value(for: "PICKY_TTS_VOICE", environment: environment)
-                    ?? "nova",
+                configuration: makeAzureOpenAITTSConfiguration(settings: settings, environment: environment),
+                voice: azureOpenAITTSVoice(settings: settings, environment: environment),
                 responseFormat: AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_TTS_RESPONSE_FORMAT", environment: environment) ?? "wav",
                 instructions: AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_TTS_INSTRUCTIONS", environment: environment),
                 modelName: AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_TTS_MODEL", environment: environment)
@@ -65,6 +59,49 @@ enum PickySpeechPlaybackProviderFactory {
         let provider = PickySystemSpeechPlaybackProvider()
         print("🔊 TTS: using local provider \(provider.displayName)")
         return provider
+    }
+
+    static func makeAzureOpenAITTSConfiguration(
+        settings: PickySettings,
+        environment: [String: String]
+    ) -> AzureOpenAIAudioConfiguration {
+        let configuredTTSEndpoint = trimmedNonEmpty(settings.azureOpenAITTSEndpoint)
+        let configuredTTSAPIKey = trimmedNonEmpty(settings.azureOpenAITTSAPIKey)
+        let fallbackAPIKey = configuredTTSAPIKey
+            ?? trimmedNonEmpty(settings.azureOpenAIAPIKey)
+            ?? AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_API_KEY", environment: environment)
+        let fallbackDeploymentName = AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_TTS_DEPLOYMENT_NAME", environment: environment)
+            ?? AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_DEPLOYMENT_NAME", environment: environment)
+
+        if configuredTTSEndpoint != nil || configuredTTSAPIKey != nil {
+            return .fromSpeechEndpointURL(
+                configuredTTSEndpoint,
+                apiKey: fallbackAPIKey,
+                fallbackDeploymentName: fallbackDeploymentName,
+                defaultAPIVersion: AzureOpenAISpeechPlaybackProvider.defaultAPIVersion
+            )
+        }
+
+        return .fromEnvironment(
+            deploymentEnvironmentKey: "AZURE_OPENAI_TTS_DEPLOYMENT_NAME",
+            defaultAPIVersion: AzureOpenAISpeechPlaybackProvider.defaultAPIVersion,
+            environment: environment
+        )
+    }
+
+    static func azureOpenAITTSVoice(
+        settings: PickySettings,
+        environment: [String: String]
+    ) -> String {
+        trimmedNonEmpty(settings.azureOpenAITTSVoice)
+            ?? AzureOpenAIKeychainStore.value(for: "AZURE_OPENAI_TTS_VOICE", environment: environment)
+            ?? AzureOpenAIKeychainStore.value(for: "PICKY_TTS_VOICE", environment: environment)
+            ?? "nova"
+    }
+
+    private static func trimmedNonEmpty(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private static func providerName(

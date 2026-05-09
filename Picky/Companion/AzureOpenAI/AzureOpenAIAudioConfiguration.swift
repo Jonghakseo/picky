@@ -15,7 +15,7 @@ struct AzureOpenAIAudioConfiguration: Equatable {
     var apiVersion: String
     var requestTimeout: TimeInterval
 
-    private struct ParsedTranscriptionEndpoint: Equatable {
+    private struct ParsedAudioEndpoint: Equatable {
         let endpoint: URL
         let deploymentName: String
         let apiVersion: String?
@@ -59,19 +59,54 @@ struct AzureOpenAIAudioConfiguration: Equatable {
         apiKey: String?,
         requestTimeout: TimeInterval = 30
     ) -> AzureOpenAIAudioConfiguration {
-        let trimmedEndpoint = endpointURLString?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        let parsedEndpoint = trimmedEndpoint.flatMap { parseTranscriptionEndpointURL($0) }
-
-        return AzureOpenAIAudioConfiguration(
-            endpoint: parsedEndpoint?.endpoint ?? trimmedEndpoint.flatMap { sanitizedURL(from: $0) },
+        fromAudioEndpointURL(
+            endpointURLString,
             apiKey: apiKey,
-            deploymentName: parsedEndpoint?.deploymentName,
-            apiVersion: parsedEndpoint?.apiVersion ?? "",
+            expectedAudioPath: ["audio", "transcriptions"],
+            fallbackDeploymentName: nil,
+            defaultAPIVersion: nil,
             requestTimeout: requestTimeout
         )
     }
 
-    private static func parseTranscriptionEndpointURL(_ rawURLString: String) -> ParsedTranscriptionEndpoint? {
+    static func fromSpeechEndpointURL(
+        _ endpointURLString: String?,
+        apiKey: String?,
+        fallbackDeploymentName: String? = nil,
+        defaultAPIVersion: String,
+        requestTimeout: TimeInterval = 30
+    ) -> AzureOpenAIAudioConfiguration {
+        fromAudioEndpointURL(
+            endpointURLString,
+            apiKey: apiKey,
+            expectedAudioPath: ["audio", "speech"],
+            fallbackDeploymentName: fallbackDeploymentName,
+            defaultAPIVersion: defaultAPIVersion,
+            requestTimeout: requestTimeout
+        )
+    }
+
+    private static func fromAudioEndpointURL(
+        _ endpointURLString: String?,
+        apiKey: String?,
+        expectedAudioPath: [String],
+        fallbackDeploymentName: String?,
+        defaultAPIVersion: String?,
+        requestTimeout: TimeInterval
+    ) -> AzureOpenAIAudioConfiguration {
+        let trimmedEndpoint = endpointURLString?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let parsedEndpoint = trimmedEndpoint.flatMap { parseAudioEndpointURL($0, expectedAudioPath: expectedAudioPath) }
+
+        return AzureOpenAIAudioConfiguration(
+            endpoint: parsedEndpoint?.endpoint ?? trimmedEndpoint.flatMap { sanitizedURL(from: $0) },
+            apiKey: apiKey,
+            deploymentName: parsedEndpoint?.deploymentName ?? fallbackDeploymentName,
+            apiVersion: parsedEndpoint?.apiVersion ?? defaultAPIVersion ?? "",
+            requestTimeout: requestTimeout
+        )
+    }
+
+    private static func parseAudioEndpointURL(_ rawURLString: String, expectedAudioPath: [String]) -> ParsedAudioEndpoint? {
         guard var components = URLComponents(string: rawURLString),
               components.scheme != nil,
               components.host != nil else { return nil }
@@ -94,9 +129,9 @@ struct AzureOpenAIAudioConfiguration: Equatable {
         }
 
         let remainingPath = pathParts.dropFirst(openAIIndex + 3).map { $0.lowercased() }
-        guard remainingPath.count >= 2,
-              remainingPath[0] == "audio",
-              remainingPath[1] == "transcriptions" else {
+        let normalizedExpectedAudioPath = expectedAudioPath.map { $0.lowercased() }
+        guard remainingPath.count >= normalizedExpectedAudioPath.count,
+              Array(remainingPath.prefix(normalizedExpectedAudioPath.count)) == normalizedExpectedAudioPath else {
             return nil
         }
 
@@ -112,7 +147,7 @@ struct AzureOpenAIAudioConfiguration: Equatable {
         components.fragment = nil
 
         guard let endpoint = components.url else { return nil }
-        return ParsedTranscriptionEndpoint(
+        return ParsedAudioEndpoint(
             endpoint: endpoint,
             deploymentName: deploymentName,
             apiVersion: apiVersion

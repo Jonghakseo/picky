@@ -526,6 +526,11 @@ struct PickySettings: Codable, Equatable {
     /// Picky parses the base endpoint, deployment name, and api-version from it.
     var azureOpenAIEndpoint: String
     var azureOpenAIAPIKey: String
+    /// Full Azure OpenAI audio/speech URL copied from the Azure portal.
+    /// Kept separate from STT because speech usually uses a different deployment/path.
+    var azureOpenAITTSEndpoint: String
+    var azureOpenAITTSAPIKey: String
+    var azureOpenAITTSVoice: String
     var azureSTTPreferredLanguage: String
     var appearance: PickyAppearanceMode
     var notifications: PickyNotificationPreferences
@@ -577,6 +582,9 @@ struct PickySettings: Codable, Equatable {
         ttsProvider: PickyVoiceProviderSelection = .automatic,
         azureOpenAIEndpoint: String = "",
         azureOpenAIAPIKey: String = "",
+        azureOpenAITTSEndpoint: String = "",
+        azureOpenAITTSAPIKey: String = "",
+        azureOpenAITTSVoice: String = "",
         azureSTTPreferredLanguage: String = "",
         appearance: PickyAppearanceMode = .dark,
         notifications: PickyNotificationPreferences = .defaults,
@@ -605,6 +613,9 @@ struct PickySettings: Codable, Equatable {
         self.ttsProvider = ttsProvider
         self.azureOpenAIEndpoint = azureOpenAIEndpoint
         self.azureOpenAIAPIKey = azureOpenAIAPIKey
+        self.azureOpenAITTSEndpoint = azureOpenAITTSEndpoint
+        self.azureOpenAITTSAPIKey = azureOpenAITTSAPIKey
+        self.azureOpenAITTSVoice = azureOpenAITTSVoice
         self.azureSTTPreferredLanguage = azureSTTPreferredLanguage
         self.appearance = appearance
         self.notifications = notifications
@@ -637,6 +648,9 @@ struct PickySettings: Codable, Equatable {
             ttsProvider: .automatic,
             azureOpenAIEndpoint: "",
             azureOpenAIAPIKey: "",
+            azureOpenAITTSEndpoint: "",
+            azureOpenAITTSAPIKey: "",
+            azureOpenAITTSVoice: "",
             azureSTTPreferredLanguage: "",
             appearance: .dark,
             notifications: .defaults,
@@ -665,6 +679,9 @@ struct PickySettings: Codable, Equatable {
         }
         copy.azureOpenAIEndpoint = azureOpenAIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.azureOpenAIAPIKey = azureOpenAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.azureOpenAITTSEndpoint = azureOpenAITTSEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.azureOpenAITTSAPIKey = azureOpenAITTSAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.azureOpenAITTSVoice = azureOpenAITTSVoice.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.azureSTTPreferredLanguage = azureSTTPreferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.openAIRealtime = openAIRealtime.normalized()
         copy.mainAgentModelPattern = mainAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -685,6 +702,9 @@ struct PickySettings: Codable, Equatable {
         case ttsProvider
         case azureOpenAIEndpoint
         case azureOpenAIAPIKey
+        case azureOpenAITTSEndpoint
+        case azureOpenAITTSAPIKey
+        case azureOpenAITTSVoice
         case azureSTTPreferredLanguage
         case appearance
         case notifications
@@ -718,6 +738,9 @@ struct PickySettings: Codable, Equatable {
         ttsProvider = try container.decodeIfPresent(PickyVoiceProviderSelection.self, forKey: .ttsProvider) ?? defaults.ttsProvider
         azureOpenAIEndpoint = try container.decodeIfPresent(String.self, forKey: .azureOpenAIEndpoint) ?? defaults.azureOpenAIEndpoint
         azureOpenAIAPIKey = try container.decodeIfPresent(String.self, forKey: .azureOpenAIAPIKey) ?? defaults.azureOpenAIAPIKey
+        azureOpenAITTSEndpoint = try container.decodeIfPresent(String.self, forKey: .azureOpenAITTSEndpoint) ?? defaults.azureOpenAITTSEndpoint
+        azureOpenAITTSAPIKey = try container.decodeIfPresent(String.self, forKey: .azureOpenAITTSAPIKey) ?? defaults.azureOpenAITTSAPIKey
+        azureOpenAITTSVoice = try container.decodeIfPresent(String.self, forKey: .azureOpenAITTSVoice) ?? defaults.azureOpenAITTSVoice
         azureSTTPreferredLanguage = try container.decodeIfPresent(String.self, forKey: .azureSTTPreferredLanguage) ?? defaults.azureSTTPreferredLanguage
         appearance = try container.decodeIfPresent(PickyAppearanceMode.self, forKey: .appearance) ?? defaults.appearance
         notifications = try container.decodeIfPresent(PickyNotificationPreferences.self, forKey: .notifications) ?? defaults.notifications

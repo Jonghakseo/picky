@@ -127,8 +127,11 @@ struct CompanionPanelSettingsView: View {
     @ObservedObject var companionManager: CompanionManager
     @State private var mainAgentCwdDraft: String = ""
     @State private var sideAgentCwdDraft: String = ""
-    @State private var azureEndpointDraft: String = ""
-    @State private var azureAPIKeyDraft: String = ""
+    @State private var azureSTTEndpointDraft: String = ""
+    @State private var azureSTTAPIKeyDraft: String = ""
+    @State private var azureTTSEndpointDraft: String = ""
+    @State private var azureTTSAPIKeyDraft: String = ""
+    @State private var azureTTSVoiceDraft: String = ""
     @State private var azureLanguageDraft: String = ""
     @State private var saveStatuses = CompanionPanelSettingsSaveStatuses()
     @State private var saveStatusResets: [CompanionPanelSettingsSection: AnyCancellable] = [:]
@@ -568,7 +571,7 @@ struct CompanionPanelSettingsView: View {
     }
 
     private var voiceSection: some View {
-        sectionHeader(section: .voice, title: "Voice (STT & TTS)", subtitle: "Speech providers. Azure STT endpoint and key are saved in Settings.") {
+        sectionHeader(section: .voice, title: "Voice (STT & TTS)", subtitle: "Speech providers. Azure STT and TTS use separate operation URLs; the Azure resource base may still be the same.") {
             VStack(alignment: .leading, spacing: 10) {
                 providerPicker(title: "STT provider", capability: .transcription, selection: $viewModel.settings.sttProvider)
                 providerPicker(title: "TTS provider", capability: .speechPlayback, selection: $viewModel.settings.ttsProvider)
@@ -578,59 +581,48 @@ struct CompanionPanelSettingsView: View {
                 }
 
                 if viewModel.settings.sttProvider == .azure {
-                    VStack(alignment: .leading, spacing: 5) {
-                        fieldLabel("AZURE_OPENAI_ENDPOINT")
-                        TextField("{endpoint}/openai/deployments/{deploymentName}/audio/transcriptions?api-version={apiVersion}", text: $azureEndpointDraft)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundColor(DS.Colors.textSecondary)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 7)
-                            .background(
-                                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                    .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
-                            )
-                            .onChange(of: azureEndpointDraft) { _, _ in
-                                updateDraftStatus(for: .voice, isDirty: isAzureDraftDirty())
-                            }
-                            .onSubmit { commitAzureField() }
-                    }
+                    azureTextField(
+                        label: "Azure STT transcription URL",
+                        placeholder: "{endpoint}/openai/deployments/{deploymentName}/audio/transcriptions?api-version={apiVersion}",
+                        text: $azureSTTEndpointDraft
+                    )
 
-                    VStack(alignment: .leading, spacing: 5) {
-                        fieldLabel("AZURE_OPENAI_API_KEY")
-                        SecureField("AZURE_OPENAI_API_KEY", text: $azureAPIKeyDraft)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundColor(DS.Colors.textSecondary)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 7)
-                            .background(
-                                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                    .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
-                            )
-                            .onChange(of: azureAPIKeyDraft) { _, _ in
-                                updateDraftStatus(for: .voice, isDirty: isAzureDraftDirty())
-                            }
-                            .onSubmit { commitAzureField() }
-                    }
+                    azureSecureField(
+                        label: "Azure STT API key",
+                        placeholder: "AZURE_OPENAI_API_KEY",
+                        text: $azureSTTAPIKeyDraft
+                    )
 
-                    VStack(alignment: .leading, spacing: 5) {
-                        fieldLabel("Azure STT preferred language")
-                        TextField("Auto detect, or e.g. ko / en", text: $azureLanguageDraft)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundColor(DS.Colors.textSecondary)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 7)
-                            .background(
-                                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                    .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
-                            )
-                            .onChange(of: azureLanguageDraft) { _, _ in
-                                updateDraftStatus(for: .voice, isDirty: isAzureDraftDirty())
-                            }
-                            .onSubmit { commitAzureField() }
-                    }
+                    azureTextField(
+                        label: "Azure STT preferred language",
+                        placeholder: "Auto detect, or e.g. ko / en",
+                        text: $azureLanguageDraft
+                    )
+                }
+
+                if viewModel.settings.ttsProvider == .azure {
+                    azureTextField(
+                        label: "Azure TTS speech URL",
+                        placeholder: "{endpoint}/openai/deployments/{deploymentName}/audio/speech?api-version={apiVersion}",
+                        text: $azureTTSEndpointDraft
+                    )
+
+                    azureSecureField(
+                        label: "Azure TTS API key",
+                        placeholder: "Leave empty to reuse the STT API key",
+                        text: $azureTTSAPIKeyDraft
+                    )
+
+                    azureTextField(
+                        label: "Azure TTS voice",
+                        placeholder: "nova, alloy, shimmer, etc.",
+                        text: $azureTTSVoiceDraft
+                    )
+
+                    Text("TTS should use the /audio/speech URL. It can share the same Azure resource and key as STT, but usually has its own deployment. The model/deployment is parsed from the URL.")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -704,6 +696,46 @@ struct CompanionPanelSettingsView: View {
             }
             .buttonStyle(.plain)
             .pointerCursor()
+        }
+    }
+
+    private func azureTextField(label: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            fieldLabel(label)
+            TextField(placeholder, text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundColor(DS.Colors.textSecondary)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
+                )
+                .onChange(of: text.wrappedValue) { _, _ in
+                    updateDraftStatus(for: .voice, isDirty: isAzureDraftDirty())
+                }
+                .onSubmit { commitAzureField() }
+        }
+    }
+
+    private func azureSecureField(label: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            fieldLabel(label)
+            SecureField(placeholder, text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundColor(DS.Colors.textSecondary)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
+                )
+                .onChange(of: text.wrappedValue) { _, _ in
+                    updateDraftStatus(for: .voice, isDirty: isAzureDraftDirty())
+                }
+                .onSubmit { commitAzureField() }
         }
     }
 
@@ -866,8 +898,11 @@ struct CompanionPanelSettingsView: View {
     }
 
     private func commitAzureField() {
-        viewModel.settings.azureOpenAIEndpoint = azureEndpointDraft
-        viewModel.settings.azureOpenAIAPIKey = azureAPIKeyDraft
+        viewModel.settings.azureOpenAIEndpoint = azureSTTEndpointDraft
+        viewModel.settings.azureOpenAIAPIKey = azureSTTAPIKeyDraft
+        viewModel.settings.azureOpenAITTSEndpoint = azureTTSEndpointDraft
+        viewModel.settings.azureOpenAITTSAPIKey = azureTTSAPIKeyDraft
+        viewModel.settings.azureOpenAITTSVoice = azureTTSVoiceDraft
         viewModel.settings.azureSTTPreferredLanguage = azureLanguageDraft
         saveImmediately(for: .voice)
     }
@@ -932,14 +967,20 @@ struct CompanionPanelSettingsView: View {
     }
 
     private func syncAzureDrafts() {
-        azureEndpointDraft = viewModel.settings.azureOpenAIEndpoint
-        azureAPIKeyDraft = viewModel.settings.azureOpenAIAPIKey
+        azureSTTEndpointDraft = viewModel.settings.azureOpenAIEndpoint
+        azureSTTAPIKeyDraft = viewModel.settings.azureOpenAIAPIKey
+        azureTTSEndpointDraft = viewModel.settings.azureOpenAITTSEndpoint
+        azureTTSAPIKeyDraft = viewModel.settings.azureOpenAITTSAPIKey
+        azureTTSVoiceDraft = viewModel.settings.azureOpenAITTSVoice
         azureLanguageDraft = viewModel.settings.azureSTTPreferredLanguage
     }
 
     private func isAzureDraftDirty() -> Bool {
-        azureEndpointDraft != viewModel.settings.azureOpenAIEndpoint
-            || azureAPIKeyDraft != viewModel.settings.azureOpenAIAPIKey
+        azureSTTEndpointDraft != viewModel.settings.azureOpenAIEndpoint
+            || azureSTTAPIKeyDraft != viewModel.settings.azureOpenAIAPIKey
+            || azureTTSEndpointDraft != viewModel.settings.azureOpenAITTSEndpoint
+            || azureTTSAPIKeyDraft != viewModel.settings.azureOpenAITTSAPIKey
+            || azureTTSVoiceDraft != viewModel.settings.azureOpenAITTSVoice
             || azureLanguageDraft != viewModel.settings.azureSTTPreferredLanguage
     }
 

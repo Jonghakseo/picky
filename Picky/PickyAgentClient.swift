@@ -249,6 +249,7 @@ private extension PickyCommandEnvelope {
         if let artifactId { parts.append("artifact=\(artifactId)") }
         if let enabled { parts.append("enabled=\(enabled)") }
         if let mode { parts.append("mode=\(mode)") }
+        if let mainAgentModelPattern { parts.append("mainAgentModel=\(mainAgentModelPattern.isEmpty ? "<auto>" : mainAgentModelPattern)") }
         if let provider { parts.append("provider=\(provider)") }
         if let modelOrDeployment { parts.append("modelOrDeployment=\(modelOrDeployment)") }
         if apiKey != nil { parts.append("apiKey=<redacted>") }
@@ -270,6 +271,8 @@ private extension PickyEventEnvelope {
             return "type=mainMessagesSnapshot id=\(id) messages=\(messages.count)"
         case .mainMessageAppended(let message):
             return "type=mainMessageAppended id=\(id) role=\(message.role.rawValue) textChars=\(message.text.count)"
+        case .mainAgentModelsSnapshot(let models):
+            return "type=mainAgentModelsSnapshot id=\(id) models=\(models.count)"
         case .mainRealtimeStateChanged(let state):
             return "type=mainRealtimeStateChanged id=\(id) state=\(state.state.rawValue) messageChars=\(state.message?.count ?? 0)"
         case .mainRealtimeInputTranscriptDelta(let inputId, let delta):

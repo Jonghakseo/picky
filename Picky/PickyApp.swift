@@ -41,6 +41,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         return PickyAgentDaemonConfiguration.development(
             defaultCwd: settings.defaultCwd,
             mainAgentThinkingLevel: settings.mainAgentThinkingLevel,
+            mainAgentModelPattern: settings.mainAgentModelPattern,
             mainAgentRuntimeMode: settings.mainAgentRuntimeMode
         )
     }()

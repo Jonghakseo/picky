@@ -1,6 +1,6 @@
 import type { BuiltPrompt } from "../prompt-builder.js";
 import type { MainAgentRuntimeMode, PickyContextPacket } from "../protocol.js";
-import type { AgentRuntime, MainRealtimeRuntime, RuntimeSessionHandle, ThinkingLevel } from "./types.js";
+import type { AgentRuntime, MainRealtimeRuntime, RuntimeModelOption, RuntimeSessionHandle, ThinkingLevel } from "./types.js";
 
 export interface SelectableMainRuntimeOptions {
   initialMode: MainAgentRuntimeMode;
@@ -36,6 +36,14 @@ export class SelectableMainRuntime implements MainRealtimeRuntime {
   setThinkingLevel(level: ThinkingLevel): void {
     this.options.piRuntime.setThinkingLevel?.(level);
     this.options.realtimeRuntime.setThinkingLevel?.(level);
+  }
+
+  setModelPattern(pattern?: string): boolean {
+    return this.options.piRuntime.setModelPattern?.(pattern) ?? false;
+  }
+
+  listAvailableModels(options?: { cwd?: string }): Promise<RuntimeModelOption[]> {
+    return this.options.piRuntime.listAvailableModels?.(options) ?? Promise.resolve([]);
   }
 
   create(prompt: BuiltPrompt, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {

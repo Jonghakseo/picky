@@ -22,6 +22,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var enabled: Bool?
     var archived: Bool?
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel?
+    var mainAgentModelPattern: String?
     var direction: PickyModelCycleDirection?
     /// User-additional instructions for `setMainAgentExtraInstructions`. Empty string clears the
     /// daemon-side override; nil omits the field for unrelated command types.
@@ -54,6 +55,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         enabled: Bool? = nil,
         archived: Bool? = nil,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel? = nil,
+        mainAgentModelPattern: String? = nil,
         direction: PickyModelCycleDirection? = nil,
         mainAgentExtraInstructions: String? = nil,
         mode: String? = nil,
@@ -82,6 +84,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.enabled = enabled
         self.archived = archived
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
+        self.mainAgentModelPattern = mainAgentModelPattern
         self.direction = direction
         self.mainAgentExtraInstructions = mainAgentExtraInstructions
         self.mode = mode
@@ -126,6 +129,8 @@ enum PickyCommandType: String, Codable, Equatable {
     case abort
     case listSessions
     case listMainMessages
+    case listMainAgentModels
+    case setMainAgentModel
     case setMainAgentRuntimeMode
     case configureMainRealtimeAuth
     case beginMainRealtimeVoiceTurn
@@ -168,6 +173,7 @@ enum PickyEvent: Equatable {
     case quickReply(PickyQuickReplyEvent)
     case mainMessagesSnapshot([PickyMainAgentMessage])
     case mainMessageAppended(PickyMainAgentMessage)
+    case mainAgentModelsSnapshot([PickyMainAgentModelOption])
     case mainRealtimeStateChanged(PickyMainRealtimeStateEvent)
     case mainRealtimeInputTranscriptDelta(inputId: UUID, delta: String)
     case mainRealtimeInputTranscriptCompleted(inputId: UUID, transcript: String)
@@ -196,6 +202,7 @@ enum PickyEvent: Equatable {
     private enum CodingKeys: String, CodingKey {
         case sessions, session, sessionId, line, tool, request, artifact, contextId, text, messages, message, commands
         case messageId, seq, steering, followUp, steeringMode, followUpMode, activitySummary, originSource, replyKind, inputId
+        case models
         case state, delta, transcript, audioBase64, status, finalTranscript
         case baselineFound, importedMessageCount, activeLastMessageId, baselinePiMessageId
     }
@@ -211,6 +218,9 @@ enum PickyEvent: Equatable {
         case "mainMessageAppended":
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self = .mainMessageAppended(try c.decode(PickyMainAgentMessage.self, forKey: .message))
+        case "mainAgentModelsSnapshot":
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self = .mainAgentModelsSnapshot(try c.decode([PickyMainAgentModelOption].self, forKey: .models))
         case "mainRealtimeStateChanged":
             self = .mainRealtimeStateChanged(try PickyMainRealtimeStateEvent(from: decoder))
         case "mainRealtimeInputTranscriptDelta":
@@ -410,6 +420,14 @@ struct PickyMainAgentMessage: Codable, Equatable, Identifiable {
     let role: Role
     let text: String
     let createdAt: Date
+}
+
+struct PickyMainAgentModelOption: Codable, Equatable, Identifiable {
+    var id: String { pattern }
+    let provider: String
+    let modelId: String
+    let displayName: String
+    let pattern: String
 }
 
 enum PickyQueueMode: String, Codable, Equatable {

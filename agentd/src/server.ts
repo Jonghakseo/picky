@@ -96,6 +96,8 @@ export class AgentdServer {
       logAgentd("command received", commandLogFields(command));
       if (command.type === "listSessions") this.send(ws, { type: "sessionSnapshot", sessions: compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession) });
       if (command.type === "listMainMessages") this.send(ws, { type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() });
+      if (command.type === "listMainAgentModels") this.send(ws, { type: "mainAgentModelsSnapshot", models: await this.options.supervisor.listMainAgentModels() });
+      if (command.type === "setMainAgentModel") await this.options.supervisor.setMainAgentModel(command.mainAgentModelPattern);
       if (command.type === "setMainAgentRuntimeMode") await this.options.supervisor.setMainAgentRuntimeMode(command.mode);
       if (command.type === "configureMainRealtimeAuth") await this.options.supervisor.configureMainRealtimeAuth(command);
       if (command.type === "beginMainRealtimeVoiceTurn") await this.options.supervisor.beginMainRealtimeVoiceTurn(command.inputId, command.context);
@@ -216,6 +218,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, requestId: command.requestId };
     case "setMainAgentRuntimeMode":
       return { commandId: command.id, type: command.type, mode: command.mode };
+    case "setMainAgentModel":
+      return { commandId: command.id, type: command.type, modelPatternChars: command.mainAgentModelPattern.length };
     case "configureMainRealtimeAuth":
       return { commandId: command.id, type: command.type, provider: command.provider, modelOrDeployment: command.modelOrDeployment, voice: command.voice, keyPresent: command.apiKey ? 1 : 0, endpointHost: endpointHostForLog(command.azure?.resourceEndpoint) };
     case "beginMainRealtimeVoiceTurn":
@@ -228,6 +232,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, inputId: command.inputId, playedAudioMs: command.playedAudioMs };
     case "listSessions":
     case "listMainMessages":
+    case "listMainAgentModels":
     case "resetMainAgent":
     case "abortMainAgent":
       return { commandId: command.id, type: command.type };
@@ -264,6 +269,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, messages: event.messages.length };
     case "mainMessageAppended":
       return { eventId: event.id, type: event.type, role: event.message.role, textChars: event.message.text.length };
+    case "mainAgentModelsSnapshot":
+      return { eventId: event.id, type: event.type, models: event.models.length };
     case "mainRealtimeStateChanged":
       return { eventId: event.id, type: event.type, state: event.state, messageChars: event.message?.length };
     case "mainRealtimeInputTranscriptDelta":

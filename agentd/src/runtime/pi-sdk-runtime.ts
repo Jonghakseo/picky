@@ -17,7 +17,7 @@ import {
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
-import type { AgentRuntime, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
+import type { AgentRuntime, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
 import { logAgentd } from "../local-log.js";
 
@@ -39,18 +39,36 @@ export interface PiSdkRuntimeOptions {
   resourceLoaderOptions?: CreateAgentSessionServicesOptions["resourceLoaderOptions"];
   customTools?: ToolDefinition[];
   thinkingLevel?: ThinkingLevel;
+  modelPattern?: string;
   disableBlockingDialogs?: boolean;
 }
 
 export class PiSdkRuntime implements AgentRuntime {
   private thinkingLevel?: ThinkingLevel;
+  private modelPattern?: string;
 
   constructor(private readonly options: PiSdkRuntimeOptions = {}) {
     this.thinkingLevel = options.thinkingLevel;
+    this.modelPattern = normalizeModelPattern(options.modelPattern);
   }
 
   setThinkingLevel(level: ThinkingLevel): void {
     this.thinkingLevel = level;
+  }
+
+  setModelPattern(pattern?: string): boolean {
+    const next = normalizeModelPattern(pattern);
+    const changed = this.modelPattern !== next;
+    this.modelPattern = next;
+    return changed;
+  }
+
+  async listAvailableModels(options: { cwd?: string } = {}): Promise<RuntimeModelOption[]> {
+    const createServices = this.options.createServices ?? createAgentSessionServices;
+    const agentDir = this.options.agentDir ?? (this.options.getAgentDir ?? getAgentDir)();
+    const services = await createServices({ cwd: options.cwd ?? process.cwd(), agentDir, resourceLoaderOptions: this.options.resourceLoaderOptions });
+    const available = await availableModelsFromServices(services);
+    return available.map(runtimeModelOptionFromModel).filter((option): option is RuntimeModelOption => Boolean(option));
   }
 
   async create(prompt: BuiltPrompt, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
@@ -88,9 +106,20 @@ export class PiSdkRuntime implements AgentRuntime {
 
     const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd: runtimeCwd, sessionManager, sessionStartEvent }) => {
       const services = await createServices({ cwd: runtimeCwd, agentDir, resourceLoaderOptions: this.options.resourceLoaderOptions });
-      const scopedModels = await scopedModelsFromServices(services);
+      const fixedModel = await modelFromServices(services, this.modelPattern);
+      const scopedModels = fixedModel
+        ? [{ model: fixedModel as ScopedModelOption["model"], ...(this.thinkingLevel ? { thinkingLevel: this.thinkingLevel } : {}) }]
+        : await scopedModelsFromServices(services);
       return {
-        ...(await createSessionFromServices({ services, sessionManager, sessionStartEvent, customTools, thinkingLevel: this.thinkingLevel, scopedModels })),
+        ...(await createSessionFromServices({
+          services,
+          sessionManager,
+          sessionStartEvent,
+          customTools,
+          thinkingLevel: this.thinkingLevel,
+          scopedModels,
+          ...(fixedModel ? { model: fixedModel as ScopedModelOption["model"] } : {}),
+        })),
         services,
         diagnostics: services.diagnostics,
       };
@@ -792,16 +821,14 @@ type ScopedModelOption = NonNullable<CreateAgentSessionFromServicesOptions["scop
 
 async function scopedModelsFromServices(services: Awaited<ReturnType<NonNullable<PiSdkRuntimeOptions["createServices"]>>>): Promise<ScopedModelOption[]> {
   const settingsManager = asRecord(services.settingsManager);
-  const modelRegistry = asRecord(services.modelRegistry);
   const getEnabledModels = settingsManager.getEnabledModels;
-  const getAvailable = modelRegistry.getAvailable;
-  if (typeof getEnabledModels !== "function" || typeof getAvailable !== "function") return [];
+  if (typeof getEnabledModels !== "function") return [];
 
   const patterns = getEnabledModels.call(services.settingsManager);
   if (!Array.isArray(patterns) || patterns.length === 0) return [];
 
-  const available = await getAvailable.call(services.modelRegistry);
-  if (!Array.isArray(available) || available.length === 0) return [];
+  const available = await availableModelsFromServices(services);
+  if (available.length === 0) return [];
 
   const scoped: ScopedModelOption[] = [];
   for (const patternValue of patterns) {
@@ -812,6 +839,41 @@ async function scopedModelsFromServices(services: Awaited<ReturnType<NonNullable
     scoped.push({ model: model as ScopedModelOption["model"], ...(parsed.thinkingLevel ? { thinkingLevel: parsed.thinkingLevel } : {}) });
   }
   return scoped;
+}
+
+async function availableModelsFromServices(services: Awaited<ReturnType<NonNullable<PiSdkRuntimeOptions["createServices"]>>>): Promise<unknown[]> {
+  const modelRegistry = asRecord(services.modelRegistry);
+  const getAvailable = modelRegistry.getAvailable;
+  if (typeof getAvailable !== "function") return [];
+  const available = await getAvailable.call(services.modelRegistry);
+  return Array.isArray(available) ? available : [];
+}
+
+async function modelFromServices(services: Awaited<ReturnType<NonNullable<PiSdkRuntimeOptions["createServices"]>>>, pattern: string | undefined): Promise<unknown | undefined> {
+  if (!pattern) return undefined;
+  const available = await availableModelsFromServices(services);
+  const model = findScopedModel(pattern, available);
+  if (!model) logAgentd("pi fixed model not found", { pattern, available: available.length });
+  return model;
+}
+
+function runtimeModelOptionFromModel(model: unknown): RuntimeModelOption | undefined {
+  const record = asRecord(model);
+  const provider = stringValue(record.provider);
+  const modelId = stringValue(record.id) ?? stringValue(record.model);
+  if (!provider || !modelId) return undefined;
+  const name = stringValue(record.name);
+  return {
+    provider,
+    modelId,
+    displayName: name && name !== modelId ? `${name} (${provider}/${modelId})` : `${provider}/${modelId}`,
+    pattern: `${provider}/${modelId}`,
+  };
+}
+
+function normalizeModelPattern(pattern: string | undefined): string | undefined {
+  const trimmed = pattern?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 function parseScopedModelPattern(pattern: string): { modelPattern: string; thinkingLevel?: ThinkingLevel } {

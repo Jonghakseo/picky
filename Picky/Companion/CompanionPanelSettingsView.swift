@@ -130,6 +130,7 @@ struct CompanionPanelSettingsSaveStatuses: Equatable {
 
 struct CompanionPanelSettingsView: View {
     @ObservedObject var viewModel: PickySettingsViewModel
+    @ObservedObject var companionManager: CompanionManager
     @State private var pathDraft: String = ""
     @State private var azureEndpointDraft: String = ""
     @State private var azureAPIKeyDraft: String = ""
@@ -357,6 +358,8 @@ struct CompanionPanelSettingsView: View {
 
                 if viewModel.settings.mainAgentRuntimeMode == .openAIRealtime {
                     realtimeSettingsFields
+                } else {
+                    piMainAgentModelPicker
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
@@ -407,6 +410,44 @@ struct CompanionPanelSettingsView: View {
                 }
             }
         }
+    }
+
+    private var piMainAgentModelPicker: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                fieldLabel("Pi model")
+                if companionManager.isLoadingMainAgentModelOptions {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.65)
+                }
+            }
+            Picker("Pi model", selection: $viewModel.settings.mainAgentModelPattern) {
+                Text("Automatic (Pi default)").tag("")
+                if shouldShowSavedMainAgentModelOption {
+                    Text("Saved: \(viewModel.settings.mainAgentModelPattern)").tag(viewModel.settings.mainAgentModelPattern)
+                }
+                ForEach(companionManager.mainAgentModelOptions) { option in
+                    Text(option.displayName).tag(option.pattern)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onChange(of: viewModel.settings.mainAgentModelPattern) { _, _ in saveImmediately(for: .mainAgent) }
+            .task { companionManager.refreshMainAgentModelOptions() }
+
+            Text("Choose Automatic to follow Pi settings, or pick a model to pin the Picky main agent. Reasoning level below is applied with the pinned model.")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundColor(DS.Colors.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var shouldShowSavedMainAgentModelOption: Bool {
+        let saved = viewModel.settings.mainAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !saved.isEmpty else { return false }
+        return !companionManager.mainAgentModelOptions.contains { $0.pattern == saved }
     }
 
     private var realtimeSettingsFields: some View {

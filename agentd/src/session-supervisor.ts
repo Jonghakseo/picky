@@ -8,7 +8,7 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
-import type { EventEnvelope, MainAgentRuntimeMode, ModelCycleDirection, OpenAIRealtimeAuthConfig, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
+import type { EventEnvelope, MainAgentRuntimeMode, ModelCycleDirection, OpenAIRealtimeAuthConfig, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { parsePointerTags, type ParsedPointerTags } from "./application/pointer-tag-parser.js";
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
@@ -325,6 +325,22 @@ export class SessionSupervisor extends EventEmitter {
     this.options.mainRuntime?.setThinkingLevel?.(level);
     logAgentd("main thinking level configured", { level, hadHandle: this.mainHandle ? 1 : 0, hadPendingHandle: this.mainHandlePromise ? 1 : 0 });
     this.applyMainThinkingLevel(this.mainHandle, level);
+  }
+
+  async listMainAgentModels(): Promise<PickyMainAgentModelOption[]> {
+    const models = await this.options.mainRuntime?.listAvailableModels?.({ cwd: this.mainState.cwd ?? process.cwd() }) ?? [];
+    return models;
+  }
+
+  async setMainAgentModel(pattern: string): Promise<void> {
+    const normalized = pattern.trim();
+    const changed = this.options.mainRuntime?.setModelPattern?.(normalized || undefined) ?? false;
+    logAgentd("main model configured", { patternChars: normalized.length, changed: changed ? 1 : 0, hadHandle: this.mainHandle ? 1 : 0, hadPendingHandle: this.mainHandlePromise ? 1 : 0 });
+    if (!changed) return;
+    const currentHandle = this.mainHandle;
+    this.detachMainHandleForInterruption();
+    if (currentHandle) await this.abortResetMainHandle(currentHandle, "model-switch");
+    await this.patchMainState({ sessionFilePath: undefined });
   }
 
   setMainAgentExtraInstructions(instructions: string): void {

@@ -969,7 +969,7 @@ final class PickySessionListViewModel: ObservableObject {
                 card.lastTerminalSyncOutcome = outcome
                 card.updatedAt = Date()
             }
-        case .quickReply, .mainMessagesSnapshot, .mainMessageAppended,
+        case .quickReply, .mainMessagesSnapshot, .mainMessageAppended, .mainAgentModelsSnapshot,
              .mainRealtimeStateChanged, .mainRealtimeInputTranscriptDelta, .mainRealtimeInputTranscriptCompleted,
              .mainRealtimeOutputAudioDelta, .mainRealtimeOutputAudioDone,
              .mainRealtimeOutputTranscriptDelta, .mainRealtimeOutputTranscriptCompleted, .mainRealtimeTurnDone,

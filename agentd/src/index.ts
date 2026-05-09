@@ -20,6 +20,7 @@ const token = process.env.PICKY_AGENTD_TOKEN;
 const appSupportDir = process.env.PICKY_APP_SUPPORT_DIR ?? defaultAppSupportRoot();
 const defaultCwd = process.env.PICKY_DEFAULT_CWD ?? process.cwd();
 const mainAgentThinkingLevel = parseMainAgentThinkingLevel(process.env.PICKY_MAIN_AGENT_THINKING_LEVEL);
+const mainAgentModelPattern = process.env.PICKY_MAIN_AGENT_MODEL?.trim() || undefined;
 const mainAgentRuntimeMode = process.env.PICKY_MAIN_AGENT_RUNTIME === "openai-realtime" ? "openai-realtime" : "pi";
 
 if (!token) {
@@ -38,7 +39,7 @@ if (!token) {
 installExtensionCrashGuard();
 
 const useMockRuntime = process.env.PICKY_AGENTD_RUNTIME === "mock";
-logAgentd("startup", { port, runtime: useMockRuntime ? "mock" : "pi", mainAgentRuntimeMode, appSupportDir, defaultCwd, mainAgentThinkingLevel });
+logAgentd("startup", { port, runtime: useMockRuntime ? "mock" : "pi", mainAgentRuntimeMode, appSupportDir, defaultCwd, mainAgentThinkingLevel, mainAgentModelPattern });
 let supervisor: SessionSupervisor;
 const askUserQuestionTool = createPickyAskUserQuestionTool();
 const skillCatalog = new PickySkillCatalog();
@@ -53,6 +54,7 @@ const piMainRuntime = useMockRuntime
   ? undefined
   : new PiSdkRuntime({
       thinkingLevel: mainAgentThinkingLevel,
+      modelPattern: mainAgentModelPattern,
       // Main agent has no UI surface for blocking dialogs (ask_user_question/confirm/input/...).
       // Without this flag, any extension or tool that calls `ctx.ui.<dialog>` would hang the main
       // session forever (`applyMainRuntimeEvent` ignores `extension_ui` events). Reject blocking

@@ -62,7 +62,7 @@ struct CompanionPanelView: View {
                             case .messages:
                                 EmptyView()
                             case .settings:
-                                CompanionPanelSettingsView(viewModel: settingsViewModel)
+                                CompanionPanelSettingsView(viewModel: settingsViewModel, companionManager: companionManager)
                             }
                         }
                         .padding(.horizontal, 16)

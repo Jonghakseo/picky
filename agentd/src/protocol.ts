@@ -184,6 +184,13 @@ export const PickyAssistantRunMetadataSchema = z.object({
   thinkingLevel: ThinkingLevelSchema.optional(),
 });
 export type PickyAssistantRunMetadata = z.infer<typeof PickyAssistantRunMetadataSchema>;
+export const PickyMainAgentModelOptionSchema = z.object({
+  provider: z.string().min(1),
+  modelId: z.string().min(1),
+  displayName: z.string().min(1),
+  pattern: z.string().min(1),
+});
+export type PickyMainAgentModelOption = z.infer<typeof PickyMainAgentModelOptionSchema>;
 export const PickySessionMessageSchema = z.object({
   id: z.string(),
   kind: z.enum(["user_text", "agent_text", "agent_thinking", "agent_question", "agent_error", "agent_activity", "system"]),
@@ -266,6 +273,8 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("abort"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("listSessions") }),
   CommandBaseSchema.extend({ type: z.literal("listMainMessages") }),
+  CommandBaseSchema.extend({ type: z.literal("listMainAgentModels") }),
+  CommandBaseSchema.extend({ type: z.literal("setMainAgentModel"), mainAgentModelPattern: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("setMainAgentRuntimeMode"), mode: MainAgentRuntimeModeSchema }),
   CommandBaseSchema.extend({ type: z.literal("configureMainRealtimeAuth"), ...OpenAIRealtimeAuthConfigShape }),
   CommandBaseSchema.extend({ type: z.literal("beginMainRealtimeVoiceTurn"), inputId: z.string().min(1), context: PickyContextPacketSchema }),
@@ -302,6 +311,7 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   }),
   EventBaseSchema.extend({ type: z.literal("mainMessagesSnapshot"), messages: z.array(PickyMainAgentMessageSchema) }),
   EventBaseSchema.extend({ type: z.literal("mainMessageAppended"), message: PickyMainAgentMessageSchema }),
+  EventBaseSchema.extend({ type: z.literal("mainAgentModelsSnapshot"), models: z.array(PickyMainAgentModelOptionSchema) }),
   EventBaseSchema.extend({ type: z.literal("mainRealtimeStateChanged"), state: MainRealtimeStateSchema, message: z.string().optional() }),
   EventBaseSchema.extend({ type: z.literal("mainRealtimeInputTranscriptDelta"), inputId: z.string(), delta: z.string() }),
   EventBaseSchema.extend({ type: z.literal("mainRealtimeInputTranscriptCompleted"), inputId: z.string(), transcript: z.string() }),

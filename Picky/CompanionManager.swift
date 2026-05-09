@@ -138,6 +138,8 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var hasScreenRecordingPermission = false
     @Published private(set) var hasMicrophonePermission = false
     @Published private(set) var hasScreenContentPermission = false
+    @Published private(set) var mainAgentModelOptions: [PickyMainAgentModelOption] = []
+    @Published private(set) var isLoadingMainAgentModelOptions = false
 
     /// Screen location (global AppKit coords) of a highlighted UI point;
     /// observed by BlueCursorView to trigger the flight animation.
@@ -609,6 +611,18 @@ final class CompanionManager: ObservableObject {
             }
     }
 
+    func refreshMainAgentModelOptions() {
+        isLoadingMainAgentModelOptions = true
+        Task {
+            do {
+                try await agentClient.send(PickyCommandEnvelope(type: .listMainAgentModels))
+            } catch {
+                await MainActor.run { self.isLoadingMainAgentModelOptions = false }
+                print("⚠️ Failed to list main agent models: \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func bindSettingsChanges() {
         settingsChangeCancellable = NotificationCenter.default.publisher(for: .pickySettingsDidSave)
             .receive(on: DispatchQueue.main)
@@ -652,14 +666,24 @@ final class CompanionManager: ObservableObject {
             }
             do {
                 try await agentClient.send(PickyCommandEnvelope(
-                    type: .setMainAgentRuntimeMode,
-                    mode: settings.mainAgentRuntimeMode.agentdEnvironmentValue
+                    type: .setMainAgentModel,
+                    mainAgentModelPattern: settings.mainAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
                 ))
-                print("🎛️ Main agent runtime mode applied — \(settings.mainAgentRuntimeMode.rawValue)")
+                print("🎛️ Main agent model applied — \(settings.mainAgentModelPattern.isEmpty ? "Pi default" : settings.mainAgentModelPattern)")
+            } catch {
+                print("⚠️ Failed to apply main agent model: \(error.localizedDescription)")
+            }
+            do {
+                let effectiveRuntimeMode = AppBundleConfiguration.realtimeOptIn ? settings.mainAgentRuntimeMode : .pi
+                try await agentClient.send(PickyCommandEnvelope(
+                    type: .setMainAgentRuntimeMode,
+                    mode: effectiveRuntimeMode.agentdEnvironmentValue
+                ))
+                print("🎛️ Main agent runtime mode applied — \(effectiveRuntimeMode.rawValue)")
             } catch {
                 print("⚠️ Failed to apply main agent runtime mode: \(error.localizedDescription)")
             }
-            if settings.mainAgentRuntimeMode == .openAIRealtime {
+            if AppBundleConfiguration.realtimeOptIn, settings.mainAgentRuntimeMode == .openAIRealtime {
                 await configureRealtimeMainAgent(settings: settings)
             }
             let trimmedExtra = settings.mainAgentExtraInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1613,6 +1637,7 @@ final class CompanionManager: ObservableObject {
                         self.syncDaemonSettings()
                     }
                     try? await self.agentClient.send(PickyCommandEnvelope(type: .listMainMessages))
+                    try? await self.agentClient.send(PickyCommandEnvelope(type: .listMainAgentModels))
                 }
             }
         }
@@ -1653,6 +1678,9 @@ final class CompanionManager: ObservableObject {
             mainAgentMessages = Array(messages.suffix(100))
         case .mainMessageAppended(let message):
             mainAgentMessages = Array((mainAgentMessages + [message]).suffix(100))
+        case .mainAgentModelsSnapshot(let models):
+            mainAgentModelOptions = models
+            isLoadingMainAgentModelOptions = false
         case .mainRealtimeStateChanged(let event):
             applyMainRealtimeState(event)
         case .mainRealtimeInputTranscriptDelta(let inputId, let delta):

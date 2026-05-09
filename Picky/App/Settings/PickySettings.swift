@@ -511,6 +511,9 @@ struct PickySettings: Codable, Equatable {
     var fontScales: PickyFontScales
     var mainAgentRuntimeMode: PickyMainAgentRuntimeMode
     var openAIRealtime: PickyOpenAIRealtimeSettings
+    /// Empty means the Pi main agent follows Pi's own default model/settings. Non-empty is a
+    /// provider/model pattern returned by picky-agentd, for example `anthropic/claude-sonnet-4-5`.
+    var mainAgentModelPattern: String
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel
     /// Free-form Korean/English instructions appended to every main-agent turn prompt. Lets users
     /// teach the always-on main agent personal preferences (tone, language, recurring reminders)
@@ -565,6 +568,7 @@ struct PickySettings: Codable, Equatable {
         fontScales: PickyFontScales = .defaults,
         mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi,
         openAIRealtime: PickyOpenAIRealtimeSettings = .defaults,
+        mainAgentModelPattern: String = "",
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .medium,
         mainAgentExtraInstructions: String = "",
         screenContextScope: PickyScreenContextScope = .allScreens,
@@ -592,6 +596,7 @@ struct PickySettings: Codable, Equatable {
         self.fontScales = fontScales
         self.mainAgentRuntimeMode = mainAgentRuntimeMode
         self.openAIRealtime = openAIRealtime
+        self.mainAgentModelPattern = mainAgentModelPattern
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
         self.mainAgentExtraInstructions = mainAgentExtraInstructions
         self.screenContextScope = screenContextScope
@@ -623,6 +628,7 @@ struct PickySettings: Codable, Equatable {
             fontScales: .defaults,
             mainAgentRuntimeMode: .pi,
             openAIRealtime: .defaults,
+            mainAgentModelPattern: "",
             mainAgentThinkingLevel: .medium,
             mainAgentExtraInstructions: "",
             screenContextScope: .allScreens,
@@ -644,6 +650,7 @@ struct PickySettings: Codable, Equatable {
         copy.azureOpenAIAPIKey = azureOpenAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.azureSTTPreferredLanguage = azureSTTPreferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.openAIRealtime = openAIRealtime.normalized()
+        copy.mainAgentModelPattern = mainAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         // mainAgentExtraInstructions: do not trim here — auto-save runs on every keystroke,
         // so trimming round-trips would eat trailing spaces while typing. Trim happens at send time.
         return copy
@@ -668,6 +675,7 @@ struct PickySettings: Codable, Equatable {
         case fontScales
         case mainAgentRuntimeMode
         case openAIRealtime
+        case mainAgentModelPattern
         case mainAgentThinkingLevel
         case mainAgentExtraInstructions
         case screenContextScope
@@ -699,6 +707,7 @@ struct PickySettings: Codable, Equatable {
         overlayBubbles = try container.decodeIfPresent(PickyOverlayBubblePreferences.self, forKey: .overlayBubbles) ?? defaults.overlayBubbles
         mainAgentRuntimeMode = try container.decodeIfPresent(PickyMainAgentRuntimeMode.self, forKey: .mainAgentRuntimeMode) ?? defaults.mainAgentRuntimeMode
         openAIRealtime = try container.decodeIfPresent(PickyOpenAIRealtimeSettings.self, forKey: .openAIRealtime) ?? defaults.openAIRealtime
+        mainAgentModelPattern = try container.decodeIfPresent(String.self, forKey: .mainAgentModelPattern) ?? defaults.mainAgentModelPattern
         mainAgentThinkingLevel = try container.decodeIfPresent(PickyMainAgentThinkingLevel.self, forKey: .mainAgentThinkingLevel) ?? defaults.mainAgentThinkingLevel
         mainAgentExtraInstructions = try container.decodeIfPresent(String.self, forKey: .mainAgentExtraInstructions) ?? defaults.mainAgentExtraInstructions
         screenContextScope = try container.decodeIfPresent(PickyScreenContextScope.self, forKey: .screenContextScope) ?? defaults.screenContextScope

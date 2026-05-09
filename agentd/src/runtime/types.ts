@@ -14,6 +14,13 @@ export interface RuntimeAssistantRunMetadata {
   thinkingLevel?: ThinkingLevel;
 }
 
+export interface RuntimeModelOption {
+  provider: string;
+  modelId: string;
+  displayName: string;
+  pattern: string;
+}
+
 export type MainRealtimeState = "connecting" | "ready" | "listening" | "thinking" | "speaking" | "failed";
 
 export type RuntimeEvent =
@@ -90,6 +97,8 @@ export interface AgentRuntime {
   prewarm?(options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle>;
   resume?(sessionFilePath: string, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle>;
   setThinkingLevel?(level: ThinkingLevel): void;
+  setModelPattern?(pattern?: string): boolean;
+  listAvailableModels?(options?: { cwd?: string }): Promise<RuntimeModelOption[]>;
   setMainAgentRuntimeMode?(mode: MainAgentRuntimeMode): boolean;
   getMainAgentRuntimeMode?(): MainAgentRuntimeMode;
 }

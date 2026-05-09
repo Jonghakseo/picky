@@ -573,6 +573,10 @@ struct CompanionPanelSettingsView: View {
                 providerPicker(title: "STT provider", capability: .transcription, selection: $viewModel.settings.sttProvider)
                 providerPicker(title: "TTS provider", capability: .speechPlayback, selection: $viewModel.settings.ttsProvider)
 
+                if viewModel.settings.ttsProvider == .local || viewModel.settings.ttsProvider == .automatic {
+                    openMacOSSpeechSettingsButton
+                }
+
                 if viewModel.settings.sttProvider == .azure {
                     VStack(alignment: .leading, spacing: 5) {
                         fieldLabel("AZURE_OPENAI_ENDPOINT")
@@ -757,6 +761,37 @@ struct CompanionPanelSettingsView: View {
                 .buttonStyle(.plain)
                 .pointerCursor()
         }
+    }
+
+    /// Opens the Spoken Content pane in System Settings so users can pick the
+    /// system voice that `NSSpeechSynthesizer` (the local TTS provider) reads with.
+    private var openMacOSSpeechSettingsButton: some View {
+        Button(action: {
+            // Sonoma+ Settings URL for Accessibility > Spoken Content. The voice
+            // selected there is what `NSSpeechSynthesizer()` (no explicit voice)
+            // uses, which is what PickySystemSpeechPlaybackProvider does today.
+            guard let url = URL(string: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?Speech") else { return }
+            NSWorkspace.shared.open(url)
+        }) {
+            HStack(spacing: 6) {
+                Image(systemName: "speaker.wave.2")
+                    .font(.system(size: 11, weight: .medium))
+                Text("Open macOS Speech Settings")
+                    .font(.system(size: 11, weight: .semibold))
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .foregroundColor(DS.Colors.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
+        .help("Choose the system voice used by Picky's local TTS in System Settings → Accessibility → Spoken Content.")
     }
 
     private func providerPicker(title: String, capability: PickyVoiceProviderCapability, selection: Binding<PickyVoiceProviderSelection>) -> some View {

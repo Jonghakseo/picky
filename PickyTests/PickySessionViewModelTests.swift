@@ -806,9 +806,22 @@ struct PickySessionViewModelTests {
 
     @Test func hudDockPositionsDefaultToEmptyWhenMissingFromSettings() throws {
         let settings = try JSONDecoder().decode(PickySettings.self, from: Data("{}".utf8))
-        // No legacy fields and no dictionary -> migration synthesizes a single "default" entry.
-        #expect(settings.hudDockPositions["default"] != nil)
-        #expect(settings.hudDockPositions["default"]?.side == .right)
+        // No legacy fields and no dictionary -> migration synthesizes a single fallback entry.
+        #expect(settings.hudDockPositions[PickyHUDDockPosition.defaultKey] != nil)
+        #expect(settings.hudDockPositions[PickyHUDDockPosition.defaultKey]?.side == .right)
+    }
+
+    @Test func hudDockPositionResolutionUsesDisplaySpecificThenDefaultFallback() throws {
+        let fallback = PickyHUDDockPosition(side: .left, anchorPercent: 48, xOffset: 12)
+        let displaySpecific = PickyHUDDockPosition(side: .right, anchorPercent: 18, xOffset: -20)
+        let positions = [
+            PickyHUDDockPosition.defaultKey: fallback,
+            "2": displaySpecific
+        ]
+
+        #expect(PickyHUDDockPosition.resolved(in: positions, displayKey: "2") == displaySpecific)
+        #expect(PickyHUDDockPosition.resolved(in: positions, displayKey: "3") == fallback)
+        #expect(PickyHUDDockPosition.resolved(in: [:], displayKey: "3") == PickyHUDDockPosition.defaults())
     }
 
     @Test func hudDockPositionsRoundTripThroughJSON() throws {

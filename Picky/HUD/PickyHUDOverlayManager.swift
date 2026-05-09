@@ -82,8 +82,10 @@ final class PickyHUDOverlayManager {
 
     /// Get the live position for a display. Returns defaults for unknown displays.
     private func position(for displayID: CGDirectDisplayID) -> PickyHUDDockPosition {
-        let key = String(displayID)
-        return currentPositionsByDisplayID[key] ?? PickyHUDDockPosition.defaults()
+        PickyHUDDockPosition.resolved(
+            in: currentPositionsByDisplayID,
+            displayKey: String(displayID)
+        )
     }
 
     /// Update position for a display after drag/double-click.
@@ -135,11 +137,14 @@ final class PickyHUDOverlayManager {
         // Create or reposition for every connected display.
         for screen in screens {
             guard let displayID = screen.pickyDisplayID else { continue }
-            if panelsByDisplayID[displayID] == nil {
+            let shouldOrderFront = panelsByDisplayID[displayID] == nil
+            if shouldOrderFront {
                 panelsByDisplayID[displayID] = makePanelEntry(displayID: displayID)
-                panelsByDisplayID[displayID]?.panel.orderFrontRegardless()
             }
             positionPanel(on: screen, displayID: displayID)
+            if shouldOrderFront {
+                panelsByDisplayID[displayID]?.panel.orderFrontRegardless()
+            }
         }
         for displayID in archiveUndoToastsByDisplayID.keys {
             positionArchiveUndoToast(displayID: displayID)

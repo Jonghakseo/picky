@@ -377,6 +377,8 @@ enum PickyHUDDockSide: String, Codable, CaseIterable, Identifiable {
 /// Per-display dock position state. Each display keeps its own side, anchor percent,
 /// and horizontal offset so users can place the dock differently on each monitor.
 struct PickyHUDDockPosition: Codable, Equatable {
+    static let defaultKey = "default"
+
     var side: PickyHUDDockSide
     var anchorPercent: Double
     var xOffset: CGFloat
@@ -387,6 +389,10 @@ struct PickyHUDDockPosition: Codable, Equatable {
             anchorPercent: PickySettings.defaultDockTopAnchorPercent,
             xOffset: 0
         )
+    }
+
+    static func resolved(in positions: [String: PickyHUDDockPosition], displayKey: String) -> PickyHUDDockPosition {
+        positions[displayKey] ?? positions[defaultKey] ?? defaults()
     }
 }
 
@@ -750,7 +756,7 @@ struct PickySettings: Codable, Equatable {
             let storedSide = try legacyContainer.decodeIfPresent(PickyHUDDockSide.self, forKey: .hudDockSide) ?? .right
             let storedXOffset = try legacyContainer.decodeIfPresent(CGFloat.self, forKey: .hudDockXOffset) ?? 0
             hudDockPositions = [
-                "default": PickyHUDDockPosition(
+                PickyHUDDockPosition.defaultKey: PickyHUDDockPosition(
                     side: storedSide,
                     anchorPercent: PickySettings.clampedDockTopAnchorPercent(storedAnchor),
                     xOffset: storedXOffset

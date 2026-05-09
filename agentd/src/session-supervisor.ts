@@ -372,9 +372,14 @@ export class SessionSupervisor extends EventEmitter {
     await runtime.appendMainRealtimeInputAudio(inputId, audioBase64);
   }
 
-  async commitMainRealtimeVoiceTurn(inputId: string): Promise<void> {
+  async commitMainRealtimeVoiceTurn(inputId: string, context?: PickyContextPacket): Promise<void> {
     const runtime = this.requireMainRealtimeRuntime();
-    await runtime.commitMainRealtimeVoiceTurn(inputId);
+    if (context) {
+      await this.ensurePrewarmedMainHandle(context.cwd ?? process.cwd());
+      this.mainContext = context;
+      this.mainReplyContextId = context.id;
+    }
+    await runtime.commitMainRealtimeVoiceTurn(inputId, context);
   }
 
   async cancelMainRealtimeVoiceTurn(inputId?: string, playedAudioMs?: number): Promise<void> {

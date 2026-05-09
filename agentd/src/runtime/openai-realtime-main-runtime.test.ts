@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildRealtimeConnection, normalizeAzureRealtimeHost, OpenAIRealtimeMainRuntime, parseAzureRealtimeEndpointUrl, type RealtimeWebSocketLike } from "./openai-realtime-main-runtime.js";
 import { SelectableMainRuntime } from "./selectable-main-runtime.js";
@@ -361,6 +364,52 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(doneEvents[0]).toMatchObject({ inputId: "input-1", finalTranscript: "완료" });
   });
 
+  it("sends final ink-marked context images before committing realtime audio", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-realtime-image-"));
+    const imagePath = join(dir, "annotated.jpg");
+    await writeFile(imagePath, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    await runtime.commitMainRealtimeVoiceTurn("input-1", context({
+      id: "context-ink",
+      screenshots: [{ id: "shot-1", label: "Main", path: imagePath, screenId: "screen1" }],
+      inkMarks: [{
+        id: "ink-1",
+        source: "voice",
+        kind: "freehand-highlight",
+        screenId: "screen1",
+        points: [{ x: 10, y: 20 }, { x: 40, y: 60 }],
+        bounds: { x: 10, y: 20, width: 30, height: 40 },
+        strokeWidth: 12,
+        opacity: 0.75,
+      }],
+    }));
+
+    const sent = socket.sent.map((raw) => JSON.parse(raw) as Record<string, any>);
+    const commitIndex = sent.findIndex((event) => event.type === "input_audio_buffer.commit");
+    const contextIndex = sent.findIndex((event) =>
+      event.type === "conversation.item.create" &&
+      event.item?.role === "user" &&
+      JSON.stringify(event.item.content).includes("User-marked screen regions")
+    );
+    const contextItem = sent[contextIndex];
+
+    expect(contextIndex).toBeGreaterThan(-1);
+    expect(commitIndex).toBeGreaterThan(contextIndex);
+    expect(contextItem.item.content.some((part: Record<string, unknown>) => part.type === "input_image" && String(part.image_url).startsWith("data:image/jpeg;base64,"))).toBe(true);
+  });
+
   it("uses GA assistant output_text content for bootstrap messages", async () => {
     const socket = new FakeRealtimeSocket();
     const runtime = new OpenAIRealtimeMainRuntime({
@@ -561,7 +610,7 @@ class RecordingRealtimeRuntime extends RecordingRuntime implements MainRealtimeR
   async appendMainRealtimeInputAudio(_inputId: string, _audioBase64: string): Promise<void> {
     this.calls.push("realtime.appendAudio");
   }
-  async commitMainRealtimeVoiceTurn(_inputId: string): Promise<void> {
+  async commitMainRealtimeVoiceTurn(_inputId: string, _context?: PickyContextPacket): Promise<void> {
     this.calls.push("realtime.commitVoice");
   }
   async cancelMainRealtimeVoiceTurn(_inputId?: string, _playedAudioMs?: number): Promise<void> {

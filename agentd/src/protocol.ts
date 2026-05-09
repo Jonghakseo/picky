@@ -270,7 +270,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("configureMainRealtimeAuth"), ...OpenAIRealtimeAuthConfigShape }),
   CommandBaseSchema.extend({ type: z.literal("beginMainRealtimeVoiceTurn"), inputId: z.string().min(1), context: PickyContextPacketSchema }),
   CommandBaseSchema.extend({ type: z.literal("appendMainRealtimeInputAudio"), inputId: z.string().min(1), audioBase64: z.string().min(1) }),
-  CommandBaseSchema.extend({ type: z.literal("commitMainRealtimeVoiceTurn"), inputId: z.string().min(1) }),
+  CommandBaseSchema.extend({ type: z.literal("commitMainRealtimeVoiceTurn"), inputId: z.string().min(1), context: PickyContextPacketSchema.optional() }),
   CommandBaseSchema.extend({ type: z.literal("cancelMainRealtimeVoiceTurn"), inputId: z.string().min(1).optional(), playedAudioMs: z.number().nonnegative().optional() }),
   CommandBaseSchema.extend({ type: z.literal("resetMainAgent") }),
   CommandBaseSchema.extend({ type: z.literal("abortMainAgent") }),

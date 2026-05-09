@@ -96,8 +96,8 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
     await (await this.ensureHandle({ sessionId: "picky-main-agent" })).appendVoiceAudio(inputId, audioBase64);
   }
 
-  async commitMainRealtimeVoiceTurn(inputId: string): Promise<void> {
-    await (await this.ensureHandle({ sessionId: "picky-main-agent" })).commitVoiceTurn(inputId);
+  async commitMainRealtimeVoiceTurn(inputId: string, context?: PickyContextPacket): Promise<void> {
+    await (await this.ensureHandle({ cwd: context?.cwd, sessionId: "picky-main-agent" })).commitVoiceTurn(inputId, context);
   }
 
   async cancelMainRealtimeVoiceTurn(inputId?: string, playedAudioMs?: number): Promise<void> {
@@ -245,9 +245,10 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     this.sendClientEvent({ type: "input_audio_buffer.append", audio: audioBase64 });
   }
 
-  async commitVoiceTurn(inputId: string): Promise<void> {
+  async commitVoiceTurn(inputId: string, context?: PickyContextPacket): Promise<void> {
     if (!this.isCurrentInput(inputId)) return;
     await this.ensureConnected();
+    if (context) await this.sendContextForRealtimeVoice(context);
     this.sendClientEvent({ type: "input_audio_buffer.commit" });
     this.emit({ type: "main_realtime_state", state: "thinking" });
     this.sendResponseCreate();
@@ -840,8 +841,27 @@ function buildRealtimeContextText(context: PickyContextPacket): string {
       lines.push(`- ${screenshot.label}${screen}${focus}${pixels}${cursor}: ${screenshot.path}`);
     }
   }
+  if (context.inkMarks.length > 0) {
+    lines.push("", "## User-marked screen regions");
+    lines.push("The user drew these semi-transparent Picky highlighter strokes during input. The attached screenshot files are annotated with matching blue strokes and number badges.");
+    for (const [index, mark] of context.inkMarks.entries()) {
+      const screen = mark.screenId ? ` on ${mark.screenId}` : "";
+      const bounds = `${formatCoordinate(mark.bounds.x)},${formatCoordinate(mark.bounds.y)},${formatCoordinate(mark.bounds.width)}x${formatCoordinate(mark.bounds.height)}`;
+      const samplePoints = mark.points.slice(0, 8).map(formatPoint).join(" -> ");
+      const suffix = mark.points.length > 8 ? ` -> … (${mark.points.length} points)` : ` (${mark.points.length} points)`;
+      lines.push(`- mark${index + 1}${screen}: ${mark.kind}; bbox=${bounds}; strokeWidth=${formatCoordinate(mark.strokeWidth)}; opacity=${formatCoordinate(mark.opacity)}; points=${samplePoints}${suffix}`);
+    }
+  }
   if (context.warnings.length > 0) lines.push("", "## Capture warnings", ...context.warnings.map((warning) => `- ${warning}`));
   return lines.join("\n");
+}
+
+function formatPoint(point: { x: number; y: number }): string {
+  return `${formatCoordinate(point.x)},${formatCoordinate(point.y)}`;
+}
+
+function formatCoordinate(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
 function realtimeTools(): Array<Record<string, unknown>> {

@@ -88,6 +88,35 @@ describe("protocol contract fixtures", () => {
     if (parsed.type === "steer") expect(parsed.context?.screenshots[0]?.path).toBe("/tmp/shot.png");
   });
 
+  it("parses realtime commit commands with optional final ink context", () => {
+    const parsed = CommandEnvelopeSchema.parse({
+      id: "cmd-realtime-commit-context",
+      protocolVersion: "2026-05-09",
+      type: "commitMainRealtimeVoiceTurn",
+      inputId: "input-1",
+      context: {
+        id: "context-realtime-ink",
+        source: "voice",
+        capturedAt: "2026-05-09T00:00:00.000Z",
+        screenshots: [{ id: "shot-1", label: "Main", path: "/tmp/annotated.jpg" }],
+        inkMarks: [{
+          id: "ink-1",
+          source: "voice",
+          kind: "freehand-highlight",
+          screenId: "screen1",
+          points: [{ x: 10, y: 20 }, { x: 30, y: 40 }],
+          bounds: { x: 10, y: 20, width: 20, height: 20 },
+          strokeWidth: 12,
+          opacity: 0.75,
+        }],
+        warnings: [],
+      },
+    });
+
+    expect(parsed.type).toBe("commitMainRealtimeVoiceTurn");
+    if (parsed.type === "commitMainRealtimeVoiceTurn") expect(parsed.context?.inkMarks).toHaveLength(1);
+  });
+
   it("parses clearQueue commands for every queue kind", () => {
     for (const kind of ["steering", "followUp", "all"] as const) {
       expect(() =>

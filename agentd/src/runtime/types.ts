@@ -98,7 +98,7 @@ export interface MainRealtimeRuntime extends AgentRuntime {
   configureMainRealtimeAuth(config: OpenAIRealtimeAuthConfig): Promise<void> | void;
   beginMainRealtimeVoiceTurn(turn: { inputId: string; context: PickyContextPacket }): Promise<void>;
   appendMainRealtimeInputAudio(inputId: string, audioBase64: string): Promise<void>;
-  commitMainRealtimeVoiceTurn(inputId: string): Promise<void>;
+  commitMainRealtimeVoiceTurn(inputId: string, context?: PickyContextPacket): Promise<void>;
   cancelMainRealtimeVoiceTurn(inputId?: string, playedAudioMs?: number): Promise<void>;
 }
 

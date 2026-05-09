@@ -1,5 +1,5 @@
 import type { BuiltPrompt } from "../prompt-builder.js";
-import type { MainAgentRuntimeMode } from "../protocol.js";
+import type { MainAgentRuntimeMode, PickyContextPacket } from "../protocol.js";
 import type { AgentRuntime, MainRealtimeRuntime, RuntimeSessionHandle, ThinkingLevel } from "./types.js";
 
 export interface SelectableMainRuntimeOptions {
@@ -68,9 +68,9 @@ export class SelectableMainRuntime implements MainRealtimeRuntime {
     return this.options.realtimeRuntime.appendMainRealtimeInputAudio(inputId, audioBase64);
   }
 
-  async commitMainRealtimeVoiceTurn(inputId: string): Promise<void> {
+  async commitMainRealtimeVoiceTurn(inputId: string, context?: PickyContextPacket): Promise<void> {
     this.assertRealtimeMode();
-    return this.options.realtimeRuntime.commitMainRealtimeVoiceTurn(inputId);
+    return this.options.realtimeRuntime.commitMainRealtimeVoiceTurn(inputId, context);
   }
 
   cancelMainRealtimeVoiceTurn(inputId?: string, playedAudioMs?: number): Promise<void> {

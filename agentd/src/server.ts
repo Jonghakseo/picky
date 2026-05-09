@@ -100,7 +100,7 @@ export class AgentdServer {
       if (command.type === "configureMainRealtimeAuth") await this.options.supervisor.configureMainRealtimeAuth(command);
       if (command.type === "beginMainRealtimeVoiceTurn") await this.options.supervisor.beginMainRealtimeVoiceTurn(command.inputId, command.context);
       if (command.type === "appendMainRealtimeInputAudio") await this.options.supervisor.appendMainRealtimeInputAudio(command.inputId, command.audioBase64);
-      if (command.type === "commitMainRealtimeVoiceTurn") await this.options.supervisor.commitMainRealtimeVoiceTurn(command.inputId);
+      if (command.type === "commitMainRealtimeVoiceTurn") await this.options.supervisor.commitMainRealtimeVoiceTurn(command.inputId, command.context);
       if (command.type === "cancelMainRealtimeVoiceTurn") await this.options.supervisor.cancelMainRealtimeVoiceTurn(command.inputId, command.playedAudioMs);
       if (command.type === "resetMainAgent") {
         await this.options.supervisor.resetMainAgent();
@@ -223,7 +223,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "appendMainRealtimeInputAudio":
       return { commandId: command.id, type: command.type, inputId: command.inputId, audioBytesBase64Chars: command.audioBase64.length };
     case "commitMainRealtimeVoiceTurn":
-      return { commandId: command.id, type: command.type, inputId: command.inputId };
+      return { commandId: command.id, type: command.type, inputId: command.inputId, contextId: command.context?.id, screenshots: command.context?.screenshots.length, inkMarks: command.context?.inkMarks.length };
     case "cancelMainRealtimeVoiceTurn":
       return { commandId: command.id, type: command.type, inputId: command.inputId, playedAudioMs: command.playedAudioMs };
     case "listSessions":

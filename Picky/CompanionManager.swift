@@ -1083,9 +1083,29 @@ final class CompanionManager: ObservableObject {
             .agentSubmissionAccepted(contextID: nil, sessionID: "picky-main-agent", inputID: inputID),
             correlation: PickyInteractionCorrelation(inputID: inputID, sessionID: "picky-main-agent", source: .agent)
         )
-        Task { [agentClient] in
+        let inkCapture = consumePendingInkCapture(inputID: inputID)
+        let beginTask = currentResponseTask
+        Task { @MainActor [weak self, agentClient] in
             do {
-                try await agentClient.send(PickyCommandEnvelope(type: .commitMainRealtimeVoiceTurn, inputId: inputID))
+                await beginTask?.value
+                guard self?.realtimeVoiceInputID == inputID else { return }
+                let contextPacket: PickyContextPacket?
+                if let inkCapture {
+                    let captureResult = try await self?.voiceContextCaptureCoordinator.captureContext(
+                        transcript: "",
+                        source: "voice",
+                        selectedSessionID: nil,
+                        inkCapture: inkCapture
+                    )
+                    contextPacket = captureResult?.contextPacket
+                } else {
+                    contextPacket = nil
+                }
+                try await agentClient.send(PickyCommandEnvelope(
+                    type: .commitMainRealtimeVoiceTurn,
+                    context: contextPacket,
+                    inputId: inputID
+                ))
             } catch {
                 print("⚠️ Failed to commit realtime voice turn: \(error.localizedDescription)")
             }

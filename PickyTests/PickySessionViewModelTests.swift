@@ -818,6 +818,67 @@ struct PickySessionViewModelTests {
         #expect(originAtCap == visibleFrame.minY + PickyHUDDockLayout.screenMargin)
     }
 
+    @Test func dockTopAnchoredPointAlignedPanelKeepsDockTopStableAcrossHeights() throws {
+        // Reproduces the live jitter class: a fractional anchor can put the fractional
+        // remainder in origin.y for short HUDs but in height for capped HUDs. The
+        // point-aligned helpers pin panelTop first, so both heights render the same
+        // dock capsule top after AppKit normalizes the NSPanel frame to whole points.
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1728, height: 1079)
+        let topPadding = PickyHUDExpansion.dockBodyTopOffsetFromContentTop
+        let anchor = 22.94283038094778
+        let shortHeight: CGFloat = 500
+        let cappedHeight = PickyHUDDockLayout.dockTopAnchoredPointAlignedMaxPanelHeight(
+            visibleFrame: visibleFrame,
+            topPaddingFromContentTop: topPadding,
+            anchorPercent: anchor
+        ) - PickyHUDExpansion.cardBreathingRoom
+
+        let shortOrigin = PickyHUDDockLayout.dockTopAnchoredPointAlignedPanelY(
+            visibleFrame: visibleFrame,
+            targetHeight: shortHeight,
+            topPaddingFromContentTop: topPadding,
+            anchorPercent: anchor
+        )
+        let cappedOrigin = PickyHUDDockLayout.dockTopAnchoredPointAlignedPanelY(
+            visibleFrame: visibleFrame,
+            targetHeight: cappedHeight,
+            topPaddingFromContentTop: topPadding,
+            anchorPercent: anchor
+        )
+        let shortDockTop = shortOrigin + shortHeight - topPadding
+        let cappedDockTop = cappedOrigin + cappedHeight - topPadding
+        let expectedDockTop = PickyHUDDockLayout.dockTopAnchoredPointAlignedPanelTopY(
+            visibleFrame: visibleFrame,
+            topPaddingFromContentTop: topPadding,
+            anchorPercent: anchor
+        ) - topPadding
+
+        #expect(shortDockTop == expectedDockTop)
+        #expect(cappedDockTop == expectedDockTop)
+        #expect(expectedDockTop == PickyHUDDockLayout.dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: anchor).rounded(.down))
+    }
+
+    @Test func dockTopAnchoredPointAlignedMaxPanelHeightUsesWholePointFloor() throws {
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1728, height: 1079)
+        let topPadding = PickyHUDExpansion.dockBodyTopOffsetFromContentTop
+        let anchor = 22.94283038094778
+        let pointAlignedCap = PickyHUDDockLayout.dockTopAnchoredPointAlignedMaxPanelHeight(
+            visibleFrame: visibleFrame,
+            topPaddingFromContentTop: topPadding,
+            anchorPercent: anchor
+        )
+        let bottomFloor = (visibleFrame.minY + PickyHUDDockLayout.screenMargin).rounded(.up)
+        let originAtCap = PickyHUDDockLayout.dockTopAnchoredPointAlignedPanelY(
+            visibleFrame: visibleFrame,
+            targetHeight: pointAlignedCap,
+            topPaddingFromContentTop: topPadding,
+            anchorPercent: anchor
+        )
+
+        #expect(pointAlignedCap.rounded(.down) == pointAlignedCap)
+        #expect(originAtCap == bottomFloor)
+    }
+
     @Test func dockBodyTopOffsetEqualsOuterVerticalPadding() throws {
         // The drag handle now lives INSIDE the dock capsule's top row, so it no
         // longer pushes the capsule top down. The distance from the panel content's

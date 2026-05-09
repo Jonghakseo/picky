@@ -225,12 +225,12 @@ final class PickyHUDOverlayManager {
             return PickyHUDPlacement.defaultAvailableCardMaxHeight
         }
         let topPadding = PickyHUDExpansion.dockBodyTopOffsetFromContentTop
-        let dockAnchoredCap = PickyHUDDockLayout.dockTopAnchoredMaxPanelHeight(
+        let dockAnchoredCap = PickyHUDDockLayout.dockTopAnchoredPointAlignedMaxPanelHeight(
             visibleFrame: visibleFrame,
             topPaddingFromContentTop: topPadding,
             anchorPercent: currentAnchorPercent
         )
-        let visibleHeightCap = visibleFrame.height - 160
+        let visibleHeightCap = (visibleFrame.height - 160).rounded(.down)
         let panelCap = min(dockAnchoredCap, visibleHeightCap)
         // Subtract the outer vertical padding (top + bottom). The card sits at HStack
         // top alongside the dock-stack VStack, so the card's max usable height is the
@@ -288,22 +288,23 @@ final class PickyHUDOverlayManager {
     private func targetFrame(for screen: NSScreen, contentSize: CGSize) -> NSRect? {
         let visibleFrame = screen.visibleFrame
         guard visibleFrame.width > 0, visibleFrame.height > 0 else { return nil }
-        // Use the dock CAPSULE's top offset (= padding + handle area + spacing) so
-        // the anchor percent lines up with the visible dock capsule, not the small
-        // handle that floats above it.
+        // Use the dock CAPSULE's top offset so the anchor percent lines up with the
+        // visible dock capsule, not just the transparent NSPanel's top edge.
         let topPadding = PickyHUDExpansion.dockBodyTopOffsetFromContentTop
-        // Cap the panel height so dockTopAnchoredPanelY never has to clamp at the
-        // visible-frame floor (which would push the dock top up and break the anchor
-        // guarantee). The conversation list scrolls internally for anything taller.
-        let dockAnchoredCap = PickyHUDDockLayout.dockTopAnchoredMaxPanelHeight(
+        // Cap and align the panel height to the whole-point frame AppKit will keep.
+        // Without this, fractional anchor math can land in `origin.y` for short HUDs
+        // but in `height` for capped HUDs; NSPanel then floors one and ceils the other,
+        // making the dock jump by 1pt while hovering between sessions.
+        let dockAnchoredCap = PickyHUDDockLayout.dockTopAnchoredPointAlignedMaxPanelHeight(
             visibleFrame: visibleFrame,
             topPaddingFromContentTop: topPadding,
             anchorPercent: currentAnchorPercent
         )
-        let visibleHeightCap = visibleFrame.height - 160
-        let cap = min(visibleHeightCap, dockAnchoredCap)
-        let targetHeight = max(min(contentSize.height, cap), minimumHeight)
-        let originY = PickyHUDDockLayout.dockTopAnchoredPanelY(
+        let visibleHeightCap = (visibleFrame.height - 160).rounded(.down)
+        let cap = max(minimumHeight, min(visibleHeightCap, dockAnchoredCap).rounded(.down))
+        let clampedHeight = min(max(contentSize.height, minimumHeight), cap)
+        let targetHeight = clampedHeight.rounded(.up)
+        let originY = PickyHUDDockLayout.dockTopAnchoredPointAlignedPanelY(
             visibleFrame: visibleFrame,
             targetHeight: targetHeight,
             topPaddingFromContentTop: topPadding,

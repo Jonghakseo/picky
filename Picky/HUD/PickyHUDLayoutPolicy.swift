@@ -220,6 +220,39 @@ enum PickyHUDDockLayout {
         return max(originY, minimumY)
     }
 
+    /// Point-aligned NSPanel top Y for dock-top anchoring. AppKit normalizes window
+    /// frames to whole-point bounds; if the fractional part sometimes lives in
+    /// `origin.y` and sometimes in `height`, the rendered dock can differ by 1pt when
+    /// switching between short and height-capped HUD cards. Anchor the panel's top to
+    /// one deterministic whole-point value first, then derive origin from that top.
+    static func dockTopAnchoredPointAlignedPanelTopY(
+        visibleFrame: CGRect,
+        topPaddingFromContentTop: CGFloat,
+        anchorPercent: Double
+    ) -> CGFloat {
+        let dockTopY = dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: anchorPercent)
+        return (dockTopY + topPaddingFromContentTop).rounded(.down)
+    }
+
+    /// Point-aligned panel origin Y for a point-aligned `targetHeight`. The rendered
+    /// dock top becomes `dockTopAnchoredPointAlignedPanelTopY - topPaddingFromContentTop`
+    /// for every card height, so hover-switching sessions cannot move the dock by the
+    /// AppKit frame-rounding remainder.
+    static func dockTopAnchoredPointAlignedPanelY(
+        visibleFrame: CGRect,
+        targetHeight: CGFloat,
+        topPaddingFromContentTop: CGFloat,
+        anchorPercent: Double
+    ) -> CGFloat {
+        let panelTopY = dockTopAnchoredPointAlignedPanelTopY(
+            visibleFrame: visibleFrame,
+            topPaddingFromContentTop: topPaddingFromContentTop,
+            anchorPercent: anchorPercent
+        )
+        let minimumY = (visibleFrame.minY + screenMargin).rounded(.up)
+        return max(panelTopY - targetHeight, minimumY)
+    }
+
     /// Largest panel height that still lets `dockTopAnchoredPanelY` keep the dock at
     /// `dockTopScreenY` without falling through `visibleFrame.minY + screenMargin`.
     /// The conversation list inside the card has its own ScrollView so anything
@@ -232,6 +265,23 @@ enum PickyHUDDockLayout {
         let dockTopY = dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: anchorPercent)
         let bottomFloor = visibleFrame.minY + screenMargin
         return max(0, dockTopY - bottomFloor + topPaddingFromContentTop)
+    }
+
+    /// Whole-point version of `dockTopAnchoredMaxPanelHeight`, matching the frame that
+    /// AppKit will actually keep after `NSPanel.setFrame`. Use this for live panel/card
+    /// caps so the measured HUD height and the window's final integer frame agree.
+    static func dockTopAnchoredPointAlignedMaxPanelHeight(
+        visibleFrame: CGRect,
+        topPaddingFromContentTop: CGFloat,
+        anchorPercent: Double
+    ) -> CGFloat {
+        let panelTopY = dockTopAnchoredPointAlignedPanelTopY(
+            visibleFrame: visibleFrame,
+            topPaddingFromContentTop: topPaddingFromContentTop,
+            anchorPercent: anchorPercent
+        )
+        let bottomFloor = (visibleFrame.minY + screenMargin).rounded(.up)
+        return max(0, panelTopY - bottomFloor)
     }
 }
 

@@ -14,6 +14,14 @@ export interface RuntimeAssistantRunMetadata {
   thinkingLevel?: ThinkingLevel;
 }
 
+export interface RuntimeBashExecutionResult {
+  output: string;
+  exitCode: number | undefined;
+  cancelled: boolean;
+  truncated: boolean;
+  fullOutputPath?: string;
+}
+
 export interface RuntimeModelOption {
   provider: string;
   modelId: string;
@@ -63,6 +71,7 @@ export interface RuntimeSessionHandle {
   steer(prompt: BuiltPrompt): Promise<RuntimeSteerResult>;
   abort(): Promise<void>;
   newSession?(): Promise<{ cancelled: boolean }>;
+  executeUserBash?(command: string, options?: { excludeFromContext?: boolean }): Promise<RuntimeBashExecutionResult>;
   answerExtensionUi?(requestId: string, value: unknown): Promise<void>;
   /**
    * Append a synthetic user/assistant pair to the start of a fresh session

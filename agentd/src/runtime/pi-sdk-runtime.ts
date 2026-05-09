@@ -17,7 +17,7 @@ import {
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
-import type { AgentRuntime, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
+import type { AgentRuntime, RuntimeAssistantRunMetadata, RuntimeBashExecutionResult, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
 import { logAgentd } from "../local-log.js";
 
@@ -216,6 +216,44 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     logAgentd("pi abort", { sessionId: this.id });
     await this.runtime.session.abort();
     this.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+  }
+
+  async executeUserBash(command: string, options: { excludeFromContext?: boolean } = {}): Promise<RuntimeBashExecutionResult> {
+    const trimmedCommand = command.trim();
+    if (!trimmedCommand) throw new Error("Bash command cannot be empty");
+    const session = this.runtime.session as unknown as PiBashCapableSession;
+    if (session.isBashRunning === true) throw new Error("A bash command is already running");
+    if (typeof session.executeBash !== "function" || typeof session.recordBashResult !== "function") {
+      throw new Error("Pi runtime does not support direct bash execution");
+    }
+
+    const excludeFromContext = options.excludeFromContext === true;
+    const toolCallId = `user-bash-${randomUUID()}`;
+    logAgentd("pi user bash", { sessionId: this.id, commandChars: trimmedCommand.length, excludeFromContext });
+    this.emit({ type: "tool", toolCallId, name: "bash", status: "running", preview: trimmedCommand, argsPreview: `$ ${trimmedCommand}` });
+
+    try {
+      const eventResult = await emitUserBash(session, { command: trimmedCommand, excludeFromContext, cwd: this.runtime.cwd });
+      const result = normalizeBashExecutionResult(eventResult?.result)
+        ?? await session.executeBash(trimmedCommand, (chunk: string) => {
+          this.emit({ type: "tool", toolCallId, name: "bash", status: "running", preview: trimmedCommand, resultPreview: sliceUtf16(chunk, 500) });
+        }, { excludeFromContext, operations: eventResult?.operations });
+
+      if (eventResult?.result) session.recordBashResult(trimmedCommand, result, { excludeFromContext });
+      this.emit({
+        type: "tool",
+        toolCallId,
+        name: "bash",
+        status: result.exitCode && result.exitCode !== 0 ? "failed" : "succeeded",
+        preview: trimmedCommand,
+        resultPreview: bashResultPreview(result),
+      });
+      return result;
+    } catch (error) {
+      const message = messageOf(error);
+      this.emit({ type: "tool", toolCallId, name: "bash", status: "failed", preview: trimmedCommand, resultPreview: message });
+      throw error;
+    }
   }
 
   async newSession(): Promise<{ cancelled: boolean }> {
@@ -805,6 +843,47 @@ function mediaTypeFromPath(path: string): string {
   if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
   if (extension === ".webp") return "image/webp";
   return "image/png";
+}
+
+interface PiBashCapableSession {
+  isBashRunning?: boolean;
+  executeBash?: (command: string, onChunk?: (chunk: string) => void, options?: { excludeFromContext?: boolean; operations?: unknown }) => Promise<RuntimeBashExecutionResult>;
+  recordBashResult?: (command: string, result: RuntimeBashExecutionResult, options?: { excludeFromContext?: boolean }) => void;
+  extensionRunner?: { emitUserBash?: (event: { type: "user_bash"; command: string; excludeFromContext: boolean; cwd: string }) => Promise<{ result?: unknown; operations?: unknown } | undefined> };
+}
+
+async function emitUserBash(session: PiBashCapableSession, event: { command: string; excludeFromContext: boolean; cwd: string }): Promise<{ result?: RuntimeBashExecutionResult; operations?: unknown } | undefined> {
+  if (typeof session.extensionRunner?.emitUserBash !== "function") return undefined;
+  const result = await session.extensionRunner.emitUserBash({ type: "user_bash", ...event });
+  if (!result) return undefined;
+  const normalized = normalizeBashExecutionResult(result.result);
+  return {
+    ...(normalized ? { result: normalized } : {}),
+    ...(result.operations ? { operations: result.operations } : {}),
+  };
+}
+
+function normalizeBashExecutionResult(value: unknown): RuntimeBashExecutionResult | undefined {
+  const record = asRecord(value);
+  if (!record || typeof record.output !== "string") return undefined;
+  return {
+    output: record.output,
+    exitCode: typeof record.exitCode === "number" ? record.exitCode : undefined,
+    cancelled: record.cancelled === true,
+    truncated: record.truncated === true,
+    ...(typeof record.fullOutputPath === "string" ? { fullOutputPath: record.fullOutputPath } : {}),
+  };
+}
+
+function bashResultPreview(result: RuntimeBashExecutionResult): string {
+  const prefix = result.cancelled ? "cancelled" : result.exitCode && result.exitCode !== 0 ? `exit ${result.exitCode}` : "ok";
+  const output = result.output.trim();
+  return output ? `${prefix}: ${sliceUtf16(output, 500)}` : prefix;
+}
+
+function sliceUtf16(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, Math.max(0, maxChars - 1))}…`;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

@@ -14,7 +14,7 @@ import { parsePointerTags, type ParsedPointerTags } from "./application/pointer-
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
-import { isMainRealtimeRuntime, type AgentRuntime, type RuntimeEvent, type RuntimeSessionHandle, type RuntimeSlashCommand, type ThinkingLevel } from "./runtime/types.js";
+import { isMainRealtimeRuntime, type AgentRuntime, type RuntimeBashExecutionResult, type RuntimeEvent, type RuntimeSessionHandle, type RuntimeSlashCommand, type ThinkingLevel } from "./runtime/types.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
 import { isTerminalStatus } from "./domain/session-status.js";
@@ -1239,6 +1239,9 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async followUp(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
+    const userBash = parseUserBashInput(text);
+    if (userBash) return this.executeUserBash(sessionId, userBash, context);
+
     const session = this.mustGet(sessionId);
     if (["failed", "cancelled"].includes(session.status)) throw new Error(`Cannot follow up ${session.status} session`);
     await this.preparePickleSessionForUserInput(sessionId);
@@ -1293,6 +1296,40 @@ export class SessionSupervisor extends EventEmitter {
     const current = this.sessions.get(sessionId);
     if (!current || ["completed", "cancelled"].includes(current.status)) return;
     await this.patch(sessionId, { status: "failed", lastSummary: `Follow-up failed: ${message}` });
+  }
+
+  private async executeUserBash(sessionId: string, input: UserBashInput, context?: PickyContextPacket): Promise<PickyAgentSession> {
+    const session = this.mustGet(sessionId);
+    await this.preparePickleSessionForUserInput(sessionId);
+    const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
+    if (!handle?.executeUserBash) {
+      const reason = handle ? "Runtime does not support direct bash execution" : "Runtime session is not attached";
+      await this.appendLog(sessionId, `bash rejected: ${reason}`);
+      throw new Error(reason);
+    }
+
+    const previous = this.mustGet(sessionId);
+    const wasRunning = previous.status === "running";
+    const prefix = input.excludeFromContext ? "!!" : "!";
+    logAgentd("user bash requested", { sessionId, commandChars: input.command.length, excludeFromContext: input.excludeFromContext, contextId: context?.id });
+    await this.appendLog(sessionId, `${prefix}${input.command}`);
+    await this.messageBuilder.flushAssistantText(sessionId);
+    await this.messageBuilder.flushThinking(sessionId);
+    await this.patch(sessionId, { status: "running", lastSummary: `Running bash: ${input.command}`, finalAnswer: undefined, thinkingPreview: undefined });
+
+    try {
+      const result = await handle.executeUserBash(input.command, { excludeFromContext: input.excludeFromContext });
+      await this.messageBuilder.recordSystemMessage(sessionId, formatUserBashSystemMessage(input, result));
+      const summary = userBashSummary(input.command, result);
+      await this.patch(sessionId, wasRunning ? { lastSummary: summary, thinkingPreview: undefined } : { status: "completed", lastSummary: summary, thinkingPreview: undefined });
+      return this.mustGet(sessionId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.appendLog(sessionId, `bash failed: ${message}`);
+      await this.messageBuilder.recordError(sessionId, `Bash failed: ${message}`);
+      await this.patch(sessionId, wasRunning ? { lastSummary: `Bash failed: ${message}`, thinkingPreview: undefined } : { status: "failed", lastSummary: `Bash failed: ${message}`, thinkingPreview: undefined });
+      throw error;
+    }
   }
 
   private async cancelPendingExtensionUiForUserInput(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {
@@ -1486,6 +1523,9 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async steer(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
+    const userBash = parseUserBashInput(text);
+    if (userBash) return this.executeUserBash(sessionId, userBash, context);
+
     const session = this.mustGet(sessionId);
     await this.preparePickleSessionForUserInput(sessionId);
     const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
@@ -1732,6 +1772,30 @@ export class SessionSupervisor extends EventEmitter {
 }
 
 type ScreenshotContext = PickyContextPacket["screenshots"][number];
+
+type UserBashInput = { command: string; excludeFromContext: boolean };
+
+function parseUserBashInput(text: string): UserBashInput | undefined {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("!")) return undefined;
+  const excludeFromContext = trimmed.startsWith("!!");
+  const command = (excludeFromContext ? trimmed.slice(2) : trimmed.slice(1)).trim();
+  return command ? { command, excludeFromContext } : undefined;
+}
+
+function formatUserBashSystemMessage(input: UserBashInput, result: RuntimeBashExecutionResult): string {
+  const prefix = input.excludeFromContext ? "!!" : "!";
+  const output = result.output.trimEnd() || "(no output)";
+  const status = result.cancelled ? "cancelled" : result.exitCode && result.exitCode !== 0 ? `exit ${result.exitCode}` : "exit 0";
+  const truncated = result.truncated ? `\n\nOutput truncated${result.fullOutputPath ? `; full output: ${result.fullOutputPath}` : ""}.` : "";
+  return `Ran \`${prefix}${input.command}\` (${status})\n\n\`\`\`\n${output}\n\`\`\`${truncated}`;
+}
+
+function userBashSummary(command: string, result: RuntimeBashExecutionResult): string {
+  if (result.cancelled) return `Bash cancelled: ${command}`;
+  if (result.exitCode && result.exitCode !== 0) return `Bash exited ${result.exitCode}: ${command}`;
+  return `Bash finished: ${command}`;
+}
 
 function makePointerOverlayRequestForContext(context: PickyContextPacket, request: PickyShowPointerRequest): PickyShowPointerResult["request"] {
   const screenshot = selectScreenshot(context, request);

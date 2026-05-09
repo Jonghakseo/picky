@@ -42,6 +42,40 @@ describe("SessionSupervisor", () => {
     expect(updated.logs.some((line) => line.includes("next step"))).toBe(true);
   });
 
+  it("executes ! follow-up input as Pi user bash without starting an agent turn", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-user-bash-test-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("initial"));
+    runtime.handle!.emit({ type: "status", status: "completed", summary: "Initial done" });
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
+
+    const updated = await supervisor.followUp(session.id, "!pwd");
+    await waitUntil(() => supervisor.get(session.id)?.activitySummary?.bash === 1);
+
+    expect(runtime.handle!.followUps).toEqual([]);
+    expect(runtime.handle!.userBashExecutions).toEqual([{ command: "pwd", excludeFromContext: false }]);
+    expect(updated.status).toBe("completed");
+    expect(supervisor.get(session.id)?.messages?.some((message) => message.kind === "system" && message.text?.includes("Ran `!pwd`"))).toBe(true);
+  });
+
+  it("executes !! steer input as hidden Pi user bash", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-hidden-user-bash-test-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("initial"));
+    runtime.handle!.emit({ type: "status", status: "completed", summary: "Initial done" });
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed");
+
+    await supervisor.steer(session.id, "!!printenv SECRET");
+
+    expect(runtime.handle!.steerPrompts).toEqual([]);
+    expect(runtime.handle!.userBashExecutions).toEqual([{ command: "printenv SECRET", excludeFromContext: true }]);
+    expect(supervisor.get(session.id)?.messages?.some((message) => message.kind === "system" && message.text?.includes("Ran `!!printenv SECRET`"))).toBe(true);
+  });
+
   it("projects queue updates with monotonic sequence numbers", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-queue-test-"));
@@ -3254,6 +3288,7 @@ class ManualHandle implements RuntimeSessionHandle {
   bootstrapInjections: Array<{ user: string; assistant: string }> = [];
   extensionUiAnswers: Array<{ requestId: string; value: unknown }> = [];
   thinkingLevels: string[] = [];
+  userBashExecutions: Array<{ command: string; excludeFromContext?: boolean }> = [];
   newSessionCalls = 0;
   sessionFilePath?: string;
   slashCommands: RuntimeSlashCommand[] = [];
@@ -3291,6 +3326,12 @@ class ManualHandle implements RuntimeSessionHandle {
   }
   async abort(): Promise<void> {
     this.aborts += 1;
+  }
+  async executeUserBash(command: string, options?: { excludeFromContext?: boolean }): Promise<{ output: string; exitCode: number; cancelled: boolean; truncated: boolean }> {
+    this.userBashExecutions.push({ command, excludeFromContext: options?.excludeFromContext });
+    this.emit({ type: "tool", toolCallId: `manual-bash-${this.userBashExecutions.length}`, name: "bash", status: "running", preview: command });
+    this.emit({ type: "tool", toolCallId: `manual-bash-${this.userBashExecutions.length}`, name: "bash", status: "succeeded", preview: command, resultPreview: "ok" });
+    return { output: `${command} output\n`, exitCode: 0, cancelled: false, truncated: false };
   }
   async newSession(): Promise<{ cancelled: boolean }> {
     this.newSessionCalls += 1;

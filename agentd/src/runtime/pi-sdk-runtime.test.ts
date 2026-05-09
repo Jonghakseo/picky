@@ -25,8 +25,16 @@ class FakeSession extends EventEmitter {
   extensionCommands: Array<{ invocationName: string; description?: string; sourceInfo?: { baseDir?: string; path?: string; source?: string; scope?: string; origin?: string } }> = [];
   promptTemplates: Array<{ name: string; description: string }> = [];
   skills: Array<{ name: string; description: string }> = [];
+  bashExecutions: Array<{ command: string; excludeFromContext?: boolean }> = [];
+  recordedBashResults: Array<{ command: string; result: unknown; excludeFromContext?: boolean }> = [];
+  userBashEvents: Array<{ type?: "user_bash"; command: string; excludeFromContext: boolean; cwd: string }> = [];
+  userBashResult?: unknown;
   extensionRunner = {
     getRegisteredCommands: () => this.extensionCommands,
+    emitUserBash: async (event: { type?: "user_bash"; command: string; excludeFromContext: boolean; cwd: string }) => {
+      this.userBashEvents.push(event);
+      return this.userBashResult ? { result: this.userBashResult } : undefined;
+    },
   };
   resourceLoader = {
     getSkills: () => ({ skills: this.skills }),
@@ -57,6 +65,18 @@ class FakeSession extends EventEmitter {
   async abort(): Promise<void> {
     this.aborts += 1;
     this.isStreaming = false;
+  }
+
+  async executeBash(command: string, _onChunk?: (chunk: string) => void, options?: { excludeFromContext?: boolean }): Promise<{ output: string; exitCode: number; cancelled: boolean; truncated: boolean }> {
+    this.bashExecutions.push({ command, excludeFromContext: options?.excludeFromContext });
+    _onChunk?.("/tmp/project\n");
+    const result = { output: "/tmp/project\n", exitCode: 0, cancelled: false, truncated: false };
+    this.recordBashResult(command, result, options);
+    return result;
+  }
+
+  recordBashResult(command: string, result: unknown, options?: { excludeFromContext?: boolean }): void {
+    this.recordedBashResults.push({ command, result, excludeFromContext: options?.excludeFromContext });
   }
 
   setThinkingLevel(level: string): void {
@@ -192,6 +212,37 @@ describe("PiSdkRuntime", () => {
     expect(events).toContainEqual({ type: "input_message", role: "user", text: "extension follow-up", originatedBy: "pi_extension" });
     expect(events).toContainEqual({ type: "input_message", role: "custom", text: "custom result", originatedBy: "pi_extension", display: true, customType: "subagent" });
     expect(events).toContainEqual({ type: "input_message", role: "custom", text: "hidden result", originatedBy: "pi_extension", display: false, customType: "hidden" });
+  });
+
+  it("executes user bash directly through the Pi session and preserves context inclusion flag", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm!({ cwd: "/tmp/project", sessionId: "session-1" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    const result = await handle.executeUserBash!("pwd", { excludeFromContext: true });
+
+    expect(result.output).toBe("/tmp/project\n");
+    expect(fakeSession.userBashEvents).toEqual([{ type: "user_bash", command: "pwd", excludeFromContext: true, cwd: "/tmp/project" }]);
+    expect(fakeSession.bashExecutions).toEqual([{ command: "pwd", excludeFromContext: true }]);
+    expect(fakeSession.recordedBashResults).toHaveLength(1);
+    expect(events).toContainEqual(expect.objectContaining({ type: "tool", name: "bash", status: "running", preview: "pwd" }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "tool", name: "bash", status: "succeeded", preview: "pwd" }));
+  });
+
+  it("records extension-provided user bash results without invoking local bash", async () => {
+    const fakeSession = new FakeSession();
+    fakeSession.userBashResult = { output: "remote\n", exitCode: 0, cancelled: false, truncated: false };
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm!({ cwd: "/tmp/project", sessionId: "session-1" });
+
+    const result = await handle.executeUserBash!("hostname");
+
+    expect(result.output).toBe("remote\n");
+    expect(fakeSession.bashExecutions).toEqual([]);
+    expect(fakeSession.recordedBashResults).toHaveLength(1);
+    expect(fakeSession.recordedBashResults[0]).toMatchObject({ command: "hostname", excludeFromContext: false });
   });
 
   it("starts an idle Pi turn for follow-up input instead of only queueing it", async () => {

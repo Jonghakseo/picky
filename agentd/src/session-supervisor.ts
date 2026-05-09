@@ -1573,6 +1573,10 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async applyRuntimeEvent(sessionId: string, event: RuntimeEvent): Promise<void> {
+    if (event.type === "session_replaced") {
+      await this.applyRuntimeSessionReplacement(sessionId, event);
+      return;
+    }
     if (event.type !== "status") {
       await this.runtimeEventHandler.handle(sessionId, event);
       return;
@@ -1587,6 +1591,40 @@ export class SessionSupervisor extends EventEmitter {
 
   private async waitForRuntimeEvents(sessionId: string): Promise<void> {
     await (this.runtimeEventChains.get(sessionId) ?? Promise.resolve());
+  }
+
+  private async applyRuntimeSessionReplacement(sessionId: string, event: Extract<RuntimeEvent, { type: "session_replaced" }>): Promise<void> {
+    const current = this.mustGet(sessionId);
+    const cwd = normalizeOptionalString(event.cwd) ?? current.cwd;
+    const context = this.sessionContexts.get(sessionId);
+    const nextContext = context ? { ...context, cwd, transcript: undefined, screenshots: [] } : undefined;
+    if (nextContext) this.sessionContexts.set(sessionId, nextContext);
+    this.pendingQueueDeliveries.delete(sessionId);
+    this.queueUpdateChains.delete(sessionId);
+    this.runtimeEventHandler.resetAssistantDraft(sessionId);
+    this.messageBuilder.onSessionRemoved(sessionId);
+    if (this.isPickleSession(sessionId)) this.clearPickleCompletionTracking(sessionId);
+    await this.patch(sessionId, {
+      title: this.isPickleSession(sessionId) ? titleForEmptyPickleSession({ ...(nextContext ?? {}), cwd } as PickyContextPacket) : current.title,
+      status: "waiting_for_input",
+      cwd,
+      lastSummary: "Ready for instructions",
+      finalAnswer: undefined,
+      thinkingPreview: undefined,
+      pendingExtensionUiRequest: undefined,
+      logs: [],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [],
+      queuedSteers: [],
+      queuedFollowUps: [],
+      activitySummary: zeroActivitySummary(),
+      contextUsage: undefined,
+      piSessionFilePath: event.sessionFilePath,
+      pinned: false,
+    });
+    logAgentd("runtime session replaced", { sessionId, reason: event.reason, cwd, sessionFilePath: event.sessionFilePath });
   }
 
   private async chainEmit(sessionId: string, fn: () => Promise<void>): Promise<void> {

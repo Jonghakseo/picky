@@ -29,6 +29,7 @@ export type RuntimeEvent =
   | { type: "thinking_delta"; delta: string }
   | { type: "queue_update"; steering: readonly string[]; followUp: readonly string[] }
   | { type: "input_message"; role: "user" | "custom"; text: string; originatedBy: "user" | "main_agent" | "pi_extension" | "internal"; display?: boolean; customType?: string }
+  | { type: "session_replaced"; reason: "new"; cwd?: string; sessionFilePath?: string }
   | { type: "status"; status: RuntimeSessionStatus; summary?: string; finalAnswer?: string; noTurnRan?: boolean; preserveSessionState?: boolean; assistantRun?: RuntimeAssistantRunMetadata; compactionStarted?: boolean; compactionCompleted?: boolean; compactionReason?: string }
   | { type: "tool"; toolCallId: string; name: string; status: "running" | "succeeded" | "failed"; preview?: string; argsPreview?: string; resultPreview?: string }
   | { type: "extension_ui"; request: Record<string, unknown>; waitsForInput: boolean }
@@ -61,6 +62,7 @@ export interface RuntimeSessionHandle {
   interrupt?(prompt: BuiltPrompt): Promise<void>;
   steer(prompt: BuiltPrompt): Promise<RuntimeSteerResult>;
   abort(): Promise<void>;
+  newSession?(): Promise<{ cancelled: boolean }>;
   answerExtensionUi?(requestId: string, value: unknown): Promise<void>;
   /**
    * Append a synthetic user/assistant pair to the start of a fresh session

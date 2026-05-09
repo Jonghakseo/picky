@@ -2375,6 +2375,33 @@ struct PickySessionViewModelTests {
         #expect(card.queuedFollowUps.map(\.text) == ["queued follow-up"])
     }
 
+    @Test func sessionUpdatedWithNewPiSessionFileResetsIncrementalConversationState() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "replaced-session", status: "completed", piSessionFilePath: "/tmp/old-pi.jsonl"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "replaced-session", messageId: "m-1", text: "old answer", seq: 1))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "replaced-session", steering: [], followUp: ["old follow-up"], steeringMode: nil, followUpMode: nil, seq: 2))))
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "replaced-session",
+            title: "New Pickle · picky",
+            status: "waiting_for_input",
+            summary: "Ready for instructions",
+            updatedAt: "2026-05-01T00:00:05.000Z",
+            piSessionFilePath: "/tmp/new-pi.jsonl"
+        ))))
+        try await settle()
+
+        let card = try #require(viewModel.sessions.first)
+        #expect(card.title == "New Pickle · picky")
+        #expect(card.status == .waiting_for_input)
+        #expect(card.lastSummary == "Ready for instructions")
+        #expect(card.messages.isEmpty)
+        #expect(card.queuedFollowUps.isEmpty)
+        #expect(card.piSessionFilePath == "/tmp/new-pi.jsonl")
+    }
+
     @Test func sessionActivityUpdatedMirrorsSummary() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())

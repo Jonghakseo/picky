@@ -26,6 +26,7 @@ import { logAgentd } from "../local-log.js";
 // cannot actually execute, otherwise users will see autocomplete suggestions that silently fall
 // through to the LLM as plain user text.
 const PICKY_BUILTIN_SLASH_COMMANDS: ReadonlyArray<{ name: string; description: string }> = [
+  { name: "new", description: "Start a fresh Pi session in this Picky card" },
   { name: "name", description: "Set the Pi session display name (usage: /name <session name>)" },
   { name: "compact", description: "Manually compact the session context (optional: /compact <focus instructions>)" },
 ];
@@ -215,6 +216,17 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     logAgentd("pi abort", { sessionId: this.id });
     await this.runtime.session.abort();
     this.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+  }
+
+  async newSession(): Promise<{ cancelled: boolean }> {
+    logAgentd("pi new session", { sessionId: this.id, cwd: this.runtime.cwd });
+    const result = await this.runtime.newSession();
+    if (result.cancelled) return result;
+    await this.bindCurrentSession();
+    this.reportDiagnostics();
+    this.emit({ type: "session_replaced", reason: "new", cwd: this.runtime.cwd, sessionFilePath: this.getSessionFilePath() });
+    this.emit({ type: "status", status: "completed", summary: "New session started", noTurnRan: true, preserveSessionState: true });
+    return result;
   }
 
   async answerExtensionUi(requestId: string, value: unknown): Promise<void> {
@@ -607,14 +619,28 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     });
   }
 
-  // Pi exposes session.setSessionName() / session.compact() as public APIs but only its TUI
-  // interactive-mode wires them to /name and /compact slash commands. Picky doesn't run that
-  // mode, so we intercept the built-in slash commands here before they would otherwise be
+  // Pi exposes session.setSessionName(), runtime.newSession(), and session.compact() as public
+  // APIs but only its TUI interactive-mode wires them to /name, /new, and /compact slash commands.
+  // Picky doesn't run that mode, so we intercept the built-in slash commands here before they would otherwise be
   // forwarded to the LLM as ordinary user text. The synthetic completed/noTurnRan status keeps
   // higher layers from treating the call as a real agent turn (no Pickle-completion notification,
   // no artifact materialization).
   private async handleBuiltinSlashCommand(text: string): Promise<boolean> {
     const trimmed = text.trim();
+    if (trimmed === "/new") {
+      try {
+        const result = await this.newSession();
+        if (result.cancelled) {
+          this.emit({ type: "log", line: "/new cancelled by extension" });
+          this.emit({ type: "status", status: "completed", summary: "/new cancelled", noTurnRan: true, preserveSessionState: true });
+        }
+      } catch (error) {
+        const message = messageOf(error);
+        logAgentd("slash /new failed", { sessionId: this.id, error: message });
+        this.emit({ type: "status", status: "failed", summary: `/new failed: ${message}`, noTurnRan: true });
+      }
+      return true;
+    }
     if (trimmed === "/name" || trimmed.startsWith("/name ")) {
       const name = trimmed.replace(/^\/name\s*/, "").trim();
       if (!name) {

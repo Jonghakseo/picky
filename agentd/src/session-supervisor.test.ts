@@ -742,6 +742,41 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("Still working");
   });
 
+  it("resets the same Pickle card when /new replaces the underlying Pi session", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "기존 작업", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "기존 답변" });
+    runtime.handle?.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running", preview: "old tool" });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+    expect(supervisor.get(pickle.id)?.messages?.length).toBeGreaterThan(0);
+    expect(supervisor.get(pickle.id)?.tools.length).toBeGreaterThan(0);
+
+    runtime.handle!.onFollowUp = (handle, prompt) => {
+      if (prompt.text === "/new") void handle.newSession();
+    };
+
+    await supervisor.followUp(pickle.id, "/new");
+    await settle();
+
+    const updated = supervisor.get(pickle.id)!;
+    expect(updated.id).toBe(pickle.id);
+    expect(updated.title).toBe("New Pickle · project");
+    expect(updated.status).toBe("waiting_for_input");
+    expect(updated.lastSummary).toBe("Ready for instructions");
+    expect(updated.messages).toEqual([]);
+    expect(updated.logs).toEqual([]);
+    expect(updated.tools).toEqual([]);
+    expect(updated.artifacts).toEqual([]);
+    expect(updated.changedFiles).toEqual([]);
+    expect(updated.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });
+    expect(updated.piSessionFilePath).toBe("/tmp/manual-new-session-1.jsonl");
+  });
+
   it("keeps a running Pickle session running when /compact is rejected during an active turn", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
@@ -3219,6 +3254,8 @@ class ManualHandle implements RuntimeSessionHandle {
   bootstrapInjections: Array<{ user: string; assistant: string }> = [];
   extensionUiAnswers: Array<{ requestId: string; value: unknown }> = [];
   thinkingLevels: string[] = [];
+  newSessionCalls = 0;
+  sessionFilePath?: string;
   slashCommands: RuntimeSlashCommand[] = [];
   onFollowUp?: (handle: ManualHandle, prompt: BuiltPrompt) => void;
   onSteer?: (handle: ManualHandle, prompt: BuiltPrompt) => void;
@@ -3255,6 +3292,13 @@ class ManualHandle implements RuntimeSessionHandle {
   async abort(): Promise<void> {
     this.aborts += 1;
   }
+  async newSession(): Promise<{ cancelled: boolean }> {
+    this.newSessionCalls += 1;
+    this.sessionFilePath = `/tmp/manual-new-session-${this.newSessionCalls}.jsonl`;
+    this.emit({ type: "session_replaced", reason: "new", cwd: "/tmp/project", sessionFilePath: this.sessionFilePath });
+    this.emit({ type: "status", status: "completed", summary: "New session started", noTurnRan: true, preserveSessionState: true });
+    return { cancelled: false };
+  }
   async answerExtensionUi(requestId: string, value: unknown): Promise<void> {
     this.extensionUiAnswers.push({ requestId, value });
   }
@@ -3287,6 +3331,9 @@ class ManualHandle implements RuntimeSessionHandle {
   isStreaming = false;
   listSlashCommands(): RuntimeSlashCommand[] {
     return this.slashCommands;
+  }
+  getSessionFilePath(): string | undefined {
+    return this.sessionFilePath;
   }
   subscribe(listener: (event: RuntimeEvent) => void): () => void {
     this.listeners.add(listener);

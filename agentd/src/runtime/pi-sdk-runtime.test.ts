@@ -9,6 +9,7 @@ class FakeSession extends EventEmitter {
   followUps: string[] = [];
   steers: string[] = [];
   aborts = 0;
+  newSessions = 0;
   thinkingLevels: string[] = [];
   isStreaming = false;
   bound = false;
@@ -136,6 +137,11 @@ function makeRuntime(fakeSession: FakeSession): PiSdkRuntime {
         session: result.session,
         diagnostics: result.diagnostics,
         setRebindSession: vi.fn(),
+        cwd: options.cwd,
+        newSession: vi.fn(async () => {
+          fakeSession.newSessions += 1;
+          return { cancelled: false };
+        }),
       };
     }) as never,
   });
@@ -550,6 +556,7 @@ describe("PiSdkRuntime", () => {
 
     expect(handle.listSlashCommands).toBeDefined();
     expect(await handle.listSlashCommands!()).toEqual([
+      { name: "new", description: "Start a fresh Pi session in this Picky card", source: "builtin" },
       { name: "name", description: "Set the Pi session display name (usage: /name <session name>)", source: "builtin" },
       { name: "compact", description: "Manually compact the session context (optional: /compact <focus instructions>)", source: "builtin" },
       { name: "deploy", description: "Deploy an environment", source: "extension" },
@@ -575,6 +582,20 @@ describe("PiSdkRuntime", () => {
     const names = commands.map((command) => command.name);
     expect(names).toContain("settings");
     expect(names).toContain("diff");
+  });
+
+  it("intercepts /new as a built-in slash command and replaces the underlying Pi session", async () => {
+    const fakeSession = new FakeSession();
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-new" });
+    const events: Array<{ type: string; status?: string; noTurnRan?: boolean; preserveSessionState?: boolean; reason?: string; cwd?: string; sessionFilePath?: string; summary?: string }> = [];
+    handle.subscribe((event) => events.push(event as { type: string; status?: string; noTurnRan?: boolean; preserveSessionState?: boolean; reason?: string; cwd?: string; sessionFilePath?: string; summary?: string }));
+
+    await handle.followUp({ text: "/new", imagePaths: [] });
+
+    expect(fakeSession.newSessions).toBe(1);
+    expect(fakeSession.prompts).toEqual([]);
+    expect(events).toContainEqual({ type: "session_replaced", reason: "new", cwd: "/tmp/project", sessionFilePath: "/tmp/fake-session.jsonl" });
+    expect(events).toContainEqual({ type: "status", status: "completed", summary: "New session started", noTurnRan: true, preserveSessionState: true });
   });
 
   it("intercepts /name as a built-in slash command and renames the underlying Pi session", async () => {

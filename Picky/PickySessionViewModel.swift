@@ -1211,22 +1211,23 @@ extension PickySessionListViewModel.SessionCard {
 
     func merged(with incoming: Self, preserveConversationState: Bool = false) -> Self {
         var result = incoming
-        if !status.canTransition(to: incoming.status) {
+        let didReplacePiSession = incoming.piSessionFilePath != nil && incoming.piSessionFilePath != piSessionFilePath
+        if !didReplacePiSession && !status.canTransition(to: incoming.status) {
             result.status = status
         }
-        if result.logPreview.isEmpty { result.logPreview = logPreview }
-        if result.lastSummary.isEmpty { result.lastSummary = lastSummary }
+        if !didReplacePiSession && result.logPreview.isEmpty { result.logPreview = logPreview }
+        if !didReplacePiSession && result.lastSummary.isEmpty { result.lastSummary = lastSummary }
         // thinkingPreview is daemon-authoritative just like pendingExtensionUiRequest: the daemon
         // explicitly drops it (`patch.thinkingPreview = undefined`) on terminal status transitions
         // and on extension UI answer, so an incoming `nil` means "thinking is over". Falling back
         // to the existing value would pin the previous "Thinking: ..." text to the card and let
         // it briefly flash again the next time the session re-enters `.running` after a follow-up.
-        if result.lastRequestText == nil { result.lastRequestText = lastRequestText }
-        if result.lastRequestAt == nil { result.lastRequestAt = lastRequestAt }
-        if result.tools.isEmpty { result.tools = tools }
-        if result.artifacts.isEmpty { result.artifacts = artifacts }
-        if result.changedFiles.isEmpty { result.changedFiles = changedFiles }
-        if preserveConversationState {
+        if !didReplacePiSession && result.lastRequestText == nil { result.lastRequestText = lastRequestText }
+        if !didReplacePiSession && result.lastRequestAt == nil { result.lastRequestAt = lastRequestAt }
+        if !didReplacePiSession && result.tools.isEmpty { result.tools = tools }
+        if !didReplacePiSession && result.artifacts.isEmpty { result.artifacts = artifacts }
+        if !didReplacePiSession && result.changedFiles.isEmpty { result.changedFiles = changedFiles }
+        if preserveConversationState && !didReplacePiSession {
             // After the daemon starts sending granular conversation events, intermediate
             // sessionUpdated snapshots are still emitted for status/log/tool patches. Those
             // snapshots can legitimately represent a transient state between queue removal,

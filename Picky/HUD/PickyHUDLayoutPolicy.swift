@@ -182,12 +182,21 @@ enum PickyHUDDockLayout {
     }
 
     static func panelX(visibleFrame: CGRect, panelWidth: CGFloat, dockSide: PickyHUDDockSide, xOffset: CGFloat = 0) -> CGFloat {
+        // Mirror the Y-axis fix in `dockTopAnchoredPointAlignedPanelTopY`: AppKit
+        // normalizes window frames to whole-point bounds. If `xOffset` ever lands
+        // on a fractional value (mouse drag, clamping math) NSPanel would round
+        // origin.x differently from one `setFrame` call to the next, producing
+        // a 1pt sideways jitter as the panel is resized between sessions.
+        // Pin the panel's leading edge to a deterministic whole-point value so
+        // the dock cannot drift while the card grows or shrinks.
+        let raw: CGFloat
         switch dockSide {
         case .right:
-            return visibleFrame.maxX - panelWidth - dockRightEdgeMargin + xOffset
+            raw = visibleFrame.maxX - panelWidth - dockRightEdgeMargin + xOffset
         case .left:
-            return visibleFrame.minX + dockLeftEdgeMargin + xOffset
+            raw = visibleFrame.minX + dockLeftEdgeMargin + xOffset
         }
+        return raw.rounded(.toNearestOrEven)
     }
 
     static func clampedPanelX(visibleFrame: CGRect, panelWidth: CGFloat, dockSide: PickyHUDDockSide, xOffset: CGFloat = 0) -> CGFloat {

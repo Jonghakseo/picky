@@ -1152,7 +1152,7 @@ struct PickySessionViewModelTests {
     }
 
     @Test func hudChromeUsesSoftShadowWithShadowBleedPadding() throws {
-        #expect(PickyHUDExpansion.outerPadding == 8)
+        #expect(PickyHUDExpansion.outerPadding == 12)
         #expect(PickyHUDExpansion.dockShadowVerticalPadding > PickyHUDExpansion.outerPadding)
         #expect(PickyHUDExpansion.dockShadowVerticalPadding == PickyHUDExpansion.dockShadowRadius + abs(PickyHUDExpansion.dockShadowYOffset) + PickyHUDExpansion.dockShadowExtraBleed)
         #expect(PickyHUDExpansion.cardShadowOpacity < 0.2)

@@ -756,16 +756,16 @@ struct PickySessionViewModelTests {
         let visibleFrame = CGRect(x: 0, y: 0, width: 1200, height: 800)
         let panelWidth: CGFloat = 540
         let margin = PickyHUDDockLayout.screenMargin
-        let halfPanel = (panelWidth / 2).rounded(.down)
+        let overhang = PickyHUDDockLayout.dockOverhangLimit
 
-        // Right-docked, large positive xOffset (outward, off-screen): capped at +halfPanel
+        // Right-docked, large positive xOffset (outward, off-screen): capped at +overhang
         let rightOutwardClamped = PickyHUDDockLayout.clampedXOffset(
             10_000,
             visibleFrame: visibleFrame,
             panelWidth: panelWidth,
             dockSide: .right
         )
-        #expect(rightOutwardClamped == halfPanel)
+        #expect(rightOutwardClamped == overhang)
 
         // Right-docked, large negative xOffset (inward): capped at the visible-frame edge
         let rightInwardClamped = PickyHUDDockLayout.clampedXOffset(
@@ -778,14 +778,14 @@ struct PickySessionViewModelTests {
         let minRightX = visibleFrame.minX + margin
         #expect(rightInwardClamped == -(naturalRightX - minRightX))
 
-        // Left-docked, large negative xOffset (outward, off-screen): capped at -halfPanel
+        // Left-docked, large negative xOffset (outward, off-screen): capped at -overhang
         let leftOutwardClamped = PickyHUDDockLayout.clampedXOffset(
             -10_000,
             visibleFrame: visibleFrame,
             panelWidth: panelWidth,
             dockSide: .left
         )
-        #expect(leftOutwardClamped == -halfPanel)
+        #expect(leftOutwardClamped == -overhang)
 
         // Left-docked, large positive xOffset (inward): capped at the visible-frame edge
         let leftInwardClamped = PickyHUDDockLayout.clampedXOffset(
@@ -797,6 +797,12 @@ struct PickySessionViewModelTests {
         let naturalLeftX = visibleFrame.minX + PickyHUDDockLayout.dockLeftEdgeMargin
         let maxLeftX = visibleFrame.maxX - margin - panelWidth
         #expect(leftInwardClamped == maxLeftX - naturalLeftX)
+    }
+
+    @Test func hudDockOverhangLimitIsHalfDockRailWidth() throws {
+        // Sanity check on the overhang constant: half the dock rail width keeps
+        // half of the capsule visible so users can always grab the handle.
+        #expect(PickyHUDDockLayout.dockOverhangLimit == (PickyHUDDockLayout.railWidth / 2).rounded(.down))
     }
 
     @Test func hudDockPositionsDefaultToEmptyWhenMissingFromSettings() throws {

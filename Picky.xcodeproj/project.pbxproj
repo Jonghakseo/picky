@@ -120,6 +120,7 @@
 				28F22CBB2F56440300A0FC59 /* Sources */,
 				28F22CBC2F56440300A0FC59 /* Frameworks */,
 				28F22CBD2F56440300A0FC59 /* Resources */,
+				F3E2D1C0B9A8877655443322 /* Copy pi-extensions */,
 			);
 			buildRules = (
 			);
@@ -252,6 +253,30 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		F3E2D1C0B9A8877655443322 /* Copy pi-extensions */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/pi-extensions",
+			);
+			name = "Copy pi-extensions";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(FULL_PRODUCT_NAME)/Contents/Resources/pi-extensions",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ -d \"${SRCROOT}/pi-extensions\" ]; then\n  rm -rf \"${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}/Contents/Resources/pi-extensions\"\n  /bin/cp -R \"${SRCROOT}/pi-extensions\" \"${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}/Contents/Resources/pi-extensions\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		28F22CBB2F56440300A0FC59 /* Sources */ = {

@@ -162,6 +162,77 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(cwdCalls).toEqual(["/tmp/project"]);
   });
 
+  it("returns minimal outputs for steer and skill lookup tools", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        ...fakeToolHandlers(),
+        async steerSideSession() {
+          return {
+            id: "side-1",
+            title: "Side 1",
+            status: "running",
+            cwd: "/tmp/project",
+            createdAt: "2026-05-09T00:00:00.000Z",
+            updatedAt: "2026-05-09T00:00:01.000Z",
+            lastSummary: "summary should not be returned",
+            logs: ["log should not be returned"],
+            tools: [{ toolCallId: "tool-1", name: "bash", status: "succeeded", preview: "tool should not be returned" }],
+            artifacts: [],
+            changedFiles: [],
+            messages: [{ id: "message-1", kind: "agent_text", createdAt: "2026-05-09T00:00:00.000Z", text: "message should not be returned" }],
+          } satisfies PickyAgentSession;
+        },
+        async searchSkills() {
+          return {
+            query: "debug",
+            root: "/tmp/project",
+            roots: ["/tmp/project/.pi"],
+            total: 1,
+            skills: [{ name: "debug", description: "Debug workflow", path: "/tmp/skills/debug/SKILL.md", match: "matched snippet" }],
+          };
+        },
+        async getSkillDetails() {
+          return {
+            name: "debug",
+            description: "Debug workflow",
+            path: "/tmp/skills/debug/SKILL.md",
+            match: "matched snippet",
+            frontmatter: { name: "debug", description: "Debug workflow" },
+            content: "---\nname: debug\n---\n\nUse systematic debugging.",
+          };
+        },
+      },
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_side_steer", call_id: "call-steer", arguments: JSON.stringify({ sessionId: "side-1", message: "continue" }) } });
+    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_skills_search", call_id: "call-search", arguments: JSON.stringify({ query: "debug" }) } });
+    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_skill_details", call_id: "call-details", arguments: JSON.stringify({ name: "debug" }) } });
+    await settle();
+
+    const outputs = Object.fromEntries(socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .filter((event) => event.type === "conversation.item.create" && event.item?.type === "function_call_output")
+      .map((event) => [event.item.call_id, JSON.parse(event.item.output)]));
+
+    expect(outputs["call-steer"]).toEqual({ id: "side-1", title: "Side 1", status: "running", cwd: "/tmp/project" });
+    expect(JSON.stringify(outputs["call-steer"])).not.toContain("summary should not be returned");
+    expect(outputs["call-search"]).toEqual({ total: 1, skills: [{ name: "debug", description: "Debug workflow", match: "matched snippet" }] });
+    expect(JSON.stringify(outputs["call-search"])).not.toContain("/tmp/skills/debug/SKILL.md");
+    expect(outputs["call-details"]).toEqual({ name: "debug", description: "Debug workflow", instructions: "---\nname: debug\n---\n\nUse systematic debugging." });
+    expect(outputs["call-details"]).not.toHaveProperty("path");
+    expect(outputs["call-details"]).not.toHaveProperty("frontmatter");
+    expect(outputs["call-details"]).not.toHaveProperty("match");
+  });
+
   it("returns a minimal side session list with only id, title, cwd, and last message", async () => {
     const socket = new FakeRealtimeSocket();
     let listCalls = 0;

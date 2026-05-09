@@ -591,15 +591,15 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
           },
         );
       case "picky_side_steer":
-        return this.options.toolHandlers.steerSideSession({ sessionId: stringArg(args, "sessionId"), message: stringArg(args, "message") });
+        return summarizeRealtimeSideSteerSession(await this.options.toolHandlers.steerSideSession({ sessionId: stringArg(args, "sessionId"), message: stringArg(args, "message") }));
       case "picky_skills_search":
-        return this.options.toolHandlers.searchSkills({
+        return summarizeRealtimeSkillSearch(await this.options.toolHandlers.searchSkills({
           query: optionalStringArg(args, "query"),
           limit: numberArg(args, "limit"),
           cwd: this.cwd,
-        });
+        }));
       case "picky_skill_details":
-        return this.options.toolHandlers.getSkillDetails({ name: stringArg(args, "name"), cwd: this.cwd });
+        return summarizeRealtimeSkillDetails(await this.options.toolHandlers.getSkillDetails({ name: stringArg(args, "name"), cwd: this.cwd }));
     }
   }
 
@@ -933,6 +933,24 @@ type RealtimeSideSessionSummary = {
   lastMessage?: string;
 };
 
+type RealtimeSideSteerSummary = {
+  id: string;
+  title: string;
+  status: PickyAgentSession["status"];
+  cwd?: string;
+};
+
+type RealtimeSkillSearchSummary = {
+  total: number;
+  skills: Array<{ name: string; description: string; match?: string }>;
+};
+
+type RealtimeSkillDetailsSummary = {
+  name: string;
+  description: string;
+  instructions: string;
+};
+
 function summarizeRealtimeSideSessions(sessions: PickyAgentSession[], request: RealtimeSideSessionsRequest): {
   sessions: RealtimeSideSessionSummary[];
   page: number;
@@ -983,6 +1001,38 @@ function compactRealtimeSideSessionText(text: string | undefined): string | unde
   const compact = text?.replace(/\s+/g, " ").trim();
   if (!compact) return undefined;
   return compact.length > 240 ? `${compact.slice(0, 237)}...` : compact;
+}
+
+function summarizeRealtimeSideSteerSession(session: PickyAgentSession): RealtimeSideSteerSummary {
+  const summary: RealtimeSideSteerSummary = {
+    id: session.id,
+    title: session.title,
+    status: session.status,
+  };
+  if (session.cwd) summary.cwd = session.cwd;
+  return summary;
+}
+
+function summarizeRealtimeSkillSearch(result: { total: number; skills: PickySkillSummary[] }): RealtimeSkillSearchSummary {
+  return {
+    total: result.total,
+    skills: result.skills.map((skill) => {
+      const summary: { name: string; description: string; match?: string } = {
+        name: skill.name,
+        description: skill.description,
+      };
+      if (skill.match) summary.match = skill.match;
+      return summary;
+    }),
+  };
+}
+
+function summarizeRealtimeSkillDetails(skill: PickySkillDetails): RealtimeSkillDetailsSummary {
+  return {
+    name: skill.name,
+    description: skill.description,
+    instructions: skill.content.trim(),
+  };
 }
 
 function normalizePage(page: number | undefined): number {

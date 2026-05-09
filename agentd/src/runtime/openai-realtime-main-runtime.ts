@@ -196,7 +196,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     });
     this.sendClientEvent({
       type: "conversation.item.create",
-      item: { type: "message", role: "assistant", content: [{ type: "text", text: messages.assistant }] },
+      item: { type: "message", role: "assistant", content: [{ type: this.assistantTextContentType(), text: messages.assistant }] },
     });
     this.bootstrapped = true;
   }
@@ -356,6 +356,10 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
 
   private usesAzurePreviewProtocol(): boolean {
     return this.config?.provider === "azure_openai" && this.config.azure?.apiShape === "preview";
+  }
+
+  private assistantTextContentType(): "output_text" | "text" {
+    return this.usesAzurePreviewProtocol() ? "text" : "output_text";
   }
 
   private async sendContextForRealtimeVoice(context: PickyContextPacket): Promise<void> {

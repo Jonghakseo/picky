@@ -102,6 +102,31 @@ describe("OpenAI Realtime provider connection builders", () => {
   });
 });
 
+describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
+  it("uses GA assistant output_text content for bootstrap messages", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+
+    const sent = socket.sent.map((raw) => JSON.parse(raw) as Record<string, any>);
+    const assistantBootstrap = sent.find((event) =>
+      event.type === "conversation.item.create" && event.item?.role === "assistant"
+    )!;
+
+    expect(assistantBootstrap.item.content[0].type).toBe("output_text");
+  });
+});
+
 describe("OpenAIRealtimeMainRuntime Azure preview protocol", () => {
   it("uses preview session and response fields without GA-only session.type", async () => {
     const socket = new FakeRealtimeSocket();

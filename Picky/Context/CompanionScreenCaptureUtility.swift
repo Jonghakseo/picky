@@ -44,11 +44,18 @@ enum CompanionScreenCaptureUtility {
 
         let mouseLocation = NSEvent.mouseLocation
 
-        // Exclude all windows belonging to this app so the AI sees
-        // only the user's content, not our overlays or panels.
-        let ownBundleIdentifier = Bundle.main.bundleIdentifier
-        let ownAppWindows = content.windows.filter { window in
-            window.owningApplication?.bundleIdentifier == ownBundleIdentifier
+        // Exclude only the cursor/bubble overlay windows. Keep regular Picky UI
+        // (HUD, settings, reports, etc.) visible in screenshots so the main agent
+        // can reason about Picky's current state while transient cursor affordances
+        // stay out of the captured context.
+        let cursorOverlayWindowIDs = Set(
+            NSApp.windows.compactMap { window -> CGWindowID? in
+                guard window is OverlayWindow, window.windowNumber > 0 else { return nil }
+                return CGWindowID(window.windowNumber)
+            }
+        )
+        let excludedOverlayWindows = content.windows.filter { window in
+            cursorOverlayWindowIDs.contains(window.windowID)
         }
 
         // Build a lookup from display ID to NSScreen so we can use AppKit-coordinate
@@ -97,7 +104,7 @@ enum CompanionScreenCaptureUtility {
                           width: CGFloat(display.width), height: CGFloat(display.height))
             let isCursorScreen = displayFrame.contains(mouseLocation)
 
-            let filter = SCContentFilter(display: display, excludingWindows: ownAppWindows)
+            let filter = SCContentFilter(display: display, excludingWindows: excludedOverlayWindows)
 
             let configuration = SCStreamConfiguration()
             let maxDimension = 1280

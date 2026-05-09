@@ -11,8 +11,8 @@ enum PickyHUDExpansion {
     static let duration: TimeInterval = 0.22
     static let panelShrinkDelay: TimeInterval = duration + 0.03
     static let animation = Animation.easeInOut(duration: duration)
-    static let outerPadding: CGFloat = 8
-    static let dockShadowOpacity = 0.30
+    static let outerPadding: CGFloat = 12
+    static let dockShadowOpacity = 0.20
     static let dockShadowRadius: CGFloat = 18
     static let dockShadowYOffset: CGFloat = 10
     static let dockShadowExtraBleed: CGFloat = 4

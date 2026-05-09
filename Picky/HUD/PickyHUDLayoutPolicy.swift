@@ -190,24 +190,29 @@ enum PickyHUDDockLayout {
         }
     }
 
-    /// Clamp an X offset so the panel never goes past the visible-frame edges.
+    /// Clamp an X offset so the dock can move inward and slide up to half its width
+    /// past the screen edge. This lets users tuck the dock partially off-screen while
+    /// still keeping enough of the capsule visible to grab the handle.
     static func clampedXOffset(
         _ xOffset: CGFloat,
         visibleFrame: CGRect,
         panelWidth: CGFloat,
         dockSide: PickyHUDDockSide
     ) -> CGFloat {
+        let halfPanel = (panelWidth / 2).rounded(.down)
         switch dockSide {
         case .right:
             let minX = visibleFrame.minX + screenMargin
             let naturalX = visibleFrame.maxX - panelWidth - dockRightEdgeMargin
-            let maxShiftLeft = naturalX - minX  // negative = no shift, positive = allowed inward
-            return max(-maxShiftLeft, min(0, xOffset))
+            let maxShiftLeft = naturalX - minX
+            // Allow shifting up to half the panel width past the right edge.
+            return max(-maxShiftLeft, min(halfPanel, xOffset))
         case .left:
             let maxX = visibleFrame.maxX - screenMargin - panelWidth
             let naturalX = visibleFrame.minX + dockLeftEdgeMargin
             let maxShiftRight = maxX - naturalX
-            return min(maxShiftRight, max(0, xOffset))
+            // Allow shifting up to half the panel width past the left edge.
+            return min(maxShiftRight, max(-halfPanel, xOffset))
         }
     }
 

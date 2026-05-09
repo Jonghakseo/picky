@@ -374,6 +374,22 @@ enum PickyHUDDockSide: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// Per-display dock position state. Each display keeps its own side, anchor percent,
+/// and horizontal offset so users can place the dock differently on each monitor.
+struct PickyHUDDockPosition: Codable, Equatable {
+    var side: PickyHUDDockSide
+    var anchorPercent: Double
+    var xOffset: CGFloat
+
+    static func defaults() -> PickyHUDDockPosition {
+        PickyHUDDockPosition(
+            side: .right,
+            anchorPercent: PickySettings.defaultDockTopAnchorPercent,
+            xOffset: 0
+        )
+    }
+}
+
 /// User zoom level for the markdown report viewer and the Pi terminal overlay.
 /// Each surface keeps its own multiplier so increasing terminal cell density does not
 /// also blow up the markdown body. Bounded by `PickyFontScales.minimum`/`.maximum`
@@ -526,22 +542,11 @@ struct PickySettings: Codable, Equatable {
     var quickInputShortcut: PickyShortcutSpec
     /// Vertical anchor for the HUD dock's top edge, expressed as a percentage of the
     /// current screen's `visibleFrame` height measured from the top. Synced across all
-    /// monitors so dragging the handle on one display lands the dock at the same
-    /// relative position on every other display. Persisted in the user's settings file
-    /// after the user releases the drag handle.
-    ///
-    /// Range: `PickySettings.dockTopAnchorPercentRange` (2%–70%). 2% keeps the dock
-    /// just under the menu bar; 70% lets the dock sit far down the screen, with the
-    /// conversation card growing into the remaining space below before its internal
-    /// ScrollView absorbs overflow.
-    var hudDockTopAnchorPercent: Double
-    /// Horizontal side for the HUD dock. The conversation card opens inward from
-    /// this edge, and the value persists across app launches.
-    var hudDockSide: PickyHUDDockSide
-    /// Horizontal offset from the natural dock-side edge. Positive means shifting
-    /// inward (toward screen center) for both left and right dock sides. Clamped
-    /// at runtime so the panel never crosses a screen edge. Persists across launches.
-    var hudDockXOffset: CGFloat
+    /// Per-display dock position state keyed by display ID. Each monitor remembers
+    /// its own dock side, anchor percent, and horizontal offset so users can place
+    /// the dock independently on each screen. Falls back to `PickyHUDDockPosition.defaults()`
+    /// when a display has not yet been configured.
+    var hudDockPositions: [String: PickyHUDDockPosition]
 
     static let dockTopAnchorPercentRange: ClosedRange<Double> = 2.0...70.0
     static let defaultDockTopAnchorPercent: Double = 22.0
@@ -581,9 +586,7 @@ struct PickySettings: Codable, Equatable {
         useConversationCard: Bool = true,
         pushToTalkShortcut: PickyShortcutSpec = .defaultPushToTalk,
         quickInputShortcut: PickyShortcutSpec = .defaultQuickInput,
-        hudDockTopAnchorPercent: Double = PickySettings.defaultDockTopAnchorPercent,
-        hudDockSide: PickyHUDDockSide = .right,
-        hudDockXOffset: CGFloat = 0
+        hudDockPositions: [String: PickyHUDDockPosition] = [:]
     ) {
         self.defaultCwd = defaultCwd
         self.mainAgentCwd = mainAgentCwd ?? defaultCwd
@@ -611,9 +614,7 @@ struct PickySettings: Codable, Equatable {
         self.useConversationCard = useConversationCard
         self.pushToTalkShortcut = pushToTalkShortcut
         self.quickInputShortcut = quickInputShortcut
-        self.hudDockTopAnchorPercent = PickySettings.clampedDockTopAnchorPercent(hudDockTopAnchorPercent)
-        self.hudDockSide = hudDockSide
-        self.hudDockXOffset = hudDockXOffset
+        self.hudDockPositions = hudDockPositions
     }
 
     static func defaults(appSupportRoot: URL = PickyAppSupport.defaultRoot()) -> PickySettings {
@@ -645,9 +646,7 @@ struct PickySettings: Codable, Equatable {
             useConversationCard: true,
             pushToTalkShortcut: .defaultPushToTalk,
             quickInputShortcut: .defaultQuickInput,
-            hudDockTopAnchorPercent: PickySettings.defaultDockTopAnchorPercent,
-            hudDockSide: .right,
-            hudDockXOffset: 0
+            hudDockPositions: [:]
         )
     }
 
@@ -695,9 +694,7 @@ struct PickySettings: Codable, Equatable {
         case useConversationCard
         case pushToTalkShortcut
         case quickInputShortcut
-        case hudDockTopAnchorPercent
-        case hudDockSide
-        case hudDockXOffset
+        case hudDockPositions
     }
 
     init(from decoder: Decoder) throws {
@@ -739,10 +736,33 @@ struct PickySettings: Codable, Equatable {
         pushToTalkShortcut = (storedPTT?.isValid == true) ? storedPTT! : defaults.pushToTalkShortcut
         let storedQuickInput = try container.decodeIfPresent(PickyShortcutSpec.self, forKey: .quickInputShortcut)
         quickInputShortcut = (storedQuickInput?.isValid == true) ? storedQuickInput! : defaults.quickInputShortcut
-        let storedAnchor = try container.decodeIfPresent(Double.self, forKey: .hudDockTopAnchorPercent) ?? defaults.hudDockTopAnchorPercent
-        hudDockTopAnchorPercent = PickySettings.clampedDockTopAnchorPercent(storedAnchor)
-        hudDockSide = try container.decodeIfPresent(PickyHUDDockSide.self, forKey: .hudDockSide) ?? defaults.hudDockSide
-        hudDockXOffset = try container.decodeIfPresent(CGFloat.self, forKey: .hudDockXOffset) ?? defaults.hudDockXOffset
+
+        // Migrate from legacy flat fields (single global position) to the per-display
+        // dictionary on first read. Old settings used hudDockTopAnchorPercent, hudDockSide,
+        // and hudDockXOffset; we fold those into a single "default" entry so the dock
+        // doesn't reset for users updating in place.
+        if let storedPositions = try container.decodeIfPresent([String: PickyHUDDockPosition].self, forKey: .hudDockPositions) {
+            hudDockPositions = storedPositions
+        } else {
+            let legacyContainer = try decoder.container(keyedBy: LegacyHUDDockKeys.self)
+            let storedAnchor = try legacyContainer.decodeIfPresent(Double.self, forKey: .hudDockTopAnchorPercent)
+                ?? PickySettings.defaultDockTopAnchorPercent
+            let storedSide = try legacyContainer.decodeIfPresent(PickyHUDDockSide.self, forKey: .hudDockSide) ?? .right
+            let storedXOffset = try legacyContainer.decodeIfPresent(CGFloat.self, forKey: .hudDockXOffset) ?? 0
+            hudDockPositions = [
+                "default": PickyHUDDockPosition(
+                    side: storedSide,
+                    anchorPercent: PickySettings.clampedDockTopAnchorPercent(storedAnchor),
+                    xOffset: storedXOffset
+                )
+            ]
+        }
+    }
+
+    private enum LegacyHUDDockKeys: String, CodingKey {
+        case hudDockTopAnchorPercent
+        case hudDockSide
+        case hudDockXOffset
     }
 }
 

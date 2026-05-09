@@ -13,6 +13,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
     var token: String
     var appSupportRoot: URL
     var defaultCwd: String
+    var mainAgentCwd: String = FileManager.default.homeDirectoryForCurrentUser.path
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .medium
     var mainAgentModelPattern: String = ""
     var mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi
@@ -30,6 +31,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
         token: String = UUID().uuidString,
         appSupportRoot: URL = PickyAppSupport.defaultRoot(),
         defaultCwd: String = FileManager.default.homeDirectoryForCurrentUser.path,
+        mainAgentCwd: String = FileManager.default.homeDirectoryForCurrentUser.path,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .medium,
         mainAgentModelPattern: String = "",
         mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi,
@@ -48,6 +50,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
             token: token,
             appSupportRoot: appSupportRoot,
             defaultCwd: defaultCwd,
+            mainAgentCwd: mainAgentCwd,
             mainAgentThinkingLevel: mainAgentThinkingLevel,
             mainAgentModelPattern: mainAgentModelPattern,
             mainAgentRuntimeMode: mainAgentRuntimeMode,
@@ -61,6 +64,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
         token: String,
         appSupportRoot: URL,
         defaultCwd: String,
+        mainAgentCwd: String,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel,
         mainAgentModelPattern: String,
         mainAgentRuntimeMode: PickyMainAgentRuntimeMode,
@@ -73,6 +77,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 token: token,
                 appSupportRoot: appSupportRoot,
                 defaultCwd: defaultCwd,
+                mainAgentCwd: mainAgentCwd,
                 mainAgentThinkingLevel: mainAgentThinkingLevel,
                 mainAgentModelPattern: mainAgentModelPattern,
                 mainAgentRuntimeMode: mainAgentRuntimeMode,
@@ -90,6 +95,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 token: token,
                 appSupportRoot: appSupportRoot,
                 defaultCwd: defaultCwd,
+                mainAgentCwd: mainAgentCwd,
                 mainAgentThinkingLevel: mainAgentThinkingLevel,
                 mainAgentModelPattern: mainAgentModelPattern,
                 mainAgentRuntimeMode: mainAgentRuntimeMode,
@@ -107,6 +113,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 token: token,
                 appSupportRoot: appSupportRoot,
                 defaultCwd: defaultCwd,
+                mainAgentCwd: mainAgentCwd,
                 mainAgentThinkingLevel: mainAgentThinkingLevel,
                 mainAgentModelPattern: mainAgentModelPattern,
                 mainAgentRuntimeMode: mainAgentRuntimeMode,
@@ -126,6 +133,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 token: token,
                 appSupportRoot: appSupportRoot,
                 defaultCwd: defaultCwd,
+                mainAgentCwd: mainAgentCwd,
                 mainAgentThinkingLevel: mainAgentThinkingLevel,
                 mainAgentModelPattern: mainAgentModelPattern,
                 mainAgentRuntimeMode: mainAgentRuntimeMode,
@@ -148,6 +156,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
         env["PICKY_AGENTD_TOKEN"] = token
         env["PICKY_APP_SUPPORT_DIR"] = appSupportRoot.path
         env["PICKY_DEFAULT_CWD"] = defaultCwd
+        env["PICKY_MAIN_AGENT_CWD"] = mainAgentCwd
         env["PICKY_MAIN_AGENT_THINKING_LEVEL"] = mainAgentThinkingLevel.rawValue
         let trimmedMainAgentModel = mainAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedMainAgentModel.isEmpty {

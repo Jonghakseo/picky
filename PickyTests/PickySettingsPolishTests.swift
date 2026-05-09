@@ -11,21 +11,21 @@ struct PickySettingsPolishTests {
     @Test func companionSettingsSaveStatusIsSectionScoped() {
         var statuses = CompanionPanelSettingsSaveStatuses()
 
-        statuses.markSaved(.notifications)
+        statuses.markSaved(.notification)
 
-        #expect(statuses[.notifications] == .saved)
-        #expect(statuses[.workspace] == .idle)
+        #expect(statuses[.notification] == .saved)
+        #expect(statuses[.sideAgent] == .idle)
         #expect(statuses[.voice] == .idle)
     }
 
     @Test func companionSettingsSaveStatusResetDoesNotTouchOtherSections() {
         var statuses = CompanionPanelSettingsSaveStatuses()
-        statuses.markDirty(.workspace)
+        statuses.markDirty(.sideAgent)
         statuses.markSaved(.voice)
 
         statuses.clearSaved(.voice)
 
-        #expect(statuses[.workspace] == .dirty)
+        #expect(statuses[.sideAgent] == .dirty)
         #expect(statuses[.voice] == .idle)
     }
 

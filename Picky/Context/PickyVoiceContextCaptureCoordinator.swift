@@ -74,7 +74,7 @@ struct PickyVoiceContextCaptureCoordinator {
             ]),
             selectedTextProvider: ClipboardSelectedTextProvider(),
             screenProvider: StaticPickyScreenContextProvider(captures: screenCaptures, inkCapture: inkCapture),
-            defaultCwd: PickySettingsStore().load().defaultCwd
+            defaultCwd: PickySettingsStore().load().mainAgentCwd
         )
         return try assembler.assemble(source: source, transcript: transcript, selectedSessionId: voiceFollowUpSessionID)
     }

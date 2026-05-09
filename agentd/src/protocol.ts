@@ -274,6 +274,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("listSessions") }),
   CommandBaseSchema.extend({ type: z.literal("listMainMessages") }),
   CommandBaseSchema.extend({ type: z.literal("listMainAgentModels") }),
+  CommandBaseSchema.extend({ type: z.literal("setDefaultCwd"), defaultCwd: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("setMainAgentModel"), mainAgentModelPattern: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("setMainAgentRuntimeMode"), mode: MainAgentRuntimeModeSchema }),
   CommandBaseSchema.extend({ type: z.literal("configureMainRealtimeAuth"), ...OpenAIRealtimeAuthConfigShape }),

@@ -41,6 +41,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         let effectiveRuntimeMode = AppBundleConfiguration.realtimeOptIn ? settings.mainAgentRuntimeMode : .pi
         return PickyAgentDaemonConfiguration.development(
             defaultCwd: settings.defaultCwd,
+            mainAgentCwd: settings.mainAgentCwd,
             mainAgentThinkingLevel: settings.mainAgentThinkingLevel,
             mainAgentModelPattern: settings.mainAgentModelPattern,
             mainAgentRuntimeMode: effectiveRuntimeMode

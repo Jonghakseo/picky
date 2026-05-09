@@ -37,6 +37,7 @@ struct PickySettingsStore {
 
     func validate(_ settings: PickySettings) throws {
         try validateDirectory(settings.defaultCwd, error: .invalidDefaultCwd(settings.defaultCwd))
+        try validateDirectory(settings.mainAgentCwd, error: .invalidMainAgentCwd(settings.mainAgentCwd))
         if !settings.worktreeParent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             try validateDirectory(settings.worktreeParent, error: .invalidWorktreeParent(settings.worktreeParent))
         }

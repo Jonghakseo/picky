@@ -44,7 +44,7 @@ describe("neutral prompt builder", () => {
   it("puts handoff cwd defaults in the main-agent bootstrap", () => {
     const pair = buildMainAgentBootstrapPair();
     expect(pair.user).toContain("`picky_handoff` accepts an optional `cwd`");
-    expect(pair.user).toContain("omit it to use Picky's configured default cwd");
+    expect(pair.user).toContain("omit it to use Picky's configured side-agent default cwd");
   });
 
   it("puts compact delta-first handoff and steering guidance in the main-agent bootstrap", () => {

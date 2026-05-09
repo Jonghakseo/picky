@@ -12,6 +12,7 @@ export interface AgentdServerOptions {
   port: number;
   token: string;
   supervisor: SessionSupervisor;
+  setDefaultCwd?: (cwd: string) => void;
 }
 
 export class AgentdServer {
@@ -97,6 +98,7 @@ export class AgentdServer {
       if (command.type === "listSessions") this.send(ws, { type: "sessionSnapshot", sessions: compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession) });
       if (command.type === "listMainMessages") this.send(ws, { type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() });
       if (command.type === "listMainAgentModels") this.send(ws, { type: "mainAgentModelsSnapshot", models: await this.options.supervisor.listMainAgentModels() });
+      if (command.type === "setDefaultCwd") this.options.setDefaultCwd?.(command.defaultCwd.trim());
       if (command.type === "setMainAgentModel") await this.options.supervisor.setMainAgentModel(command.mainAgentModelPattern);
       if (command.type === "setMainAgentRuntimeMode") await this.options.supervisor.setMainAgentRuntimeMode(command.mode);
       if (command.type === "configureMainRealtimeAuth") await this.options.supervisor.configureMainRealtimeAuth(command);
@@ -216,6 +218,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, sessionId: command.sessionId };
     case "answerExtensionUi":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, requestId: command.requestId };
+    case "setDefaultCwd":
+      return { commandId: command.id, type: command.type, cwdChars: command.defaultCwd.length };
     case "setMainAgentRuntimeMode":
       return { commandId: command.id, type: command.type, mode: command.mode };
     case "setMainAgentModel":

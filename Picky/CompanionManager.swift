@@ -657,6 +657,15 @@ final class CompanionManager: ObservableObject {
         Task {
             do {
                 try await agentClient.send(PickyCommandEnvelope(
+                    type: .setDefaultCwd,
+                    defaultCwd: settings.defaultCwd.trimmingCharacters(in: .whitespacesAndNewlines)
+                ))
+                print("🎛️ Side agent default cwd applied — \(settings.defaultCwd)")
+            } catch {
+                print("⚠️ Failed to apply side agent default cwd: \(error.localizedDescription)")
+            }
+            do {
+                try await agentClient.send(PickyCommandEnvelope(
                     type: .setMainAgentThinkingLevel,
                     mainAgentThinkingLevel: settings.mainAgentThinkingLevel
                 ))

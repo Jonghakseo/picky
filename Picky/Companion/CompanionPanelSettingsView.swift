@@ -15,11 +15,10 @@ import Combine
 import SwiftUI
 
 enum CompanionPanelSettingsSection: CaseIterable, Hashable {
-    case workspace
-    case notifications
-    case cursor
-    case overlayBubbles
     case mainAgent
+    case sideAgent
+    case notification
+    case cursorBubbles
     case voice
     case shortcuts
 }
@@ -30,22 +29,20 @@ enum CompanionPanelSettingsSection: CaseIterable, Hashable {
 /// to the matching helper view inside CompanionPanelSettingsView.
 enum CompanionPanelSettingsRoute: Hashable {
     case index
-    case workspace
-    case notifications
-    case cursor
-    case overlayBubbles
     case mainAgent
+    case sideAgent
+    case notification
+    case cursorBubbles
     case voice
     case shortcuts
 
     var section: CompanionPanelSettingsSection? {
         switch self {
         case .index: nil
-        case .workspace: .workspace
-        case .notifications: .notifications
-        case .cursor: .cursor
-        case .overlayBubbles: .overlayBubbles
         case .mainAgent: .mainAgent
+        case .sideAgent: .sideAgent
+        case .notification: .notification
+        case .cursorBubbles: .cursorBubbles
         case .voice: .voice
         case .shortcuts: .shortcuts
         }
@@ -54,12 +51,11 @@ enum CompanionPanelSettingsRoute: Hashable {
     var title: String {
         switch self {
         case .index: "Settings"
-        case .workspace: "Workspace"
-        case .notifications: "Notifications"
-        case .cursor: "Cursor Buddy"
-        case .overlayBubbles: "Speech Bubbles"
         case .mainAgent: "Main Agent"
-        case .voice: "Voice"
+        case .sideAgent: "Side Agent"
+        case .notification: "Notification"
+        case .cursorBubbles: "Cursor & Bubbles"
+        case .voice: "Voice (STT & TTS)"
         case .shortcuts: "Shortcuts"
         }
     }
@@ -67,11 +63,10 @@ enum CompanionPanelSettingsRoute: Hashable {
     var subtitle: String? {
         switch self {
         case .index: nil
-        case .workspace: "Default folder for new sessions."
-        case .notifications: "Banners for session events."
-        case .cursor: "Pi cursor visibility and small animations."
-        case .overlayBubbles: "Toggle cursor-side STT and Picky reply bubbles."
-        case .mainAgent: "Reasoning and captured screen context."
+        case .mainAgent: "Runtime, cwd, reasoning, and captured screen context."
+        case .sideAgent: "Default folder for side sessions."
+        case .notification: "Banners for session events."
+        case .cursorBubbles: "Pi cursor visibility, small animations, and speech bubbles."
         case .voice: "Speech providers and language."
         case .shortcuts: "Push to Talk and Quick Input bindings."
         }
@@ -81,11 +76,10 @@ enum CompanionPanelSettingsRoute: Hashable {
 /// Order of the categories shown on the Settings index. Kept separate from
 /// the enum so we can rearrange without disturbing the type.
 private let companionPanelSettingsRouteOrder: [CompanionPanelSettingsRoute] = [
-    .workspace,
-    .notifications,
-    .cursor,
-    .overlayBubbles,
     .mainAgent,
+    .sideAgent,
+    .notification,
+    .cursorBubbles,
     .voice,
     .shortcuts
 ]
@@ -131,7 +125,8 @@ struct CompanionPanelSettingsSaveStatuses: Equatable {
 struct CompanionPanelSettingsView: View {
     @ObservedObject var viewModel: PickySettingsViewModel
     @ObservedObject var companionManager: CompanionManager
-    @State private var pathDraft: String = ""
+    @State private var mainAgentCwdDraft: String = ""
+    @State private var sideAgentCwdDraft: String = ""
     @State private var azureEndpointDraft: String = ""
     @State private var azureAPIKeyDraft: String = ""
     @State private var azureLanguageDraft: String = ""
@@ -154,20 +149,21 @@ struct CompanionPanelSettingsView: View {
         }
         .animation(.easeOut(duration: 0.16), value: route)
         .onAppear {
-            pathDraft = viewModel.settings.defaultCwd
+            mainAgentCwdDraft = viewModel.settings.mainAgentCwd
+            sideAgentCwdDraft = viewModel.settings.defaultCwd
             syncAzureDrafts()
         }
         .onChange(of: viewModel.settings.notifications) { _, _ in
             // Toggles only flip booleans, so they cannot fail directory validation.
             // Persist immediately and flash the saved indicator next to the changed
             // section only. Draft text in other sections remains untouched.
-            saveImmediately(for: .notifications)
+            saveImmediately(for: .notification)
         }
         .onChange(of: viewModel.settings.cursor) { _, _ in
-            saveImmediately(for: .cursor)
+            saveImmediately(for: .cursorBubbles)
         }
         .onChange(of: viewModel.settings.overlayBubbles) { _, _ in
-            saveImmediately(for: .overlayBubbles)
+            saveImmediately(for: .cursorBubbles)
         }
     }
 
@@ -175,11 +171,10 @@ struct CompanionPanelSettingsView: View {
     private var content: some View {
         switch route {
         case .index: indexView
-        case .workspace: workspaceSection
-        case .notifications: notificationsSection
-        case .cursor: cursorSection
-        case .overlayBubbles: overlayBubblesSection
         case .mainAgent: mainAgentSection
+        case .sideAgent: sideAgentSection
+        case .notification: notificationSection
+        case .cursorBubbles: cursorBubblesSection
         case .voice: voiceSection
         case .shortcuts: shortcutsSection
         }
@@ -246,40 +241,25 @@ struct CompanionPanelSettingsView: View {
         }
     }
 
-    private var workspaceSection: some View {
-        sectionHeader(section: .workspace, title: "Workspace") {
+    private var sideAgentSection: some View {
+        sectionHeader(section: .sideAgent, title: "Side Agent") {
             VStack(alignment: .leading, spacing: 6) {
-                fieldLabel("Default folder")
-                HStack(spacing: 7) {
-                    TextField("~/", text: $pathDraft)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundColor(DS.Colors.textSecondary)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 7)
-                        .background(
-                            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
-                        )
-                        .onChange(of: pathDraft) { _, newValue in
-                            // The user is mid-type; mark this section dirty until they
-                            // either submit (Return), pick a folder, or revert to the
-                            // persisted value. Submitting routes through onSubmit below.
-                            updateDraftStatus(for: .workspace, isDirty: newValue != viewModel.settings.defaultCwd)
-                        }
-                        .onSubmit { commitPathField() }
-                    Button("Choose") { chooseDirectory() }
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(DS.Colors.accentText)
-                        .buttonStyle(.plain)
-                        .pointerCursor()
-                }
+                fieldLabel("Default cwd")
+                cwdField(
+                    placeholder: "~/",
+                    text: $sideAgentCwdDraft,
+                    onChange: { newValue in
+                        updateDraftStatus(for: .sideAgent, isDirty: newValue != viewModel.settings.defaultCwd)
+                    },
+                    onSubmit: commitSideAgentCwdField,
+                    onChoose: chooseSideAgentDirectory
+                )
             }
         }
     }
 
-    private var notificationsSection: some View {
-        sectionHeader(section: .notifications, title: "Notifications", subtitle: "Pick which session events raise a banner.") {
+    private var notificationSection: some View {
+        sectionHeader(section: .notification, title: "Notification", subtitle: "Pick which session events raise a banner.") {
             VStack(alignment: .leading, spacing: 0) {
                 toggleRow("On success", isOn: $viewModel.settings.notifications.notifyOnCompleted, divider: true)
                 toggleRow("On failure", isOn: $viewModel.settings.notifications.notifyOnFailed, divider: true)
@@ -288,8 +268,8 @@ struct CompanionPanelSettingsView: View {
         }
     }
 
-    private var cursorSection: some View {
-        sectionHeader(section: .cursor, title: "Cursor Buddy", subtitle: "Control the Pi cursor overlay and its small motion behaviors.") {
+    private var cursorBubblesSection: some View {
+        sectionHeader(section: .cursorBubbles, title: "Cursor & Bubbles", subtitle: "Control the Pi cursor overlay, animations, and nearby speech bubbles.") {
             VStack(alignment: .leading, spacing: 0) {
                 toggleRow("Show Pi cursor", isOn: $viewModel.settings.cursor.showPiCursor, divider: true)
                 toggleRow(
@@ -301,8 +281,18 @@ struct CompanionPanelSettingsView: View {
                 toggleRow(
                     "Idle animations",
                     isOn: $viewModel.settings.cursor.enableIdleAnimations,
-                    divider: false,
+                    divider: true,
                     isEnabled: viewModel.settings.cursor.showPiCursor
+                )
+                toggleRow(
+                    "User STT recognition",
+                    isOn: $viewModel.settings.overlayBubbles.showUserSpeechRecognitionBubble,
+                    divider: true
+                )
+                toggleRow(
+                    "Picky reply text",
+                    isOn: $viewModel.settings.overlayBubbles.showPickyResponseBubble,
+                    divider: false
                 )
 
                 if !viewModel.settings.cursor.showPiCursor {
@@ -316,26 +306,26 @@ struct CompanionPanelSettingsView: View {
         }
     }
 
-    private var overlayBubblesSection: some View {
-        sectionHeader(section: .overlayBubbles, title: "Speech Bubbles", subtitle: "Choose which short speech bubbles appear beside the Pi cursor.") {
-            VStack(alignment: .leading, spacing: 0) {
-                toggleRow(
-                    "User STT recognition",
-                    isOn: $viewModel.settings.overlayBubbles.showUserSpeechRecognitionBubble,
-                    divider: true
-                )
-                toggleRow(
-                    "Picky reply text",
-                    isOn: $viewModel.settings.overlayBubbles.showPickyResponseBubble,
-                    divider: false
-                )
-            }
-        }
-    }
-
     private var mainAgentSection: some View {
-        sectionHeader(section: .mainAgent, title: "Main Agent", subtitle: "Runtime, reasoning, captured screens, and standing instructions.") {
+        sectionHeader(section: .mainAgent, title: "Main Agent", subtitle: "Runtime, cwd, reasoning, captured screens, and standing instructions.") {
             VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
+                    fieldLabel("Main Agent cwd")
+                    cwdField(
+                        placeholder: "~/",
+                        text: $mainAgentCwdDraft,
+                        onChange: { newValue in
+                            updateDraftStatus(for: .mainAgent, isDirty: newValue != viewModel.settings.mainAgentCwd)
+                        },
+                        onSubmit: commitMainAgentCwdField,
+                        onChoose: chooseMainAgentDirectory
+                    )
+                    Text("Applies to captured main-agent context and the next main-agent session.")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 if AppBundleConfiguration.realtimeOptIn {
                     VStack(alignment: .leading, spacing: 5) {
                         fieldLabel("Runtime")
@@ -578,7 +568,7 @@ struct CompanionPanelSettingsView: View {
     }
 
     private var voiceSection: some View {
-        sectionHeader(section: .voice, title: "Voice", subtitle: "Speech providers. Azure STT endpoint and key are saved in Settings.") {
+        sectionHeader(section: .voice, title: "Voice (STT & TTS)", subtitle: "Speech providers. Azure STT endpoint and key are saved in Settings.") {
             VStack(alignment: .leading, spacing: 10) {
                 providerPicker(title: "STT provider", capability: .transcription, selection: $viewModel.settings.sttProvider)
                 providerPicker(title: "TTS provider", capability: .speechPlayback, selection: $viewModel.settings.ttsProvider)
@@ -741,6 +731,34 @@ struct CompanionPanelSettingsView: View {
         }
     }
 
+    private func cwdField(
+        placeholder: String,
+        text: Binding<String>,
+        onChange: @escaping (String) -> Void,
+        onSubmit: @escaping () -> Void,
+        onChoose: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 7) {
+            TextField(placeholder, text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundColor(DS.Colors.textSecondary)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
+                )
+                .onChange(of: text.wrappedValue) { _, newValue in onChange(newValue) }
+                .onSubmit { onSubmit() }
+            Button("Choose") { onChoose() }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(DS.Colors.accentText)
+                .buttonStyle(.plain)
+                .pointerCursor()
+        }
+    }
+
     private func providerPicker(title: String, capability: PickyVoiceProviderCapability, selection: Binding<PickyVoiceProviderSelection>) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             fieldLabel(title)
@@ -761,16 +779,14 @@ struct CompanionPanelSettingsView: View {
     /// the view-model so unrelated dirty sections keep their unsaved text intact.
     private func commitEdits(in section: CompanionPanelSettingsSection) {
         switch section {
-        case .workspace:
-            commitPathField()
-        case .notifications:
-            saveImmediately(for: .notifications)
-        case .cursor:
-            saveImmediately(for: .cursor)
-        case .overlayBubbles:
-            saveImmediately(for: .overlayBubbles)
         case .mainAgent:
-            saveImmediately(for: .mainAgent)
+            commitMainAgentCwdField()
+        case .sideAgent:
+            commitSideAgentCwdField()
+        case .notification:
+            saveImmediately(for: .notification)
+        case .cursorBubbles:
+            saveImmediately(for: .cursorBubbles)
         case .voice:
             commitAzureField()
         case .shortcuts:
@@ -804,9 +820,14 @@ struct CompanionPanelSettingsView: View {
         }
     }
 
-    private func commitPathField() {
-        viewModel.settings.defaultCwd = pathDraft
-        saveImmediately(for: .workspace)
+    private func commitMainAgentCwdField() {
+        viewModel.settings.mainAgentCwd = mainAgentCwdDraft
+        saveImmediately(for: .mainAgent)
+    }
+
+    private func commitSideAgentCwdField() {
+        viewModel.settings.defaultCwd = sideAgentCwdDraft
+        saveImmediately(for: .sideAgent)
     }
 
     private func commitAzureField() {
@@ -816,15 +837,28 @@ struct CompanionPanelSettingsView: View {
         saveImmediately(for: .voice)
     }
 
-    private func chooseDirectory() {
+    private func chooseMainAgentDirectory() {
+        chooseDirectory(initialPath: mainAgentCwdDraft) { url in
+            mainAgentCwdDraft = url.path
+            commitMainAgentCwdField()
+        }
+    }
+
+    private func chooseSideAgentDirectory() {
+        chooseDirectory(initialPath: sideAgentCwdDraft) { url in
+            sideAgentCwdDraft = url.path
+            commitSideAgentCwdField()
+        }
+    }
+
+    private func chooseDirectory(initialPath: String, commit: (URL) -> Void) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.directoryURL = URL(fileURLWithPath: NSString(string: pathDraft).expandingTildeInPath, isDirectory: true)
+        panel.directoryURL = URL(fileURLWithPath: NSString(string: initialPath).expandingTildeInPath, isDirectory: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        pathDraft = url.path
-        commitPathField()
+        commit(url)
     }
 
     /// Persist whatever is currently in `viewModel.settings`, then briefly flash the
@@ -832,6 +866,9 @@ struct CompanionPanelSettingsView: View {
     /// section falls back to dirty; the validation message itself renders at the
     /// bottom of the form.
     private func saveImmediately(for section: CompanionPanelSettingsSection) {
+        if section == .mainAgent, mainAgentCwdDraft != viewModel.settings.mainAgentCwd {
+            viewModel.settings.mainAgentCwd = mainAgentCwdDraft
+        }
         let succeeded = viewModel.save()
         if succeeded {
             syncDraft(for: section)
@@ -846,9 +883,11 @@ struct CompanionPanelSettingsView: View {
 
     private func syncDraft(for section: CompanionPanelSettingsSection) {
         switch section {
-        case .workspace:
-            pathDraft = viewModel.settings.defaultCwd
-        case .notifications, .cursor, .overlayBubbles, .mainAgent, .shortcuts:
+        case .mainAgent:
+            mainAgentCwdDraft = viewModel.settings.mainAgentCwd
+        case .sideAgent:
+            sideAgentCwdDraft = viewModel.settings.defaultCwd
+        case .notification, .cursorBubbles, .shortcuts:
             break
         case .voice:
             syncAzureDrafts()

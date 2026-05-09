@@ -18,7 +18,9 @@ import { logAgentd } from "./local-log.js";
 const port = Number(process.env.PICKY_AGENTD_PORT ?? 17631);
 const token = process.env.PICKY_AGENTD_TOKEN;
 const appSupportDir = process.env.PICKY_APP_SUPPORT_DIR ?? defaultAppSupportRoot();
-const defaultCwd = process.env.PICKY_DEFAULT_CWD ?? process.cwd();
+const initialDefaultCwd = process.env.PICKY_DEFAULT_CWD ?? process.cwd();
+const currentDefaultCwd = { value: initialDefaultCwd };
+const mainAgentCwd = process.env.PICKY_MAIN_AGENT_CWD ?? initialDefaultCwd;
 const mainAgentThinkingLevel = parseMainAgentThinkingLevel(process.env.PICKY_MAIN_AGENT_THINKING_LEVEL);
 const mainAgentModelPattern = process.env.PICKY_MAIN_AGENT_MODEL?.trim() || undefined;
 const mainAgentRuntimeMode = process.env.PICKY_MAIN_AGENT_RUNTIME === "openai-realtime" ? "openai-realtime" : "pi";
@@ -39,7 +41,7 @@ if (!token) {
 installExtensionCrashGuard();
 
 const useMockRuntime = process.env.PICKY_AGENTD_RUNTIME === "mock";
-logAgentd("startup", { port, runtime: useMockRuntime ? "mock" : "pi", mainAgentRuntimeMode, appSupportDir, defaultCwd, mainAgentThinkingLevel, mainAgentModelPattern });
+logAgentd("startup", { port, runtime: useMockRuntime ? "mock" : "pi", mainAgentRuntimeMode, appSupportDir, defaultCwd: currentDefaultCwd.value, mainAgentCwd, mainAgentThinkingLevel, mainAgentModelPattern });
 let supervisor: SessionSupervisor;
 const askUserQuestionTool = createPickyAskUserQuestionTool();
 const skillCatalog = new PickySkillCatalog();
@@ -64,7 +66,7 @@ const piMainRuntime = useMockRuntime
         createPickyHandoffTool(async (request) => {
           const context = supervisor.currentMainContext();
           if (!context) throw new Error("No active Picky main-agent context to hand off.");
-          const cwd = request.cwd?.trim() || context.cwd || defaultCwd;
+          const cwd = request.cwd?.trim() || currentDefaultCwd.value;
           logAgentd("handoff requested", { contextId: context.id, titleChars: request.title.length, instructionChars: request.instructions.length, cwd });
           supervisor.announceMainHandoff(
             context.id,
@@ -91,7 +93,7 @@ const realtimeMainRuntime = useMockRuntime
         handoff: async (request) => {
           const context = supervisor.currentMainContext();
           if (!context) throw new Error("No active Picky main-agent context to hand off.");
-          const cwd = request.cwd?.trim() || context.cwd || defaultCwd;
+          const cwd = request.cwd?.trim() || currentDefaultCwd.value;
           logAgentd("handoff requested", { contextId: context.id, titleChars: request.title.length, instructionChars: request.instructions.length, cwd });
           supervisor.announceMainHandoff(
             context.id,
@@ -125,7 +127,15 @@ supervisor = new SessionSupervisor(runtime, new SessionStore(appSupportDir), {
   mainRuntime,
 });
 await supervisor.load();
-const server = new AgentdServer({ port, token, supervisor });
+const server = new AgentdServer({
+  port,
+  token,
+  supervisor,
+  setDefaultCwd: (cwd) => {
+    currentDefaultCwd.value = cwd;
+    logAgentd("default cwd updated", { defaultCwd: cwd });
+  },
+});
 const boundPort = await server.start();
 const connectionInfoPath = await writeConnectionInfo(appSupportDir, {
   protocolVersion: PROTOCOL_VERSION,
@@ -134,15 +144,15 @@ const connectionInfoPath = await writeConnectionInfo(appSupportDir, {
   port: boundPort,
   pid: process.pid,
   appSupportDir,
-  defaultCwd,
+  defaultCwd: currentDefaultCwd.value,
   startedAt: new Date().toISOString(),
 });
 logAgentd("connection info written", { path: connectionInfoPath });
 console.log(`picky-agentd listening on 127.0.0.1:${boundPort}`);
 
 if (mainRuntime) {
-  void supervisor.prewarmMainAgent(defaultCwd)
-    .then(() => console.log(`picky main agent prewarmed for ${defaultCwd}`))
+  void supervisor.prewarmMainAgent(mainAgentCwd)
+    .then(() => console.log(`picky main agent prewarmed for ${mainAgentCwd}`))
     .catch((error) => console.error(`picky main agent prewarm failed: ${error instanceof Error ? error.message : String(error)}`));
 }
 

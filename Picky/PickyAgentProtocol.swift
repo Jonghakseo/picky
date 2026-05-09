@@ -21,6 +21,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var artifactId: String?
     var enabled: Bool?
     var archived: Bool?
+    var defaultCwd: String?
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel?
     var mainAgentModelPattern: String?
     var direction: PickyModelCycleDirection?
@@ -54,6 +55,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         artifactId: String? = nil,
         enabled: Bool? = nil,
         archived: Bool? = nil,
+        defaultCwd: String? = nil,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel? = nil,
         mainAgentModelPattern: String? = nil,
         direction: PickyModelCycleDirection? = nil,
@@ -83,6 +85,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.artifactId = artifactId
         self.enabled = enabled
         self.archived = archived
+        self.defaultCwd = defaultCwd
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
         self.mainAgentModelPattern = mainAgentModelPattern
         self.direction = direction
@@ -130,6 +133,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case listSessions
     case listMainMessages
     case listMainAgentModels
+    case setDefaultCwd
     case setMainAgentModel
     case setMainAgentRuntimeMode
     case configureMainRealtimeAuth

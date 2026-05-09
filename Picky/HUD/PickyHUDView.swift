@@ -79,10 +79,10 @@ struct PickyHUDView: View {
                 maxHeight: .infinity,
                 alignment: placement.dockSide == .left ? .topLeading : .topTrailing
             )
-            // Animate only expand/collapse sizing. The conversation card itself opts out
-            // of insertion/removal transitions so the HUD appears and disappears without
-            // a fade while still avoiding cross-fades between dock-hovered sessions.
-            .animation(PickyHUDExpansion.animation, value: activeSession != nil)
+            // Do not implicitly animate the initial card insertion. The card contains
+            // ScrollView/TextEditor subtrees that perform one-frame measurement and
+            // bottom-pinning on appear; animating that first layout exposes transient
+            // pre-scroll positions as rows/composer floating outside the card.
             .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: handleHUDSizeChange)
             .onDisappear {
                 closeExpansionTask?.cancel()
@@ -168,12 +168,8 @@ struct PickyHUDView: View {
                 onDockHandleDoubleClick: onDockHandleDoubleClick
             )
             .frame(width: PickyHUDDockLayout.railWidth)
-            // Suppress the implicit layout animation triggered by the outer body's
-            // `.animation(_:value: activeSession != nil)` for the dock rail. Without
-            // this, the first hover that brings the conversation card in animates
-            // the HStack height interpolation through the dock-rail subtree, which
-            // briefly drops the dock capsule by a few points before the panel
-            // resize settles — the "덜컹" the user reported.
+            // Keep rail state changes instantaneous; the conversation card handles
+            // its own sizing and scroll stabilization when it appears.
             .transaction(value: activeSession?.id) { transaction in
                 transaction.animation = nil
             }
@@ -335,6 +331,19 @@ final class PickyHUDSizeReporter {
 
         guard activeSessionChanged || !lastReportedHUDSize.isApproximatelyEqual(to: targetSize) else { return }
         lastReportedHUDSize = targetSize
+
+        if activeSessionChanged {
+            // First hover opens the conversation card while the NSPanel is still at
+            // its dock-only collapsed height. If we coalesce this resize for a frame,
+            // SwiftUI can draw the newly inserted ScrollView/TextEditor against the
+            // stale panel bounds, exposing transient pre-scroll layout outside the
+            // card. Grow the outer panel immediately for session switches; keep
+            // coalescing only for streaming/content churn after the card is visible.
+            cancelPendingReport()
+            onSizeChange(targetSize)
+            return
+        }
+
         scheduleReport(targetSize, onSizeChange: onSizeChange)
     }
 

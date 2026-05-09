@@ -63,12 +63,12 @@ struct PickyConversationListView: View {
                 // because the first attempt could land at the top before the
                 // anchor was materialized; a single scroll after one frame
                 // lands cleanly.
-                try? await Task.sleep(nanoseconds: 16_000_000)
-                scrollToBottom(proxy: proxy, animated: false)
+                try? await Task.sleep(nanoseconds: PickyConversationScrollPolicy.initialScrollDelayNanoseconds)
+                scrollToBottom(proxy: proxy, animated: PickyConversationScrollPolicy.shouldAnimateScroll(hasAppeared: hasAppeared))
                 hasAppeared = true
             }
             .onChange(of: session.messages.last?.id) { _, _ in
-                scrollToBottom(proxy: proxy, animated: hasAppeared)
+                scrollToBottom(proxy: proxy, animated: PickyConversationScrollPolicy.shouldAnimateScroll(hasAppeared: hasAppeared))
             }
         }
     }
@@ -366,16 +366,32 @@ struct PickyConversationListView: View {
     private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool) {
         DispatchQueue.main.async {
             if animated {
-                withAnimation(.easeOut(duration: 0.18)) {
+                withAnimation(PickyConversationScrollPolicy.liveUpdateAnimation) {
                     proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
                 }
             } else {
-                proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                // First hover can inherit the HUD reveal transaction. Force the
+                // initial bottom pin to be instantaneous so the user never sees
+                // the list animate from its top/pre-measure content offset.
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                }
             }
         }
     }
 
     private static let bottomAnchorID = "__picky_conversation_bottom_anchor__"
+}
+
+enum PickyConversationScrollPolicy {
+    static let initialScrollDelayNanoseconds: UInt64 = 16_000_000
+    static let liveUpdateAnimation = Animation.easeOut(duration: 0.18)
+
+    static func shouldAnimateScroll(hasAppeared: Bool) -> Bool {
+        hasAppeared
+    }
 }
 
 struct PickyConversationListRenderSnapshot: Equatable {

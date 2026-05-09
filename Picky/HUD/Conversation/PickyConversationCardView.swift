@@ -45,6 +45,10 @@ struct PickyConversationCardView: View {
         // a hardcoded 1080. PickyConversationListView's ScrollView absorbs anything
         // taller than this cap.
         .frame(minHeight: 320, maxHeight: maxHeight, alignment: .top)
+        // During first hover the NSPanel grows after SwiftUI reports the measured
+        // content size. Without clipping, children can render past the temporary
+        // card frame while ScrollView/TextEditor settle into their final layout.
+        .clipped()
         .background(cardBackground)
         .contentShape(Rectangle())
         .onDrop(of: PickyConversationFileDrop.acceptedTypeIdentifiers, isTargeted: $isFileDropTargeted, perform: handleFileDrop)

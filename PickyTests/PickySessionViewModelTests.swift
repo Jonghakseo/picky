@@ -586,16 +586,27 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDExpansion.contentFrameHeight(isExpanded: true, measuredHeight: 0) == nil)
     }
 
-    @Test func hudSizeReporterCoalescesPreferenceBurstsBeforeResizingPanel() async throws {
+    @Test func conversationListOnlyAnimatesScrollAfterInitialAppear() throws {
+        #expect(!PickyConversationScrollPolicy.shouldAnimateScroll(hasAppeared: false))
+        #expect(PickyConversationScrollPolicy.shouldAnimateScroll(hasAppeared: true))
+        #expect(PickyConversationScrollPolicy.initialScrollDelayNanoseconds == 16_000_000)
+    }
+
+    @Test func hudSizeReporterReportsActiveSessionSwitchImmediatelyThenCoalescesPreferenceBursts() async throws {
         let reporter = PickyHUDSizeReporter(coalescingDelayNanoseconds: 1_000_000)
         var reports: [CGSize] = []
 
-        reporter.handleMeasuredSize(CGSize(width: 100, height: 100), activeSessionID: "agent-a", shouldHoldHeight: false) { reports.append($0) }
+        reporter.handleMeasuredSize(CGSize(width: 100, height: 100), activeSessionID: nil, shouldHoldHeight: false) { reports.append($0) }
+        #expect(reports.isEmpty)
+
         reporter.handleMeasuredSize(CGSize(width: 100, height: 120), activeSessionID: "agent-a", shouldHoldHeight: false) { reports.append($0) }
+        #expect(reports == [CGSize(width: 100, height: 120)])
+
         reporter.handleMeasuredSize(CGSize(width: 100, height: 140), activeSessionID: "agent-a", shouldHoldHeight: false) { reports.append($0) }
+        reporter.handleMeasuredSize(CGSize(width: 100, height: 160), activeSessionID: "agent-a", shouldHoldHeight: false) { reports.append($0) }
         try await Task.sleep(nanoseconds: 10_000_000)
 
-        #expect(reports == [CGSize(width: 100, height: 140)])
+        #expect(reports == [CGSize(width: 100, height: 120), CGSize(width: 100, height: 160)])
     }
 
     @Test func hudSizeReporterKeepsRunningPanelHeightFromShrinking() async throws {

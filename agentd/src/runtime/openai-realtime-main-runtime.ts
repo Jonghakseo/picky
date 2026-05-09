@@ -929,15 +929,8 @@ type RealtimeSideSessionsRequest = { includeTerminal?: boolean; page?: number; l
 type RealtimeSideSessionSummary = {
   id: string;
   title: string;
-  status: PickyAgentSession["status"];
   cwd?: string;
-  updatedAt: string;
-  lastSummary?: string;
-  finalAnswer?: string;
-  thinkingPreview?: string;
-  tools?: Array<{ name: string; status: string; preview?: string; resultPreview?: string }>;
-  artifacts?: Array<{ id: string; kind: string; title: string }>;
-  changedFiles?: Array<{ path: string; status: string; summary?: string }>;
+  lastMessage?: string;
 };
 
 function summarizeRealtimeSideSessions(sessions: PickyAgentSession[], request: RealtimeSideSessionsRequest): {
@@ -947,7 +940,6 @@ function summarizeRealtimeSideSessions(sessions: PickyAgentSession[], request: R
   total: number;
   hasMore: boolean;
   nextPage?: number;
-  instruction: string;
 } {
   const includeTerminal = request.includeTerminal !== false;
   const page = normalizePage(request.page);
@@ -963,29 +955,34 @@ function summarizeRealtimeSideSessions(sessions: PickyAgentSession[], request: R
     total: filtered.length,
     hasMore,
     nextPage: hasMore ? page + 1 : undefined,
-    instruction: "Use a returned session.id with picky_side_steer when the user's request should update an existing side agent; otherwise call picky_handoff for new delegated work.",
   };
 }
 
 function summarizeRealtimeSideSession(session: PickyAgentSession): RealtimeSideSessionSummary {
-  return removeUndefined({
+  const summary: RealtimeSideSessionSummary = {
     id: session.id,
     title: session.title,
-    status: session.status,
-    cwd: session.cwd,
-    updatedAt: session.updatedAt,
-    lastSummary: session.lastSummary,
-    finalAnswer: session.finalAnswer,
-    thinkingPreview: session.thinkingPreview,
-    tools: session.tools.slice(-5).map((tool) => removeUndefined({
-      name: tool.name,
-      status: tool.status,
-      preview: tool.preview,
-      resultPreview: tool.resultPreview,
-    })),
-    artifacts: session.artifacts.slice(-5).map((artifact) => ({ id: artifact.id, kind: artifact.kind, title: artifact.title })),
-    changedFiles: session.changedFiles.slice(-10).map((file) => removeUndefined({ path: file.path, status: file.status, summary: file.summary })),
-  });
+  };
+  if (session.cwd) summary.cwd = session.cwd;
+  const lastMessage = lastSideSessionMessage(session);
+  if (lastMessage) summary.lastMessage = lastMessage;
+  return summary;
+}
+
+function lastSideSessionMessage(session: PickyAgentSession): string | undefined {
+  const messages = session.messages ?? [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    const text = message.text ?? message.errorMessage ?? message.question?.prompt ?? message.question?.title;
+    if (text?.trim()) return compactRealtimeSideSessionText(text);
+  }
+  return compactRealtimeSideSessionText(session.finalAnswer ?? session.lastSummary ?? session.thinkingPreview);
+}
+
+function compactRealtimeSideSessionText(text: string | undefined): string | undefined {
+  const compact = text?.replace(/\s+/g, " ").trim();
+  if (!compact) return undefined;
+  return compact.length > 240 ? `${compact.slice(0, 237)}...` : compact;
 }
 
 function normalizePage(page: number | undefined): number {
@@ -996,13 +993,6 @@ function normalizePage(page: number | undefined): number {
 function clampRealtimeSideSessionLimit(limit: number | undefined): number {
   if (typeof limit !== "number" || !Number.isFinite(limit)) return REALTIME_SIDE_SESSIONS_DEFAULT_LIMIT;
   return Math.max(1, Math.min(REALTIME_SIDE_SESSIONS_MAX_LIMIT, Math.floor(limit)));
-}
-
-function removeUndefined<T extends Record<string, unknown>>(value: T): T {
-  for (const key of Object.keys(value)) {
-    if (value[key] === undefined) delete value[key];
-  }
-  return value;
 }
 
 async function imagePathToDataUrl(path: string): Promise<string | undefined> {

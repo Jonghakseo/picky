@@ -162,7 +162,7 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(cwdCalls).toEqual(["/tmp/project"]);
   });
 
-  it("summarizes side sessions for function output and applies pagination", async () => {
+  it("returns a minimal side session list with only id, title, cwd, and last message", async () => {
     const socket = new FakeRealtimeSocket();
     let listCalls = 0;
     const runtime = new OpenAIRealtimeMainRuntime({
@@ -179,10 +179,13 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
             updatedAt: `2026-05-09T00:00:0${index}.000Z`,
             lastSummary: `Summary ${index + 1}`,
             logs: ["very long raw log that should not be returned"],
-            tools: [],
-            artifacts: [],
-            changedFiles: [],
-            messages: [{ id: "message-1", kind: "agent_text", createdAt: "2026-05-09T00:00:00.000Z", text: "raw transcript should not be returned" }],
+            tools: [{ toolCallId: "tool-1", name: "bash", status: "succeeded", startedAt: "2026-05-09T00:00:00.000Z", endedAt: "2026-05-09T00:00:00.000Z", preview: "tool preview should not be returned" }],
+            artifacts: [{ id: "artifact-1", kind: "report", title: "artifact should not be returned", path: "/tmp/artifact.md", updatedAt: "2026-05-09T00:00:00.000Z" }],
+            changedFiles: [{ path: "file.ts", status: "modified", summary: "changed file should not be returned" }],
+            messages: [
+              { id: "message-1", kind: "agent_text", createdAt: "2026-05-09T00:00:00.000Z", text: "older message should not be returned" },
+              { id: "message-2", kind: "agent_text", createdAt: "2026-05-09T00:00:01.000Z", text: `Last message ${index + 1}` },
+            ],
           } satisfies PickyAgentSession));
         },
       },
@@ -212,11 +215,18 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     const payload = JSON.parse(output.item.output);
 
     expect(listCalls).toBe(1);
-    expect(payload.sessions.map((session: Record<string, unknown>) => session.id)).toEqual(["side-1", "side-3"]);
+    expect(payload.sessions).toEqual([
+      { id: "side-1", title: "Side 1", cwd: "/tmp/project", lastMessage: "Last message 1" },
+      { id: "side-3", title: "Side 3", cwd: "/tmp/project", lastMessage: "Last message 3" },
+    ]);
     expect(payload.total).toBe(3);
     expect(payload.hasMore).toBe(true);
+    expect(payload).not.toHaveProperty("instruction");
     expect(output.item.output).not.toContain("very long raw log");
-    expect(output.item.output).not.toContain("raw transcript should not be returned");
+    expect(output.item.output).not.toContain("tool preview should not be returned");
+    expect(output.item.output).not.toContain("artifact should not be returned");
+    expect(output.item.output).not.toContain("changed file should not be returned");
+    expect(output.item.output).not.toContain("older message should not be returned");
   });
 
   it("executes each realtime function call only once when GA emits multiple done events", async () => {

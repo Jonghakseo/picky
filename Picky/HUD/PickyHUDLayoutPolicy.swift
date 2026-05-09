@@ -190,6 +190,71 @@ enum PickyHUDDockLayout {
         }
     }
 
+    static func clampedPanelX(visibleFrame: CGRect, panelWidth: CGFloat, dockSide: PickyHUDDockSide, xOffset: CGFloat = 0) -> CGFloat {
+        let safeOffset = clampedXOffset(
+            xOffset,
+            visibleFrame: visibleFrame,
+            panelWidth: panelWidth,
+            dockSide: dockSide
+        )
+        return panelX(
+            visibleFrame: visibleFrame,
+            panelWidth: panelWidth,
+            dockSide: dockSide,
+            xOffset: safeOffset
+        )
+    }
+
+    static func dockRailCenterX(
+        visibleFrame: CGRect,
+        panelWidth: CGFloat,
+        dockSide: PickyHUDDockSide,
+        xOffset: CGFloat = 0
+    ) -> CGFloat {
+        let x = panelX(
+            visibleFrame: visibleFrame,
+            panelWidth: panelWidth,
+            dockSide: dockSide,
+            xOffset: xOffset
+        )
+        switch dockSide {
+        case .right:
+            return x + panelWidth - PickyHUDExpansion.outerPadding - (railWidth / 2)
+        case .left:
+            return x + PickyHUDExpansion.outerPadding + (railWidth / 2)
+        }
+    }
+
+    static func dockSide(forDockRailCenterX dockRailCenterX: CGFloat, visibleFrame: CGRect) -> PickyHUDDockSide {
+        dockRailCenterX < visibleFrame.midX ? .left : .right
+    }
+
+    static func xOffset(
+        forDockRailCenterX dockRailCenterX: CGFloat,
+        visibleFrame: CGRect,
+        panelWidth: CGFloat,
+        dockSide: PickyHUDDockSide
+    ) -> CGFloat {
+        let naturalPanelX = panelX(
+            visibleFrame: visibleFrame,
+            panelWidth: panelWidth,
+            dockSide: dockSide
+        )
+        let naturalDockRailCenterX: CGFloat
+        switch dockSide {
+        case .right:
+            naturalDockRailCenterX = naturalPanelX + panelWidth - PickyHUDExpansion.outerPadding - (railWidth / 2)
+        case .left:
+            naturalDockRailCenterX = naturalPanelX + PickyHUDExpansion.outerPadding + (railWidth / 2)
+        }
+        return clampedXOffset(
+            dockRailCenterX - naturalDockRailCenterX,
+            visibleFrame: visibleFrame,
+            panelWidth: panelWidth,
+            dockSide: dockSide
+        )
+    }
+
     /// Maximum number of points the dock capsule may slide past the screen edge
     /// in either direction. Half the dock rail width keeps half of the capsule
     /// visible so the handle is always grabbable.

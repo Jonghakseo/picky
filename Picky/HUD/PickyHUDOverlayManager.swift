@@ -325,8 +325,20 @@ final class PickyHUDOverlayManager {
             topPaddingFromContentTop: topPadding,
             anchorPercent: pos.anchorPercent
         )
+        let safeXOffset = PickyHUDDockLayout.clampedXOffset(
+            pos.xOffset,
+            visibleFrame: visibleFrame,
+            panelWidth: width,
+            dockSide: pos.side
+        )
+        if safeXOffset != pos.xOffset {
+            var normalizedPosition = pos
+            normalizedPosition.xOffset = safeXOffset
+            setPosition(normalizedPosition, for: displayID)
+        }
+
         return NSRect(
-            x: PickyHUDDockLayout.panelX(
+            x: PickyHUDDockLayout.clampedPanelX(
                 visibleFrame: visibleFrame,
                 panelWidth: width,
                 dockSide: pos.side,
@@ -429,12 +441,11 @@ final class PickyHUDOverlayManager {
         }
     }
 
-    // MARK: - Dock handle drag / side toggle
+    // MARK: - Dock handle drag / reset
 
     private func handleDockHandleDoubleClick(displayID: CGDirectDisplayID) {
-        var pos = position(for: displayID)
-        pos.side = pos.side.toggled
-        pos.xOffset = 0  // Reset offset when toggling sides for predictable behavior
+        dragStartPositionsByDisplayID = nil
+        let pos = PickyHUDDockPosition.defaults()
         setPosition(pos, for: displayID)
         // Only update the placement for this display so other monitors stay put.
         if let entry = panelsByDisplayID[displayID] {
@@ -450,7 +461,7 @@ final class PickyHUDOverlayManager {
     private func handleDockDragChanged(displayID: CGDirectDisplayID, delta: CGPoint) {
         guard let screen = screen(for: displayID) else { return }
         let visibleFrame = screen.visibleFrame
-        guard visibleFrame.height > 0 else { return }
+        guard visibleFrame.width > 0, visibleFrame.height > 0 else { return }
 
         var pos = position(for: displayID)
 
@@ -458,15 +469,29 @@ final class PickyHUDOverlayManager {
         if dragStartPositionsByDisplayID == nil {
             dragStartPositionsByDisplayID = currentPositionsByDisplayID
         }
-        let startPos = dragStartPositionsByDisplayID?[String(displayID)] ?? pos
+        let startPositions = dragStartPositionsByDisplayID ?? currentPositionsByDisplayID
+        let startPos = PickyHUDDockPosition.resolved(
+            in: startPositions,
+            displayKey: String(displayID)
+        )
         let dPct = -(Double(delta.y) / Double(visibleFrame.height)) * 100.0
         pos.anchorPercent = PickySettings.clampedDockTopAnchorPercent(
             startPos.anchorPercent + dPct
         )
 
-        // -- X axis: horizontal offset --
-        pos.xOffset = PickyHUDDockLayout.clampedXOffset(
-            startPos.xOffset + delta.x,
+        // -- X axis: horizontal offset and side --
+        let draggedDockCenterX = PickyHUDDockLayout.dockRailCenterX(
+            visibleFrame: visibleFrame,
+            panelWidth: width,
+            dockSide: startPos.side,
+            xOffset: startPos.xOffset
+        ) + delta.x
+        pos.side = PickyHUDDockLayout.dockSide(
+            forDockRailCenterX: draggedDockCenterX,
+            visibleFrame: visibleFrame
+        )
+        pos.xOffset = PickyHUDDockLayout.xOffset(
+            forDockRailCenterX: draggedDockCenterX,
             visibleFrame: visibleFrame,
             panelWidth: width,
             dockSide: pos.side

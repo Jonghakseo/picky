@@ -4,7 +4,7 @@
 //
 //  Per-panel reactive placement state shared between PickyHUDOverlayManager and the
 //  SwiftUI HUD view. Exposes the max card height and horizontal dock side so the
-//  HUD adapts to wherever the user has dragged or toggled the dock.
+//  HUD adapts to wherever the user has dragged or reset the dock.
 //
 
 import Combine
@@ -20,8 +20,8 @@ final class PickyHUDPlacement: ObservableObject {
     /// the user drags the dock anchor or the screen configuration changes.
     @Published var availableCardMaxHeight: CGFloat
     /// Horizontal edge where the dock is anchored. Updated immediately when the user
-    /// double-clicks the handle so SwiftUI can mirror the card/dock order without
-    /// rebuilding the hosting view.
+    /// drags across the screen midpoint or resets the handle so SwiftUI can mirror
+    /// the card/dock order without rebuilding the hosting view.
     @Published var dockSide: PickyHUDDockSide
 
     /// Default fallback used while the placement hasn't been hydrated yet (e.g. during

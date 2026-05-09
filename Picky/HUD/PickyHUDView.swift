@@ -540,7 +540,7 @@ private struct PickyHUDDockRailView: View {
                 .allowsHitTesting(false)
         }
         .accessibilityLabel("HUD dock handle")
-        .accessibilityHint("Drag up or down to move the side-agent dock between 2% and 70% of the screen. Double-click to switch the dock between the left and right screen edges.")
+        .accessibilityHint("Drag to move the side-agent dock. Crossing the middle of the screen switches the dock edge. Double-click to reset the dock to its default position.")
     }
 
     /// Frosted-glass capsule that hosts the dock icons. Uses .ultraThinMaterial

@@ -798,6 +798,71 @@ struct PickySessionViewModelTests {
         #expect(leftInwardClamped == maxLeftX - naturalLeftX)
     }
 
+    @Test func hudDockPanelXClampsPersistedOffsetsBeforePlacement() throws {
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1200, height: 800)
+        let panelWidth: CGFloat = 540
+        let overhang = PickyHUDDockLayout.dockOverhangLimit
+
+        let naturalRightX = PickyHUDDockLayout.panelX(
+            visibleFrame: visibleFrame,
+            panelWidth: panelWidth,
+            dockSide: .right
+        )
+        #expect(
+            PickyHUDDockLayout.clampedPanelX(
+                visibleFrame: visibleFrame,
+                panelWidth: panelWidth,
+                dockSide: .right,
+                xOffset: 10_000
+            ) == naturalRightX + overhang
+        )
+
+        let naturalLeftX = PickyHUDDockLayout.panelX(
+            visibleFrame: visibleFrame,
+            panelWidth: panelWidth,
+            dockSide: .left
+        )
+        #expect(
+            PickyHUDDockLayout.clampedPanelX(
+                visibleFrame: visibleFrame,
+                panelWidth: panelWidth,
+                dockSide: .left,
+                xOffset: -10_000
+            ) == naturalLeftX - overhang
+        )
+    }
+
+    @Test func hudDockSideSwitchesAtVisibleFrameMidpoint() throws {
+        let visibleFrame = CGRect(x: 100, y: 0, width: 1200, height: 800)
+
+        #expect(PickyHUDDockLayout.dockSide(forDockRailCenterX: visibleFrame.midX - 0.1, visibleFrame: visibleFrame) == .left)
+        #expect(PickyHUDDockLayout.dockSide(forDockRailCenterX: visibleFrame.midX, visibleFrame: visibleFrame) == .right)
+        #expect(PickyHUDDockLayout.dockSide(forDockRailCenterX: visibleFrame.midX + 0.1, visibleFrame: visibleFrame) == .right)
+    }
+
+    @Test func hudDockXOffsetKeepsRailCenterContinuousAcrossSides() throws {
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1200, height: 800)
+        let panelWidth: CGFloat = 540
+        let leftCenter = visibleFrame.midX - 100
+        let rightCenter = visibleFrame.midX + 100
+
+        let leftOffset = PickyHUDDockLayout.xOffset(
+            forDockRailCenterX: leftCenter,
+            visibleFrame: visibleFrame,
+            panelWidth: panelWidth,
+            dockSide: .left
+        )
+        let rightOffset = PickyHUDDockLayout.xOffset(
+            forDockRailCenterX: rightCenter,
+            visibleFrame: visibleFrame,
+            panelWidth: panelWidth,
+            dockSide: .right
+        )
+
+        #expect(PickyHUDDockLayout.dockRailCenterX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .left, xOffset: leftOffset) == leftCenter)
+        #expect(PickyHUDDockLayout.dockRailCenterX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .right, xOffset: rightOffset) == rightCenter)
+    }
+
     @Test func hudDockOverhangLimitIsHalfDockRailWidth() throws {
         // Sanity check on the overhang constant: half the dock rail width keeps
         // half of the capsule visible so users can always grab the handle.

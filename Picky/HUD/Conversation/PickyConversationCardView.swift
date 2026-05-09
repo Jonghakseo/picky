@@ -88,16 +88,16 @@ struct PickyConversationCardView: View {
     }
 
     private var cardBackgroundOpacity: Double {
-        isPreviewMode ? 0.89 : 0.95
+        isPreviewMode ? 0.72 : 0.95
     }
 
     private var cardShadowOpacity: Double {
-        PickyHUDExpansion.cardShadowOpacity * (isPreviewMode ? 0.55 : 1)
+        PickyHUDExpansion.cardShadowOpacity * (isPreviewMode ? 0.45 : 1)
     }
 
     private var cardBorderColor: Color {
         if isFileDropTargeted { return DS.Colors.accentText.opacity(0.85) }
-        return statusColor.opacity(isPreviewMode ? 0.38 : 0.58)
+        return statusColor.opacity(isPreviewMode ? 0.28 : 0.58)
     }
 
     private var statusColor: Color {

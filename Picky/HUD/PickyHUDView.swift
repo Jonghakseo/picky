@@ -590,11 +590,11 @@ private struct PickyHUDDockRailView: View {
     private var addAgentSlotButton: some View {
         Button(action: onCreateSideAgent) {
             ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(.ultraThinMaterial)
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.white.opacity(0.04))
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.primary.opacity(0.04))
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(
                         DS.Colors.textTertiary.opacity(0.7),
                         style: StrokeStyle(lineWidth: 1, dash: [3.5, 3])
@@ -616,11 +616,11 @@ private struct PickyHUDDockRailView: View {
         Button(action: onCreateSideAgent) {
             ZStack {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(.ultraThinMaterial)
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color.white.opacity(0.04))
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.primary.opacity(0.04))
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(
                             DS.Colors.textTertiary.opacity(0.7),
                             style: StrokeStyle(lineWidth: 1, dash: [3.5, 3])
@@ -698,13 +698,6 @@ private struct PickyHUDDockIconView: View {
         .overlay(alignment: .topTrailing) {
             statusDot.offset(x: -1.3, y: 1.3)
         }
-        .overlay(alignment: .leading) {
-            if isOpened {
-                openStateMarker
-                    .offset(x: -7)
-                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
-            }
-        }
         .overlay(alignment: .bottomTrailing) {
             if isPinned {
                 Image(systemName: "pin.fill")
@@ -754,18 +747,6 @@ private struct PickyHUDDockIconView: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    private var openStateMarker: some View {
-        Capsule(style: .continuous)
-            .fill(DS.Colors.accentText.opacity(isActive ? 0.96 : 0.78))
-            .frame(width: 3, height: 18)
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(DS.Colors.surface1.opacity(0.72), lineWidth: 0.6)
-            )
-            .shadow(color: DS.Colors.accentText.opacity(0.22), radius: 2, x: 0, y: 0)
-            .accessibilityHidden(true)
-    }
-
     private var archiveProgressRing: some View {
         ZStack {
             archiveRingArc(progress: 1)
@@ -810,22 +791,22 @@ private struct PickyHUDDockIconView: View {
         // The completion flash temporarily boosts the success-tinted glaze + stroke
         // and adds an ambient glow so a Done transition feels celebratory without
         // disturbing the layout.
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
             .fill(.ultraThinMaterial)
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(statusColor.opacity(isActive ? 0.22 : 0.0))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.white.opacity(isActive ? 0.0 : 0.04))
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.primary.opacity(isActive ? 0.0 : 0.04))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(DS.Colors.warning.opacity(0.20 * archiveProgress))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(DS.Colors.success.opacity(0.34 * completionFlashIntensity))
             )
             .overlay {
@@ -834,10 +815,10 @@ private struct PickyHUDDockIconView: View {
                         baseColor: statusColor,
                         highlightColor: statusLoadingHighlightColor,
                         duration: statusBorderAnimationDuration,
-                        cornerRadius: 18
+                        cornerRadius: 12
                     )
                 } else {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(
                             isActive ? statusColor.opacity(0.55) : statusColor.opacity(0.30),
                             lineWidth: isActive ? 1.0 : 0.7
@@ -845,11 +826,11 @@ private struct PickyHUDDockIconView: View {
                 }
             }
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(DS.Colors.warning.opacity(0.76 * archiveProgress), lineWidth: 1.35)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(DS.Colors.success.opacity(0.85 * completionFlashIntensity), lineWidth: 1.4)
             )
             .shadow(color: DS.Colors.warning.opacity(0.30 * archiveProgress), radius: 5, x: 0, y: 0)
@@ -978,8 +959,8 @@ private struct PickyHUDDockIconView: View {
 
     private var labelFont: Font {
         Self.containsHangul(initials)
-            ? .system(size: PickyHUDTypography.Size.status, weight: .semibold)
-            : .system(size: PickyHUDTypography.Size.status, weight: .semibold, design: .monospaced)
+            ? .system(size: PickyHUDTypography.Size.status, weight: .bold)
+            : .system(size: PickyHUDTypography.Size.status, weight: .bold, design: .monospaced)
     }
 
     private var tileScale: CGFloat {

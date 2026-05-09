@@ -174,20 +174,22 @@ final class CompanionManager: ObservableObject {
     private var speechPlaybackProvider: any PickySpeechPlaybackProvider
     private let voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator
     private let realtimeVoiceInputManager = OpenAIRealtimeVoiceInputManager()
-    private let realtimeAudioPlaybackEngine = OpenAIRealtimeAudioPlaybackEngine()
+    private let realtimeAudioPlaybackEngine: any PickyRealtimeAudioPlaybacking
 
     init(
         agentClient: any PickyAgentClient = LocalStubPickyAgentClient(),
         selectionStore: PickySessionSelectionStoring = PickyUserDefaultsSessionSelectionStore.shared,
         buddyDictationManager: BuddyDictationManager? = nil,
         speechPlaybackProvider: (any PickySpeechPlaybackProvider)? = nil,
-        voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator? = nil
+        voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator? = nil,
+        realtimeAudioPlaybackEngine: (any PickyRealtimeAudioPlaybacking)? = nil
     ) {
         self.agentClient = agentClient
         self.selectionStore = selectionStore
         self.buddyDictationManager = buddyDictationManager ?? BuddyDictationManager()
         self.speechPlaybackProvider = speechPlaybackProvider ?? PickySpeechPlaybackProviderFactory.makeDefaultProvider()
         self.voiceContextCaptureCoordinator = voiceContextCaptureCoordinator ?? PickyVoiceContextCaptureCoordinator()
+        self.realtimeAudioPlaybackEngine = realtimeAudioPlaybackEngine ?? OpenAIRealtimeAudioPlaybackEngine()
         self.inkCaptureController.onStateChange = { [weak self] state in
             Task { @MainActor [weak self] in
                 self?.inkOverlayState = state
@@ -196,6 +198,9 @@ final class CompanionManager: ObservableObject {
         self.inkCaptureController.shouldPassThroughMouseEvent = { [weak self] point, source in
             guard source == .text else { return false }
             return self?.quickInputPanelManager.containsInteractiveGlobalPoint(point) == true
+        }
+        self.realtimeAudioPlaybackEngine.onPlaybackDrained = { [weak self] in
+            self?.handleRealtimePlaybackDrained()
         }
     }
 
@@ -1641,17 +1646,20 @@ final class CompanionManager: ObservableObject {
             voicePromptBubbleState = transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .hidden : .recognized(transcript)
         case .mainRealtimeOutputAudioDelta(_, let audioBase64):
             stopCurrentSpeech()
+            hideVoicePromptBubbleForRealtimeResponse()
             realtimeAudioPlaybackEngine.enqueuePCM16Base64(audioBase64)
             clearPendingAgentResponseTiming()
             voiceState = .responding
         case .mainRealtimeOutputAudioDone:
             break
         case .mainRealtimeOutputTranscriptDelta(let inputId, let delta):
+            hideVoicePromptBubbleForRealtimeResponse()
             let key = inputId ?? realtimeVoiceInputID ?? UUID()
             let updated = (realtimeOutputTranscriptByInputID[key] ?? "") + delta
             realtimeOutputTranscriptByInputID[key] = updated
             latestAgentSessionSummary = updated
         case .mainRealtimeOutputTranscriptCompleted(let inputId, let transcript):
+            hideVoicePromptBubbleForRealtimeResponse()
             let key = inputId ?? realtimeVoiceInputID ?? UUID()
             realtimeOutputTranscriptByInputID[key] = transcript
             latestAgentSessionSummary = transcript
@@ -1677,6 +1685,18 @@ final class CompanionManager: ObservableObject {
              .sessionMessageAppended, .sessionMessageReplaced, .sessionMessageRemoved, .sessionQueueUpdated, .sessionActivityUpdated, .terminalSessionSyncOutcome:
             break
         }
+    }
+
+    private func hideVoicePromptBubbleForRealtimeResponse() {
+        currentVoicePromptPreview = nil
+        voicePromptBubbleState = .hidden
+    }
+
+    private func handleRealtimePlaybackDrained() {
+        guard realtimeVoiceInputID == nil else { return }
+        guard voiceState == .responding else { return }
+        voiceState = .idle
+        scheduleTransientHideIfNeeded()
     }
 
     private func applyMainRealtimeState(_ event: PickyMainRealtimeStateEvent) {

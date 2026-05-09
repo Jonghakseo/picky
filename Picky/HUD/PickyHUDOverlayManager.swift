@@ -66,7 +66,9 @@ final class PickyHUDOverlayManager {
     /// same value so the dock sits at the same relative position on every monitor.
     private var currentAnchorPercent: Double
     private var currentDockSide: PickyHUDDockSide
+    private var currentXOffset: CGFloat
     private var dragStartAnchorPercent: Double?
+    private var dragStartXOffset: CGFloat?
 
     init(
         viewModel: PickySessionListViewModel,
@@ -81,6 +83,7 @@ final class PickyHUDOverlayManager {
             settings.hudDockTopAnchorPercent
         )
         self.currentDockSide = settings.hudDockSide
+        self.currentXOffset = settings.hudDockXOffset
     }
 
     func start() {
@@ -163,8 +166,8 @@ final class PickyHUDOverlayManager {
                 // finished so shadows/content aren't clipped by the outer container.
                 self?.resizePanel(displayID: displayID, toContentSize: size, deferShrink: true)
             },
-            onDockHandleDragChanged: { [weak self] screenDeltaY in
-                self?.handleDockDragChanged(displayID: displayID, screenDeltaY: screenDeltaY)
+            onDockHandleDragChanged: { [weak self] delta in
+                self?.handleDockDragChanged(displayID: displayID, delta: delta)
             },
             onDockHandleDragEnded: { [weak self] in
                 self?.handleDockDragEnded()
@@ -314,7 +317,8 @@ final class PickyHUDOverlayManager {
             x: PickyHUDDockLayout.panelX(
                 visibleFrame: visibleFrame,
                 panelWidth: width,
-                dockSide: currentDockSide
+                dockSide: currentDockSide,
+                xOffset: currentXOffset
             ),
             y: originY,
             width: width,
@@ -431,30 +435,49 @@ final class PickyHUDOverlayManager {
         try? settingsStore.save(settings)
     }
 
-    private func handleDockDragChanged(displayID: CGDirectDisplayID, screenDeltaY: CGFloat) {
+    private func handleDockDragChanged(displayID: CGDirectDisplayID, delta: CGPoint) {
         guard let screen = screen(for: displayID) else { return }
         let visibleFrame = screen.visibleFrame
         guard visibleFrame.height > 0 else { return }
+
+        // -- Y axis: anchor percent (existing) --
         if dragStartAnchorPercent == nil {
             dragStartAnchorPercent = currentAnchorPercent
         }
-        // `screenDeltaY` is the cursor's bottom-up screen delta from drag start.
-        // Moving the cursor DOWN (screen Y decreasing) should INCREASE anchor%, since
-        // anchor% measures the dock's top edge as a fraction below the visible-frame
-        // top. Negate to get a top-down delta percentage and add to the start value.
-        let dPct = -(Double(screenDeltaY) / Double(visibleFrame.height)) * 100.0
-        let next = PickySettings.clampedDockTopAnchorPercent((dragStartAnchorPercent ?? currentAnchorPercent) + dPct)
-        guard next != currentAnchorPercent else { return }
-        currentAnchorPercent = next
+        let dPct = -(Double(delta.y) / Double(visibleFrame.height)) * 100.0
+        let nextAnchor = PickySettings.clampedDockTopAnchorPercent(
+            (dragStartAnchorPercent ?? currentAnchorPercent) + dPct
+        )
+        if nextAnchor != currentAnchorPercent {
+            currentAnchorPercent = nextAnchor
+        }
+
+        // -- X axis: horizontal offset --
+        if dragStartXOffset == nil {
+            dragStartXOffset = currentXOffset
+        }
+        let nextXOffset = PickyHUDDockLayout.clampedXOffset(
+            (dragStartXOffset ?? currentXOffset) + delta.x,
+            visibleFrame: visibleFrame,
+            panelWidth: width,
+            dockSide: currentDockSide
+        )
+        if nextXOffset != currentXOffset {
+            currentXOffset = nextXOffset
+        }
+
         repositionAllPanels()
     }
 
     private func handleDockDragEnded() {
         dragStartAnchorPercent = nil
+        dragStartXOffset = nil
         var settings = settingsStore.load()
-        let clamped = PickySettings.clampedDockTopAnchorPercent(currentAnchorPercent)
-        guard settings.hudDockTopAnchorPercent != clamped else { return }
-        settings.hudDockTopAnchorPercent = clamped
+        let clampedAnchor = PickySettings.clampedDockTopAnchorPercent(currentAnchorPercent)
+        let didChange = settings.hudDockTopAnchorPercent != clampedAnchor || settings.hudDockXOffset != currentXOffset
+        guard didChange else { return }
+        settings.hudDockTopAnchorPercent = clampedAnchor
+        settings.hudDockXOffset = currentXOffset
         // Settings save throws on directory validation failure (defaultCwd / worktreeParent).
         // Failing to persist the anchor shouldn't tear down the live drag UX, so swallow the
         // error here — next launch falls back to the previously saved anchor percent.

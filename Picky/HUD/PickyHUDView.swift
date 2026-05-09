@@ -17,11 +17,10 @@ struct PickyHUDView: View {
     @ObservedObject var placement: PickyHUDPlacement = PickyHUDPlacement()
     var onSizeChange: (CGSize) -> Void = { _ in }
     /// Live delta callback for the dock anchor handle. Argument is the cursor's
-    /// bottom-up screen Y delta from drag start (`NSEvent.mouseLocation` based, so it
-    /// stays correct even though the panel itself moves while we drag). The overlay
-    /// manager converts the delta into a percentage of the dragged display's
-    /// visibleFrame and updates the shared anchor across every panel.
-    var onDockHandleDragChanged: (CGFloat) -> Void = { _ in }
+    /// screen delta from drag start in both X and Y (`NSEvent.mouseLocation` based).
+    /// The overlay manager converts the Y delta into an anchor percent and the X
+    /// delta into a horizontal offset, then updates placement across every panel.
+    var onDockHandleDragChanged: (CGPoint) -> Void = { _ in }
     var onDockHandleDragEnded: () -> Void = { }
     var onDockHandleDoubleClick: () -> Void = { }
     var onArchiveUndoRequested: (_ sessionID: String, _ title: String) -> Void = { _, _ in }
@@ -448,7 +447,7 @@ private struct PickyHUDDockRailView: View {
     let onCreateSideAgent: () -> Void
     let onDockHoverChanged: (Bool) -> Void
     let onDoneFlashConsumed: (String) -> Void
-    let onDockHandleDragChanged: (CGFloat) -> Void
+    let onDockHandleDragChanged: (CGPoint) -> Void
     let onDockHandleDragEnded: () -> Void
     let onDockHandleDoubleClick: () -> Void
 
@@ -1122,13 +1121,13 @@ private final class PickyHUDDockIconClickNSView: NSView {
 /// just the visible 22×4 capsule that SwiftUI's gesture system kept latching onto.
 private struct PickyHUDDockAnchorHandleHost: NSViewRepresentable {
     var onHoverChanged: (Bool) -> Void
-    var onDragChanged: (CGFloat) -> Void
+    var onDragChanged: (CGPoint) -> Void
     var onDragEnded: () -> Void
     var onDoubleClick: () -> Void
 
     final class Coordinator {
         var onHoverChanged: ((Bool) -> Void)?
-        var onDragChanged: ((CGFloat) -> Void)?
+        var onDragChanged: ((CGPoint) -> Void)?
         var onDragEnded: (() -> Void)?
         var onDoubleClick: (() -> Void)?
     }
@@ -1155,7 +1154,7 @@ private struct PickyHUDDockAnchorHandleHost: NSViewRepresentable {
 
 private final class PickyHUDDockAnchorHandleNSView: NSView {
     weak var coordinator: PickyHUDDockAnchorHandleHost.Coordinator?
-    private var dragStartScreenY: CGFloat?
+    private var dragStartScreenPoint: CGPoint?
     private var trackingArea: NSTrackingArea?
     private var hasClosedHandPushed = false
 
@@ -1197,11 +1196,11 @@ private final class PickyHUDDockAnchorHandleNSView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         if event.clickCount >= 2 {
-            dragStartScreenY = nil
+            dragStartScreenPoint = nil
             coordinator?.onDoubleClick?()
             return
         }
-        dragStartScreenY = NSEvent.mouseLocation.y
+        dragStartScreenPoint = NSEvent.mouseLocation
         if !hasClosedHandPushed {
             NSCursor.closedHand.push()
             hasClosedHandPushed = true
@@ -1209,18 +1208,21 @@ private final class PickyHUDDockAnchorHandleNSView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let startY = dragStartScreenY else { return }
-        let delta = NSEvent.mouseLocation.y - startY
+        guard let startPoint = dragStartScreenPoint else { return }
+        let delta = CGPoint(
+            x: NSEvent.mouseLocation.x - startPoint.x,
+            y: NSEvent.mouseLocation.y - startPoint.y
+        )
         coordinator?.onDragChanged?(delta)
     }
 
     override func mouseUp(with event: NSEvent) {
-        let wasDragging = dragStartScreenY != nil
+        let wasDragging = dragStartScreenPoint != nil
         if hasClosedHandPushed {
             NSCursor.pop()
             hasClosedHandPushed = false
         }
-        dragStartScreenY = nil
+        dragStartScreenPoint = nil
         if wasDragging {
             coordinator?.onDragEnded?()
         }

@@ -181,12 +181,33 @@ enum PickyHUDDockLayout {
         return min(max(centeredY, minimumY), maximumY)
     }
 
-    static func panelX(visibleFrame: CGRect, panelWidth: CGFloat, dockSide: PickyHUDDockSide) -> CGFloat {
+    static func panelX(visibleFrame: CGRect, panelWidth: CGFloat, dockSide: PickyHUDDockSide, xOffset: CGFloat = 0) -> CGFloat {
         switch dockSide {
         case .right:
-            return visibleFrame.maxX - panelWidth - dockRightEdgeMargin
+            return visibleFrame.maxX - panelWidth - dockRightEdgeMargin + xOffset
         case .left:
-            return visibleFrame.minX + dockLeftEdgeMargin
+            return visibleFrame.minX + dockLeftEdgeMargin + xOffset
+        }
+    }
+
+    /// Clamp an X offset so the panel never goes past the visible-frame edges.
+    static func clampedXOffset(
+        _ xOffset: CGFloat,
+        visibleFrame: CGRect,
+        panelWidth: CGFloat,
+        dockSide: PickyHUDDockSide
+    ) -> CGFloat {
+        switch dockSide {
+        case .right:
+            let minX = visibleFrame.minX + screenMargin
+            let naturalX = visibleFrame.maxX - panelWidth - dockRightEdgeMargin
+            let maxShiftLeft = naturalX - minX  // negative = no shift, positive = allowed inward
+            return max(-maxShiftLeft, min(0, xOffset))
+        case .left:
+            let maxX = visibleFrame.maxX - screenMargin - panelWidth
+            let naturalX = visibleFrame.minX + dockLeftEdgeMargin
+            let maxShiftRight = maxX - naturalX
+            return min(maxShiftRight, max(0, xOffset))
         }
     }
 

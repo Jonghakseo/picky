@@ -492,6 +492,7 @@ struct PickyOverlayBubblePreferences: Codable, Equatable {
 
 struct PickySettings: Codable, Equatable {
     var defaultCwd: String
+    var mainAgentCwd: String
     var worktreeParent: String
     var preferredToolVisibility: String
     var readOnlyInvestigationPreference: Bool
@@ -537,6 +538,10 @@ struct PickySettings: Codable, Equatable {
     /// Horizontal side for the HUD dock. The conversation card opens inward from
     /// this edge, and the value persists across app launches.
     var hudDockSide: PickyHUDDockSide
+    /// Horizontal offset from the natural dock-side edge. Positive means shifting
+    /// inward (toward screen center) for both left and right dock sides. Clamped
+    /// at runtime so the panel never crosses a screen edge. Persists across launches.
+    var hudDockXOffset: CGFloat
 
     static let dockTopAnchorPercentRange: ClosedRange<Double> = 2.0...70.0
     static let defaultDockTopAnchorPercent: Double = 22.0
@@ -551,6 +556,7 @@ struct PickySettings: Codable, Equatable {
 
     init(
         defaultCwd: String,
+        mainAgentCwd: String? = nil,
         worktreeParent: String,
         preferredToolVisibility: String,
         readOnlyInvestigationPreference: Bool,
@@ -576,9 +582,11 @@ struct PickySettings: Codable, Equatable {
         pushToTalkShortcut: PickyShortcutSpec = .defaultPushToTalk,
         quickInputShortcut: PickyShortcutSpec = .defaultQuickInput,
         hudDockTopAnchorPercent: Double = PickySettings.defaultDockTopAnchorPercent,
-        hudDockSide: PickyHUDDockSide = .right
+        hudDockSide: PickyHUDDockSide = .right,
+        hudDockXOffset: CGFloat = 0
     ) {
         self.defaultCwd = defaultCwd
+        self.mainAgentCwd = mainAgentCwd ?? defaultCwd
         self.worktreeParent = worktreeParent
         self.preferredToolVisibility = preferredToolVisibility
         self.readOnlyInvestigationPreference = readOnlyInvestigationPreference
@@ -605,12 +613,14 @@ struct PickySettings: Codable, Equatable {
         self.quickInputShortcut = quickInputShortcut
         self.hudDockTopAnchorPercent = PickySettings.clampedDockTopAnchorPercent(hudDockTopAnchorPercent)
         self.hudDockSide = hudDockSide
+        self.hudDockXOffset = hudDockXOffset
     }
 
     static func defaults(appSupportRoot: URL = PickyAppSupport.defaultRoot()) -> PickySettings {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         return PickySettings(
             defaultCwd: home,
+            mainAgentCwd: home,
             worktreeParent: home,
             preferredToolVisibility: "visible in context only",
             readOnlyInvestigationPreference: true,
@@ -636,13 +646,15 @@ struct PickySettings: Codable, Equatable {
             pushToTalkShortcut: .defaultPushToTalk,
             quickInputShortcut: .defaultQuickInput,
             hudDockTopAnchorPercent: PickySettings.defaultDockTopAnchorPercent,
-            hudDockSide: .right
+            hudDockSide: .right,
+            hudDockXOffset: 0
         )
     }
 
     func normalizedPaths() -> PickySettings {
         var copy = self
         copy.defaultCwd = NSString(string: defaultCwd).expandingTildeInPath
+        copy.mainAgentCwd = NSString(string: mainAgentCwd).expandingTildeInPath
         if !worktreeParent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             copy.worktreeParent = NSString(string: worktreeParent).expandingTildeInPath
         }
@@ -658,6 +670,7 @@ struct PickySettings: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case defaultCwd
+        case mainAgentCwd
         case worktreeParent
         case preferredToolVisibility
         case readOnlyInvestigationPreference
@@ -684,6 +697,7 @@ struct PickySettings: Codable, Equatable {
         case quickInputShortcut
         case hudDockTopAnchorPercent
         case hudDockSide
+        case hudDockXOffset
     }
 
     init(from decoder: Decoder) throws {
@@ -691,6 +705,7 @@ struct PickySettings: Codable, Equatable {
         let defaults = PickySettings.defaults()
 
         defaultCwd = try container.decodeIfPresent(String.self, forKey: .defaultCwd) ?? defaults.defaultCwd
+        mainAgentCwd = try container.decodeIfPresent(String.self, forKey: .mainAgentCwd) ?? defaultCwd
         worktreeParent = try container.decodeIfPresent(String.self, forKey: .worktreeParent) ?? defaults.worktreeParent
         preferredToolVisibility = try container.decodeIfPresent(String.self, forKey: .preferredToolVisibility) ?? defaults.preferredToolVisibility
         readOnlyInvestigationPreference = try container.decodeIfPresent(Bool.self, forKey: .readOnlyInvestigationPreference) ?? defaults.readOnlyInvestigationPreference
@@ -727,16 +742,19 @@ struct PickySettings: Codable, Equatable {
         let storedAnchor = try container.decodeIfPresent(Double.self, forKey: .hudDockTopAnchorPercent) ?? defaults.hudDockTopAnchorPercent
         hudDockTopAnchorPercent = PickySettings.clampedDockTopAnchorPercent(storedAnchor)
         hudDockSide = try container.decodeIfPresent(PickyHUDDockSide.self, forKey: .hudDockSide) ?? defaults.hudDockSide
+        hudDockXOffset = try container.decodeIfPresent(CGFloat.self, forKey: .hudDockXOffset) ?? defaults.hudDockXOffset
     }
 }
 
 enum PickySettingsValidationError: LocalizedError, Equatable {
     case invalidDefaultCwd(String)
+    case invalidMainAgentCwd(String)
     case invalidWorktreeParent(String)
 
     var errorDescription: String? {
         switch self {
-        case .invalidDefaultCwd(let path): "Default cwd does not exist or is not a directory: \(path)"
+        case .invalidDefaultCwd(let path): "Side agent default cwd does not exist or is not a directory: \(path)"
+        case .invalidMainAgentCwd(let path): "Main agent cwd does not exist or is not a directory: \(path)"
         case .invalidWorktreeParent(let path): "Worktree parent does not exist or is not a directory: \(path)"
         }
     }

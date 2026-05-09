@@ -735,6 +735,70 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDDockLayout.panelX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .right) == visibleFrame.maxX - panelWidth - PickyHUDDockLayout.dockRightEdgeMargin)
     }
 
+    @Test func hudDockPanelXOffsetShiftsInwardFromEdge() throws {
+        let visibleFrame = CGRect(x: 0, y: 0, width: 1200, height: 800)
+        let panelWidth: CGFloat = 540
+
+        // Right-docked: positive offset shifts left (inward)
+        let rightShifted = PickyHUDDockLayout.panelX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .right, xOffset: 100)
+        #expect(rightShifted == visibleFrame.maxX - panelWidth - PickyHUDDockLayout.dockRightEdgeMargin - 100)
+
+        // Left-docked: positive offset shifts right (inward)
+        let leftShifted = PickyHUDDockLayout.panelX(visibleFrame: visibleFrame, panelWidth: panelWidth, dockSide: .left, xOffset: 100)
+        #expect(leftShifted == visibleFrame.minX + PickyHUDDockLayout.dockLeftEdgeMargin + 100)
+    }
+
+    @Test func hudDockPanelXOffsetClampedToScreenEdges() throws {
+        let visibleFrame = CGRect(x: 0, y: 0, width: 600, height: 800)
+        let panelWidth: CGFloat = 540
+        let margin = PickyHUDDockLayout.screenMargin
+
+        // Right-docked: can only shift inward (negative or zero offset effective)
+        let rightClamped = PickyHUDDockLayout.clampedXOffset(
+            200,
+            visibleFrame: visibleFrame,
+            panelWidth: panelWidth,
+            dockSide: .right
+        )
+        let naturalRightX = visibleFrame.maxX - panelWidth - PickyHUDDockLayout.dockRightEdgeMargin
+        let minRightX = visibleFrame.minX + margin
+        #expect(rightClamped == naturalRightX - minRightX)
+
+        // Left-docked: can only shift inward
+        let leftClamped = PickyHUDDockLayout.clampedXOffset(
+            200,
+            visibleFrame: visibleFrame,
+            panelWidth: panelWidth,
+            dockSide: .left
+        )
+        let naturalLeftX = visibleFrame.minX + PickyHUDDockLayout.dockLeftEdgeMargin
+        let maxLeftX = visibleFrame.maxX - margin - panelWidth
+        #expect(leftClamped == maxLeftX - naturalLeftX)
+
+        // Negative offset on right-docked is capped at 0 (no outward shift beyond edge)
+        let rightNegative = PickyHUDDockLayout.clampedXOffset(
+            -50,
+            visibleFrame: visibleFrame,
+            panelWidth: panelWidth,
+            dockSide: .right
+        )
+        #expect(rightNegative == 0)
+
+        // Negative offset on left-docked is capped at 0
+        let leftNegative = PickyHUDDockLayout.clampedXOffset(
+            -50,
+            visibleFrame: visibleFrame,
+            panelWidth: panelWidth,
+            dockSide: .left
+        )
+        #expect(leftNegative == 0)
+    }
+
+    @Test func hudDockXOffsetDefaultsToZeroWhenMissingFromSettings() throws {
+        let settings = try JSONDecoder().decode(PickySettings.self, from: Data("{}".utf8))
+        #expect(settings.hudDockXOffset == 0)
+    }
+
     @Test func hudDockSideDefaultsToRightWhenMissingFromSettings() throws {
         let settings = try JSONDecoder().decode(PickySettings.self, from: Data("{}".utf8))
         #expect(settings.hudDockSide == .right)

@@ -26,8 +26,8 @@ export interface OpenAIRealtimeToolHandlers {
   handoff(request: { title: string; instructions: string; userMessage?: string; cwd?: string }): Promise<{ sessionId: string; title: string; cwd?: string }>;
   listSideSessions(request: { includeTerminal?: boolean; page?: number; limit?: number }): PickyAgentSession[];
   steerSideSession(request: { sessionId: string; message: string }): Promise<PickyAgentSession>;
-  searchSkills(request: { query?: string; limit?: number }): Promise<{ query: string; root: string; total: number; skills: PickySkillSummary[] }>;
-  getSkillDetails(request: { name: string }): Promise<PickySkillDetails>;
+  searchSkills(request: { query?: string; limit?: number; cwd?: string }): Promise<{ query: string; root: string; roots?: string[]; total: number; skills: PickySkillSummary[] }>;
+  getSkillDetails(request: { name: string; cwd?: string }): Promise<PickySkillDetails>;
 }
 
 export interface RealtimeWebSocketLike {
@@ -114,6 +114,8 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
         toolHandlers: this.options.toolHandlers,
         webSocketFactory: this.options.webSocketFactory,
       });
+    } else {
+      this.handle.setCwd(options.cwd);
     }
     if (this.config) this.handle.configure(this.config);
     return this.handle;
@@ -140,6 +142,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   private completedFunctionCallIds = new Set<string>();
   private generation = 0;
   private thinkingLevel: ThinkingLevel;
+  private cwd?: string;
 
   constructor(private readonly options: {
     id: string;
@@ -152,6 +155,11 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     this.id = options.id;
     this.config = options.config;
     this.thinkingLevel = options.thinkingLevel;
+    this.cwd = options.cwd;
+  }
+
+  setCwd(cwd: string | undefined): void {
+    if (cwd) this.cwd = cwd;
   }
 
   id: string;
@@ -588,9 +596,10 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
         return this.options.toolHandlers.searchSkills({
           query: optionalStringArg(args, "query"),
           limit: numberArg(args, "limit"),
+          cwd: this.cwd,
         });
       case "picky_skill_details":
-        return this.options.toolHandlers.getSkillDetails({ name: stringArg(args, "name") });
+        return this.options.toolHandlers.getSkillDetails({ name: stringArg(args, "name"), cwd: this.cwd });
     }
   }
 

@@ -127,6 +127,41 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(toolNames).not.toContain("picky_pointer_overlay");
   });
 
+  it("passes the active cwd to skill lookup tool handlers", async () => {
+    const socket = new FakeRealtimeSocket();
+    const cwdCalls: Array<string | undefined> = [];
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        ...fakeToolHandlers(),
+        async searchSkills(request) {
+          cwdCalls.push(request.cwd);
+          return { query: request.query ?? "", root: request.cwd ?? "", total: 0, skills: [] };
+        },
+      },
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context({ cwd: "/tmp/project" }) });
+    socket.serverEvent({
+      type: "response.output_item.done",
+      item: {
+        type: "function_call",
+        name: "picky_skills_search",
+        call_id: "call-skills",
+        arguments: JSON.stringify({ query: "debug" }),
+      },
+    });
+    await settle();
+
+    expect(cwdCalls).toEqual(["/tmp/project"]);
+  });
+
   it("summarizes side sessions for function output and applies pagination", async () => {
     const socket = new FakeRealtimeSocket();
     let listCalls = 0;
@@ -473,7 +508,7 @@ async function settle(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-function context(): PickyContextPacket {
+function context(overrides: Partial<PickyContextPacket> = {}): PickyContextPacket {
   return {
     id: "context-realtime",
     source: "voice",
@@ -482,5 +517,6 @@ function context(): PickyContextPacket {
     screenshots: [],
     inkMarks: [],
     warnings: [],
+    ...overrides,
   };
 }

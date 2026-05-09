@@ -1,6 +1,12 @@
-import { readdir, readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { basename } from "node:path";
+import {
+  DefaultPackageManager,
+  SettingsManager,
+  getAgentDir,
+  loadSkills,
+  type Skill,
+} from "@mariozechner/pi-coding-agent";
 
 export type PickySkillSummary = {
   name: string;
@@ -20,12 +26,13 @@ type SkillDocument = PickySkillDetails & {
 };
 
 export class PickySkillCatalog {
-  constructor(private readonly root = process.env.PICKY_SKILLS_DIR ?? join(homedir(), ".pi", "agent", "skills")) {}
+  constructor(private readonly defaults: { cwd?: string; agentDir?: string } = {}) {}
 
-  async search(request: { query?: string; limit?: number } = {}): Promise<{ query: string; root: string; total: number; skills: PickySkillSummary[] }> {
+  async search(request: { query?: string; limit?: number; cwd?: string } = {}): Promise<{ query: string; root: string; roots: string[]; total: number; skills: PickySkillSummary[] }> {
     const query = request.query?.trim() ?? "";
+    const cwd = request.cwd ?? this.defaults.cwd ?? process.cwd();
     const limit = clampLimit(request.limit, 8, 20);
-    const documents = await this.loadDocuments();
+    const documents = await this.loadDocuments(cwd);
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
     const scored = documents
       .map((document) => ({ document, score: scoreSkill(document, terms), match: matchSnippet(document, terms) }))
@@ -34,7 +41,8 @@ export class PickySkillCatalog {
 
     return {
       query,
-      root: this.root,
+      root: cwd,
+      roots: Array.from(new Set(documents.map((document) => document.path))),
       total: scored.length,
       skills: scored.slice(0, limit).map(({ document, match }) => ({
         name: document.name,
@@ -45,11 +53,11 @@ export class PickySkillCatalog {
     };
   }
 
-  async details(request: { name: string }): Promise<PickySkillDetails> {
+  async details(request: { name: string; cwd?: string }): Promise<PickySkillDetails> {
     const requestedName = request.name.trim().replace(/^skill:/, "");
     if (!requestedName) throw new Error("Skill name is required");
     const normalized = normalizeSkillName(requestedName);
-    const documents = await this.loadDocuments();
+    const documents = await this.loadDocuments(request.cwd ?? this.defaults.cwd ?? process.cwd());
     const document = documents.find((skill) =>
       skill.normalizedName === normalized || normalizeSkillName(basename(skill.path, ".md")) === normalized
     );
@@ -64,42 +72,41 @@ export class PickySkillCatalog {
     };
   }
 
-  private async loadDocuments(): Promise<SkillDocument[]> {
-    let entries: Array<{ name: string; isDirectory(): boolean }>;
-    try {
-      entries = await readdir(this.root, { withFileTypes: true });
-    } catch (error) {
-      throw new Error(`Unable to read Pi skills directory: ${error instanceof Error ? error.message : String(error)}`);
-    }
+  private async loadDocuments(cwd: string): Promise<SkillDocument[]> {
+    const agentDir = this.defaults.agentDir ?? getAgentDir();
+    const settingsManager = SettingsManager.create(cwd, agentDir);
+    const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
+    const resolved = await packageManager.resolve(async () => "skip");
+    const enabledSkillPaths = resolved.skills.filter((resource) => resource.enabled).map((resource) => resource.path);
+    const loaded = loadSkills({ cwd, agentDir, skillPaths: enabledSkillPaths, includeDefaults: false });
 
-    const documents = await Promise.all(entries
-      .filter((entry) => entry.isDirectory())
-      .map(async (entry) => this.loadDocument(entry.name)));
+    const documents = await Promise.all(
+      loaded.skills
+        .filter((skill) => !skill.disableModelInvocation)
+        .map((skill) => this.loadDocument(skill)),
+    );
 
     return documents
       .filter((document): document is SkillDocument => Boolean(document))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  private async loadDocument(directoryName: string): Promise<SkillDocument | undefined> {
-    const path = join(this.root, directoryName, "SKILL.md");
+  private async loadDocument(skill: Skill): Promise<SkillDocument | undefined> {
     let content: string;
     try {
-      content = await readFile(path, "utf8");
+      content = await readFile(skill.filePath, "utf8");
     } catch {
       return undefined;
     }
     const parsed = parseSkillMarkdown(content);
-    const name = parsed.frontmatter.name || directoryName;
-    const description = parsed.frontmatter.description || firstParagraph(parsed.body);
     return {
-      name,
-      description,
-      path,
+      name: skill.name,
+      description: skill.description,
+      path: skill.filePath,
       frontmatter: parsed.frontmatter,
       content,
-      normalizedName: normalizeSkillName(name),
-      searchableText: [name, description, parsed.body].join("\n").toLowerCase(),
+      normalizedName: normalizeSkillName(skill.name),
+      searchableText: [skill.name, skill.description, parsed.body].join("\n").toLowerCase(),
     };
   }
 }
@@ -123,10 +130,6 @@ function stripYamlScalar(value: string): string {
     return trimmed.slice(1, -1);
   }
   return trimmed;
-}
-
-function firstParagraph(body: string): string {
-  return body.split(/\n\s*\n/).map((part) => part.trim()).find(Boolean)?.replace(/\s+/g, " ") ?? "";
 }
 
 function normalizeSkillName(name: string): string {

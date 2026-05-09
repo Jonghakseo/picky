@@ -42,10 +42,7 @@ struct PickyHUDView: View {
         PickyHUDDockLayout.activeSessionID(
             visibleIDs: visibleSessions.map(\.id),
             held: heldSession,
-            previewID: PickyHUDDockLayout.previewSessionID(
-                hoveredID: hoverPreviewSessionID,
-                heldID: heldSession?.sessionID
-            )
+            previewID: nil
         )
     }
 
@@ -137,22 +134,16 @@ struct PickyHUDView: View {
     @ViewBuilder
     private var conversationCard: some View {
         if let activeSession {
-            if isHoverPreviewSession(activeSession.id) {
-                PickyHUDMiniPreviewCardView(session: activeSession)
-                    .id("mini-\(activeSession.id)")
-                    .transition(.identity)
-            } else {
-                PickyConversationCardView(
-                    viewModel: viewModel,
-                    session: activeSession,
-                    onArchiveSession: archiveSession,
-                    maxHeight: placement.availableCardMaxHeight,
-                    isPreviewMode: false
-                )
-                .id(activeSession.id)
-                .frame(width: PickyHUDDockLayout.detailWidth)
-                .transition(.identity)
-            }
+            PickyConversationCardView(
+                viewModel: viewModel,
+                session: activeSession,
+                onArchiveSession: archiveSession,
+                maxHeight: placement.availableCardMaxHeight,
+                isPreviewMode: false
+            )
+            .id(activeSession.id)
+            .frame(width: PickyHUDDockLayout.detailWidth)
+            .transition(.identity)
         }
     }
 
@@ -164,6 +155,8 @@ struct PickyHUDView: View {
                 activeSessionID: activeSession?.id,
                 pinnedSessionID: pinnedSessionID,
                 openedSessionID: openedSessionID,
+                previewSessionID: hoverPreviewSessionID,
+                dockSide: placement.dockSide,
                 pendingDoneFlashSessionIDs: viewModel.pendingDoneFlashSessionIDs,
                 onHoverSession: previewDockSession,
                 onOpenSession: toggleOpenSession,
@@ -177,6 +170,7 @@ struct PickyHUDView: View {
                 onDockHandleDoubleClick: onDockHandleDoubleClick
             )
             .frame(width: PickyHUDDockLayout.railWidth)
+            .zIndex(10)
             // Keep rail state changes instantaneous; the conversation card handles
             // its own sizing and scroll stabilization when it appears.
             .transaction(value: activeSession?.id) { transaction in
@@ -230,7 +224,7 @@ struct PickyHUDView: View {
     private func previewDockSession(_ sessionID: String) {
         isDockHovered = true
         cancelPendingClose()
-        guard heldSession == nil else {
+        if heldSession?.sessionID == sessionID {
             if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
             return
         }
@@ -404,6 +398,10 @@ struct PickyHUDView: View {
 }
 
 private struct PickyHUDMiniPreviewCardView: View {
+    static let cardWidth: CGFloat = 238
+    static let shadowPadding: CGFloat = 18
+    static var totalWidth: CGFloat { cardWidth + (shadowPadding * 2) }
+
     let session: PickySessionListViewModel.SessionCard
     @State private var gitStatus: PickyGitRepositoryStatus?
 
@@ -437,16 +435,10 @@ private struct PickyHUDMiniPreviewCardView: View {
                 contextLine
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-
-            Text(trailingLabel)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(trailingColor)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
-        .frame(width: 238)
+        .frame(width: Self.cardWidth)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -457,6 +449,7 @@ private struct PickyHUDMiniPreviewCardView: View {
                 .strokeBorder(DS.Colors.borderStrong.opacity(0.72), lineWidth: 0.7)
         )
         .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 5)
+        .padding(Self.shadowPadding)
         .task(id: "\(session.cwd ?? "")|\(session.updatedAt.timeIntervalSince1970)") {
             if gitStatus == nil, let cached = PickyGitRepositoryStatus.cached(cwd: session.cwd) {
                 gitStatus = cached
@@ -514,32 +507,6 @@ private struct PickyHUDMiniPreviewCardView: View {
         case .completed: return "done"
         case .failed: return "failed"
         case .cancelled: return "cancelled"
-        }
-    }
-
-    private var trailingLabel: String {
-        switch session.status {
-        case .waiting_for_input:
-            return "reply"
-        case .blocked, .failed:
-            return "check"
-        case .completed, .cancelled:
-            return session.elapsedDescription()
-        case .queued, .running:
-            return session.elapsedDescription()
-        }
-    }
-
-    private var trailingColor: Color {
-        switch session.status {
-        case .waiting_for_input:
-            return DS.Colors.warningText
-        case .failed:
-            return DS.Colors.destructiveText
-        case .completed:
-            return DS.Colors.success
-        default:
-            return DS.Colors.textTertiary
         }
     }
 
@@ -720,6 +687,8 @@ private struct PickyHUDDockRailView: View {
     let activeSessionID: String?
     let pinnedSessionID: String?
     let openedSessionID: String?
+    let previewSessionID: String?
+    let dockSide: PickyHUDDockSide
     let pendingDoneFlashSessionIDs: Set<String>
     let onHoverSession: (String) -> Void
     let onOpenSession: (String) -> Void
@@ -769,6 +738,8 @@ private struct PickyHUDDockRailView: View {
                         isActive: activeSessionID == session.id,
                         isPinned: pinnedSessionID == session.id,
                         isOpened: openedSessionID == session.id,
+                        isPreviewed: previewSessionID == session.id,
+                        dockSide: dockSide,
                         shouldFlashCompletion: pendingDoneFlashSessionIDs.contains(session.id),
                         onHover: { onHoverSession(session.id) },
                         onOpen: { onOpenSession(session.id) },
@@ -925,6 +896,8 @@ private struct PickyHUDDockIconView: View {
     let isActive: Bool
     let isPinned: Bool
     let isOpened: Bool
+    let isPreviewed: Bool
+    let dockSide: PickyHUDDockSide
     let shouldFlashCompletion: Bool
     let onHover: () -> Void
     let onOpen: () -> Void
@@ -984,6 +957,15 @@ private struct PickyHUDDockIconView: View {
         .overlay(alignment: .center) {
             archiveProgressRing
         }
+        .overlay(alignment: .center) {
+            if isPreviewed {
+                PickyHUDMiniPreviewCardView(session: session)
+                    .offset(x: miniPreviewXOffset)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
+        }
+        .zIndex(isPreviewed ? 100 : 0)
         .contentShape(Circle())
         .overlay {
             PickyHUDDockIconClickHost(
@@ -1232,6 +1214,11 @@ private struct PickyHUDDockIconView: View {
     private var tileScale: CGFloat {
         if isArchivePressing { return 0.92 }
         return isHovered ? 1.03 : 1.0
+    }
+
+    private var miniPreviewXOffset: CGFloat {
+        let distance = (PickyHUDMiniPreviewCardView.totalWidth / 2) + 22
+        return dockSide == .right ? -distance : distance
     }
 
     private static func containsHangul(_ string: String) -> Bool {

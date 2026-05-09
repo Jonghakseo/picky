@@ -10,7 +10,7 @@ Icon?
 # Xcode / Swift
 build/
 DerivedData/
-*.xcworkspace/xcuserdata/
+**/*.xcworkspace/xcuserdata/
 *.playground/playground.xcworkspace/xcuserdata/
 *.moved-aside
 *.pbxuser

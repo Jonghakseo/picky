@@ -13,7 +13,7 @@ enum PickyHUDExpansion {
     static let animation = Animation.easeInOut(duration: duration)
     static let outerPadding: CGFloat = 12
     static let dockShadowOpacity = 0.20
-    static let dockShadowRadius: CGFloat = 18
+    static let dockShadowRadius: CGFloat = 12
     static let dockShadowYOffset: CGFloat = 10
     static let dockShadowExtraBleed: CGFloat = 4
     static var dockShadowVerticalPadding: CGFloat {

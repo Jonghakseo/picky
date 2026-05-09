@@ -592,10 +592,7 @@ export function buildRealtimeConnection(config: OpenAIRealtimeAuthConfig): { url
     return {
       url: `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(config.modelOrDeployment)}`,
       host: "api.openai.com",
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "OpenAI-Beta": "realtime=v1",
-      },
+      headers: openAIRealtimeHeaders(config),
     };
   }
 
@@ -693,6 +690,19 @@ export function normalizeAzureRealtimeHost(endpoint: string): string {
   if (url.pathname !== "/" || url.search || url.hash) throw new Error("Azure OpenAI endpoint must not include a path, query, or fragment");
   if (!url.hostname) throw new Error("Azure OpenAI endpoint host is required");
   return url.hostname;
+}
+
+function openAIRealtimeHeaders(config: OpenAIRealtimeAuthConfig): Record<string, string> {
+  const headers: Record<string, string> = { Authorization: `Bearer ${config.apiKey}` };
+  if (requiresOpenAIBetaRealtimeHeader(config.modelOrDeployment)) headers["OpenAI-Beta"] = "realtime=v1";
+  return headers;
+}
+
+function requiresOpenAIBetaRealtimeHeader(model: string): boolean {
+  // Public OpenAI `gpt-realtime-*` models are GA-only. Sending the legacy
+  // OpenAI-Beta realtime header downgrades the WebSocket to the beta schema,
+  // where GA session fields like `session.type` are rejected.
+  return !/^gpt-realtime(?:-|$)/i.test(model.trim());
 }
 
 function normalizeRealtimeConfig(config: OpenAIRealtimeAuthConfig): OpenAIRealtimeAuthConfig {

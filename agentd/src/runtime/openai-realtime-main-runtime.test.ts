@@ -6,7 +6,7 @@ import type { BuiltPrompt } from "../prompt-builder.js";
 import type { OpenAIRealtimeAuthConfig, PickyAgentSession, PickyContextPacket } from "../protocol.js";
 
 describe("OpenAI Realtime provider connection builders", () => {
-  it("builds OpenAI public websocket URL and bearer auth", () => {
+  it("builds OpenAI GA websocket URL without the beta header for gpt-realtime models", () => {
     const connection = buildRealtimeConnection({
       provider: "openai",
       apiKey: "sk-test",
@@ -15,6 +15,18 @@ describe("OpenAI Realtime provider connection builders", () => {
     });
 
     expect(connection.url).toBe("wss://api.openai.com/v1/realtime?model=gpt-realtime-2");
+    expect(connection.headers).toEqual({ Authorization: "Bearer sk-test" });
+  });
+
+  it("keeps the beta header for older OpenAI realtime preview models", () => {
+    const connection = buildRealtimeConnection({
+      provider: "openai",
+      apiKey: "sk-test",
+      modelOrDeployment: "gpt-4o-realtime-preview",
+      voice: "marin",
+    });
+
+    expect(connection.url).toBe("wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview");
     expect(connection.headers.Authorization).toBe("Bearer sk-test");
     expect(connection.headers["OpenAI-Beta"]).toBe("realtime=v1");
   });

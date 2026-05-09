@@ -39,7 +39,7 @@ private final class FakeWebSocketFactory: PickyWebSocketTaskMaking {
 private enum EventJSON {
     static func hello() -> String {
         """
-        {"id":"event-hello","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:00.000Z","type":"hello","serverName":"picky-agentd","supportedProtocolVersions":["2026-05-05"]}
+        {"id":"event-hello","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:00.000Z","type":"hello","serverName":"picky-agentd","supportedProtocolVersions":["2026-05-09"]}
         """
     }
 }
@@ -117,7 +117,7 @@ struct PickyAgentClientTests {
         task.receiveResults = [
             .success(.string(EventJSON.hello())),
             .success(.string("""
-            {"id":"event-session","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionUpdated","session":{"id":"session-1","title":"Work","status":"running","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
+            {"id":"event-session","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionUpdated","session":{"id":"session-1","title":"Work","status":"running","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
             """))
         ]
         let client = WebSocketPickyAgentClient(configuration: .init(port: 19001, token: "secret", reconnectDelay: 0.01), factory: FakeWebSocketFactory(task: task))
@@ -130,7 +130,7 @@ struct PickyAgentClientTests {
         let session = await iterator.next()
 
         if case .protocolEvent(let event)? = hello {
-            #expect(event.event == .hello(PickyHelloEvent(serverName: "picky-agentd", supportedProtocolVersions: ["2026-05-05"])))
+            #expect(event.event == .hello(PickyHelloEvent(serverName: "picky-agentd", supportedProtocolVersions: ["2026-05-09"])))
         } else { Issue.record("Expected hello") }
 
         if case .protocolEvent(let event)? = session,

@@ -61,6 +61,61 @@ struct PickySettingsPolishTests {
         #expect(store.load().mainAgentThinkingLevel == .high)
     }
 
+    @Test func settingsLoadDefaultsMainAgentRuntimeToPiWhenLegacyFileLacksField() throws {
+        let legacyJSON = """
+        {
+          "defaultCwd": "/tmp",
+          "worktreeParent": "",
+          "preferredToolVisibility": "visible in context only",
+          "readOnlyInvestigationPreference": true,
+          "daemonPath": "/tmp/agentd",
+          "logPath": "/tmp/logs"
+        }
+        """.data(using: .utf8)!
+
+        let settings = try JSONDecoder().decode(PickySettings.self, from: legacyJSON)
+
+        #expect(settings.mainAgentRuntimeMode == .pi)
+        #expect(settings.openAIRealtime.modelOrDeployment == "gpt-realtime-2")
+        #expect(settings.openAIRealtime.provider == .openAI)
+    }
+
+    @Test func settingsRoundTripPreservesOpenAIRealtimeSettings() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.defaultCwd = project.path
+        settings.worktreeParent = project.path
+        settings.mainAgentRuntimeMode = .openAIRealtime
+        settings.openAIRealtime = PickyOpenAIRealtimeSettings(
+            provider: .azureOpenAI,
+            apiKey: " azure-key ",
+            modelOrDeployment: " realtime-deployment ",
+            azureResourceEndpoint: " https://resource.openai.azure.com ",
+            azureAPIVersion: " 2025-04-01-preview ",
+            azureAPIShape: .preview,
+            voice: " marin ",
+            reasoningEffort: .high,
+            transcriptionLanguage: " ko "
+        )
+
+        try store.save(settings)
+        let loaded = store.load()
+
+        #expect(loaded.mainAgentRuntimeMode == .openAIRealtime)
+        #expect(loaded.openAIRealtime.provider == .azureOpenAI)
+        #expect(loaded.openAIRealtime.apiKey == "azure-key")
+        #expect(loaded.openAIRealtime.modelOrDeployment == "realtime-deployment")
+        #expect(loaded.openAIRealtime.azureResourceEndpoint == "https://resource.openai.azure.com")
+        #expect(loaded.openAIRealtime.azureAPIVersion == "2025-04-01-preview")
+        #expect(loaded.openAIRealtime.azureAPIShape == .preview)
+        #expect(loaded.openAIRealtime.voice == "marin")
+        #expect(loaded.openAIRealtime.reasoningEffort == .high)
+        #expect(loaded.openAIRealtime.transcriptionLanguage == "ko")
+    }
+
     @Test func settingsLoadDefaultsScreenContextScopeToAllScreensWhenLegacyFileLacksField() throws {
         let legacyJSON = """
         {
@@ -380,7 +435,7 @@ private final class FakePolishClient: PickyAgentClient {
 
 private func sessionUpdatedJSON(id: String, title: String, status: String, summary: String) -> String {
     """
-    {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-05","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/tmp/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
+    {"id":"event-\(id)-\(status)","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionUpdated","session":{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"/tmp/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}}
     """
 }
 

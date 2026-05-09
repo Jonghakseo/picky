@@ -101,6 +101,26 @@ struct PickyCompanionManagerTests {
         #expect(client.submissions.isEmpty)
     }
 
+    @Test func sideHoverVoiceFollowUpNeverUsesRealtimeCommands() async throws {
+        let client = FakeVoiceClient()
+        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+        let context = context(source: "voice-follow-up")
+
+        _ = try await manager.routeVoiceTranscript(transcript: "side delta", contextPacket: context, voiceFollowUpSessionID: "side-session")
+
+        #expect(client.commands.map(\.type) == [.followUp])
+        let sentRealtimeCommand = client.commands.contains { command in
+            switch command.type {
+            case .beginMainRealtimeVoiceTurn, .appendMainRealtimeInputAudio, .commitMainRealtimeVoiceTurn, .cancelMainRealtimeVoiceTurn:
+                return true
+            default:
+                return false
+            }
+        }
+        #expect(sentRealtimeCommand == false)
+        #expect(client.submissions.isEmpty)
+    }
+
     // Regression: between `stopPushToTalkFromKeyboardShortcut` and the eventual
     // `submitDraftText` -> `submitTranscriptToPickyAgent` callback, the dictation
     // publishers (isKeyboardRecording / isFinalizingTranscript / isPreparingToRecord)
@@ -202,6 +222,21 @@ struct PickyCompanionManagerTests {
         #expect(manager.latestAgentSessionSummary == "열어볼게요.")
         #expect(manager.voiceState == .responding)
         #expect(speechProvider.spokenUtterances == ["열어볼게요."])
+    }
+
+    @Test func realtimeTranscriptEventsDoNotTriggerExistingSpeechProvider() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+
+        manager.applyAgentEvent(.mainRealtimeOutputTranscriptCompleted(inputId: nil, transcript: "Realtime 응답"))
+        manager.applyAgentEvent(.mainRealtimeTurnDone(PickyMainRealtimeTurnDoneEvent(inputId: nil, status: .completed, finalTranscript: "Realtime 응답")))
+
+        #expect(manager.latestAgentSessionSummary == "Realtime 응답")
+        #expect(speechProvider.spokenUtterances.isEmpty)
     }
 
     @Test func injectedSpeechProviderControlsResponseLifecycle() async throws {

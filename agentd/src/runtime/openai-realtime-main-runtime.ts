@@ -869,12 +869,12 @@ function realtimeTools(): Array<Record<string, unknown>> {
     {
       type: "function",
       name: "picky_handoff",
-      description: "Delegate complex, long-running, tool-heavy, or multi-turn work to a side Pi agent shown in Picky's HUD overlay.",
+      description: "Delegate complex, long-running, tool-heavy, or multi-turn work to a side Pi agent shown in Picky's dock.",
       parameters: {
         type: "object",
         additionalProperties: false,
         properties: {
-          title: { type: "string", description: "Short Korean title for the side-agent HUD card." },
+          title: { type: "string", description: "Short Korean title for the side-agent dock card." },
           instructions: { type: "string", description: "Compact delta-first brief for the side Pi agent." },
           userMessage: { type: "string", description: "Optional Korean message to tell the user after handoff." },
           cwd: { type: "string", description: "Optional absolute working directory for the side Pi agent." },

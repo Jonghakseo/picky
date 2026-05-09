@@ -40,7 +40,7 @@ export function createPickyHandoffTool(onHandoff: (request: PickyHandoffRequest)
     name: "picky_handoff",
     label: "Picky handoff",
     description: "Delegate complex, long-running, tool-heavy, or multi-turn work to a side Pi agent shown in Picky's dock.",
-    promptSnippet: "picky_handoff: delegate complex or long-running work to a side Pi agent in the Picky HUD.",
+    promptSnippet: "picky_handoff: delegate complex or long-running work to a side Pi agent in the Picky dock.",
     promptGuidelines: [
       "Use picky_handoff when the user's request needs new detailed screen analysis, code/repo/file work, web/video extraction, MCPs, or multiple turns.",
       "Before creating a new handoff for work that may already be delegated, call picky_side_sessions and prefer picky_side_steer for a matching existing side agent.",
@@ -49,7 +49,7 @@ export function createPickyHandoffTool(onHandoff: (request: PickyHandoffRequest)
       "After calling picky_handoff, tell the user in Korean that a side agent has been started and progress can be checked in the Picky dock.",
     ],
     parameters: Type.Object({
-      title: Type.String({ description: "Short Korean title for the side-agent HUD card." }),
+      title: Type.String({ description: "Short Korean title for the side-agent dock card." }),
       instructions: Type.String({ description: "Compact delta-first brief for the side Pi agent, ideally about 300 Korean characters: goal, essential constraints, key paths/URLs/IDs, known decisions, and expected output. Do not paste full prompts, transcripts, logs, screenshot metadata, or captured context." }),
       userMessage: Type.Optional(Type.String({ description: "Optional short Korean message you intend to tell the user after handoff." })),
       cwd: Type.Optional(Type.String({ description: "Optional absolute working directory for the side Pi agent. Omit to use Picky's configured default cwd." })),
@@ -82,7 +82,7 @@ export function createPickySideSessionsTool(onList: () => PickyAgentSession[]): 
     name: "picky_side_sessions",
     label: "Picky side sessions",
     description: "List one bounded page of side Pi agents that the Picky main agent has already delegated work to, so steering requests can reuse the right side agent instead of starting a duplicate.",
-    promptSnippet: "picky_side_sessions: list one bounded page of current and recent side Pi agents in the Picky HUD before deciding whether to steer one.",
+    promptSnippet: "picky_side_sessions: list one bounded page of current and recent side Pi agents in the Picky dock before deciding whether to steer one.",
     promptGuidelines: [
       "Use picky_side_sessions when the user refers to an existing delegated task, side agent, running work, recent completion, or asks to continue/change/check progress.",
       "The tool returns at most one small page at a time; follow nextPage only when needed for the user's request.",

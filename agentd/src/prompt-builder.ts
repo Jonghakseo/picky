@@ -70,7 +70,7 @@ export function buildSideAgentPrompt(context: PickyContextPacket, handoff: { tit
 
 export function buildMainAgentSideCompletionPrompt(session: { id: string; title: string; status: string; finalAnswer?: string; lastSummary?: string; artifacts?: Array<{ title: string; path?: string; url?: string }> }): BuiltPrompt {
   const result = session.finalAnswer || session.lastSummary || "(no final answer captured)";
-  const artifacts = session.artifacts?.map((artifact) => `- ${artifact.title}: ${artifact.path ?? artifact.url ?? "available in HUD"}`).join("\n") || "- available in the side-agent HUD card";
+  const artifacts = session.artifacts?.map((artifact) => `- ${artifact.title}: ${artifact.path ?? artifact.url ?? "available in the Picky dock"}`).join("\n") || "- available in the side-agent dock card";
   return {
     text: [
       "# Side-agent completion",

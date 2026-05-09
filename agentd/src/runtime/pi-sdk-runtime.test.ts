@@ -1,7 +1,6 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import { PiSdkRuntime } from "./pi-sdk-runtime.js";
-import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 
 class FakeSession extends EventEmitter {
   sessionFile = "/tmp/fake-session.jsonl";

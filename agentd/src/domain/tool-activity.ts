@@ -1,6 +1,6 @@
 import type { PickyToolActivity } from "../protocol.js";
 
-export function hasActiveTools(tools: PickyToolActivity[]): boolean {
+function hasActiveTools(tools: PickyToolActivity[]): boolean {
   return tools.some((tool) => isActiveToolStatus(tool.status));
 }
 

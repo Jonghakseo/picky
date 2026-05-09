@@ -1784,11 +1784,15 @@ function parseUserBashInput(text: string): UserBashInput | undefined {
 }
 
 function formatUserBashSystemMessage(input: UserBashInput, result: RuntimeBashExecutionResult): string {
-  const prefix = input.excludeFromContext ? "!!" : "!";
   const output = result.output.trimEnd() || "(no output)";
-  const status = result.cancelled ? "cancelled" : result.exitCode && result.exitCode !== 0 ? `exit ${result.exitCode}` : "exit 0";
-  const truncated = result.truncated ? `\n\nOutput truncated${result.fullOutputPath ? `; full output: ${result.fullOutputPath}` : ""}.` : "";
-  return `Ran \`${prefix}${input.command}\` (${status})\n\n\`\`\`\n${output}\n\`\`\`${truncated}`;
+  const status = result.cancelled
+    ? "⚠️ Cancelled"
+    : result.exitCode && result.exitCode !== 0
+      ? `❌ Failed · exit ${result.exitCode}`
+      : "✅ Completed · exit 0";
+  const contextVisibility = input.excludeFromContext ? "hidden from Pi context" : "added to Pi context";
+  const truncated = result.truncated ? `\n\n⚠️ Output truncated${result.fullOutputPath ? `; full output: ${result.fullOutputPath}` : ""}.` : "";
+  return `### 🖥️ ${input.command}\n\n${status} · ${contextVisibility}\n\n\`\`\`console\n${output}\n\`\`\`${truncated}`;
 }
 
 function userBashSummary(command: string, result: RuntimeBashExecutionResult): string {

@@ -57,7 +57,7 @@ describe("SessionSupervisor", () => {
     expect(runtime.handle!.followUps).toEqual([]);
     expect(runtime.handle!.userBashExecutions).toEqual([{ command: "pwd", excludeFromContext: false }]);
     expect(updated.status).toBe("completed");
-    expect(supervisor.get(session.id)?.messages?.some((message) => message.kind === "system" && message.text?.includes("Ran `!pwd`"))).toBe(true);
+    expect(supervisor.get(session.id)?.messages?.some((message) => message.kind === "system" && message.text?.includes("### 🖥️ pwd") && message.text.includes("✅ Completed · exit 0 · added to Pi context"))).toBe(true);
   });
 
   it("executes !! steer input as hidden Pi user bash", async () => {
@@ -73,7 +73,7 @@ describe("SessionSupervisor", () => {
 
     expect(runtime.handle!.steerPrompts).toEqual([]);
     expect(runtime.handle!.userBashExecutions).toEqual([{ command: "printenv SECRET", excludeFromContext: true }]);
-    expect(supervisor.get(session.id)?.messages?.some((message) => message.kind === "system" && message.text?.includes("Ran `!!printenv SECRET`"))).toBe(true);
+    expect(supervisor.get(session.id)?.messages?.some((message) => message.kind === "system" && message.text?.includes("### 🖥️ printenv SECRET") && message.text.includes("✅ Completed · exit 0 · hidden from Pi context"))).toBe(true);
   });
 
   it("projects queue updates with monotonic sequence numbers", async () => {

@@ -1,0 +1,11 @@
+{
+  "": {
+    "swift-dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlaygroundTests.build/master.swiftdeps"
+  },
+  "/Users/creatrip/Documents/picky/tools/diff-review-playground/Tests/DiffReviewPlaygroundTests/AppKitDiffFilesChangedViewTests.swift": {
+    "dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlaygroundTests.build/AppKitDiffFilesChangedViewTests.d",
+    "object": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlaygroundTests.build/AppKitDiffFilesChangedViewTests.swift.o",
+    "swiftmodule": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlaygroundTests.build/AppKitDiffFilesChangedViewTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlaygroundTests.build/AppKitDiffFilesChangedViewTests.swiftdeps"
+  }
+}

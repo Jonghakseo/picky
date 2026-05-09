@@ -1,0 +1,4 @@
+module PickyDiffReviewPlaygroundPackageTests {
+    header "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.build/PickyDiffReviewPlaygroundPackageTests-Swift.h"
+    requires objc
+}

@@ -1,0 +1,798 @@
+{
+  "builtTestProducts" : [
+    {
+      "binaryPath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.xctest/Contents/MacOS/PickyDiffReviewPlaygroundPackageTests",
+      "packagePath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground",
+      "productName" : "PickyDiffReviewPlaygroundPackageTests"
+    }
+  ],
+  "copyCommands" : {
+
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.DiffReviewPlayground-arm64-apple-macosx15.0-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/sources",
+      "importPath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/App.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/AppKitDiffFilesChangedView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewModels.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewPromptBuilder.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewSource.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewStore.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewViews.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/UnifiedDiffParser.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "DiffReviewPlayground",
+      "moduleOutputPath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/Modules/DiffReviewPlayground.swiftmodule",
+      "objects" : [
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/App.swift.o",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/AppKitDiffFilesChangedView.swift.o",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewModels.swift.o",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewPromptBuilder.swift.o",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewSource.swift.o",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewStore.swift.o",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewViews.swift.o",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/UnifiedDiffParser.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-enable-batch-mode",
+        "-index-store-path",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-j14",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-module-cache-path",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "DiffReviewPlayground_main",
+        "-swift-version",
+        "5",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "diff_review_playground"
+      ],
+      "outputFileMapPath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/App.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/AppKitDiffFilesChangedView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewModels.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewPromptBuilder.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewSource.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewStore.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewViews.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/UnifiedDiffParser.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/Modules/DiffReviewPlayground.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/App.swift",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/AppKitDiffFilesChangedView.swift",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewModels.swift",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewPromptBuilder.swift",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewSource.swift",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewStore.swift",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewViews.swift",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/UnifiedDiffParser.swift"
+      ],
+      "tempsPath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.DiffReviewPlaygroundTests-arm64-apple-macosx15.0-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlaygroundTests.build/sources",
+      "importPath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Tests/DiffReviewPlaygroundTests/AppKitDiffFilesChangedViewTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/diff-review-playground"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlaygroundTests.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "DiffReviewPlaygroundTests",
+      "moduleOutputPath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/Modules/DiffReviewPlaygroundTests.swiftmodule",
+      "objects" : [
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlaygroundTests.build/AppKitDiffFilesChangedViewTests.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-enable-batch-mode",
+        "-index-store-path",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-Xfrontend",
+        "-enable-cross-import-overlays",
+        "-j14",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-module-cache-path",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-swift-version",
+        "5",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "diff_review_playground"
+      ],
+      "outputFileMapPath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlaygroundTests.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlaygroundTests.build/AppKitDiffFilesChangedViewTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/Modules/DiffReviewPlaygroundTests.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/Tests/DiffReviewPlaygroundTests/AppKitDiffFilesChangedViewTests.swift"
+      ],
+      "tempsPath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlaygroundTests.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.PickyDiffReviewPlaygroundPackageTests-arm64-apple-macosx15.0-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.build/sources",
+      "importPath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.derived/runner.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/Modules/DiffReviewPlaygroundTests.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "PickyDiffReviewPlaygroundPackageTests",
+      "moduleOutputPath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/Modules/PickyDiffReviewPlaygroundPackageTests.swiftmodule",
+      "objects" : [
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.build/runner.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-enable-batch-mode",
+        "-index-store-path",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-Xfrontend",
+        "-enable-cross-import-overlays",
+        "-j14",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-module-cache-path",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.build/PickyDiffReviewPlaygroundPackageTests-Swift.h",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "diff_review_playground"
+      ],
+      "outputFileMapPath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.build/runner.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/Modules/PickyDiffReviewPlaygroundPackageTests.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.derived/runner.swift"
+      ],
+      "tempsPath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.build",
+      "wholeModuleOptimization" : false
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "DiffReviewPlayground" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "DiffReviewPlayground",
+      "-package-name",
+      "diff_review_playground",
+      "-incremental",
+      "-c",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/App.swift",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/AppKitDiffFilesChangedView.swift",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewModels.swift",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewPromptBuilder.swift",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewSource.swift",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewStore.swift",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewViews.swift",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/UnifiedDiffParser.swift",
+      "-I",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-enable-batch-mode",
+      "-index-store-path",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-j14",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-module-cache-path",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "DiffReviewPlayground_main",
+      "-swift-version",
+      "5",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "diff_review_playground",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "DiffReviewPlaygroundTests" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "DiffReviewPlaygroundTests",
+      "-package-name",
+      "diff_review_playground",
+      "-incremental",
+      "-c",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/Tests/DiffReviewPlaygroundTests/AppKitDiffFilesChangedViewTests.swift",
+      "-I",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-enable-batch-mode",
+      "-index-store-path",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-Xfrontend",
+      "-enable-cross-import-overlays",
+      "-j14",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-module-cache-path",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-swift-version",
+      "5",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "diff_review_playground",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "PickyDiffReviewPlaygroundPackageTests" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "PickyDiffReviewPlaygroundPackageTests",
+      "-package-name",
+      "diff_review_playground",
+      "-incremental",
+      "-c",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.derived/runner.swift",
+      "-I",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-enable-batch-mode",
+      "-index-store-path",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-Xfrontend",
+      "-enable-cross-import-overlays",
+      "-j14",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-module-cache-path",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.build/PickyDiffReviewPlaygroundPackageTests-Swift.h",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.4.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "diff_review_playground",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "DiffReviewPlayground" : [
+
+    ],
+    "DiffReviewPlaygroundTests" : [
+      "DiffReviewPlayground"
+    ],
+    "PickyDiffReviewPlaygroundPackageTests" : [
+      "DiffReviewPlaygroundTests",
+      "DiffReviewPlayground"
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+    "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.derived/runner.swift" : {
+      "inputs" : [
+
+      ],
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.derived/runner.swift"
+        }
+      ]
+    }
+  },
+  "traitConfiguration" : {
+    "enableAllTraits" : false
+  },
+  "writeCommands" : {
+    "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/App.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/AppKitDiffFilesChangedView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewModels.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewPromptBuilder.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewSource.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewStore.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewViews.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/UnifiedDiffParser.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/sources"
+    },
+    "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlaygroundTests.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/Tests/DiffReviewPlaygroundTests/AppKitDiffFilesChangedViewTests.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlaygroundTests.build/sources"
+    },
+    "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.derived/runner.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.build/sources"
+    },
+    "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/App.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/AppKitDiffFilesChangedView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewModels.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewPromptBuilder.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewSource.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewStore.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewViews.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/UnifiedDiffParser.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlaygroundTests.build/AppKitDiffFilesChangedViewTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.build/runner.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/PickyDiffReviewPlaygroundPackageTests.product/Objects.LinkFileList"
+    },
+    "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/diff-review-playground-entitlement.plist" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<entitlement-plist>"
+        },
+        {
+          "kind" : "virtual",
+          "name" : "<com.apple.security.get-task-allow>"
+        }
+      ],
+      "outputFilePath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/diff-review-playground-entitlement.plist"
+    },
+    "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/diff-review-playground.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/App.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/AppKitDiffFilesChangedView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewModels.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewPromptBuilder.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewSource.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewStore.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewViews.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/UnifiedDiffParser.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/diff-review-playground.product/Objects.LinkFileList"
+    },
+    "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+    }
+  }
+}

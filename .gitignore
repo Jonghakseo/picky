@@ -9,7 +9,6 @@ Icon?
 
 # Xcode / Swift
 build/
-.build/
 DerivedData/
 *.xcworkspace/xcuserdata/
 *.playground/playground.xcworkspace/xcuserdata/

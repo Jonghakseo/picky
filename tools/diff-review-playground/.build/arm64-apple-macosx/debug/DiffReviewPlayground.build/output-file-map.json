@@ -1,0 +1,53 @@
+{
+  "": {
+    "swift-dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/master.swiftdeps"
+  },
+  "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/App.swift": {
+    "dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/App.d",
+    "object": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/App.swift.o",
+    "swiftmodule": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/App~partial.swiftmodule",
+    "swift-dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/App.swiftdeps"
+  },
+  "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/AppKitDiffFilesChangedView.swift": {
+    "dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/AppKitDiffFilesChangedView.d",
+    "object": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/AppKitDiffFilesChangedView.swift.o",
+    "swiftmodule": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/AppKitDiffFilesChangedView~partial.swiftmodule",
+    "swift-dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/AppKitDiffFilesChangedView.swiftdeps"
+  },
+  "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewModels.swift": {
+    "dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewModels.d",
+    "object": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewModels.swift.o",
+    "swiftmodule": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewModels~partial.swiftmodule",
+    "swift-dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewModels.swiftdeps"
+  },
+  "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewPromptBuilder.swift": {
+    "dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewPromptBuilder.d",
+    "object": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewPromptBuilder.swift.o",
+    "swiftmodule": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewPromptBuilder~partial.swiftmodule",
+    "swift-dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewPromptBuilder.swiftdeps"
+  },
+  "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewSource.swift": {
+    "dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewSource.d",
+    "object": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewSource.swift.o",
+    "swiftmodule": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewSource~partial.swiftmodule",
+    "swift-dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewSource.swiftdeps"
+  },
+  "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewStore.swift": {
+    "dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewStore.d",
+    "object": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewStore.swift.o",
+    "swiftmodule": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewStore~partial.swiftmodule",
+    "swift-dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewStore.swiftdeps"
+  },
+  "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/DiffReviewViews.swift": {
+    "dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewViews.d",
+    "object": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewViews.swift.o",
+    "swiftmodule": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewViews~partial.swiftmodule",
+    "swift-dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/DiffReviewViews.swiftdeps"
+  },
+  "/Users/creatrip/Documents/picky/tools/diff-review-playground/Sources/DiffReviewPlayground/UnifiedDiffParser.swift": {
+    "dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/UnifiedDiffParser.d",
+    "object": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/UnifiedDiffParser.swift.o",
+    "swiftmodule": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/UnifiedDiffParser~partial.swiftmodule",
+    "swift-dependencies": "/Users/creatrip/Documents/picky/tools/diff-review-playground/.build/arm64-apple-macosx/debug/DiffReviewPlayground.build/UnifiedDiffParser.swiftdeps"
+  }
+}

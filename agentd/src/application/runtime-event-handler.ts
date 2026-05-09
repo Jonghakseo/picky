@@ -32,8 +32,8 @@ export interface RuntimeEventHandlerDependencies {
   applyQueueUpdate(sessionId: string, steering: readonly string[], followUp: readonly string[]): Promise<void>;
   incrementActivity(sessionId: string, category: ToolCategory): Promise<void>;
   commitTurnActivity(sessionId: string): Promise<void>;
-  notifySideCompletion(sessionId: string): Promise<void>;
-  isSideSession(sessionId: string): boolean;
+  notifyPickleCompletion(sessionId: string): Promise<void>;
+  isPickleSession(sessionId: string): boolean;
   emitExtensionUiRequest(request: PickyExtensionUiRequest): void;
   onInputMessage?(sessionId: string, event: Extract<RuntimeEvent, { type: "input_message" }>): Promise<void>;
   messageBuilder: RuntimeMessageJournal;
@@ -190,14 +190,14 @@ export class RuntimeEventHandler {
       // Synthetic completions (Pi `/slash` handlers, `input` handlers returning `handled`) flip
       // the session out of the loading state but did not run any agent turn. Re-materializing
       // terminal artifacts would overwrite the previous session report with empty content, and
-      // notifying the main agent would deliver a bogus "side session finished" message even
+      // notifying Picky would deliver a bogus "Pickle session finished" message even
       // though nothing actually completed. Skip both for `noTurnRan` events.
       if (event.noTurnRan) {
         this.dependencies.consumeNoTurnRanSessionStateRestore?.(sessionId);
         return;
       }
       await this.dependencies.materializeTerminalArtifacts(sessionId);
-      if (this.dependencies.isSideSession(sessionId)) await this.dependencies.notifySideCompletion(sessionId);
+      if (this.dependencies.isPickleSession(sessionId)) await this.dependencies.notifyPickleCompletion(sessionId);
     }
   }
 

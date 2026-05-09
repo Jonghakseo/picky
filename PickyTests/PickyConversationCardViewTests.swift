@@ -285,9 +285,9 @@ struct PickyConversationCardViewTests {
         )
 
         #expect(enabledComposer.notifyOnCompletionIconName == "bell.fill")
-        #expect(enabledComposer.notifyOnCompletionHelpText == "Notify main agent on completion")
+        #expect(enabledComposer.notifyOnCompletionHelpText == "Notify Picky on completion")
         #expect(disabledComposer.notifyOnCompletionIconName == "bell.slash")
-        #expect(disabledComposer.notifyOnCompletionHelpText == "Do not notify main agent on completion")
+        #expect(disabledComposer.notifyOnCompletionHelpText == "Do not notify Picky on completion")
     }
 
     @Test func headerTitleTooltipMentionsNameCommand() {
@@ -510,15 +510,15 @@ struct PickyConversationCardViewTests {
         viewModel.start()
         defer { viewModel.stop() }
 
-        client.emit(.protocolEvent(.fixture(eventJSON: sessionUpdatedJSON(id: "side-voice", status: "running"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: sessionUpdatedJSON(id: "pickle-voice", status: "running"))))
         try await settle()
 
-        let session = try #require(viewModel.sessions.first(where: { $0.id == "side-voice" }))
+        let session = try #require(viewModel.sessions.first(where: { $0.id == "pickle-voice" }))
         let card = PickyConversationCardView(viewModel: viewModel, session: session)
 
         card.updateVoiceFollowUpHover(true)
-        #expect(viewModel.hoveredVoiceFollowUpSessionID == "side-voice")
-        #expect(selection.hoveredVoiceFollowUpSessionID == "side-voice")
+        #expect(viewModel.hoveredVoiceFollowUpSessionID == "pickle-voice")
+        #expect(selection.hoveredVoiceFollowUpSessionID == "pickle-voice")
 
         card.updateVoiceFollowUpHover(false)
         #expect(viewModel.hoveredVoiceFollowUpSessionID == nil)
@@ -528,7 +528,7 @@ struct PickyConversationCardViewTests {
     @Test func userBubbleShowsByMainAgentLabelWhenOriginated() {
         let bubble = PickyUserBubbleView(message: message("m-main", kind: .userText, text: "delegated", originatedBy: .mainAgent))
 
-        #expect(bubble.displayedOriginLabel == "by main agent")
+        #expect(bubble.displayedOriginLabel == "by Picky")
     }
 
     @Test func userBubbleShowsPiExtensionLabelWhenPiExtensionOriginated() {

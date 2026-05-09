@@ -7,7 +7,7 @@ import { extractChangedFilesFromExplicitText, extractSessionLinkArtifacts } from
 import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
-import { buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentSideCompletionPrompt, buildSideAgentPrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
+import { buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
 import type { EventEnvelope, MainAgentRuntimeMode, ModelCycleDirection, OpenAIRealtimeAuthConfig, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { parsePointerTags, type ParsedPointerTags } from "./application/pointer-tag-parser.js";
@@ -46,7 +46,7 @@ export class SessionSupervisor extends EventEmitter {
   private mainHandleUnsubscribe?: () => void;
   private mainHandleGeneration = 0;
   private mainThinkingLevel?: ThinkingLevel;
-  /// Free-form user instructions appended to every main-agent per-turn prompt. Mirrors the
+  /// Free-form user instructions appended to every Picky per-turn prompt. Mirrors the
   /// `mainAgentExtraInstructions` field stored in PickySettings on the Picky.app side; pushed
   /// over the websocket via `setMainAgentExtraInstructions` whenever settings are saved.
   private mainExtraInstructions = "";
@@ -66,10 +66,10 @@ export class SessionSupervisor extends EventEmitter {
   private mainTerminalProcessed = false;
   private suppressNextMainReply = false;
   private suppressInterruptedMainCompletion = false;
-  private sideSessionIds = new Set<string>();
-  private sideCompletionNotified = new Set<string>();
-  private sideCompletionInFlight = new Set<string>();
-  private pendingSideCompletions: string[] = [];
+  private pickleSessionIds = new Set<string>();
+  private pickleCompletionNotified = new Set<string>();
+  private pickleCompletionInFlight = new Set<string>();
+  private pendingPickleCompletions: string[] = [];
   private sessionContexts = new Map<string, PickyContextPacket>();
   private pendingRuntimeHandles = new Map<string, Promise<RuntimeSessionHandle>>();
   private sessionSeq = new Map<string, number>();
@@ -113,8 +113,8 @@ export class SessionSupervisor extends EventEmitter {
       applyQueueUpdate: (sessionId, steering, followUp) => this.applyQueueUpdate(sessionId, steering, followUp),
       incrementActivity: (sessionId, category) => this.incrementActivity(sessionId, category),
       commitTurnActivity: (sessionId) => this.commitTurnActivity(sessionId),
-      notifySideCompletion: (sessionId) => this.notifyMainOfSideCompletion(sessionId),
-      isSideSession: (sessionId) => this.sideSessionIds.has(sessionId),
+      notifyPickleCompletion: (sessionId) => this.notifyPickyOfPickleCompletion(sessionId),
+      isPickleSession: (sessionId) => this.pickleSessionIds.has(sessionId),
       emitExtensionUiRequest: (request) => this.emit("extensionUiRequest", request),
       onInputMessage: (sessionId, event) => this.handleRuntimeInputMessage(sessionId, event),
       messageBuilder: this.messageBuilder,
@@ -127,15 +127,15 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("sessions loading", { count: persisted.length });
     for (const persistedSession of persisted) {
       const migratedSession = withPiSessionFileFromLogs(persistedSession);
-      const isSideSession = hasSideSessionMarkerLog(migratedSession);
-      if (isSideSession) this.sideSessionIds.add(migratedSession.id);
-      const session = isSideSession && migratedSession.notifyMainOnCompletion === undefined
+      const isPickleSession = hasPickleSessionMarkerLog(migratedSession);
+      if (isPickleSession) this.pickleSessionIds.add(migratedSession.id);
+      const session = isPickleSession && migratedSession.notifyMainOnCompletion === undefined
         ? { ...migratedSession, notifyMainOnCompletion: true }
         : migratedSession;
       this.sessions.set(session.id, session);
       this.messageBuilder.hydrateSession(session.id, session.messages);
       if (session.piSessionFilePath !== persistedSession.piSessionFilePath || session.notifyMainOnCompletion !== persistedSession.notifyMainOnCompletion) await this.store.save(session);
-      if (this.sideSessionIds.has(session.id)) void this.refreshSideSessionTitleFromPi(session.id);
+      if (this.pickleSessionIds.has(session.id)) void this.refreshPickleSessionTitleFromPi(session.id);
 
       if (!isTerminalStatus(session.status)) {
         if (session.archived === true) {
@@ -174,13 +174,14 @@ export class SessionSupervisor extends EventEmitter {
     return [...this.sessions.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
-  listSideSessions(): PickyAgentSession[] {
-    return this.list().filter((session) => this.sideSessionIds.has(session.id));
+  listPickleSessions(): PickyAgentSession[] {
+    return this.list().filter((session) => this.pickleSessionIds.has(session.id));
   }
 
-  isSideSession(sessionId: string): boolean {
-    return this.sideSessionIds.has(sessionId);
+  isPickleSession(sessionId: string): boolean {
+    return this.pickleSessionIds.has(sessionId);
   }
+
 
   get(id: string): PickyAgentSession | undefined {
     return this.sessions.get(id);
@@ -423,8 +424,8 @@ export class SessionSupervisor extends EventEmitter {
     this.mainTerminalProcessed = false;
     this.suppressNextMainReply = false;
     this.suppressInterruptedMainCompletion = false;
-    if (this.pendingSideCompletions.length > 0) logAgentd("main pending side completions cleared", { count: this.pendingSideCompletions.length });
-    this.pendingSideCompletions = [];
+    if (this.pendingPickleCompletions.length > 0) logAgentd("Picky pending Pickle completions cleared", { count: this.pendingPickleCompletions.length });
+    this.pendingPickleCompletions = [];
   }
 
   private async abortResetMainHandle(handle: RuntimeSessionHandle, label: string): Promise<void> {
@@ -466,28 +467,30 @@ export class SessionSupervisor extends EventEmitter {
     this.emit("quickReply", contextId, text, metadata);
   }
 
-  async createSideFromHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string }): Promise<PickyAgentSession> {
+
+  async createPickleFromHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string }): Promise<PickyAgentSession> {
     const cwd = normalizeOptionalString(handoff.cwd) ?? context.cwd;
     const handoffContext = cwd ? { ...context, cwd } : context;
-    logAgentd("side session create requested", { contextId: context.id, titleChars: handoff.title.length, instructionChars: handoff.instructions.length, cwd: handoffContext.cwd });
-    const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildSideAgentPrompt(handoffContext, handoff), { notifyMainOnCompletion: true });
-    this.sideSessionIds.add(session.id);
+    logAgentd("pickle session create requested", { contextId: context.id, titleChars: handoff.title.length, instructionChars: handoff.instructions.length, cwd: handoffContext.cwd });
+    const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildPicklePrompt(handoffContext, handoff), { notifyMainOnCompletion: true });
+    this.pickleSessionIds.add(session.id);
     await this.appendLog(session.id, `${HANDOFF_PREFIX}${handoff.instructions}`);
-    if (handoffContext.cwd) await this.appendLog(session.id, `main-agent handoff cwd: ${handoffContext.cwd}`);
+    if (handoffContext.cwd) await this.appendLog(session.id, `Picky handoff cwd: ${handoffContext.cwd}`);
     return this.mustGet(session.id);
   }
 
-  async createEmptySideSession(context: PickyContextPacket): Promise<PickyAgentSession> {
-    if (!this.runtime.prewarm) throw new Error("Runtime cannot prewarm empty side sessions");
+
+  async createEmptyPickleSession(context: PickyContextPacket): Promise<PickyAgentSession> {
+    if (!this.runtime.prewarm) throw new Error("Runtime cannot prewarm empty Pickle sessions");
     const now = new Date().toISOString();
     const id = `session-${randomUUID()}`;
     const cwd = normalizeOptionalString(context.cwd);
-    const sideContext: PickyContextPacket = { ...context, cwd, transcript: undefined, screenshots: [] };
+    const pickleContext: PickyContextPacket = { ...context, cwd, transcript: undefined, screenshots: [] };
     const session: PickyAgentSession = {
       id,
-      title: titleForEmptySideSession(sideContext),
+      title: titleForEmptyPickleSession(pickleContext),
       status: "waiting_for_input",
-      cwd: sideContext.cwd,
+      cwd: pickleContext.cwd,
       createdAt: now,
       updatedAt: now,
       lastSummary: "Ready for instructions",
@@ -498,22 +501,22 @@ export class SessionSupervisor extends EventEmitter {
       changedFiles: [],
       activitySummary: zeroActivitySummary(),
     };
-    this.sideSessionIds.add(id);
-    this.sessionContexts.set(id, sideContext);
+    this.pickleSessionIds.add(id);
+    this.sessionContexts.set(id, pickleContext);
     const pendingHandle = createPendingRuntimeHandle();
     this.pendingRuntimeHandles.set(id, pendingHandle.promise);
     try {
       await this.upsert(session);
-      logAgentd("empty side session queued", { sessionId: id, cwd: sideContext.cwd, contextId: context.id });
-      const handle = await this.runtime.prewarm({ cwd: sideContext.cwd, sessionId: id });
+      logAgentd("empty pickle session queued", { sessionId: id, cwd: pickleContext.cwd, contextId: context.id });
+      const handle = await this.runtime.prewarm({ cwd: pickleContext.cwd, sessionId: id });
       pendingHandle.resolve(handle);
       await this.attachRuntimeHandle(id, handle);
-      await this.appendLog(id, "manual side agent: waiting for first instruction");
-      if (sideContext.cwd) await this.appendLog(id, `manual side agent cwd: ${sideContext.cwd}`);
+      await this.appendLog(id, "manual pickle: waiting for first instruction");
+      if (pickleContext.cwd) await this.appendLog(id, `manual pickle cwd: ${pickleContext.cwd}`);
       return this.mustGet(id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logAgentd("empty side session prewarm failed", { sessionId: id, error: message });
+      logAgentd("empty pickle session prewarm failed", { sessionId: id, error: message });
       await this.patch(id, {
         status: "failed",
         lastSummary: `Failed to start runtime: ${message}`,
@@ -527,7 +530,7 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   /**
-   * Fork an existing side-session into a brand-new sibling session that resumes from a snapshot
+   * Fork an existing Pickle session into a brand-new sibling session that resumes from a snapshot
    * of the source's Pi JSONL transcript. The new session inherits cwd, message history, and
    * notification preference, but starts with empty activity counters / artifacts / changed-files
    * (per-session usage telemetry should not double-count). Forking is allowed regardless of the
@@ -535,9 +538,10 @@ export class SessionSupervisor extends EventEmitter {
    * complete line so the runtime can resume on a non-corrupt transcript even mid-turn.
    *
    * The new title is `(copy) <source title>`; Pi will rename the underlying session as soon as
-   * the user runs `/name` (existing `refreshSideSessionTitleFromPi` flow handles the resync).
+   * the user runs `/name` (existing `refreshPickleSessionTitleFromPi` flow handles the resync).
    */
-  async duplicateSideSession(sourceSessionId: string): Promise<PickyAgentSession> {
+
+  async duplicatePickleSession(sourceSessionId: string): Promise<PickyAgentSession> {
     if (!this.runtime.resume) throw new Error("Runtime cannot duplicate sessions");
     const source = this.mustGet(sourceSessionId);
     const sourceFilePath = this.resolveSourcePiSessionFile(source);
@@ -547,7 +551,7 @@ export class SessionSupervisor extends EventEmitter {
     const id = `session-${randomUUID()}`;
     const cwd = normalizeOptionalString(source.cwd);
     const newFilePath = await snapshotPiSessionFile(sourceFilePath, id);
-    const baseTitle = source.title.trim() || "side agent";
+    const baseTitle = source.title.trim() || "Pickle";
     const sourceMessages = source.messages ?? [];
     const session: PickyAgentSession = {
       id,
@@ -556,7 +560,7 @@ export class SessionSupervisor extends EventEmitter {
       cwd,
       createdAt: now,
       updatedAt: now,
-      lastSummary: "Duplicated from existing side agent",
+      lastSummary: "Duplicated from existing Pickle",
       logs: [
         `duplicated from session: ${source.id}`,
         ...(cwd ? [`source cwd: ${cwd}`] : []),
@@ -571,7 +575,7 @@ export class SessionSupervisor extends EventEmitter {
       piSessionFilePath: newFilePath,
     };
 
-    this.sideSessionIds.add(id);
+    this.pickleSessionIds.add(id);
     const pendingHandle = createPendingRuntimeHandle();
     this.pendingRuntimeHandles.set(id, pendingHandle.promise);
     try {
@@ -580,7 +584,7 @@ export class SessionSupervisor extends EventEmitter {
       // any tool/assistant deltas. Without hydration, the first appendInternal would build a
       // fresh empty journal and overwrite the persisted message history via syncSessionMessages.
       this.messageBuilder.hydrateSession(id, session.messages);
-      logAgentd("side session duplicate queued", {
+      logAgentd("pickle session duplicate queued", {
         sourceSessionId,
         newSessionId: id,
         sourceFilePath,
@@ -591,14 +595,14 @@ export class SessionSupervisor extends EventEmitter {
       const handle = await this.runtime.resume(newFilePath, { cwd, sessionId: id });
       pendingHandle.resolve(handle);
       await this.attachRuntimeHandle(id, handle);
-      logAgentd("side session duplicate ready", { sourceSessionId, newSessionId: id });
+      logAgentd("pickle session duplicate ready", { sourceSessionId, newSessionId: id });
       // Pull the freshly-resumed Pi session_info name (when present) so the (copy) prefix is
       // applied on top of Pi's own name rather than a stale Picky default.
-      void this.refreshSideSessionTitleFromPi(id);
+      void this.refreshPickleSessionTitleFromPi(id);
       return this.mustGet(id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logAgentd("side session duplicate failed", { sourceSessionId, newSessionId: id, error: message });
+      logAgentd("pickle session duplicate failed", { sourceSessionId, newSessionId: id, error: message });
       await this.patch(id, {
         status: "failed",
         lastSummary: `Failed to duplicate session: ${message}`,
@@ -618,7 +622,8 @@ export class SessionSupervisor extends EventEmitter {
     return handle?.getSessionFilePath?.();
   }
 
-  async pinSideSession(context: PickyContextPacket, title?: string): Promise<PickyAgentSession> {
+
+  async pinPickleSession(context: PickyContextPacket, title?: string): Promise<PickyAgentSession> {
     const now = new Date().toISOString();
     const id = `session-${randomUUID()}`;
     const session: PickyAgentSession = {
@@ -629,8 +634,8 @@ export class SessionSupervisor extends EventEmitter {
       createdAt: now,
       updatedAt: now,
       lastSummary: "Pinned completed Pi session",
-      finalAnswer: "Pinned from an idle Pi session. No Picky side-agent run has been started yet.",
-      logs: buildPinnedSideSessionLogs(context),
+      finalAnswer: "Pinned from an idle Pi session. No Pickle run has been started yet.",
+      logs: buildPinnedPickleSessionLogs(context),
       piSessionFilePath: piSessionFilePathFromHandoffTranscript(context.transcript),
       notifyMainOnCompletion: false,
       pinned: true,
@@ -639,8 +644,8 @@ export class SessionSupervisor extends EventEmitter {
       changedFiles: [],
       activitySummary: zeroActivitySummary(),
     };
-    this.sideSessionIds.add(id);
-    logAgentd("side session pinned", { sessionId: id, titleChars: session.title.length, cwd: context.cwd, contextId: context.id });
+    this.pickleSessionIds.add(id);
+    logAgentd("pickle session pinned", { sessionId: id, titleChars: session.title.length, cwd: context.cwd, contextId: context.id });
     await this.upsert(session);
 
     const sourceMessages = await readRecentPinnedSourceMessages(session.piSessionFilePath);
@@ -788,20 +793,20 @@ export class SessionSupervisor extends EventEmitter {
     }
     const recentMessages = this.mainState.messages.slice(-MAIN_AGENT_SUMMARY_MESSAGE_LIMIT);
     if (recentMessages.length > 0) {
-      lines.push("", "Recent visible main-agent messages:");
+      lines.push("", "Recent visible Picky messages:");
       for (const message of recentMessages) {
         const role = message.role === "user" ? "User" : "Picky";
         lines.push(`- ${role}: ${truncateMainSummaryText(message.text, 360)}`);
       }
     }
-    const sideSessions = [...this.sideSessionIds]
+    const pickleSessions = [...this.pickleSessionIds]
       .map((sessionId) => this.sessions.get(sessionId))
       .filter((session): session is PickyAgentSession => Boolean(session))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      .slice(0, MAIN_AGENT_SUMMARY_SIDE_SESSION_LIMIT);
-    if (sideSessions.length > 0) {
-      lines.push("", "Recent side-agent sessions:");
-      for (const session of sideSessions) {
+      .slice(0, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT);
+    if (pickleSessions.length > 0) {
+      lines.push("", "Recent Pickle sessions:");
+      for (const session of pickleSessions) {
         const summary = session.finalAnswer ?? session.lastSummary;
         lines.push(`- ${session.id} | ${session.title} | status=${session.status}${summary ? ` | ${truncateMainSummaryText(summary, 240)}` : ""}`);
       }
@@ -841,7 +846,7 @@ export class SessionSupervisor extends EventEmitter {
     const resumed = await this.tryResumeMainHandle(cwd, generation);
     if (resumed) return resumed;
     if (!this.options.mainRuntime?.prewarm) throw new Error("Main runtime cannot prewarm");
-    const handle = await this.options.mainRuntime.prewarm({ cwd, sessionId: "picky-main-agent" });
+    const handle = await this.options.mainRuntime.prewarm({ cwd, sessionId: "picky" });
     logAgentd("main prewarmed", { cwd });
     if (generation !== this.mainHandleGeneration) {
       await this.abortResetMainHandle(handle, "stale-prewarm");
@@ -856,7 +861,7 @@ export class SessionSupervisor extends EventEmitter {
   private async createInitialMainHandle(prompt: ReturnType<typeof buildMainAgentPrompt>, cwd?: string, generation = this.mainHandleGeneration): Promise<{ handle: RuntimeSessionHandle; initialPromptAlreadySent: boolean }> {
     const resumed = await this.tryResumeMainHandle(cwd ?? process.cwd(), generation);
     if (resumed) return { handle: resumed, initialPromptAlreadySent: false };
-    const handle = await this.options.mainRuntime!.create(prompt, { cwd, sessionId: "picky-main-agent" });
+    const handle = await this.options.mainRuntime!.create(prompt, { cwd, sessionId: "picky" });
     if (generation !== this.mainHandleGeneration) {
       await this.abortResetMainHandle(handle, "stale-initial");
       return { handle, initialPromptAlreadySent: true };
@@ -872,7 +877,7 @@ export class SessionSupervisor extends EventEmitter {
     try {
       // Bake the user's extra instructions into the standing bootstrap turn instead of every
       // per-turn prompt: it costs zero tokens beyond the first turn, mirrors the "standing
-      // instructions" mental model, and makes changes opt-in via main-agent reset.
+      // instructions" mental model, and makes changes opt-in via Picky reset.
       await handle.injectInitialBootstrap(buildMainAgentBootstrapPair(this.mainExtraInstructions, this.mainState.compactSummary));
     } catch (error) {
       logAgentd("main bootstrap inject failed", { error: error instanceof Error ? error.message : String(error) });
@@ -884,7 +889,7 @@ export class SessionSupervisor extends EventEmitter {
     if (!sessionFilePath || !this.options.mainRuntime?.resume) return undefined;
     try {
       logAgentd("main resume requested", { sessionFilePath, cwd });
-      const handle = await this.options.mainRuntime.resume(sessionFilePath, { cwd, sessionId: "picky-main-agent" });
+      const handle = await this.options.mainRuntime.resume(sessionFilePath, { cwd, sessionId: "picky" });
       logAgentd("main resumed", { sessionFilePath, cwd });
       if (generation !== this.mainHandleGeneration) {
         await this.abortResetMainHandle(handle, "stale-resume");
@@ -981,7 +986,7 @@ export class SessionSupervisor extends EventEmitter {
       this.mainDraft = "";
       if (finalTranscript?.trim()) await this.appendMainMessage("assistant", finalTranscript);
       this.emit("mainRealtimeTurnDone", event.inputId, event.status, finalTranscript);
-      this.scheduleSideCompletionDrain();
+      this.schedulePickleCompletionDrain();
       return;
     }
     if (event.type === "log") {
@@ -997,7 +1002,7 @@ export class SessionSupervisor extends EventEmitter {
       // A new delta means a new turn has started. Re-arm the terminal guard even
       // if the runtime did not emit an explicit `status:"running"` between turns
       // (Pi normally does, but follow-up flows that immediately stream content can
-      // skip it). Without this, a side-completion follow-up turn whose `running`
+      // skip it). Without this, a Pickle-completion follow-up turn whose `running`
       // is omitted would be silently swallowed by the prior turn's guard.
       this.mainTerminalProcessed = false;
       this.mainDraft += event.delta;
@@ -1025,7 +1030,7 @@ export class SessionSupervisor extends EventEmitter {
         this.mainDraft = "";
         if (this.suppressInterruptedMainCompletion) {
           this.suppressInterruptedMainCompletion = false;
-          this.scheduleSideCompletionDrain();
+          this.schedulePickleCompletionDrain();
           return;
         }
         logAgentd("main status", { status: event.status, contextId: this.mainReplyContextId, draftChars: draftSnapshot.length });
@@ -1041,94 +1046,94 @@ export class SessionSupervisor extends EventEmitter {
             await this.appendMainMessage("assistant", reply);
             this.emitQuickReply(this.mainReplyContextId, reply, {
               originSource: this.mainReplyContextId === this.mainContext?.id ? quickReplyOriginFromContextSource(this.mainContext.source) : "system",
-              replyKind: this.sideSessionIds.has(this.mainReplyContextId) ? "sideCompletion" : "main",
-              sessionId: this.sideSessionIds.has(this.mainReplyContextId) ? this.mainReplyContextId : undefined,
+              replyKind: this.pickleSessionIds.has(this.mainReplyContextId) ? "pickleCompletion" : "main",
+              sessionId: this.pickleSessionIds.has(this.mainReplyContextId) ? this.mainReplyContextId : undefined,
             });
           }
           this.schedulePointerOverlaysFromTags(parsedPointerTags, pointerContext);
         }
-        this.scheduleSideCompletionDrain();
+        this.schedulePickleCompletionDrain();
       }
     }
   }
 
-  private async notifyMainOfSideCompletion(sessionId: string): Promise<void> {
+  private async notifyPickyOfPickleCompletion(sessionId: string): Promise<void> {
     const session = this.mustGet(sessionId);
-    if (this.sideCompletionNotified.has(sessionId) || this.sideCompletionInFlight.has(sessionId)) return;
+    if (this.pickleCompletionNotified.has(sessionId) || this.pickleCompletionInFlight.has(sessionId)) return;
     if (session.notifyMainOnCompletion === false) {
-      this.sideCompletionNotified.add(sessionId);
-      logAgentd("side completion notify skipped", { sessionId, status: session.status });
+      this.pickleCompletionNotified.add(sessionId);
+      logAgentd("Pickle completion notify skipped", { sessionId, status: session.status });
       return;
     }
-    // Defer when the main agent is mid-turn (e.g. the handoff turn that spawned this
-    // side session has not emitted status:completed yet). Sending the followUp now
+    // Defer when the Picky is mid-turn (e.g. the handoff turn that spawned this
+    // Pickle session has not emitted status:completed yet). Sending the followUp now
     // would clobber mainReplyContextId / mainDraft, and the in-flight turn's
-    // suppressNextMainReply would later swallow this side completion's reply when its
+    // suppressNextMainReply would later swallow this Pickle completion's reply when its
     // delayed status:completed finally arrives. Park the sessionId and let
     // applyMainRuntimeEvent drain it once the active turn ends.
     if (this.mainIsProcessing) {
-      if (!this.pendingSideCompletions.includes(sessionId) && !this.sideCompletionNotified.has(sessionId) && !this.sideCompletionInFlight.has(sessionId)) {
-        this.pendingSideCompletions.push(sessionId);
-        logAgentd("side completion deferred", { sessionId, status: session.status, queueLength: this.pendingSideCompletions.length });
+      if (!this.pendingPickleCompletions.includes(sessionId) && !this.pickleCompletionNotified.has(sessionId) && !this.pickleCompletionInFlight.has(sessionId)) {
+        this.pendingPickleCompletions.push(sessionId);
+        logAgentd("Pickle completion deferred", { sessionId, status: session.status, queueLength: this.pendingPickleCompletions.length });
       }
       return;
     }
-    await this.deliverSideCompletionToMain(sessionId);
+    await this.deliverPickleCompletionToMain(sessionId);
   }
 
-  private async deliverSideCompletionToMain(sessionId: string): Promise<void> {
-    if (this.sideCompletionNotified.has(sessionId) || this.sideCompletionInFlight.has(sessionId)) return;
+  private async deliverPickleCompletionToMain(sessionId: string): Promise<void> {
+    if (this.pickleCompletionNotified.has(sessionId) || this.pickleCompletionInFlight.has(sessionId)) return;
     const session = this.sessions.get(sessionId);
     if (!session) return;
     if (session.notifyMainOnCompletion === false) {
-      this.sideCompletionNotified.add(sessionId);
-      logAgentd("side completion notify skipped", { sessionId, status: session.status });
+      this.pickleCompletionNotified.add(sessionId);
+      logAgentd("Pickle completion notify skipped", { sessionId, status: session.status });
       return;
     }
-    this.sideCompletionInFlight.add(sessionId);
+    this.pickleCompletionInFlight.add(sessionId);
     try {
-      const prompt = buildMainAgentSideCompletionPrompt(session);
+      const prompt = buildMainAgentPickleCompletionPrompt(session);
       this.mainReplyContextId = sessionId;
       this.mainDraft = "";
-      const delivery = await this.prepareMainCompletionDelivery(prompt, session.cwd);
+      const delivery = await this.preparePickyCompletionDelivery(prompt, session.cwd);
       if (!delivery) return;
 
-      this.sideCompletionNotified.add(sessionId);
+      this.pickleCompletionNotified.add(sessionId);
       this.mainIsProcessing = true;
-      logAgentd("side completion notifying main", { sessionId, status: session.status });
+      logAgentd("Pickle completion notifying Picky", { sessionId, status: session.status });
       if (delivery.sendAsFollowUp) await delivery.handle.followUp(prompt);
     } finally {
-      this.sideCompletionInFlight.delete(sessionId);
+      this.pickleCompletionInFlight.delete(sessionId);
     }
   }
 
-  private scheduleSideCompletionDrain(): void {
-    void this.drainPendingSideCompletions().catch((error) => {
-      logAgentd("side completion drain failed", { error: error instanceof Error ? error.message : String(error) });
+  private schedulePickleCompletionDrain(): void {
+    void this.drainPendingPickleCompletions().catch((error) => {
+      logAgentd("Pickle completion drain failed", { error: error instanceof Error ? error.message : String(error) });
     });
   }
 
-  private async drainPendingSideCompletions(): Promise<void> {
+  private async drainPendingPickleCompletions(): Promise<void> {
     if (this.mainIsProcessing) return;
-    const sessionId = this.pendingSideCompletions.shift();
+    const sessionId = this.pendingPickleCompletions.shift();
     if (!sessionId) return;
-    logAgentd("side completion draining", { sessionId, queueLength: this.pendingSideCompletions.length });
-    await this.deliverSideCompletionToMain(sessionId);
+    logAgentd("Pickle completion draining", { sessionId, queueLength: this.pendingPickleCompletions.length });
+    await this.deliverPickleCompletionToMain(sessionId);
   }
 
-  private async prepareMainCompletionDelivery(prompt: ReturnType<typeof buildMainAgentSideCompletionPrompt>, cwd?: string): Promise<{ handle: RuntimeSessionHandle; sendAsFollowUp: boolean } | undefined> {
+  private async preparePickyCompletionDelivery(prompt: ReturnType<typeof buildMainAgentPickleCompletionPrompt>, cwd?: string): Promise<{ handle: RuntimeSessionHandle; sendAsFollowUp: boolean } | undefined> {
     if (this.mainHandle) return { handle: this.mainHandle, sendAsFollowUp: true };
     if (!this.options.mainRuntime) return undefined;
     if (this.mainHandlePromise) return { handle: await this.mainHandlePromise, sendAsFollowUp: true };
     if (this.options.mainRuntime.prewarm) return { handle: await this.ensurePrewarmedMainHandle(cwd ?? process.cwd()), sendAsFollowUp: true };
 
-    const handle = await this.options.mainRuntime.create(prompt, { cwd, sessionId: "picky-main-agent" });
+    const handle = await this.options.mainRuntime.create(prompt, { cwd, sessionId: "picky" });
     this.attachMainHandle(handle);
     return { handle, sendAsFollowUp: false };
   }
 
   async setNotifyMainOnCompletion(sessionId: string, enabled: boolean): Promise<PickyAgentSession> {
-    if (!this.isSideSession(sessionId)) throw new Error(`Session is not a Picky side agent: ${sessionId}`);
+    if (!this.isPickleSession(sessionId)) throw new Error(`Session is not a Pickle: ${sessionId}`);
     await this.patch(sessionId, { notifyMainOnCompletion: enabled });
     return this.mustGet(sessionId);
   }
@@ -1165,24 +1170,25 @@ export class SessionSupervisor extends EventEmitter {
     return handle;
   }
 
-  async steerSideSession(sessionId: string, text: string): Promise<PickyAgentSession> {
-    if (!this.isSideSession(sessionId)) throw new Error(`Session is not a Picky side agent: ${sessionId}`);
+
+  async steerPickleSession(sessionId: string, text: string): Promise<PickyAgentSession> {
+    if (!this.isPickleSession(sessionId)) throw new Error(`Session is not a Pickle: ${sessionId}`);
     return this.steer(sessionId, text);
   }
 
-  private async prepareSideSessionForUserInput(sessionId: string): Promise<void> {
-    if (!this.isSideSession(sessionId)) return;
-    this.clearSideCompletionTracking(sessionId);
+  private async preparePickleSessionForUserInput(sessionId: string): Promise<void> {
+    if (!this.isPickleSession(sessionId)) return;
+    this.clearPickleCompletionTracking(sessionId);
     if (this.mustGet(sessionId).pinned) await this.patch(sessionId, { pinned: false });
   }
 
-  private clearSideCompletionTracking(sessionId: string): void {
-    this.sideCompletionNotified.delete(sessionId);
-    this.sideCompletionInFlight.delete(sessionId);
-    const queueIndex = this.pendingSideCompletions.indexOf(sessionId);
+  private clearPickleCompletionTracking(sessionId: string): void {
+    this.pickleCompletionNotified.delete(sessionId);
+    this.pickleCompletionInFlight.delete(sessionId);
+    const queueIndex = this.pendingPickleCompletions.indexOf(sessionId);
     if (queueIndex >= 0) {
-      this.pendingSideCompletions.splice(queueIndex, 1);
-      logAgentd("side completion dequeued", { sessionId, queueLength: this.pendingSideCompletions.length });
+      this.pendingPickleCompletions.splice(queueIndex, 1);
+      logAgentd("Pickle completion dequeued", { sessionId, queueLength: this.pendingPickleCompletions.length });
     }
   }
 
@@ -1235,7 +1241,7 @@ export class SessionSupervisor extends EventEmitter {
   async followUp(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
     if (["failed", "cancelled"].includes(session.status)) throw new Error(`Cannot follow up ${session.status} session`);
-    await this.prepareSideSessionForUserInput(sessionId);
+    await this.preparePickleSessionForUserInput(sessionId);
     const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
     if (!handle) {
       const hasPiSessionFile = Boolean(piSessionFilePathForSession(session));
@@ -1265,7 +1271,7 @@ export class SessionSupervisor extends EventEmitter {
 
   private queueFollowUpDelivery(sessionId: string, handle: RuntimeSessionHandle, prompt: BuiltPrompt): void {
     // Pi SDK followUp may resolve only after an idle session finishes its whole next turn.
-    // Picky follow-ups are enqueue semantics, so do not hold the caller/main-agent tool open.
+    // Picky follow-ups are enqueue semantics, so do not hold the caller/Picky tool open.
     void handle.followUp(prompt)
       .then(async () => {
         logAgentd("follow-up delivery finished", { sessionId });
@@ -1404,7 +1410,7 @@ export class SessionSupervisor extends EventEmitter {
 
   private async handleRuntimeInputMessage(sessionId: string, event: Extract<RuntimeEvent, { type: "input_message" }>): Promise<void> {
     if (event.originatedBy !== "pi_extension") return;
-    await this.prepareSideSessionForUserInput(sessionId);
+    await this.preparePickleSessionForUserInput(sessionId);
   }
 
   private async incrementActivity(sessionId: string, category: ToolCategory): Promise<void> {
@@ -1481,7 +1487,7 @@ export class SessionSupervisor extends EventEmitter {
 
   async steer(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
-    await this.prepareSideSessionForUserInput(sessionId);
+    await this.preparePickleSessionForUserInput(sessionId);
     const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
     if (!handle) {
       const reason = "Runtime session is not attached";
@@ -1609,15 +1615,15 @@ export class SessionSupervisor extends EventEmitter {
       await this.messageBuilder.recordUserText(sessionId, line.slice(HANDOFF_PREFIX.length), "main_agent");
     }
     if (piSessionFilePath) {
-      void this.refreshSideSessionTitleFromPi(sessionId);
+      void this.refreshPickleSessionTitleFromPi(sessionId);
     }
   }
 
   // Pi names the underlying session asynchronously after the first turn, but session_info_changed
   // events do not fire when Picky resumes an existing pi session file. Read the JSONL directly and
-  // patch the side-agent title so the HUD card shows Pi's name instead of "New side agent · cwd".
-  private async refreshSideSessionTitleFromPi(sessionId: string): Promise<void> {
-    if (!this.isSideSession(sessionId)) return;
+  // patch the Pickle title so the HUD card shows Pi's name instead of "New Pickle · cwd".
+  private async refreshPickleSessionTitleFromPi(sessionId: string): Promise<void> {
+    if (!this.isPickleSession(sessionId)) return;
     const session = this.sessions.get(sessionId);
     if (!session) return;
     const sessionFilePath = piSessionFilePathForSession(session);
@@ -1627,10 +1633,10 @@ export class SessionSupervisor extends EventEmitter {
       if (!name) return;
       const current = this.sessions.get(sessionId);
       if (!current || current.title === name) return;
-      logAgentd("side session title refreshed from pi", { sessionId, previousTitle: current.title, name });
+      logAgentd("pickle session title refreshed from pi", { sessionId, previousTitle: current.title, name });
       await this.patch(sessionId, { title: name });
     } catch (error) {
-      logAgentd("side session title refresh failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
+      logAgentd("pickle session title refresh failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
     }
   }
 
@@ -1883,7 +1889,7 @@ function isPickyHandoffCommandMessage(message: PickySessionMessage): boolean {
   return message.kind === "user_text" && /^\s*\/handoff-to-picky(\s|$)/.test(message.text ?? "");
 }
 
-function buildPinnedSideSessionLogs(context: PickyContextPacket): string[] {
+function buildPinnedPickleSessionLogs(context: PickyContextPacket): string[] {
   const logs = ["pi-extension handoff pin: completed idle Pi session", `source context id: ${context.id}`];
   if (context.cwd) logs.push(`source cwd: ${context.cwd}`);
   const sessionFile = piSessionFilePathFromHandoffTranscript(context.transcript);
@@ -1996,7 +2002,7 @@ const MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT = 70;
 const MAIN_AGENT_ROLLOVER_SESSION_BYTES = 2_000_000;
 const MAIN_AGENT_COMPACT_SUMMARY_LIMIT = 4_000;
 const MAIN_AGENT_SUMMARY_MESSAGE_LIMIT = 16;
-const MAIN_AGENT_SUMMARY_SIDE_SESSION_LIMIT = 10;
+const MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT = 10;
 
 function normalizeMainAgentState(state: PickyMainAgentState): PickyMainAgentState {
   const compactSummary = state.compactSummary ? truncateMainSummaryText(state.compactSummary, MAIN_AGENT_COMPACT_SUMMARY_LIMIT) : undefined;
@@ -2017,12 +2023,13 @@ function countSystemMessages(session: PickyAgentSession, text: string): number {
   return (session.messages ?? []).filter((message) => message.kind === "system" && message.text === text).length;
 }
 
-function hasSideSessionMarkerLog(session: PickyAgentSession): boolean {
+function hasPickleSessionMarkerLog(session: PickyAgentSession): boolean {
   return session.logs.some(
     (line) => line.startsWith(HANDOFF_PREFIX.trimEnd())
-      || line.startsWith("main-agent handoff cwd:")
+      || line.startsWith("Picky handoff cwd:")
       || line.startsWith("pi-extension handoff pin:")
-      || line.startsWith("manual side agent:"),
+      || line.startsWith("manual pickle:")
+      || line.startsWith("manual pickle cwd:"),
   );
 }
 
@@ -2044,9 +2051,9 @@ async function snapshotPiSessionFile(sourcePath: string, newSessionId: string): 
   return destinationPath;
 }
 
-function titleForEmptySideSession(context: PickyContextPacket): string {
+function titleForEmptyPickleSession(context: PickyContextPacket): string {
   const cwd = normalizeOptionalString(context.cwd);
-  if (!cwd) return "New side agent";
+  if (!cwd) return "New Pickle";
   const basename = cwd.split(/[\\/]/).filter(Boolean).at(-1);
-  return basename ? `New side agent · ${basename}` : "New side agent";
+  return basename ? `New Pickle · ${basename}` : "New Pickle";
 }

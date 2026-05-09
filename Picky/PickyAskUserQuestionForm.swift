@@ -97,7 +97,7 @@ struct PickyAskUserQuestionFormState: Equatable {
 
     /// Build a human-readable summary of the user's answer to an extension UI request.
     /// Returns `nil` for cancellations or when the answer carries no displayable content;
-    /// callers can use the returned string to populate the side-agent card REQUEST line.
+    /// callers can use the returned string to populate the Pickle card REQUEST line.
     static func summarizeAnswer(request: PickyExtensionUiRequest, value: JSONValue) -> String? {
         if case .object(let object) = value, object["cancelled"] == .bool(true) { return nil }
 

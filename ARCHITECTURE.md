@@ -4,7 +4,7 @@ _Last updated: 2026-05-06_
 
 ## 1. Product shape
 
-Picky is a local-first macOS command center for Pi sessions. It is not a generic chat app and it should not become a workflow router. The app captures neutral desktop context, sends it to local Pi through `picky-agentd`, and renders long-running side agents in the Picky dock.
+Picky is a local-first macOS command center for Pi sessions. It is not a generic chat app and it should not become a workflow router. The app captures neutral desktop context, sends it to local Pi through `picky-agentd`, and renders long-running Pickles in the Picky dock.
 
 Core principle:
 
@@ -50,8 +50,8 @@ local Pi environment
 1. User invokes Picky by a configurable push-to-talk shortcut or quick-input shortcut. Defaults are `Control+Option` for voice and double-tap `Control` for text entry.
 2. `Picky.app` captures transcript, active app/window, browser context, selected text, screenshots, cwd, and optional selected session.
 3. App sends `routeTask`/`createTask` to `picky-agentd`.
-4. If main-agent mode is enabled, daemon routes through the always-on main agent. Simple requests can receive `quickReply`; complex work is delegated through `picky_handoff` to a visible side session.
-5. Side session runs through Pi SDK; daemon normalizes runtime events into HUD events.
+4. If Picky mode is enabled, daemon routes through the always-on Picky runtime. Simple requests can receive `quickReply`; complex work is delegated through `picky_start_pickle` to a visible Pickle session.
+5. Pickle session runs through Pi SDK; daemon normalizes runtime events into HUD events.
 
 ### Follow-up
 
@@ -149,14 +149,14 @@ agentd/src/
   session-message-builder.ts            app-facing message journal/source mapping
   artifact-store.ts                     artifact persistence/opening
   log-store.ts                          daemon log storage
-  prompt-builder.ts                     neutral task/follow-up/main/side prompts
+  prompt-builder.ts                     neutral task/follow-up/Picky/Pickle prompts
   task-router.ts                        mock conservative router for mock runtime
   local-log.ts                          daemon logging
 
   application/
-    handoff-tool.ts                     main-agent tools: handoff/list/follow-up side sessions
-    pointer-tool.ts                     main-agent pointer overlay request tool
-    ask-user-question-tool.ts           side-agent ask_user_question bridge
+    handoff-tool.ts                     Picky tools: start/list/follow-up Pickle sessions
+    pointer-tool.ts                     Picky pointer overlay request tool
+    ask-user-question-tool.ts           Pickle ask_user_question bridge
     pi-session-syncer.ts                Pi session JSONL/history sync helpers
     runtime-event-handler.ts            normalized runtime event state transitions
     artifact-materializer.ts            terminal artifacts/reports/PR extraction
@@ -207,11 +207,11 @@ Picky prompts must be neutral. Include user request and captured context, then t
 
 Important prompt builders:
 
-- `buildInitialTaskPrompt`: visible session without main-agent routing.
-- `buildMainAgentPrompt`: always-on main agent turn with side-agent tools.
-- `buildSideAgentPrompt`: delegated side session.
+- `buildInitialTaskPrompt`: visible session without Picky routing.
+- `buildMainAgentPrompt`: always-on Picky turn with Pickle tools.
+- `buildPicklePrompt`: delegated Pickle session.
 - `buildFollowUpPrompt`: follow-up with optional fresh context.
-- `buildMainAgentSideCompletionPrompt`: concise completion summary back to main.
+- `buildMainAgentPickleCompletionPrompt`: concise completion summary back to Picky.
 
 ## 9. Persistence and file locations
 
@@ -273,7 +273,7 @@ These are intentionally deferred until they clearly reduce complexity:
 - Further `CompanionManager` collaborators beyond the current voice/context/event boundaries.
 - `agentd/src/server.ts` transport split.
 - `agentd/src/runtime/pi-sdk-runtime.ts` session/image-options split.
-- Broader `main-agent-orchestrator` or visible lifecycle extraction unless session orchestration grows again.
+- Broader Picky runtime orchestrator or visible lifecycle extraction unless session orchestration grows again.
 
 ## 13. Pi integration references
 

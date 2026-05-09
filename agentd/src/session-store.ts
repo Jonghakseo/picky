@@ -5,10 +5,10 @@ import { PickyAgentSessionSchema, PickyMainAgentStateSchema, type PickyAgentSess
 
 export class SessionStore {
   private readonly sessionsDir: string;
-  private readonly mainAgentPath: string;
+  private readonly pickyStatePath: string;
   constructor(private readonly appSupportDir: string) {
     this.sessionsDir = join(appSupportDir, "sessions");
-    this.mainAgentPath = join(appSupportDir, "main-agent.json");
+    this.pickyStatePath = join(appSupportDir, "picky.json");
   }
 
   async save(session: PickyAgentSession): Promise<void> {
@@ -21,17 +21,17 @@ export class SessionStore {
 
   async saveMainAgentState(state: PickyMainAgentState): Promise<void> {
     await mkdir(this.appSupportDir, { recursive: true });
-    const tempPath = join(this.appSupportDir, `.main-agent.${process.pid}.${Date.now()}.${randomUUID()}.tmp`);
+    const tempPath = join(this.appSupportDir, `.picky.${process.pid}.${Date.now()}.${randomUUID()}.tmp`);
     await writeFile(tempPath, JSON.stringify(state, null, 2));
-    await rename(tempPath, this.mainAgentPath);
+    await rename(tempPath, this.pickyStatePath);
   }
 
   async loadMainAgentState(): Promise<PickyMainAgentState> {
     try {
-      return PickyMainAgentStateSchema.parse(JSON.parse(await readFile(this.mainAgentPath, "utf8")));
+      return PickyMainAgentStateSchema.parse(JSON.parse(await readFile(this.pickyStatePath, "utf8")));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        console.warn(`Skipping unreadable Picky main-agent metadata ${this.mainAgentPath}: ${messageOf(error)}`);
+        console.warn(`Skipping unreadable Picky metadata ${this.pickyStatePath}: ${messageOf(error)}`);
       }
       return { messages: [] };
     }

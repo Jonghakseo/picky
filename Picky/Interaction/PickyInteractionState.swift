@@ -154,7 +154,7 @@ enum PickyDisplaySource: String, Equatable, Codable {
     case textReply
     case voiceReply
     case passiveSummary
-    case sideCompletion
+    case pickleCompletion
     case suppressed
 }
 
@@ -205,7 +205,7 @@ enum PickyPointerCancelReason: String, Equatable, Codable {
 enum PickyReplySuppressionReason: String, Equatable, Codable {
     case activeVoiceInput
     case staleContext
-    case sideCompletionPolicy
+    case pickleCompletionPolicy
     case unknown
 }
 

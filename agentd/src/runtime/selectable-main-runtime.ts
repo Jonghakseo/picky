@@ -9,7 +9,7 @@ export interface SelectableMainRuntimeOptions {
 }
 
 /**
- * Code-level isolation boundary for main-agent runtime selection.
+ * Code-level isolation boundary for Picky runtime selection.
  *
  * Pi remains the default delegate and sees exactly the same AgentRuntime calls as
  * before unless the user explicitly switches the mode to `openai-realtime`.

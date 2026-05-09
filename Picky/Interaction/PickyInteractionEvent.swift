@@ -87,7 +87,7 @@ enum PickyQuickReplyOriginSource: String, Codable, Equatable {
 
 enum PickyQuickReplyKind: String, Codable, Equatable {
     case main
-    case sideCompletion
+    case pickleCompletion
     case router
     case handoffAck
     case error
@@ -107,7 +107,7 @@ enum PickyQuickReplyKind: String, Codable, Equatable {
     static func normalized(_ raw: String?) -> Self {
         switch raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
         case "main": .main
-        case "sidecompletion", "side-completion", "side_completion": .sideCompletion
+        case "picklecompletion", "pickle-completion", "pickle_completion": .pickleCompletion
         case "router": .router
         case "handoffack", "handoff-ack", "handoff_ack": .handoffAck
         case "error": .error
@@ -155,7 +155,7 @@ enum PickyInteractionEvent: Equatable, Codable {
     case agentSubmissionAccepted(contextID: String?, sessionID: String, inputID: UUID?)
     case quickReply(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, inputID: UUID?)
     case passiveAgentSummary(sessionID: String, text: String)
-    case sideAgentCompleted(sessionID: String, summary: String?)
+    case pickleCompleted(sessionID: String, summary: String?)
 
     case pointerRequested(PickyPointerTarget)
     case pointerCancelled(pointerID: String, reason: PickyPointerCancelReason)
@@ -174,7 +174,7 @@ enum PickyInteractionEvent: Equatable, Codable {
         case appStarted, permissionsChanged, cursorPreferenceChanged
         case voicePressed, voiceStartFailed, voiceReleased, transcriptFinal, transcriptFailed
         case textSubmitted, textContextCaptured, textSubmissionAccepted, textSubmissionFailed
-        case voiceContextCaptured, agentSubmissionAccepted, quickReply, passiveAgentSummary, sideAgentCompleted
+        case voiceContextCaptured, agentSubmissionAccepted, quickReply, passiveAgentSummary, pickleCompleted
         case pointerRequested, pointerCancelled, pointerAnimationFinished
         case speechStarted, speechFinished, speechFailed, minimumDisplayTimerFired
         case overlayShown, overlayHidden, transientHideTimerFired
@@ -257,9 +257,9 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .passiveAgentSummary:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .passiveAgentSummary(sessionID: try payload.decodeFlexibleString(primary: .sessionID, fallback: .sessionId), text: try payload.decode(String.self, forKey: .text))
-        case .sideAgentCompleted:
+        case .pickleCompleted:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
-            self = .sideAgentCompleted(sessionID: try payload.decodeFlexibleString(primary: .sessionID, fallback: .sessionId), summary: try payload.decodeIfPresent(String.self, forKey: .summary))
+            self = .pickleCompleted(sessionID: try payload.decodeFlexibleString(primary: .sessionID, fallback: .sessionId), summary: try payload.decodeIfPresent(String.self, forKey: .summary))
         case .pointerRequested:
             self = .pointerRequested(try container.decode(PickyPointerTarget.self, forKey: key))
         case .pointerCancelled:
@@ -345,8 +345,8 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .passiveAgentSummary(let sessionID, let text):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .passiveAgentSummary)
             try payload.encode(sessionID, forKey: .sessionID); try payload.encode(text, forKey: .text)
-        case .sideAgentCompleted(let sessionID, let summary):
-            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .sideAgentCompleted)
+        case .pickleCompleted(let sessionID, let summary):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .pickleCompleted)
             try payload.encode(sessionID, forKey: .sessionID); try payload.encodeIfPresent(summary, forKey: .summary)
         case .pointerRequested(let target):
             try container.encode(target, forKey: .pointerRequested)

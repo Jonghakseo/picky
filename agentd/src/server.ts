@@ -124,9 +124,9 @@ export class AgentdServer {
       }
       if (command.type === "routeTask") await this.options.supervisor.route(command.context);
       if (command.type === "createTask") await this.options.supervisor.create(command.context);
-      if (command.type === "createEmptySideSession") await this.options.supervisor.createEmptySideSession(command.context);
-      if (command.type === "duplicateSession") await this.options.supervisor.duplicateSideSession(command.sessionId);
-      if (command.type === "pinSideSession") await this.options.supervisor.pinSideSession(command.context, command.title);
+      if (command.type === "createEmptyPickleSession") await this.options.supervisor.createEmptyPickleSession(command.context);
+      if (command.type === "duplicatePickleSession") await this.options.supervisor.duplicatePickleSession(command.sessionId);
+      if (command.type === "pinPickleSession") await this.options.supervisor.pinPickleSession(command.context, command.title);
       if (command.type === "setNotifyMainOnCompletion") await this.options.supervisor.setNotifyMainOnCompletion(command.sessionId, command.enabled);
       if (command.type === "setSessionArchived") await this.options.supervisor.setSessionArchived(command.sessionId, command.archived);
       if (command.type === "cycleSessionThinkingLevel") await this.options.supervisor.cycleSessionThinkingLevel(command.sessionId);
@@ -193,8 +193,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
   switch (command.type) {
     case "routeTask":
     case "createTask":
-    case "createEmptySideSession":
-    case "pinSideSession":
+    case "createEmptyPickleSession":
+    case "pinPickleSession":
       return { commandId: command.id, type: command.type, contextId: command.context.id, source: command.context.source, transcriptChars: command.context.transcript?.length, screenshots: command.context.screenshots.length };
     case "followUp":
     case "steer":
@@ -214,7 +214,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "abort":
     case "getSession":
     case "listSlashCommands":
-    case "duplicateSession":
+    case "duplicatePickleSession":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId };
     case "answerExtensionUi":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, requestId: command.requestId };

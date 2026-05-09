@@ -1,13 +1,13 @@
 {
-  "id": "cmd-create-empty-side-session-001",
+  "id": "cmd-create-empty-pickle-session-001",
   "protocolVersion": "2026-05-09",
-  "type": "createEmptySideSession",
+  "type": "createEmptyPickleSession",
   "context": {
-    "id": "context-manual-side-agent-001",
+    "id": "context-manual-pickle-001",
     "source": "system",
     "capturedAt": "2026-05-05T00:00:00.000Z",
     "cwd": "/tmp/project",
     "screenshots": [],
-    "warnings": ["manualSideAgent=true"]
+    "warnings": ["manualPickle=true"]
   }
 }

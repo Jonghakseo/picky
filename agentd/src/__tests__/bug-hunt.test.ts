@@ -56,8 +56,8 @@ describe("picky agentd known bugs (failing reproductions)", () => {
       applyQueueUpdate: async () => {},
       incrementActivity: async () => {},
       commitTurnActivity: async () => {},
-      notifySideCompletion: async () => {},
-      isSideSession: () => false,
+      notifyPickleCompletion: async () => {},
+      isPickleSession: () => false,
       emitExtensionUiRequest: () => {},
       messageBuilder: {
         recordExtensionQuestion: async () => {},

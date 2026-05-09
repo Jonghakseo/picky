@@ -3,7 +3,7 @@
 //  Picky
 //
 //  User-controllable light/dark switch for the entire Picky UI surface
-//  (menu bar companion panel, HUD side-agent cards, and auxiliary panels).
+//  (menu bar companion panel, HUD Pickle cards, and auxiliary panels).
 //
 
 import SwiftUI

@@ -2,7 +2,7 @@
 //  PickyConversationMarkdownText.swift
 //  Picky
 //
-//  Compact Markdown renderer for side-agent conversation bubbles.
+//  Compact Markdown renderer for Pickle conversation bubbles.
 //
 
 import SwiftUI

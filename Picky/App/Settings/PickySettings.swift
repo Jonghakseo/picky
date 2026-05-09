@@ -357,7 +357,7 @@ enum PickyScreenContextScope: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-/// Horizontal screen edge where the side-agent HUD dock is anchored.
+/// Horizontal screen edge where the Pickle HUD dock is anchored.
 /// Defaults to `.right` to preserve existing behavior for users without the key
 /// in their settings file. The dock handle double-click toggles this value.
 enum PickyHUDDockSide: String, Codable, CaseIterable, Identifiable {
@@ -539,12 +539,12 @@ struct PickySettings: Codable, Equatable {
     var fontScales: PickyFontScales
     var mainAgentRuntimeMode: PickyMainAgentRuntimeMode
     var openAIRealtime: PickyOpenAIRealtimeSettings
-    /// Empty means the Pi main agent follows Pi's own default model/settings. Non-empty is a
+    /// Empty means Picky follows Pi's own default model/settings. Non-empty is a
     /// provider/model pattern returned by picky-agentd, for example `anthropic/claude-sonnet-4-5`.
     var mainAgentModelPattern: String
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel
-    /// Free-form Korean/English instructions appended to every main-agent turn prompt. Lets users
-    /// teach the always-on main agent personal preferences (tone, language, recurring reminders)
+    /// Free-form Korean/English instructions appended to every Picky turn prompt. Lets users
+    /// teach the always-on Picky personal preferences (tone, language, recurring reminders)
     /// without forking the bootstrap pair. Empty by default; trimmed before persisting.
     var mainAgentExtraInstructions: String
     var screenContextScope: PickyScreenContextScope
@@ -802,8 +802,8 @@ enum PickySettingsValidationError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .invalidDefaultCwd(let path): "Side agent default cwd does not exist or is not a directory: \(path)"
-        case .invalidMainAgentCwd(let path): "Main agent cwd does not exist or is not a directory: \(path)"
+        case .invalidDefaultCwd(let path): "Pickle default cwd does not exist or is not a directory: \(path)"
+        case .invalidMainAgentCwd(let path): "Picky cwd does not exist or is not a directory: \(path)"
         case .invalidWorktreeParent(let path): "Worktree parent does not exist or is not a directory: \(path)"
         }
     }

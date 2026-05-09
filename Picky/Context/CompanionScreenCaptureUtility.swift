@@ -45,8 +45,8 @@ enum CompanionScreenCaptureUtility {
         let mouseLocation = NSEvent.mouseLocation
 
         // Exclude only the cursor/bubble overlay windows. Keep regular Picky UI
-        // (HUD, settings, reports, etc.) visible in screenshots so the main agent
-        // can reason about Picky's current state while transient cursor affordances
+        // (HUD, settings, reports, etc.) visible in screenshots so Picky
+        // can reason about its current state while transient cursor affordances
         // stay out of the captured context.
         let cursorOverlayWindowIDs = Set(
             NSApp.windows.compactMap { window -> CGWindowID? in

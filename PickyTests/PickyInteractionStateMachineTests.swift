@@ -33,8 +33,8 @@ struct PickyInteractionStateMachineTests {
 
     private let baseDate = Date(timeIntervalSince1970: 1_800_000_000)
     private let voiceContextID = "voice-context"
-    private let sideSessionID = "side-session"
-    private let mainSessionID = "main-session"
+    private let pickleSessionID = "pickle-session"
+    private let pickySessionID = "picky-session"
 
     // MARK: - Group A: `.speaking` preemption emits stopSpeech + drops overlay reason
     //
@@ -84,12 +84,12 @@ struct PickyInteractionStateMachineTests {
         )))
     }
 
-    @Test func speakingPreemptedBySideCompletionDuringVoiceInputEmitsStopSpeechAndShowsSuppressedReply() {
+    @Test func speakingPreemptedByPickleCompletionDuringVoiceInputEmitsStopSpeechAndShowsSuppressedReply() {
         // Synthetic state the production code can never construct on its own
         // (voicePressed clears `.speaking` first), but we exercise the reducer
         // branch directly to lock in the cleanup contract.
         var initial = speakingState(
-            contextID: sideSessionID,
+            contextID: pickleSessionID,
             speechID: speechA,
             timerID: timerA,
             minimumDisplayUntil: baseDate.addingTimeInterval(0.35)
@@ -100,11 +100,11 @@ struct PickyInteractionStateMachineTests {
         let transition = reduce(
             initial,
             .quickReply(
-                contextID: sideSessionID,
-                text: "completed side work",
+                contextID: pickleSessionID,
+                text: "completed Pickle work",
                 originSource: .system,
-                replyKind: .sideCompletion,
-                sessionID: sideSessionID,
+                replyKind: .pickleCompletion,
+                sessionID: pickleSessionID,
                 inputID: nil
             ),
             id: timerB
@@ -114,8 +114,8 @@ struct PickyInteractionStateMachineTests {
             Issue.record("Expected suppressedReply, got \(transition.state.output)")
             return
         }
-        #expect(contextID == sideSessionID)
-        #expect(text == "completed side work")
+        #expect(contextID == pickleSessionID)
+        #expect(text == "completed Pickle work")
         #expect(reason == .activeVoiceInput)
         #expect(outputTimer == timerB)
         #expect(!isSpeakingResponseOverlayActive(transition.state))
@@ -580,22 +580,22 @@ struct PickyInteractionStateMachineTests {
 
     // MARK: - Group D: Realistic race scenarios drive the full event timeline
 
-    @Test func sideCompletionThenAnotherSideCompletionQueuesSecondAndIdlesOnSecondFinish() {
+    @Test func pickleCompletionThenAnotherPickleCompletionQueuesSecondAndIdlesOnSecondFinish() {
         // First completion → speaking(A).
         var state = reduce(
             PickyInteractionState(),
-            .quickReply(contextID: sideSessionID, text: "first", originSource: .system, replyKind: .sideCompletion, sessionID: sideSessionID, inputID: nil),
+            .quickReply(contextID: pickleSessionID, text: "first", originSource: .system, replyKind: .pickleCompletion, sessionID: pickleSessionID, inputID: nil),
             id: envelopeA
         ).state
         guard case .speaking(_, let firstSpeechID, _, _, _, _) = state.output else {
-            Issue.record("Expected speaking after first sideCompletion")
+            Issue.record("Expected speaking after first pickleCompletion")
             return
         }
 
         // Second completion arrives while the first is still speaking.
         let secondTransition = reduce(
             state,
-            .quickReply(contextID: sideSessionID, text: "second", originSource: .system, replyKind: .sideCompletion, sessionID: sideSessionID, inputID: nil),
+            .quickReply(contextID: pickleSessionID, text: "second", originSource: .system, replyKind: .pickleCompletion, sessionID: pickleSessionID, inputID: nil),
             id: envelopeB,
             offset: 0.05
         )
@@ -614,12 +614,12 @@ struct PickyInteractionStateMachineTests {
         )
         state = queuedStart.state
         guard case .speaking(_, let secondSpeechID, let secondText, _, _, _) = state.output else {
-            Issue.record("Expected queued second sideCompletion to start, got \(state.output)")
+            Issue.record("Expected queued second pickleCompletion to start, got \(state.output)")
             return
         }
         #expect(secondSpeechID == envelopeB)
         #expect(secondText == "second")
-        #expect(queuedStart.effects.contains(.speak(speechID: secondSpeechID, text: "second", contextID: sideSessionID)))
+        #expect(queuedStart.effects.contains(.speak(speechID: secondSpeechID, text: "second", contextID: pickleSessionID)))
         #expect(state.queuedSpeechReplies.isEmpty)
 
         // Real finish for the SECOND speechID transitions to idle.
@@ -633,14 +633,14 @@ struct PickyInteractionStateMachineTests {
         #expect(!isSpeakingResponseOverlayActive(cleanFinish.state))
     }
 
-    @Test func sideCompletionThenTextReplyPreemptionThenMinDisplayTimerEndsAtIdleWithoutSpeakingOverlay() {
+    @Test func pickleCompletionThenTextReplyPreemptionThenMinDisplayTimerEndsAtIdleWithoutSpeakingOverlay() {
         var state = reduce(
             PickyInteractionState(),
-            .quickReply(contextID: sideSessionID, text: "first", originSource: .system, replyKind: .sideCompletion, sessionID: sideSessionID, inputID: nil),
+            .quickReply(contextID: pickleSessionID, text: "first", originSource: .system, replyKind: .pickleCompletion, sessionID: pickleSessionID, inputID: nil),
             id: envelopeA
         ).state
         guard case .speaking(_, let speechID, _, _, _, _) = state.output else {
-            Issue.record("Expected speaking after sideCompletion")
+            Issue.record("Expected speaking after pickleCompletion")
             return
         }
 

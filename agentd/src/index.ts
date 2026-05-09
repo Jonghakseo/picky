@@ -7,7 +7,7 @@ import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
 import { OpenAIRealtimeMainRuntime } from "./runtime/openai-realtime-main-runtime.js";
 import { SelectableMainRuntime } from "./runtime/selectable-main-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
-import { createPickyHandoffTool, createPickySideSessionsTool, createPickySideSteerTool } from "./application/handoff-tool.js";
+import { createPickyPickleSessionsTool, createPickyStartPickleTool, createPickySteerPickleTool, type PickyHandoffRequest, type PickyPickleSteerRequest } from "./application/handoff-tool.js";
 import { createPickyAskUserQuestionTool } from "./application/ask-user-question-tool.js";
 import { PickySkillCatalog } from "./application/skill-catalog.js";
 import { installExtensionCrashGuard } from "./extension-crash-guard.js";
@@ -30,11 +30,11 @@ if (!token) {
   process.exit(1);
 }
 
-// pi extensions run in-process inside agentd. A throw from a passive hook
+// pi extensions run in-process within agentd. A throw from a passive hook
 // (e.g. an idle-timer screensaver calling `ctx.ui.custom`, or an extension
 // referencing a pi TUI API like `theme.fg` that Picky does not expose) would
 // otherwise propagate up the timer/microtask stack and tear the daemon down,
-// taking every running side-agent session with it. The crash guard swallows
+// taking every running Pickle session with it. The crash guard swallows
 // extension-originated errors after structured logging so the agent (and
 // whoever inspects logs) can recognise unsupported references, while real
 // daemon bugs are still re-thrown.
@@ -45,7 +45,7 @@ logAgentd("startup", { port, runtime: useMockRuntime ? "mock" : "pi", mainAgentR
 let supervisor: SessionSupervisor;
 const askUserQuestionTool = createPickyAskUserQuestionTool();
 const skillCatalog = new PickySkillCatalog();
-// handoff/side-session tools are reserved for the always-on main agent.
+// Pickle delegation tools are reserved for Picky.
 const runtime = useMockRuntime
   ? new MockRuntime()
   : new PiSdkRuntime({
@@ -57,32 +57,15 @@ const piMainRuntime = useMockRuntime
   : new PiSdkRuntime({
       thinkingLevel: mainAgentThinkingLevel,
       modelPattern: mainAgentModelPattern,
-      // Main agent has no UI surface for blocking dialogs (ask_user_question/confirm/input/...).
-      // Without this flag, any extension or tool that calls `ctx.ui.<dialog>` would hang the main
+      // Picky has no UI surface for blocking dialogs (ask_user_question/confirm/input/...).
+      // Without this flag, any extension or tool that calls `ctx.ui.<dialog>` would hang the Picky
       // session forever (`applyMainRuntimeEvent` ignores `extension_ui` events). Reject blocking
-      // calls eagerly so the LLM gets a usable error and can fall back to picky_handoff.
+      // calls eagerly so the LLM gets a usable error and can fall back to picky_start_pickle.
       disableBlockingDialogs: true,
       customTools: [
-        createPickyHandoffTool(async (request) => {
-          const context = supervisor.currentMainContext();
-          if (!context) throw new Error("No active Picky main-agent context to hand off.");
-          const cwd = request.cwd?.trim() || currentDefaultCwd.value;
-          logAgentd("handoff requested", { contextId: context.id, titleChars: request.title.length, instructionChars: request.instructions.length, cwd });
-          supervisor.announceMainHandoff(
-            context.id,
-            request.userMessage?.trim() || "복잡한 작업이라 사이드 에이전트에 위임하겠습니다. 진행 상황은 Picky dock에서 확인할 수 있어요.",
-          );
-          const session = await supervisor.createSideFromHandoff(context, { title: request.title, instructions: request.instructions, cwd });
-          logAgentd("handoff started", { contextId: context.id, sessionId: session.id, titleChars: session.title.length, cwd: session.cwd });
-          return { sessionId: session.id, title: session.title, cwd: session.cwd };
-        }),
-        createPickySideSessionsTool(() => supervisor.listSideSessions()),
-        createPickySideSteerTool(async (request) => {
-          logAgentd("side steer requested", { sessionId: request.sessionId, textChars: request.message.length });
-          const session = await supervisor.steerSideSession(request.sessionId, request.message);
-          logAgentd("side steer sent", { sessionId: session.id, status: session.status });
-          return session;
-        }),
+        createPickyStartPickleTool(startPickleFromMainContext),
+        createPickyPickleSessionsTool(() => supervisor.listPickleSessions()),
+        createPickySteerPickleTool(steerPickleSession),
       ],
     });
 
@@ -90,26 +73,9 @@ const realtimeMainRuntime = useMockRuntime
   ? undefined
   : new OpenAIRealtimeMainRuntime({
       toolHandlers: {
-        handoff: async (request) => {
-          const context = supervisor.currentMainContext();
-          if (!context) throw new Error("No active Picky main-agent context to hand off.");
-          const cwd = request.cwd?.trim() || currentDefaultCwd.value;
-          logAgentd("handoff requested", { contextId: context.id, titleChars: request.title.length, instructionChars: request.instructions.length, cwd });
-          supervisor.announceMainHandoff(
-            context.id,
-            request.userMessage?.trim() || "복잡한 작업이라 사이드 에이전트에 위임하겠습니다. 진행 상황은 Picky dock에서 확인할 수 있어요.",
-          );
-          const session = await supervisor.createSideFromHandoff(context, { title: request.title, instructions: request.instructions, cwd });
-          logAgentd("handoff started", { contextId: context.id, sessionId: session.id, titleChars: session.title.length, cwd: session.cwd });
-          return { sessionId: session.id, title: session.title, cwd: session.cwd };
-        },
-        listSideSessions: () => supervisor.listSideSessions(),
-        steerSideSession: async (request) => {
-          logAgentd("side steer requested", { sessionId: request.sessionId, textChars: request.message.length });
-          const session = await supervisor.steerSideSession(request.sessionId, request.message);
-          logAgentd("side steer sent", { sessionId: session.id, status: session.status });
-          return session;
-        },
+        handoff: startPickleFromMainContext,
+        listPickleSessions: () => supervisor.listPickleSessions(),
+        steerPickleSession: steerPickleSession,
         searchSkills: (request) => skillCatalog.search(request),
         getSkillDetails: (request) => skillCatalog.details(request),
       },
@@ -152,8 +118,29 @@ console.log(`picky-agentd listening on 127.0.0.1:${boundPort}`);
 
 if (mainRuntime) {
   void supervisor.prewarmMainAgent(mainAgentCwd)
-    .then(() => console.log(`picky main agent prewarmed for ${mainAgentCwd}`))
-    .catch((error) => console.error(`picky main agent prewarm failed: ${error instanceof Error ? error.message : String(error)}`));
+    .then(() => console.log(`Picky prewarmed for ${mainAgentCwd}`))
+    .catch((error) => console.error(`Picky prewarm failed: ${error instanceof Error ? error.message : String(error)}`));
+}
+
+async function startPickleFromMainContext(request: PickyHandoffRequest) {
+  const context = supervisor.currentMainContext();
+  if (!context) throw new Error("No active Picky context to hand off.");
+  const cwd = request.cwd?.trim() || currentDefaultCwd.value;
+  logAgentd("pickle start requested", { contextId: context.id, titleChars: request.title.length, instructionChars: request.instructions.length, cwd });
+  supervisor.announceMainHandoff(
+    context.id,
+    request.userMessage?.trim() || "이건 피클에 맡길게요. 진행 상황은 Picky dock에서 확인할 수 있어요.",
+  );
+  const session = await supervisor.createPickleFromHandoff(context, { title: request.title, instructions: request.instructions, cwd });
+  logAgentd("pickle started", { contextId: context.id, sessionId: session.id, titleChars: session.title.length, cwd: session.cwd });
+  return { sessionId: session.id, title: session.title, cwd: session.cwd };
+}
+
+async function steerPickleSession(request: PickyPickleSteerRequest) {
+  logAgentd("pickle steer requested", { sessionId: request.sessionId, textChars: request.message.length });
+  const session = await supervisor.steerPickleSession(request.sessionId, request.message);
+  logAgentd("pickle steer sent", { sessionId: session.id, status: session.status });
+  return session;
 }
 
 function parseMainAgentThinkingLevel(value: string | undefined) {

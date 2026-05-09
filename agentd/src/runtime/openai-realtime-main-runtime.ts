@@ -24,8 +24,8 @@ export interface OpenAIRealtimeMainRuntimeOptions {
 
 export interface OpenAIRealtimeToolHandlers {
   handoff(request: { title: string; instructions: string; userMessage?: string; cwd?: string }): Promise<{ sessionId: string; title: string; cwd?: string }>;
-  listSideSessions(request: { includeTerminal?: boolean; page?: number; limit?: number }): PickyAgentSession[];
-  steerSideSession(request: { sessionId: string; message: string }): Promise<PickyAgentSession>;
+  listPickleSessions(request: { includeTerminal?: boolean; page?: number; limit?: number }): PickyAgentSession[];
+  steerPickleSession(request: { sessionId: string; message: string }): Promise<PickyAgentSession>;
   searchSkills(request: { query?: string; limit?: number; cwd?: string }): Promise<{ query: string; root: string; roots?: string[]; total: number; skills: PickySkillSummary[] }>;
   getSkillDetails(request: { name: string; cwd?: string }): Promise<PickySkillDetails>;
 }
@@ -42,7 +42,7 @@ export interface RealtimeWebSocketLike {
 
 export type RealtimeWebSocketFactory = (url: string, headers: Record<string, string>) => RealtimeWebSocketLike;
 
-type RealtimeToolName = "picky_handoff" | "picky_side_sessions" | "picky_side_steer" | "picky_skills_search" | "picky_skill_details";
+type RealtimeToolName = "picky_start_pickle" | "picky_pickle_sessions" | "picky_steer_pickle" | "picky_skills_search" | "picky_skill_details";
 
 type PendingFunctionCall = {
   callId: string;
@@ -89,25 +89,25 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
   }
 
   async beginMainRealtimeVoiceTurn(turn: { inputId: string; context: PickyContextPacket }): Promise<void> {
-    await (await this.ensureHandle({ cwd: turn.context.cwd, sessionId: "picky-main-agent" })).beginVoiceTurn(turn);
+    await (await this.ensureHandle({ cwd: turn.context.cwd, sessionId: "picky" })).beginVoiceTurn(turn);
   }
 
   async appendMainRealtimeInputAudio(inputId: string, audioBase64: string): Promise<void> {
-    await (await this.ensureHandle({ sessionId: "picky-main-agent" })).appendVoiceAudio(inputId, audioBase64);
+    await (await this.ensureHandle({ sessionId: "picky" })).appendVoiceAudio(inputId, audioBase64);
   }
 
   async commitMainRealtimeVoiceTurn(inputId: string, context?: PickyContextPacket): Promise<void> {
-    await (await this.ensureHandle({ cwd: context?.cwd, sessionId: "picky-main-agent" })).commitVoiceTurn(inputId, context);
+    await (await this.ensureHandle({ cwd: context?.cwd, sessionId: "picky" })).commitVoiceTurn(inputId, context);
   }
 
   async cancelMainRealtimeVoiceTurn(inputId?: string, playedAudioMs?: number): Promise<void> {
-    await (await this.ensureHandle({ sessionId: "picky-main-agent" })).cancelVoiceTurn(inputId, playedAudioMs);
+    await (await this.ensureHandle({ sessionId: "picky" })).cancelVoiceTurn(inputId, playedAudioMs);
   }
 
   private async ensureHandle(options: { cwd?: string; sessionId?: string }): Promise<OpenAIRealtimeSessionHandle> {
     if (!this.handle) {
       this.handle = new OpenAIRealtimeSessionHandle({
-        id: options.sessionId ?? "picky-main-agent",
+        id: options.sessionId ?? "picky",
         cwd: options.cwd,
         config: this.config,
         thinkingLevel: this.thinkingLevel,
@@ -191,7 +191,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   }
 
   async steer(_prompt: BuiltPrompt): Promise<RuntimeSteerResult> {
-    throw new Error("OpenAI Realtime main runtime does not support side-session steer handles.");
+    throw new Error("OpenAI Realtime main runtime does not support Pickle steer handles.");
   }
 
   async abort(): Promise<void> {
@@ -571,16 +571,16 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
 
   private async executeTool(name: RealtimeToolName, args: Record<string, unknown>): Promise<unknown> {
     switch (name) {
-      case "picky_handoff":
+      case "picky_start_pickle":
         return this.options.toolHandlers.handoff({
           title: stringArg(args, "title"),
           instructions: stringArg(args, "instructions"),
           userMessage: optionalStringArg(args, "userMessage"),
           cwd: optionalStringArg(args, "cwd"),
         });
-      case "picky_side_sessions":
-        return summarizeRealtimeSideSessions(
-          this.options.toolHandlers.listSideSessions({
+      case "picky_pickle_sessions":
+        return summarizeRealtimePickleSessions(
+          this.options.toolHandlers.listPickleSessions({
             includeTerminal: typeof args.includeTerminal === "boolean" ? args.includeTerminal : undefined,
             page: numberArg(args, "page"),
             limit: numberArg(args, "limit"),
@@ -591,8 +591,8 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
             limit: numberArg(args, "limit"),
           },
         );
-      case "picky_side_steer":
-        return summarizeRealtimeSideSteerSession(await this.options.toolHandlers.steerSideSession({ sessionId: stringArg(args, "sessionId"), message: stringArg(args, "message") }));
+      case "picky_steer_pickle":
+        return summarizeRealtimePickleSteerSession(await this.options.toolHandlers.steerPickleSession({ sessionId: stringArg(args, "sessionId"), message: stringArg(args, "message") }));
       case "picky_skills_search":
         return summarizeRealtimeSkillSearch(await this.options.toolHandlers.searchSkills({
           query: optionalStringArg(args, "query"),
@@ -810,8 +810,8 @@ function buildRealtimeInstructions(): string {
     "- You are speaking directly to the user. Keep spoken Korean replies concise and natural.",
     "- Never speak or emit [POINT:...] tags. Realtime main has no pointing tool; describe UI locations verbally when needed.",
     "- Use `picky_skills_search` to discover available Pi skills before delegating specialized work, then `picky_skill_details` for exact usage guidance when needed.",
-    "- You cannot execute Pi skills directly. If a skill is relevant, include the skill name and the essential details in `picky_handoff.instructions` or `picky_side_steer.message` for the side Pi agent.",
-    "- Side HUD hover follow-ups bypass you and go directly to the side Pi agent. If the user refers to delegated work during a main-agent turn, call `picky_side_sessions` before deciding whether to use `picky_side_steer`.",
+    "- You cannot execute Pi skills directly. If a skill is relevant, include the skill name and the essential details in `picky_start_pickle.instructions` or `picky_steer_pickle.message` for the Pickle.",
+    "- Pickle hover follow-ups bypass you and go directly to the Pickle. If the user refers to delegated work during a Picky turn, call `picky_pickle_sessions` before deciding whether to use `picky_steer_pickle`.",
   ].join("\n");
 }
 
@@ -868,24 +868,24 @@ function realtimeTools(): Array<Record<string, unknown>> {
   return [
     {
       type: "function",
-      name: "picky_handoff",
-      description: "Delegate complex, long-running, tool-heavy, or multi-turn work to a side Pi agent shown in Picky's dock.",
+      name: "picky_start_pickle",
+      description: "Delegate complex, long-running, tool-heavy, or multi-turn work to a Pickle shown in Picky's dock.",
       parameters: {
         type: "object",
         additionalProperties: false,
         properties: {
-          title: { type: "string", description: "Short Korean title for the side-agent dock card." },
-          instructions: { type: "string", description: "Compact delta-first brief for the side Pi agent." },
-          userMessage: { type: "string", description: "Optional Korean message to tell the user after handoff." },
-          cwd: { type: "string", description: "Optional absolute working directory for the side Pi agent." },
+          title: { type: "string", description: "Short Korean title for the Pickle card." },
+          instructions: { type: "string", description: "Compact delta-first brief for the Pickle." },
+          userMessage: { type: "string", description: "Optional Korean message to tell the user after starting Pickle." },
+          cwd: { type: "string", description: "Optional absolute working directory for the Pickle." },
         },
         required: ["title", "instructions"],
       },
     },
     {
       type: "function",
-      name: "picky_side_sessions",
-      description: "List current and recent side Pi agents delegated from Picky.",
+      name: "picky_pickle_sessions",
+      description: "List current and recent Pickles delegated from Picky.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -899,8 +899,8 @@ function realtimeTools(): Array<Record<string, unknown>> {
     },
     {
       type: "function",
-      name: "picky_side_steer",
-      description: "Send delta-only steering instructions to an existing side Pi agent.",
+      name: "picky_steer_pickle",
+      description: "Send delta-only steering instructions to an existing Pickle.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -914,7 +914,7 @@ function realtimeTools(): Array<Record<string, unknown>> {
     {
       type: "function",
       name: "picky_skills_search",
-      description: "Search local Pi skill specifications available to side Pi agents. Returns matching skill names, descriptions, paths, and snippets.",
+      description: "Search local Pi skill specifications available to Pickles. Returns matching skill names, descriptions, paths, and snippets.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -928,7 +928,7 @@ function realtimeTools(): Array<Record<string, unknown>> {
     {
       type: "function",
       name: "picky_skill_details",
-      description: "Read the full SKILL.md instructions for one local Pi skill by name before delegating skill-specific work to a side Pi agent.",
+      description: "Read the full SKILL.md instructions for one local Pi skill by name before delegating skill-specific work to a Pickle.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -941,19 +941,19 @@ function realtimeTools(): Array<Record<string, unknown>> {
   ];
 }
 
-const REALTIME_SIDE_SESSIONS_DEFAULT_LIMIT = 10;
-const REALTIME_SIDE_SESSIONS_MAX_LIMIT = 10;
+const REALTIME_PICKLE_SESSIONS_DEFAULT_LIMIT = 10;
+const REALTIME_PICKLE_SESSIONS_MAX_LIMIT = 10;
 
-type RealtimeSideSessionsRequest = { includeTerminal?: boolean; page?: number; limit?: number };
+type RealtimePickleSessionsRequest = { includeTerminal?: boolean; page?: number; limit?: number };
 
-type RealtimeSideSessionSummary = {
+type RealtimePickleSessionSummary = {
   id: string;
   title: string;
   cwd?: string;
   lastMessage?: string;
 };
 
-type RealtimeSideSteerSummary = {
+type RealtimePickleSteerSummary = {
   id: string;
   title: string;
   status: PickyAgentSession["status"];
@@ -971,8 +971,8 @@ type RealtimeSkillDetailsSummary = {
   instructions: string;
 };
 
-function summarizeRealtimeSideSessions(sessions: PickyAgentSession[], request: RealtimeSideSessionsRequest): {
-  sessions: RealtimeSideSessionSummary[];
+function summarizeRealtimePickleSessions(sessions: PickyAgentSession[], request: RealtimePickleSessionsRequest): {
+  sessions: RealtimePickleSessionSummary[];
   page: number;
   pageSize: number;
   total: number;
@@ -981,10 +981,10 @@ function summarizeRealtimeSideSessions(sessions: PickyAgentSession[], request: R
 } {
   const includeTerminal = request.includeTerminal !== false;
   const page = normalizePage(request.page);
-  const pageSize = clampRealtimeSideSessionLimit(request.limit);
+  const pageSize = clampRealtimePickleSessionLimit(request.limit);
   const filtered = sessions.filter((session) => includeTerminal || !["completed", "failed", "cancelled"].includes(session.status));
   const start = (page - 1) * pageSize;
-  const selected = filtered.slice(start, start + pageSize).map(summarizeRealtimeSideSession);
+  const selected = filtered.slice(start, start + pageSize).map(summarizeRealtimePickleSession);
   const hasMore = filtered.length > start + pageSize;
   return {
     sessions: selected,
@@ -996,35 +996,35 @@ function summarizeRealtimeSideSessions(sessions: PickyAgentSession[], request: R
   };
 }
 
-function summarizeRealtimeSideSession(session: PickyAgentSession): RealtimeSideSessionSummary {
-  const summary: RealtimeSideSessionSummary = {
+function summarizeRealtimePickleSession(session: PickyAgentSession): RealtimePickleSessionSummary {
+  const summary: RealtimePickleSessionSummary = {
     id: session.id,
     title: session.title,
   };
   if (session.cwd) summary.cwd = session.cwd;
-  const lastMessage = lastSideSessionMessage(session);
+  const lastMessage = lastPickleSessionMessage(session);
   if (lastMessage) summary.lastMessage = lastMessage;
   return summary;
 }
 
-function lastSideSessionMessage(session: PickyAgentSession): string | undefined {
+function lastPickleSessionMessage(session: PickyAgentSession): string | undefined {
   const messages = session.messages ?? [];
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     const text = message.text ?? message.errorMessage ?? message.question?.prompt ?? message.question?.title;
-    if (text?.trim()) return compactRealtimeSideSessionText(text);
+    if (text?.trim()) return compactRealtimePickleSessionText(text);
   }
-  return compactRealtimeSideSessionText(session.finalAnswer ?? session.lastSummary ?? session.thinkingPreview);
+  return compactRealtimePickleSessionText(session.finalAnswer ?? session.lastSummary ?? session.thinkingPreview);
 }
 
-function compactRealtimeSideSessionText(text: string | undefined): string | undefined {
+function compactRealtimePickleSessionText(text: string | undefined): string | undefined {
   const compact = text?.replace(/\s+/g, " ").trim();
   if (!compact) return undefined;
   return compact.length > 240 ? `${compact.slice(0, 237)}...` : compact;
 }
 
-function summarizeRealtimeSideSteerSession(session: PickyAgentSession): RealtimeSideSteerSummary {
-  const summary: RealtimeSideSteerSummary = {
+function summarizeRealtimePickleSteerSession(session: PickyAgentSession): RealtimePickleSteerSummary {
+  const summary: RealtimePickleSteerSummary = {
     id: session.id,
     title: session.title,
     status: session.status,
@@ -1060,9 +1060,9 @@ function normalizePage(page: number | undefined): number {
   return Math.max(1, Math.floor(page));
 }
 
-function clampRealtimeSideSessionLimit(limit: number | undefined): number {
-  if (typeof limit !== "number" || !Number.isFinite(limit)) return REALTIME_SIDE_SESSIONS_DEFAULT_LIMIT;
-  return Math.max(1, Math.min(REALTIME_SIDE_SESSIONS_MAX_LIMIT, Math.floor(limit)));
+function clampRealtimePickleSessionLimit(limit: number | undefined): number {
+  if (typeof limit !== "number" || !Number.isFinite(limit)) return REALTIME_PICKLE_SESSIONS_DEFAULT_LIMIT;
+  return Math.max(1, Math.min(REALTIME_PICKLE_SESSIONS_MAX_LIMIT, Math.floor(limit)));
 }
 
 async function imagePathToDataUrl(path: string): Promise<string | undefined> {
@@ -1127,9 +1127,9 @@ function normalizeResponseStatus(status: string | undefined): "completed" | "can
 
 function normalizeToolName(name: string): RealtimeToolName | undefined {
   switch (name) {
-    case "picky_handoff":
-    case "picky_side_sessions":
-    case "picky_side_steer":
+    case "picky_start_pickle":
+    case "picky_pickle_sessions":
+    case "picky_steer_pickle":
     case "picky_skills_search":
     case "picky_skill_details":
       return name;

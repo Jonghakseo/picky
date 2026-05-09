@@ -50,7 +50,7 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
-  it("broadcasts an empty main-message snapshot after resetting the main agent", async () => {
+  it("broadcasts an empty Picky message snapshot after resetting Picky", async () => {
     const { ws } = await connectWithHello();
     ws.send(JSON.stringify({ id: "cmd-reset-main", protocolVersion: PROTOCOL_VERSION, type: "resetMainAgent" }));
     const snapshot = await nextEvent(ws);
@@ -73,6 +73,25 @@ describe("AgentdServer", () => {
     await waitUntil(() => steer.mock.calls.length > 0);
 
     expect(steer).toHaveBeenCalledWith(session.id, "inspect this", expect.objectContaining({ id: "context-visual-steer", screenshots: [expect.objectContaining({ path: "/tmp/shot.png" })] }));
+    ws.close();
+  });
+
+  it("routes Pickle session command names to the supervisor", async () => {
+    const createEmptyPickleSession = vi.spyOn(supervisor, "createEmptyPickleSession");
+    const pinPickleSession = vi.spyOn(supervisor, "pinPickleSession");
+    const duplicatePickleSession = vi.spyOn(supervisor, "duplicatePickleSession").mockResolvedValue(makeSession({ id: "session-copy" }));
+    const { ws } = await connectWithHello();
+
+    ws.send(JSON.stringify({ id: "cmd-empty-pickle", protocolVersion: PROTOCOL_VERSION, type: "createEmptyPickleSession", context: context("manual pickle") }));
+    await waitUntil(() => createEmptyPickleSession.mock.calls.length === 1);
+    ws.send(JSON.stringify({ id: "cmd-pin-pickle", protocolVersion: PROTOCOL_VERSION, type: "pinPickleSession", context: context("pin pickle") }));
+    await waitUntil(() => pinPickleSession.mock.calls.length === 1);
+    ws.send(JSON.stringify({ id: "cmd-duplicate-pickle", protocolVersion: PROTOCOL_VERSION, type: "duplicatePickleSession", sessionId: "session-source" }));
+    await waitUntil(() => duplicatePickleSession.mock.calls.length === 1);
+
+    expect(createEmptyPickleSession).toHaveBeenCalledWith(expect.objectContaining({ id: "context-manual pickle" }));
+    expect(pinPickleSession).toHaveBeenCalledWith(expect.objectContaining({ id: "context-pin pickle" }), undefined);
+    expect(duplicatePickleSession).toHaveBeenCalledWith("session-source");
     ws.close();
   });
 

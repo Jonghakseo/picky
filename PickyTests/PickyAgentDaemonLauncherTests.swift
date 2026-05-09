@@ -98,14 +98,14 @@ struct PickyAgentDaemonLauncherTests {
         )
 
         launcher.start()
-        let payload = Data("hello from side agent".utf8).base64EncodedString()
+        let payload = Data("hello from Pickle".utf8).base64EncodedString()
         runner.emitStdout("before\u{001B}]52;c;\(payload)\u{0007}after\n")
 
         let stdoutLog = try String(contentsOf: temp.appendingPathComponent("Logs/agentd.stdout.log"))
-        #expect(clipboard.copiedTexts == ["hello from side agent"])
+        #expect(clipboard.copiedTexts == ["hello from Pickle"])
         #expect(stdoutLog.contains("before"))
         #expect(stdoutLog.contains("after"))
-        #expect(stdoutLog.contains("[Picky intercepted OSC52 clipboard request: 21 chars]"))
+        #expect(stdoutLog.contains("[Picky intercepted OSC52 clipboard request: 17 chars]"))
         #expect(!stdoutLog.contains(payload))
         #expect(!stdoutLog.contains("\u{001B}]52"))
     }

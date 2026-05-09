@@ -2,7 +2,7 @@
 //  PickyConversationListView.swift
 //  Picky
 //
-//  Message list for the conversation-style side-agent card.
+//  Message list for the conversation-style Pickle card.
 //
 
 import SwiftUI

@@ -189,7 +189,7 @@ enum PickyInteractionReducer {
             state.output = .waitingForAgent(inputID: inputID, contextID: context.id, promptPreview: transcript)
             effects.append(.recordContextOwnership(inputID: inputID, contextID: context.id, owner: .voice(inputID: inputID)))
             if let targetSessionID {
-                effects.append(.followUpSide(inputID: inputID, sessionID: targetSessionID, transcript: transcript, context: context))
+                effects.append(.followUpPickle(inputID: inputID, sessionID: targetSessionID, transcript: transcript, context: context))
             } else {
                 effects.append(.submitMain(inputID: inputID, transcript: transcript, context: context))
             }
@@ -225,8 +225,8 @@ enum PickyInteractionReducer {
             let deadline = envelope.occurredAt.addingTimeInterval(minimumDisplayDuration)
             let owner = state.contextOwnership[contextID] ?? ownerFromMetadata(originSource)
             let hasActiveVoiceInput = state.hasActiveVoiceInput
-            let shouldSpeakReply = owner.isVoiceOwned || owner.usesCursorResponsePresentation || replyKind == .sideCompletion
-            if hasActiveVoiceInput, replyKind == .sideCompletion {
+            let shouldSpeakReply = owner.isVoiceOwned || owner.usesCursorResponsePresentation || replyKind == .pickleCompletion
+            if hasActiveVoiceInput, replyKind == .pickleCompletion {
                 state.queuedSpeechReplies.removeAll()
                 preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
                 state.output = .suppressedReply(
@@ -238,10 +238,10 @@ enum PickyInteractionReducer {
                 )
                 effects.append(.scheduleMinimumDisplay(timerID: timerID, speechID: nil, inputID: inputID, delay: minimumDisplayDuration))
                 state.lastDisplayMessage = PickyDisplayMessage(id: contextID, contextID: contextID, text: text, source: .suppressed, updatedAt: envelope.occurredAt)
-                record(.stateChanged, "Suppressed side completion quick reply while voice input is active")
+                record(.stateChanged, "Suppressed Pickle completion quick reply while voice input is active")
             } else if shouldSpeakReply, !hasActiveVoiceInput {
                 let speechID = envelope.correlation.speechID ?? envelope.id
-                let displaySource: PickyDisplaySource = replyKind == .sideCompletion ? .sideCompletion : (owner.usesCursorResponsePresentation ? .textReply : .voiceReply)
+                let displaySource: PickyDisplaySource = replyKind == .pickleCompletion ? .pickleCompletion : (owner.usesCursorResponsePresentation ? .textReply : .voiceReply)
                 let queuedReply = PickyQueuedSpeechReply(
                     contextID: contextID,
                     text: text,
@@ -271,7 +271,7 @@ enum PickyInteractionReducer {
                     id: contextID,
                     contextID: contextID,
                     text: text,
-                    source: replyKind == .sideCompletion ? .sideCompletion : .textReply,
+                    source: replyKind == .pickleCompletion ? .pickleCompletion : .textReply,
                     updatedAt: envelope.occurredAt
                 )
                 effects.append(.scheduleMinimumDisplay(timerID: timerID, speechID: nil, inputID: inputID, delay: minimumDisplayDuration))
@@ -283,11 +283,11 @@ enum PickyInteractionReducer {
             state.lastDisplayMessage = PickyDisplayMessage(id: sessionID, contextID: nil, text: text, source: .passiveSummary, updatedAt: envelope.occurredAt)
             record(.stateChanged, "Passive agent summary updated")
 
-        case .sideAgentCompleted(let sessionID, let summary):
+        case .pickleCompleted(let sessionID, let summary):
             if let summary {
-                state.lastDisplayMessage = PickyDisplayMessage(id: sessionID, contextID: nil, text: summary, source: .sideCompletion, updatedAt: envelope.occurredAt)
+                state.lastDisplayMessage = PickyDisplayMessage(id: sessionID, contextID: nil, text: summary, source: .pickleCompletion, updatedAt: envelope.occurredAt)
             }
-            record(.accepted, "Side agent completed")
+            record(.accepted, "Pickle completed")
 
         case .pointerRequested(let target):
             if let previous = state.pointer.target?.id, previous != target.id {

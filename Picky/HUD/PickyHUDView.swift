@@ -159,7 +159,7 @@ struct PickyHUDView: View {
                 onOpenSession: toggleOpenSession,
                 onPinSession: pinSession,
                 onArchiveSession: archiveSession,
-                onCreateSideAgent: chooseFolderForEmptySideAgent,
+                onCreatePickle: chooseFolderForEmptyPickle,
                 onDockHoverChanged: handleDockHover,
                 onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:),
                 onDockHandleDragChanged: onDockHandleDragChanged,
@@ -201,19 +201,19 @@ struct PickyHUDView: View {
         hoverPreviewSessionID == sessionID && heldSession?.sessionID != sessionID
     }
 
-    private func chooseFolderForEmptySideAgent() {
+    private func chooseFolderForEmptyPickle() {
         NSApp.activate(ignoringOtherApps: true)
 
         let panel = NSOpenPanel()
         panel.title = "Choose a working folder"
         panel.prompt = "Start"
-        panel.message = "Choose the folder where the new side agent should run."
+        panel.message = "Choose the folder where the new Pickle should run."
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
-            Task { try? await viewModel.createEmptySideSession(cwd: url.path) }
+            Task { try? await viewModel.createEmptyPickleSession(cwd: url.path) }
         }
     }
 
@@ -254,7 +254,7 @@ struct PickyHUDView: View {
 
     private func archiveSession(_ sessionID: String) {
         cancelPendingClose()
-        let title = (visibleSessions + viewModel.sessions).first(where: { $0.id == sessionID })?.title ?? "Side agent"
+        let title = (visibleSessions + viewModel.sessions).first(where: { $0.id == sessionID })?.title ?? "Pickle"
         viewModel.archive(sessionID: sessionID)
         if heldSession?.sessionID == sessionID { heldSession = nil }
         if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
@@ -458,7 +458,7 @@ private struct PickyHUDDockRailView: View {
     let onOpenSession: (String) -> Void
     let onPinSession: (String) -> Void
     let onArchiveSession: (String) -> Void
-    let onCreateSideAgent: () -> Void
+    let onCreatePickle: () -> Void
     let onDockHoverChanged: (Bool) -> Void
     let onDoneFlashConsumed: (String) -> Void
     let onDockHandleDragChanged: (CGPoint) -> Void
@@ -552,7 +552,7 @@ private struct PickyHUDDockRailView: View {
                 .allowsHitTesting(false)
         }
         .accessibilityLabel("HUD dock handle")
-        .accessibilityHint("Drag to move the side-agent dock. Crossing the middle of the screen switches the dock edge. Double-click to reset the dock to its default position.")
+        .accessibilityHint("Drag to move the Pickle dock. Crossing the middle of the screen switches the dock edge. Double-click to reset the dock to its default position.")
     }
 
     /// Frosted-glass capsule that hosts the dock icons. Uses .ultraThinMaterial
@@ -587,7 +587,7 @@ private struct PickyHUDDockRailView: View {
     }
 
     private var addAgentSlotButton: some View {
-        Button(action: onCreateSideAgent) {
+        Button(action: onCreatePickle) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(.ultraThinMaterial)
@@ -607,12 +607,12 @@ private struct PickyHUDDockRailView: View {
         }
         .buttonStyle(.plain)
         .pointerCursor()
-        .accessibilityLabel("Start side agent")
-        .accessibilityHint("Choose a working folder and start an empty side agent")
+        .accessibilityLabel("Start Pickle")
+        .accessibilityHint("Choose a working folder and start an empty Pickle")
     }
 
     private var collapsibleAddAgentSlot: some View {
-        Button(action: onCreateSideAgent) {
+        Button(action: onCreatePickle) {
             ZStack {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -647,8 +647,8 @@ private struct PickyHUDDockRailView: View {
                 isAddSlotExpanded = hovering
             }
         }
-        .accessibilityLabel("Start side agent")
-        .accessibilityHint("Choose a working folder and start an empty side agent")
+        .accessibilityLabel("Start Pickle")
+        .accessibilityHint("Choose a working folder and start an empty Pickle")
     }
 }
 
@@ -742,7 +742,7 @@ private struct PickyHUDDockIconView: View {
         }
         .animation(.spring(response: 0.2, dampingFraction: 0.78), value: isArchivePressing)
         .accessibilityLabel("Preview \(session.title)")
-        .accessibilityHint("Click to open or close. Double-click to pin or unpin. Press and hold for 1.5 seconds to archive this side agent.")
+        .accessibilityHint("Click to open or close. Double-click to pin or unpin. Press and hold for 1.5 seconds to archive this Pickle.")
         .accessibilityAddTraits(.isButton)
     }
 

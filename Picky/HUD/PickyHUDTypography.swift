@@ -2,7 +2,7 @@
 //  PickyHUDTypography.swift
 //  Picky
 //
-//  Typography tokens for the side-agent HUD. These intentionally apply only to
+//  Typography tokens for the Pickle HUD. These intentionally apply only to
 //  readable text, not decorative SF Symbols or tiny state glyphs such as pin icons.
 //
 

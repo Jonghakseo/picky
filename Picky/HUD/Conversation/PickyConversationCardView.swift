@@ -2,7 +2,7 @@
 //  PickyConversationCardView.swift
 //  Picky
 //
-//  Core conversation-style side-agent card container.
+//  Core conversation-style Pickle card container.
 //
 
 import AppKit

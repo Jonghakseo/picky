@@ -16,12 +16,13 @@ interface PickyHandoffResult {
   cwd?: string;
 }
 
-export interface PickySideSteerRequest {
+export interface PickyPickleSteerRequest {
   sessionId: string;
   message: string;
 }
 
-interface SideSessionSummary {
+
+interface PickleSessionSummary {
   id: string;
   title: string;
   status: PickyAgentSession["status"];
@@ -35,24 +36,45 @@ interface SideSessionSummary {
   cwd?: string;
 }
 
-export function createPickyHandoffTool(onHandoff: (request: PickyHandoffRequest) => Promise<PickyHandoffResult>): ToolDefinition {
+type PickleToolNames = {
+  start: "picky_start_pickle";
+  sessions: "picky_pickle_sessions";
+  steer: "picky_steer_pickle";
+};
+
+const PICKLE_TOOL_NAMES: PickleToolNames = {
+  start: "picky_start_pickle",
+  sessions: "picky_pickle_sessions",
+  steer: "picky_steer_pickle",
+};
+
+
+export function createPickyStartPickleTool(onHandoff: (request: PickyHandoffRequest) => Promise<PickyHandoffResult>): ToolDefinition {
+  return createPickyStartPickleToolWithNames(onHandoff, PICKLE_TOOL_NAMES);
+}
+
+
+function createPickyStartPickleToolWithNames(
+  onHandoff: (request: PickyHandoffRequest) => Promise<PickyHandoffResult>,
+  names: PickleToolNames,
+): ToolDefinition {
   return defineTool({
-    name: "picky_handoff",
-    label: "Picky handoff",
-    description: "Delegate complex, long-running, tool-heavy, or multi-turn work to a side Pi agent shown in Picky's dock.",
-    promptSnippet: "picky_handoff: delegate complex or long-running work to a side Pi agent in the Picky dock.",
+    name: names.start,
+    label: "Picky start Pickle",
+    description: "Delegate complex, long-running, tool-heavy, or multi-turn work to Pickle, shown in Picky's dock.",
+    promptSnippet: `${names.start}: delegate complex or long-running work to Pickle in the Picky dock.`,
     promptGuidelines: [
-      "Use picky_handoff when the user's request needs new detailed screen analysis, code/repo/file work, web/video extraction, MCPs, or multiple turns.",
-      "Before creating a new handoff for work that may already be delegated, call picky_side_sessions and prefer picky_side_steer for a matching existing side agent.",
+      `Use ${names.start} when the user's request needs new detailed screen analysis, code/repo/file work, web/video extraction, MCPs, or multiple turns.`,
+      `Before creating a new Pickle for work that may already be delegated, call ${names.sessions} and prefer ${names.steer} for a matching existing Pickle.`,
       "Write instructions as a compact, action-oriented brief of about 300 Korean characters: goal, essential constraints, known decisions, key paths/URLs/IDs, and expected output.",
       "Do not paste the full current prompt, captured context, screenshot metadata, prior transcript, or tool logs into instructions; include only deltas and essential references.",
-      "After calling picky_handoff, tell the user in Korean that a side agent has been started and progress can be checked in the Picky dock.",
+      `After calling ${names.start}, tell the user in Korean that a Pickle has been started and progress can be checked in the Picky dock.`,
     ],
     parameters: Type.Object({
-      title: Type.String({ description: "Short Korean title for the side-agent dock card." }),
-      instructions: Type.String({ description: "Compact delta-first brief for the side Pi agent, ideally about 300 Korean characters: goal, essential constraints, key paths/URLs/IDs, known decisions, and expected output. Do not paste full prompts, transcripts, logs, screenshot metadata, or captured context." }),
-      userMessage: Type.Optional(Type.String({ description: "Optional short Korean message you intend to tell the user after handoff." })),
-      cwd: Type.Optional(Type.String({ description: "Optional absolute working directory for the side Pi agent. Omit to use Picky's configured default cwd." })),
+      title: Type.String({ description: "Short Korean title for the Pickle card in the Picky dock." }),
+      instructions: Type.String({ description: "Compact delta-first brief for Pickle, ideally about 300 Korean characters: goal, essential constraints, key paths/URLs/IDs, known decisions, and expected output. Do not paste full prompts, transcripts, logs, screenshot metadata, or captured context." }),
+      userMessage: Type.Optional(Type.String({ description: "Optional short Korean message you intend to tell the user after starting Pickle." })),
+      cwd: Type.Optional(Type.String({ description: "Optional absolute working directory for Pickle. Omit to use Picky's configured default cwd." })),
     }),
     execute: async (_toolCallId, params) => {
       const session = await onHandoff({
@@ -65,7 +87,7 @@ export function createPickyHandoffTool(onHandoff: (request: PickyHandoffRequest)
         content: [
           {
             type: "text",
-            text: `Side agent started: ${session.title} (${session.sessionId}). Now tell the user in Korean that you delegated this work and that they can check progress in the Picky dock.`,
+            text: `Pickle started: ${session.title} (${session.sessionId}). Now tell the user in Korean that you delegated this work to Pickle and that they can check progress in the Picky dock.`,
           },
         ],
         details: session,
@@ -74,67 +96,80 @@ export function createPickyHandoffTool(onHandoff: (request: PickyHandoffRequest)
   });
 }
 
-const SIDE_SESSIONS_DEFAULT_PAGE_SIZE = 10;
-const SIDE_SESSIONS_MAX_PAGE_SIZE = 10;
+const PICKLE_SESSIONS_DEFAULT_PAGE_SIZE = 10;
+const PICKLE_SESSIONS_MAX_PAGE_SIZE = 10;
 
-export function createPickySideSessionsTool(onList: () => PickyAgentSession[]): ToolDefinition {
+export function createPickyPickleSessionsTool(onList: () => PickyAgentSession[]): ToolDefinition {
+  return createPickyPickleSessionsToolWithNames(onList, PICKLE_TOOL_NAMES);
+}
+
+
+function createPickyPickleSessionsToolWithNames(onList: () => PickyAgentSession[], names: PickleToolNames): ToolDefinition {
   return defineTool({
-    name: "picky_side_sessions",
-    label: "Picky side sessions",
-    description: "List one bounded page of side Pi agents that the Picky main agent has already delegated work to, so steering requests can reuse the right side agent instead of starting a duplicate.",
-    promptSnippet: "picky_side_sessions: list one bounded page of current and recent side Pi agents in the Picky dock before deciding whether to steer one.",
+    name: names.sessions,
+    label: "Picky Pickle sessions",
+    description: "List one bounded page of Pickles that Picky has already delegated work to, so steering requests can reuse the right Pickle instead of starting a duplicate.",
+    promptSnippet: `${names.sessions}: list one bounded page of current and recent Pickles in the Picky dock before deciding whether to steer one.`,
     promptGuidelines: [
-      "Use picky_side_sessions when the user refers to an existing delegated task, side agent, running work, recent completion, or asks to continue/change/check progress.",
+      `Use ${names.sessions} when the user refers to an existing delegated task, Pickle, running work, recent completion, or asks to continue/change/check progress.`,
       "The tool returns at most one small page at a time; follow nextPage only when needed for the user's request.",
-      "Prefer steering a relevant side session with picky_side_steer over creating a duplicate side agent.",
+      `Prefer steering a relevant Pickle session with ${names.steer} over creating a duplicate Pickle.`,
     ],
     parameters: Type.Object({
-      includeTerminal: Type.Optional(Type.Boolean({ description: "Whether to include completed, failed, and cancelled side sessions. Defaults to true." })),
+      includeTerminal: Type.Optional(Type.Boolean({ description: "Whether to include completed, failed, and cancelled Pickle sessions. Defaults to true." })),
       page: Type.Optional(Type.Number({ description: "1-based page number to return. Defaults to 1.", minimum: 1 })),
-      limit: Type.Optional(Type.Number({ description: `Maximum number of side sessions to return on this page. Defaults to ${SIDE_SESSIONS_DEFAULT_PAGE_SIZE}; capped at ${SIDE_SESSIONS_MAX_PAGE_SIZE}.`, minimum: 1, maximum: SIDE_SESSIONS_MAX_PAGE_SIZE })),
+      limit: Type.Optional(Type.Number({ description: `Maximum number of Pickle sessions to return on this page. Defaults to ${PICKLE_SESSIONS_DEFAULT_PAGE_SIZE}; capped at ${PICKLE_SESSIONS_MAX_PAGE_SIZE}.`, minimum: 1, maximum: PICKLE_SESSIONS_MAX_PAGE_SIZE })),
     }),
     execute: async (_toolCallId, params) => {
       const includeTerminal = params.includeTerminal !== false;
       const page = normalizePage(params.page);
-      const pageSize = clampLimit(params.limit, SIDE_SESSIONS_DEFAULT_PAGE_SIZE);
+      const pageSize = clampLimit(params.limit, PICKLE_SESSIONS_DEFAULT_PAGE_SIZE);
       const start = (page - 1) * pageSize;
       const end = start + pageSize;
       const allSessions = onList().filter((session) => includeTerminal || !["completed", "failed", "cancelled"].includes(session.status));
-      const sessions = allSessions.slice(start, end).map(summarizeSideSession);
+      const sessions = allSessions.slice(start, end).map(summarizePickleSession);
       const hasMore = allSessions.length > end;
       const nextPage = hasMore ? page + 1 : undefined;
       return {
-        content: [{ type: "text", text: formatSideSessions(sessions, { page, pageSize, hasMore, nextPage }) }],
+        content: [{ type: "text", text: formatPickleSessions(sessions, { page, pageSize, hasMore, nextPage }) }],
         details: { sessions, page, pageSize, hasMore, nextPage },
       };
     },
   });
 }
 
-export function createPickySideSteerTool(onSteer: (request: PickySideSteerRequest) => Promise<PickyAgentSession>): ToolDefinition {
+export function createPickySteerPickleTool(onSteer: (request: PickyPickleSteerRequest) => Promise<PickyAgentSession>): ToolDefinition {
+  return createPickySteerPickleToolWithNames(onSteer, PICKLE_TOOL_NAMES);
+}
+
+
+function createPickySteerPickleToolWithNames(
+  onSteer: (request: PickyPickleSteerRequest) => Promise<PickyAgentSession>,
+  names: PickleToolNames,
+): ToolDefinition {
   return defineTool({
-    name: "picky_side_steer",
-    label: "Picky side steer",
-    description: "Send steering instructions to an existing side Pi agent that was started by picky_handoff.",
-    promptSnippet: "picky_side_steer: steer an existing delegated side Pi agent with additional user instructions.",
+    name: names.steer,
+    label: "Picky steer Pickle",
+    description: `Send steering instructions to an existing Pickle that was started by ${names.start}.`,
+    promptSnippet: `${names.steer}: steer an existing delegated Pickle with additional user instructions.`,
     promptGuidelines: [
-      "Use picky_side_steer after picky_side_sessions identifies the side agent that should receive the user's new instruction.",
+      `Use ${names.steer} after ${names.sessions} identifies the Pickle that should receive the user's new instruction.`,
       "Send only the new delta instruction plus essential references; do not restate the whole task or paste prior transcript/tool logs.",
-      "Do not use this for unrelated new work; call picky_handoff for a new delegated task instead.",
-      "After calling picky_side_steer, tell the user in Korean that the existing side agent has been steered and progress can still be checked in the Picky dock.",
+      `Do not use this for unrelated new work; call ${names.start} for a new delegated task instead.`,
+      `After calling ${names.steer}, tell the user in Korean that the existing Pickle has been steered and progress can still be checked in the Picky dock.`,
     ],
     parameters: Type.Object({
-      sessionId: Type.String({ description: "ID of the side session to steer, as returned by picky_side_sessions." }),
-      message: Type.String({ description: "Delta-only steering instruction for the side Pi agent, with only essential references. Do not restate the whole task or paste prior transcript, tool logs, or captured context." }),
+      sessionId: Type.String({ description: `ID of the Pickle session to steer, as returned by ${names.sessions}.` }),
+      message: Type.String({ description: "Delta-only steering instruction for Pickle, with only essential references. Do not restate the whole task or paste prior transcript, tool logs, or captured context." }),
     }),
     execute: async (_toolCallId, params) => {
       const session = await onSteer({ sessionId: params.sessionId, message: params.message });
-      const summary = summarizeSideSession(session);
+      const summary = summarizePickleSession(session);
       return {
         content: [
           {
             type: "text",
-            text: `Steering sent to side agent: ${session.title} (${session.id}). Status is ${session.status}. Now tell the user in Korean that the existing side agent was steered and progress can be checked in the Picky dock.`,
+            text: `Steering sent to Pickle: ${session.title} (${session.id}). Status is ${session.status}. Now tell the user in Korean that the existing Pickle was steered and progress can be checked in the Picky dock.`,
           },
         ],
         details: { session: summary },
@@ -143,7 +178,7 @@ export function createPickySideSteerTool(onSteer: (request: PickySideSteerReques
   });
 }
 
-function summarizeSideSession(session: PickyAgentSession): SideSessionSummary {
+function summarizePickleSession(session: PickyAgentSession): PickleSessionSummary {
   return {
     id: session.id,
     title: session.title,
@@ -159,10 +194,10 @@ function summarizeSideSession(session: PickyAgentSession): SideSessionSummary {
   };
 }
 
-function formatSideSessions(sessions: SideSessionSummary[], pagination: { page: number; pageSize: number; hasMore: boolean; nextPage?: number }): string {
-  if (sessions.length === 0) return `No side agents returned on page ${pagination.page}.`;
+function formatPickleSessions(sessions: PickleSessionSummary[], pagination: { page: number; pageSize: number; hasMore: boolean; nextPage?: number }): string {
+  if (sessions.length === 0) return `No Pickles returned on page ${pagination.page}.`;
   const nextPageHint = pagination.hasMore && pagination.nextPage ? `; more available, request page ${pagination.nextPage}` : "";
-  const lines = [`Side agents page ${pagination.page} (${sessions.length} shown, page size ${pagination.pageSize}${nextPageHint}):`];
+  const lines = [`Pickles page ${pagination.page} (${sessions.length} shown, page size ${pagination.pageSize}${nextPageHint}):`];
   for (const session of sessions) {
     const pendingInput = session.pendingInput ? "; waiting for input" : "";
     const summary = session.lastSummary ? `; summary=${truncate(session.lastSummary, 160)}` : "";
@@ -181,7 +216,7 @@ function formatSideSessions(sessions: SideSessionSummary[], pagination: { page: 
 
 function clampLimit(value: number | undefined, fallback: number): number {
   if (!Number.isFinite(value)) return fallback;
-  return Math.max(1, Math.min(SIDE_SESSIONS_MAX_PAGE_SIZE, Math.floor(value!)));
+  return Math.max(1, Math.min(PICKLE_SESSIONS_MAX_PAGE_SIZE, Math.floor(value!)));
 }
 
 function normalizePage(value: number | undefined): number {

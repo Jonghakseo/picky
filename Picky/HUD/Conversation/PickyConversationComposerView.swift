@@ -2,7 +2,7 @@
 //  PickyConversationComposerView.swift
 //  Picky
 //
-//  Composer for the conversation-style side-agent card.
+//  Composer for the conversation-style Pickle card.
 //
 
 import AppKit
@@ -116,7 +116,7 @@ struct PickyConversationComposerView: View {
     }
 
     var notifyOnCompletionHelpText: String {
-        session.notifyMainOnCompletion == true ? "Notify main agent on completion" : "Do not notify main agent on completion"
+        session.notifyMainOnCompletion == true ? "Notify Picky on completion" : "Do not notify Picky on completion"
     }
 
     private var notifyOnCompletionColor: Color {

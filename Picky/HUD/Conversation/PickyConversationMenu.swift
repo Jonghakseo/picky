@@ -2,7 +2,7 @@
 //  PickyConversationMenu.swift
 //  Picky
 //
-//  Action menu for the conversation-style side-agent card.
+//  Action menu for the conversation-style Pickle card.
 //
 
 import SwiftUI

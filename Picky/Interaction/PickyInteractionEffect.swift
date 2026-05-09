@@ -6,7 +6,7 @@ enum PickyInteractionEffect: Equatable {
     case captureVoiceContext(inputID: UUID, transcript: String, targetSessionID: String?)
     case recordContextOwnership(inputID: UUID, contextID: String, owner: PickyContextOwner)
     case submitMain(inputID: UUID, transcript: String, context: PickyContextPacket)
-    case followUpSide(inputID: UUID, sessionID: String, transcript: String, context: PickyContextPacket)
+    case followUpPickle(inputID: UUID, sessionID: String, transcript: String, context: PickyContextPacket)
     case captureTextContext(inputID: UUID, text: String)
     case submitText(inputID: UUID, context: PickyContextPacket, text: String)
     case speak(speechID: UUID, text: String, contextID: String?)

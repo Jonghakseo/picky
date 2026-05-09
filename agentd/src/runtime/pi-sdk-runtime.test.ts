@@ -218,7 +218,7 @@ describe("PiSdkRuntime", () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);
 
-    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
     fakeSession.isStreaming = true;
     await handle.interrupt?.({ text: "replacement voice input", imagePaths: [] });
 
@@ -234,12 +234,12 @@ describe("PiSdkRuntime", () => {
     const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-1" });
 
     const result = await Promise.race([
-      handle.followUp({ text: "long side-agent follow-up", imagePaths: [] }).then(() => "returned"),
+      handle.followUp({ text: "long Pickle follow-up", imagePaths: [] }).then(() => "returned"),
       delay(20).then(() => "timeout"),
     ]);
 
     expect(result).toBe("returned");
-    expect(fakeSession.prompts).toEqual(["long side-agent follow-up"]);
+    expect(fakeSession.prompts).toEqual(["long Pickle follow-up"]);
     expect(fakeSession.promptOptions[0]).toMatchObject({ source: "rpc", streamingBehavior: "followUp" });
     fakeSession.resolvePrompt();
   });
@@ -247,7 +247,7 @@ describe("PiSdkRuntime", () => {
   it("returns from interrupt after Pi accepts replacement input instead of waiting for the whole turn", async () => {
     const fakeSession = new BlockingPromptSession();
     const runtime = makeRuntime(fakeSession);
-    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
     fakeSession.isStreaming = true;
 
     const result = await Promise.race([
@@ -488,10 +488,10 @@ describe("PiSdkRuntime", () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);
 
-    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(handle.id).toBe("picky-main-agent");
+    expect(handle.id).toBe("picky");
     expect(fakeSession.bound).toBe(true);
     expect(fakeSession.prompts).toEqual([]);
   });
@@ -499,7 +499,7 @@ describe("PiSdkRuntime", () => {
   it("injects a synthetic user/assistant pair into a fresh session and persists both messages", async () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);
-    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
 
     await handle.injectInitialBootstrap?.({ user: "답변 규칙", assistant: "OK" });
 
@@ -521,7 +521,7 @@ describe("PiSdkRuntime", () => {
     const fakeSession = new FakeSession();
     fakeSession.state.messages = [{ role: "user", content: "prior turn" }];
     const runtime = makeRuntime(fakeSession);
-    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
 
     await handle.injectInitialBootstrap?.({ user: "답변 규칙", assistant: "OK" });
 
@@ -533,7 +533,7 @@ describe("PiSdkRuntime", () => {
     const fakeSession = new FakeSession();
     fakeSession.state.model = undefined;
     const runtime = makeRuntime(fakeSession);
-    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
 
     await handle.injectInitialBootstrap?.({ user: "답변 규칙", assistant: "OK" });
 
@@ -639,7 +639,7 @@ describe("PiSdkRuntime", () => {
   it("updates the active Pi session thinking level", async () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);
-    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
 
     handle.setThinkingLevel?.("high");
 
@@ -665,7 +665,7 @@ describe("PiSdkRuntime", () => {
     });
 
     runtime.setThinkingLevel("xhigh");
-    await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+    await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
 
     expect(createSessionFromServices).toHaveBeenCalledWith(expect.objectContaining({ thinkingLevel: "xhigh" }));
   });
@@ -688,7 +688,7 @@ describe("PiSdkRuntime", () => {
       }) as never,
     });
 
-    await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky-main-agent" });
+    await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
 
     expect(createSessionFromServices).toHaveBeenCalledWith(expect.objectContaining({ thinkingLevel: "medium" }));
   });

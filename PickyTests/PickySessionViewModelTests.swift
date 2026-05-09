@@ -142,32 +142,32 @@ struct PickySessionViewModelTests {
         #expect(viewModel.isLoadingInitialSessionSnapshot == false)
     }
 
-    @Test func createEmptySideSessionSendsSystemContextWithSelectedCwd() async throws {
+    @Test func createEmptyPickleSessionSendsSystemContextWithSelectedCwd() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
 
-        try await viewModel.createEmptySideSession(cwd: "  /tmp/manual-project  ")
+        try await viewModel.createEmptyPickleSession(cwd: "  /tmp/manual-project  ")
 
         #expect(client.sentCommands.count == 1)
         let command = try #require(client.sentCommands.first)
-        #expect(command.type == .createEmptySideSession)
+        #expect(command.type == .createEmptyPickleSession)
         #expect(command.context?.source == "system")
         #expect(command.context?.cwd == "/tmp/manual-project")
         #expect(command.context?.transcript == nil)
         #expect(command.context?.screenshots.isEmpty == true)
-        #expect(command.context?.warnings == ["manualSideAgent=true"])
+        #expect(command.context?.warnings == ["manualPickle=true"])
     }
 
     @Test func duplicateSendsDuplicateSessionCommandWithSourceID() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
 
-        try await viewModel.duplicate(sessionID: "side-source")
+        try await viewModel.duplicate(sessionID: "pickle-source")
 
         #expect(client.sentCommands.count == 1)
         let command = try #require(client.sentCommands.first)
-        #expect(command.type == .duplicateSession)
-        #expect(command.sessionId == "side-source")
+        #expect(command.type == .duplicatePickleSession)
+        #expect(command.sessionId == "pickle-source")
         #expect(viewModel.lastError == nil)
     }
 
@@ -436,7 +436,7 @@ struct PickySessionViewModelTests {
         #expect(notifications.delivered.map(\.title).contains("분석이 끝났습니다"))
     }
 
-    @Test func pinnedSideSessionDoesNotDeliverCompletedNotification() async throws {
+    @Test func pinnedPickleSessionDoesNotDeliverCompletedNotification() async throws {
         let client = FakePickyAgentClient()
         let notifications = PickyNoopNotificationCenter()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: notifications, notificationPreferencesProvider: PickyStubNotificationPreferences(notificationPreferences: .defaults))
@@ -520,7 +520,7 @@ struct PickySessionViewModelTests {
         viewModel.start()
 
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            title: "New side agent · manual-project",
+            title: "New Pickle · manual-project",
             status: "waiting_for_input",
             summary: "Ready for instructions"
         ))))
@@ -567,7 +567,7 @@ struct PickySessionViewModelTests {
         #expect(notifications.delivered.map(\.title).contains("분석이 끝났습니다"))
     }
 
-    @Test func hudStatusToneMatchesSideAgentColorRules() throws {
+    @Test func hudStatusToneMatchesPickleColorRules() throws {
         #expect(PickySessionStatus.running.hudTone == .inProgress)
         #expect(PickySessionStatus.blocked.hudTone == .error)
         #expect(PickySessionStatus.failed.hudTone == .error)
@@ -1377,20 +1377,20 @@ struct PickySessionViewModelTests {
             NotificationCenter.default.post(name: .pickyVoiceFollowUpTargetChanged, object: nil, userInfo: [:])
         }
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-voice", status: "running"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-voice", status: "running"))))
         try await settle()
-        viewModel.beginHoveredVoiceFollowUp(sessionID: "side-voice")
+        viewModel.beginHoveredVoiceFollowUp(sessionID: "pickle-voice")
         NotificationCenter.default.post(
             name: .pickyVoiceFollowUpTargetChanged,
             object: nil,
-            userInfo: [PickyVoiceFollowUpTargetNotification.sessionIDKey: "side-voice"]
+            userInfo: [PickyVoiceFollowUpTargetNotification.sessionIDKey: "pickle-voice"]
         )
         try await settle()
 
-        viewModel.endHoveredVoiceFollowUp(sessionID: "side-voice")
+        viewModel.endHoveredVoiceFollowUp(sessionID: "pickle-voice")
 
         #expect(viewModel.hoveredVoiceFollowUpSessionID == nil)
-        #expect(viewModel.activeVoiceFollowUpSessionID == "side-voice")
+        #expect(viewModel.activeVoiceFollowUpSessionID == "pickle-voice")
 
         NotificationCenter.default.post(name: .pickyVoiceFollowUpTargetChanged, object: nil, userInfo: [:])
         try await settle()
@@ -1406,15 +1406,15 @@ struct PickySessionViewModelTests {
             NotificationCenter.default.post(name: .pickyVoiceFollowUpTargetChanged, object: nil, userInfo: [:])
         }
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-voice", status: "running"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-voice", status: "running"))))
         try await settle()
         NotificationCenter.default.post(
             name: .pickyVoiceFollowUpTargetChanged,
             object: nil,
-            userInfo: [PickyVoiceFollowUpTargetNotification.sessionIDKey: "side-voice"]
+            userInfo: [PickyVoiceFollowUpTargetNotification.sessionIDKey: "pickle-voice"]
         )
         try await settle()
-        #expect(viewModel.activeVoiceFollowUpSessionID == "side-voice")
+        #expect(viewModel.activeVoiceFollowUpSessionID == "pickle-voice")
 
         client.emit(.protocolEvent(.fixture(eventJSON: """
         {"id":"snapshot-empty","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:10.000Z","type":"sessionSnapshot","sessions":[]}
@@ -1433,22 +1433,22 @@ struct PickySessionViewModelTests {
             archiveStore: archiveStore
         )
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "main-1", title: "Main", status: "completed"))))
         try await settle()
 
-        viewModel.archive(sessionID: "side-1")
+        viewModel.archive(sessionID: "pickle-1")
         try await settle()
-        #expect(archiveStore.archivedSessionIDs == ["side-1"])
+        #expect(archiveStore.archivedSessionIDs == ["pickle-1"])
         #expect(viewModel.sessions.map(\.id) == ["main-1"])
         let archiveCommand = try #require(client.sentCommands.first { $0.type == .setSessionArchived })
-        #expect(archiveCommand.sessionId == "side-1")
+        #expect(archiveCommand.sessionId == "pickle-1")
         #expect(archiveCommand.archived == true)
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "completed", summary: "Updated"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", summary: "Updated"))))
         try await settle()
         #expect(viewModel.sessions.map(\.id) == ["main-1"])
-        #expect(viewModel.archivedSessions.first(where: { $0.id == "side-1" })?.lastSummary == "Updated")
+        #expect(viewModel.archivedSessions.first(where: { $0.id == "pickle-1" })?.lastSummary == "Updated")
     }
 
     @Test func unarchiveRestoresSessionAndClearsManualArchiveState() async throws {
@@ -1460,23 +1460,23 @@ struct PickySessionViewModelTests {
             archiveStore: archiveStore
         )
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
         try await settle()
 
-        viewModel.archive(sessionID: "side-1")
+        viewModel.archive(sessionID: "pickle-1")
         try await settle()
         #expect(viewModel.sessions.isEmpty)
-        #expect(viewModel.archivedSessions.map(\.id) == ["side-1"])
+        #expect(viewModel.archivedSessions.map(\.id) == ["pickle-1"])
 
-        viewModel.unarchive(sessionID: "side-1")
+        viewModel.unarchive(sessionID: "pickle-1")
         try await settle()
 
         #expect(archiveStore.archivedSessionIDs.isEmpty)
         #expect(archiveStore.manuallyArchivedSessionIDs.isEmpty)
-        #expect(viewModel.sessions.map(\.id) == ["side-1"])
+        #expect(viewModel.sessions.map(\.id) == ["pickle-1"])
         #expect(viewModel.archivedSessions.isEmpty)
         let unarchiveCommand = try #require(client.sentCommands.last { $0.type == .setSessionArchived })
-        #expect(unarchiveCommand.sessionId == "side-1")
+        #expect(unarchiveCommand.sessionId == "pickle-1")
         #expect(unarchiveCommand.archived == false)
     }
 
@@ -1491,14 +1491,14 @@ struct PickySessionViewModelTests {
         )
         viewModel.start()
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "side-1",
-            title: "Side",
+            id: "pickle-1",
+            title: "Pickle",
             status: "running",
             logs: ["pi session: /tmp/pi-session.jsonl"]
         ))))
         try await settle()
 
-        viewModel.copyTerminalResumeCommand(sessionID: "side-1")
+        viewModel.copyTerminalResumeCommand(sessionID: "pickle-1")
 
         #expect(clipboard.copied == ["cd '/Users/creatrip/Documents/picky' && pi --session '/tmp/pi-session.jsonl'"])
         // Resume command intentionally no longer fires a macOS banner; clipboard write is the
@@ -1517,18 +1517,18 @@ struct PickySessionViewModelTests {
         )
         viewModel.start()
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "side-1",
-            title: "Side",
+            id: "pickle-1",
+            title: "Pickle",
             status: "completed",
             logs: ["pi session: /tmp/pi-session.jsonl"]
         ))))
         try await settle()
 
-        viewModel.openTerminalOverlay(sessionID: "side-1")
+        viewModel.openTerminalOverlay(sessionID: "pickle-1")
 
         #expect(presenter.calls == [FakeTerminalOverlayPresenter.Call(
-            sessionID: "side-1",
-            title: "Side",
+            sessionID: "pickle-1",
+            title: "Pickle",
             sessionFilePath: "/tmp/pi-session.jsonl",
             cwd: "/Users/creatrip/Documents/picky"
         )])
@@ -1545,19 +1545,19 @@ struct PickySessionViewModelTests {
         )
         viewModel.start()
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "side-explicit",
-            title: "Side",
+            id: "pickle-explicit",
+            title: "Pickle",
             status: "completed",
             logs: ["recent compacted log without session path"],
             piSessionFilePath: "/tmp/explicit-pi-session.jsonl"
         ))))
         try await settle()
 
-        viewModel.openTerminalOverlay(sessionID: "side-explicit")
+        viewModel.openTerminalOverlay(sessionID: "pickle-explicit")
 
         #expect(presenter.calls == [FakeTerminalOverlayPresenter.Call(
-            sessionID: "side-explicit",
-            title: "Side",
+            sessionID: "pickle-explicit",
+            title: "Pickle",
             sessionFilePath: "/tmp/explicit-pi-session.jsonl",
             cwd: "/Users/creatrip/Documents/picky"
         )])
@@ -1565,7 +1565,7 @@ struct PickySessionViewModelTests {
     }
 
     @Test func openTerminalOverlayWorksWhileSessionIsActive() async throws {
-        // Earlier history pill should stay clickable even while the side-agent is still working
+        // Earlier history pill should stay clickable even while the Pickle is still working
         // (running, queued, waiting_for_input). The overlay launches its own `pi --session` process
         // pointed at the on-disk session file, so the user gets a transcript view of the live run
         // even though the daemon is still writing to it.
@@ -1578,18 +1578,18 @@ struct PickySessionViewModelTests {
         )
         viewModel.start()
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "side-1",
-            title: "Side",
+            id: "pickle-1",
+            title: "Pickle",
             status: "running",
             logs: ["pi session: /tmp/pi-session.jsonl"]
         ))))
         try await settle()
 
-        viewModel.openTerminalOverlay(sessionID: "side-1")
+        viewModel.openTerminalOverlay(sessionID: "pickle-1")
 
         #expect(presenter.calls == [FakeTerminalOverlayPresenter.Call(
-            sessionID: "side-1",
-            title: "Side",
+            sessionID: "pickle-1",
+            title: "Pickle",
             sessionFilePath: "/tmp/pi-session.jsonl",
             cwd: "/Users/creatrip/Documents/picky"
         )])
@@ -1601,7 +1601,7 @@ struct PickySessionViewModelTests {
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "pinned-side",
+            id: "pinned-pickle",
             title: "Pinned",
             status: "completed",
             logs: ["source transcript:\n## Source Pi session\n- Session file: /tmp/from-handoff.jsonl"]
@@ -1628,22 +1628,22 @@ struct PickySessionViewModelTests {
         )
         viewModel.start()
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "side-1",
-            title: "Side",
+            id: "pickle-1",
+            title: "Pickle",
             status: "completed",
             summary: "Old summary",
             logs: ["pi session: /tmp/pi-session.jsonl"]
         ))))
         try await settle()
 
-        viewModel.openTerminalOverlay(sessionID: "side-1")
-        presenter.close(sessionID: "side-1")
+        viewModel.openTerminalOverlay(sessionID: "pickle-1")
+        presenter.close(sessionID: "pickle-1")
         try await settle()
 
         #expect(syncer.paths == ["/tmp/pi-session.jsonl"])
         let command = try #require(client.sentCommands.last)
         #expect(command.type == .syncTerminalSession)
-        #expect(command.sessionId == "side-1")
+        #expect(command.sessionId == "pickle-1")
         #expect(command.baselinePiMessageId == "a1")
         #expect(viewModel.sessions.first?.lastSummary == "Old summary")
     }
@@ -1660,21 +1660,21 @@ struct PickySessionViewModelTests {
         )
         viewModel.start()
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
-            id: "side-1",
-            title: "Side",
+            id: "pickle-1",
+            title: "Pickle",
             status: "completed",
             summary: "Stored summary",
             logs: ["pi session: /tmp/pi-session.jsonl"]
         ))))
         try await settle()
 
-        viewModel.openTerminalOverlay(sessionID: "side-1")
-        presenter.close(sessionID: "side-1")
+        viewModel.openTerminalOverlay(sessionID: "pickle-1")
+        presenter.close(sessionID: "pickle-1")
         try await settle()
 
         let command = try #require(client.sentCommands.last)
         #expect(command.type == .syncTerminalSession)
-        #expect(command.sessionId == "side-1")
+        #expect(command.sessionId == "pickle-1")
         #expect(command.baselinePiMessageId == nil)
         #expect(viewModel.sessions.first?.lastSummary == "Stored summary")
     }
@@ -1683,9 +1683,9 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1"))))
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.terminalSessionSyncOutcome(
-            sessionId: "side-1", baselineFound: true, importedMessageCount: 2
+            sessionId: "pickle-1", baselineFound: true, importedMessageCount: 2
         ))))
         try await settle()
 
@@ -1696,9 +1696,9 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1"))))
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.terminalSessionSyncOutcome(
-            sessionId: "side-1", baselineFound: false, importedMessageCount: 0
+            sessionId: "pickle-1", baselineFound: false, importedMessageCount: 0
         ))))
         try await settle()
 
@@ -1713,9 +1713,9 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1"))))
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.terminalSessionSyncOutcome(
-            sessionId: "side-1", baselineFound: true, importedMessageCount: 0
+            sessionId: "pickle-1", baselineFound: true, importedMessageCount: 0
         ))))
         try await settle()
 
@@ -1800,7 +1800,7 @@ struct PickySessionViewModelTests {
         viewModel.start()
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
             status: "running",
-            logs: ["main-agent handoff: initial screen check", "steer: summarize the failing case"]
+            logs: ["Picky handoff: initial screen check", "steer: summarize the failing case"]
         ))))
         try await settle()
 
@@ -1817,20 +1817,20 @@ struct PickySessionViewModelTests {
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "running"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running"))))
         try await settle()
         #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
         try await settle()
-        #expect(viewModel.pendingDoneFlashSessionIDs.contains("side-1"))
+        #expect(viewModel.pendingDoneFlashSessionIDs.contains("pickle-1"))
 
-        viewModel.markDoneFlashConsumed(sessionID: "side-1")
+        viewModel.markDoneFlashConsumed(sessionID: "pickle-1")
         #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
 
         // A duplicate .completed update (e.g. a tool/log patch arriving after the terminal
         // status) must not re-queue the flash within the same completion phase.
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "completed", summary: "Resent", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", summary: "Resent", updatedAt: "2026-05-01T00:00:10.000Z"))))
         try await settle()
         #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
     }
@@ -1872,17 +1872,17 @@ struct PickySessionViewModelTests {
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "running"))))
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", updatedAt: "2026-05-01T00:00:05.000Z"))))
         try await settle()
-        viewModel.markDoneFlashConsumed(sessionID: "side-1")
+        viewModel.markDoneFlashConsumed(sessionID: "pickle-1")
         #expect(viewModel.pendingDoneFlashSessionIDs.isEmpty)
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "running", summary: "Working", updatedAt: "2026-05-01T00:00:10.000Z"))))
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "side-1", title: "Side", status: "completed", summary: "Done again", updatedAt: "2026-05-01T00:00:20.000Z"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "running", summary: "Working", updatedAt: "2026-05-01T00:00:10.000Z"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed", summary: "Done again", updatedAt: "2026-05-01T00:00:20.000Z"))))
         try await settle()
 
-        #expect(viewModel.pendingDoneFlashSessionIDs.contains("side-1"))
+        #expect(viewModel.pendingDoneFlashSessionIDs.contains("pickle-1"))
     }
 
     @Test func runtimeDetachedRestoredSessionsStayVisibleAndClearAutoArchiveState() async throws {
@@ -1898,7 +1898,7 @@ struct PickySessionViewModelTests {
         viewModel.start()
 
         client.emit(.protocolEvent(.fixture(eventJSON: """
-        {"id":"snapshot-detached","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionSnapshot","sessions":[{"id":"lost-runtime","title":"Old side agent","status":"blocked","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Runtime not attached after daemon restart; start a new task or resume support is required","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},{"id":"manual-completed","title":"Manual archive","status":"completed","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
+        {"id":"snapshot-detached","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionSnapshot","sessions":[{"id":"lost-runtime","title":"Old Pickle","status":"blocked","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Runtime not attached after daemon restart; start a new task or resume support is required","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},{"id":"manual-completed","title":"Manual archive","status":"completed","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
         """)))
         try await settle()
 
@@ -1911,7 +1911,7 @@ struct PickySessionViewModelTests {
         #expect(archiveStore.manuallyArchivedSessionIDs == ["lost-runtime", "manual-completed"])
 
         client.emit(.protocolEvent(.fixture(eventJSON: """
-        {"id":"snapshot-detached-2","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionSnapshot","sessions":[{"id":"lost-runtime","title":"Old side agent","status":"blocked","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","lastSummary":"Runtime not attached after daemon restart; start a new task or resume support is required","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},{"id":"manual-completed","title":"Manual archive","status":"completed","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
+        {"id":"snapshot-detached-2","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionSnapshot","sessions":[{"id":"lost-runtime","title":"Old Pickle","status":"blocked","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:01.000Z","lastSummary":"Runtime not attached after daemon restart; start a new task or resume support is required","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},{"id":"manual-completed","title":"Manual archive","status":"completed","cwd":"/Users/creatrip/Documents/picky","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"Done","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}]}
         """)))
         try await settle()
         #expect(viewModel.sessions.isEmpty)
@@ -1931,7 +1931,7 @@ struct PickySessionViewModelTests {
 
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
             id: "followup-detached",
-            title: "Detached side agent",
+            title: "Detached Pickle",
             status: "blocked",
             summary: "Runtime session is not attached after daemon restart; this runtime cannot resume saved Pi sessions, so start a new task or open the Pi terminal overlay"
         ))))

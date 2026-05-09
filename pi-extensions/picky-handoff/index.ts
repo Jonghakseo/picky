@@ -60,14 +60,14 @@ export default function pickyHandoffExtension(pi: PiExtensionAPI) {
 
 function registerHandoffCommand(pi: PiExtensionAPI, name: string): void {
   pi.registerCommand(name, {
-    description: "Pin the current idle Pi context to Picky as a completed side-agent card",
+    description: "Pin the current idle Pi context to Picky as a completed Pickle card",
     handler: async (args, ctx) => {
       try {
         if (!ctx.isIdle()) {
           ctx.ui.notify("Picky 핸드오프는 Pi가 대기 중일 때만 가능합니다. 현재 실행 중인 응답이 끝난 뒤 다시 시도하세요.", "warning");
           return;
         }
-        const goal = args.trim() || "Pin the current completed Pi task in Picky as a side agent.";
+        const goal = args.trim() || "Pin the current completed Pi task in Picky as a Pickle.";
         const title = makeTitle(goal, pi.getSessionName(), ctx.cwd);
         const connection = await readConnectionInfo();
         const transcript = buildTranscript({
@@ -88,7 +88,7 @@ function registerHandoffCommand(pi: PiExtensionAPI, name: string): void {
           screenshots: [],
           warnings: ["Started from a Pi extension command; no desktop screenshots were captured for this handoff."],
         };
-        const session = await pinPickySideSession(connection, title, context);
+        const session = await pinPickyPickleSession(connection, title, context);
         ctx.ui.notify(`Picky에 완료 상태로 pin 했습니다: ${session.title}`, "info");
       } catch (error) {
         ctx.ui.notify(`Picky 핸드오프 실패: ${messageOf(error)}`, "error");
@@ -104,7 +104,7 @@ async function readConnectionInfo(): Promise<PickyAgentdConnectionInfo> {
   return { protocolVersion: raw.protocolVersion, url: raw.url, token: raw.token, defaultCwd: raw.defaultCwd };
 }
 
-async function pinPickySideSession(connection: PickyAgentdConnectionInfo, title: string, context: PickyContextPacket): Promise<PickyAgentSessionSummary> {
+async function pinPickyPickleSession(connection: PickyAgentdConnectionInfo, title: string, context: PickyContextPacket): Promise<PickyAgentSessionSummary> {
   const WebSocketCtor = (globalThis as unknown as { WebSocket?: MinimalWebSocketConstructor }).WebSocket;
   if (!WebSocketCtor) throw new Error("This Node.js runtime does not expose global WebSocket.");
 
@@ -123,7 +123,7 @@ async function pinPickySideSession(connection: PickyAgentdConnectionInfo, title:
         JSON.stringify({
           id: `cmd-${context.id}`,
           protocolVersion: connection.protocolVersion || DEFAULT_PROTOCOL_VERSION,
-          type: "pinSideSession",
+          type: "pinPickleSession",
           title,
           context,
         }),
@@ -159,8 +159,8 @@ function buildTranscript(input: { goal: string; title: string; cwd?: string; ses
   const lines = [
     input.title,
     "",
-    "A Pi extension command pinned this idle/completed task to Picky as a completed side-agent card in the Picky dock.",
-    "No new Picky agent run has been started by this handoff. Treat the source Pi session as context for a future follow-up, not as an instruction to skip verification.",
+    "A Pi extension command pinned this idle/completed task to Picky as a completed Pickle card in the Picky dock.",
+    "No new Pickle run has been started by this handoff. Treat the source Pi session as context for a future follow-up, not as an instruction to skip verification.",
     "",
     "## User handoff request",
     input.goal,

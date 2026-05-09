@@ -2,7 +2,7 @@
 //  CompanionPanelMessagesView.swift
 //  Picky
 //
-//  Recent user/main-agent messages for the menu bar panel.
+//  Recent user/Picky messages for the menu bar panel.
 //
 
 import SwiftUI
@@ -78,7 +78,7 @@ struct CompanionPanelMessagesView: View {
             Text("No messages yet")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(DS.Colors.textSecondary)
-            Text("Hold Control+Option or type below. Your prompt and the main agent reply will appear here.")
+            Text("Hold Control+Option or type below. Your prompt and the Picky reply will appear here.")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

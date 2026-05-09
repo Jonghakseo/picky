@@ -1,6 +1,6 @@
 # Picky Pi handoff extension
 
-This Pi extension adds a slash command that pins the current idle Pi session context to Picky as a completed side-agent card.
+This Pi extension adds a slash command that pins the current idle Pi session context to Picky as a completed Pickle card.
 
 Command:
 
@@ -33,4 +33,4 @@ Then restart Pi or run `/reload` in an existing Pi session.
 /handoff-to-picky continue this investigation in Picky and produce a final report
 ```
 
-The command is allowed only while Pi is idle. It does not start a new Picky agent run; it creates a completed Picky side-agent card using the current Pi session file, cwd, and recent branch excerpt as context for future follow-up.
+The command is allowed only while Pi is idle. It does not start a new Pickle run; it creates a completed Pickle card in Picky using the current Pi session file, cwd, and recent branch excerpt as context for future follow-up.

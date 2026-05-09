@@ -270,9 +270,9 @@ const CommandBaseSchema = z.object({ id: z.string(), protocolVersion: z.literal(
 export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("routeTask"), context: PickyContextPacketSchema }),
   CommandBaseSchema.extend({ type: z.literal("createTask"), context: PickyContextPacketSchema }),
-  CommandBaseSchema.extend({ type: z.literal("createEmptySideSession"), context: PickyContextPacketSchema }),
-  CommandBaseSchema.extend({ type: z.literal("duplicateSession"), sessionId: z.string() }),
-  CommandBaseSchema.extend({ type: z.literal("pinSideSession"), context: PickyContextPacketSchema, title: z.string().min(1).optional() }),
+  CommandBaseSchema.extend({ type: z.literal("createEmptyPickleSession"), context: PickyContextPacketSchema }),
+  CommandBaseSchema.extend({ type: z.literal("duplicatePickleSession"), sessionId: z.string() }),
+  CommandBaseSchema.extend({ type: z.literal("pinPickleSession"), context: PickyContextPacketSchema, title: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("setNotifyMainOnCompletion"), sessionId: z.string(), enabled: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("setSessionArchived"), sessionId: z.string(), archived: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("cycleSessionThinkingLevel"), sessionId: z.string() }),
@@ -308,7 +308,12 @@ const EventBaseSchema = z.object({ id: z.string(), protocolVersion: z.literal(PR
 const MainRealtimeStateSchema = z.enum(["connecting", "ready", "listening", "thinking", "speaking", "failed"]);
 const MainRealtimeTurnStatusSchema = z.enum(["completed", "cancelled", "failed", "incomplete"]);
 const QuickReplyOriginSourceSchema = z.enum(["voice", "text", "voiceFollowUp", "textFollowUp", "system", "unknown"]);
-const QuickReplyKindSchema = z.enum(["main", "sideCompletion", "router", "handoffAck", "error", "unknown"]);
+const QuickReplyKindSchema = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const normalized = value.trim().toLowerCase();
+  if (["picklecompletion", "pickle-completion", "pickle_completion"].includes(normalized)) return "pickleCompletion";
+  return value;
+}, z.enum(["main", "pickleCompletion", "router", "handoffAck", "error", "unknown"]));
 
 export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("hello"), serverName: z.literal("picky-agentd"), supportedProtocolVersions: z.array(z.string()) }),

@@ -1,37 +1,37 @@
-# OpenAI Realtime 메인 에이전트 옵션 전환 계획
+# OpenAI Realtime Picky 옵션 전환 계획
 
 Status: draft, user decisions incorporated  
-Target: Picky 메인 에이전트의 음성 입력부터 음성 출력까지 `gpt-realtime-2` 또는 `gpt-realtime-1.5` 기반 옵션으로 제공하되, 기존 Pi 메인/사이드 구조는 기본값으로 보존한다.
+Target: Picky의 음성 입력부터 음성 출력까지 `gpt-realtime-2` 또는 `gpt-realtime-1.5` 기반 옵션으로 제공하되, 기존 Pi 기반 Picky/Pickle 구조는 기본값으로 보존한다.
 
 ## 1. 목표
 
-Picky 설정 탭에서 사용자가 선택할 수 있는 두 가지 메인 에이전트 모드를 제공한다.
+Picky 설정 탭에서 사용자가 선택할 수 있는 두 가지 Picky 런타임 모드를 제공한다.
 
-1. **Pi main agent (current)**
+1. **Pi-backed Picky (current)**
    
    - 현재 구조 유지.
    
    - Swift `BuddyDictationManager`가 STT를 수행한다.
    
-   - `picky-agentd`의 Pi `mainRuntime`이 판단한다.
+   - `picky-agentd`의 Pi `pickyRuntime`이 판단한다.
    
    - Swift `PickySpeechPlaybackProvider`가 TTS를 수행한다.
 
-2. **OpenAI Realtime main agent (optional)**
+2. **OpenAI Realtime Picky (optional)**
    
-   - 메인 음성 입력, 모델 판단, 함수 호출, 음성 출력까지 OpenAI Realtime 세션이 담당한다.
+   - Picky 음성 입력, 모델 판단, 함수 호출, 음성 출력까지 OpenAI Realtime 세션이 담당한다.
    
    - 모델은 `gpt-realtime-2`를 기본값으로 하되 `gpt-realtime-1.5`도 선택 가능하게 한다.
    
-   - 사이드 에이전트는 계속 Pi SDK 런타임을 사용한다.
+   - Pickle은 계속 Pi SDK 런타임을 사용한다.
    
-   - 사이드 HUD card 위에 hover한 상태에서 말하는 follow-up은 현재처럼 side Pi agent에게 직접 전달한다. 즉, Realtime main을 거치지 않는다.
+   - Pickle card 위에 hover한 상태에서 말하는 follow-up은 현재처럼 Pickle Pi agent에게 직접 전달한다. 즉, Realtime Picky를 거치지 않는다.
    
-   - hover 대상이 없는 메인 요청에서 복잡한 작업 위임, 사이드 세션 목록 조회, 사이드 세션 조향이 필요하면 Realtime function calling으로 수행한다.
+   - hover 대상이 없는 Picky 요청에서 복잡한 작업 위임, Pickle session 목록 조회, Pickle session 조향이 필요하면 Realtime function calling으로 수행한다.
 
 ## 2. 비목표
 
-- 사이드 에이전트를 OpenAI Realtime으로 바꾸지 않는다.
+- Pickle을 OpenAI Realtime으로 바꾸지 않는다.
 - Pi skills/MCP/tools를 Picky에 복제하지 않는다.
 - URL/app 이름 기반 deterministic workflow routing을 추가하지 않는다.
 - OpenAI/Azure OpenAI API key를 로그, 프로세스 인자, crash log에 노출하지 않는다. 단, 사용자가 설정 탭에 입력한 key는 현재 Azure STT 설정과 동일하게 로컬 settings 저장 방식으로 보존한다.
@@ -62,11 +62,11 @@ Picky.app
        └─ local/Azure/ElevenLabs TTS
 
 picky-agentd
-  ├─ side runtime: PiSdkRuntime
-  └─ main runtime: PiSdkRuntime
-       ├─ picky_handoff
-       ├─ picky_side_sessions
-       └─ picky_side_steer
+  ├─ pickle runtime: PiSdkRuntime
+  └─ Picky runtime: PiSdkRuntime
+       ├─ picky_start_pickle
+       ├─ picky_pickle_sessions
+       └─ picky_steer_pickle
 ```
 
 주요 파일:
@@ -79,13 +79,13 @@ picky-agentd
 - session orchestration: `agentd/src/session-supervisor.ts`
 - runtime interface: `agentd/src/runtime/types.ts`
 - Pi runtime: `agentd/src/runtime/pi-sdk-runtime.ts`
-- main prompt/tool bridge: `agentd/src/prompt-builder.ts`, `agentd/src/application/handoff-tool.ts`
+- Picky prompt/tool bridge: `agentd/src/prompt-builder.ts`, `agentd/src/application/handoff-tool.ts`
 
 ## 5. 목표 구조
 
 ```text
 Picky.app
-  ├─ MainAgentMode setting
+  ├─ Picky runtime mode setting
   │    ├─ piCurrent
   │    └─ openAIRealtime
   │
@@ -95,30 +95,30 @@ Picky.app
   │    └─ PickySpeechPlaybackProvider
   │
   └─ Realtime mode
-       ├─ Main-agent turn
+       ├─ Picky turn
        │    ├─ RealtimeVoiceInputManager
        │    │    └─ AVAudioEngine -> PCM16 24kHz mono chunks -> local agentd WS
        │    ├─ RealtimeAudioPlaybackEngine
        │    │    └─ OpenAI/Azure output_audio.delta PCM playback
        │    └─ PickyContextPacket capture
        │         └─ context/images sent to agentd before response.create
-       └─ Side-card hover follow-up
-            └─ BuddyDictationManager -> followUp command -> side Pi agent
+       └─ Pickle-card hover follow-up
+            └─ BuddyDictationManager -> followUp command -> Pickle Pi agent
 
 picky-agentd
-  ├─ sideRuntime: PiSdkRuntime
-  │    └─ HUD side sessions, Pi tools, skills, MCP, terminal resume
+  ├─ pickleRuntime: PiSdkRuntime
+  │    └─ HUD Pickle sessions, Pi tools, skills, MCP, terminal resume
   │
-  └─ mainRuntime: selectable
+  └─ pickyRuntime: selectable
        ├─ PiSdkRuntime
-       └─ OpenAIRealtimeMainRuntime
+       └─ OpenAIRealtimePickyRuntime
             ├─ OpenAI/Azure OpenAI Realtime WebSocket
             ├─ session.update instructions/audio/tools
             ├─ input_audio_buffer append/commit
             ├─ function calling
-            │    ├─ picky_handoff -> Pi side agent 생성
-            │    ├─ picky_side_sessions
-            │    ├─ picky_side_steer
+            │    ├─ picky_start_pickle -> Pi Pickle 생성
+            │    ├─ picky_pickle_sessions
+            │    ├─ picky_steer_pickle
             │    ├─ picky_skills_search
             │    └─ picky_skill_details
             └─ output audio + transcript relay to Picky.app
@@ -126,18 +126,18 @@ picky-agentd
 
 ## 6. 설정 UX
 
-Settings > Main Agent 또는 Voice 섹션에 다음을 추가한다.
+Settings > Picky 또는 Voice 섹션에 다음을 추가한다.
 
-### 6.1 Main agent runtime
+### 6.1 Picky runtime
 
 Radio/Picker:
 
 - `Pi (current, local-first)`
-- `OpenAI Realtime (voice-to-voice, sends main-agent voice/context to OpenAI or Azure OpenAI)`
+- `OpenAI Realtime (voice-to-voice, sends Picky voice/context to OpenAI or Azure OpenAI)`
 
 설명 문구:
 
-> OpenAI Realtime mode sends microphone audio, captured screen context, selected text, browser metadata, and screenshots to OpenAI or Azure OpenAI for main-agent turns. Side agents still run locally through Pi, and side-card hover follow-ups are sent directly to the side Pi agent as they are today.
+> OpenAI Realtime mode sends microphone audio, captured screen context, selected text, browser metadata, and screenshots to OpenAI or Azure OpenAI for Picky turns. Pickles still run locally through Pi, and Pickle-card hover follow-ups are sent directly to the Pickle Pi agent as they are today.
 
 ### 6.2 OpenAI Realtime 설정 필드
 
@@ -322,7 +322,7 @@ mainRealtimeTurnDone {
 
 ## 8. Realtime 음성 턴 흐름
 
-이 흐름은 **hover 대상 side session이 없는 메인 에이전트 음성 턴**에만 적용한다. side HUD card 위에 hover된 상태의 음성 follow-up은 기존 방식대로 transcript를 만든 뒤 `followUp` command로 side Pi agent에 직접 전달한다.
+이 흐름은 **hover 대상 Pickle session이 없는 Picky 음성 턴**에만 적용한다. Pickle card 위에 hover된 상태의 음성 follow-up은 기존 방식대로 transcript를 만든 뒤 `followUp` command로 Pickle Pi agent에 직접 전달한다.
 
 ### 8.1 Push-to-talk down
 
@@ -375,7 +375,7 @@ OpenAI
 
 agentd
   -> output_audio.delta를 Picky.app으로 relay
-  -> transcript delta를 Picky.app overlay/main history로 relay
+  -> transcript delta를 Picky.app overlay/Picky history로 relay
   -> function_call이면 tool 실행 후 function_call_output + response.create 재호출
 
 Picky.app
@@ -401,7 +401,7 @@ agentd
 
 초기 버전부터 `conversation.item.truncate`까지 구현한다. truncate에 필요한 `item_id`, `content_index`, playback 시작 시각, playedAudioMs를 app/agentd 양쪽에서 추적한다. truncate를 하지 않으면 모델 conversation에는 사용자가 듣지 못한 assistant audio transcript가 남을 수 있으므로 필수 범위로 둔다.
 
-## 9. OpenAIRealtimeMainRuntime 설계
+## 9. OpenAIRealtimePickyRuntime 설계
 
 신규 파일 후보:
 
@@ -416,7 +416,7 @@ agentd
 기존 `AgentRuntime`은 text prompt 중심이다. Realtime voice stream을 억지로 `followUp(prompt)`에 넣지 말고 optional interface를 추가한다.
 
 ```ts
-export interface MainRealtimeVoiceRuntime extends AgentRuntime {
+export interface PickyRealtimeVoiceRuntime extends AgentRuntime {
   configureAuth?(auth: { apiKey: string }): Promise<void>;
   beginVoiceTurn?(turn: {
     inputId: string;
@@ -428,7 +428,7 @@ export interface MainRealtimeVoiceRuntime extends AgentRuntime {
 }
 ```
 
-`SessionSupervisor`는 `options.mainRuntime`이 이 interface를 지원할 때만 Realtime voice commands를 처리한다.
+`SessionSupervisor`는 `options.pickyRuntime`이 이 interface를 지원할 때만 Realtime voice commands를 처리한다.
 
 ### 9.2 Session lifecycle
 
@@ -436,7 +436,7 @@ export interface MainRealtimeVoiceRuntime extends AgentRuntime {
 - API key가 아직 없으면 `mainRealtimeStateChanged { state: "failed", message: "API key required" }` 대신 `ready=false` 상태만 emit하고 기존 Pi mode로 자동 fallback하지 않는다. 사용자가 선택한 모드가 실패했다는 것을 명확히 보여준다.
 - Realtime session 최대 60분 제약 때문에 다음 중 하나를 구현한다.
   - `expires_at` 또는 연결 시간 기준 50분에 새 session 준비.
-  - 최근 main messages, side session summaries, standing instructions를 새 session에 replay.
+  - 최근 Picky messages, Pickle session summaries, standing instructions를 새 session에 replay.
 
 ### 9.3 Provider connection strategy
 
@@ -461,7 +461,7 @@ wss://<resource>.openai.azure.com/openai/realtime?api-version=<apiVersion>&deplo
 api-key: <apiKey>
 ```
 
-`OpenAIRealtimeMainRuntime`은 provider별 URL/auth builder를 분리한다. event loop와 Realtime event parser는 OpenAI/Azure 공통으로 재사용한다.
+`OpenAIRealtimePickyRuntime`은 provider별 URL/auth builder를 분리한다. event loop와 Realtime event parser는 OpenAI/Azure 공통으로 재사용한다.
 
 ### 9.4 session.update 예시
 
@@ -471,7 +471,7 @@ api-key: <apiKey>
   "session": {
     "type": "realtime",
     "model": "gpt-realtime-2",
-    "instructions": "...Picky main-agent standing instructions...",
+    "instructions": "...Picky standing instructions...",
     "output_modalities": ["audio"],
     "audio": {
       "input": {
@@ -487,9 +487,9 @@ api-key: <apiKey>
       }
     },
     "tools": [
-      { "type": "function", "name": "picky_handoff", "parameters": { } },
-      { "type": "function", "name": "picky_side_sessions", "parameters": { } },
-      { "type": "function", "name": "picky_side_steer", "parameters": { } },
+      { "type": "function", "name": "picky_start_pickle", "parameters": { } },
+      { "type": "function", "name": "picky_pickle_sessions", "parameters": { } },
+      { "type": "function", "name": "picky_steer_pickle", "parameters": { } },
       { "type": "function", "name": "picky_skills_search", "parameters": { } },
       { "type": "function", "name": "picky_skill_details", "parameters": { } }
     ],
@@ -506,11 +506,11 @@ api-key: <apiKey>
 
 - “마크다운 없이 1~3문장” 규칙은 유지.
 - “pointer tags를 마지막에 붙이라”는 규칙은 Realtime audio mode에서 제거한다. 음성으로 태그를 읽을 위험이 있기 때문이다.
-- Realtime main에는 pointer overlay function을 제공하지 않는다. 위치 설명이 필요하면 자연어로 짧게 말한다.
-- `picky_handoff`, `picky_side_sessions`, `picky_side_steer` 사용 규칙은 유지한다.
-- `picky_skills_search`, `picky_skill_details`로 side Pi agent가 사용할 수 있는 skill 명세를 조회하고, 관련 skill 이름/핵심 지침을 handoff/steer 메시지에 포함한다.
+- Realtime Picky에는 pointer overlay function을 제공하지 않는다. 위치 설명이 필요하면 자연어로 짧게 말한다.
+- `picky_start_pickle`, `picky_pickle_sessions`, `picky_steer_pickle` 사용 규칙은 유지한다.
+- `picky_skills_search`, `picky_skill_details`로 Pickle Pi agent가 사용할 수 있는 skill 명세를 조회하고, 관련 skill 이름/핵심 지침을 handoff/steer 메시지에 포함한다.
 
-## 10. Function calling / side Pi 유지
+## 10. Function calling / Pickle Pi 유지
 
 ### 10.1 Tool schema 재사용
 
@@ -519,7 +519,7 @@ api-key: <apiKey>
 신규 구조 후보:
 
 ```text
-agentd/src/application/main-agent-tools.ts
+agentd/src/application/picky-tools.ts
   ├─ canonical JSON schemas
   ├─ tool descriptions/guidelines
   └─ handlers factory
@@ -546,17 +546,17 @@ response.done output contains function_call
 - JSON arguments parse 실패: function_call_output에 error JSON 전달.
 - tool handler throw: function_call_output에 recoverable error 전달.
 - tool 실행 중 사용자가 새 PTT로 interrupt: tool 결과는 버리거나 stale turn이면 response.create를 생략.
-- handoff tool이 side session을 시작하면 `SessionSupervisor.createSideFromHandoff()`는 기존 Pi side runtime을 그대로 사용한다.
+- handoff tool이 Pickle session을 시작하면 `SessionSupervisor.createPickleFromHandoff()`는 기존 Pi Pickle runtime을 그대로 사용한다.
 
-### 10.3 Side completion delivery
+### 10.3 Pickle completion delivery
 
-현재 side session 완료 시 `buildMainAgentSideCompletionPrompt()`를 main runtime에 followUp한다. Realtime mode에서도 이 경로를 유지하되, 출력은 text TTS가 아니라 Realtime audio response로 보낸다.
+현재 Pickle session 완료 시 `buildPickyPickleCompletionPrompt()`를 Picky runtime에 followUp한다. Realtime mode에서도 이 경로를 유지하되, 출력은 text TTS가 아니라 Realtime audio response로 보낸다.
 
 주의:
 
-- 사용자가 현재 PTT 중이면 side completion audio를 재생하지 말고 queue/defer한다.
-- side completion prompt는 audio output으로 짧게 응답하게 한다.
-- 사용자가 side completion 알림 음성 재생을 원치 않을 수 있으므로 기존 `notifyMainOnCompletion`을 존중한다.
+- 사용자가 현재 PTT 중이면 Pickle completion audio를 재생하지 말고 queue/defer한다.
+- Pickle completion prompt는 audio output으로 짧게 응답하게 한다.
+- 사용자가 Pickle completion 알림 음성 재생을 원치 않을 수 있으므로 기존 `notifyMainOnCompletion`을 존중한다.
 
 ## 11. Picky.app 음성 입력 변경
 
@@ -602,9 +602,9 @@ response.done output contains function_call
 원칙:
 
 - runtime mode가 `pi`이면 현재 reducer/effect 흐름을 그대로 사용한다.
-- runtime mode가 `openAIRealtime`이고 target이 main이면 `startDictation`/`stopDictation` 대신 Realtime voice effects를 사용한다.
-- side session hover follow-up은 Realtime mode에서도 현재 구조를 유지한다. 즉, `BuddyDictationManager`로 transcript를 만든 뒤 `followUp` command로 side Pi agent에 직접 전달한다.
-- hover 대상이 없는 메인 대화 중 사용자가 기존 delegated work를 언급하면, Realtime main이 `picky_side_sessions`/`picky_side_steer` function을 호출할 수 있다.
+- runtime mode가 `openAIRealtime`이고 target이 Picky이면 `startDictation`/`stopDictation` 대신 Realtime voice effects를 사용한다.
+- Pickle session hover follow-up은 Realtime mode에서도 현재 구조를 유지한다. 즉, `BuddyDictationManager`로 transcript를 만든 뒤 `followUp` command로 Pickle Pi agent에 직접 전달한다.
+- hover 대상이 없는 Picky 대화 중 사용자가 기존 delegated work를 언급하면, Realtime Picky가 `picky_pickle_sessions`/`picky_steer_pickle` function을 호출할 수 있다.
 
 신규 effect 후보:
 
@@ -625,13 +625,13 @@ Realtime mode에서도 quick text input은 지원해야 한다.
 
 권장:
 
-- typed text request도 Realtime main mode에서는 `conversation.item.create` with `input_text` + context/images 후 `response.create { output_modalities: ["audio"] }`를 사용한다.
+- typed text request도 Realtime Picky mode에서는 `conversation.item.create` with `input_text` + context/images 후 `response.create { output_modalities: ["audio"] }`를 사용한다.
 - 사용자는 지금처럼 음성 응답과 화면 텍스트를 함께 받아야 한다. 단, 공식 Realtime API는 `output_modalities`에서 `audio`와 `text`를 동시에 요청하지 않으므로, 화면 텍스트는 `response.output_audio_transcript.delta/done` transcript로 표시한다.
 - 기존 Pi mode에서는 typed text가 현재처럼 text reply 중심으로 동작한다.
 
 ## 14. Pointer overlay 처리
 
-현재 Pi main은 final answer에 `[POINT:x,y:label]` tags를 붙이고 agentd가 파싱한다. Realtime audio mode에서는 이 방식이 부적합하다.
+현재 Pi-backed Picky는 final answer에 `[POINT:x,y:label]` tags를 붙이고 agentd가 파싱한다. Realtime audio mode에서는 이 방식이 부적합하다.
 
 문제:
 
@@ -640,7 +640,7 @@ Realtime mode에서도 quick text input은 지원해야 한다.
 
 현재 결정:
 
-- Realtime main에는 pointer overlay function tool을 제공하지 않는다.
+- Realtime Picky에는 pointer overlay function tool을 제공하지 않는다.
 - 화면 위치 설명이 필요하면 짧은 자연어로 말한다.
 - Pi current mode는 기존 pointer tag 방식을 유지한다.
 
@@ -661,8 +661,8 @@ Realtime mode에서도 quick text input은 지원해야 한다.
 ### 15.3 60분 session 만료
 
 - 50분 경과 또는 `expires_at` 근접 시 새 session 생성.
-- standing instructions, 최근 main messages, side sessions summary를 replay.
-- pending side completion queue는 보존.
+- standing instructions, 최근 Picky messages, Pickle sessions summary를 replay.
+- pending Pickle completion queue는 보존.
 
 ### 15.4 Rate limit
 
@@ -679,7 +679,7 @@ Realtime mode가 전송하는 데이터:
 - selected text
 - screenshots
 - cwd
-- side session summaries when tool calls happen
+- Pickle session summaries when tool calls happen
 
 설정 UI에 이 내용을 명시한다.
 
@@ -706,14 +706,14 @@ Realtime mode가 전송하는 데이터:
 테스트 항목:
 
 1. runtime mode가 기본값 `pi`로 migration된다.
-2. `PICKY_MAIN_AGENT_RUNTIME=openai-realtime`이면 sideRuntime은 `PiSdkRuntime`, mainRuntime만 `OpenAIRealtimeMainRuntime`이 된다.
+2. `PICKY_MAIN_AGENT_RUNTIME=openai-realtime`이면 pickleRuntime은 `PiSdkRuntime`, pickyRuntime만 `OpenAIRealtimePickyRuntime`이 된다.
 3. API key는 settings payload에 존재할 수 있지만 log field에는 값이 남지 않는다.
 4. OpenAI public provider URL/auth와 Azure OpenAI GA/preview provider URL/auth가 올바르게 만들어진다.
 5. `gpt-realtime-2`와 `gpt-realtime-1.5` model/deployment 값이 모두 허용된다.
 6. voice begin/append/commit command가 Realtime client event로 매핑된다.
 7. OpenAI `response.output_audio.delta`가 Picky protocol event로 relay된다.
-8. `response.output_audio_transcript.delta/done`이 main transcript event로 relay된다.
-9. `function_call` output이 `picky_handoff` handler를 호출하고 side Pi session을 만든다.
+8. `response.output_audio_transcript.delta/done`이 Picky transcript event로 relay된다.
+9. `function_call` output이 `picky_start_pickle` handler를 호출하고 Pickle Pi session을 만든다.
 10. function call result 후 `response.create { output_modalities: ["audio"] }`가 다시 호출된다.
 11. interrupt 시 `response.cancel`과 `conversation.item.truncate`가 호출되고 stale delta는 무시된다.
 12. session expiration/reconnect 시 bootstrap replay가 수행된다.
@@ -734,7 +734,7 @@ OpenAI 실제 API는 CI에서 호출하지 않는다. fake WebSocket server/clie
 1. settings Codable migration: 기존 settings 파일에 신규 필드가 없어도 defaults 적용.
 2. Realtime mode에서 PTT down이 BuddyDictationManager 대신 Realtime controller를 사용.
 3. Realtime mode에서 기존 TTS provider가 중복 실행되지 않음.
-4. side follow-up hover 상태에서는 Realtime main을 거치지 않고 기존 direct side follow-up 경로를 사용함.
+4. Pickle follow-up hover 상태에서는 Realtime Picky를 거치지 않고 기존 direct Pickle follow-up 경로를 사용함.
 5. audio delta event 수신 시 playback engine으로 전달됨.
 6. output audio transcript event가 화면 텍스트로 표시됨.
 7. user interrupt 시 playback stop + cancel command + playedAudioMs 전달.
@@ -745,9 +745,9 @@ OpenAI 실제 API는 CI에서 호출하지 않는다. fake WebSocket server/clie
 1. Pi current mode에서 기존 PTT/STT/TTS/HUD 동작 회귀 확인.
 2. Realtime mode API key 없이 PTT: 명확한 설정 오류.
 3. Realtime mode API key 입력 후 PTT: 음성 입력 -> 음성 응답 + 화면 transcript 표시.
-4. “복잡한 건 사이드에 맡겨” 류 요청: Realtime이 `picky_handoff` 호출, side Pi HUD 생성.
-5. 실행 중 side session 위에 hover 후 음성 추가 지시: 기존처럼 side Pi agent에 직접 follow-up 전달.
-6. hover 없이 기존 delegated work를 언급: Realtime이 `picky_side_sessions` 후 필요 시 `picky_side_steer` 호출.
+4. “복잡한 건 피클에 맡겨” 류 요청: Realtime이 `picky_start_pickle` 호출, Pickle Pi HUD 생성.
+5. 실행 중 Pickle session 위에 hover 후 음성 추가 지시: 기존처럼 Pickle Pi agent에 직접 follow-up 전달.
+6. hover 없이 기존 delegated work를 언급: Realtime이 `picky_pickle_sessions` 후 필요 시 `picky_steer_pickle` 호출.
 7. 응답 도중 PTT 재시작: 기존 응답 중단, `conversation.item.truncate`, 새 응답 시작.
 8. screenshot 기반 “여기 뭐야?” 요청: image context 전달 확인.
 9. pointer overlay 필요 요청: Realtime function으로 pointer 표시.
@@ -803,14 +803,14 @@ OpenAI 실제 API는 CI에서 호출하지 않는다. fake WebSocket server/clie
 
 파일:
 
-- `agentd/src/application/main-agent-tools.ts`
+- `agentd/src/application/picky-tools.ts`
 - `agentd/src/application/handoff-tool.ts`
 - `agentd/src/runtime/openai-realtime-tools.ts`
 - `agentd/src/session-supervisor.ts`
 
 작업:
 
-- handoff/side sessions/side steer canonical schema 추출.
+- handoff/Pickle sessions/Pickle steer canonical schema 추출.
 - Pi adapter와 OpenAI adapter 분리.
 - function call loop 구현.
 - pointer overlay function 추가.
@@ -845,7 +845,7 @@ OpenAI 실제 API는 CI에서 호출하지 않는다. fake WebSocket server/clie
 - PTT 중/후 context capture 타이밍 정리.
 - screenshot path -> data URL 변환.
 - context item ordering 보장.
-- main Realtime turn에는 side hover target을 전달하지 않는다. side hover follow-up은 기존 direct side path에서 처리한다.
+- Picky Realtime turn에는 Pickle hover target을 전달하지 않는다. Pickle hover follow-up은 기존 direct Pickle path에서 처리한다.
 
 ### Phase 6: hardening / QA
 
@@ -862,13 +862,13 @@ OpenAI 실제 API는 CI에서 호출하지 않는다. fake WebSocket server/clie
 
 | 리스크                                            | 영향                     | 대응                                                                         |
 | ---------------------------------------------- | ----------------------:| -------------------------------------------------------------------------- |
-| Realtime session 60분 제한                        | 장시간 main context 유실    | proactive reconnect + recent history replay                                |
+| Realtime session 60분 제한                        | 장시간 Picky context 유실    | proactive reconnect + recent history replay                                |
 | output audio를 듣기 전 interrupt                   | 모델 context에 안 들은 내용 잔류 | `response.cancel` + `conversation.item.truncate`를 초기 범위에 포함                |
 | 기존 quickReply가 TTS를 중복 실행                      | 이중 음성 출력               | Realtime 전용 transcript/audio event 사용 또는 `audioAlreadyPlayed` 플래그          |
 | pointer tags가 음성으로 읽힘                          | UX 손상                  | Realtime mode에서는 pointer function tool 사용                                  |
 | API key local settings 저장                      | settings 파일 접근 시 노출 가능 | Azure STT와 동일한 UX 유지, 로그/proc args/agentd persistence 금지                   |
 | audio chunk JSON overhead                      | 지연/CPU 증가              | 초기 JSON, 필요 시 binary WS frame로 개선                                          |
-| side hover direct follow-up은 Realtime main을 우회 | 메인 Realtime 일관성 일부 감소  | 사용자가 확정한 UX. hover는 명시적 side targeting으로 보고 기존 side Pi direct follow-up 유지 |
+| Pickle hover direct follow-up은 Realtime Picky를 우회 | Picky Realtime 일관성 일부 감소  | 사용자가 확정한 UX. hover는 명시적 Pickle targeting으로 보고 기존 Pickle Pi direct follow-up 유지 |
 | OpenAI/Azure Realtime 장애 시 자동 Pi fallback      | 사용자 기대 불일치/개인정보 혼선     | 자동 fallback 금지, 명시 오류 표시                                                   |
 
 ## 20. 확정된 제품 결정 사항
@@ -880,7 +880,7 @@ OpenAI 실제 API는 CI에서 호출하지 않는다. fake WebSocket server/clie
 3. 모델은 `gpt-realtime-2`를 기본으로 하되 `gpt-realtime-1.5`도 사용할 수 있게 한다.
 4. Realtime mode의 사용자 응답 UX는 audio + text를 모두 제공한다. API 차원에서는 `output_modalities: ["audio"]`를 사용하고 text는 output audio transcript 이벤트로 표시한다.
 5. Pointer overlay는 Realtime 전용 function tool로 구현한다.
-6. side HUD card hover 상태의 음성 지시는 Realtime main을 거치지 않고 현재처럼 side Pi agent에게 직접 전달한다.
+6. Pickle card hover 상태의 음성 지시는 Realtime Picky를 거치지 않고 현재처럼 Pickle Pi agent에게 직접 전달한다.
 7. interrupt/cancel 품질을 위해 초기 버전부터 `conversation.item.truncate`까지 구현한다.
 
 ## 21. 구현 준비도 보강 체크리스트
@@ -891,13 +891,13 @@ OpenAI 실제 API는 CI에서 호출하지 않는다. fake WebSocket server/clie
 
 | Runtime mode     | Target           | Input path                             | Agent path                    | Output path                                   |
 | ---------------- | ---------------- | -------------------------------------- | ----------------------------- | --------------------------------------------- |
-| `pi`             | main             | `BuddyDictationManager` STT            | `routeTask` -> Pi mainRuntime | `quickReply` -> existing TTS                  |
-| `pi`             | side hover       | `BuddyDictationManager` STT            | `followUp` -> side Pi agent   | HUD / side completion notification            |
-| `openAIRealtime` | main             | `RealtimeVoiceInputManager` PCM stream | `OpenAIRealtimeMainRuntime`   | `output_audio.delta` playback + transcript UI |
-| `openAIRealtime` | side hover       | `BuddyDictationManager` STT            | `followUp` -> side Pi agent   | HUD / side completion notification            |
-| `openAIRealtime` | typed main input | text item + context/images             | `OpenAIRealtimeMainRuntime`   | audio playback + output audio transcript UI   |
+| `pi`             | Picky            | `BuddyDictationManager` STT            | `routeTask` -> Pi Picky runtime | `quickReply` -> existing TTS                  |
+| `pi`             | Pickle hover     | `BuddyDictationManager` STT            | `followUp` -> Pickle Pi agent   | HUD / Pickle completion notification          |
+| `openAIRealtime` | Picky            | `RealtimeVoiceInputManager` PCM stream | `OpenAIRealtimePickyRuntime`    | `output_audio.delta` playback + transcript UI |
+| `openAIRealtime` | Pickle hover     | `BuddyDictationManager` STT            | `followUp` -> Pickle Pi agent   | HUD / Pickle completion notification          |
+| `openAIRealtime` | typed Picky input | text item + context/images             | `OpenAIRealtimePickyRuntime`   | audio playback + output audio transcript UI   |
 
-Side hover direct follow-up is an explicit exception to “main Realtime voice path”. It preserves the existing precise side-targeting UX.
+Pickle hover direct follow-up is an explicit exception to “Picky Realtime voice path”. It preserves the existing precise Pickle-targeting UX.
 
 ### 21.2 Protocol/versioning requirements
 
@@ -908,7 +908,7 @@ Side hover direct follow-up is an explicit exception to “main Realtime voice p
 
 ### 21.3 Context capture without final transcript
 
-Realtime main mode does not have a final transcript before audio is sent. Context capture must therefore support `transcript: nil` or an empty placeholder for main realtime turns. The recognized user text shown in UI comes later from `conversation.item.input_audio_transcription.*` events and should not be required to build the initial `PickyContextPacket`.
+Realtime Picky mode does not have a final transcript before audio is sent. Context capture must therefore support `transcript: nil` or an empty placeholder for Picky Realtime turns. The recognized user text shown in UI comes later from `conversation.item.input_audio_transcription.*` events and should not be required to build the initial `PickyContextPacket`.
 
 ### 21.4 Truncate bookkeeping
 
@@ -937,8 +937,8 @@ Normalize Azure endpoint input so both `https://x.openai.azure.com` and `x.opena
 
 Add these on top of section 17:
 
-- Routing matrix tests for all main/side-hover/runtime combinations.
-- Realtime main context capture works with no transcript.
+- Routing matrix tests for all Picky/Pickle-hover/runtime combinations.
+- Realtime Picky context capture works with no transcript.
 - Realtime mode does not trigger existing `PickySpeechPlaybackProvider` for realtime audio replies.
 - Realtime transcript events update visible text without creating duplicate `quickReply` TTS.
 - `conversation.item.truncate` includes the last assistant `item_id`, `content_index`, and app-provided `playedAudioMs`.
@@ -946,4 +946,4 @@ Add these on top of section 17:
 - `gpt-realtime-1.5` is accepted as model/deployment in both OpenAI and Azure provider configs.
 - Audio append command logs never include `audioBase64`.
 - `configureMainRealtimeAuth` logs never include `apiKey`.
-- Side completion notification in Realtime mode uses audio + transcript and respects `notifyMainOnCompletion`.
+- Pickle completion notification in Realtime mode uses audio + transcript and respects `notifyMainOnCompletion`.

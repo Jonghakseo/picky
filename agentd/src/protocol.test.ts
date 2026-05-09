@@ -5,6 +5,18 @@ import { BrowserMetadataSchema, CommandEnvelopeSchema, EventEnvelopeSchema, Open
 
 const contractsRoot = join(process.cwd(), "..", "contracts", "protocol");
 
+function contextFixture() {
+  return {
+    id: "context-fixture",
+    source: "text" as const,
+    capturedAt: "2026-05-02T00:00:00.000Z",
+    transcript: "Pin this completed Pi session",
+    screenshots: [],
+    inkMarks: [],
+    warnings: [],
+  };
+}
+
 describe("protocol contract fixtures", () => {
   for (const name of readdirSync(contractsRoot).filter((file) => file.endsWith(".request.json"))) {
     it(`parses command fixture ${name}`, () => {
@@ -28,12 +40,12 @@ describe("protocol contract fixtures", () => {
     });
   });
 
-  it("parses completed side-session pin commands", () => {
+  it("parses completed Pickle-session pin commands", () => {
     expect(() =>
       CommandEnvelopeSchema.parse({
         id: "cmd-pin",
         protocolVersion: "2026-05-09",
-        type: "pinSideSession",
+        type: "pinPickleSession",
         title: "Pinned Pi session",
         context: {
           id: "context-pin",
@@ -48,22 +60,38 @@ describe("protocol contract fixtures", () => {
     ).not.toThrow();
   });
 
-  it("parses manual empty side-session commands", () => {
+  it("parses manual empty Pickle-session commands", () => {
     expect(() =>
       CommandEnvelopeSchema.parse({
-        id: "cmd-empty-side",
+        id: "cmd-empty-pickle",
         protocolVersion: "2026-05-09",
-        type: "createEmptySideSession",
+        type: "createEmptyPickleSession",
         context: {
-          id: "context-empty-side",
+          id: "context-empty-pickle",
           source: "system",
           capturedAt: "2026-05-05T00:00:00.000Z",
           cwd: "/tmp/project",
           screenshots: [],
-          warnings: ["manualSideAgent=true"],
+          warnings: ["manualPickle=true"],
         },
       }),
     ).not.toThrow();
+  });
+
+  it("parses Pickle session commands", () => {
+    for (const command of [
+      { type: "createEmptyPickleSession", context: { ...contextFixture(), source: "system" as const } },
+      { type: "pinPickleSession", context: contextFixture(), title: "Pinned Pi session" },
+      { type: "duplicatePickleSession", sessionId: "session-source" },
+    ]) {
+      expect(() =>
+        CommandEnvelopeSchema.parse({
+          id: `cmd-pickle-${command.type}`,
+          protocolVersion: "2026-05-09",
+          ...command,
+        }),
+      ).not.toThrow();
+    }
   });
 
   it("parses steer commands with optional captured context", () => {

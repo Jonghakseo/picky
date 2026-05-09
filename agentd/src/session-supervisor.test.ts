@@ -201,7 +201,7 @@ describe("SessionSupervisor", () => {
     supervisor.on("activityUpdated", (...args) => events.push(args));
     await supervisor.load();
 
-    const pinned = await supervisor.pinSideSession(context("pin completed source"), "Pinned source");
+    const pinned = await supervisor.pinPickleSession(context("pin completed source"), "Pinned source");
 
     expect(pinned.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });
     expect(events).toEqual([]);
@@ -292,30 +292,30 @@ describe("SessionSupervisor", () => {
     expect(runtime.handle!.getFollowUpMessages()).toEqual([]);
   });
 
-  it("lists and resumes side sessions created from main-agent handoff", async () => {
+  it("lists and resumes Pickle sessions created from a legacy handoff log", async () => {
     const supervisor = await makeSupervisor();
     const regular = await supervisor.create(context("regular"));
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
-    expect(supervisor.isSideSession(side.id)).toBe(true);
-    expect(supervisor.listSideSessions().map((session) => session.id)).toEqual([side.id]);
+    expect(supervisor.isPickleSession(pickle.id)).toBe(true);
+    expect(supervisor.listPickleSessions().map((session) => session.id)).toEqual([pickle.id]);
 
-    const updated = await supervisor.steerSideSession(side.id, "추가로 원인도 정리해줘");
+    const updated = await supervisor.steerPickleSession(pickle.id, "추가로 원인도 정리해줘");
     expect(updated.lastSummary).toBe("Steering message sent");
     expect(updated.logs.some((line) => line.includes("추가로 원인도 정리해줘"))).toBe(true);
-    await expect(supervisor.steerSideSession(regular.id, "wrong target")).rejects.toThrow(/not a Picky side agent/);
+    await expect(supervisor.steerPickleSession(regular.id, "wrong target")).rejects.toThrow(/not a Pickle/);
   });
 
-  it("duplicates a side session by snapshotting its Pi transcript and resuming the copy", async () => {
+  it("duplicates a Pickle session by snapshotting its Pi transcript and resuming the copy", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-duplicate-"));
     const runtime = new ResumableRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
     const sourceFilePath = join(dir, "source-pi.jsonl");
     await writeFile(sourceFilePath, '{"type":"user_text","text":"hello"}\n{"type":"agent_text","text":"world"}\n');
-    const source = await supervisor.pinSideSession(contextWithPiSessionFile("original work", sourceFilePath), "Original work");
+    const source = await supervisor.pinPickleSession(contextWithPiSessionFile("original work", sourceFilePath), "Original work");
 
-    const fork = await supervisor.duplicateSideSession(source.id);
+    const fork = await supervisor.duplicatePickleSession(source.id);
 
     expect(fork.id).not.toBe(source.id);
     expect(fork.title).toBe("(copy) Original work");
@@ -325,7 +325,7 @@ describe("SessionSupervisor", () => {
     expect(fork.tools).toEqual([]);
     expect(fork.artifacts).toEqual([]);
     expect(fork.changedFiles).toEqual([]);
-    expect(supervisor.isSideSession(fork.id)).toBe(true);
+    expect(supervisor.isPickleSession(fork.id)).toBe(true);
 
     expect(runtime.resumeCalls).toHaveLength(1);
     const [resume] = runtime.resumeCalls;
@@ -340,14 +340,14 @@ describe("SessionSupervisor", () => {
     expect(copied).toBe(original);
   });
 
-  it("copies the source side session's message history and notify-on-completion preference", async () => {
+  it("copies the source Pickle session's message history and notify-on-completion preference", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-duplicate-history-"));
     const runtime = new ResumableRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
     const sourceFilePath = join(dir, "history-pi.jsonl");
     await writeFile(sourceFilePath, '{"hello":1}\n');
-    const source = await supervisor.createSideFromHandoff(
+    const source = await supervisor.createPickleFromHandoff(
       context("history source"),
       { title: "History source", instructions: "Investigate" },
     );
@@ -360,7 +360,7 @@ describe("SessionSupervisor", () => {
     await waitUntil(() => (supervisor.get(source.id)?.messages ?? []).some((message) => message.kind === "agent_text"));
     await supervisor.setNotifyMainOnCompletion(source.id, false);
 
-    const fork = await supervisor.duplicateSideSession(source.id);
+    const fork = await supervisor.duplicatePickleSession(source.id);
 
     const sourceMessages = supervisor.get(source.id)?.messages ?? [];
     expect(sourceMessages.length).toBeGreaterThan(0);
@@ -379,9 +379,9 @@ describe("SessionSupervisor", () => {
     // Simulate a Pi JSONL that is being written mid-line: two complete records plus a partial
     // third line that has not yet flushed its trailing newline.
     await writeFile(sourceFilePath, '{"line":1}\n{"line":2}\n{"line":3,"partial":');
-    const source = await supervisor.pinSideSession(contextWithPiSessionFile("streaming source", sourceFilePath), "Streaming");
+    const source = await supervisor.pinPickleSession(contextWithPiSessionFile("streaming source", sourceFilePath), "Streaming");
 
-    const fork = await supervisor.duplicateSideSession(source.id);
+    const fork = await supervisor.duplicatePickleSession(source.id);
 
     const copyPath = runtime.resumeCalls[0]?.sessionFilePath;
     expect(copyPath).toBeTruthy();
@@ -390,14 +390,14 @@ describe("SessionSupervisor", () => {
     expect(fork.title).toBe("(copy) Streaming");
   });
 
-  it("throws when the source side session has no Pi transcript on disk", async () => {
+  it("throws when the source Pickle session has no Pi transcript on disk", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-duplicate-missing-"));
     const runtime = new ResumableRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const source = await supervisor.createSideFromHandoff(context("no transcript"), { title: "No transcript", instructions: "Investigate" });
+    const source = await supervisor.createPickleFromHandoff(context("no transcript"), { title: "No transcript", instructions: "Investigate" });
 
-    await expect(supervisor.duplicateSideSession(source.id)).rejects.toThrow(/no Pi session file to duplicate/);
+    await expect(supervisor.duplicatePickleSession(source.id)).rejects.toThrow(/no Pi session file to duplicate/);
   });
 
   it("throws when the runtime cannot resume sessions", async () => {
@@ -405,51 +405,51 @@ describe("SessionSupervisor", () => {
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const source = await supervisor.createSideFromHandoff(
+    const source = await supervisor.createPickleFromHandoff(
       contextWithPiSessionFile("resume unsupported", "/tmp/whatever.jsonl"),
       { title: "Resume unsupported", instructions: "Investigate" },
     );
 
-    await expect(supervisor.duplicateSideSession(source.id)).rejects.toThrow(/Runtime cannot duplicate sessions/);
+    await expect(supervisor.duplicatePickleSession(source.id)).rejects.toThrow(/Runtime cannot duplicate sessions/);
   });
 
-  it("prewarms an empty manual side session and waits for the first instruction", async () => {
+  it("prewarms an empty manual Pickle session and waits for the first instruction", async () => {
     const runtime = new ManualRuntime({ supportsPrewarm: true });
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-empty-side-"));
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-empty-pickle-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
 
-    const session = await supervisor.createEmptySideSession({ ...context("manual"), source: "system", transcript: undefined, cwd: "  /tmp/manual-project  " });
+    const session = await supervisor.createEmptyPickleSession({ ...context("manual"), source: "system", transcript: undefined, cwd: "  /tmp/manual-project  " });
 
     expect(runtime.createCalls).toBe(0);
     expect(runtime.prewarmCalls).toBe(1);
     expect(runtime.prewarmOptions).toEqual([{ cwd: "/tmp/manual-project", sessionId: session.id }]);
     expect(session.status).toBe("waiting_for_input");
     expect(session.cwd).toBe("/tmp/manual-project");
-    expect(session.title).toBe("New side agent · manual-project");
+    expect(session.title).toBe("New Pickle · manual-project");
     expect(session.notifyMainOnCompletion).toBe(false);
-    expect(supervisor.isSideSession(session.id)).toBe(true);
-    expect(supervisor.listSideSessions().map((side) => side.id)).toEqual([session.id]);
-    expect(session.logs).toContain("manual side agent: waiting for first instruction");
+    expect(supervisor.isPickleSession(session.id)).toBe(true);
+    expect(supervisor.listPickleSessions().map((pickle) => pickle.id)).toEqual([session.id]);
+    expect(session.logs).toContain("manual pickle: waiting for first instruction");
 
-    const steered = await supervisor.steerSideSession(session.id, "첫 작업 시작해줘");
+    const steered = await supervisor.steerPickleSession(session.id, "첫 작업 시작해줘");
     expect(steered.status).toBe("running");
     expect(runtime.handle?.interrupts).toEqual([]);
     expect(runtime.handle?.steers).toEqual(["첫 작업 시작해줘"]);
   });
 
-  it("queues active side-session steering without interrupting current work", async () => {
+  it("queues active Pickle-session steering without interrupting current work", async () => {
     const runtime = new ManualRuntime();
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-side-steer-queue-"));
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pickle-steer-queue-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const session = await supervisor.createSideFromHandoff(context("side request"), { title: "Side work", instructions: "Investigate" });
+    const session = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "Pickle work", instructions: "Investigate" });
 
     runtime.handle!.isStreaming = true;
     runtime.handle?.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running", preview: "sleep 50" });
     await waitUntil(() => supervisor.get(session.id)?.tools[0]?.status === "running");
 
-    const steered = await supervisor.steerSideSession(session.id, "아니다 10초");
+    const steered = await supervisor.steerPickleSession(session.id, "아니다 10초");
 
     expect(runtime.handle?.interrupts).toEqual([]);
     expect(runtime.handle?.steers).toEqual(["아니다 10초"]);
@@ -459,15 +459,15 @@ describe("SessionSupervisor", () => {
     expect(steered.queuedSteers?.map((item) => item.text)).toEqual(["아니다 10초"]);
   });
 
-  it("falls back to queued steer for active side sessions when interrupt is unavailable", async () => {
+  it("falls back to queued steer for active Pickle sessions when interrupt is unavailable", async () => {
     const runtime = new ManualRuntime();
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-side-steer-fallback-"));
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pickle-steer-fallback-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const session = await supervisor.createSideFromHandoff(context("side request"), { title: "Side work", instructions: "Investigate" });
+    const session = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "Pickle work", instructions: "Investigate" });
     (runtime.handle as unknown as { interrupt?: undefined }).interrupt = undefined;
 
-    const steered = await supervisor.steerSideSession(session.id, "기존 큐 방식");
+    const steered = await supervisor.steerPickleSession(session.id, "기존 큐 방식");
 
     expect(runtime.handle?.interrupts).toEqual([]);
     expect(runtime.handle?.steers).toEqual(["기존 큐 방식"]);
@@ -536,44 +536,44 @@ describe("SessionSupervisor", () => {
     });
   });
 
-  it("does not append pointer hints to visible side-agent prompts", async () => {
+  it("does not append pointer hints to visible Pickle prompts", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new RecordingRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
 
     await supervisor.create(context("direct visual task"));
-    await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate" });
+    await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate" });
 
     expect(runtime.creates[0].prompt.text).not.toContain("## Picky visual pointer overlay");
     expect(runtime.creates[0].prompt.text).not.toContain("sourceSessionId");
-    expect(runtime.creates[1].prompt.text).toContain("# Picky side-agent task");
+    expect(runtime.creates[1].prompt.text).toContain("# Picky Pickle task");
     expect(runtime.creates[1].prompt.text).not.toContain("## Picky visual pointer overlay");
     expect(runtime.creates[1].prompt.text).not.toContain("sourceSessionId");
   });
 
-  it("uses the handoff cwd override for side session metadata, prompt context, and runtime cwd", async () => {
+  it("uses the handoff cwd override for Pickle session metadata, prompt context, and runtime cwd", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new RecordingRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
 
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate", cwd: "  /tmp/override-project  " });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate", cwd: "  /tmp/override-project  " });
 
-    expect(side.cwd).toBe("/tmp/override-project");
-    expect(side.logs).toContain("main-agent handoff cwd: /tmp/override-project");
+    expect(pickle.cwd).toBe("/tmp/override-project");
+    expect(pickle.logs).toContain("Picky handoff cwd: /tmp/override-project");
     expect(runtime.creates[0].options.cwd).toBe("/tmp/override-project");
     expect(runtime.creates[0].prompt.text).toContain("- CWD: /tmp/override-project");
   });
 
-  it("routes side-session follow-ups through the follow-up queue", async () => {
+  it("routes Pickle-session follow-ups through the follow-up queue", async () => {
     const supervisor = await makeSupervisor();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
-    const result = await supervisor.followUp(side.id, "추가로 원인도 정리해줘", context("follow-up"));
+    const result = await supervisor.followUp(pickle.id, "추가로 원인도 정리해줘", context("follow-up"));
     await settle();
 
-    const updated = supervisor.get(side.id)!;
+    const updated = supervisor.get(pickle.id)!;
     expect(result.lastSummary).toBe("Follow-up queued");
     expect(updated.logs.some((line: string) => line === "follow-up: 추가로 원인도 정리해줘")).toBe(true);
     expect((updated.queuedFollowUps ?? []).map((item) => item.text)).toEqual(["추가로 원인도 정리해줘"]);
@@ -625,7 +625,7 @@ describe("SessionSupervisor", () => {
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("multi-turn"), { title: "멀티턴 조사", instructions: "Investigate" });
+    const pickle = await supervisor.createPickleFromHandoff(context("multi-turn"), { title: "멀티턴 조사", instructions: "Investigate" });
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "조사 중입니다." });
     runtime.handle?.emit({ type: "assistant_delta", delta: "계속 조사 중입니다." });
@@ -633,27 +633,27 @@ describe("SessionSupervisor", () => {
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed", finalAnswer: "최종 답변입니다." });
     await settle();
 
-    const completed = supervisor.get(side.id)!;
+    const completed = supervisor.get(pickle.id)!;
     expect(completed.status).toBe("completed");
     expect(completed.finalAnswer).toBe("최종 답변입니다.");
     expect(completed.finalAnswer).not.toContain("조사 중입니다.");
   });
 
-  it("marks completed side sessions as running when they are steered", async () => {
+  it("marks completed Pickle sessions as running when they are steered", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "조사 완료입니다." });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
-    expect(supervisor.get(side.id)?.status).toBe("completed");
-    expect(supervisor.get(side.id)?.finalAnswer).toBe("조사 완료입니다.");
+    expect(supervisor.get(pickle.id)?.status).toBe("completed");
+    expect(supervisor.get(pickle.id)?.finalAnswer).toBe("조사 완료입니다.");
 
-    const updated = await supervisor.steerSideSession(side.id, "추가로 원인도 정리해줘");
+    const updated = await supervisor.steerPickleSession(pickle.id, "추가로 원인도 정리해줘");
 
     expect(runtime.handle?.steers).toEqual(["추가로 원인도 정리해줘"]);
     expect(updated.status).toBe("running");
@@ -690,24 +690,24 @@ describe("SessionSupervisor", () => {
   // status when Pi handles a slash command synchronously inside `session.prompt()`, and reports
   // back via `RuntimeSteerResult.handledSynchronously`. Previously `steer()` then unconditionally
   // re-patched to `running`, leaving the HUD card stuck on the loading state forever.
-  it("keeps a side session terminal when steer reports handledSynchronously (slash command)", async () => {
+  it("keeps a Pickle session terminal when steer reports handledSynchronously (slash command)", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "조사 완료입니다." });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
-    expect(supervisor.get(side.id)?.status).toBe("completed");
+    expect(supervisor.get(pickle.id)?.status).toBe("completed");
 
     // Replay PiSdkRuntimeSession's behaviour for slash commands: signal `handledSynchronously` and
     // (optionally) the synthetic `completed` status emit. The supervisor must NOT then resurrect
     // the session into `running`.
     runtime.handle!.steerOutcome = { handledSynchronously: true };
 
-    const updated = await supervisor.steerSideSession(side.id, "/diff-review");
+    const updated = await supervisor.steerPickleSession(pickle.id, "/diff-review");
 
     expect(runtime.handle?.steers).toEqual(["/diff-review"]);
     expect(updated.status).toBe("completed");
@@ -715,17 +715,17 @@ describe("SessionSupervisor", () => {
     expect(updated.logs).toContain("steer: /diff-review");
   });
 
-  it("keeps a running side session running when /name is handled without an agent turn", async () => {
+  it("keeps a running Pickle session running when /name is handled without an agent turn", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "status", status: "running", summary: "Still working" });
     await settle();
-    expect(supervisor.get(side.id)?.status).toBe("running");
-    expect(supervisor.get(side.id)?.lastSummary).toBe("Still working");
+    expect(supervisor.get(pickle.id)?.status).toBe("running");
+    expect(supervisor.get(pickle.id)?.lastSummary).toBe("Still working");
 
     runtime.handle!.steerOutcome = { handledSynchronously: true };
     runtime.handle!.onSteer = (handle) => {
@@ -733,37 +733,37 @@ describe("SessionSupervisor", () => {
       handle.emit({ type: "status", status: "completed", summary: "Session renamed to 새 세션 이름", noTurnRan: true, preserveSessionState: true });
     };
 
-    const updated = await supervisor.steerSideSession(side.id, "/name 새 세션 이름");
+    const updated = await supervisor.steerPickleSession(pickle.id, "/name 새 세션 이름");
     await settle();
 
     expect(updated.status).toBe("running");
-    expect(supervisor.get(side.id)?.status).toBe("running");
-    expect(supervisor.get(side.id)?.title).toBe("새 세션 이름");
-    expect(supervisor.get(side.id)?.lastSummary).toBe("Still working");
+    expect(supervisor.get(pickle.id)?.status).toBe("running");
+    expect(supervisor.get(pickle.id)?.title).toBe("새 세션 이름");
+    expect(supervisor.get(pickle.id)?.lastSummary).toBe("Still working");
   });
 
-  it("keeps a running side session running when /compact is rejected during an active turn", async () => {
+  it("keeps a running Pickle session running when /compact is rejected during an active turn", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "status", status: "running", summary: "Still working" });
     await settle();
-    expect(supervisor.get(side.id)?.status).toBe("running");
-    expect(supervisor.get(side.id)?.lastSummary).toBe("Still working");
+    expect(supervisor.get(pickle.id)?.status).toBe("running");
+    expect(supervisor.get(pickle.id)?.lastSummary).toBe("Still working");
 
     runtime.handle!.isStreaming = true;
     runtime.handle!.onFollowUp = (handle) => {
       handle.emit({ type: "status", status: "completed", summary: "/compact is unavailable while the agent is running", noTurnRan: true, preserveSessionState: true });
     };
 
-    await supervisor.followUp(side.id, "/compact");
+    await supervisor.followUp(pickle.id, "/compact");
     await settle();
 
-    expect(supervisor.get(side.id)?.status).toBe("running");
-    expect(supervisor.get(side.id)?.lastSummary).toBe("Still working");
+    expect(supervisor.get(pickle.id)?.status).toBe("running");
+    expect(supervisor.get(pickle.id)?.lastSummary).toBe("Still working");
   });
 
   it("records a compact completion system message after automatic overflow compaction", async () => {
@@ -771,13 +771,13 @@ describe("SessionSupervisor", () => {
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting after context overflow…" });
     runtime.handle?.emit({ type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, compactionReason: "overflow" });
     await settle();
 
-    const updated = supervisor.get(side.id)!;
+    const updated = supervisor.get(pickle.id)!;
     expect(updated.status).toBe("running");
     expect(updated.lastSummary).toBe("Compaction completed; retrying…");
     expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted after context overflow")).toBe(true);
@@ -788,22 +788,22 @@ describe("SessionSupervisor", () => {
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "완료 답변" });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
-    expect(supervisor.get(side.id)?.status).toBe("completed");
-    expect(supervisor.get(side.id)?.lastSummary).toBe("완료 답변");
+    expect(supervisor.get(pickle.id)?.status).toBe("completed");
+    expect(supervisor.get(pickle.id)?.lastSummary).toBe("완료 답변");
 
     runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "threshold" });
     await settle();
-    expect(supervisor.get(side.id)?.status).toBe("running");
-    expect(supervisor.get(side.id)?.lastSummary).toBe("Compacting session…");
+    expect(supervisor.get(pickle.id)?.status).toBe("running");
+    expect(supervisor.get(pickle.id)?.lastSummary).toBe("Compacting session…");
 
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "threshold" });
     await settle();
-    const updated = supervisor.get(side.id)!;
+    const updated = supervisor.get(pickle.id)!;
     expect(updated.status).toBe("completed");
     expect(updated.lastSummary).toBe("Session compacted");
     expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(true);
@@ -814,15 +814,15 @@ describe("SessionSupervisor", () => {
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
     await settle();
-    expect(supervisor.get(side.id)?.status).toBe("cancelled");
+    expect(supervisor.get(pickle.id)?.status).toBe("cancelled");
 
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "threshold" });
     await settle();
-    const updated = supervisor.get(side.id)!;
+    const updated = supervisor.get(pickle.id)!;
     expect(updated.status).toBe("cancelled");
     expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(false);
   });
@@ -832,12 +832,12 @@ describe("SessionSupervisor", () => {
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "조사 완료입니다." });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
-    expect(supervisor.get(side.id)?.lastSummary).toBe("조사 완료입니다.");
+    expect(supervisor.get(pickle.id)?.lastSummary).toBe("조사 완료입니다.");
 
     runtime.handle!.onFollowUp = (handle, prompt) => {
       if (prompt.text === "/compact") {
@@ -850,18 +850,18 @@ describe("SessionSupervisor", () => {
       }
     };
 
-    await supervisor.followUp(side.id, "/compact");
+    await supervisor.followUp(pickle.id, "/compact");
     await settle();
-    expect(supervisor.get(side.id)?.status).toBe("completed");
-    expect(supervisor.get(side.id)?.lastSummary).toBe("Session compacted");
-    expect((supervisor.get(side.id)?.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(true);
+    expect(supervisor.get(pickle.id)?.status).toBe("completed");
+    expect(supervisor.get(pickle.id)?.lastSummary).toBe("Session compacted");
+    expect((supervisor.get(pickle.id)?.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(true);
 
-    await supervisor.followUp(side.id, "/name 컴팩션 후 이름");
+    await supervisor.followUp(pickle.id, "/name 컴팩션 후 이름");
     await settle();
 
-    expect(supervisor.get(side.id)?.status).toBe("completed");
-    expect(supervisor.get(side.id)?.title).toBe("컴팩션 후 이름");
-    expect(supervisor.get(side.id)?.lastSummary).toBe("Session compacted");
+    expect(supervisor.get(pickle.id)?.status).toBe("completed");
+    expect(supervisor.get(pickle.id)?.title).toBe("컴팩션 후 이름");
+    expect(supervisor.get(pickle.id)?.lastSummary).toBe("Session compacted");
   });
 
   it("restores the previous terminal state when /name is sent as a follow-up", async () => {
@@ -869,70 +869,70 @@ describe("SessionSupervisor", () => {
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "조사 완료입니다." });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
-    expect(supervisor.get(side.id)?.status).toBe("completed");
-    expect(supervisor.get(side.id)?.lastSummary).toBe("조사 완료입니다.");
+    expect(supervisor.get(pickle.id)?.status).toBe("completed");
+    expect(supervisor.get(pickle.id)?.lastSummary).toBe("조사 완료입니다.");
 
     runtime.handle!.onFollowUp = (handle) => {
       handle.emit({ type: "session_info", name: "완료 세션 이름" });
       handle.emit({ type: "status", status: "completed", summary: "Session renamed to 완료 세션 이름", noTurnRan: true, preserveSessionState: true });
     };
 
-    await supervisor.followUp(side.id, "/name 완료 세션 이름");
+    await supervisor.followUp(pickle.id, "/name 완료 세션 이름");
     await settle();
 
-    expect(supervisor.get(side.id)?.status).toBe("completed");
-    expect(supervisor.get(side.id)?.title).toBe("완료 세션 이름");
-    expect(supervisor.get(side.id)?.lastSummary).toBe("조사 완료입니다.");
-    expect(supervisor.get(side.id)?.finalAnswer).toBe("조사 완료입니다.");
+    expect(supervisor.get(pickle.id)?.status).toBe("completed");
+    expect(supervisor.get(pickle.id)?.title).toBe("완료 세션 이름");
+    expect(supervisor.get(pickle.id)?.lastSummary).toBe("조사 완료입니다.");
+    expect(supervisor.get(pickle.id)?.finalAnswer).toBe("조사 완료입니다.");
   });
 
-  it("preserves synchronous runtime tool events when steering a completed side session", async () => {
+  it("preserves synchronous runtime tool events when steering a completed Pickle session", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
-    expect(supervisor.get(side.id)?.status).toBe("completed");
+    expect(supervisor.get(pickle.id)?.status).toBe("completed");
 
     runtime.handle!.onSteer = (handle) => {
       handle.emit({ type: "tool", toolCallId: "sync-tool", name: "bash", status: "running", preview: "sleep 10" });
     };
 
-    const updated = await supervisor.steerSideSession(side.id, "interrupt now");
+    const updated = await supervisor.steerPickleSession(pickle.id, "interrupt now");
 
     expect(updated.status).toBe("running");
     expect(updated.tools).toEqual([expect.objectContaining({ toolCallId: "sync-tool", name: "bash", status: "running", preview: "sleep 10" })]);
   });
 
-  it("preserves synchronous runtime queue events when following up a completed side session", async () => {
+  it("preserves synchronous runtime queue events when following up a completed Pickle session", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
-    expect(supervisor.get(side.id)?.status).toBe("completed");
+    expect(supervisor.get(pickle.id)?.status).toBe("completed");
 
     runtime.handle!.onFollowUp = (handle) => {
       handle.emit({ type: "queue_update", steering: ["queued steer"], followUp: ["queued follow-up"] });
     };
 
-    const updated = await supervisor.followUp(side.id, "continue");
-    await waitUntil(() => (supervisor.get(side.id)?.queuedSteers ?? []).length === 1);
+    const updated = await supervisor.followUp(pickle.id, "continue");
+    await waitUntil(() => (supervisor.get(pickle.id)?.queuedSteers ?? []).length === 1);
 
     expect(updated.status).toBe("running");
-    expect(supervisor.get(side.id)?.queuedSteers?.map((item) => item.text)).toEqual(["queued steer"]);
-    expect(supervisor.get(side.id)?.queuedFollowUps?.map((item) => item.text)).toEqual(["queued follow-up"]);
+    expect(supervisor.get(pickle.id)?.queuedSteers?.map((item) => item.text)).toEqual(["queued steer"]);
+    expect(supervisor.get(pickle.id)?.queuedFollowUps?.map((item) => item.text)).toEqual(["queued follow-up"]);
   });
 
   it("settles active tools when a session is aborted", async () => {
@@ -953,18 +953,18 @@ describe("SessionSupervisor", () => {
     expect(aborted.tools[0]).toMatchObject({ status: "failed", preview: "Tool stopped because the session was cancelled." });
   });
 
-  it("marks cancelled side sessions as running when they are steered", async () => {
+  it("marks cancelled Pickle sessions as running when they are steered", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
-    await supervisor.abort(side.id);
+    await supervisor.abort(pickle.id);
 
-    expect(supervisor.get(side.id)?.status).toBe("cancelled");
+    expect(supervisor.get(pickle.id)?.status).toBe("cancelled");
 
-    const updated = await supervisor.steerSideSession(side.id, "다시 진행해줘");
+    const updated = await supervisor.steerPickleSession(pickle.id, "다시 진행해줘");
 
     expect(runtime.handle?.steers).toEqual(["다시 진행해줘"]);
     expect(updated.status).toBe("running");
@@ -972,35 +972,35 @@ describe("SessionSupervisor", () => {
     expect(updated.logs).toContain("steer: 다시 진행해줘");
   });
 
-  it("rejects cancelled side-session follow-up calls", async () => {
+  it("rejects cancelled Pickle-session follow-up calls", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
-    await supervisor.abort(side.id);
+    await supervisor.abort(pickle.id);
 
-    await expect(supervisor.followUp(side.id, "follow-up 경로로 다시 진행")).rejects.toThrow(/Cannot follow up cancelled session/);
+    await expect(supervisor.followUp(pickle.id, "follow-up 경로로 다시 진행")).rejects.toThrow(/Cannot follow up cancelled session/);
     expect(runtime.handle?.followUps).toEqual([]);
     expect(runtime.handle?.steers).toEqual([]);
   });
 
-  it("clears stale cancelled side-session output when a new steering turn starts", async () => {
+  it("clears stale cancelled Pickle-session output when a new steering turn starts", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "assistant_delta", delta: "취소 전 부분 답변" });
     runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
     await settle();
 
-    expect(supervisor.get(side.id)?.status).toBe("cancelled");
-    expect(supervisor.get(side.id)?.finalAnswer).toBe("취소 전 부분 답변");
+    expect(supervisor.get(pickle.id)?.status).toBe("cancelled");
+    expect(supervisor.get(pickle.id)?.finalAnswer).toBe("취소 전 부분 답변");
 
-    const resumed = await supervisor.steerSideSession(side.id, "새로 다시 진행");
+    const resumed = await supervisor.steerPickleSession(pickle.id, "새로 다시 진행");
 
     expect(resumed.status).toBe("running");
     expect(resumed.finalAnswer).toBeUndefined();
@@ -1010,23 +1010,23 @@ describe("SessionSupervisor", () => {
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
-    const completed = supervisor.get(side.id)!;
+    const completed = supervisor.get(pickle.id)!;
     expect(completed.status).toBe("completed");
     expect(completed.finalAnswer).toBe("재개 후 답변");
     expect(completed.finalAnswer).not.toContain("취소 전 부분 답변");
   });
 
-  it("allows failed side sessions to be steered back to running", async () => {
+  it("allows failed Pickle sessions to be steered back to running", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate the request" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
     runtime.handle?.emit({ type: "status", status: "failed", summary: "Failed" });
     await settle();
 
-    const steered = await supervisor.steerSideSession(side.id, "실패 세션 재개 시도");
+    const steered = await supervisor.steerPickleSession(pickle.id, "실패 세션 재개 시도");
 
     expect(runtime.handle?.steers).toEqual(["실패 세션 재개 시도"]);
     expect(steered.status).toBe("running");
@@ -1050,18 +1050,18 @@ describe("SessionSupervisor", () => {
     expect(failed.lastSummary).toBe("Tool crashed before completion");
   });
 
-  it("reattaches cancelled persisted side sessions from Pi session files before steering", async () => {
+  it("reattaches cancelled persisted Pickle sessions from Pi session files before steering", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);
     await store.save({
       id: "cancelled-with-pi-file",
-      title: "Cancelled side agent",
+      title: "Cancelled Pickle",
       status: "cancelled",
       cwd: "/tmp/project",
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:10.000Z",
       lastSummary: "Cancelled before restart",
-      logs: ["main-agent handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
+      logs: ["Picky handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
       tools: [],
       artifacts: [],
       changedFiles: [],
@@ -1071,11 +1071,11 @@ describe("SessionSupervisor", () => {
     const supervisor = new SessionSupervisor(runtime, store);
     await supervisor.load();
 
-    expect(supervisor.isSideSession("cancelled-with-pi-file")).toBe(true);
+    expect(supervisor.isPickleSession("cancelled-with-pi-file")).toBe(true);
     expect(supervisor.get("cancelled-with-pi-file")?.status).toBe("cancelled");
     expect(supervisor.get("cancelled-with-pi-file")?.piSessionFilePath).toBe("/tmp/pi-session.jsonl");
 
-    const updated = await supervisor.steerSideSession("cancelled-with-pi-file", "재시작 후 다시 진행");
+    const updated = await supervisor.steerPickleSession("cancelled-with-pi-file", "재시작 후 다시 진행");
 
     expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/pi-session.jsonl", cwd: "/tmp/project", sessionId: "cancelled-with-pi-file" }]);
     expect(runtime.handle?.steers).toEqual(["재시작 후 다시 진행"]);
@@ -1121,29 +1121,29 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.thinkingPreview).toBeUndefined();
   });
 
-  it("restores persisted side-session markers from handoff logs", async () => {
+  it("restores persisted Pickle-session markers from handoff logs", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const firstSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
-    const side = await firstSupervisor.createSideFromHandoff(context("persist side"), { title: "사이드 유지", instructions: "Keep marker" });
+    const pickle = await firstSupervisor.createPickleFromHandoff(context("persist pickle"), { title: "피클 유지", instructions: "Keep marker" });
 
     const secondSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
     await secondSupervisor.load();
 
-    expect(secondSupervisor.isSideSession(side.id)).toBe(true);
-    expect(secondSupervisor.listSideSessions().map((session) => session.id)).toEqual([side.id]);
+    expect(secondSupervisor.isPickleSession(pickle.id)).toBe(true);
+    expect(secondSupervisor.listPickleSessions().map((session) => session.id)).toEqual([pickle.id]);
   });
 
-  it("restores side-session markers from legacy handoff cwd logs", async () => {
+  it("restores Pickle-session markers from manual Pickle logs", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);
     await store.save({
-      id: "legacy-side-cwd-marker",
-      title: "Legacy side",
-      status: "blocked",
+      id: "manual-pickle-marker",
+      title: "Manual Pickle",
+      status: "waiting_for_input",
       cwd: "/tmp/project",
       createdAt: "2026-05-01T00:00:00.000Z",
-      updatedAt: "2026-05-01T00:00:10.000Z",
-      logs: ["pi session: /tmp/pi-session.jsonl", "main-agent handoff cwd: /tmp/project"],
+      updatedAt: "2026-05-01T00:00:00.000Z",
+      logs: ["manual pickle: waiting for first instruction"],
       tools: [],
       artifacts: [],
       changedFiles: [],
@@ -1152,8 +1152,31 @@ describe("SessionSupervisor", () => {
     const supervisor = new SessionSupervisor(new MockRuntime(), store);
     await supervisor.load();
 
-    expect(supervisor.isSideSession("legacy-side-cwd-marker")).toBe(true);
-    expect(supervisor.listSideSessions().map((session) => session.id)).toEqual(["legacy-side-cwd-marker"]);
+    expect(supervisor.isPickleSession("manual-pickle-marker")).toBe(true);
+    expect(supervisor.listPickleSessions().map((session) => session.id)).toEqual(["manual-pickle-marker"]);
+  });
+
+  it("restores Pickle-session markers from handoff cwd logs", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "pickle-cwd-marker",
+      title: "Pickle",
+      status: "blocked",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      logs: ["pi session: /tmp/pi-session.jsonl", "Picky handoff cwd: /tmp/project"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    });
+
+    const supervisor = new SessionSupervisor(new MockRuntime(), store);
+    await supervisor.load();
+
+    expect(supervisor.isPickleSession("pickle-cwd-marker")).toBe(true);
+    expect(supervisor.listPickleSessions().map((session) => session.id)).toEqual(["pickle-cwd-marker"]);
   });
 
   it("migrates legacy agent_report messages instead of skipping persisted sessions", async () => {
@@ -1166,7 +1189,7 @@ describe("SessionSupervisor", () => {
       status: "completed",
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:10.000Z",
-      logs: ["main-agent handoff: investigate"],
+      logs: ["Picky handoff: investigate"],
       tools: [],
       artifacts: [],
       changedFiles: [],
@@ -1179,10 +1202,10 @@ describe("SessionSupervisor", () => {
     await supervisor.load();
 
     expect(supervisor.get("legacy-report")?.messages?.[0]?.kind).toBe("agent_text");
-    expect(supervisor.isSideSession("legacy-report")).toBe(true);
+    expect(supervisor.isPickleSession("legacy-report")).toBe(true);
   });
 
-  it("pins an idle Pi handoff as a completed side session without starting runtime", async () => {
+  it("pins an idle Pi handoff as a completed Pickle session without starting runtime", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir));
     await supervisor.load();
@@ -1191,18 +1214,18 @@ describe("SessionSupervisor", () => {
       ...context("pin completed source"),
       transcript: "## Source Pi session\n- CWD: /tmp/project\n- Session file: /tmp/source-pi-session.jsonl\n",
     };
-    const pinned = await supervisor.pinSideSession(pinnedContext, "Pinned source");
+    const pinned = await supervisor.pinPickleSession(pinnedContext, "Pinned source");
 
     expect(pinned.status).toBe("completed");
     expect(pinned.title).toBe("Pinned source");
     expect(pinned.lastSummary).toBe("Pinned completed Pi session");
-    expect(pinned.finalAnswer).toMatch(/No Picky side-agent run/);
+    expect(pinned.finalAnswer).toMatch(/No Pickle run/);
     expect(pinned.notifyMainOnCompletion).toBe(false);
     expect(pinned.pinned).toBe(true);
     expect(pinned.logs).toContain("pi session: /tmp/source-pi-session.jsonl");
     expect(pinned.piSessionFilePath).toBe("/tmp/source-pi-session.jsonl");
     expect(pinned.logs.some((line) => line.startsWith("pi-extension handoff pin:"))).toBe(true);
-    expect(supervisor.isSideSession(pinned.id)).toBe(true);
+    expect(supervisor.isPickleSession(pinned.id)).toBe(true);
   });
 
   it("imports the last two source Pi turns when pinning an idle Pi handoff", async () => {
@@ -1221,7 +1244,7 @@ describe("SessionSupervisor", () => {
     const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir));
     await supervisor.load();
 
-    const pinned = await supervisor.pinSideSession(contextWithPiSessionFile("pin completed source", piSessionFile), "Pinned source");
+    const pinned = await supervisor.pinPickleSession(contextWithPiSessionFile("pin completed source", piSessionFile), "Pinned source");
 
     expect(pinned.messages?.map((message) => ({ kind: message.kind, text: message.text, originatedBy: message.originatedBy }))).toEqual([
       { kind: "user_text", text: "second prompt", originatedBy: "pi_extension" },
@@ -1233,7 +1256,7 @@ describe("SessionSupervisor", () => {
     expect(pinned.finalAnswer).toBe("third answer");
   });
 
-  it("does not notify the main agent when a local Pi session is pinned", async () => {
+  it("does not notify Picky when a local Pi session is pinned", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
     const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir), { mainRuntime });
@@ -1241,22 +1264,22 @@ describe("SessionSupervisor", () => {
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
     await supervisor.load();
 
-    await supervisor.pinSideSession(context("pin completed source"), "Pinned source");
+    await supervisor.pinPickleSession(context("pin completed source"), "Pinned source");
 
     expect(mainRuntime.prewarmCalls).toBe(0);
     expect(mainRuntime.handle?.followUps ?? []).toHaveLength(0);
     expect(replies).toEqual([]);
   });
 
-  it("lets side sessions opt out without replaying completed notifications", async () => {
+  it("lets Pickle sessions opt out without replaying completed notifications", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
     const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate" });
 
-    const disabled = await supervisor.setNotifyMainOnCompletion(side.id, false);
+    const disabled = await supervisor.setNotifyMainOnCompletion(pickle.id, false);
     sideRuntime.handle?.emit({ type: "assistant_delta", delta: "조사 완료" });
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
@@ -1264,14 +1287,14 @@ describe("SessionSupervisor", () => {
     expect(disabled.notifyMainOnCompletion).toBe(false);
     expect(mainRuntime.prewarmCalls).toBe(0);
 
-    const enabled = await supervisor.setNotifyMainOnCompletion(side.id, true);
+    const enabled = await supervisor.setNotifyMainOnCompletion(pickle.id, true);
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Duplicate completed" });
     await settle();
 
     expect(enabled.notifyMainOnCompletion).toBe(true);
     expect(mainRuntime.prewarmCalls).toBe(0);
 
-    await supervisor.followUp(side.id, "다시 확인해줘");
+    await supervisor.followUp(pickle.id, "다시 확인해줘");
     sideRuntime.handle?.emit({ type: "assistant_delta", delta: "재조사 완료" });
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
@@ -1317,40 +1340,40 @@ describe("SessionSupervisor", () => {
     expect(updated?.lastSummary).toBe("취소 전에 보이던 답변");
   });
 
-  it("captures only the latest side-session steering answer when a steered run completes", async () => {
+  it("captures only the latest Pickle-session steering answer when a steered run completes", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
     const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
     await supervisor.load();
-    const side = await supervisor.createSideFromHandoff(context("side request"), { title: "사이드 조사", instructions: "Investigate" });
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate" });
 
     sideRuntime.handle?.emit({ type: "assistant_delta", delta: "초기 답변" });
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
-    await supervisor.steerSideSession(side.id, "후속 질문");
+    await supervisor.steerPickleSession(pickle.id, "후속 질문");
     sideRuntime.handle?.emit({ type: "assistant_delta", delta: "후속 답변" });
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
-    const updated = supervisor.get(side.id)!;
+    const updated = supervisor.get(pickle.id)!;
     expect(updated.status).toBe("completed");
     expect(updated.finalAnswer).toBe("후속 답변");
     expect(updated.finalAnswer).not.toContain("초기 답변");
   });
 
-  it("restores persisted pinned side sessions", async () => {
+  it("restores persisted pinned Pickle sessions", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const firstSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
-    const pinned = await firstSupervisor.pinSideSession(context("persist pinned"), "Pinned persisted");
+    const pinned = await firstSupervisor.pinPickleSession(context("persist pinned"), "Pinned persisted");
 
     const secondSupervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
     await secondSupervisor.load();
 
     expect(secondSupervisor.get(pinned.id)?.status).toBe("completed");
     expect(secondSupervisor.get(pinned.id)?.pinned).toBe(true);
-    expect(secondSupervisor.isSideSession(pinned.id)).toBe(true);
+    expect(secondSupervisor.isPickleSession(pinned.id)).toBe(true);
   });
 
   it("reattaches a persisted pinned session before accepting follow-up input", async () => {
@@ -1358,7 +1381,7 @@ describe("SessionSupervisor", () => {
     const store = new SessionStore(dir);
     const firstSupervisor = new SessionSupervisor(new MockRuntime(), store);
     await firstSupervisor.load();
-    const pinned = await firstSupervisor.pinSideSession(contextWithPiSessionFile("persist pinned with source", "/tmp/source-pi-session.jsonl"), "Pinned persisted");
+    const pinned = await firstSupervisor.pinPickleSession(contextWithPiSessionFile("persist pinned with source", "/tmp/source-pi-session.jsonl"), "Pinned persisted");
 
     const runtime = new ResumableRuntime();
     const secondSupervisor = new SessionSupervisor(runtime, store);
@@ -1379,10 +1402,10 @@ describe("SessionSupervisor", () => {
     const runtime = new ResumableRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const pinned = await supervisor.pinSideSession(contextWithPiSessionFile("pin then steer", "/tmp/source-pi-session.jsonl"), "Pinned source");
+    const pinned = await supervisor.pinPickleSession(contextWithPiSessionFile("pin then steer", "/tmp/source-pi-session.jsonl"), "Pinned source");
     expect(pinned.pinned).toBe(true);
 
-    const steered = await supervisor.steerSideSession(pinned.id, "continue this work");
+    const steered = await supervisor.steerPickleSession(pinned.id, "continue this work");
 
     expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/source-pi-session.jsonl", cwd: "/tmp/project", sessionId: pinned.id }]);
     expect(runtime.handle?.steerPrompts.map((prompt) => prompt.text)).toEqual(["continue this work"]);
@@ -1395,7 +1418,7 @@ describe("SessionSupervisor", () => {
     const runtime = new ResumableRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
-    const pinned = await supervisor.pinSideSession(contextWithPiSessionFile("pin then follow up", "/tmp/source-pi-session.jsonl"), "Pinned source");
+    const pinned = await supervisor.pinPickleSession(contextWithPiSessionFile("pin then follow up", "/tmp/source-pi-session.jsonl"), "Pinned source");
 
     const followedUp = await supervisor.followUp(pinned.id, "continue this work");
     await settle();
@@ -1520,13 +1543,13 @@ describe("SessionSupervisor", () => {
     const store = new SessionStore(dir);
     await store.save({
       id: "running-with-pi-file",
-      title: "Running side agent",
+      title: "Running Pickle",
       status: "running",
       cwd: "/tmp/project",
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:10.000Z",
       lastSummary: "Still working before restart",
-      logs: ["main-agent handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
+      logs: ["Picky handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
       tools: [{ toolCallId: "tool-1", name: "bash", status: "running", startedAt: "2026-05-01T00:00:05.000Z" }],
       artifacts: [],
       changedFiles: [],
@@ -1553,13 +1576,13 @@ describe("SessionSupervisor", () => {
     const store = new SessionStore(dir);
     await store.save({
       id: "blocked-with-pi-file",
-      title: "Blocked side agent",
+      title: "Blocked Pickle",
       status: "blocked",
       cwd: "/tmp/project",
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:10.000Z",
       lastSummary: "Previous run was interrupted by daemon restart; send a follow-up or steer message to continue.",
-      logs: ["main-agent handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
+      logs: ["Picky handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
       tools: [],
       artifacts: [],
       changedFiles: [],
@@ -1581,13 +1604,13 @@ describe("SessionSupervisor", () => {
     const store = new SessionStore(dir);
     await store.save({
       id: "waiting-with-pending-ui",
-      title: "Waiting side agent",
+      title: "Waiting Pickle",
       status: "waiting_for_input",
       cwd: "/tmp/project",
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:10.000Z",
       lastSummary: "Waiting before restart",
-      logs: ["main-agent handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
+      logs: ["Picky handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
       tools: [],
       artifacts: [],
       changedFiles: [],
@@ -1630,13 +1653,13 @@ describe("SessionSupervisor", () => {
     const store = new SessionStore(dir);
     await store.save({
       id: "archived-running-with-pi-file",
-      title: "Archived side agent",
+      title: "Archived Pickle",
       status: "running",
       cwd: "/tmp/project",
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:10.000Z",
       lastSummary: "Archived before restart",
-      logs: ["main-agent handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
+      logs: ["Picky handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
       tools: [],
       artifacts: [],
       changedFiles: [],
@@ -1670,7 +1693,7 @@ describe("SessionSupervisor", () => {
     const store = new SessionStore(dir);
     await store.save({
       id: "restored-with-pi-file",
-      title: "Restored side agent",
+      title: "Restored Pickle",
       status: "completed",
       cwd: "/tmp/project",
       createdAt: "2026-05-01T00:00:00.000Z",
@@ -1729,7 +1752,7 @@ describe("SessionSupervisor", () => {
     expect(replies).toEqual([{ contextId: "context-마이크 테스트", text: "바로 답변" }]);
   });
 
-  it("routes voice requests through the main agent when configured", async () => {
+  it("routes voice requests through Picky when configured", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
@@ -1751,7 +1774,7 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
-  it("strips main-agent point tags and emits pointer overlays sequentially", async () => {
+  it("strips Picky point tags and emits pointer overlays sequentially", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
@@ -1874,7 +1897,7 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
-  it("resets main-agent messages and starts the next prompt on a new handle", async () => {
+  it("resets Picky messages and starts the next prompt on a new handle", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);
     const mainRuntime = new ManualRuntime();
@@ -1903,7 +1926,7 @@ describe("SessionSupervisor", () => {
     expect(supervisor.listMainMessages().map((message) => message.text)).toEqual(["새 질문"]);
   });
 
-  it("aborts the active main-agent turn without clearing visible message history", async () => {
+  it("aborts the active Picky turn without clearing visible message history", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);
     const mainRuntime = new ManualRuntime();
@@ -1944,7 +1967,7 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
-  it("aborts a pending prewarmed main-agent handle after voice input cancels it", async () => {
+  it("aborts a pending prewarmed Picky handle after voice input cancels it", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new DeferredPrewarmRuntime();
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
@@ -1970,7 +1993,7 @@ describe("SessionSupervisor", () => {
     expect(supervisor.listMainMessages().map((message) => message.text)).toEqual(["새 음성 입력"]);
   });
 
-  it("keeps only the latest 100 main-agent user and assistant messages", async () => {
+  it("keeps only the latest 100 Picky user and assistant messages", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime();
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
@@ -2004,7 +2027,7 @@ describe("SessionSupervisor", () => {
     expect(previousHandle?.aborts).toBe(1);
     expect(mainRuntime.createCalls).toBe(2);
     expect(mainRuntime.handle).not.toBe(previousHandle);
-    expect(mainRuntime.handle?.bootstrapInjections.at(-1)?.user).toContain("Previous main-agent epoch summary");
+    expect(mainRuntime.handle?.bootstrapInjections.at(-1)?.user).toContain("Previous Picky epoch summary");
     expect(mainRuntime.handle?.bootstrapInjections.at(-1)?.user).toContain("질문 39");
     expect(supervisor.listMainMessages().at(-1)).toMatchObject({ role: "user", text: "롤오버 후 질문" });
   });
@@ -2028,7 +2051,7 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.handle?.bootstrapInjections.at(-1)?.user).toContain("context:75%");
   });
 
-  it("resumes the persisted main-agent Pi session after daemon restart", async () => {
+  it("resumes the persisted Picky Pi session after daemon restart", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);
     await store.saveMainAgentState({ sessionFilePath: "/tmp/main-pi-session.jsonl", cwd: "/tmp/project", messages: [] });
@@ -2038,13 +2061,13 @@ describe("SessionSupervisor", () => {
 
     await supervisor.route(context("재시작 후 질문"));
 
-    expect(mainRuntime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/main-pi-session.jsonl", cwd: "/tmp/project", sessionId: "picky-main-agent" }]);
+    expect(mainRuntime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/main-pi-session.jsonl", cwd: "/tmp/project", sessionId: "picky" }]);
     expect(mainRuntime.handle?.followUps).toHaveLength(1);
     expect(mainRuntime.handle?.followUps[0].text).toContain("재시작 후 질문");
     expect(supervisor.listMainMessages().map((message) => message.text)).toEqual(["재시작 후 질문"]);
   });
 
-  it("reuses the same main agent handle for later voice turns", async () => {
+  it("reuses the same Picky handle for later voice turns", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime();
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
@@ -2060,7 +2083,7 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.handle?.followUps[0].text).toContain("두 번째");
   });
 
-  it("interrupts the active main-agent turn when newer voice input arrives", async () => {
+  it("interrupts the active Picky turn when newer voice input arrives", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
@@ -2081,7 +2104,7 @@ describe("SessionSupervisor", () => {
     expect(replies).toEqual([{ contextId: "context-두 번째 질문", text: "두 번째 응답" }]);
   });
 
-  it("prewarms the main agent without creating a visible session", async () => {
+  it("prewarms Picky without creating a visible session", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
@@ -2110,7 +2133,7 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.handle?.thinkingLevels).toEqual(["high"]);
   });
 
-  it("bakes the configured main-agent extra instructions into the bootstrap pair, not per-turn prompts", async () => {
+  it("bakes the configured Picky extra instructions into the bootstrap pair, not per-turn prompts", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-extra-instructions-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
@@ -2120,15 +2143,15 @@ describe("SessionSupervisor", () => {
 
     expect(mainRuntime.handle?.bootstrapInjections).toHaveLength(1);
     const injectedUser = mainRuntime.handle!.bootstrapInjections[0]!.user;
-    expect(injectedUser).toContain("## User-provided main-agent instructions");
+    expect(injectedUser).toContain("## User-provided Picky instructions");
     expect(injectedUser).toContain("항상 존대말로 답해주세요");
 
     // Per-turn prompt stays free of the user-additional block; only the bootstrap carries it.
     await supervisor.route(context("첫 질문"));
     await settle();
     const turnPromptText = mainRuntime.handle?.followUps.at(-1)?.text ?? "";
-    expect(turnPromptText).toContain("# Picky main-agent turn");
-    expect(turnPromptText).not.toContain("User-provided main-agent instructions");
+    expect(turnPromptText).toContain("# Picky turn");
+    expect(turnPromptText).not.toContain("User-provided Picky instructions");
   });
 
   it("applies configured thinking level to the active main runtime", async () => {
@@ -2144,7 +2167,7 @@ describe("SessionSupervisor", () => {
     expect(handle.thinkingLevels).toEqual(["xhigh"]);
   });
 
-  it("injects the main-agent bootstrap pair on a fresh prewarm so the rules ride the first turn", async () => {
+  it("injects the Picky bootstrap pair on a fresh prewarm so the rules ride the first turn", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
     const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
@@ -2156,7 +2179,7 @@ describe("SessionSupervisor", () => {
     expect(injection.assistant).toBe("OK");
   });
 
-  it("skips bootstrap injection when the main agent resumes from a persisted Pi session", async () => {
+  it("skips bootstrap injection when Picky resumes from a persisted Pi session", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);
     await store.saveMainAgentState({ sessionFilePath: "/tmp/main-pi-session.jsonl", cwd: "/tmp/project", messages: [] });
@@ -2180,7 +2203,7 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.handle?.bootstrapInjections).toHaveLength(1);
   });
 
-  it("defers a side completion notification while the handoff turn is still in flight, then drains it without losing the reply", async () => {
+  it("defers a Pickle completion notification while the handoff turn is still in flight, then drains it without losing the reply", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
@@ -2188,70 +2211,70 @@ describe("SessionSupervisor", () => {
     const replies: Array<{ contextId: string; text: string }> = [];
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
 
-    // 1) Voice command routed to the main agent — main turn starts running.
-    const userCtx = context("사이드 띄워서 작업 해줘");
+    // 1) Voice command routed to Picky — Picky turn starts running.
+    const userCtx = context("피클 띄워서 작업 해줘");
     await supervisor.route(userCtx);
     mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
     await settle();
 
     // 2) Main decides to hand off: it announces the handoff text (which sets
-    //    suppressNextMainReply=true) and spawns the side session. The handoff
+    //    suppressNextMainReply=true) and spawns the Pickle session. The handoff
     //    turn has NOT yet emitted status:completed.
-    supervisor.announceMainHandoff(userCtx.id, "사이드에 위임할게요");
-    const sideSession = await supervisor.createSideFromHandoff(userCtx, { title: "task", instructions: "do it" });
+    supervisor.announceMainHandoff(userCtx.id, "피클에 위임할게요");
+    const pickleSession = await supervisor.createPickleFromHandoff(userCtx, { title: "task", instructions: "do it" });
     await settle();
 
-    expect(replies).toContainEqual({ contextId: userCtx.id, text: "사이드에 위임할게요" });
+    expect(replies).toContainEqual({ contextId: userCtx.id, text: "피클에 위임할게요" });
 
-    // 3) Side session finishes BEFORE the main handoff turn ends. The
+    // 3) Pickle session finishes BEFORE the main handoff turn ends. The
     //    notification must be deferred — sending it now would clobber
     //    mainReplyContextId/mainDraft and let the handoff turn's
-    //    suppressNextMainReply swallow this side completion's reply.
-    sideRuntime.handle?.emit({ type: "assistant_delta", delta: "사이드 결과 X" });
+    //    suppressNextMainReply swallow this Pickle completion's reply.
+    sideRuntime.handle?.emit({ type: "assistant_delta", delta: "피클 결과 X" });
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
     expect(mainRuntime.handle?.followUps ?? []).toHaveLength(0);
 
     // 4) Handoff turn finally ends. suppressNextMainReply is consumed here, the
-    //    handoff turn's draft is discarded, and the deferred side completion is
-    //    drained from the queue and delivered as a fresh main turn.
+    //    handoff turn's draft is discarded, and the deferred Pickle completion is
+    //    drained from the queue and delivered as a fresh Picky turn.
     mainRuntime.handle?.emit({ type: "assistant_delta", delta: "핸드오프 잔여 텍스트" });
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
     expect(mainRuntime.handle?.followUps).toHaveLength(1);
-    expect(mainRuntime.handle?.followUps[0]?.text).toContain(`Side session: ${sideSession.id}`);
+    expect(mainRuntime.handle?.followUps[0]?.text).toContain(`Pickle session: ${pickleSession.id}`);
     // Handoff-turn draft must NOT have been emitted as a quickReply (suppress
-    // consumed it correctly), and no spurious side-completion reply was emitted.
-    expect(replies.filter((entry) => entry.contextId === sideSession.id)).toHaveLength(0);
+    // consumed it correctly), and no spurious Pickle-completion reply was emitted.
+    expect(replies.filter((entry) => entry.contextId === pickleSession.id)).toHaveLength(0);
     expect(replies.filter((entry) => entry.contextId === userCtx.id)).toEqual([
-      { contextId: userCtx.id, text: "사이드에 위임할게요" },
+      { contextId: userCtx.id, text: "피클에 위임할게요" },
     ]);
 
-    // 5) Main processes the side-completion follow-up. Its reply must arrive
-    //    against the side session's id, not the original user context.
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "사이드 작업 마쳤어요" });
+    // 5) Main processes the Pickle-completion follow-up. Its reply must arrive
+    //    against the Pickle session's id, not the original user context.
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "피클 작업 마쳤어요" });
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
-    expect(replies).toContainEqual({ contextId: sideSession.id, text: "사이드 작업 마쳤어요" });
+    expect(replies).toContainEqual({ contextId: pickleSession.id, text: "피클 작업 마쳤어요" });
   });
 
   // Regression for the `/diff-review` follow-up: the previous fix synthesized a `completed`
-  // runtime status with `noTurnRan: true` so the HUD spinner clears, but the side session must
-  // NOT also notify the main agent (no real turn produced any progress). RuntimeEventHandler
-  // skips notifySideCompletion + materializeTerminalArtifacts when `noTurnRan` is set.
-  it("does not notify the main agent when a side session synthesizes a completion without running a turn", async () => {
+  // runtime status with `noTurnRan: true` so the HUD spinner clears, but the Pickle session must
+  // NOT also notify Picky (no real turn produced any progress). RuntimeEventHandler
+  // skips notifyPickleCompletion + materializeTerminalArtifacts when `noTurnRan` is set.
+  it("does not notify Picky when a Pickle session synthesizes a completion without running a turn", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
     const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
 
-    const userCtx = context("사이드 시작");
+    const userCtx = context("피클 시작");
     await supervisor.route(userCtx);
-    supervisor.announceMainHandoff(userCtx.id, "사이드 위임");
-    const sideSession = await supervisor.createSideFromHandoff(userCtx, { title: "task", instructions: "do it" });
+    supervisor.announceMainHandoff(userCtx.id, "피클 위임");
+    const pickleSession = await supervisor.createPickleFromHandoff(userCtx, { title: "task", instructions: "do it" });
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
@@ -2259,11 +2282,11 @@ describe("SessionSupervisor", () => {
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Handled without agent turn", noTurnRan: true });
     await settle();
 
-    expect(supervisor.get(sideSession.id)?.status).toBe("completed");
+    expect(supervisor.get(pickleSession.id)?.status).toBe("completed");
     expect(mainRuntime.handle?.followUps ?? []).toHaveLength(0);
   });
 
-  it("delivers a side completion notification immediately when the main agent is idle", async () => {
+  it("delivers a Pickle completion notification immediately when Picky is idle", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
@@ -2271,16 +2294,16 @@ describe("SessionSupervisor", () => {
     const replies: Array<{ contextId: string; text: string }> = [];
     supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
 
-    const userCtx = context("사이드 시작");
+    const userCtx = context("피클 시작");
     await supervisor.route(userCtx);
-    supervisor.announceMainHandoff(userCtx.id, "사이드 위임");
-    const sideSession = await supervisor.createSideFromHandoff(userCtx, { title: "task", instructions: "do it" });
+    supervisor.announceMainHandoff(userCtx.id, "피클 위임");
+    const pickleSession = await supervisor.createPickleFromHandoff(userCtx, { title: "task", instructions: "do it" });
 
-    // Handoff turn ends BEFORE the side session emits its terminal status.
+    // Handoff turn ends BEFORE the Pickle session emits its terminal status.
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
-    // Now main is idle; side completion must be delivered immediately.
+    // Now main is idle; Pickle completion must be delivered immediately.
     // Pi can emit both turn_end and agent_end as completed back-to-back; those
     // duplicate terminal events must still produce only one main follow-up.
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
@@ -2288,13 +2311,13 @@ describe("SessionSupervisor", () => {
     await settle();
 
     expect(mainRuntime.handle?.followUps).toHaveLength(1);
-    expect(mainRuntime.handle?.followUps[0]?.text).toContain(`Side session: ${sideSession.id}`);
+    expect(mainRuntime.handle?.followUps[0]?.text).toContain(`Pickle session: ${pickleSession.id}`);
 
     mainRuntime.handle?.emit({ type: "assistant_delta", delta: "바로 끝났어요" });
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
-    expect(replies).toContainEqual({ contextId: sideSession.id, text: "바로 끝났어요" });
+    expect(replies).toContainEqual({ contextId: pickleSession.id, text: "바로 끝났어요" });
   });
 
   it("never queues a deferred notification when notifyMainOnCompletion is disabled", async () => {
@@ -2308,10 +2331,10 @@ describe("SessionSupervisor", () => {
     mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
     await settle();
     supervisor.announceMainHandoff(userCtx.id, "위임");
-    const sideSession = await supervisor.createSideFromHandoff(userCtx, { title: "task", instructions: "do it" });
-    await supervisor.setNotifyMainOnCompletion(sideSession.id, false);
+    const pickleSession = await supervisor.createPickleFromHandoff(userCtx, { title: "task", instructions: "do it" });
+    await supervisor.setNotifyMainOnCompletion(pickleSession.id, false);
 
-    // Side terminal status arrives while main is still busy on the handoff turn.
+    // Pickle terminal status arrives while main is still busy on the handoff turn.
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
@@ -2322,7 +2345,7 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.handle?.followUps ?? []).toHaveLength(0);
   });
 
-  it("clears deferred side completion notifications when the main agent is aborted", async () => {
+  it("clears deferred Pickle completion notifications when Picky is aborted", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
@@ -2333,16 +2356,16 @@ describe("SessionSupervisor", () => {
     mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
     await settle();
     supervisor.announceMainHandoff(userCtx.id, "위임");
-    await supervisor.createSideFromHandoff(userCtx, { title: "task", instructions: "do it" });
+    await supervisor.createPickleFromHandoff(userCtx, { title: "task", instructions: "do it" });
 
-    // Side completes while main is still running the handoff turn → deferred.
+    // Pickle completes while main is still running the handoff turn → deferred.
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
     const handleBeforeAbort = mainRuntime.handle;
     expect(handleBeforeAbort?.followUps ?? []).toHaveLength(0);
 
-    // User aborts the main agent before the handoff turn finishes. The pending
+    // User aborts Picky before the handoff turn finishes. The pending
     // queue must be cleared so a stale terminal event from the orphaned handle
     // can never re-trigger delivery against a fresh main session.
     await supervisor.abortMainAgent();
@@ -2351,7 +2374,7 @@ describe("SessionSupervisor", () => {
 
     expect(handleBeforeAbort?.followUps ?? []).toHaveLength(0);
 
-    // A new main turn must not see the dropped notification either.
+    // A new Picky turn must not see the dropped notification either.
     await supervisor.route(context("다음 질문"));
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
@@ -2359,7 +2382,7 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.handle?.followUps ?? []).toHaveLength(0);
   });
 
-  it("drops a queued side completion when the user steers the side session before the main agent drains it", async () => {
+  it("drops a queued Pickle completion when the user steers the Pickle session before Picky drains it", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
@@ -2372,22 +2395,22 @@ describe("SessionSupervisor", () => {
     mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
     await settle();
     supervisor.announceMainHandoff(userCtx.id, "위임");
-    const sideSession = await supervisor.createSideFromHandoff(userCtx, { title: "task", instructions: "do it" });
+    const pickleSession = await supervisor.createPickleFromHandoff(userCtx, { title: "task", instructions: "do it" });
 
-    // Side completes while main is mid-turn → deferred.
+    // Pickle completes while main is mid-turn → deferred.
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
-    // User immediately steers the side session, which also drops the deferred
-    // notification because the side run is no longer terminal.
-    await supervisor.steerSideSession(sideSession.id, "한 번 더 다듬어줘");
+    // User immediately steers the Pickle session, which also drops the deferred
+    // notification because the pickle run is no longer terminal.
+    await supervisor.steerPickleSession(pickleSession.id, "한 번 더 다듬어줘");
 
     // Main handoff turn ends; the drain must find an empty queue.
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
 
     expect(mainRuntime.handle?.followUps ?? []).toHaveLength(0);
-    expect(replies.filter((entry) => entry.contextId === sideSession.id)).toEqual([]);
+    expect(replies.filter((entry) => entry.contextId === pickleSession.id)).toEqual([]);
   });
 
   it("routes complex requests to the long-running runtime", async () => {
@@ -2633,7 +2656,7 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
-  it("resumes a persisted side session command catalog before falling back to the main catalog", async () => {
+  it("resumes a persisted Pickle session command catalog before falling back to the main catalog", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);
     await store.save({
@@ -2643,7 +2666,7 @@ describe("SessionSupervisor", () => {
       cwd: "/tmp/product",
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:10.000Z",
-      logs: ["main-agent handoff: investigate", "pi session: /tmp/product-pi-session.jsonl"],
+      logs: ["Picky handoff: investigate", "pi session: /tmp/product-pi-session.jsonl"],
       tools: [],
       artifacts: [],
       changedFiles: [],
@@ -2690,7 +2713,7 @@ describe("SessionSupervisor", () => {
     await expect(supervisor.listSlashCommands(session.id)).resolves.toEqual([]);
   });
 
-  it("appends user_text messages from steer, follow-up, extension answer, and main-agent handoff sources", async () => {
+  it("appends user_text messages from steer, follow-up, extension answer, and Picky handoff sources", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-message-sources-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
@@ -2702,14 +2725,14 @@ describe("SessionSupervisor", () => {
     runtime.handle?.emit({ type: "extension_ui", waitsForInput: true, request: { id: "ui-message", sessionId: session.id, method: "input", prompt: "Need input", createdAt: "2026-05-01T00:00:00.000Z" } });
     await settle();
     await supervisor.answerExtensionUi(session.id, "ui-message", "answer text");
-    const side = await supervisor.createSideFromHandoff(context("handoff"), { title: "Side", instructions: "main instructions" });
+    const pickle = await supervisor.createPickleFromHandoff(context("handoff"), { title: "Pickle", instructions: "main instructions" });
 
     expect(supervisor.get(session.id)?.messages?.filter((message) => message.kind === "user_text").map((message) => ({ text: message.text, originatedBy: message.originatedBy }))).toEqual([
       { text: "user steer", originatedBy: "user" },
       { text: "user follow-up", originatedBy: "user" },
       { text: "answer text", originatedBy: "user" },
     ]);
-    expect(supervisor.get(side.id)?.messages).toMatchObject([{ kind: "user_text", text: "main instructions", originatedBy: "main_agent" }]);
+    expect(supervisor.get(pickle.id)?.messages).toMatchObject([{ kind: "user_text", text: "main instructions", originatedBy: "main_agent" }]);
   });
 
   it("records Pi extension injected user and custom messages as extension-origin user bubbles", async () => {
@@ -2989,7 +3012,7 @@ describe("SessionSupervisor", () => {
       cwd: "/tmp/project",
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:10.000Z",
-      logs: ["main-agent handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
+      logs: ["Picky handoff: investigate", "pi session: /tmp/pi-session.jsonl"],
       tools: [],
       artifacts: [],
       changedFiles: [],
@@ -2999,7 +3022,7 @@ describe("SessionSupervisor", () => {
     const runtime = new ResumableRuntime();
     const supervisor = new SessionSupervisor(runtime, store);
     await supervisor.load();
-    await supervisor.steerSideSession("persisted-message-session", "second steer");
+    await supervisor.steerPickleSession("persisted-message-session", "second steer");
 
     expect(supervisor.get("persisted-message-session")?.messages?.map((message) => message.kind)).toEqual(["user_text", "user_text"]);
     expect(supervisor.get("persisted-message-session")?.messages?.map((message) => message.text)).toEqual(["first steer", "second steer"]);
@@ -3051,7 +3074,7 @@ describe("SessionSupervisor", () => {
     runtime.handle?.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
     await waitUntil(() => supervisor.get(cancelledSession.id)?.messages?.some((message) => message.kind === "system") === true);
 
-    const pinned = await supervisor.pinSideSession(context("\nPinned goal\nMore"), "Pinned title");
+    const pinned = await supervisor.pinPickleSession(context("\nPinned goal\nMore"), "Pinned title");
 
     expect(supervisor.get(questionSession.id)?.messages?.[0]).toMatchObject({ id: "question-message", kind: "agent_question" });
     expect(supervisor.get(failedSession.id)?.messages).toMatchObject([{ kind: "agent_error", errorMessage: "Runtime failed" }]);
@@ -3059,7 +3082,7 @@ describe("SessionSupervisor", () => {
     expect(pinned.messages?.map((message) => ({ kind: message.kind, text: message.text, originatedBy: message.originatedBy }))).toEqual([
       { kind: "user_text", text: "Pinned goal", originatedBy: "pi_extension" },
       { kind: "system", text: "Pinned from idle Pi session", originatedBy: undefined },
-      { kind: "agent_text", text: "Pinned from an idle Pi session. No Picky side-agent run has been started yet.", originatedBy: undefined },
+      { kind: "agent_text", text: "Pinned from an idle Pi session. No Pickle run has been started yet.", originatedBy: undefined },
     ]);
   });
 

@@ -15,7 +15,7 @@ export function extensionUiWaitingSummary(request: PickyExtensionUiRequest): str
 /**
  * Build a human-readable summary of the user's answer to an extension UI request.
  * Returns `undefined` for cancellations or when the answer carries no displayable
- * content. Picky uses the result to refresh the side-agent card REQUEST line and
+ * content. Picky uses the result to refresh the Pickle card REQUEST line and
  * to write a `extension ui answer:` log entry that survives snapshot rebuilds.
  */
 export function summarizeExtensionUiAnswer(request: PickyExtensionUiRequest, rawValue: unknown): string | undefined {

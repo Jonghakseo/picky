@@ -155,25 +155,25 @@ struct PickyInteractionReducerTests {
         #expect(cleared.state.output == .idle)
     }
 
-    @Test func notifySideCompletionQuickReplySpeaksEvenWhenSystemOriginated() {
+    @Test func notifyPickleCompletionQuickReplySpeaksEvenWhenSystemOriginated() {
         let transition = reduce(
             PickyInteractionState(),
-            .quickReply(contextID: "side-session", text: "사이드 에이전트 작업이 완료됐습니다.", originSource: .system, replyKind: .sideCompletion, sessionID: "side-session", inputID: nil),
+            .quickReply(contextID: "pickle-session", text: "피클 작업이 완료됐습니다.", originSource: .system, replyKind: .pickleCompletion, sessionID: "pickle-session", inputID: nil),
             id: timerA
         )
 
         #expect(transition.state.output == .speaking(
-            contextID: "side-session",
+            contextID: "pickle-session",
             speechID: timerA,
-            text: "사이드 에이전트 작업이 완료됐습니다.",
+            text: "피클 작업이 완료됐습니다.",
             minimumDisplayTimerID: timerA,
             minimumDisplayUntil: baseDate.addingTimeInterval(PickyInteractionReducer.minimumDisplayDuration),
             finishPending: false
         ))
-        #expect(transition.state.lastDisplayMessage?.source == .sideCompletion)
+        #expect(transition.state.lastDisplayMessage?.source == .pickleCompletion)
         #expect(transition.effects == [
             .scheduleMinimumDisplay(timerID: timerA, speechID: timerA, inputID: nil, delay: PickyInteractionReducer.minimumDisplayDuration),
-            .speak(speechID: timerA, text: "사이드 에이전트 작업이 완료됐습니다.", contextID: "side-session")
+            .speak(speechID: timerA, text: "피클 작업이 완료됐습니다.", contextID: "pickle-session")
         ])
     }
 
@@ -199,8 +199,8 @@ struct PickyInteractionReducerTests {
         let invalid = try decodeQuickReply(#"{"quickReply":{"contextId":"ctx","text":"hello","originSource":"wat","replyKind":"nope"}}"#)
         #expect(invalid == .quickReply(contextID: "ctx", text: "hello", originSource: .unknown, replyKind: .unknown, sessionID: nil, inputID: nil))
 
-        let hyphenated = try decodeQuickReply(#"{"quickReply":{"contextId":"ctx","text":"hello","originSource":"voice-follow-up","replyKind":"side-completion"}}"#)
-        #expect(hyphenated == .quickReply(contextID: "ctx", text: "hello", originSource: .voiceFollowUp, replyKind: .sideCompletion, sessionID: nil, inputID: nil))
+        let hyphenated = try decodeQuickReply(#"{"quickReply":{"contextId":"ctx","text":"hello","originSource":"voice-follow-up","replyKind":"pickle-completion"}}"#)
+        #expect(hyphenated == .quickReply(contextID: "ctx", text: "hello", originSource: .voiceFollowUp, replyKind: .pickleCompletion, sessionID: nil, inputID: nil))
 
         let legacyVoice = try decodeQuickReply(#"{"quickReply":{"contextId":"ctx","text":"hello","source":"voice"}}"#)
         #expect(legacyVoice == .quickReply(contextID: "ctx", text: "hello", originSource: .voice, replyKind: .unknown, sessionID: nil, inputID: nil))

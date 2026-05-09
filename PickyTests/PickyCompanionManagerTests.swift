@@ -131,12 +131,12 @@ struct PickyCompanionManagerTests {
         #expect(client.submissions.isEmpty)
     }
 
-    @Test func sideHoverVoiceFollowUpNeverUsesRealtimeCommands() async throws {
+    @Test func pickleHoverVoiceFollowUpNeverUsesRealtimeCommands() async throws {
         let client = FakeVoiceClient()
         let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
         let context = context(source: "voice-follow-up")
 
-        _ = try await manager.routeVoiceTranscript(transcript: "side delta", contextPacket: context, voiceFollowUpSessionID: "side-session")
+        _ = try await manager.routeVoiceTranscript(transcript: "pickle delta", contextPacket: context, voiceFollowUpSessionID: "pickle-session")
 
         #expect(client.commands.map(\.type) == [.followUp])
         let sentRealtimeCommand = client.commands.contains { command in
@@ -158,7 +158,7 @@ struct PickyCompanionManagerTests {
     // The reducer reports idle in that window, and the previous implementation
     // cleared `voiceFollowUpSessionIDForCurrentUtterance` from inside
     // `updateVoicePresentation`, racing the response task into routing the voice
-    // utterance to the main agent instead of the hovered side session.
+    // utterance to Picky instead of the hovered Pickle.
     @Test @MainActor func idleVoicePresentationDoesNotClearPressedHoverIDBeforeSubmit() async {
         let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
         manager.setVoiceFollowUpSessionIDForCurrentUtterance("session-hovered")
@@ -522,8 +522,8 @@ struct PickyCompanionManagerTests {
         )
         #expect(manager.voiceState == .responding)
 
-        manager.applyAgentEvent(.sessionLogAppended(sessionId: "side-1", line: "running"))
-        manager.applyAgentEvent(.toolActivityUpdated(sessionId: "side-1", tool: PickyToolActivity(
+        manager.applyAgentEvent(.sessionLogAppended(sessionId: "pickle-1", line: "running"))
+        manager.applyAgentEvent(.toolActivityUpdated(sessionId: "pickle-1", tool: PickyToolActivity(
             toolCallId: "tool-1",
             name: "bash",
             status: "running",
@@ -532,8 +532,8 @@ struct PickyCompanionManagerTests {
             endedAt: nil
         )))
         manager.applyAgentEvent(.sessionUpdated(PickyAgentSession(
-            id: "side-1",
-            title: "Side",
+            id: "pickle-1",
+            title: "Pickle",
             status: .running,
             cwd: nil,
             createdAt: Date(timeIntervalSince1970: 1_800_000_000),
@@ -659,7 +659,7 @@ struct PickyCompanionManagerTests {
     // when the underlying interaction projection is no longer speaking — even
     // if the projection moves through a non-`.idle` intermediate state.
 
-    @Test func sideCompletionReplyDrivesSpeakingProjectionAndClearsViaSpeechFinish() async throws {
+    @Test func pickleCompletionReplyDrivesSpeakingProjectionAndClearsViaSpeechFinish() async throws {
         let speechProvider = FakeSpeechPlaybackProvider()
         let manager = CompanionManager(
             agentClient: FakeVoiceClient(),
@@ -668,16 +668,16 @@ struct PickyCompanionManagerTests {
         )
 
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
-            contextId: "session-side",
-            text: "사이드 작업이 완료됐어요.",
+            contextId: "session-pickle",
+            text: "피클 작업이 완료됐어요.",
             originSource: .system,
-            replyKind: .sideCompletion,
-            sessionId: "session-side"
+            replyKind: .pickleCompletion,
+            sessionId: "session-pickle"
         )))
         try await waitUntil { manager.voiceState == .responding }
 
-        #expect(manager.latestAgentSessionSummary == "사이드 작업이 완료됐어요.")
-        #expect(speechProvider.spokenUtterances == ["사이드 작업이 완료됐어요."])
+        #expect(manager.latestAgentSessionSummary == "피클 작업이 완료됐어요.")
+        #expect(speechProvider.spokenUtterances == ["피클 작업이 완료됐어요."])
 
         // Wait past the minimum-display window so .speechFinished routes
         // straight to .idle, and let the FakeSpeechProvider close cleanly.
@@ -686,7 +686,7 @@ struct PickyCompanionManagerTests {
         try await waitUntil { manager.voiceState == .idle }
     }
 
-    @Test func sideCompletionPreemptedByMainTextReplyClearsVoiceStateViaSafetyNet() async throws {
+    @Test func pickleCompletionPreemptedByMainTextReplyClearsVoiceStateViaSafetyNet() async throws {
         let speechProvider = FakeSpeechPlaybackProvider()
         let manager = CompanionManager(
             agentClient: FakeVoiceClient(),
@@ -694,19 +694,19 @@ struct PickyCompanionManagerTests {
             speechPlaybackProvider: speechProvider
         )
 
-        // Side completion → speaking, voiceState = .responding.
+        // Pickle completion → speaking, voiceState = .responding.
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
-            contextId: "session-side",
-            text: "사이드 답변",
+            contextId: "session-pickle",
+            text: "피클 답변",
             originSource: .system,
-            replyKind: .sideCompletion,
-            sessionId: "session-side"
+            replyKind: .pickleCompletion,
+            sessionId: "session-pickle"
         )))
         try await waitUntil { manager.voiceState == .responding }
 
         // Before TTS finishes, a system-originated `.main` reply arrives that
         // routes to `.showingTextReply`. Without the safety net + reducer
-        // preemption fix, the cursor bubble would stay stuck on the side reply
+        // preemption fix, the cursor bubble would stay stuck on the Pickle reply
         // until the user manually triggers another voice interaction.
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
             contextId: "context-typed",
@@ -727,11 +727,11 @@ struct PickyCompanionManagerTests {
         )
 
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
-            contextId: "session-side",
+            contextId: "session-pickle",
             text: "답변 중",
             originSource: .system,
-            replyKind: .sideCompletion,
-            sessionId: "session-side"
+            replyKind: .pickleCompletion,
+            sessionId: "session-pickle"
         )))
         try await waitUntil { manager.voiceState == .responding }
 
@@ -746,7 +746,7 @@ struct PickyCompanionManagerTests {
         #expect(manager.voiceState != .responding)
     }
 
-    @Test func sideCompletionStaysRespondingWhileTtsIsActive() async throws {
+    @Test func pickleCompletionStaysRespondingWhileTtsIsActive() async throws {
         let speechProvider = FakeSpeechPlaybackProvider()
         let manager = CompanionManager(
             agentClient: FakeVoiceClient(),
@@ -755,11 +755,11 @@ struct PickyCompanionManagerTests {
         )
 
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
-            contextId: "session-side",
+            contextId: "session-pickle",
             text: "긴 답변 진행 중",
             originSource: .system,
-            replyKind: .sideCompletion,
-            sessionId: "session-side"
+            replyKind: .pickleCompletion,
+            sessionId: "session-pickle"
         )))
         try await waitUntil { manager.voiceState == .responding }
 

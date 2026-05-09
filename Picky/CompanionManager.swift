@@ -618,7 +618,7 @@ final class CompanionManager: ObservableObject {
                 try await agentClient.send(PickyCommandEnvelope(type: .listMainAgentModels))
             } catch {
                 await MainActor.run { self.isLoadingMainAgentModelOptions = false }
-                print("⚠️ Failed to list main agent models: \(error.localizedDescription)")
+                print("⚠️ Failed to list Picky models: \(error.localizedDescription)")
             }
         }
     }
@@ -660,27 +660,27 @@ final class CompanionManager: ObservableObject {
                     type: .setDefaultCwd,
                     defaultCwd: settings.defaultCwd.trimmingCharacters(in: .whitespacesAndNewlines)
                 ))
-                print("🎛️ Side agent default cwd applied — \(settings.defaultCwd)")
+                print("🎛️ Pickle default cwd applied — \(settings.defaultCwd)")
             } catch {
-                print("⚠️ Failed to apply side agent default cwd: \(error.localizedDescription)")
+                print("⚠️ Failed to apply Pickle default cwd: \(error.localizedDescription)")
             }
             do {
                 try await agentClient.send(PickyCommandEnvelope(
                     type: .setMainAgentThinkingLevel,
                     mainAgentThinkingLevel: settings.mainAgentThinkingLevel
                 ))
-                print("🎛️ Main agent thinking level applied — \(settings.mainAgentThinkingLevel.rawValue)")
+                print("🎛️ Picky thinking level applied — \(settings.mainAgentThinkingLevel.rawValue)")
             } catch {
-                print("⚠️ Failed to apply main agent thinking level: \(error.localizedDescription)")
+                print("⚠️ Failed to apply Picky thinking level: \(error.localizedDescription)")
             }
             do {
                 try await agentClient.send(PickyCommandEnvelope(
                     type: .setMainAgentModel,
                     mainAgentModelPattern: settings.mainAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
                 ))
-                print("🎛️ Main agent model applied — \(settings.mainAgentModelPattern.isEmpty ? "Pi default" : settings.mainAgentModelPattern)")
+                print("🎛️ Picky model applied — \(settings.mainAgentModelPattern.isEmpty ? "Pi default" : settings.mainAgentModelPattern)")
             } catch {
-                print("⚠️ Failed to apply main agent model: \(error.localizedDescription)")
+                print("⚠️ Failed to apply Picky model: \(error.localizedDescription)")
             }
             do {
                 let effectiveRuntimeMode = AppBundleConfiguration.realtimeOptIn ? settings.mainAgentRuntimeMode : .pi
@@ -688,9 +688,9 @@ final class CompanionManager: ObservableObject {
                     type: .setMainAgentRuntimeMode,
                     mode: effectiveRuntimeMode.agentdEnvironmentValue
                 ))
-                print("🎛️ Main agent runtime mode applied — \(effectiveRuntimeMode.rawValue)")
+                print("🎛️ Picky runtime mode applied — \(effectiveRuntimeMode.rawValue)")
             } catch {
-                print("⚠️ Failed to apply main agent runtime mode: \(error.localizedDescription)")
+                print("⚠️ Failed to apply Picky runtime mode: \(error.localizedDescription)")
             }
             if AppBundleConfiguration.realtimeOptIn, settings.mainAgentRuntimeMode == .openAIRealtime {
                 await configureRealtimeMainAgent(settings: settings)
@@ -701,9 +701,9 @@ final class CompanionManager: ObservableObject {
                     type: .setMainAgentExtraInstructions,
                     mainAgentExtraInstructions: trimmedExtra
                 ))
-                print("🎛️ Main agent extra instructions applied — \(trimmedExtra.count) chars")
+                print("🎛️ Picky extra instructions applied — \(trimmedExtra.count) chars")
             } catch {
-                print("⚠️ Failed to apply main agent extra instructions: \(error.localizedDescription)")
+                print("⚠️ Failed to apply Picky extra instructions: \(error.localizedDescription)")
             }
         }
     }
@@ -711,14 +711,14 @@ final class CompanionManager: ObservableObject {
     private func configureRealtimeMainAgent(settings: PickySettings) async {
         let realtime = settings.openAIRealtime.normalized()
         guard !realtime.apiKey.isEmpty else {
-            print("🎛️ Realtime main agent not configured — API key missing")
+            print("🎛️ Realtime Picky not configured — API key missing")
             return
         }
         let azureConfig: PickyOpenAIRealtimeAzureProtocolConfig?
         let modelOrDeployment: String
         if realtime.provider == .azureOpenAI {
             guard let endpoint = realtime.azureRealtimeEndpointComponents else {
-                print("🎛️ Realtime main agent not configured — Azure Realtime URL missing or invalid")
+                print("🎛️ Realtime Picky not configured — Azure Realtime URL missing or invalid")
                 return
             }
             azureConfig = PickyOpenAIRealtimeAzureProtocolConfig(
@@ -742,9 +742,9 @@ final class CompanionManager: ObservableObject {
                 transcriptionLanguage: realtime.transcriptionLanguage.isEmpty ? nil : realtime.transcriptionLanguage,
                 azure: azureConfig
             ))
-            print("🎛️ Realtime main agent configured — provider: \(realtime.provider.rawValue), model: \(modelOrDeployment)")
+            print("🎛️ Realtime Picky configured — provider: \(realtime.provider.rawValue), model: \(modelOrDeployment)")
         } catch {
-            print("⚠️ Failed to configure Realtime main agent: \(error.localizedDescription)")
+            print("⚠️ Failed to configure Realtime Picky: \(error.localizedDescription)")
         }
     }
 
@@ -803,8 +803,8 @@ final class CompanionManager: ObservableObject {
             // `stopPushToTalkFromKeyboardShortcut` and the subsequent finalize +
             // `submitDraftText` -> `submitTranscriptToPickyAgent` chain), and clearing
             // `voiceFollowUpSessionIDForCurrentUtterance` here would race the response
-            // task into routing voice input to the main agent instead of the hovered
-            // side session. Hover-ID cleanup is handled explicitly on dictation error,
+            // task into routing voice input to Picky instead of the hovered
+            // Pickle. Hover-ID cleanup is handled explicitly on dictation error,
             // capture failure, and at the end of the response task. See the regression
             // test `idleVoicePresentationDoesNotClearPressedHoverIDBeforeSubmit`.
             scheduleTransientHideIfNeeded()
@@ -1113,8 +1113,8 @@ final class CompanionManager: ObservableObject {
         realtimeVoiceInputManager.stop()
         beginAwaitingAgentResponse(recognizedTranscript: currentVoicePromptPreview)
         interactionCoordinator.accept(
-            .agentSubmissionAccepted(contextID: nil, sessionID: "picky-main-agent", inputID: inputID),
-            correlation: PickyInteractionCorrelation(inputID: inputID, sessionID: "picky-main-agent", source: .agent)
+            .agentSubmissionAccepted(contextID: nil, sessionID: "picky", inputID: inputID),
+            correlation: PickyInteractionCorrelation(inputID: inputID, sessionID: "picky", source: .agent)
         )
         let inkCapture = consumePendingInkCapture(inputID: inputID)
         let beginTask = currentResponseTask
@@ -1203,11 +1203,11 @@ final class CompanionManager: ObservableObject {
         voiceFollowUpSessionID: String? = nil
     ) async throws -> PickyAgentSubmissionReceipt {
         if let targetSessionID = normalizedVoiceFollowUpSessionID(voiceFollowUpSessionID) {
-            print("🎙️ Picky voice route — FOLLOW-UP side=\(targetSessionID)")
+            print("🎙️ Picky voice route — FOLLOW-UP Pickle=\(targetSessionID)")
             try await agentClient.send(PickyCommandEnvelope(type: .followUp, context: contextPacket, sessionId: targetSessionID, text: transcript))
             return PickyAgentSubmissionReceipt(sessionID: targetSessionID, message: "")
         }
-        print("🎙️ Picky voice route — SUBMIT main (arg=\(voiceFollowUpSessionID ?? "<nil>") self=\(voiceFollowUpSessionIDForCurrentUtterance ?? "<nil>"))")
+        print("🎙️ Picky voice route — SUBMIT Picky (arg=\(voiceFollowUpSessionID ?? "<nil>") self=\(voiceFollowUpSessionIDForCurrentUtterance ?? "<nil>"))")
         return try await agentClient.submit(PickyAgentSubmission(transcript: transcript, context: contextPacket))
     }
 
@@ -1445,7 +1445,7 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    fileprivate func runFollowUpSideEffect(inputID: UUID, sessionID: String, transcript: String, context: PickyContextPacket) {
+    fileprivate func runFollowUpPickleEffect(inputID: UUID, sessionID: String, transcript: String, context: PickyContextPacket) {
         currentResponseTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -1782,7 +1782,7 @@ final class CompanionManager: ObservableObject {
             voiceState = .responding
         case .failed:
             clearPendingAgentResponseTiming()
-            latestAgentSessionSummary = event.message ?? "Realtime main agent failed"
+            latestAgentSessionSummary = event.message ?? "Realtime Picky failed"
             voiceState = .idle
             realtimeVoiceInputID = nil
             realtimeCanSendAudio = false
@@ -1885,7 +1885,7 @@ final class CompanionManager: ObservableObject {
             do {
                 try await agentClient.send(PickyCommandEnvelope(type: .abortMainAgent))
             } catch {
-                print("⚠️ Failed to abort main agent for voice input: \(error)")
+                print("⚠️ Failed to abort Picky for voice input: \(error)")
             }
         }
     }
@@ -2131,8 +2131,8 @@ private final class CompanionInteractionEffectRunner: PickyInteractionEffectRunn
                 manager?.runCaptureVoiceContextEffect(inputID: inputID, transcript: transcript, targetSessionID: targetSessionID)
             case .submitMain(let inputID, let transcript, let context):
                 manager?.runSubmitMainEffect(inputID: inputID, transcript: transcript, context: context)
-            case .followUpSide(let inputID, let sessionID, let transcript, let context):
-                manager?.runFollowUpSideEffect(inputID: inputID, sessionID: sessionID, transcript: transcript, context: context)
+            case .followUpPickle(let inputID, let sessionID, let transcript, let context):
+                manager?.runFollowUpPickleEffect(inputID: inputID, sessionID: sessionID, transcript: transcript, context: context)
             case .scheduleMinimumDisplay(let timerID, let speechID, let inputID, let delay):
                 manager?.runMinimumDisplayTimerEffect(timerID: timerID, speechID: speechID, inputID: inputID, delay: delay)
             case .speak(let speechID, let text, let contextID):
@@ -2150,7 +2150,7 @@ private final class CompanionInteractionEffectRunner: PickyInteractionEffectRunn
 }
 
 /// Removes parenthesised passages so the TTS layer skips supplementary detail
-/// (URLs, paths, identifiers) that the main agent placed in `(...)`. Handles
+/// (URLs, paths, identifiers) that Picky placed in `(...)`. Handles
 /// both ASCII parentheses and the full-width Korean variants. Visible text
 /// keeps the parentheses intact.
 func stripParentheticalsForSpeech(_ text: String) -> String {

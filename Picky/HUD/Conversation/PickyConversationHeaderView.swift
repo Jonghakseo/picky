@@ -2,7 +2,7 @@
 //  PickyConversationHeaderView.swift
 //  Picky
 //
-//  Header for the conversation-style side-agent card.
+//  Header for the conversation-style Pickle card.
 //
 
 import SwiftUI
@@ -67,7 +67,7 @@ struct PickyConversationHeaderView: View {
     }
 
     var titleHelpText: String {
-        "Use /name <new title> to rename this side agent"
+        "Use /name <new title> to rename this Pickle"
     }
 
     private var conversationMenuButton: some View {

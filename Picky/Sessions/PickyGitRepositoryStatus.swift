@@ -2,7 +2,7 @@
 //  PickyGitRepositoryStatus.swift
 //  Picky
 //
-//  Lightweight git metadata used by the side-agent HUD cards.
+//  Lightweight git metadata used by the Pickle HUD cards.
 //
 
 import Foundation

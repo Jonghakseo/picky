@@ -14,18 +14,18 @@ struct PickySettingsPolishTests {
         statuses.markSaved(.notification)
 
         #expect(statuses[.notification] == .saved)
-        #expect(statuses[.sideAgent] == .idle)
+        #expect(statuses[.pickle] == .idle)
         #expect(statuses[.voice] == .idle)
     }
 
     @Test func companionSettingsSaveStatusResetDoesNotTouchOtherSections() {
         var statuses = CompanionPanelSettingsSaveStatuses()
-        statuses.markDirty(.sideAgent)
+        statuses.markDirty(.pickle)
         statuses.markSaved(.voice)
 
         statuses.clearSaved(.voice)
 
-        #expect(statuses[.sideAgent] == .dirty)
+        #expect(statuses[.pickle] == .dirty)
         #expect(statuses[.voice] == .idle)
     }
 

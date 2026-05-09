@@ -611,7 +611,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   // interactive-mode wires them to /name and /compact slash commands. Picky doesn't run that
   // mode, so we intercept the built-in slash commands here before they would otherwise be
   // forwarded to the LLM as ordinary user text. The synthetic completed/noTurnRan status keeps
-  // higher layers from treating the call as a real agent turn (no side-completion notification,
+  // higher layers from treating the call as a real agent turn (no Pickle-completion notification,
   // no artifact materialization).
   private async handleBuiltinSlashCommand(text: string): Promise<boolean> {
     const trimmed = text.trim();
@@ -739,7 +739,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   // detect that no agent turn was actually started, and report whether we did so to the caller so
   // higher layers (e.g. session-supervisor.steer) can avoid resurrecting the session as `running`.
   // The `noTurnRan: true` marker tells RuntimeEventHandler to release the loading state without
-  // running terminal side effects (notifying the main agent, re-materializing artifacts), since
+  // running terminal side effects (notifying Picky, re-materializing artifacts), since
   // no real agent turn produced any new state to report.
   private maybeEmitImmediateCompletion(wasStreaming: boolean): boolean {
     if (wasStreaming) return false;

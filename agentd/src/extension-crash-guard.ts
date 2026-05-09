@@ -15,7 +15,7 @@ interface CrashOrigin {
 
 /**
  * Inspect an error to decide whether it originated from a pi extension running
- * inside agentd (either a local one under `~/.pi/agent/extensions/` or a
+ * within agentd (either a local one under `~/.pi/agent/extensions/` or a
  * published `pi-extension-*` package), and to extract a human-readable
  * extension identifier for diagnostic logging.
  */

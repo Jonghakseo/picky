@@ -72,7 +72,7 @@ struct PickyUserBubbleView: View {
     private var originLabel: String? {
         switch message.originatedBy {
         case .mainAgent:
-            return "by main agent"
+            return "by Picky"
         case .piExtension:
             return "from Pi extension"
         case .user, nil:

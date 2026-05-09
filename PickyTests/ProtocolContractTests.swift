@@ -78,6 +78,16 @@ struct ProtocolContractTests {
         #expect(decoded.context?.id == "context-test-001")
     }
 
+    @Test func encodesAndDecodesPickleCommand() throws {
+        let command = PickyCommandEnvelope(id: "cmd-pickle", type: .createEmptyPickleSession)
+        let data = try JSONEncoder.pickyAgentProtocolEncoder().encode(command)
+        let encoded = String(data: data, encoding: .utf8)
+        let decoded = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyCommandEnvelope.self, from: data)
+
+        #expect(encoded?.contains("\"type\":\"createEmptyPickleSession\"") == true)
+        #expect(decoded.type == .createEmptyPickleSession)
+    }
+
     @Test func decodesRealtimeProtocolEvents() throws {
         let audioJSON = """
         {
@@ -152,7 +162,7 @@ struct ProtocolContractTests {
           "contextId":"session-1",
           "text":"완료했어요",
           "originSource":"voiceFollowUp",
-          "replyKind":"sideCompletion",
+          "replyKind":"pickleCompletion",
           "sessionId":"session-1"
         }
         """.data(using: .utf8)!
@@ -162,7 +172,7 @@ struct ProtocolContractTests {
             contextId: "session-1",
             text: "완료했어요",
             originSource: .voiceFollowUp,
-            replyKind: .sideCompletion,
+            replyKind: .pickleCompletion,
             sessionId: "session-1"
         )))
     }
@@ -177,7 +187,7 @@ struct ProtocolContractTests {
           "contextId":"context-1",
           "text":"바로 답변",
           "originSource":"voice-follow-up",
-          "replyKind":"side-completion",
+          "replyKind":"pickle-completion",
           "inputId":"not-a-uuid"
         }
         """.data(using: .utf8)!
@@ -187,7 +197,7 @@ struct ProtocolContractTests {
             contextId: "context-1",
             text: "바로 답변",
             originSource: .voiceFollowUp,
-            replyKind: .sideCompletion,
+            replyKind: .pickleCompletion,
             inputId: nil
         )))
     }

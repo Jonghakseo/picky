@@ -354,7 +354,7 @@ final class PickySessionListViewModel: ObservableObject {
         _ = try await client.submit(PickyAgentSubmission(transcript: transcript, context: context))
     }
 
-    func createEmptySideSession(cwd: String) async throws {
+    func createEmptyPickleSession(cwd: String) async throws {
         let trimmedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
         let context = PickyContextPacket(
             id: "context-\(UUID().uuidString)",
@@ -367,11 +367,11 @@ final class PickySessionListViewModel: ObservableObject {
             activeWindow: nil,
             browser: nil,
             screenshots: [],
-            warnings: ["manualSideAgent=true"]
+            warnings: ["manualPickle=true"]
         )
-        pickySessionLog("create empty side session context=\(context.id) cwd=\(context.cwd ?? "none")")
+        pickySessionLog("create empty Pickle session context=\(context.id) cwd=\(context.cwd ?? "none")")
         do {
-            try await client.send(PickyCommandEnvelope(type: .createEmptySideSession, context: context))
+            try await client.send(PickyCommandEnvelope(type: .createEmptyPickleSession, context: context))
             lastError = nil
         } catch {
             lastError = error.localizedDescription
@@ -379,14 +379,14 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    /// Forks the side-agent session at `sessionID` into a brand-new sibling that resumes from a
+    /// Forks the Pickle session at `sessionID` into a brand-new sibling that resumes from a
     /// snapshot of its Pi transcript. Daemon-side rejects when the source has no Pi session file
     /// or is not yet attached to a runtime; we surface that error via `lastError` like the rest
     /// of the lifecycle commands here.
     func duplicate(sessionID: String) async throws {
         pickySessionLog("duplicate session=\(sessionID)")
         do {
-            try await client.send(PickyCommandEnvelope(type: .duplicateSession, sessionId: sessionID))
+            try await client.send(PickyCommandEnvelope(type: .duplicatePickleSession, sessionId: sessionID))
             lastError = nil
         } catch {
             lastError = error.localizedDescription
@@ -681,7 +681,7 @@ final class PickySessionListViewModel: ObservableObject {
             lastError = PickySessionListViewModelError.missingPiSessionFile.localizedDescription
             return
         }
-        // Earlier history pill stays clickable while the side-agent is still working: the overlay
+        // Earlier history pill stays clickable while the Pickle is still working: the overlay
         // launches its own `pi --session` process against the on-disk session file, so the user
         // gets a read view of the running transcript even though the daemon is still writing.
 

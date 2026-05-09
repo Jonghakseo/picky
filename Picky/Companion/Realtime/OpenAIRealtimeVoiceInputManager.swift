@@ -4,8 +4,8 @@
 //
 //  Main-agent-only microphone streaming for OpenAI/Azure OpenAI Realtime.
 //  This class is intentionally separate from BuddyDictationManager so the
-//  existing Pi STT -> Pi main/side flow remains untouched unless the user opts
-//  into the Realtime main runtime and the utterance is not a side-hover follow-up.
+//  existing Pi STT -> Picky/Pickle flow remains untouched unless the user opts
+//  into the Realtime main runtime and the utterance is not a Pickle-hover follow-up.
 //
 
 import AVFoundation

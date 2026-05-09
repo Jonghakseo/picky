@@ -337,7 +337,7 @@ struct BlueCursorView: View {
 
             // Voice prompt bubble — once the push-to-talk button is released,
             // keep the recognized user prompt visible while Picky is preparing
-            // and waiting for the main agent response.
+            // and waiting for the Picky response.
             if isCursorOnThisScreen,
                overlayBubblePreferencesStore.preferences.showUserSpeechRecognitionBubble,
                companionManager.voicePromptBubbleState.isVisible {

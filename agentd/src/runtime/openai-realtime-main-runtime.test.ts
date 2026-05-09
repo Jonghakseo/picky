@@ -125,6 +125,9 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     const sessionUpdate = sent.find((event) => event.type === "session.update")!;
     const toolNames = sessionUpdate.session.tools.map((tool: Record<string, unknown>) => tool.name);
 
+    expect(toolNames).toContain("picky_start_pickle");
+    expect(toolNames).toContain("picky_pickle_sessions");
+    expect(toolNames).toContain("picky_steer_pickle");
     expect(toolNames).toContain("picky_skills_search");
     expect(toolNames).toContain("picky_skill_details");
     expect(toolNames).not.toContain("picky_pointer_overlay");
@@ -170,10 +173,10 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     const runtime = new OpenAIRealtimeMainRuntime({
       toolHandlers: {
         ...fakeToolHandlers(),
-        async steerSideSession() {
+        async steerPickleSession() {
           return {
-            id: "side-1",
-            title: "Side 1",
+            id: "pickle-1",
+            title: "Pickle 1",
             status: "running",
             cwd: "/tmp/project",
             createdAt: "2026-05-09T00:00:00.000Z",
@@ -216,7 +219,7 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     });
 
     await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
-    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_side_steer", call_id: "call-steer", arguments: JSON.stringify({ sessionId: "side-1", message: "continue" }) } });
+    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_steer_pickle", call_id: "call-steer", arguments: JSON.stringify({ sessionId: "pickle-1", message: "continue" }) } });
     socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_skills_search", call_id: "call-search", arguments: JSON.stringify({ query: "debug" }) } });
     socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_skill_details", call_id: "call-details", arguments: JSON.stringify({ name: "debug" }) } });
     await settle();
@@ -226,7 +229,7 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
       .filter((event) => event.type === "conversation.item.create" && event.item?.type === "function_call_output")
       .map((event) => [event.item.call_id, JSON.parse(event.item.output)]));
 
-    expect(outputs["call-steer"]).toEqual({ id: "side-1", title: "Side 1", status: "running", cwd: "/tmp/project" });
+    expect(outputs["call-steer"]).toEqual({ id: "pickle-1", title: "Pickle 1", status: "running", cwd: "/tmp/project" });
     expect(JSON.stringify(outputs["call-steer"])).not.toContain("summary should not be returned");
     expect(outputs["call-search"]).toEqual({ total: 1, skills: [{ name: "debug", description: "Debug workflow", match: "matched snippet" }] });
     expect(JSON.stringify(outputs["call-search"])).not.toContain("/tmp/skills/debug/SKILL.md");
@@ -236,17 +239,17 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(outputs["call-details"]).not.toHaveProperty("match");
   });
 
-  it("returns a minimal side session list with only id, title, cwd, and last message", async () => {
+  it("returns a minimal Pickle session list with only id, title, cwd, and last message", async () => {
     const socket = new FakeRealtimeSocket();
     let listCalls = 0;
     const runtime = new OpenAIRealtimeMainRuntime({
       toolHandlers: {
         ...fakeToolHandlers(),
-        listSideSessions() {
+        listPickleSessions() {
           listCalls += 1;
           return Array.from({ length: 6 }, (_, index) => ({
-            id: `side-${index + 1}`,
-            title: `Side ${index + 1}`,
+            id: `pickle-${index + 1}`,
+            title: `Pickle ${index + 1}`,
             status: index % 2 === 0 ? "running" : "completed",
             cwd: "/tmp/project",
             createdAt: "2026-05-09T00:00:00.000Z",
@@ -277,8 +280,8 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
       type: "response.output_item.done",
       item: {
         type: "function_call",
-        name: "picky_side_sessions",
-        call_id: "call-side-sessions",
+        name: "picky_pickle_sessions",
+        call_id: "call-pickle-sessions",
         arguments: JSON.stringify({ includeTerminal: false, page: 1, limit: 2 }),
       },
     });
@@ -290,8 +293,8 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
 
     expect(listCalls).toBe(1);
     expect(payload.sessions).toEqual([
-      { id: "side-1", title: "Side 1", cwd: "/tmp/project", lastMessage: "Last message 1" },
-      { id: "side-3", title: "Side 3", cwd: "/tmp/project", lastMessage: "Last message 3" },
+      { id: "pickle-1", title: "Pickle 1", cwd: "/tmp/project", lastMessage: "Last message 1" },
+      { id: "pickle-3", title: "Pickle 3", cwd: "/tmp/project", lastMessage: "Last message 3" },
     ]);
     expect(payload.total).toBe(3);
     expect(payload.hasMore).toBe(true);
@@ -303,13 +306,13 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(output.item.output).not.toContain("older message should not be returned");
   });
 
-  it("executes each realtime function call only once when GA emits multiple done events", async () => {
+  it("accepts legacy realtime Pickle tool names from existing transcripts", async () => {
     const socket = new FakeRealtimeSocket();
     let listCalls = 0;
     const runtime = new OpenAIRealtimeMainRuntime({
       toolHandlers: {
         ...fakeToolHandlers(),
-        listSideSessions() {
+        listPickleSessions() {
           listCalls += 1;
           return [];
         },
@@ -324,8 +327,35 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     });
 
     await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
-    socket.serverEvent({ type: "response.function_call_arguments.done", call_id: "call-dup", name: "picky_side_sessions", arguments: "{}" });
-    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_side_sessions", call_id: "call-dup", arguments: "{}" } });
+    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_pickle_sessions", call_id: "call-list", arguments: "{}" } });
+    await settle();
+
+    expect(listCalls).toBe(1);
+  });
+
+  it("executes each realtime function call only once when GA emits multiple done events", async () => {
+    const socket = new FakeRealtimeSocket();
+    let listCalls = 0;
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        ...fakeToolHandlers(),
+        listPickleSessions() {
+          listCalls += 1;
+          return [];
+        },
+      },
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    socket.serverEvent({ type: "response.function_call_arguments.done", call_id: "call-dup", name: "picky_pickle_sessions", arguments: "{}" });
+    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_pickle_sessions", call_id: "call-dup", arguments: "{}" } });
     await settle();
 
     const outputEvents = socket.sent
@@ -347,13 +377,13 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
       },
       webSocketFactory: () => socket,
     });
-    const handle = await runtime.prewarm({ sessionId: "picky-main-agent" });
+    const handle = await runtime.prewarm({ sessionId: "picky" });
     const events: Array<any> = [];
     handle.subscribe((event) => events.push(event));
 
     await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
     socket.serverEvent({ type: "response.output_audio_transcript.delta", delta: "조회 중" });
-    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_side_sessions", call_id: "call-tool", arguments: "{}" } });
+    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_pickle_sessions", call_id: "call-tool", arguments: "{}" } });
     socket.serverEvent({ type: "response.done", response: { status: "completed", output: [{ type: "function_call", call_id: "call-tool" }] } });
     socket.serverEvent({ type: "response.output_audio_transcript.delta", delta: "완료" });
     socket.serverEvent({ type: "response.done", response: { status: "completed", output: [{ type: "message" }] } });
@@ -568,8 +598,8 @@ class FakeRealtimeSocket implements RealtimeWebSocketLike {
 
 function fakeToolHandlers() {
   const session: PickyAgentSession = {
-    id: "side",
-    title: "Side",
+    id: "pickle",
+    title: "Pickle",
     status: "completed",
     cwd: "/tmp",
     createdAt: "2026-05-09T00:00:00.000Z",
@@ -580,9 +610,9 @@ function fakeToolHandlers() {
     changedFiles: [],
   };
   return {
-    async handoff() { return { sessionId: "side", title: "Side" }; },
-    listSideSessions() { return []; },
-    async steerSideSession() { return session; },
+    async handoff() { return { sessionId: "pickle", title: "Pickle" }; },
+    listPickleSessions() { return []; },
+    async steerPickleSession() { return session; },
     async searchSkills() { return { query: "", root: "/tmp/skills", total: 1, skills: [{ name: "debug", description: "Debug", path: "/tmp/skills/debug/SKILL.md" }] }; },
     async getSkillDetails() { return { name: "debug", description: "Debug", path: "/tmp/skills/debug/SKILL.md", frontmatter: { name: "debug" }, content: "---\nname: debug\n---\n" }; },
   };

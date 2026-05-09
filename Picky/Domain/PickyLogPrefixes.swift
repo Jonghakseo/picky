@@ -8,6 +8,6 @@
 enum PickyLogPrefixes {
     static let steer = "steer: "
     static let followUp = "follow-up: "
-    static let handoff = "main-agent handoff: "
+    static let handoff = "Picky handoff: "
     static let extensionAnswer = "extension ui answer: "
 }

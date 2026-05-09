@@ -123,8 +123,9 @@ enum PickyModelCycleDirection: String, Codable, Equatable {
 enum PickyCommandType: String, Codable, Equatable {
     case routeTask
     case createTask
-    case createEmptySideSession
-    case duplicateSession
+    case createEmptyPickleSession
+    case duplicatePickleSession
+    case pinPickleSession
     case clearQueue
     case syncTerminalSession
     case followUp
@@ -152,6 +153,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case answerExtensionUi
     case setNotifyMainOnCompletion
     case setSessionArchived
+
 }
 
 struct PickyEventEnvelope: Decodable, Equatable {

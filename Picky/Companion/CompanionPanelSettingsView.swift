@@ -16,7 +16,7 @@ import SwiftUI
 
 enum CompanionPanelSettingsSection: CaseIterable, Hashable {
     case mainAgent
-    case sideAgent
+    case pickle
     case notification
     case cursorBubbles
     case voice
@@ -30,7 +30,7 @@ enum CompanionPanelSettingsSection: CaseIterable, Hashable {
 enum CompanionPanelSettingsRoute: Hashable {
     case index
     case mainAgent
-    case sideAgent
+    case pickle
     case notification
     case cursorBubbles
     case voice
@@ -40,7 +40,7 @@ enum CompanionPanelSettingsRoute: Hashable {
         switch self {
         case .index: nil
         case .mainAgent: .mainAgent
-        case .sideAgent: .sideAgent
+        case .pickle: .pickle
         case .notification: .notification
         case .cursorBubbles: .cursorBubbles
         case .voice: .voice
@@ -51,8 +51,8 @@ enum CompanionPanelSettingsRoute: Hashable {
     var title: String {
         switch self {
         case .index: "Settings"
-        case .mainAgent: "Main Agent"
-        case .sideAgent: "Side Agent"
+        case .mainAgent: "Picky"
+        case .pickle: "Pickle"
         case .notification: "Notification"
         case .cursorBubbles: "Cursor & Bubbles"
         case .voice: "Voice (STT & TTS)"
@@ -64,7 +64,7 @@ enum CompanionPanelSettingsRoute: Hashable {
         switch self {
         case .index: nil
         case .mainAgent: "Runtime, cwd, reasoning, and captured screen context."
-        case .sideAgent: "Default folder for side sessions."
+        case .pickle: "Default folder for Pickles."
         case .notification: "Banners for session events."
         case .cursorBubbles: "Pi cursor visibility, small animations, and speech bubbles."
         case .voice: "Speech providers and language."
@@ -77,7 +77,7 @@ enum CompanionPanelSettingsRoute: Hashable {
 /// the enum so we can rearrange without disturbing the type.
 private let companionPanelSettingsRouteOrder: [CompanionPanelSettingsRoute] = [
     .mainAgent,
-    .sideAgent,
+    .pickle,
     .notification,
     .cursorBubbles,
     .voice,
@@ -126,7 +126,7 @@ struct CompanionPanelSettingsView: View {
     @ObservedObject var viewModel: PickySettingsViewModel
     @ObservedObject var companionManager: CompanionManager
     @State private var mainAgentCwdDraft: String = ""
-    @State private var sideAgentCwdDraft: String = ""
+    @State private var pickleCwdDraft: String = ""
     @State private var azureSTTEndpointDraft: String = ""
     @State private var azureSTTAPIKeyDraft: String = ""
     @State private var azureTTSEndpointDraft: String = ""
@@ -153,7 +153,7 @@ struct CompanionPanelSettingsView: View {
         .animation(.easeOut(duration: 0.16), value: route)
         .onAppear {
             mainAgentCwdDraft = viewModel.settings.mainAgentCwd
-            sideAgentCwdDraft = viewModel.settings.defaultCwd
+            pickleCwdDraft = viewModel.settings.defaultCwd
             syncAzureDrafts()
         }
         .onChange(of: viewModel.settings.notifications) { _, _ in
@@ -175,7 +175,7 @@ struct CompanionPanelSettingsView: View {
         switch route {
         case .index: indexView
         case .mainAgent: mainAgentSection
-        case .sideAgent: sideAgentSection
+        case .pickle: pickleSection
         case .notification: notificationSection
         case .cursorBubbles: cursorBubblesSection
         case .voice: voiceSection
@@ -244,18 +244,18 @@ struct CompanionPanelSettingsView: View {
         }
     }
 
-    private var sideAgentSection: some View {
-        sectionHeader(section: .sideAgent, title: "Side Agent") {
+    private var pickleSection: some View {
+        sectionHeader(section: .pickle, title: "Pickle") {
             VStack(alignment: .leading, spacing: 6) {
                 fieldLabel("Default cwd")
                 cwdField(
                     placeholder: "~/",
-                    text: $sideAgentCwdDraft,
+                    text: $pickleCwdDraft,
                     onChange: { newValue in
-                        updateDraftStatus(for: .sideAgent, isDirty: newValue != viewModel.settings.defaultCwd)
+                        updateDraftStatus(for: .pickle, isDirty: newValue != viewModel.settings.defaultCwd)
                     },
-                    onSubmit: commitSideAgentCwdField,
-                    onChoose: chooseSideAgentDirectory
+                    onSubmit: commitPickleCwdField,
+                    onChoose: choosePickleDirectory
                 )
             }
         }
@@ -310,10 +310,10 @@ struct CompanionPanelSettingsView: View {
     }
 
     private var mainAgentSection: some View {
-        sectionHeader(section: .mainAgent, title: "Main Agent", subtitle: "Runtime, cwd, reasoning, captured screens, and standing instructions.") {
+        sectionHeader(section: .mainAgent, title: "Picky", subtitle: "Runtime, cwd, reasoning, captured screens, and standing instructions.") {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 6) {
-                    fieldLabel("Main Agent cwd")
+                    fieldLabel("Picky cwd")
                     cwdField(
                         placeholder: "~/",
                         text: $mainAgentCwdDraft,
@@ -323,7 +323,7 @@ struct CompanionPanelSettingsView: View {
                         onSubmit: commitMainAgentCwdField,
                         onChoose: chooseMainAgentDirectory
                     )
-                    Text("Applies to captured main-agent context and the next main-agent session.")
+                    Text("Applies to captured Picky context and the next Picky session.")
                         .font(.system(size: 10.5, weight: .medium))
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -343,8 +343,8 @@ struct CompanionPanelSettingsView: View {
                         .onChange(of: viewModel.settings.mainAgentRuntimeMode) { _, _ in saveImmediately(for: .mainAgent) }
 
                         Text(viewModel.settings.mainAgentRuntimeMode == .openAIRealtime
-                             ? "Main-agent voice uses OpenAI/Azure Realtime audio. Side-hover voice follow-ups still go directly to side Pi agents."
-                             : "Default local Pi main-agent flow. Existing STT/TTS providers are unchanged.")
+                             ? "Picky voice uses OpenAI/Azure Realtime audio. Pickle-hover voice follow-ups still go directly to Pickles."
+                             : "Default local Pi Picky flow. Existing STT/TTS providers are unchanged.")
                             .font(.system(size: 10.5, weight: .medium))
                             .foregroundColor(DS.Colors.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -387,7 +387,7 @@ struct CompanionPanelSettingsView: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     fieldLabel("Additional instructions")
-                    Text("Baked into the main-agent bootstrap. Edits apply on the next main-agent session — reset the main agent or relaunch Picky to pick up changes mid-session.")
+                    Text("Baked into the Picky bootstrap. Edits apply on the next Picky session — reset Picky or relaunch Picky to pick up changes mid-session.")
                         .font(.system(size: 11))
                         .foregroundColor(DS.Colors.textTertiary)
                     TextEditor(text: $viewModel.settings.mainAgentExtraInstructions)
@@ -434,7 +434,7 @@ struct CompanionPanelSettingsView: View {
             .onChange(of: viewModel.settings.mainAgentModelPattern) { _, _ in saveImmediately(for: .mainAgent) }
             .task { companionManager.refreshMainAgentModelOptions() }
 
-            Text("Choose Automatic to follow Pi settings, or pick a model to pin the Picky main agent. Reasoning level below is applied with the pinned model.")
+            Text("Choose Automatic to follow Pi settings, or pick a model to pin Picky. Reasoning level below is applied with the pinned model.")
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -848,8 +848,8 @@ struct CompanionPanelSettingsView: View {
         switch section {
         case .mainAgent:
             commitMainAgentCwdField()
-        case .sideAgent:
-            commitSideAgentCwdField()
+        case .pickle:
+            commitPickleCwdField()
         case .notification:
             saveImmediately(for: .notification)
         case .cursorBubbles:
@@ -892,9 +892,9 @@ struct CompanionPanelSettingsView: View {
         saveImmediately(for: .mainAgent)
     }
 
-    private func commitSideAgentCwdField() {
-        viewModel.settings.defaultCwd = sideAgentCwdDraft
-        saveImmediately(for: .sideAgent)
+    private func commitPickleCwdField() {
+        viewModel.settings.defaultCwd = pickleCwdDraft
+        saveImmediately(for: .pickle)
     }
 
     private func commitAzureField() {
@@ -914,10 +914,10 @@ struct CompanionPanelSettingsView: View {
         }
     }
 
-    private func chooseSideAgentDirectory() {
-        chooseDirectory(initialPath: sideAgentCwdDraft) { url in
-            sideAgentCwdDraft = url.path
-            commitSideAgentCwdField()
+    private func choosePickleDirectory() {
+        chooseDirectory(initialPath: pickleCwdDraft) { url in
+            pickleCwdDraft = url.path
+            commitPickleCwdField()
         }
     }
 
@@ -957,8 +957,8 @@ struct CompanionPanelSettingsView: View {
         switch section {
         case .mainAgent:
             mainAgentCwdDraft = viewModel.settings.mainAgentCwd
-        case .sideAgent:
-            sideAgentCwdDraft = viewModel.settings.defaultCwd
+        case .pickle:
+            pickleCwdDraft = viewModel.settings.defaultCwd
         case .notification, .cursorBubbles, .shortcuts:
             break
         case .voice:

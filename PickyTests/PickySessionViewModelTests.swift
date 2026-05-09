@@ -832,12 +832,17 @@ struct PickySessionViewModelTests {
         )
     }
 
-    @Test func hudDockSideSwitchesAtVisibleFrameMidpoint() throws {
+    @Test func hudDockSideUsesFortySixtySnapHysteresis() throws {
         let visibleFrame = CGRect(x: 100, y: 0, width: 1200, height: 800)
+        let snapLeftX = visibleFrame.minX + visibleFrame.width * PickyHUDDockLayout.dockSideSnapLeftThreshold
+        let snapRightX = visibleFrame.minX + visibleFrame.width * PickyHUDDockLayout.dockSideSnapRightThreshold
 
-        #expect(PickyHUDDockLayout.dockSide(forDockRailCenterX: visibleFrame.midX - 0.1, visibleFrame: visibleFrame) == .left)
-        #expect(PickyHUDDockLayout.dockSide(forDockRailCenterX: visibleFrame.midX, visibleFrame: visibleFrame) == .right)
-        #expect(PickyHUDDockLayout.dockSide(forDockRailCenterX: visibleFrame.midX + 0.1, visibleFrame: visibleFrame) == .right)
+        #expect(PickyHUDDockLayout.dockSide(forDockRailCenterX: snapLeftX - 0.1, visibleFrame: visibleFrame, currentSide: .right) == .left)
+        #expect(PickyHUDDockLayout.dockSide(forDockRailCenterX: snapLeftX, visibleFrame: visibleFrame, currentSide: .right) == .right)
+        #expect(PickyHUDDockLayout.dockSide(forDockRailCenterX: visibleFrame.midX, visibleFrame: visibleFrame, currentSide: .left) == .left)
+        #expect(PickyHUDDockLayout.dockSide(forDockRailCenterX: visibleFrame.midX, visibleFrame: visibleFrame, currentSide: .right) == .right)
+        #expect(PickyHUDDockLayout.dockSide(forDockRailCenterX: snapRightX, visibleFrame: visibleFrame, currentSide: .left) == .left)
+        #expect(PickyHUDDockLayout.dockSide(forDockRailCenterX: snapRightX + 0.1, visibleFrame: visibleFrame, currentSide: .left) == .right)
     }
 
     @Test func hudDockXOffsetKeepsRailCenterContinuousAcrossSides() throws {

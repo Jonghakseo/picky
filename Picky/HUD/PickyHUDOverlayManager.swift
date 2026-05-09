@@ -488,7 +488,8 @@ final class PickyHUDOverlayManager {
         ) + delta.x
         pos.side = PickyHUDDockLayout.dockSide(
             forDockRailCenterX: draggedDockCenterX,
-            visibleFrame: visibleFrame
+            visibleFrame: visibleFrame,
+            currentSide: pos.side
         )
         pos.xOffset = PickyHUDDockLayout.xOffset(
             forDockRailCenterX: draggedDockCenterX,

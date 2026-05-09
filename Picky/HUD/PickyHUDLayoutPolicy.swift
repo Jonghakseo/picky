@@ -225,8 +225,19 @@ enum PickyHUDDockLayout {
         }
     }
 
-    static func dockSide(forDockRailCenterX dockRailCenterX: CGFloat, visibleFrame: CGRect) -> PickyHUDDockSide {
-        dockRailCenterX < visibleFrame.midX ? .left : .right
+    static let dockSideSnapLeftThreshold: CGFloat = 0.40
+    static let dockSideSnapRightThreshold: CGFloat = 0.60
+
+    static func dockSide(
+        forDockRailCenterX dockRailCenterX: CGFloat,
+        visibleFrame: CGRect,
+        currentSide: PickyHUDDockSide
+    ) -> PickyHUDDockSide {
+        guard visibleFrame.width > 0 else { return currentSide }
+        let relativeX = (dockRailCenterX - visibleFrame.minX) / visibleFrame.width
+        if relativeX < dockSideSnapLeftThreshold { return .left }
+        if relativeX > dockSideSnapRightThreshold { return .right }
+        return currentSide
     }
 
     static func xOffset(

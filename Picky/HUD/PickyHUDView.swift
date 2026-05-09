@@ -114,12 +114,16 @@ struct PickyHUDView: View {
         // top edge. The conversation card sits inward from the dock side, keeping the
         // rail pinned to the chosen screen edge whether the dock is left or right.
         HStack(alignment: .top, spacing: PickyHUDDockLayout.panelGap) {
+            if placement.dockSide == .right {
+                conversationCard
+            }
+            // Keep the dock rail at a stable syntactic position in the SwiftUI tree.
+            // When the handle drag crosses the snap threshold, only the optional
+            // conversation-card side changes; the AppKit-backed handle view that owns
+            // the active mouse drag stays alive instead of being recreated mid-drag.
+            dockRail
             if placement.dockSide == .left {
-                dockRail
                 conversationCard
-            } else {
-                conversationCard
-                dockRail
             }
         }
         .padding(.horizontal, PickyHUDExpansion.outerPadding)

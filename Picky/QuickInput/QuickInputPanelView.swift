@@ -14,10 +14,12 @@ import SwiftUI
 enum QuickInputPanelLayout {
     static let pillWidth: CGFloat = 360
     static let capsuleHeight: CGFloat = 44
-    static let mainShadowRadius: CGFloat = 9
-    static let mainShadowYOffset: CGFloat = 5
-    static let tightShadowRadius: CGFloat = 1.5
-    static let tightShadowYOffset: CGFloat = 0.5
+    static let mainShadowOpacity: Double = 0.08
+    static let mainShadowRadius: CGFloat = 4
+    static let mainShadowYOffset: CGFloat = 2
+    static let tightShadowOpacity: Double = 0.04
+    static let tightShadowRadius: CGFloat = 0.8
+    static let tightShadowYOffset: CGFloat = 0.3
     static var shadowOutset: CGFloat {
         mainShadowRadius + abs(mainShadowYOffset)
     }
@@ -81,13 +83,13 @@ struct QuickInputPanelView: View {
                             .stroke(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
                     )
                     .shadow(
-                        color: Color.black.opacity(0.15),
+                        color: Color.black.opacity(QuickInputPanelLayout.mainShadowOpacity),
                         radius: QuickInputPanelLayout.mainShadowRadius,
                         x: 0,
                         y: QuickInputPanelLayout.mainShadowYOffset
                     )
                     .shadow(
-                        color: Color.black.opacity(0.08),
+                        color: Color.black.opacity(QuickInputPanelLayout.tightShadowOpacity),
                         radius: QuickInputPanelLayout.tightShadowRadius,
                         x: 0,
                         y: QuickInputPanelLayout.tightShadowYOffset

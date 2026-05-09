@@ -11,15 +11,15 @@ enum PickyHUDExpansion {
     static let duration: TimeInterval = 0.22
     static let panelShrinkDelay: TimeInterval = duration + 0.03
     static let animation = Animation.easeInOut(duration: duration)
-    static let outerPadding: CGFloat = 16
-    static let dockShadowOpacity = 0.20
-    static let dockShadowRadius: CGFloat = 12
-    static let dockShadowYOffset: CGFloat = 10
+    static let outerPadding: CGFloat = 11
+    static let dockShadowOpacity = 0.14
+    static let dockShadowRadius: CGFloat = 8
+    static let dockShadowYOffset: CGFloat = 6
     // SwiftUI shadows are drawn outside layout bounds. Give the transparent NSPanel
     // explicit chrome bleed so the dock's blur tail is not clipped at the hosting
     // view edge. Vertical bleed is asymmetric because the main shadow is offset down.
-    static let dockShadowHorizontalExtraBleed: CGFloat = 4
-    static let dockShadowVerticalExtraBleed: CGFloat = 8
+    static let dockShadowHorizontalExtraBleed: CGFloat = 3
+    static let dockShadowVerticalExtraBleed: CGFloat = 5
     static var dockShadowHorizontalPadding: CGFloat {
         dockShadowRadius + dockShadowHorizontalExtraBleed
     }
@@ -40,9 +40,9 @@ enum PickyHUDExpansion {
     static var dockShadowVerticalPadding: CGFloat {
         dockShadowTopPadding + dockShadowBottomPadding
     }
-    static let dockTightShadowOpacity = 0.10
-    static let dockTightShadowRadius: CGFloat = 3
-    static let dockTightShadowYOffset: CGFloat = 1
+    static let dockTightShadowOpacity = 0.06
+    static let dockTightShadowRadius: CGFloat = 1.5
+    static let dockTightShadowYOffset: CGFloat = 0.5
     static let cardShadowOpacity = 0.12
     static let cardShadowRadius: CGFloat = 8
     static let cardShadowYOffset: CGFloat = 4

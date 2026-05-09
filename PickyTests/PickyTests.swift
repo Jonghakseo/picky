@@ -73,10 +73,12 @@ struct PickyTests {
     }
 
     @Test func quickInputPanelUsesCompactShadowOutset() throws {
-        #expect(QuickInputPanelLayout.mainShadowRadius == 9)
-        #expect(QuickInputPanelLayout.mainShadowYOffset == 5)
-        #expect(QuickInputPanelLayout.tightShadowRadius == 1.5)
-        #expect(QuickInputPanelLayout.tightShadowYOffset == 0.5)
+        #expect(QuickInputPanelLayout.mainShadowOpacity == 0.08)
+        #expect(QuickInputPanelLayout.mainShadowRadius == 4)
+        #expect(QuickInputPanelLayout.mainShadowYOffset == 2)
+        #expect(QuickInputPanelLayout.tightShadowOpacity == 0.04)
+        #expect(QuickInputPanelLayout.tightShadowRadius == 0.8)
+        #expect(QuickInputPanelLayout.tightShadowYOffset == 0.3)
         #expect(QuickInputPanelLayout.shadowOutset == QuickInputPanelLayout.mainShadowRadius + abs(QuickInputPanelLayout.mainShadowYOffset))
         #expect(QuickInputPanelLayout.panelWidth == QuickInputPanelLayout.pillWidth + QuickInputPanelLayout.shadowOutset * 2)
         #expect(QuickInputPanelLayout.estimatedPanelHeight == QuickInputPanelLayout.capsuleHeight + QuickInputPanelLayout.shadowOutset * 2)

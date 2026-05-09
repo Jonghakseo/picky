@@ -16,16 +16,22 @@
 			containerPortal = 28F22CB72F56440300A0FC59 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 28F22CBE2F56440300A0FC59;
-			remoteInfo = "Picky";
+			remoteInfo = Picky;
 		};
 		28F22CD72F56440300A0FC59 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 28F22CB72F56440300A0FC59 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 28F22CBE2F56440300A0FC59;
-			remoteInfo = "Picky";
+			remoteInfo = Picky;
 		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		28F22CBF2F56440300A0FC59 /* Picky.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Picky.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		28F22CCC2F56440300A0FC59 /* PickyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PickyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		28F22CD62F56440300A0FC59 /* PickyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PickyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
 		28F22CE92F56440300A0FC59 /* Exceptions for "Picky" folder in "Picky" target */ = {
@@ -37,29 +43,23 @@
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
-/* Begin PBXFileReference section */
-		28F22CBF2F56440300A0FC59 /* Picky.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Picky.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		28F22CCC2F56440300A0FC59 /* PickyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "PickyTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		28F22CD62F56440300A0FC59 /* PickyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "PickyUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-/* End PBXFileReference section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		28F22CC12F56440300A0FC59 /* Picky */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				28F22CE92F56440300A0FC59 /* Exceptions for "Picky" folder in "Picky" target */,
 			);
-			path = "Picky";
+			path = Picky;
 			sourceTree = "<group>";
 		};
 		28F22CCF2F56440300A0FC59 /* PickyTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "PickyTests";
+			path = PickyTests;
 			sourceTree = "<group>";
 		};
 		28F22CD92F56440300A0FC59 /* PickyUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "PickyUITests";
+			path = PickyUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -128,11 +128,11 @@
 			fileSystemSynchronizedGroups = (
 				28F22CC12F56440300A0FC59 /* Picky */,
 			);
-			name = "Picky";
+			name = Picky;
 			packageProductDependencies = (
 				FA606A6D792443B3BC19DE3C /* SwiftTerm */,
 			);
-			productName = "Picky";
+			productName = Picky;
 			productReference = 28F22CBF2F56440300A0FC59 /* Picky.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -152,10 +152,10 @@
 			fileSystemSynchronizedGroups = (
 				28F22CCF2F56440300A0FC59 /* PickyTests */,
 			);
-			name = "PickyTests";
+			name = PickyTests;
 			packageProductDependencies = (
 			);
-			productName = "PickyTests";
+			productName = PickyTests;
 			productReference = 28F22CCC2F56440300A0FC59 /* PickyTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
@@ -175,10 +175,10 @@
 			fileSystemSynchronizedGroups = (
 				28F22CD92F56440300A0FC59 /* PickyUITests */,
 			);
-			name = "PickyUITests";
+			name = PickyUITests;
 			packageProductDependencies = (
 			);
-			productName = "PickyUITests";
+			productName = PickyUITests;
 			productReference = 28F22CD62F56440300A0FC59 /* PickyUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
@@ -289,25 +289,6 @@
 			targetProxy = 28F22CD72F56440300A0FC59 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		13D3B18451574315A6DBCBB2 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		FA606A6D792443B3BC19DE3C /* SwiftTerm */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 13D3B18451574315A6DBCBB2 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
-			productName = SwiftTerm;
-		};
-/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		28F22CDE2F56440300A0FC59 /* Debug */ = {
@@ -435,8 +416,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "Picky/Picky.entitlements";
 				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGN_ENTITLEMENTS = Picky/Picky.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -447,7 +428,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Picky/Info.plist";
+				INFOPLIST_FILE = Picky/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Picky;
 				INFOPLIST_KEY_CFBundleName = Picky;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -457,7 +438,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.jonghakseo.picky";
+				PRODUCT_BUNDLE_IDENTIFIER = com.jonghakseo.picky;
 				PRODUCT_NAME = Picky;
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -474,8 +455,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "Picky/Picky.entitlements";
 				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGN_ENTITLEMENTS = Picky/Picky.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -486,7 +467,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Picky/Info.plist";
+				INFOPLIST_FILE = Picky/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Picky;
 				INFOPLIST_KEY_CFBundleName = Picky;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -496,7 +477,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.jonghakseo.picky";
+				PRODUCT_BUNDLE_IDENTIFIER = com.jonghakseo.picky;
 				PRODUCT_NAME = Picky;
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -519,7 +500,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.jonghakseo.picky.tests";
+				PRODUCT_BUNDLE_IDENTIFIER = com.jonghakseo.picky.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -541,7 +522,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.jonghakseo.picky.tests";
+				PRODUCT_BUNDLE_IDENTIFIER = com.jonghakseo.picky.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -561,14 +542,14 @@
 				DEVELOPMENT_TEAM = 6D7X9GGZAW;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.jonghakseo.picky.uitests";
+				PRODUCT_BUNDLE_IDENTIFIER = com.jonghakseo.picky.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "Picky";
+				TEST_TARGET_NAME = Picky;
 			};
 			name = Debug;
 		};
@@ -581,14 +562,14 @@
 				DEVELOPMENT_TEAM = 6D7X9GGZAW;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.jonghakseo.picky.uitests";
+				PRODUCT_BUNDLE_IDENTIFIER = com.jonghakseo.picky.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "Picky";
+				TEST_TARGET_NAME = Picky;
 			};
 			name = Release;
 		};
@@ -634,9 +615,22 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		13D3B18451574315A6DBCBB2 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		FA606A6D792443B3BC19DE3C /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 13D3B18451574315A6DBCBB2 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
+		};
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 28F22CB72F56440300A0FC59 /* Project object */;

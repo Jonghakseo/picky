@@ -88,7 +88,7 @@ struct PickyConversationCardView: View {
     }
 
     private var cardBackgroundOpacity: Double {
-        isPreviewMode ? 0.72 : 0.95
+        isPreviewMode ? 0.82 : 0.95
     }
 
     private var cardShadowOpacity: Double {

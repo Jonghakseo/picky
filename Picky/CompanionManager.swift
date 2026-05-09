@@ -994,6 +994,7 @@ final class CompanionManager: ObservableObject {
         realtimeVoiceInputID = inputID
         realtimeCanSendAudio = false
         realtimeBufferedAudioChunks.removeAll()
+        realtimeOutputTranscriptByInputID.removeAll()
         currentResponseTask?.cancel()
         beginAwaitingAgentResponse(recognizedTranscript: nil)
 
@@ -1663,12 +1664,16 @@ final class CompanionManager: ObservableObject {
             let key = inputId ?? realtimeVoiceInputID ?? UUID()
             realtimeOutputTranscriptByInputID[key] = transcript
             latestAgentSessionSummary = transcript
+            realtimeOutputTranscriptByInputID.removeValue(forKey: key)
         case .mainRealtimeTurnDone(let done):
-            if let inputId = done.inputId, realtimeVoiceInputID == inputId {
-                realtimeVoiceInputID = nil
-                realtimeCanSendAudio = false
-                realtimeBufferedAudioChunks.removeAll()
-                completeVoiceInteractionIfCurrent(inputID: inputId)
+            if let inputId = done.inputId {
+                realtimeOutputTranscriptByInputID.removeValue(forKey: inputId)
+                if realtimeVoiceInputID == inputId {
+                    realtimeVoiceInputID = nil
+                    realtimeCanSendAudio = false
+                    realtimeBufferedAudioChunks.removeAll()
+                    completeVoiceInteractionIfCurrent(inputID: inputId)
+                }
             }
             if let final = done.finalTranscript, !final.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 latestAgentSessionSummary = final

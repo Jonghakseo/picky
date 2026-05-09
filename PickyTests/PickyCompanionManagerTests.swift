@@ -303,6 +303,17 @@ struct PickyCompanionManagerTests {
         #expect(playback.enqueuedAudio == ["AAAA"])
     }
 
+    @Test func realtimeTranscriptCompletionResetsAccumulatorForFollowUpResponses() async throws {
+        let inputID = UUID()
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+
+        manager.applyAgentEvent(.mainRealtimeOutputTranscriptDelta(inputId: inputID, delta: "조회 중"))
+        manager.applyAgentEvent(.mainRealtimeOutputTranscriptCompleted(inputId: inputID, transcript: "조회 중"))
+        manager.applyAgentEvent(.mainRealtimeOutputTranscriptDelta(inputId: inputID, delta: "완료"))
+
+        #expect(manager.latestAgentSessionSummary == "완료")
+    }
+
     @Test func realtimePlaybackDrainClearsRespondingAfterTurnDone() async throws {
         let playback = FakeRealtimeAudioPlaybackEngine()
         let inputID = UUID()

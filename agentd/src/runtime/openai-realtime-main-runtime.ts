@@ -137,6 +137,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   private outputTranscriptByInputId = new Map<string, string>();
   private inputTranscriptByInputId = new Map<string, string>();
   private functionCalls = new Map<string, PendingFunctionCall>();
+  private completedFunctionCallIds = new Set<string>();
   private generation = 0;
   private thinkingLevel: ThinkingLevel;
 
@@ -482,10 +483,20 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
         if (status === "failed") this.emit({ type: "main_realtime_state", state: "failed", message: stringField(event, "response.status_details.error.message") });
         const inputId = this.activeInputId;
         const finalTranscript = inputId ? this.outputTranscriptByInputId.get(inputId) : undefined;
-        this.emit({ type: "main_realtime_turn_done", inputId, status, finalTranscript });
-        this.emit({ type: "main_realtime_state", state: status === "failed" ? "failed" : "ready" });
         this.activeResponseId = undefined;
         this.activeAssistantAudioItem = undefined;
+        if (responseIncludesFunctionCall(event)) {
+          if (inputId) this.outputTranscriptByInputId.delete(inputId);
+          this.emit({ type: "main_realtime_state", state: "thinking" });
+          break;
+        }
+        this.emit({ type: "main_realtime_turn_done", inputId, status, finalTranscript });
+        this.emit({ type: "main_realtime_state", state: status === "failed" ? "failed" : "ready" });
+        if (inputId) {
+          this.outputTranscriptByInputId.delete(inputId);
+          this.inputTranscriptByInputId.delete(inputId);
+        }
+        this.activeInputId = undefined;
         break;
       }
       case "error":
@@ -533,6 +544,9 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     } catch (error) {
       parsed = { _parseError: error instanceof Error ? error.message : String(error) };
     }
+    if (this.completedFunctionCallIds.has(callId)) return;
+    this.completedFunctionCallIds.add(callId);
+    if (this.completedFunctionCallIds.size > 200) this.completedFunctionCallIds.clear();
     const result = await this.executeTool(name, parsed);
     this.sendClientEvent({
       type: "conversation.item.create",
@@ -556,11 +570,18 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
           cwd: optionalStringArg(args, "cwd"),
         });
       case "picky_side_sessions":
-        return { sessions: this.options.toolHandlers.listSideSessions({
-          includeTerminal: typeof args.includeTerminal === "boolean" ? args.includeTerminal : undefined,
-          page: numberArg(args, "page"),
-          limit: numberArg(args, "limit"),
-        }) };
+        return summarizeRealtimeSideSessions(
+          this.options.toolHandlers.listSideSessions({
+            includeTerminal: typeof args.includeTerminal === "boolean" ? args.includeTerminal : undefined,
+            page: numberArg(args, "page"),
+            limit: numberArg(args, "limit"),
+          }),
+          {
+            includeTerminal: typeof args.includeTerminal === "boolean" ? args.includeTerminal : undefined,
+            page: numberArg(args, "page"),
+            limit: numberArg(args, "limit"),
+          },
+        );
       case "picky_side_steer":
         return this.options.toolHandlers.steerSideSession({ sessionId: stringArg(args, "sessionId"), message: stringArg(args, "message") });
       case "picky_skills_search":
@@ -891,6 +912,90 @@ function realtimeTools(): Array<Record<string, unknown>> {
   ];
 }
 
+const REALTIME_SIDE_SESSIONS_DEFAULT_LIMIT = 10;
+const REALTIME_SIDE_SESSIONS_MAX_LIMIT = 10;
+
+type RealtimeSideSessionsRequest = { includeTerminal?: boolean; page?: number; limit?: number };
+
+type RealtimeSideSessionSummary = {
+  id: string;
+  title: string;
+  status: PickyAgentSession["status"];
+  cwd?: string;
+  updatedAt: string;
+  lastSummary?: string;
+  finalAnswer?: string;
+  thinkingPreview?: string;
+  tools?: Array<{ name: string; status: string; preview?: string; resultPreview?: string }>;
+  artifacts?: Array<{ id: string; kind: string; title: string }>;
+  changedFiles?: Array<{ path: string; status: string; summary?: string }>;
+};
+
+function summarizeRealtimeSideSessions(sessions: PickyAgentSession[], request: RealtimeSideSessionsRequest): {
+  sessions: RealtimeSideSessionSummary[];
+  page: number;
+  pageSize: number;
+  total: number;
+  hasMore: boolean;
+  nextPage?: number;
+  instruction: string;
+} {
+  const includeTerminal = request.includeTerminal !== false;
+  const page = normalizePage(request.page);
+  const pageSize = clampRealtimeSideSessionLimit(request.limit);
+  const filtered = sessions.filter((session) => includeTerminal || !["completed", "failed", "cancelled"].includes(session.status));
+  const start = (page - 1) * pageSize;
+  const selected = filtered.slice(start, start + pageSize).map(summarizeRealtimeSideSession);
+  const hasMore = filtered.length > start + pageSize;
+  return {
+    sessions: selected,
+    page,
+    pageSize,
+    total: filtered.length,
+    hasMore,
+    nextPage: hasMore ? page + 1 : undefined,
+    instruction: "Use a returned session.id with picky_side_steer when the user's request should update an existing side agent; otherwise call picky_handoff for new delegated work.",
+  };
+}
+
+function summarizeRealtimeSideSession(session: PickyAgentSession): RealtimeSideSessionSummary {
+  return removeUndefined({
+    id: session.id,
+    title: session.title,
+    status: session.status,
+    cwd: session.cwd,
+    updatedAt: session.updatedAt,
+    lastSummary: session.lastSummary,
+    finalAnswer: session.finalAnswer,
+    thinkingPreview: session.thinkingPreview,
+    tools: session.tools.slice(-5).map((tool) => removeUndefined({
+      name: tool.name,
+      status: tool.status,
+      preview: tool.preview,
+      resultPreview: tool.resultPreview,
+    })),
+    artifacts: session.artifacts.slice(-5).map((artifact) => ({ id: artifact.id, kind: artifact.kind, title: artifact.title })),
+    changedFiles: session.changedFiles.slice(-10).map((file) => removeUndefined({ path: file.path, status: file.status, summary: file.summary })),
+  });
+}
+
+function normalizePage(page: number | undefined): number {
+  if (typeof page !== "number" || !Number.isFinite(page)) return 1;
+  return Math.max(1, Math.floor(page));
+}
+
+function clampRealtimeSideSessionLimit(limit: number | undefined): number {
+  if (typeof limit !== "number" || !Number.isFinite(limit)) return REALTIME_SIDE_SESSIONS_DEFAULT_LIMIT;
+  return Math.max(1, Math.min(REALTIME_SIDE_SESSIONS_MAX_LIMIT, Math.floor(limit)));
+}
+
+function removeUndefined<T extends Record<string, unknown>>(value: T): T {
+  for (const key of Object.keys(value)) {
+    if (value[key] === undefined) delete value[key];
+  }
+  return value;
+}
+
 async function imagePathToDataUrl(path: string): Promise<string | undefined> {
   try {
     const data = await readFile(path);
@@ -933,6 +1038,12 @@ function field(value: unknown, path: string): unknown {
     if (!current || typeof current !== "object") return undefined;
     return (current as Record<string, unknown>)[part];
   }, value);
+}
+
+function responseIncludesFunctionCall(event: Record<string, unknown>): boolean {
+  const response = objectField(event, "response");
+  const output = response?.output;
+  return Array.isArray(output) && output.some((item) => Boolean(item) && typeof item === "object" && (item as Record<string, unknown>).type === "function_call");
 }
 
 function normalizeResponseStatus(status: string | undefined): "completed" | "cancelled" | "failed" | "incomplete" {

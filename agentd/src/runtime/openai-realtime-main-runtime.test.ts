@@ -127,6 +127,124 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(toolNames).not.toContain("picky_pointer_overlay");
   });
 
+  it("summarizes side sessions for function output and applies pagination", async () => {
+    const socket = new FakeRealtimeSocket();
+    let listCalls = 0;
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        ...fakeToolHandlers(),
+        listSideSessions() {
+          listCalls += 1;
+          return Array.from({ length: 6 }, (_, index) => ({
+            id: `side-${index + 1}`,
+            title: `Side ${index + 1}`,
+            status: index % 2 === 0 ? "running" : "completed",
+            cwd: "/tmp/project",
+            createdAt: "2026-05-09T00:00:00.000Z",
+            updatedAt: `2026-05-09T00:00:0${index}.000Z`,
+            lastSummary: `Summary ${index + 1}`,
+            logs: ["very long raw log that should not be returned"],
+            tools: [],
+            artifacts: [],
+            changedFiles: [],
+            messages: [{ id: "message-1", kind: "agent_text", createdAt: "2026-05-09T00:00:00.000Z", text: "raw transcript should not be returned" }],
+          } satisfies PickyAgentSession));
+        },
+      },
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    socket.serverEvent({
+      type: "response.output_item.done",
+      item: {
+        type: "function_call",
+        name: "picky_side_sessions",
+        call_id: "call-side-sessions",
+        arguments: JSON.stringify({ includeTerminal: false, page: 1, limit: 2 }),
+      },
+    });
+    await settle();
+
+    const sent = socket.sent.map((raw) => JSON.parse(raw) as Record<string, any>);
+    const output = sent.find((event) => event.type === "conversation.item.create" && event.item?.type === "function_call_output")!;
+    const payload = JSON.parse(output.item.output);
+
+    expect(listCalls).toBe(1);
+    expect(payload.sessions.map((session: Record<string, unknown>) => session.id)).toEqual(["side-1", "side-3"]);
+    expect(payload.total).toBe(3);
+    expect(payload.hasMore).toBe(true);
+    expect(output.item.output).not.toContain("very long raw log");
+    expect(output.item.output).not.toContain("raw transcript should not be returned");
+  });
+
+  it("executes each realtime function call only once when GA emits multiple done events", async () => {
+    const socket = new FakeRealtimeSocket();
+    let listCalls = 0;
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        ...fakeToolHandlers(),
+        listSideSessions() {
+          listCalls += 1;
+          return [];
+        },
+      },
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    socket.serverEvent({ type: "response.function_call_arguments.done", call_id: "call-dup", name: "picky_side_sessions", arguments: "{}" });
+    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_side_sessions", call_id: "call-dup", arguments: "{}" } });
+    await settle();
+
+    const outputEvents = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .filter((event) => event.type === "conversation.item.create" && event.item?.type === "function_call_output");
+    expect(listCalls).toBe(1);
+    expect(outputEvents).toHaveLength(1);
+  });
+
+  it("keeps a tool-call response open and resets transcript accumulation for the final reply", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+    const handle = await runtime.prewarm({ sessionId: "picky-main-agent" });
+    const events: Array<any> = [];
+    handle.subscribe((event) => events.push(event));
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    socket.serverEvent({ type: "response.output_audio_transcript.delta", delta: "조회 중" });
+    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_side_sessions", call_id: "call-tool", arguments: "{}" } });
+    socket.serverEvent({ type: "response.done", response: { status: "completed", output: [{ type: "function_call", call_id: "call-tool" }] } });
+    socket.serverEvent({ type: "response.output_audio_transcript.delta", delta: "완료" });
+    socket.serverEvent({ type: "response.done", response: { status: "completed", output: [{ type: "message" }] } });
+    await settle();
+
+    const doneEvents = events.filter((event) => event.type === "main_realtime_turn_done");
+    expect(doneEvents).toHaveLength(1);
+    expect(doneEvents[0]).toMatchObject({ inputId: "input-1", finalTranscript: "완료" });
+  });
+
   it("uses GA assistant output_text content for bootstrap messages", async () => {
     const socket = new FakeRealtimeSocket();
     const runtime = new OpenAIRealtimeMainRuntime({
@@ -266,6 +384,10 @@ class FakeRealtimeSocket implements RealtimeWebSocketLike {
     this.emit("close", 1000, Buffer.from(""));
   }
 
+  serverEvent(event: Record<string, unknown>): void {
+    this.emit("message", Buffer.from(JSON.stringify(event)));
+  }
+
   on(event: "open" | "message" | "close" | "error", listener: (...args: any[]) => void): this {
     const listeners = this.listeners.get(event) ?? [];
     listeners.push(listener);
@@ -345,6 +467,10 @@ function handle(id: string): RuntimeSessionHandle {
     isStreaming: false,
     subscribe: () => () => {},
   };
+}
+
+async function settle(): Promise<void> {
+  await new Promise((resolve) => setImmediate(resolve));
 }
 
 function context(): PickyContextPacket {

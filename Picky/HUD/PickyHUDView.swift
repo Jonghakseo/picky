@@ -30,6 +30,7 @@ struct PickyHUDView: View {
     @State private var isHUDHovered = false
     @State private var isDockHovered = false
     @State private var closeExpansionTask: Task<Void, Never>?
+    @State private var keyDownMonitor: Any?
     @State private var sizeReporter = PickyHUDSizeReporter()
 
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {
@@ -84,9 +85,11 @@ struct PickyHUDView: View {
             // bottom-pinning on appear; animating that first layout exposes transient
             // pre-scroll positions as rows/composer floating outside the card.
             .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: handleHUDSizeChange)
+            .onAppear(perform: installCloseShortcutMonitor)
             .onDisappear {
                 closeExpansionTask?.cancel()
                 closeExpansionTask = nil
+                uninstallCloseShortcutMonitor()
                 sizeReporter.cancelPendingReport()
             }
     }
@@ -133,16 +136,22 @@ struct PickyHUDView: View {
     @ViewBuilder
     private var conversationCard: some View {
         if let activeSession {
-            PickyConversationCardView(
-                viewModel: viewModel,
-                session: activeSession,
-                onArchiveSession: archiveSession,
-                maxHeight: placement.availableCardMaxHeight,
-                isPreviewMode: isHoverPreviewSession(activeSession.id)
-            )
-            .id(activeSession.id)
-            .frame(width: PickyHUDDockLayout.detailWidth)
-            .transition(.identity)
+            if isHoverPreviewSession(activeSession.id) {
+                PickyHUDMiniPreviewCardView(session: activeSession)
+                    .id("mini-\(activeSession.id)")
+                    .transition(.identity)
+            } else {
+                PickyConversationCardView(
+                    viewModel: viewModel,
+                    session: activeSession,
+                    onArchiveSession: archiveSession,
+                    maxHeight: placement.availableCardMaxHeight,
+                    isPreviewMode: false
+                )
+                .id(activeSession.id)
+                .frame(width: PickyHUDDockLayout.detailWidth)
+                .transition(.identity)
+            }
         }
     }
 
@@ -220,6 +229,10 @@ struct PickyHUDView: View {
     private func previewDockSession(_ sessionID: String) {
         isDockHovered = true
         cancelPendingClose()
+        guard heldSession == nil else {
+            if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
+            return
+        }
         if suppressedHoverSessionID == sessionID { return }
         suppressedHoverSessionID = nil
         hoverPreviewSessionID = PickyHUDDockLayout.previewSessionIDAfterDockHover(
@@ -240,6 +253,7 @@ struct PickyHUDView: View {
             if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
             suppressedHoverSessionID = sessionID
         } else {
+            hoverPreviewSessionID = nil
             suppressedHoverSessionID = nil
         }
     }
@@ -247,9 +261,8 @@ struct PickyHUDView: View {
     private func pinSession(_ sessionID: String) {
         cancelPendingClose()
         heldSession = PickyHUDDockLayout.heldSessionAfterDoubleClick(current: heldSession, doubleClicked: sessionID)
-        if isPointerInsideHUDSurface && suppressedHoverSessionID != sessionID {
-            hoverPreviewSessionID = sessionID
-        }
+        hoverPreviewSessionID = nil
+        suppressedHoverSessionID = nil
     }
 
     private func archiveSession(_ sessionID: String) {
@@ -288,9 +301,197 @@ struct PickyHUDView: View {
         }
     }
 
+    private func closeHeldSession() {
+        guard let sessionID = heldSession?.sessionID else { return }
+        heldSession = nil
+        if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
+        suppressedHoverSessionID = sessionID
+    }
+
+    private func installCloseShortcutMonitor() {
+        guard keyDownMonitor == nil else { return }
+        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard NSApp.keyWindow is PickyHUDPanel,
+                  flags.contains(.command),
+                  event.keyCode == Self.wKeyCode,
+                  heldSession != nil else {
+                return event
+            }
+            closeHeldSession()
+            return nil
+        }
+    }
+
+    private func uninstallCloseShortcutMonitor() {
+        guard let keyDownMonitor else { return }
+        NSEvent.removeMonitor(keyDownMonitor)
+        self.keyDownMonitor = nil
+    }
+
     private func cancelPendingClose() {
         closeExpansionTask?.cancel()
         closeExpansionTask = nil
+    }
+
+    private static let wKeyCode: UInt16 = 13
+}
+
+private struct PickyHUDMiniPreviewCardView: View {
+    let session: PickySessionListViewModel.SessionCard
+    @State private var gitStatus: PickyGitRepositoryStatus?
+
+    init(session: PickySessionListViewModel.SessionCard) {
+        self.session = session
+        _gitStatus = State(initialValue: PickyGitRepositoryStatus.cached(cwd: session.cwd))
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 7, height: 7)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 7) {
+                    Text(session.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(DS.Colors.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .layoutPriority(1)
+                    Text(statusLabel)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(DS.Colors.textSecondary)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+
+                contextLine
+            }
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+
+            Text(trailingLabel)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(trailingColor)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .frame(width: 238)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(DS.Colors.surface1.opacity(0.62))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(DS.Colors.borderStrong.opacity(0.72), lineWidth: 0.7)
+        )
+        .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 5)
+        .task(id: "\(session.cwd ?? "")|\(session.updatedAt.timeIntervalSince1970)") {
+            if gitStatus == nil, let cached = PickyGitRepositoryStatus.cached(cwd: session.cwd) {
+                gitStatus = cached
+            }
+            let freshGit = await PickyGitRepositoryStatus.load(cwd: session.cwd)
+            guard !Task.isCancelled else { return }
+            gitStatus = freshGit
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Preview \(session.title), \(statusLabel), \(contextAccessibilityLabel)")
+    }
+
+    @ViewBuilder
+    private var contextLine: some View {
+        if let gitStatus {
+            HStack(spacing: 4) {
+                Text(gitStatus.repositoryDisplayName)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .lineLimit(1)
+                    .layoutPriority(2)
+                Text("·")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .fixedSize(horizontal: true, vertical: false)
+                Text(gitStatus.branchDisplayName)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(0)
+            }
+        } else if let cwd = session.compactCwdDescription {
+            Text(cwd)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundColor(DS.Colors.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+    }
+
+    private var contextAccessibilityLabel: String {
+        if let gitStatus {
+            return "\(gitStatus.repositoryDisplayName), \(gitStatus.branchDisplayName)"
+        }
+        return session.compactCwdDescription ?? "No folder"
+    }
+
+    private var statusLabel: String {
+        switch session.status {
+        case .queued: return "queued"
+        case .running: return "running"
+        case .waiting_for_input: return "waiting"
+        case .blocked: return "blocked"
+        case .completed: return "done"
+        case .failed: return "failed"
+        case .cancelled: return "cancelled"
+        }
+    }
+
+    private var trailingLabel: String {
+        switch session.status {
+        case .waiting_for_input:
+            return "reply"
+        case .blocked, .failed:
+            return "check"
+        case .completed, .cancelled:
+            return session.elapsedDescription()
+        case .queued, .running:
+            return session.elapsedDescription()
+        }
+    }
+
+    private var trailingColor: Color {
+        switch session.status {
+        case .waiting_for_input:
+            return DS.Colors.warningText
+        case .failed:
+            return DS.Colors.destructiveText
+        case .completed:
+            return DS.Colors.success
+        default:
+            return DS.Colors.textTertiary
+        }
+    }
+
+    private var statusColor: Color {
+        switch session.status {
+        case .queued:
+            return DS.Colors.accentText
+        case .running:
+            return DS.Colors.overlayCursorBlue
+        case .waiting_for_input, .blocked:
+            return DS.Colors.warning
+        case .completed:
+            return DS.Colors.success
+        case .failed:
+            return DS.Colors.destructiveText
+        case .cancelled:
+            return DS.Colors.textTertiary
+        }
     }
 }
 

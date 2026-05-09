@@ -677,27 +677,34 @@ final class CompanionManager: ObservableObject {
             return
         }
         let azureConfig: PickyOpenAIRealtimeAzureProtocolConfig?
+        let modelOrDeployment: String
         if realtime.provider == .azureOpenAI {
+            guard let endpoint = realtime.azureRealtimeEndpointComponents else {
+                print("🎛️ Realtime main agent not configured — Azure Realtime URL missing or invalid")
+                return
+            }
             azureConfig = PickyOpenAIRealtimeAzureProtocolConfig(
-                resourceEndpoint: realtime.azureResourceEndpoint,
-                apiVersion: realtime.azureAPIVersion.isEmpty ? nil : realtime.azureAPIVersion,
-                apiShape: realtime.azureAPIShape.protocolValue
+                resourceEndpoint: endpoint.resourceEndpoint,
+                apiVersion: endpoint.apiVersion,
+                apiShape: endpoint.apiShape.protocolValue
             )
+            modelOrDeployment = endpoint.deployment
         } else {
             azureConfig = nil
+            modelOrDeployment = realtime.modelOrDeployment.isEmpty ? "gpt-realtime-2" : realtime.modelOrDeployment
         }
         do {
             try await agentClient.send(PickyCommandEnvelope(
                 type: .configureMainRealtimeAuth,
                 provider: realtime.provider.protocolValue,
                 apiKey: realtime.apiKey,
-                modelOrDeployment: realtime.modelOrDeployment.isEmpty ? "gpt-realtime-2" : realtime.modelOrDeployment,
+                modelOrDeployment: modelOrDeployment,
                 voice: realtime.voice.isEmpty ? "marin" : realtime.voice,
                 reasoningEffort: realtime.reasoningEffort.rawValue,
                 transcriptionLanguage: realtime.transcriptionLanguage.isEmpty ? nil : realtime.transcriptionLanguage,
                 azure: azureConfig
             ))
-            print("🎛️ Realtime main agent configured — provider: \(realtime.provider.rawValue), model: \(realtime.modelOrDeployment)")
+            print("🎛️ Realtime main agent configured — provider: \(realtime.provider.rawValue), model: \(modelOrDeployment)")
         } catch {
             print("⚠️ Failed to configure Realtime main agent: \(error.localizedDescription)")
         }

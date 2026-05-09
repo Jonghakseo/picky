@@ -586,21 +586,83 @@ export function buildRealtimeConnection(config: OpenAIRealtimeAuthConfig): { url
 
   const azure = config.azure;
   if (!azure) throw new Error("Azure OpenAI Realtime config is required");
-  const host = normalizeAzureRealtimeHost(azure.resourceEndpoint);
-  if (azure.apiShape === "preview") {
-    const apiVersion = azure.apiVersion?.trim();
+  const endpoint = buildAzureRealtimeEndpoint(config);
+  if (endpoint.apiShape === "preview") {
+    const apiVersion = endpoint.apiVersion?.trim();
     if (!apiVersion) throw new Error("Azure OpenAI Realtime preview API requires apiVersion");
     return {
-      url: `wss://${host}/openai/realtime?api-version=${encodeURIComponent(apiVersion)}&deployment=${encodeURIComponent(config.modelOrDeployment)}`,
-      host,
+      url: `wss://${endpoint.host}/openai/realtime?api-version=${encodeURIComponent(apiVersion)}&deployment=${encodeURIComponent(endpoint.deployment)}`,
+      host: endpoint.host,
       headers: { "api-key": config.apiKey },
     };
   }
   return {
-    url: `wss://${host}/openai/v1/realtime?model=${encodeURIComponent(config.modelOrDeployment)}`,
-    host,
+    url: `wss://${endpoint.host}/openai/v1/realtime?model=${encodeURIComponent(endpoint.deployment)}`,
+    host: endpoint.host,
     headers: { "api-key": config.apiKey },
   };
+}
+
+type AzureRealtimeEndpoint = {
+  host: string;
+  deployment: string;
+  apiVersion?: string;
+  apiShape: "ga" | "preview";
+};
+
+function buildAzureRealtimeEndpoint(config: OpenAIRealtimeAuthConfig): AzureRealtimeEndpoint {
+  const azure = config.azure;
+  if (!azure) throw new Error("Azure OpenAI Realtime config is required");
+  const parsed = parseAzureRealtimeEndpointUrl(azure.resourceEndpoint);
+  if (parsed) {
+    return {
+      host: parsed.host,
+      deployment: parsed.deployment || config.modelOrDeployment,
+      apiVersion: parsed.apiVersion ?? azure.apiVersion,
+      apiShape: parsed.apiShape,
+    };
+  }
+  const deployment = config.modelOrDeployment.trim();
+  if (!deployment) throw new Error("Azure OpenAI Realtime deployment is required");
+  return {
+    host: normalizeAzureRealtimeHost(azure.resourceEndpoint),
+    deployment,
+    apiVersion: azure.apiVersion,
+    apiShape: azure.apiShape,
+  };
+}
+
+export function parseAzureRealtimeEndpointUrl(endpoint: string): AzureRealtimeEndpoint | undefined {
+  const trimmed = endpoint.trim();
+  if (!/^wss?:\/\//i.test(trimmed) && !/^https?:\/\//i.test(trimmed)) return undefined;
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new Error("Azure OpenAI Realtime URL must be a valid https or wss URL");
+  }
+  const scheme = url.protocol.replace(":", "").toLowerCase();
+  if (!["https", "wss"].includes(scheme)) throw new Error("Azure OpenAI Realtime URL must use https or wss");
+  const path = url.pathname.replace(/\/+$/, "");
+  if (!path || path === "") return undefined;
+  if (path === "/") return undefined;
+
+  if (path === "/openai/realtime") {
+    const apiVersion = url.searchParams.get("api-version")?.trim();
+    const deployment = (url.searchParams.get("deployment") ?? url.searchParams.get("model") ?? "").trim();
+    if (!apiVersion) throw new Error("Azure OpenAI Realtime preview URL requires api-version");
+    if (!deployment) throw new Error("Azure OpenAI Realtime preview URL requires deployment");
+    return { host: url.host, deployment, apiVersion, apiShape: "preview" };
+  }
+
+  if (path === "/openai/v1/realtime") {
+    const deployment = (url.searchParams.get("model") ?? url.searchParams.get("deployment") ?? "").trim();
+    if (!deployment) throw new Error("Azure OpenAI Realtime GA URL requires model");
+    const apiVersion = url.searchParams.get("api-version")?.trim() || undefined;
+    return { host: url.host, deployment, apiVersion, apiShape: "ga" };
+  }
+
+  throw new Error("Azure OpenAI Realtime URL must use /openai/realtime or /openai/v1/realtime");
 }
 
 export function normalizeAzureRealtimeHost(endpoint: string): string {

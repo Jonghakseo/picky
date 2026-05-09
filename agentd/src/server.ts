@@ -217,7 +217,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "setMainAgentRuntimeMode":
       return { commandId: command.id, type: command.type, mode: command.mode };
     case "configureMainRealtimeAuth":
-      return { commandId: command.id, type: command.type, provider: command.provider, modelOrDeployment: command.modelOrDeployment, voice: command.voice, keyPresent: command.apiKey ? 1 : 0, endpointHost: command.azure?.resourceEndpoint };
+      return { commandId: command.id, type: command.type, provider: command.provider, modelOrDeployment: command.modelOrDeployment, voice: command.voice, keyPresent: command.apiKey ? 1 : 0, endpointHost: endpointHostForLog(command.azure?.resourceEndpoint) };
     case "beginMainRealtimeVoiceTurn":
       return { commandId: command.id, type: command.type, inputId: command.inputId, contextId: command.context.id, source: command.context.source, screenshots: command.context.screenshots.length };
     case "appendMainRealtimeInputAudio":
@@ -235,6 +235,22 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, mainAgentThinkingLevel: command.mainAgentThinkingLevel };
     case "setMainAgentExtraInstructions":
       return { commandId: command.id, type: command.type, instructionChars: command.mainAgentExtraInstructions.length };
+  }
+}
+
+function endpointHostForLog(endpoint: string | undefined): string | undefined {
+  if (!endpoint) return undefined;
+  const trimmed = endpoint.trim();
+  if (!trimmed) return undefined;
+  const candidate = /^wss?:\/\//i.test(trimmed)
+    ? trimmed.replace(/^wss:/i, "https:").replace(/^ws:/i, "http:")
+    : /^https?:\/\//i.test(trimmed)
+      ? trimmed
+      : `https://${trimmed}`;
+  try {
+    return new URL(candidate).host;
+  } catch {
+    return "<invalid>";
   }
 }
 

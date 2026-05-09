@@ -155,6 +155,10 @@ struct PickyOpenAIRealtimeSettings: Codable, Equatable {
     var provider: PickyOpenAIRealtimeProvider
     var apiKey: String
     var modelOrDeployment: String
+    /// Preferred Azure Realtime input. The full WebSocket/HTTPS endpoint includes
+    /// api-version and deployment/model, so Azure users only need this URL plus an API key.
+    var azureRealtimeURL: String
+    /// Legacy split Azure fields kept for backward-compatible decode and protocol mapping.
     var azureResourceEndpoint: String
     var azureAPIVersion: String
     var azureAPIShape: PickyAzureOpenAIRealtimeAPIShape
@@ -166,6 +170,7 @@ struct PickyOpenAIRealtimeSettings: Codable, Equatable {
         provider: .openAI,
         apiKey: "",
         modelOrDeployment: "gpt-realtime-2",
+        azureRealtimeURL: "",
         azureResourceEndpoint: "",
         azureAPIVersion: "",
         azureAPIShape: .ga,
@@ -174,15 +179,167 @@ struct PickyOpenAIRealtimeSettings: Codable, Equatable {
         transcriptionLanguage: ""
     )
 
+    init(
+        provider: PickyOpenAIRealtimeProvider,
+        apiKey: String,
+        modelOrDeployment: String,
+        azureRealtimeURL: String = "",
+        azureResourceEndpoint: String,
+        azureAPIVersion: String,
+        azureAPIShape: PickyAzureOpenAIRealtimeAPIShape,
+        voice: String,
+        reasoningEffort: PickyOpenAIRealtimeReasoningEffort,
+        transcriptionLanguage: String
+    ) {
+        self.provider = provider
+        self.apiKey = apiKey
+        self.modelOrDeployment = modelOrDeployment
+        self.azureRealtimeURL = azureRealtimeURL
+        self.azureResourceEndpoint = azureResourceEndpoint
+        self.azureAPIVersion = azureAPIVersion
+        self.azureAPIShape = azureAPIShape
+        self.voice = voice
+        self.reasoningEffort = reasoningEffort
+        self.transcriptionLanguage = transcriptionLanguage
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case provider
+        case apiKey
+        case modelOrDeployment
+        case azureRealtimeURL
+        case azureResourceEndpoint
+        case azureAPIVersion
+        case azureAPIShape
+        case voice
+        case reasoningEffort
+        case transcriptionLanguage
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = Self.defaults
+        provider = try container.decodeIfPresent(PickyOpenAIRealtimeProvider.self, forKey: .provider) ?? defaults.provider
+        apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? defaults.apiKey
+        modelOrDeployment = try container.decodeIfPresent(String.self, forKey: .modelOrDeployment) ?? defaults.modelOrDeployment
+        azureRealtimeURL = try container.decodeIfPresent(String.self, forKey: .azureRealtimeURL) ?? defaults.azureRealtimeURL
+        azureResourceEndpoint = try container.decodeIfPresent(String.self, forKey: .azureResourceEndpoint) ?? defaults.azureResourceEndpoint
+        azureAPIVersion = try container.decodeIfPresent(String.self, forKey: .azureAPIVersion) ?? defaults.azureAPIVersion
+        azureAPIShape = try container.decodeIfPresent(PickyAzureOpenAIRealtimeAPIShape.self, forKey: .azureAPIShape) ?? defaults.azureAPIShape
+        voice = try container.decodeIfPresent(String.self, forKey: .voice) ?? defaults.voice
+        reasoningEffort = try container.decodeIfPresent(PickyOpenAIRealtimeReasoningEffort.self, forKey: .reasoningEffort) ?? defaults.reasoningEffort
+        transcriptionLanguage = try container.decodeIfPresent(String.self, forKey: .transcriptionLanguage) ?? defaults.transcriptionLanguage
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(provider, forKey: .provider)
+        try container.encode(apiKey, forKey: .apiKey)
+        try container.encode(modelOrDeployment, forKey: .modelOrDeployment)
+        try container.encode(azureRealtimeURL, forKey: .azureRealtimeURL)
+        try container.encode(azureResourceEndpoint, forKey: .azureResourceEndpoint)
+        try container.encode(azureAPIVersion, forKey: .azureAPIVersion)
+        try container.encode(azureAPIShape, forKey: .azureAPIShape)
+        try container.encode(voice, forKey: .voice)
+        try container.encode(reasoningEffort, forKey: .reasoningEffort)
+        try container.encode(transcriptionLanguage, forKey: .transcriptionLanguage)
+    }
+
     func normalized() -> PickyOpenAIRealtimeSettings {
         var copy = self
         copy.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.modelOrDeployment = modelOrDeployment.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.azureRealtimeURL = azureRealtimeURL.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.azureResourceEndpoint = azureResourceEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.azureAPIVersion = azureAPIVersion.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.voice = voice.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.transcriptionLanguage = transcriptionLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+        if copy.azureRealtimeURL.isEmpty,
+           let legacyURL = PickyAzureOpenAIRealtimeURLComponents.makeURL(
+               resourceEndpoint: copy.azureResourceEndpoint,
+               deployment: copy.modelOrDeployment,
+               apiVersion: copy.azureAPIVersion,
+               apiShape: copy.azureAPIShape
+           ) {
+            copy.azureRealtimeURL = legacyURL
+        }
         return copy
+    }
+
+    var azureRealtimeEndpointComponents: PickyAzureOpenAIRealtimeURLComponents? {
+        PickyAzureOpenAIRealtimeURLComponents.parse(normalized().azureRealtimeURL)
+    }
+}
+
+struct PickyAzureOpenAIRealtimeURLComponents: Equatable {
+    var resourceEndpoint: String
+    var deployment: String
+    var apiVersion: String?
+    var apiShape: PickyAzureOpenAIRealtimeAPIShape
+
+    static func parse(_ rawValue: String) -> PickyAzureOpenAIRealtimeURLComponents? {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let components = URLComponents(string: trimmed),
+              let scheme = components.scheme?.lowercased(),
+              ["https", "wss"].contains(scheme),
+              let host = components.host,
+              !host.isEmpty else {
+            return nil
+        }
+        let endpointScheme = "https"
+        let portSuffix = components.port.map { ":\($0)" } ?? ""
+        let resourceEndpoint = "\(endpointScheme)://\(host)\(portSuffix)"
+        let path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let queryItems = components.queryItems ?? []
+        func query(_ name: String) -> String? {
+            queryItems.first { $0.name.lowercased() == name.lowercased() }?.value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        switch path {
+        case "openai/realtime":
+            guard let apiVersion = query("api-version"), !apiVersion.isEmpty,
+                  let deployment = query("deployment") ?? query("model"), !deployment.isEmpty else {
+                return nil
+            }
+            return PickyAzureOpenAIRealtimeURLComponents(
+                resourceEndpoint: resourceEndpoint,
+                deployment: deployment,
+                apiVersion: apiVersion,
+                apiShape: .preview
+            )
+        case "openai/v1/realtime":
+            guard let deployment = query("model") ?? query("deployment"), !deployment.isEmpty else {
+                return nil
+            }
+            return PickyAzureOpenAIRealtimeURLComponents(
+                resourceEndpoint: resourceEndpoint,
+                deployment: deployment,
+                apiVersion: query("api-version"),
+                apiShape: .ga
+            )
+        default:
+            return nil
+        }
+    }
+
+    static func makeURL(
+        resourceEndpoint: String,
+        deployment: String,
+        apiVersion: String,
+        apiShape: PickyAzureOpenAIRealtimeAPIShape
+    ) -> String? {
+        let endpoint = resourceEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let deployment = deployment.trimmingCharacters(in: .whitespacesAndNewlines)
+        let apiVersion = apiVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !endpoint.isEmpty, !deployment.isEmpty else { return nil }
+        switch apiShape {
+        case .ga:
+            return "\(endpoint)/openai/v1/realtime?model=\(deployment)"
+        case .preview:
+            guard !apiVersion.isEmpty else { return nil }
+            return "\(endpoint)/openai/realtime?api-version=\(apiVersion)&deployment=\(deployment)"
+        }
     }
 }
 

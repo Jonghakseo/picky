@@ -425,73 +425,56 @@ struct CompanionPanelSettingsView: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 fieldLabel("API key")
-                SecureField("sk-…", text: $viewModel.settings.openAIRealtime.apiKey)
+                SecureField(viewModel.settings.openAIRealtime.provider == .azureOpenAI ? "Azure OpenAI API key" : "sk-…", text: $viewModel.settings.openAIRealtime.apiKey)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .onSubmit { saveImmediately(for: .mainAgent) }
                     .onChange(of: viewModel.settings.openAIRealtime.apiKey) { _, _ in saveImmediately(for: .mainAgent) }
             }
 
-            VStack(alignment: .leading, spacing: 5) {
-                fieldLabel(viewModel.settings.openAIRealtime.provider == .azureOpenAI ? "Deployment" : "Model")
-                TextField("gpt-realtime-2", text: $viewModel.settings.openAIRealtime.modelOrDeployment)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .onSubmit { saveImmediately(for: .mainAgent) }
-                    .onChange(of: viewModel.settings.openAIRealtime.modelOrDeployment) { _, _ in saveImmediately(for: .mainAgent) }
-            }
-
             if viewModel.settings.openAIRealtime.provider == .azureOpenAI {
                 VStack(alignment: .leading, spacing: 5) {
-                    fieldLabel("Azure endpoint")
-                    TextField("https://resource.openai.azure.com", text: $viewModel.settings.openAIRealtime.azureResourceEndpoint)
+                    fieldLabel("Azure Realtime URL")
+                    TextField("https://resource.openai.azure.com/openai/realtime?api-version=...&deployment=...", text: $viewModel.settings.openAIRealtime.azureRealtimeURL)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .onSubmit { saveImmediately(for: .mainAgent) }
-                        .onChange(of: viewModel.settings.openAIRealtime.azureResourceEndpoint) { _, _ in saveImmediately(for: .mainAgent) }
+                        .onChange(of: viewModel.settings.openAIRealtime.azureRealtimeURL) { _, _ in saveImmediately(for: .mainAgent) }
+                    Text("Paste the full Azure Realtime URL. Picky derives deployment, API version, and preview/GA shape from it.")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+            } else {
+                VStack(alignment: .leading, spacing: 5) {
+                    fieldLabel("Model")
+                    TextField("gpt-realtime-2", text: $viewModel.settings.openAIRealtime.modelOrDeployment)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .onSubmit { saveImmediately(for: .mainAgent) }
+                        .onChange(of: viewModel.settings.openAIRealtime.modelOrDeployment) { _, _ in saveImmediately(for: .mainAgent) }
+                }
+
                 HStack(spacing: 8) {
                     VStack(alignment: .leading, spacing: 5) {
-                        fieldLabel("Azure API shape")
-                        Picker("Azure API shape", selection: $viewModel.settings.openAIRealtime.azureAPIShape) {
-                            ForEach(PickyAzureOpenAIRealtimeAPIShape.allCases) { shape in
-                                Text(shape.displayName).tag(shape)
+                        fieldLabel("Voice")
+                        TextField("marin", text: $viewModel.settings.openAIRealtime.voice)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .onSubmit { saveImmediately(for: .mainAgent) }
+                            .onChange(of: viewModel.settings.openAIRealtime.voice) { _, _ in saveImmediately(for: .mainAgent) }
+                    }
+                    VStack(alignment: .leading, spacing: 5) {
+                        fieldLabel("Realtime effort")
+                        Picker("Realtime effort", selection: $viewModel.settings.openAIRealtime.reasoningEffort) {
+                            ForEach(PickyOpenAIRealtimeReasoningEffort.allCases) { effort in
+                                Text(effort.displayName).tag(effort)
                             }
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
-                        .onChange(of: viewModel.settings.openAIRealtime.azureAPIShape) { _, _ in saveImmediately(for: .mainAgent) }
+                        .onChange(of: viewModel.settings.openAIRealtime.reasoningEffort) { _, _ in saveImmediately(for: .mainAgent) }
                     }
-                    VStack(alignment: .leading, spacing: 5) {
-                        fieldLabel("API version")
-                        TextField("preview only", text: $viewModel.settings.openAIRealtime.azureAPIVersion)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .onSubmit { saveImmediately(for: .mainAgent) }
-                            .onChange(of: viewModel.settings.openAIRealtime.azureAPIVersion) { _, _ in saveImmediately(for: .mainAgent) }
-                    }
-                }
-            }
-
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 5) {
-                    fieldLabel("Voice")
-                    TextField("marin", text: $viewModel.settings.openAIRealtime.voice)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .onSubmit { saveImmediately(for: .mainAgent) }
-                        .onChange(of: viewModel.settings.openAIRealtime.voice) { _, _ in saveImmediately(for: .mainAgent) }
-                }
-                VStack(alignment: .leading, spacing: 5) {
-                    fieldLabel("Realtime effort")
-                    Picker("Realtime effort", selection: $viewModel.settings.openAIRealtime.reasoningEffort) {
-                        ForEach(PickyOpenAIRealtimeReasoningEffort.allCases) { effort in
-                            Text(effort.displayName).tag(effort)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .onChange(of: viewModel.settings.openAIRealtime.reasoningEffort) { _, _ in saveImmediately(for: .mainAgent) }
                 }
             }
         }

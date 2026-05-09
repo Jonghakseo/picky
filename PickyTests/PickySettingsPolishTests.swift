@@ -78,6 +78,7 @@ struct PickySettingsPolishTests {
         #expect(settings.mainAgentRuntimeMode == .pi)
         #expect(settings.openAIRealtime.modelOrDeployment == "gpt-realtime-2")
         #expect(settings.openAIRealtime.provider == .openAI)
+        #expect(settings.openAIRealtime.azureRealtimeURL.isEmpty)
     }
 
     @Test func settingsRoundTripPreservesOpenAIRealtimeSettings() throws {
@@ -93,6 +94,7 @@ struct PickySettingsPolishTests {
             provider: .azureOpenAI,
             apiKey: " azure-key ",
             modelOrDeployment: " realtime-deployment ",
+            azureRealtimeURL: " https://resource.openai.azure.com/openai/realtime?api-version=2024-10-01-preview&deployment=gpt-realtime-1.5 ",
             azureResourceEndpoint: " https://resource.openai.azure.com ",
             azureAPIVersion: " 2025-04-01-preview ",
             azureAPIShape: .preview,
@@ -108,12 +110,42 @@ struct PickySettingsPolishTests {
         #expect(loaded.openAIRealtime.provider == .azureOpenAI)
         #expect(loaded.openAIRealtime.apiKey == "azure-key")
         #expect(loaded.openAIRealtime.modelOrDeployment == "realtime-deployment")
+        #expect(loaded.openAIRealtime.azureRealtimeURL == "https://resource.openai.azure.com/openai/realtime?api-version=2024-10-01-preview&deployment=gpt-realtime-1.5")
         #expect(loaded.openAIRealtime.azureResourceEndpoint == "https://resource.openai.azure.com")
         #expect(loaded.openAIRealtime.azureAPIVersion == "2025-04-01-preview")
         #expect(loaded.openAIRealtime.azureAPIShape == .preview)
         #expect(loaded.openAIRealtime.voice == "marin")
         #expect(loaded.openAIRealtime.reasoningEffort == .high)
         #expect(loaded.openAIRealtime.transcriptionLanguage == "ko")
+    }
+
+    @Test func azureRealtimeURLParserDerivesPreviewProtocolFields() throws {
+        let parsed = try #require(PickyAzureOpenAIRealtimeURLComponents.parse("https://creatrip-openai-api-us2.openai.azure.com/openai/realtime?api-version=2024-10-01-preview&deployment=gpt-realtime-1.5"))
+
+        #expect(parsed.resourceEndpoint == "https://creatrip-openai-api-us2.openai.azure.com")
+        #expect(parsed.deployment == "gpt-realtime-1.5")
+        #expect(parsed.apiVersion == "2024-10-01-preview")
+        #expect(parsed.apiShape == .preview)
+    }
+
+    @Test func legacyAzureRealtimeSettingsSynthesizeFullURL() throws {
+        let legacyJSON = """
+        {
+          "provider": "azureOpenAI",
+          "apiKey": "key",
+          "modelOrDeployment": "deployment-one",
+          "azureResourceEndpoint": "https://resource.openai.azure.com",
+          "azureAPIVersion": "2024-10-01-preview",
+          "azureAPIShape": "preview",
+          "voice": "marin",
+          "reasoningEffort": "medium",
+          "transcriptionLanguage": ""
+        }
+        """.data(using: .utf8)!
+
+        let settings = try JSONDecoder().decode(PickyOpenAIRealtimeSettings.self, from: legacyJSON).normalized()
+
+        #expect(settings.azureRealtimeURL == "https://resource.openai.azure.com/openai/realtime?api-version=2024-10-01-preview&deployment=deployment-one")
     }
 
     @Test func settingsLoadDefaultsScreenContextScopeToAllScreensWhenLegacyFileLacksField() throws {

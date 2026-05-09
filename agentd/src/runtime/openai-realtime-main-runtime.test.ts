@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRealtimeConnection, normalizeAzureRealtimeHost } from "./openai-realtime-main-runtime.js";
+import { buildRealtimeConnection, normalizeAzureRealtimeHost, parseAzureRealtimeEndpointUrl } from "./openai-realtime-main-runtime.js";
 import { SelectableMainRuntime } from "./selectable-main-runtime.js";
 import type { AgentRuntime, MainRealtimeRuntime, RuntimeSessionHandle, ThinkingLevel } from "./types.js";
 import type { BuiltPrompt } from "../prompt-builder.js";
@@ -50,6 +50,37 @@ describe("OpenAI Realtime provider connection builders", () => {
 
     expect(connection.url).toBe("wss://picky-resource.openai.azure.com/openai/realtime?api-version=2025-04-01-preview&deployment=rt-deployment");
     expect(connection.headers).toEqual({ "api-key": "azure-key" });
+  });
+
+  it("derives Azure OpenAI preview connection from full Realtime URL", () => {
+    const connection = buildRealtimeConnection({
+      provider: "azure_openai",
+      apiKey: "azure-key",
+      modelOrDeployment: "ignored-when-url-has-deployment",
+      voice: "marin",
+      azure: {
+        resourceEndpoint: "https://creatrip-openai-api-us2.openai.azure.com/openai/realtime?api-version=2024-10-01-preview&deployment=gpt-realtime-1.5",
+        apiShape: "ga",
+      },
+    });
+
+    expect(connection.url).toBe("wss://creatrip-openai-api-us2.openai.azure.com/openai/realtime?api-version=2024-10-01-preview&deployment=gpt-realtime-1.5");
+    expect(connection.headers).toEqual({ "api-key": "azure-key" });
+  });
+
+  it("parses full Azure Realtime URLs into host, deployment, and API shape", () => {
+    expect(parseAzureRealtimeEndpointUrl("https://x.openai.azure.com/openai/realtime?api-version=2024-10-01-preview&deployment=rt-15")).toEqual({
+      host: "x.openai.azure.com",
+      deployment: "rt-15",
+      apiVersion: "2024-10-01-preview",
+      apiShape: "preview",
+    });
+    expect(parseAzureRealtimeEndpointUrl("wss://x.openai.azure.com/openai/v1/realtime?model=rt-ga")).toEqual({
+      host: "x.openai.azure.com",
+      deployment: "rt-ga",
+      apiVersion: undefined,
+      apiShape: "ga",
+    });
   });
 
   it("normalizes Azure endpoint hosts and rejects paths", () => {

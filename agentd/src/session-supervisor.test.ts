@@ -1207,6 +1207,34 @@ describe("SessionSupervisor", () => {
     expect(supervisor.isSideSession(pinned.id)).toBe(true);
   });
 
+  it("imports the last two source Pi turns when pinning an idle Pi handoff", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pinned-source-turns-"));
+    const piSessionFile = join(dir, "source-pi-session.jsonl");
+    await writeFile(piSessionFile, [
+      JSON.stringify({ type: "session", version: 3, id: "pi-session", timestamp: "2026-05-01T00:00:00.000Z", cwd: "/tmp/project" }),
+      JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-05-01T00:00:01.000Z", message: { role: "user", content: "first prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-05-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "first answer" }], timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "u2", parentId: "a1", timestamp: "2026-05-01T00:00:03.000Z", message: { role: "user", content: "second prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a2", parentId: "u2", timestamp: "2026-05-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: "second answer" }], timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "u3", parentId: "a2", timestamp: "2026-05-01T00:00:05.000Z", message: { role: "user", content: "third prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a3", parentId: "u3", timestamp: "2026-05-01T00:00:06.000Z", message: { role: "assistant", content: [{ type: "text", text: "third answer" }], timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "u4", parentId: "a3", timestamp: "2026-05-01T00:00:07.000Z", message: { role: "user", content: "/handoff-to-picky pin this in Picky", timestamp: 0 } }),
+    ].join("\n"));
+    const supervisor = new SessionSupervisor(new ThrowingRuntime(), new SessionStore(dir));
+    await supervisor.load();
+
+    const pinned = await supervisor.pinSideSession(contextWithPiSessionFile("pin completed source", piSessionFile), "Pinned source");
+
+    expect(pinned.messages?.map((message) => ({ kind: message.kind, text: message.text, originatedBy: message.originatedBy }))).toEqual([
+      { kind: "user_text", text: "second prompt", originatedBy: "pi_extension" },
+      { kind: "agent_text", text: "second answer", originatedBy: undefined },
+      { kind: "user_text", text: "third prompt", originatedBy: "pi_extension" },
+      { kind: "agent_text", text: "third answer", originatedBy: undefined },
+    ]);
+    expect(pinned.lastSummary).toBe("third answer");
+    expect(pinned.finalAnswer).toBe("third answer");
+  });
+
   it("does not notify the main agent when a local Pi session is pinned", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });

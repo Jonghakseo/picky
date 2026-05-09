@@ -564,7 +564,16 @@ export class SessionSupervisor extends EventEmitter {
     this.sideSessionIds.add(id);
     logAgentd("side session pinned", { sessionId: id, titleChars: session.title.length, cwd: context.cwd, contextId: context.id });
     await this.upsert(session);
-    await this.messageBuilder.seedPinnedSession(id, context.transcript, session.finalAnswer, session.title);
+
+    const sourceMessages = await readRecentPinnedSourceMessages(session.piSessionFilePath);
+    if (sourceMessages.length > 0) {
+      await this.messageBuilder.recordTerminalSessionMessages(id, sourceMessages);
+      const latestAssistantText = [...sourceMessages].reverse().find((message) => message.kind === "agent_text")?.text?.trim();
+      if (latestAssistantText) await this.patch(id, { lastSummary: latestAssistantText, finalAnswer: latestAssistantText });
+    } else {
+      await this.messageBuilder.seedPinnedSession(id, context.transcript, session.finalAnswer, session.title);
+    }
+
     await this.materializeTerminalArtifacts(id);
     return this.mustGet(id);
   }
@@ -1629,6 +1638,31 @@ function createPendingRuntimeHandle(): { promise: Promise<RuntimeSessionHandle>;
   // handled by the session creation path, so avoid an unhandled rejection when no request races it.
   promise.catch(() => undefined);
   return { promise, resolve, reject };
+}
+
+const PINNED_SOURCE_TURN_COUNT = 2;
+
+async function readRecentPinnedSourceMessages(sessionFilePath: string | undefined): Promise<PickySessionMessage[]> {
+  if (!sessionFilePath) return [];
+  try {
+    const result = await readPiTerminalSessionMessages(sessionFilePath);
+    const conversationMessages = result.messages.filter((message) => !isPickyHandoffCommandMessage(message));
+    return lastTurns(conversationMessages, PINNED_SOURCE_TURN_COUNT);
+  } catch {
+    return [];
+  }
+}
+
+function lastTurns(messages: PickySessionMessage[], turnCount: number): PickySessionMessage[] {
+  if (messages.length === 0) return [];
+  const userIndices = messages.flatMap((message, index) => message.kind === "user_text" ? [index] : []);
+  if (userIndices.length === 0) return messages;
+  const startIndex = userIndices[Math.max(0, userIndices.length - turnCount)];
+  return messages.slice(startIndex);
+}
+
+function isPickyHandoffCommandMessage(message: PickySessionMessage): boolean {
+  return message.kind === "user_text" && /^\s*\/handoff-to-picky(\s|$)/.test(message.text ?? "");
 }
 
 function buildPinnedSideSessionLogs(context: PickyContextPacket): string[] {

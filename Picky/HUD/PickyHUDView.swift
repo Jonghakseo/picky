@@ -423,7 +423,7 @@ private struct PickyHUDCollapsibleContent<Content: View>: View {
 }
 
 enum PickyHUDArchiveHoldPolicy {
-    static let duration: TimeInterval = 2
+    static let duration: TimeInterval = 1.5
     static let feedbackStartDelay: TimeInterval = 0.2
     static let feedbackStartDelayNanoseconds: UInt64 = 200_000_000
     static let maximumDistance: CGFloat = 10
@@ -724,7 +724,7 @@ private struct PickyHUDDockIconView: View {
         }
         .animation(.spring(response: 0.2, dampingFraction: 0.78), value: isArchivePressing)
         .accessibilityLabel("Preview \(session.title)")
-        .accessibilityHint("Click to open or close. Double-click to pin or unpin. Press and hold for 2 seconds to archive this side agent.")
+        .accessibilityHint("Click to open or close. Double-click to pin or unpin. Press and hold for 1.5 seconds to archive this side agent.")
         .accessibilityAddTraits(.isButton)
     }
 

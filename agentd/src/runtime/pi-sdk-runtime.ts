@@ -29,6 +29,7 @@ const PICKY_BUILTIN_SLASH_COMMANDS: ReadonlyArray<{ name: string; description: s
   { name: "new", description: "Start a fresh Pi session in this Picky card" },
   { name: "name", description: "Set the Pi session display name (usage: /name <session name>)" },
   { name: "compact", description: "Manually compact the session context (optional: /compact <focus instructions>)" },
+  { name: "reload", description: "Reload Pi skills, extensions, prompts, and context files" },
 ];
 
 export interface PiSdkRuntimeOptions {
@@ -721,6 +722,35 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
         const message = messageOf(error);
         logAgentd("slash /compact failed", { sessionId: this.id, error: message });
         this.emit({ type: "status", status: "failed", summary: `/compact failed: ${message}`, noTurnRan: true });
+      }
+      return true;
+    }
+    if (trimmed === "/reload") {
+      const session = this.runtime.session as unknown as { reload?: () => Promise<void>; isStreaming?: boolean; isCompacting?: boolean };
+      if (typeof session.reload !== "function") {
+        this.emit({ type: "status", status: "failed", summary: "/reload is not supported by this Pi runtime", noTurnRan: true });
+        return true;
+      }
+      if (session.isStreaming === true) {
+        this.emit({ type: "log", line: "/reload rejected: wait for the current response to finish" });
+        this.emit({ type: "status", status: "completed", summary: "/reload is unavailable while the agent is running", noTurnRan: true, preserveSessionState: true });
+        return true;
+      }
+      if (session.isCompacting === true) {
+        this.emit({ type: "log", line: "/reload rejected: wait for compaction to finish" });
+        this.emit({ type: "status", status: "completed", summary: "/reload is unavailable while the session is compacting", noTurnRan: true, preserveSessionState: true });
+        return true;
+      }
+      this.pendingExtensionUiRequestIds.clear();
+      this.emit({ type: "status", status: "running", summary: "Reloading Pi resources…" });
+      try {
+        await session.reload();
+        this.emit({ type: "log", line: "pi resources reloaded" });
+        this.emit({ type: "status", status: "completed", summary: "Pi resources reloaded", noTurnRan: true, preserveSessionState: true });
+      } catch (error) {
+        const message = messageOf(error);
+        logAgentd("slash /reload failed", { sessionId: this.id, error: message });
+        this.emit({ type: "status", status: "failed", summary: `/reload failed: ${message}`, noTurnRan: true });
       }
       return true;
     }

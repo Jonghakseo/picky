@@ -10,8 +10,10 @@ class FakeSession extends EventEmitter {
   steers: string[] = [];
   aborts = 0;
   newSessions = 0;
+  reloads = 0;
   thinkingLevels: string[] = [];
   isStreaming = false;
+  isCompacting = false;
   bound = false;
   uiContext?: Record<string, unknown>;
   state: {
@@ -65,6 +67,10 @@ class FakeSession extends EventEmitter {
   async abort(): Promise<void> {
     this.aborts += 1;
     this.isStreaming = false;
+  }
+
+  async reload(): Promise<void> {
+    this.reloads += 1;
   }
 
   async executeBash(command: string, _onChunk?: (chunk: string) => void, options?: { excludeFromContext?: boolean }): Promise<{ output: string; exitCode: number; cancelled: boolean; truncated: boolean }> {
@@ -610,6 +616,7 @@ describe("PiSdkRuntime", () => {
       { name: "new", description: "Start a fresh Pi session in this Picky card", source: "builtin" },
       { name: "name", description: "Set the Pi session display name (usage: /name <session name>)", source: "builtin" },
       { name: "compact", description: "Manually compact the session context (optional: /compact <focus instructions>)", source: "builtin" },
+      { name: "reload", description: "Reload Pi skills, extensions, prompts, and context files", source: "builtin" },
       { name: "deploy", description: "Deploy an environment", source: "extension" },
       { name: "fix-tests", description: "Fix failing tests", source: "prompt" },
       { name: "skill:context7-cli", description: "Look up library docs", source: "skill" },
@@ -710,6 +717,36 @@ describe("PiSdkRuntime", () => {
     expect(fakeSession.prompts).toEqual([]);
     expect(events).toContainEqual({ type: "log", line: "/compact rejected: cannot compact while the agent is running" });
     expect(events).toContainEqual({ type: "status", status: "completed", summary: "/compact is unavailable while the agent is running", noTurnRan: true, preserveSessionState: true });
+  });
+
+  it("intercepts /reload and reloads Pi resources without an agent turn", async () => {
+    const fakeSession = new FakeSession();
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-reload" });
+    const events: Array<{ type: string; status?: string; summary?: string; noTurnRan?: boolean; preserveSessionState?: boolean; line?: string }> = [];
+    handle.subscribe((event) => events.push(event as { type: string; status?: string; summary?: string; noTurnRan?: boolean; preserveSessionState?: boolean; line?: string }));
+
+    await handle.followUp({ text: "/reload", imagePaths: [] });
+
+    expect(fakeSession.reloads).toBe(1);
+    expect(fakeSession.prompts).toEqual([]);
+    expect(events).toContainEqual({ type: "status", status: "running", summary: "Reloading Pi resources…" });
+    expect(events).toContainEqual({ type: "log", line: "pi resources reloaded" });
+    expect(events).toContainEqual({ type: "status", status: "completed", summary: "Pi resources reloaded", noTurnRan: true, preserveSessionState: true });
+  });
+
+  it("rejects /reload while the active agent is running", async () => {
+    const fakeSession = new FakeSession();
+    fakeSession.isStreaming = true;
+    const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-reload-running" });
+    const events: Array<{ type: string; status?: string; summary?: string; noTurnRan?: boolean; preserveSessionState?: boolean; line?: string }> = [];
+    handle.subscribe((event) => events.push(event as { type: string; status?: string; summary?: string; noTurnRan?: boolean; preserveSessionState?: boolean; line?: string }));
+
+    await handle.followUp({ text: "/reload", imagePaths: [] });
+
+    expect(fakeSession.reloads).toBe(0);
+    expect(fakeSession.prompts).toEqual([]);
+    expect(events).toContainEqual({ type: "log", line: "/reload rejected: wait for the current response to finish" });
+    expect(events).toContainEqual({ type: "status", status: "completed", summary: "/reload is unavailable while the agent is running", noTurnRan: true, preserveSessionState: true });
   });
 
   it("updates the active Pi session thinking level", async () => {

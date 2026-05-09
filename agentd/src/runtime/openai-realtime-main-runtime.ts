@@ -14,6 +14,7 @@ import type {
   ThinkingLevel,
 } from "./types.js";
 import { logAgentd } from "../local-log.js";
+import type { PickySkillDetails, PickySkillSummary } from "../application/skill-catalog.js";
 
 export interface OpenAIRealtimeMainRuntimeOptions {
   toolHandlers: OpenAIRealtimeToolHandlers;
@@ -25,7 +26,8 @@ export interface OpenAIRealtimeToolHandlers {
   handoff(request: { title: string; instructions: string; userMessage?: string; cwd?: string }): Promise<{ sessionId: string; title: string; cwd?: string }>;
   listSideSessions(request: { includeTerminal?: boolean; page?: number; limit?: number }): PickyAgentSession[];
   steerSideSession(request: { sessionId: string; message: string }): Promise<PickyAgentSession>;
-  showPointer(request: { x: number; y: number; screenId?: string; label?: string }): Promise<{ request: unknown }>;
+  searchSkills(request: { query?: string; limit?: number }): Promise<{ query: string; root: string; total: number; skills: PickySkillSummary[] }>;
+  getSkillDetails(request: { name: string }): Promise<PickySkillDetails>;
 }
 
 export interface RealtimeWebSocketLike {
@@ -40,7 +42,7 @@ export interface RealtimeWebSocketLike {
 
 export type RealtimeWebSocketFactory = (url: string, headers: Record<string, string>) => RealtimeWebSocketLike;
 
-type RealtimeToolName = "picky_handoff" | "picky_side_sessions" | "picky_side_steer" | "picky_pointer_overlay";
+type RealtimeToolName = "picky_handoff" | "picky_side_sessions" | "picky_side_steer" | "picky_skills_search" | "picky_skill_details";
 
 type PendingFunctionCall = {
   callId: string;
@@ -561,13 +563,13 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
         }) };
       case "picky_side_steer":
         return this.options.toolHandlers.steerSideSession({ sessionId: stringArg(args, "sessionId"), message: stringArg(args, "message") });
-      case "picky_pointer_overlay":
-        return this.options.toolHandlers.showPointer({
-          x: requiredNumberArg(args, "x"),
-          y: requiredNumberArg(args, "y"),
-          screenId: optionalStringArg(args, "screenId"),
-          label: optionalStringArg(args, "label"),
+      case "picky_skills_search":
+        return this.options.toolHandlers.searchSkills({
+          query: optionalStringArg(args, "query"),
+          limit: numberArg(args, "limit"),
         });
+      case "picky_skill_details":
+        return this.options.toolHandlers.getSkillDetails({ name: stringArg(args, "name") });
     }
   }
 
@@ -775,8 +777,10 @@ function buildRealtimeInstructions(): string {
     "",
     "## Realtime voice mode overrides",
     "- You are speaking directly to the user. Keep spoken Korean replies concise and natural.",
-    "- Never speak or emit [POINT:...] tags. In Realtime mode, use the `picky_pointer_overlay` function tool for visual pointing.",
-    "- Side HUD hover follow-ups bypass you and go directly to the side Pi agent. If the user refers to delegated work during a main-agent turn, call `picky_side_sessions` and then `picky_side_steer` when appropriate.",
+    "- Never speak or emit [POINT:...] tags. Realtime main has no pointing tool; describe UI locations verbally when needed.",
+    "- Use `picky_skills_search` to discover available Pi skills before delegating specialized work, then `picky_skill_details` for exact usage guidance when needed.",
+    "- You cannot execute Pi skills directly. If a skill is relevant, include the skill name and the essential details in `picky_handoff.instructions` or `picky_side_steer.message` for the side Pi agent.",
+    "- Side HUD hover follow-ups bypass you and go directly to the side Pi agent. If the user refers to delegated work during a main-agent turn, call `picky_side_sessions` before deciding whether to use `picky_side_steer`.",
   ].join("\n");
 }
 
@@ -859,18 +863,29 @@ function realtimeTools(): Array<Record<string, unknown>> {
     },
     {
       type: "function",
-      name: "picky_pointer_overlay",
-      description: "Show a visual-only pointer overlay at screenshot-pixel coordinates. Does not move or click the real cursor.",
+      name: "picky_skills_search",
+      description: "Search local Pi skill specifications available to side Pi agents. Returns matching skill names, descriptions, paths, and snippets.",
       parameters: {
         type: "object",
         additionalProperties: false,
         properties: {
-          x: { type: "number" },
-          y: { type: "number" },
-          screenId: { type: "string" },
-          label: { type: "string" },
+          query: { type: "string", description: "Optional keywords, e.g. sentry, slack, release, debugging. Empty lists top skills." },
+          limit: { type: "number", description: "Maximum number of matches to return. Defaults to 8, max 20." },
         },
-        required: ["x", "y"],
+        required: [],
+      },
+    },
+    {
+      type: "function",
+      name: "picky_skill_details",
+      description: "Read the full SKILL.md instructions for one local Pi skill by name before delegating skill-specific work to a side Pi agent.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          name: { type: "string", description: "Skill name, with or without the skill: prefix." },
+        },
+        required: ["name"],
       },
     },
   ];
@@ -935,7 +950,8 @@ function normalizeToolName(name: string): RealtimeToolName | undefined {
     case "picky_handoff":
     case "picky_side_sessions":
     case "picky_side_steer":
-    case "picky_pointer_overlay":
+    case "picky_skills_search":
+    case "picky_skill_details":
       return name;
     default:
       return undefined;
@@ -956,10 +972,4 @@ function optionalStringArg(args: Record<string, unknown>, key: string): string |
 function numberArg(args: Record<string, unknown>, key: string): number | undefined {
   const value = args[key];
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function requiredNumberArg(args: Record<string, unknown>, key: string): number {
-  const value = numberArg(args, key);
-  if (value === undefined) throw new Error(`Missing required number argument: ${key}`);
-  return value;
 }

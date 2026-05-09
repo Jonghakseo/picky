@@ -119,7 +119,8 @@ picky-agentd
             │    ├─ picky_handoff -> Pi side agent 생성
             │    ├─ picky_side_sessions
             │    ├─ picky_side_steer
-            │    └─ picky_pointer_overlay (Realtime mode 전용 권장)
+            │    ├─ picky_skills_search
+            │    └─ picky_skill_details
             └─ output audio + transcript relay to Picky.app
 ```
 
@@ -489,7 +490,8 @@ api-key: <apiKey>
       { "type": "function", "name": "picky_handoff", "parameters": { } },
       { "type": "function", "name": "picky_side_sessions", "parameters": { } },
       { "type": "function", "name": "picky_side_steer", "parameters": { } },
-      { "type": "function", "name": "picky_pointer_overlay", "parameters": { } }
+      { "type": "function", "name": "picky_skills_search", "parameters": { } },
+      { "type": "function", "name": "picky_skill_details", "parameters": { } }
     ],
     "tool_choice": "auto"
   }
@@ -504,8 +506,9 @@ api-key: <apiKey>
 
 - “마크다운 없이 1~3문장” 규칙은 유지.
 - “pointer tags를 마지막에 붙이라”는 규칙은 Realtime audio mode에서 제거한다. 음성으로 태그를 읽을 위험이 있기 때문이다.
-- 대신 `picky_pointer_overlay` function을 호출하라고 지시한다.
+- Realtime main에는 pointer overlay function을 제공하지 않는다. 위치 설명이 필요하면 자연어로 짧게 말한다.
 - `picky_handoff`, `picky_side_sessions`, `picky_side_steer` 사용 규칙은 유지한다.
+- `picky_skills_search`, `picky_skill_details`로 side Pi agent가 사용할 수 있는 skill 명세를 조회하고, 관련 skill 이름/핵심 지침을 handoff/steer 메시지에 포함한다.
 
 ## 10. Function calling / side Pi 유지
 
@@ -635,21 +638,10 @@ Realtime mode에서도 quick text input은 지원해야 한다.
 - audio transcript에 pointer tag가 들어가면 모델이 태그를 음성으로 읽을 수 있다.
 - OpenAI Realtime audio output은 별도 hidden text channel을 제공하지 않는다.
 
-권장 대안:
+현재 결정:
 
-- Realtime mode 전용 function tool `picky_pointer_overlay` 추가.
-- schema:
-
-```json
-{
-  "screenId": "optional string",
-  "points": [
-    { "x": 100, "y": 200, "label": "검색창" }
-  ]
-}
-```
-
-- handler는 기존 `makePointerOverlayRequestForContext()` / `pointerOverlayRequested` event를 재사용한다.
+- Realtime main에는 pointer overlay function tool을 제공하지 않는다.
+- 화면 위치 설명이 필요하면 짧은 자연어로 말한다.
 - Pi current mode는 기존 pointer tag 방식을 유지한다.
 
 ## 15. 오류/복구 정책

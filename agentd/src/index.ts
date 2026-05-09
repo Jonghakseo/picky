@@ -9,6 +9,7 @@ import { SelectableMainRuntime } from "./runtime/selectable-main-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyHandoffTool, createPickySideSessionsTool, createPickySideSteerTool } from "./application/handoff-tool.js";
 import { createPickyAskUserQuestionTool } from "./application/ask-user-question-tool.js";
+import { PickySkillCatalog } from "./application/skill-catalog.js";
 import { installExtensionCrashGuard } from "./extension-crash-guard.js";
 import { removeConnectionInfo, writeConnectionInfo } from "./connection-info-store.js";
 import { PROTOCOL_VERSION, ThinkingLevelSchema } from "./protocol.js";
@@ -40,6 +41,7 @@ const useMockRuntime = process.env.PICKY_AGENTD_RUNTIME === "mock";
 logAgentd("startup", { port, runtime: useMockRuntime ? "mock" : "pi", mainAgentRuntimeMode, appSupportDir, defaultCwd, mainAgentThinkingLevel });
 let supervisor: SessionSupervisor;
 const askUserQuestionTool = createPickyAskUserQuestionTool();
+const skillCatalog = new PickySkillCatalog();
 // handoff/side-session tools are reserved for the always-on main agent.
 const runtime = useMockRuntime
   ? new MockRuntime()
@@ -104,7 +106,8 @@ const realtimeMainRuntime = useMockRuntime
           logAgentd("side steer sent", { sessionId: session.id, status: session.status });
           return session;
         },
-        showPointer: async (request) => supervisor.requestPointerOverlay(request),
+        searchSkills: (request) => skillCatalog.search(request),
+        getSkillDetails: (request) => skillCatalog.details(request),
       },
     });
 

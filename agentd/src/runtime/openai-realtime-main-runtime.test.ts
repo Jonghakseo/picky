@@ -103,6 +103,30 @@ describe("OpenAI Realtime provider connection builders", () => {
 });
 
 describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
+  it("exposes skill lookup tools and omits the pointer overlay tool", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+
+    const sent = socket.sent.map((raw) => JSON.parse(raw) as Record<string, any>);
+    const sessionUpdate = sent.find((event) => event.type === "session.update")!;
+    const toolNames = sessionUpdate.session.tools.map((tool: Record<string, unknown>) => tool.name);
+
+    expect(toolNames).toContain("picky_skills_search");
+    expect(toolNames).toContain("picky_skill_details");
+    expect(toolNames).not.toContain("picky_pointer_overlay");
+  });
+
   it("uses GA assistant output_text content for bootstrap messages", async () => {
     const socket = new FakeRealtimeSocket();
     const runtime = new OpenAIRealtimeMainRuntime({
@@ -272,7 +296,8 @@ function fakeToolHandlers() {
     async handoff() { return { sessionId: "side", title: "Side" }; },
     listSideSessions() { return []; },
     async steerSideSession() { return session; },
-    async showPointer() { return { request: {} }; },
+    async searchSkills() { return { query: "", root: "/tmp/skills", total: 1, skills: [{ name: "debug", description: "Debug", path: "/tmp/skills/debug/SKILL.md" }] }; },
+    async getSkillDetails() { return { name: "debug", description: "Debug", path: "/tmp/skills/debug/SKILL.md", frontmatter: { name: "debug" }, content: "---\nname: debug\n---\n" }; },
   };
 }
 

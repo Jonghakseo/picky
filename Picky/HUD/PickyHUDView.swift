@@ -79,9 +79,9 @@ struct PickyHUDView: View {
                 maxHeight: .infinity,
                 alignment: placement.dockSide == .left ? .topLeading : .topTrailing
             )
-            // Animate only expand/collapse. Switching between dock-hovered sessions should
-            // swap content immediately; animating every activeSession id change cross-fades
-            // different card heights and makes the HUD look like it is stretching/flickering.
+            // Animate only expand/collapse sizing. The conversation card itself opts out
+            // of insertion/removal transitions so the HUD appears and disappears without
+            // a fade while still avoiding cross-fades between dock-hovered sessions.
             .animation(PickyHUDExpansion.animation, value: activeSession != nil)
             .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: handleHUDSizeChange)
             .onDisappear {
@@ -139,7 +139,7 @@ struct PickyHUDView: View {
             )
             .id(activeSession.id)
             .frame(width: PickyHUDDockLayout.detailWidth)
-            .transition(.opacity)
+            .transition(.identity)
         }
     }
 

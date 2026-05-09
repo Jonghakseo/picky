@@ -203,6 +203,8 @@ struct PickyHUDView: View {
     }
 
     private func chooseFolderForEmptySideAgent() {
+        NSApp.activate(ignoringOtherApps: true)
+
         let panel = NSOpenPanel()
         panel.title = "Choose a working folder"
         panel.prompt = "Start"

@@ -887,6 +887,8 @@ struct CompanionPanelSettingsView: View {
     }
 
     private func chooseDirectory(initialPath: String, commit: (URL) -> Void) {
+        NSApp.activate(ignoringOtherApps: true)
+
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true

@@ -656,6 +656,10 @@ struct PickySessionViewModelTests {
 
     @Test func hudDockKeyboardShortcutsOpenNumberedSessionsAndCycle() throws {
         let visibleIDs = ["agent-a", "agent-b", "agent-c"]
+        #expect(PickyHUDKeyboardShortcutPolicy.cycleDirection(keyCode: 33, charactersIgnoringModifiers: "{") == -1)
+        #expect(PickyHUDKeyboardShortcutPolicy.cycleDirection(keyCode: 30, charactersIgnoringModifiers: "}") == 1)
+        #expect(PickyHUDKeyboardShortcutPolicy.cycleDirection(keyCode: 0, charactersIgnoringModifiers: "[") == -1)
+        #expect(PickyHUDKeyboardShortcutPolicy.cycleDirection(keyCode: 0, charactersIgnoringModifiers: "]") == 1)
         #expect(PickyHUDDockLayout.heldSessionAfterNumberShortcut(visibleIDs: visibleIDs, number: 1) == .open("agent-a"))
         #expect(PickyHUDDockLayout.heldSessionAfterNumberShortcut(visibleIDs: visibleIDs, number: 3) == .open("agent-c"))
         #expect(PickyHUDDockLayout.heldSessionAfterNumberShortcut(visibleIDs: visibleIDs, number: 4) == nil)

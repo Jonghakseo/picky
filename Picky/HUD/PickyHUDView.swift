@@ -375,11 +375,10 @@ struct PickyHUDView: View {
     }
 
     private static func cycleDirection(for event: NSEvent) -> Int? {
-        switch event.charactersIgnoringModifiers {
-        case "[": return -1
-        case "]": return 1
-        default: return nil
-        }
+        PickyHUDKeyboardShortcutPolicy.cycleDirection(
+            keyCode: event.keyCode,
+            charactersIgnoringModifiers: event.charactersIgnoringModifiers
+        )
     }
 
     private static func isTextInputFocused(in window: NSWindow) -> Bool {
@@ -395,6 +394,25 @@ struct PickyHUDView: View {
 
     private static let wKeyCode: UInt16 = 13
     private static let escapeKeyCode: UInt16 = 53
+}
+
+enum PickyHUDKeyboardShortcutPolicy {
+    private static let leftBracketKeyCode: UInt16 = 33
+    private static let rightBracketKeyCode: UInt16 = 30
+
+    static func cycleDirection(keyCode: UInt16, charactersIgnoringModifiers: String?) -> Int? {
+        switch keyCode {
+        case leftBracketKeyCode: return -1
+        case rightBracketKeyCode: return 1
+        default: break
+        }
+
+        switch charactersIgnoringModifiers {
+        case "[", "{": return -1
+        case "]", "}": return 1
+        default: return nil
+        }
+    }
 }
 
 private struct PickyHUDMiniPreviewCardView: View {

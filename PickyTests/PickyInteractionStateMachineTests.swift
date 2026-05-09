@@ -5,8 +5,8 @@
 //  Tight state-machine coverage for `PickyInteractionReducer` focused on the
 //  `.speaking` output phase and the events that can preempt it. These tests
 //  pin down the contract that protects the cursor response bubble from
-//  getting stuck after a TTS reply is interrupted by another reply, a typed
-//  message, or a new voice input.
+//  getting stuck after a TTS reply is queued behind or interrupted by another
+//  reply, a typed message, or a new voice input.
 //
 //  The matrix below is intentionally exhaustive — each test covers exactly
 //  one (initial output) × (event) transition so a regression points at the
@@ -38,11 +38,11 @@ struct PickyInteractionStateMachineTests {
 
     // MARK: - Group A: `.speaking` preemption emits stopSpeech + drops overlay reason
     //
-    // The bug we fix here: any event that overwrites a `.speaking` output with a
-    // non-`.speaking` output must (a) emit `.stopSpeech(.superseded)` so the in-flight
-    // TTS is actually stopped and (b) remove the `.speakingResponse` overlay reason
-    // so subsequent overlay-visibility math is correct. Without this both the playing
-    // utterance and the cursor bubble can outlive the projection state.
+    // Any event that overwrites a `.speaking` output with a non-`.speaking` output must
+    // (a) emit `.stopSpeech(.superseded)` so the in-flight TTS is actually stopped and
+    // (b) remove the `.speakingResponse` overlay reason so subsequent overlay-visibility
+    // math is correct. Speakable quick replies are the exception: they queue behind the
+    // current utterance instead of overwriting it.
 
     @Test func speakingPreemptedByTextQuickReplyEmitsStopSpeechAndDropsSpeakingOverlay() {
         let initial = speakingState(
@@ -122,7 +122,7 @@ struct PickyInteractionStateMachineTests {
         #expect(containsStopSpeech(reason: .superseded, speechID: speechA, in: transition.effects))
     }
 
-    @Test func speakingReplacedByNewSpeakingEmitsStopSpeechForOldSpeechIDAndQueuesNewSpeak() {
+    @Test func speakingQuickReplyQueuesBehindCurrentSpeechWithoutPreemption() {
         var initial = speakingState(
             contextID: voiceContextID,
             speechID: speechA,
@@ -145,36 +145,11 @@ struct PickyInteractionStateMachineTests {
             correlation: .init(inputID: inputA, contextID: voiceContextID, speechID: speechB, source: .agent)
         )
 
-        guard case .speaking(let contextID, let speechID, let text, _, _, let finishPending) = transition.state.output else {
-            Issue.record("Expected new speaking output, got \(transition.state.output)")
-            return
-        }
-        #expect(contextID == voiceContextID)
-        #expect(speechID == speechB)
-        #expect(text == "second voice reply")
-        #expect(finishPending == false)
+        #expect(transition.state.output == initial.output)
+        #expect(transition.state.queuedSpeechReplies.map(\.text) == ["second voice reply"])
+        #expect(transition.effects.isEmpty)
+        #expect(!containsStopSpeech(reason: .superseded, in: transition.effects))
         #expect(isSpeakingResponseOverlayActive(transition.state))
-        // The reducer now owns the speaking-handoff explicitly: stopSpeech for
-        // the OLD speechID is emitted before the new .speak. The dispatched
-        // .speechFailed(old) will hit the new .speaking output's guard and be
-        // marked stale, so behavior is equivalent to the previous implicit
-        // path — but the contract is no longer leaking out into runSpeakEffect.
-        #expect(containsStopSpeech(reason: .superseded, speechID: speechA, in: transition.effects))
-        #expect(!containsStopSpeech(reason: .superseded, speechID: speechB, in: transition.effects))
-        #expect(transition.effects.contains(.speak(speechID: speechB, text: "second voice reply", contextID: voiceContextID)))
-        // Effect ordering matters: stop the old utterance before scheduling
-        // and starting the new one, otherwise CompanionManager could observe
-        // the new TTS being torn down by a late stop.
-        let stopIndex = transition.effects.firstIndex { effect in
-            if case .stopSpeech(_, let id) = effect, id == speechA { return true }
-            return false
-        }
-        let speakIndex = transition.effects.firstIndex(of: .speak(speechID: speechB, text: "second voice reply", contextID: voiceContextID))
-        #expect(stopIndex != nil)
-        #expect(speakIndex != nil)
-        if let stopIndex, let speakIndex {
-            #expect(stopIndex < speakIndex)
-        }
     }
 
     @Test func speakingPreemptedByQuickInputTextSubmittedEmitsStopSpeechAndShowsWaiting() {
@@ -605,7 +580,7 @@ struct PickyInteractionStateMachineTests {
 
     // MARK: - Group D: Realistic race scenarios drive the full event timeline
 
-    @Test func sideCompletionThenAnotherSideCompletionPlaysSecondAndIdlesOnSecondFinish() {
+    @Test func sideCompletionThenAnotherSideCompletionQueuesSecondAndIdlesOnSecondFinish() {
         // First completion → speaking(A).
         var state = reduce(
             PickyInteractionState(),
@@ -626,23 +601,26 @@ struct PickyInteractionStateMachineTests {
         )
         state = secondTransition.state
 
-        // New `.speak(secondSpeechID)` effect emitted; no `.stopSpeech` because
-        // the new speak takes over inside the runtime.
-        guard case .speaking(_, let secondSpeechID, _, _, _, _) = state.output else {
-            Issue.record("Expected speaking after second sideCompletion, got \(state.output)")
+        #expect(state.queuedSpeechReplies.map(\.text) == ["second"])
+        #expect(secondTransition.effects.isEmpty)
+        #expect(!containsStopSpeech(reason: .superseded, speechID: firstSpeechID, in: secondTransition.effects))
+
+        // First finish starts the queued second utterance.
+        let queuedStart = reduce(
+            state,
+            .speechFinished(speechID: firstSpeechID),
+            id: envelopeC,
+            offset: PickyInteractionReducer.minimumDisplayDuration + 0.1
+        )
+        state = queuedStart.state
+        guard case .speaking(_, let secondSpeechID, let secondText, _, _, _) = state.output else {
+            Issue.record("Expected queued second sideCompletion to start, got \(state.output)")
             return
         }
-        #expect(secondSpeechID != firstSpeechID)
-        #expect(secondTransition.effects.contains(.speak(speechID: secondSpeechID, text: "second", contextID: sideSessionID)))
-        // Reducer now emits an explicit stopSpeech tagged with the OLD speechID
-        // when one .speaking output replaces another. The new .speak effect
-        // still queues right after, so playback flows from utterance A to B.
-        #expect(containsStopSpeech(reason: .superseded, speechID: firstSpeechID, in: secondTransition.effects))
-
-        // Stale finish for the FIRST speechID is ignored.
-        let staleFinish = reduce(state, .speechFinished(speechID: firstSpeechID), id: envelopeC, offset: 0.1)
-        #expect(staleFinish.state == state)
-        #expect(staleFinish.journalRecords.last?.kind == .staleEvent)
+        #expect(secondSpeechID == envelopeB)
+        #expect(secondText == "second")
+        #expect(queuedStart.effects.contains(.speak(speechID: secondSpeechID, text: "second", contextID: sideSessionID)))
+        #expect(state.queuedSpeechReplies.isEmpty)
 
         // Real finish for the SECOND speechID transitions to idle.
         let cleanFinish = reduce(

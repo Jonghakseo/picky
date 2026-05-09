@@ -9,6 +9,7 @@ struct PickyInteractionState: Equatable, Codable {
     var pendingTextInputs: [UUID: PickyTextInputState]
     var pendingVoiceInputs: [UUID: PickyVoiceInputState]
     var contextOwnership: [String: PickyContextOwner]
+    var queuedSpeechReplies: [PickyQueuedSpeechReply]
     var lastDisplayMessage: PickyDisplayMessage?
 
     init(
@@ -19,6 +20,7 @@ struct PickyInteractionState: Equatable, Codable {
         pendingTextInputs: [UUID: PickyTextInputState] = [:],
         pendingVoiceInputs: [UUID: PickyVoiceInputState] = [:],
         contextOwnership: [String: PickyContextOwner] = [:],
+        queuedSpeechReplies: [PickyQueuedSpeechReply] = [],
         lastDisplayMessage: PickyDisplayMessage? = nil
     ) {
         self.input = input
@@ -28,6 +30,7 @@ struct PickyInteractionState: Equatable, Codable {
         self.pendingTextInputs = pendingTextInputs
         self.pendingVoiceInputs = pendingVoiceInputs
         self.contextOwnership = contextOwnership
+        self.queuedSpeechReplies = queuedSpeechReplies
         self.lastDisplayMessage = lastDisplayMessage
     }
 }
@@ -46,6 +49,15 @@ enum PickyOutputPhase: Equatable, Codable {
     case showingTextReply(contextID: String, text: String, minimumDisplayTimerID: UUID?, minimumDisplayUntil: Date?)
     case speaking(contextID: String?, speechID: UUID, text: String, minimumDisplayTimerID: UUID?, minimumDisplayUntil: Date?, finishPending: Bool)
     case suppressedReply(contextID: String, text: String, reason: PickyReplySuppressionReason, minimumDisplayTimerID: UUID?, minimumDisplayUntil: Date?)
+}
+
+struct PickyQueuedSpeechReply: Equatable, Codable {
+    let contextID: String
+    let text: String
+    let timerID: UUID
+    let speechID: UUID
+    let inputID: UUID?
+    let displaySource: PickyDisplaySource
 }
 
 enum PickyPointerPhase: Equatable, Codable {

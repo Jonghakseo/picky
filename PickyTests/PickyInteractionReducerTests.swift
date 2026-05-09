@@ -55,6 +55,81 @@ struct PickyInteractionReducerTests {
         #expect(cleared.state.output == .idle)
     }
 
+    @Test func speakableQuickRepliesQueueBehindCurrentSpeech() {
+        var state = PickyInteractionState()
+        state.contextOwnership["voice-context"] = .voice(inputID: inputA)
+
+        state = reduce(
+            state,
+            .quickReply(contextID: "voice-context", text: "first reply", originSource: nil, replyKind: .main, sessionID: nil, inputID: inputA),
+            id: timerA,
+            correlation: .init(inputID: inputA, contextID: "voice-context", speechID: speechA, source: .agent)
+        ).state
+
+        let queued = reduce(
+            state,
+            .quickReply(contextID: "voice-context", text: "second reply", originSource: nil, replyKind: .main, sessionID: nil, inputID: inputA),
+            id: timerB,
+            correlation: .init(inputID: inputA, contextID: "voice-context", speechID: inputB, source: .agent)
+        )
+
+        #expect(queued.effects.isEmpty)
+        #expect(queued.state.queuedSpeechReplies.map(\.text) == ["second reply"])
+        #expect(queued.journalRecords.last?.message == "Voice quick reply queued")
+
+        let started = reduce(
+            queued.state,
+            .speechFinished(speechID: speechA),
+            id: UUID(uuidString: "30000000-0000-0000-0000-00000000000F")!,
+            offset: PickyInteractionReducer.minimumDisplayDuration + 0.1
+        )
+
+        #expect(started.state.queuedSpeechReplies.isEmpty)
+        #expect(started.effects == [
+            .scheduleMinimumDisplay(timerID: timerB, speechID: inputB, inputID: inputA, delay: PickyInteractionReducer.minimumDisplayDuration),
+            .speak(speechID: inputB, text: "second reply", contextID: "voice-context")
+        ])
+        let expectedSecondDeadline = baseDate
+            .addingTimeInterval(PickyInteractionReducer.minimumDisplayDuration + 0.1)
+            .addingTimeInterval(PickyInteractionReducer.minimumDisplayDuration)
+        #expect(started.state.output == .speaking(
+            contextID: "voice-context",
+            speechID: inputB,
+            text: "second reply",
+            minimumDisplayTimerID: timerB,
+            minimumDisplayUntil: expectedSecondDeadline,
+            finishPending: false
+        ))
+        #expect(started.journalRecords.last?.message == "Queued voice quick reply started")
+    }
+
+    @Test func pendingSpeechQueueClearsWhenNewUserInputStarts() {
+        var state = PickyInteractionState()
+        state.contextOwnership["voice-context"] = .voice(inputID: inputA)
+        state = reduce(
+            state,
+            .quickReply(contextID: "voice-context", text: "first reply", originSource: nil, replyKind: .main, sessionID: nil, inputID: inputA),
+            id: timerA,
+            correlation: .init(inputID: inputA, contextID: "voice-context", speechID: speechA, source: .agent)
+        ).state
+        state = reduce(
+            state,
+            .quickReply(contextID: "voice-context", text: "queued reply", originSource: nil, replyKind: .main, sessionID: nil, inputID: inputA),
+            id: timerB,
+            correlation: .init(inputID: inputA, contextID: "voice-context", speechID: inputB, source: .agent)
+        ).state
+
+        let interrupted = reduce(
+            state,
+            .textSubmitted(text: "new request", inputID: inputB),
+            id: UUID(uuidString: "30000000-0000-0000-0000-000000000010")!,
+            correlation: .init(inputID: inputB, source: .quickInput)
+        )
+
+        #expect(interrupted.state.queuedSpeechReplies.isEmpty)
+        #expect(interrupted.effects.contains(.stopSpeech(reason: .superseded, speechID: speechA)))
+    }
+
     @Test func quickReplyImmediateSpeechFailureKeepsDisplayUntilMatchingTimerFires() {
         var state = PickyInteractionState()
         state.contextOwnership["voice-context"] = .voice(inputID: inputA)

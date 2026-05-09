@@ -39,6 +39,7 @@ enum PickyInteractionReducer {
 
         case .voicePressed(let targetSessionID):
             let inputID = envelope.correlation.inputID ?? envelope.id
+            state.queuedSpeechReplies.removeAll()
             var preemptedSpeechID: UUID?
             if case .speaking(_, let speechID, _, _, _, _) = state.output {
                 preemptedSpeechID = speechID
@@ -87,6 +88,7 @@ enum PickyInteractionReducer {
             record(.stateChanged, "Voice transcript finalized")
 
         case .transcriptFailed(let message, let inputID):
+            state.queuedSpeechReplies.removeAll()
             guard state.pendingVoiceInputs[inputID] != nil else {
                 record(.staleEvent, "Ignored stale transcript failure: \(message)")
                 break
@@ -101,6 +103,7 @@ enum PickyInteractionReducer {
 
         case .textSubmitted(let text, let inputID):
             let source = envelope.correlation.source
+            state.queuedSpeechReplies.removeAll()
             state.input = .textSubmitting(inputID: inputID, text: text)
             state.pendingTextInputs[inputID] = PickyTextInputState(text: text, source: source)
             if source == .quickInput {
@@ -120,6 +123,7 @@ enum PickyInteractionReducer {
             state.pendingTextInputs[inputID] = pendingText
             let owner: PickyContextOwner = pendingText.source == .quickInput ? .quickInputText(inputID: inputID) : .text(inputID: inputID)
             state.contextOwnership[context.id] = owner
+            state.queuedSpeechReplies.removeAll()
             preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
             state.output = .waitingForAgent(inputID: inputID, contextID: context.id, promptPreview: pendingText.text)
             if pendingText.source == .quickInput {
@@ -161,6 +165,7 @@ enum PickyInteractionReducer {
             } else {
                 preemptedSpeaking = false
             }
+            state.queuedSpeechReplies.removeAll()
             preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
             if pendingText.source == .quickInput {
                 state.output = .idle
@@ -179,6 +184,7 @@ enum PickyInteractionReducer {
             pendingVoice.transcript = transcript
             state.pendingVoiceInputs[inputID] = pendingVoice
             state.contextOwnership[context.id] = .voice(inputID: inputID)
+            state.queuedSpeechReplies.removeAll()
             preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
             state.output = .waitingForAgent(inputID: inputID, contextID: context.id, promptPreview: transcript)
             effects.append(.recordContextOwnership(inputID: inputID, contextID: context.id, owner: .voice(inputID: inputID)))
@@ -216,6 +222,7 @@ enum PickyInteractionReducer {
             let hasActiveVoiceInput = state.hasActiveVoiceInput
             let shouldSpeakReply = owner.isVoiceOwned || owner.usesCursorResponsePresentation || replyKind == .sideCompletion
             if hasActiveVoiceInput, replyKind == .sideCompletion {
+                state.queuedSpeechReplies.removeAll()
                 preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
                 state.output = .suppressedReply(
                     contextID: contextID,
@@ -228,33 +235,25 @@ enum PickyInteractionReducer {
                 state.lastDisplayMessage = PickyDisplayMessage(id: contextID, contextID: contextID, text: text, source: .suppressed, updatedAt: envelope.occurredAt)
                 record(.stateChanged, "Suppressed side completion quick reply while voice input is active")
             } else if shouldSpeakReply, !hasActiveVoiceInput {
-                // A new speaking output is replacing whatever was there — if the
-                // previous output was itself .speaking, emit an explicit
-                // .stopSpeech(.superseded, oldSpeechID) so the reducer's state
-                // machine, not the effect runner's internal `stopCurrentSpeech`,
-                // owns the handoff. The dispatched .speechFailed for the old
-                // speechID will hit the new .speaking guard and be marked stale
-                // — which is the same outcome as the implicit path, but no
-                // longer depends on runSpeakEffect calling stopCurrentSpeech
-                // before starting the new utterance.
-                preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
                 let speechID = envelope.correlation.speechID ?? envelope.id
                 let displaySource: PickyDisplaySource = replyKind == .sideCompletion ? .sideCompletion : (owner.usesCursorResponsePresentation ? .textReply : .voiceReply)
-                state.output = .speaking(
+                let queuedReply = PickyQueuedSpeechReply(
                     contextID: contextID,
-                    speechID: speechID,
                     text: text,
-                    minimumDisplayTimerID: timerID,
-                    minimumDisplayUntil: deadline,
-                    finishPending: false
+                    timerID: timerID,
+                    speechID: speechID,
+                    inputID: inputID,
+                    displaySource: displaySource
                 )
-                state = state.removingOverlayReason(.waitingForVoiceResponse)
-                state = state.addingOverlayReason(.speakingResponse)
-                state.lastDisplayMessage = PickyDisplayMessage(id: contextID, contextID: contextID, text: text, source: displaySource, updatedAt: envelope.occurredAt)
-                effects.append(.scheduleMinimumDisplay(timerID: timerID, speechID: speechID, inputID: inputID, delay: minimumDisplayDuration))
-                effects.append(.speak(speechID: speechID, text: text, contextID: contextID))
-                record(.stateChanged, "Voice quick reply is speaking")
+                if case .speaking = state.output {
+                    state.queuedSpeechReplies.append(queuedReply)
+                    record(.accepted, "Voice quick reply queued")
+                } else {
+                    startSpeakingReply(queuedReply, occurredAt: envelope.occurredAt, state: &state, effects: &effects)
+                    record(.stateChanged, "Voice quick reply is speaking")
+                }
             } else {
+                state.queuedSpeechReplies.removeAll()
                 state = state.removingOverlayReason(.waitingForVoiceResponse)
                 preemptSpeakingOutputIfNeeded(state: &state, effects: &effects)
                 state.output = .showingTextReply(
@@ -331,6 +330,8 @@ enum PickyInteractionReducer {
                     finishPending: true
                 )
                 record(.stateChanged, "Speech completed before minimum display")
+            } else if startNextQueuedSpeechIfAvailable(occurredAt: envelope.occurredAt, state: &state, effects: &effects) {
+                record(.stateChanged, "Queued voice quick reply started")
             } else {
                 state.output = .idle
                 state = state.removingOverlayReason(.speakingResponse)
@@ -351,9 +352,13 @@ enum PickyInteractionReducer {
                 record(.stateChanged, "Suppressed reply minimum display completed")
             case .speaking(let contextID, let speechID, let text, let currentTimerID, _, let finishPending) where currentTimerID == timerID:
                 if finishPending {
-                    state.output = .idle
-                    state = state.removingOverlayReason(.speakingResponse)
-                    record(.stateChanged, "Speaking reply minimum display completed")
+                    if startNextQueuedSpeechIfAvailable(occurredAt: envelope.occurredAt, state: &state, effects: &effects) {
+                        record(.stateChanged, "Queued voice quick reply started")
+                    } else {
+                        state.output = .idle
+                        state = state.removingOverlayReason(.speakingResponse)
+                        record(.stateChanged, "Speaking reply minimum display completed")
+                    }
                 } else {
                     state.output = .speaking(
                         contextID: contextID,
@@ -387,6 +392,45 @@ enum PickyInteractionReducer {
         }
 
         return PickyInteractionTransition(state: state, effects: effects, journalRecords: records)
+    }
+
+    private static func startSpeakingReply(
+        _ reply: PickyQueuedSpeechReply,
+        occurredAt: Date,
+        state: inout PickyInteractionState,
+        effects: inout [PickyInteractionEffect]
+    ) {
+        let deadline = occurredAt.addingTimeInterval(minimumDisplayDuration)
+        state = state.removingOverlayReason(.waitingForVoiceResponse)
+        state = state.addingOverlayReason(.speakingResponse)
+        state.output = .speaking(
+            contextID: reply.contextID,
+            speechID: reply.speechID,
+            text: reply.text,
+            minimumDisplayTimerID: reply.timerID,
+            minimumDisplayUntil: deadline,
+            finishPending: false
+        )
+        state.lastDisplayMessage = PickyDisplayMessage(
+            id: reply.contextID,
+            contextID: reply.contextID,
+            text: reply.text,
+            source: reply.displaySource,
+            updatedAt: occurredAt
+        )
+        effects.append(.scheduleMinimumDisplay(timerID: reply.timerID, speechID: reply.speechID, inputID: reply.inputID, delay: minimumDisplayDuration))
+        effects.append(.speak(speechID: reply.speechID, text: reply.text, contextID: reply.contextID))
+    }
+
+    private static func startNextQueuedSpeechIfAvailable(
+        occurredAt: Date,
+        state: inout PickyInteractionState,
+        effects: inout [PickyInteractionEffect]
+    ) -> Bool {
+        guard !state.queuedSpeechReplies.isEmpty else { return false }
+        let reply = state.queuedSpeechReplies.removeFirst()
+        startSpeakingReply(reply, occurredAt: occurredAt, state: &state, effects: &effects)
+        return true
     }
 
     /// Cleans up a `.speaking` output when an event must replace it with a non-`.speaking`

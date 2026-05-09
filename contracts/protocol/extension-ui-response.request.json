@@ -1,6 +1,6 @@
 {
   "id": "cmd-ui-001",
-  "protocolVersion": "2026-05-05",
+  "protocolVersion": "2026-05-09",
   "type": "answerExtensionUi",
   "sessionId": "session-001",
   "requestId": "ui-001",

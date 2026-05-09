@@ -77,6 +77,115 @@ enum PickyMainAgentThinkingLevel: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum PickyMainAgentRuntimeMode: String, Codable, CaseIterable, Identifiable {
+    case pi
+    case openAIRealtime
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .pi: "Pi (current)"
+        case .openAIRealtime: "OpenAI Realtime"
+        }
+    }
+
+    var agentdEnvironmentValue: String {
+        switch self {
+        case .pi: "pi"
+        case .openAIRealtime: "openai-realtime"
+        }
+    }
+}
+
+enum PickyOpenAIRealtimeProvider: String, Codable, CaseIterable, Identifiable {
+    case openAI
+    case azureOpenAI
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .openAI: "OpenAI"
+        case .azureOpenAI: "Azure OpenAI"
+        }
+    }
+
+    var protocolValue: String {
+        switch self {
+        case .openAI: "openai"
+        case .azureOpenAI: "azure_openai"
+        }
+    }
+}
+
+enum PickyAzureOpenAIRealtimeAPIShape: String, Codable, CaseIterable, Identifiable {
+    case ga
+    case preview
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .ga: "GA /openai/v1/realtime"
+        case .preview: "Preview /openai/realtime"
+        }
+    }
+
+    var protocolValue: String { rawValue }
+}
+
+enum PickyOpenAIRealtimeReasoningEffort: String, Codable, CaseIterable, Identifiable {
+    case low
+    case medium
+    case high
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .low: "Low"
+        case .medium: "Medium"
+        case .high: "High"
+        }
+    }
+}
+
+struct PickyOpenAIRealtimeSettings: Codable, Equatable {
+    var provider: PickyOpenAIRealtimeProvider
+    var apiKey: String
+    var modelOrDeployment: String
+    var azureResourceEndpoint: String
+    var azureAPIVersion: String
+    var azureAPIShape: PickyAzureOpenAIRealtimeAPIShape
+    var voice: String
+    var reasoningEffort: PickyOpenAIRealtimeReasoningEffort
+    var transcriptionLanguage: String
+
+    static let defaults = PickyOpenAIRealtimeSettings(
+        provider: .openAI,
+        apiKey: "",
+        modelOrDeployment: "gpt-realtime-2",
+        azureResourceEndpoint: "",
+        azureAPIVersion: "",
+        azureAPIShape: .ga,
+        voice: "marin",
+        reasoningEffort: .medium,
+        transcriptionLanguage: ""
+    )
+
+    func normalized() -> PickyOpenAIRealtimeSettings {
+        var copy = self
+        copy.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.modelOrDeployment = modelOrDeployment.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.azureResourceEndpoint = azureResourceEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.azureAPIVersion = azureAPIVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.voice = voice.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.transcriptionLanguage = transcriptionLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+        return copy
+    }
+}
+
 enum PickyScreenContextScope: String, Codable, CaseIterable, Identifiable {
     case allScreens
     case focusedScreen
@@ -243,6 +352,8 @@ struct PickySettings: Codable, Equatable {
     var cursor: PickyCursorPreferences
     var overlayBubbles: PickyOverlayBubblePreferences
     var fontScales: PickyFontScales
+    var mainAgentRuntimeMode: PickyMainAgentRuntimeMode
+    var openAIRealtime: PickyOpenAIRealtimeSettings
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel
     /// Free-form Korean/English instructions appended to every main-agent turn prompt. Lets users
     /// teach the always-on main agent personal preferences (tone, language, recurring reminders)
@@ -295,6 +406,8 @@ struct PickySettings: Codable, Equatable {
         cursor: PickyCursorPreferences = .defaults,
         overlayBubbles: PickyOverlayBubblePreferences = .defaults,
         fontScales: PickyFontScales = .defaults,
+        mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi,
+        openAIRealtime: PickyOpenAIRealtimeSettings = .defaults,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .medium,
         mainAgentExtraInstructions: String = "",
         screenContextScope: PickyScreenContextScope = .allScreens,
@@ -320,6 +433,8 @@ struct PickySettings: Codable, Equatable {
         self.cursor = cursor
         self.overlayBubbles = overlayBubbles
         self.fontScales = fontScales
+        self.mainAgentRuntimeMode = mainAgentRuntimeMode
+        self.openAIRealtime = openAIRealtime
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
         self.mainAgentExtraInstructions = mainAgentExtraInstructions
         self.screenContextScope = screenContextScope
@@ -349,6 +464,8 @@ struct PickySettings: Codable, Equatable {
             cursor: .defaults,
             overlayBubbles: .defaults,
             fontScales: .defaults,
+            mainAgentRuntimeMode: .pi,
+            openAIRealtime: .defaults,
             mainAgentThinkingLevel: .medium,
             mainAgentExtraInstructions: "",
             screenContextScope: .allScreens,
@@ -369,6 +486,7 @@ struct PickySettings: Codable, Equatable {
         copy.azureOpenAIEndpoint = azureOpenAIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.azureOpenAIAPIKey = azureOpenAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.azureSTTPreferredLanguage = azureSTTPreferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.openAIRealtime = openAIRealtime.normalized()
         // mainAgentExtraInstructions: do not trim here — auto-save runs on every keystroke,
         // so trimming round-trips would eat trailing spaces while typing. Trim happens at send time.
         return copy
@@ -391,6 +509,8 @@ struct PickySettings: Codable, Equatable {
         case cursor
         case overlayBubbles
         case fontScales
+        case mainAgentRuntimeMode
+        case openAIRealtime
         case mainAgentThinkingLevel
         case mainAgentExtraInstructions
         case screenContextScope
@@ -420,6 +540,8 @@ struct PickySettings: Codable, Equatable {
         notifications = try container.decodeIfPresent(PickyNotificationPreferences.self, forKey: .notifications) ?? defaults.notifications
         cursor = try container.decodeIfPresent(PickyCursorPreferences.self, forKey: .cursor) ?? defaults.cursor
         overlayBubbles = try container.decodeIfPresent(PickyOverlayBubblePreferences.self, forKey: .overlayBubbles) ?? defaults.overlayBubbles
+        mainAgentRuntimeMode = try container.decodeIfPresent(PickyMainAgentRuntimeMode.self, forKey: .mainAgentRuntimeMode) ?? defaults.mainAgentRuntimeMode
+        openAIRealtime = try container.decodeIfPresent(PickyOpenAIRealtimeSettings.self, forKey: .openAIRealtime) ?? defaults.openAIRealtime
         mainAgentThinkingLevel = try container.decodeIfPresent(PickyMainAgentThinkingLevel.self, forKey: .mainAgentThinkingLevel) ?? defaults.mainAgentThinkingLevel
         mainAgentExtraInstructions = try container.decodeIfPresent(String.self, forKey: .mainAgentExtraInstructions) ?? defaults.mainAgentExtraInstructions
         screenContextScope = try container.decodeIfPresent(PickyScreenContextScope.self, forKey: .screenContextScope) ?? defaults.screenContextScope

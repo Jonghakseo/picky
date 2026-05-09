@@ -40,7 +40,8 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         let settings = settingsStore.load().normalizedPaths()
         return PickyAgentDaemonConfiguration.development(
             defaultCwd: settings.defaultCwd,
-            mainAgentThinkingLevel: settings.mainAgentThinkingLevel
+            mainAgentThinkingLevel: settings.mainAgentThinkingLevel,
+            mainAgentRuntimeMode: settings.mainAgentRuntimeMode
         )
     }()
     private lazy var daemonLauncher = PickyAgentDaemonLauncher(configuration: daemonConfiguration)

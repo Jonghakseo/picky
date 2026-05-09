@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { BrowserMetadataSchema, CommandEnvelopeSchema, EventEnvelopeSchema } from "./protocol.js";
+import { BrowserMetadataSchema, CommandEnvelopeSchema, EventEnvelopeSchema, OpenAIRealtimeAuthConfigSchema } from "./protocol.js";
 
 const contractsRoot = join(process.cwd(), "..", "contracts", "protocol");
 
@@ -32,7 +32,7 @@ describe("protocol contract fixtures", () => {
     expect(() =>
       CommandEnvelopeSchema.parse({
         id: "cmd-pin",
-        protocolVersion: "2026-05-05",
+        protocolVersion: "2026-05-09",
         type: "pinSideSession",
         title: "Pinned Pi session",
         context: {
@@ -52,7 +52,7 @@ describe("protocol contract fixtures", () => {
     expect(() =>
       CommandEnvelopeSchema.parse({
         id: "cmd-empty-side",
-        protocolVersion: "2026-05-05",
+        protocolVersion: "2026-05-09",
         type: "createEmptySideSession",
         context: {
           id: "context-empty-side",
@@ -69,7 +69,7 @@ describe("protocol contract fixtures", () => {
   it("parses steer commands with optional captured context", () => {
     const parsed = CommandEnvelopeSchema.parse({
       id: "cmd-steer-context",
-      protocolVersion: "2026-05-05",
+      protocolVersion: "2026-05-09",
       type: "steer",
       sessionId: "session-001",
       text: "look at this screenshot",
@@ -93,7 +93,7 @@ describe("protocol contract fixtures", () => {
       expect(() =>
         CommandEnvelopeSchema.parse({
           id: `cmd-clear-${kind}`,
-          protocolVersion: "2026-05-05",
+          protocolVersion: "2026-05-09",
           type: "clearQueue",
           sessionId: "session-001",
           kind,
@@ -106,7 +106,7 @@ describe("protocol contract fixtures", () => {
     expect(() =>
       EventEnvelopeSchema.parse({
         id: "event-message-appended",
-        protocolVersion: "2026-05-05",
+        protocolVersion: "2026-05-09",
         timestamp: "2026-05-05T00:00:00.000Z",
         type: "sessionMessageAppended",
         sessionId: "session-001",
@@ -127,7 +127,7 @@ describe("protocol contract fixtures", () => {
     expect(() =>
       EventEnvelopeSchema.parse({
         id: "event-activity-message",
-        protocolVersion: "2026-05-05",
+        protocolVersion: "2026-05-09",
         timestamp: "2026-05-05T00:00:00.000Z",
         type: "sessionMessageAppended",
         sessionId: "session-001",
@@ -145,7 +145,7 @@ describe("protocol contract fixtures", () => {
   it("parses session queue updates with optional mode fields", () => {
     const base = {
       id: "event-queue-updated",
-      protocolVersion: "2026-05-05",
+      protocolVersion: "2026-05-09",
       timestamp: "2026-05-05T00:00:00.000Z",
       type: "sessionQueueUpdated",
       sessionId: "session-001",
@@ -156,6 +156,72 @@ describe("protocol contract fixtures", () => {
 
     expect(() => EventEnvelopeSchema.parse(base)).not.toThrow();
     expect(() => EventEnvelopeSchema.parse({ ...base, steeringMode: "one-at-a-time", followUpMode: "all" })).not.toThrow();
+  });
+
+  it("parses realtime runtime mode and auth commands", () => {
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-runtime-mode",
+      protocolVersion: "2026-05-09",
+      type: "setMainAgentRuntimeMode",
+      mode: "openai-realtime",
+    })).toMatchObject({ type: "setMainAgentRuntimeMode", mode: "openai-realtime" });
+
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-realtime-auth",
+      protocolVersion: "2026-05-09",
+      type: "configureMainRealtimeAuth",
+      provider: "openai",
+      apiKey: "sk-test",
+      modelOrDeployment: "gpt-realtime-1.5",
+      voice: "marin",
+      reasoningEffort: "medium",
+    })).toMatchObject({ type: "configureMainRealtimeAuth", modelOrDeployment: "gpt-realtime-1.5" });
+  });
+
+  it("validates Azure OpenAI realtime auth config shape", () => {
+    expect(OpenAIRealtimeAuthConfigSchema.parse({
+      provider: "azure_openai",
+      apiKey: "azure-key",
+      modelOrDeployment: "deployment",
+      voice: "marin",
+      azure: { resourceEndpoint: "https://x.openai.azure.com", apiShape: "ga" },
+    })).toMatchObject({ provider: "azure_openai" });
+
+    expect(() => OpenAIRealtimeAuthConfigSchema.parse({
+      provider: "azure_openai",
+      apiKey: "azure-key",
+      modelOrDeployment: "deployment",
+      voice: "marin",
+    })).toThrow(/Azure OpenAI realtime config is required/);
+  });
+
+  it("parses realtime voice and output events", () => {
+    expect(EventEnvelopeSchema.parse({
+      id: "event-realtime-state",
+      protocolVersion: "2026-05-09",
+      timestamp: "2026-05-09T00:00:00.000Z",
+      type: "mainRealtimeStateChanged",
+      state: "speaking",
+    })).toMatchObject({ type: "mainRealtimeStateChanged", state: "speaking" });
+
+    expect(EventEnvelopeSchema.parse({
+      id: "event-realtime-audio",
+      protocolVersion: "2026-05-09",
+      timestamp: "2026-05-09T00:00:00.000Z",
+      type: "mainRealtimeOutputAudioDelta",
+      inputId: "input-1",
+      audioBase64: "AAAA",
+    })).toMatchObject({ type: "mainRealtimeOutputAudioDelta", audioBase64: "AAAA" });
+
+    expect(EventEnvelopeSchema.parse({
+      id: "event-realtime-done",
+      protocolVersion: "2026-05-09",
+      timestamp: "2026-05-09T00:00:00.000Z",
+      type: "mainRealtimeTurnDone",
+      inputId: "input-1",
+      status: "completed",
+      finalTranscript: "완료",
+    })).toMatchObject({ type: "mainRealtimeTurnDone", finalTranscript: "완료" });
   });
 
   it("rejects invalid protocol versions", () => {

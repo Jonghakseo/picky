@@ -14,6 +14,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
     var appSupportRoot: URL
     var defaultCwd: String
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .medium
+    var mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi
     var runtime: String?
     var workingDirectory: URL
     var executableURL: URL
@@ -29,6 +30,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
         appSupportRoot: URL = PickyAppSupport.defaultRoot(),
         defaultCwd: String = FileManager.default.homeDirectoryForCurrentUser.path,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .medium,
+        mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         bundleResourceURL: URL? = Bundle.main.resourceURL,
         fileManager: FileManager = .default
@@ -45,6 +47,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
             appSupportRoot: appSupportRoot,
             defaultCwd: defaultCwd,
             mainAgentThinkingLevel: mainAgentThinkingLevel,
+            mainAgentRuntimeMode: mainAgentRuntimeMode,
             runtime: environment["PICKY_AGENTD_RUNTIME"]
         )
     }
@@ -56,6 +59,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
         appSupportRoot: URL,
         defaultCwd: String,
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel,
+        mainAgentRuntimeMode: PickyMainAgentRuntimeMode,
         runtime: String?
     ) -> PickyAgentDaemonConfiguration {
         switch location {
@@ -66,6 +70,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 appSupportRoot: appSupportRoot,
                 defaultCwd: defaultCwd,
                 mainAgentThinkingLevel: mainAgentThinkingLevel,
+                mainAgentRuntimeMode: mainAgentRuntimeMode,
                 runtime: runtime,
                 workingDirectory: root,
                 executableURL: URL(fileURLWithPath: "/usr/bin/env"),
@@ -81,6 +86,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 appSupportRoot: appSupportRoot,
                 defaultCwd: defaultCwd,
                 mainAgentThinkingLevel: mainAgentThinkingLevel,
+                mainAgentRuntimeMode: mainAgentRuntimeMode,
                 runtime: runtime,
                 workingDirectory: root,
                 executableURL: URL(fileURLWithPath: "/usr/bin/env"),
@@ -96,6 +102,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 appSupportRoot: appSupportRoot,
                 defaultCwd: defaultCwd,
                 mainAgentThinkingLevel: mainAgentThinkingLevel,
+                mainAgentRuntimeMode: mainAgentRuntimeMode,
                 runtime: runtime,
                 workingDirectory: root,
                 executableURL: URL(fileURLWithPath: "/usr/bin/env"),
@@ -113,6 +120,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 appSupportRoot: appSupportRoot,
                 defaultCwd: defaultCwd,
                 mainAgentThinkingLevel: mainAgentThinkingLevel,
+                mainAgentRuntimeMode: mainAgentRuntimeMode,
                 runtime: runtime,
                 workingDirectory: root,
                 executableURL: URL(fileURLWithPath: "/usr/bin/env"),
@@ -133,6 +141,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
         env["PICKY_APP_SUPPORT_DIR"] = appSupportRoot.path
         env["PICKY_DEFAULT_CWD"] = defaultCwd
         env["PICKY_MAIN_AGENT_THINKING_LEVEL"] = mainAgentThinkingLevel.rawValue
+        env["PICKY_MAIN_AGENT_RUNTIME"] = mainAgentRuntimeMode.agentdEnvironmentValue
         if let runtime { env["PICKY_AGENTD_RUNTIME"] = runtime }
         return env
     }

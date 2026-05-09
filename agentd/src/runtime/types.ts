@@ -1,5 +1,5 @@
 import type { BuiltPrompt } from "../prompt-builder.js";
-import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
+import type { MainAgentRuntimeMode, ModelCycleDirection, OpenAIRealtimeAuthConfig, PickyContextPacket, PickyQueueMode } from "../protocol.js";
 
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 export type RuntimeSlashCommandSource = "extension" | "prompt" | "skill" | "builtin";
@@ -14,6 +14,8 @@ export interface RuntimeAssistantRunMetadata {
   thinkingLevel?: ThinkingLevel;
 }
 
+export type MainRealtimeState = "connecting" | "ready" | "listening" | "thinking" | "speaking" | "failed";
+
 export type RuntimeEvent =
   | { type: "log"; line: string }
   | { type: "assistant_delta"; delta: string }
@@ -24,7 +26,15 @@ export type RuntimeEvent =
   | { type: "tool"; toolCallId: string; name: string; status: "running" | "succeeded" | "failed"; preview?: string; argsPreview?: string; resultPreview?: string }
   | { type: "extension_ui"; request: Record<string, unknown>; waitsForInput: boolean }
   | { type: "session_info"; name: string }
-  | { type: "context_usage"; usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined };
+  | { type: "context_usage"; usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined }
+  | { type: "main_realtime_state"; state: MainRealtimeState; message?: string }
+  | { type: "main_realtime_input_transcript_delta"; inputId: string; delta: string }
+  | { type: "main_realtime_input_transcript_completed"; inputId: string; transcript: string }
+  | { type: "main_realtime_output_audio_delta"; inputId?: string; audioBase64: string }
+  | { type: "main_realtime_output_audio_done"; inputId?: string }
+  | { type: "main_realtime_output_transcript_delta"; inputId?: string; delta: string }
+  | { type: "main_realtime_output_transcript_completed"; inputId?: string; transcript: string }
+  | { type: "main_realtime_turn_done"; inputId?: string; status: "completed" | "cancelled" | "failed" | "incomplete"; finalTranscript?: string };
 
 export interface RuntimeSteerResult {
   /**
@@ -80,4 +90,25 @@ export interface AgentRuntime {
   prewarm?(options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle>;
   resume?(sessionFilePath: string, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle>;
   setThinkingLevel?(level: ThinkingLevel): void;
+  setMainAgentRuntimeMode?(mode: MainAgentRuntimeMode): boolean;
+  getMainAgentRuntimeMode?(): MainAgentRuntimeMode;
+}
+
+export interface MainRealtimeRuntime extends AgentRuntime {
+  configureMainRealtimeAuth(config: OpenAIRealtimeAuthConfig): Promise<void> | void;
+  beginMainRealtimeVoiceTurn(turn: { inputId: string; context: PickyContextPacket }): Promise<void>;
+  appendMainRealtimeInputAudio(inputId: string, audioBase64: string): Promise<void>;
+  commitMainRealtimeVoiceTurn(inputId: string): Promise<void>;
+  cancelMainRealtimeVoiceTurn(inputId?: string, playedAudioMs?: number): Promise<void>;
+}
+
+export function isMainRealtimeRuntime(runtime: AgentRuntime | undefined): runtime is MainRealtimeRuntime {
+  return Boolean(
+    runtime
+      && typeof (runtime as Partial<MainRealtimeRuntime>).configureMainRealtimeAuth === "function"
+      && typeof (runtime as Partial<MainRealtimeRuntime>).beginMainRealtimeVoiceTurn === "function"
+      && typeof (runtime as Partial<MainRealtimeRuntime>).appendMainRealtimeInputAudio === "function"
+      && typeof (runtime as Partial<MainRealtimeRuntime>).commitMainRealtimeVoiceTurn === "function"
+      && typeof (runtime as Partial<MainRealtimeRuntime>).cancelMainRealtimeVoiceTurn === "function",
+  );
 }

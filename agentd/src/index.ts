@@ -4,6 +4,8 @@ import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
+import { OpenAIRealtimeMainRuntime } from "./runtime/openai-realtime-main-runtime.js";
+import { SelectableMainRuntime } from "./runtime/selectable-main-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyHandoffTool, createPickySideSessionsTool, createPickySideSteerTool } from "./application/handoff-tool.js";
 import { createPickyAskUserQuestionTool } from "./application/ask-user-question-tool.js";
@@ -17,6 +19,7 @@ const token = process.env.PICKY_AGENTD_TOKEN;
 const appSupportDir = process.env.PICKY_APP_SUPPORT_DIR ?? defaultAppSupportRoot();
 const defaultCwd = process.env.PICKY_DEFAULT_CWD ?? process.cwd();
 const mainAgentThinkingLevel = parseMainAgentThinkingLevel(process.env.PICKY_MAIN_AGENT_THINKING_LEVEL);
+const mainAgentRuntimeMode = process.env.PICKY_MAIN_AGENT_RUNTIME === "openai-realtime" ? "openai-realtime" : "pi";
 
 if (!token) {
   console.error("PICKY_AGENTD_TOKEN is required");
@@ -34,7 +37,7 @@ if (!token) {
 installExtensionCrashGuard();
 
 const useMockRuntime = process.env.PICKY_AGENTD_RUNTIME === "mock";
-logAgentd("startup", { port, runtime: useMockRuntime ? "mock" : "pi", appSupportDir, defaultCwd, mainAgentThinkingLevel });
+logAgentd("startup", { port, runtime: useMockRuntime ? "mock" : "pi", mainAgentRuntimeMode, appSupportDir, defaultCwd, mainAgentThinkingLevel });
 let supervisor: SessionSupervisor;
 const askUserQuestionTool = createPickyAskUserQuestionTool();
 // handoff/side-session tools are reserved for the always-on main agent.
@@ -43,7 +46,8 @@ const runtime = useMockRuntime
   : new PiSdkRuntime({
       customTools: [askUserQuestionTool],
     });
-const mainRuntime = useMockRuntime
+
+const piMainRuntime = useMockRuntime
   ? undefined
   : new PiSdkRuntime({
       thinkingLevel: mainAgentThinkingLevel,
@@ -74,6 +78,42 @@ const mainRuntime = useMockRuntime
           return session;
         }),
       ],
+    });
+
+const realtimeMainRuntime = useMockRuntime
+  ? undefined
+  : new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        handoff: async (request) => {
+          const context = supervisor.currentMainContext();
+          if (!context) throw new Error("No active Picky main-agent context to hand off.");
+          const cwd = request.cwd?.trim() || context.cwd || defaultCwd;
+          logAgentd("handoff requested", { contextId: context.id, titleChars: request.title.length, instructionChars: request.instructions.length, cwd });
+          supervisor.announceMainHandoff(
+            context.id,
+            request.userMessage?.trim() || "복잡한 작업이라 사이드 에이전트에 위임하겠습니다. 진행 상황은 화면 가장자리 HUD에서 볼 수 있어요.",
+          );
+          const session = await supervisor.createSideFromHandoff(context, { title: request.title, instructions: request.instructions, cwd });
+          logAgentd("handoff started", { contextId: context.id, sessionId: session.id, titleChars: session.title.length, cwd: session.cwd });
+          return { sessionId: session.id, title: session.title, cwd: session.cwd };
+        },
+        listSideSessions: () => supervisor.listSideSessions(),
+        steerSideSession: async (request) => {
+          logAgentd("side steer requested", { sessionId: request.sessionId, textChars: request.message.length });
+          const session = await supervisor.steerSideSession(request.sessionId, request.message);
+          logAgentd("side steer sent", { sessionId: session.id, status: session.status });
+          return session;
+        },
+        showPointer: async (request) => supervisor.requestPointerOverlay(request),
+      },
+    });
+
+const mainRuntime = useMockRuntime || !piMainRuntime || !realtimeMainRuntime
+  ? undefined
+  : new SelectableMainRuntime({
+      initialMode: mainAgentRuntimeMode,
+      piRuntime: piMainRuntime,
+      realtimeRuntime: realtimeMainRuntime,
     });
 supervisor = new SessionSupervisor(runtime, new SessionStore(appSupportDir), {
   taskRouter: useMockRuntime ? new ConservativeMockTaskRouter() : undefined,

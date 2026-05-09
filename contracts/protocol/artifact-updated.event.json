@@ -1,6 +1,6 @@
 {
   "id": "event-artifact-001",
-  "protocolVersion": "2026-05-05",
+  "protocolVersion": "2026-05-09",
   "timestamp": "2026-05-01T00:00:05.000Z",
   "type": "artifactUpdated",
   "sessionId": "session-001",

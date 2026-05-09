@@ -1,6 +1,6 @@
 {
   "id": "cmd-create-001",
-  "protocolVersion": "2026-05-05",
+  "protocolVersion": "2026-05-09",
   "type": "createTask",
   "context": {
     "id": "context-plain-001",

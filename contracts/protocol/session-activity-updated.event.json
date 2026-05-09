@@ -1,6 +1,6 @@
 {
   "id": "event-session-activity-updated",
-  "protocolVersion": "2026-05-05",
+  "protocolVersion": "2026-05-09",
   "timestamp": "2026-05-05T00:00:04.000Z",
   "type": "sessionActivityUpdated",
   "sessionId": "session-001",

@@ -1,6 +1,6 @@
 {
   "id": "cmd-create-empty-side-session-001",
-  "protocolVersion": "2026-05-05",
+  "protocolVersion": "2026-05-09",
   "type": "createEmptySideSession",
   "context": {
     "id": "context-manual-side-agent-001",

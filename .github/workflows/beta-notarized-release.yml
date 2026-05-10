@@ -182,18 +182,12 @@ jobs:
           set -euo pipefail
           ./scripts/package-signed-app.sh
 
-      - name: Re-sign, notarize, staple, and validate app
-        id: notarize
+      - name: Re-sign nested Mach-O files and final app
         env:
           PICKY_CODE_SIGN_IDENTITY: ${{ secrets.PICKY_CODE_SIGN_IDENTITY }}
-          PICKY_DEVELOPMENT_TEAM: ${{ secrets.PICKY_DEVELOPMENT_TEAM }}
-          PICKY_NOTARY_APPLE_ID: ${{ secrets.PICKY_NOTARY_APPLE_ID }}
-          PICKY_NOTARY_APP_PASSWORD: ${{ secrets.PICKY_NOTARY_APP_PASSWORD }}
         run: |
           set -euo pipefail
           app="${PWD}/build/package/export/${APP_NAME}.app"
-          upload_zip="${PWD}/build/package/${APP_NAME}-beta-notary-upload.zip"
-          notary_result="${PWD}/build/package/notary-submit-result.json"
 
           signed_count=0
           while IFS= read -r -d '' file; do
@@ -220,46 +214,8 @@ jobs:
 
           /usr/bin/codesign --verify --deep --strict --verbose=2 "${app}"
           /usr/bin/codesign -d --entitlements :- "${app}" 2>/dev/null | /usr/bin/plutil -p -
-
-          rm -f "${upload_zip}"
-          (
-            cd build/package/export
-            /usr/bin/ditto -c -k --sequesterRsrc --keepParent "${APP_NAME}.app" "${upload_zip}"
-          )
-
-          xcrun notarytool submit "${upload_zip}" \
-            --apple-id "${PICKY_NOTARY_APPLE_ID}" \
-            --password "${PICKY_NOTARY_APP_PASSWORD}" \
-            --team-id "${PICKY_DEVELOPMENT_TEAM}" \
-            --wait \
-            --output-format json | tee "${notary_result}"
-
-          submission_id="$(python3 - "${notary_result}" <<'PY'
-          import json, sys
-          from pathlib import Path
-          print(json.loads(Path(sys.argv[1]).read_text())["id"])
-          PY
-          )"
-          submission_status="$(python3 - "${notary_result}" <<'PY'
-          import json, sys
-          from pathlib import Path
-          print(json.loads(Path(sys.argv[1]).read_text())["status"])
-          PY
-          )"
-
-          if [[ "${submission_status}" != "Accepted" ]]; then
-            echo "Notarization failed with status: ${submission_status}" >&2
-            exit 1
-          fi
-
-          xcrun stapler staple "${app}"
-          xcrun stapler validate "${app}"
-          /usr/bin/codesign --verify --deep --strict --verbose=2 "${app}"
-          /usr/sbin/spctl -a -vvv --type execute "${app}"
           /usr/bin/lipo -info "${app}/Contents/MacOS/${APP_NAME}"
           cat "${app}/Contents/Resources/PickyBuildInfo.json"
-
-          echo "app_submission_id=${submission_id}" >> "${GITHUB_OUTPUT}"
 
       - name: Create, sign, notarize, and staple DMG
         id: package
@@ -394,7 +350,6 @@ jobs:
           BUILD_LABEL: ${{ steps.package.outputs.build_label }}
           RELEASE_CHANNEL: ${{ steps.package.outputs.release_channel }}
           GIT_SHA: ${{ steps.package.outputs.git_sha }}
-          APP_SUBMISSION_ID: ${{ steps.notarize.outputs.app_submission_id }}
           DMG_SUBMISSION_ID: ${{ steps.package.outputs.dmg_submission_id }}
         run: |
           set -euo pipefail
@@ -415,8 +370,7 @@ jobs:
           - Release channel: ${RELEASE_CHANNEL}
           - Git SHA: ${GIT_SHA}
           - SHA256: \`${SHA256}\`
-          - Apple notary submission ID (app): \`${APP_SUBMISSION_ID}\`
-          - Apple notary submission ID (dmg): \`${DMG_SUBMISSION_ID}\`
+          - Apple notary submission ID: \`${DMG_SUBMISSION_ID}\`
 
           Install:
           1. Double-click the dmg to mount it.
@@ -453,6 +407,4 @@ jobs:
           if-no-files-found: ignore
           path: |
             build/package/*.dmg
-            build/package/notary-submit-result.json
             build/package/dmg-notary-submit-result.json
-            build/package/Picky-beta-notary-upload.zip

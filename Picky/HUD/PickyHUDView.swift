@@ -456,11 +456,14 @@ private struct PickyHUDMiniPreviewCardView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
         .frame(width: Self.cardWidth)
-        .background(
+        .background {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.ultraThinMaterial)
-                .overlay(DS.Colors.surface1.opacity(0.68))
-        )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(DS.Colors.surface1.opacity(0.68))
+                )
+        }
         .task(id: "\(session.cwd ?? "")|\(session.updatedAt.timeIntervalSince1970)") {
             if gitStatus == nil, let cached = PickyGitRepositoryStatus.cached(cwd: session.cwd) {
                 gitStatus = cached
@@ -1228,7 +1231,8 @@ private struct PickyHUDDockIconView: View {
     }
 
     private var miniPreviewXOffset: CGFloat {
-        let distance = (PickyHUDMiniPreviewCardView.totalWidth / 2) + 22
+        let iconHalfWidth: CGFloat = 18
+        let distance = (PickyHUDMiniPreviewCardView.totalWidth / 2) + iconHalfWidth + PickyHUDDockLayout.panelGap
         return dockSide == .right ? -distance : distance
     }
 

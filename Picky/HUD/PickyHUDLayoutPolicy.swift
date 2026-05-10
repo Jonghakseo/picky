@@ -130,9 +130,13 @@ struct PickyHUDDockMetrics: Equatable {
     var railWidth: CGFloat { scaled(PickyHUDDockLayout.railWidth) }
     var iconSide: CGFloat { scaled(PickyHUDDockLayout.addSlotButtonSide) }
     var iconCornerRadius: CGFloat { scaled(12) }
-    var iconLabelFontSize: CGFloat { max(9.5, PickyHUDTypography.Size.status * scale) }
-    var sessionSpacing: CGFloat { max(5, scaled(7)) }
-    var horizontalPadding: CGFloat { max(5, scaled(6)) }
+    var sessionTileWidth: CGFloat { max(44, scaled(54)) }
+    var sessionTileHeight: CGFloat { max(48, scaled(54)) }
+    var sessionTileCornerRadius: CGFloat { scaled(9) }
+    var sessionLogoSide: CGFloat { max(22, scaled(28)) }
+    var sessionLabelFontSize: CGFloat { max(11.5, scaled(15)) }
+    var sessionSpacing: CGFloat { max(7, scaled(9)) }
+    var horizontalPadding: CGFloat { max(3, scaled(4)) }
     var topPadding: CGFloat { max(3, scaled(4)) }
     var bottomPadding: CGFloat { max(8, scaled(10)) }
     var addSlotTopPadding: CGFloat { max(5, scaled(7)) }
@@ -166,7 +170,7 @@ enum PickyHUDDockLayout {
     static let detailWidth: CGFloat = 446
     static let detailHorizontalPadding: CGFloat = 12
     static var detailContentWidth: CGFloat { max(0, detailWidth - (detailHorizontalPadding * 2)) }
-    static let railWidth: CGFloat = 50
+    static let railWidth: CGFloat = 62
     static let panelGap: CGFloat = 10
     static let screenMargin: CGFloat = 8
     /// Distance kept between the dock capsule and the screen edge.

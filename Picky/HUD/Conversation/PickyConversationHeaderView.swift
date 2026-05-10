@@ -226,7 +226,7 @@ struct PickyConversationHeaderView: View {
     }
 }
 
-private struct PickyPiLogoGlyph: Shape {
+struct PickyPiLogoGlyph: Shape {
     func path(in rect: CGRect) -> Path {
         let scale = min(rect.width, rect.height) / 512
         let xOffset = rect.midX - 256 * scale

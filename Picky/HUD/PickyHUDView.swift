@@ -1023,36 +1023,28 @@ private struct PickyHUDDockIconView: View {
     @State private var isHovered = false
 
     var body: some View {
-        ZStack {
-            dockIconBackground
-            Text(initials)
-                .font(labelFont)
-                .foregroundColor(isActive ? DS.Colors.textPrimary : DS.Colors.textSecondary)
-                .opacity(isArchivePressing ? 0.64 : 1)
-        }
-        .frame(width: metrics.iconSide, height: metrics.iconSide)
-        .opacity(session.status == .cancelled ? 0.55 : 1)
-        .scaleEffect(tileScale)
-        .onHover { isHovered = $0 }
-        .animation(.easeOut(duration: 0.16), value: isHovered)
-        .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
-        .overlay(alignment: .topTrailing) {
-            statusDot.offset(x: -1.3, y: 1.3)
-        }
-        .overlay(alignment: .topLeading) {
-            if isArchivePressing {
-                archiveBadge
-                    .offset(x: -5, y: -5)
-                    .transition(.scale.combined(with: .opacity))
+        dockIconContent
+            .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
+            .background(dockIconBackground)
+            .opacity(session.status == .cancelled ? 0.55 : 1)
+            .scaleEffect(tileScale)
+            .onHover { isHovered = $0 }
+            .animation(.easeOut(duration: 0.16), value: isHovered)
+            .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
+            .overlay(alignment: .topLeading) {
+                if isArchivePressing {
+                    archiveBadge
+                        .offset(x: -5, y: -5)
+                        .transition(.scale.combined(with: .opacity))
+                }
             }
-        }
-        .overlay(alignment: .bottomLeading) {
-            if isCommandShortcutHintVisible, let shortcutNumber {
-                commandShortcutBadge(number: shortcutNumber)
-                    .offset(x: -5, y: 5)
-                    .transition(.scale(scale: 0.88, anchor: .bottomLeading).combined(with: .opacity))
+            .overlay(alignment: .topTrailing) {
+                if isCommandShortcutHintVisible, let shortcutNumber {
+                    commandShortcutBadge(number: shortcutNumber)
+                        .offset(x: 5, y: -5)
+                        .transition(.scale(scale: 0.88, anchor: .topTrailing).combined(with: .opacity))
+                }
             }
-        }
         .overlay(alignment: .center) {
             archiveProgressRing
         }
@@ -1065,7 +1057,7 @@ private struct PickyHUDDockIconView: View {
             }
         }
         .zIndex(isPreviewed ? 100 : 0)
-        .contentShape(Circle())
+        .contentShape(RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous))
         .overlay {
             PickyHUDDockIconClickHost(
                 onHover: onHover,
@@ -1160,54 +1152,52 @@ private struct PickyHUDDockIconView: View {
         .accessibilityHidden(true)
     }
 
+    private var dockIconContent: some View {
+        VStack(spacing: max(1, 2 * metrics.scale)) {
+            PickyPiLogoGlyph()
+                .fill(statusColor, style: FillStyle(eoFill: true))
+                .frame(width: metrics.sessionLogoSide, height: metrics.sessionLogoSide)
+                .shadow(color: statusColor.opacity(isSelected ? 0.20 : 0.10), radius: 2.2, x: 0, y: 0.8)
+
+            Text(dockLabel)
+                .font(dockLabelFont)
+                .foregroundColor(DS.Colors.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .frame(width: metrics.sessionTileWidth - 4, alignment: .center)
+        }
+        .opacity(isArchivePressing ? 0.64 : 1)
+    }
+
     private var dockIconBackground: some View {
-        // Glass icon: ultraThinMaterial base + (active) status-tinted glaze +
-        // (inactive) faint white film. The stroke is a top-bright / status-tinted
-        // bottom gradient so the icon reads as a small piece of glass on the
-        // bigger glass capsule rather than a flat fill.
-        // The completion flash temporarily boosts the success-tinted glaze + stroke
-        // and adds an ambient glow so a Done transition feels celebratory without
-        // disturbing the layout.
-        RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-            .fill(.ultraThinMaterial)
+        // Session tile in the dock: quiet transparent by default, subtle neutral
+        // plate on hover/preview, and a status-tinted selected outline while the
+        // Pickle is open. The old standalone accent dot is intentionally omitted;
+        // status now lives in the pickle glyph + selected outline.
+        RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
+            .fill((isSelected || isSoftHighlighted) ? DS.Colors.surface1.opacity(0.24) : Color.clear)
             .overlay(
-                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                    .fill(statusColor.opacity(isActive ? 0.22 : 0.0))
+                RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
+                    .fill(tileFillColor)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                    .fill(Color.primary.opacity(isActive ? 0.0 : 0.04))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
                     .fill(DS.Colors.warning.opacity(0.20 * archiveProgress))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
                     .fill(DS.Colors.success.opacity(0.34 * completionFlashIntensity))
             )
-            .overlay {
-                if usesAnimatedStatusBorder {
-                    PickyHUDAnimatedStatusBorderView(
-                        baseColor: statusColor,
-                        highlightColor: statusLoadingHighlightColor,
-                        duration: statusBorderAnimationDuration,
-                        cornerRadius: metrics.iconCornerRadius
-                    )
-                } else {
-                    RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                        .stroke(
-                            isActive ? statusColor.opacity(0.55) : statusColor.opacity(0.30),
-                            lineWidth: isActive ? 1.0 : 0.7
-                        )
-                }
-            }
             .overlay(
-                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
+                    .strokeBorder(tileStrokeColor, lineWidth: tileStrokeWidth)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
                     .strokeBorder(DS.Colors.warning.opacity(0.76 * archiveProgress), lineWidth: 1.35)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: metrics.sessionTileCornerRadius, style: .continuous)
                     .strokeBorder(DS.Colors.success.opacity(0.85 * completionFlashIntensity), lineWidth: 1.4)
             )
             .shadow(color: DS.Colors.warning.opacity(0.30 * archiveProgress), radius: 5, x: 0, y: 0)
@@ -1276,31 +1266,28 @@ private struct PickyHUDDockIconView: View {
         completionFlashTask = task
     }
 
-    private var statusDot: some View {
-        Circle()
-            .fill(statusColor)
-            .frame(width: metrics.statusDotSide, height: metrics.statusDotSide)
-            .overlay(Circle().stroke(DS.Colors.surface1.opacity(0.94), lineWidth: max(1.5, 2 * metrics.scale)))
-            .accessibilityHidden(true)
+    private var tileFillColor: Color {
+        if isSelected { return statusColor.opacity(0.10) }
+        if isSoftHighlighted { return DS.Colors.surface1.opacity(0.58) }
+        return .clear
     }
 
-    private var usesAnimatedStatusBorder: Bool {
-        session.status == .queued || session.status == .running
+    private var tileStrokeColor: Color {
+        if isSelected { return statusColor.opacity(0.92) }
+        if isSoftHighlighted { return DS.Colors.borderSubtle.opacity(0.66) }
+        return .clear
     }
 
-    private var statusBorderAnimationDuration: Double {
-        session.status == .running ? 2.4 : 4.2
+    private var tileStrokeWidth: CGFloat {
+        isSelected ? 1.35 : (isSoftHighlighted ? 0.85 : 0)
     }
 
-    private var statusLoadingHighlightColor: Color {
-        switch session.status {
-        case .running:
-            return DS.Colors.info
-        case .queued:
-            return DS.Colors.floatingGradientPurple
-        default:
-            return statusColor
-        }
+    private var isSelected: Bool {
+        isOpened || isActive
+    }
+
+    private var isSoftHighlighted: Bool {
+        isHovered || isPreviewed
     }
 
     private var statusColor: Color {
@@ -1322,22 +1309,20 @@ private struct PickyHUDDockIconView: View {
         }
     }
 
-    private var initials: String {
+    private var dockLabel: String {
         let trimmedTitle = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let cwdLeaf = (session.cwd ?? "")
             .split(separator: "/")
             .last
             .map(String.init) ?? ""
         let source = trimmedTitle.isEmpty ? cwdLeaf : trimmedTitle
-        guard !source.isEmpty else { return "··" }
-        let prefix = String(source.prefix(2))
-        return Self.containsHangul(prefix) ? prefix : prefix.uppercased()
+        return Self.compactDockLabel(source.isEmpty ? "Pickle" : source)
     }
 
-    private var labelFont: Font {
-        Self.containsHangul(initials)
-            ? .system(size: metrics.iconLabelFontSize, weight: .bold)
-            : .system(size: metrics.iconLabelFontSize, weight: .bold, design: .monospaced)
+    private var dockLabelFont: Font {
+        Self.containsHangul(dockLabel)
+            ? .system(size: metrics.sessionLabelFontSize, weight: .medium)
+            : .system(size: metrics.sessionLabelFontSize, weight: .medium, design: .rounded)
     }
 
     private var tileScale: CGFloat {
@@ -1346,9 +1331,18 @@ private struct PickyHUDDockIconView: View {
     }
 
     private var miniPreviewXOffset: CGFloat {
-        let iconHalfWidth = metrics.iconSide / 2
+        let iconHalfWidth = metrics.sessionTileWidth / 2
         let distance = (metrics.previewCardWidth / 2) + iconHalfWidth + PickyHUDDockLayout.panelGap
         return dockSide == .right ? -distance : distance
+    }
+
+    private static func compactDockLabel(_ string: String) -> String {
+        let normalized = string
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return "Pickle" }
+        let limit = containsHangul(normalized) ? 4 : 6
+        return String(normalized.prefix(limit))
     }
 
     private static func containsHangul(_ string: String) -> Bool {
@@ -1362,48 +1356,6 @@ private extension CGSize {
             && abs(height - other.height) <= tolerance
     }
 }
-
-private struct PickyHUDAnimatedStatusBorderView: View {
-    let baseColor: Color
-    let highlightColor: Color
-    let duration: Double
-    var cornerRadius: CGFloat = 14
-    @State private var isFlowing = false
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(baseColor.opacity(0.24), lineWidth: 1)
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(
-                    AngularGradient(
-                        stops: [
-                            .init(color: baseColor.opacity(0.20), location: 0.00),
-                            .init(color: highlightColor.opacity(0.85), location: 0.11),
-                            .init(color: Color.white.opacity(0.64), location: 0.17),
-                            .init(color: baseColor.opacity(0.86), location: 0.24),
-                            .init(color: baseColor.opacity(0.18), location: 0.42),
-                            .init(color: highlightColor.opacity(0.30), location: 0.62),
-                            .init(color: highlightColor.opacity(0.82), location: 0.79),
-                            .init(color: baseColor.opacity(0.24), location: 1.00)
-                        ],
-                        center: .center,
-                        angle: .degrees(isFlowing ? 360 : 0)
-                    ),
-                    lineWidth: 1.45
-                )
-                .shadow(color: highlightColor.opacity(0.26), radius: 3.4, x: 0, y: 0)
-        }
-        .onAppear {
-            guard !isFlowing else { return }
-            withAnimation(.linear(duration: duration).repeatForever(autoreverses: false)) {
-                isFlowing = true
-            }
-        }
-        .accessibilityHidden(true)
-    }
-}
-
 
 #Preview("Picky HUD") {
     PickyHUDView(viewModel: PickySessionListViewModel(client: LocalStubPickyAgentClient(), notificationCenter: PickyNoopNotificationCenter()))

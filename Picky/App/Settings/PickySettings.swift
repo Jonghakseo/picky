@@ -396,8 +396,8 @@ struct PickyHUDDockPosition: Codable, Equatable {
     }
 }
 
-/// User-facing size preset for the Pickle HUD dock rail. Medium intentionally
-/// maps to the pre-existing dimensions so upgrading users keep the current size.
+/// User-facing size preset for the Pickle HUD dock rail. Large maps to the
+/// original redesigned dimensions; Medium and Small step down from there.
 enum PickyHUDDockSizePreset: String, Codable, CaseIterable, Identifiable {
     case small = "s"
     case medium = "m"
@@ -415,9 +415,9 @@ enum PickyHUDDockSizePreset: String, Codable, CaseIterable, Identifiable {
 
     var scale: Double {
         switch self {
-        case .small: 0.88
-        case .medium: 1.0
-        case .large: 1.16
+        case .small: 0.72
+        case .medium: 0.86
+        case .large: 1.0
         }
     }
 }

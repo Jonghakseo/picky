@@ -73,17 +73,17 @@ struct PickyTests {
     }
 
     @Test func dockAddSlotUsesCompactCollapsedHitAreaAndReservesPanelRoomOnly() throws {
-        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false) == PickyHUDDockLayout.collapsedAddSlotVisualHeight)
-        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: true) == PickyHUDDockLayout.addSlotButtonSide)
-        #expect(PickyHUDDockLayout.addSlotCollapsedExpansionReserve == PickyHUDDockLayout.addSlotButtonSide - PickyHUDDockLayout.collapsedAddSlotVisualHeight)
-
         let smallMetrics = PickyHUDDockMetrics(preset: .small)
         let mediumMetrics = PickyHUDDockMetrics(preset: .medium)
         let largeMetrics = PickyHUDDockMetrics(preset: .large)
-        #expect(mediumMetrics.railWidth == PickyHUDDockLayout.railWidth)
-        #expect(mediumMetrics.addSlotButtonSide == PickyHUDDockLayout.addSlotButtonSide)
+        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false) == mediumMetrics.collapsedAddSlotVisualHeight)
+        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: true) == mediumMetrics.addSlotButtonSide)
+        #expect(PickyHUDDockLayout.addSlotCollapsedExpansionReserve == mediumMetrics.addSlotButtonSide - mediumMetrics.collapsedAddSlotVisualHeight)
+
+        #expect(largeMetrics.railWidth == PickyHUDDockLayout.railWidth)
+        #expect(largeMetrics.addSlotButtonSide == PickyHUDDockLayout.addSlotButtonSide)
         #expect(smallMetrics.railWidth < mediumMetrics.railWidth)
-        #expect(largeMetrics.railWidth > mediumMetrics.railWidth)
+        #expect(mediumMetrics.railWidth < largeMetrics.railWidth)
         #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false, metrics: smallMetrics) == smallMetrics.collapsedAddSlotVisualHeight)
         #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: true, metrics: largeMetrics) == largeMetrics.addSlotButtonSide)
 

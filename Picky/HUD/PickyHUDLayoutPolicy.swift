@@ -127,14 +127,14 @@ struct PickyHUDDockMetrics: Equatable {
 
     static let medium = PickyHUDDockMetrics(preset: .medium)
 
-    var railWidth: CGFloat { scaled(PickyHUDDockLayout.railWidth) }
+    var railWidth: CGFloat { max(sessionTileWidth + (horizontalPadding * 2), scaled(PickyHUDDockLayout.railWidth)) }
     var iconSide: CGFloat { scaled(PickyHUDDockLayout.addSlotButtonSide) }
     var iconCornerRadius: CGFloat { scaled(12) }
-    var sessionTileWidth: CGFloat { max(44, scaled(54)) }
-    var sessionTileHeight: CGFloat { max(48, scaled(54)) }
+    var sessionTileWidth: CGFloat { max(40, scaled(54)) }
+    var sessionTileHeight: CGFloat { max(42, scaled(54)) }
     var sessionTileCornerRadius: CGFloat { scaled(9) }
-    var sessionLogoSide: CGFloat { max(22, scaled(28)) }
-    var sessionLabelFontSize: CGFloat { max(11.5, scaled(15)) }
+    var sessionLogoSide: CGFloat { max(17, scaled(24)) }
+    var sessionLabelFontSize: CGFloat { max(10.5, scaled(15)) }
     var sessionSpacing: CGFloat { max(7, scaled(9)) }
     var horizontalPadding: CGFloat { max(3, scaled(4)) }
     var topPadding: CGFloat { max(3, scaled(4)) }

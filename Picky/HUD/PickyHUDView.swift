@@ -1021,6 +1021,7 @@ private struct PickyHUDDockIconView: View {
     @State private var archiveProgress: Double = 0
     @State private var didCompleteArchiveHold = false
     @State private var isHovered = false
+    @State private var isRunningLogoPulsing = false
 
     var body: some View {
         dockIconContent
@@ -1029,6 +1030,7 @@ private struct PickyHUDDockIconView: View {
             .opacity(session.status == .cancelled ? 0.55 : 1)
             .scaleEffect(tileScale)
             .onHover { isHovered = $0 }
+            .animation(.easeInOut(duration: 0.18), value: isSoftHighlighted)
             .animation(.easeOut(duration: 0.16), value: isHovered)
             .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
             .overlay(alignment: .topLeading) {
@@ -1069,15 +1071,20 @@ private struct PickyHUDDockIconView: View {
         .pointerCursor()
         .onAppear {
             if shouldFlashCompletion { runCompletionFlash() }
+            updateRunningLogoPulse()
         }
         .onChange(of: shouldFlashCompletion) { _, shouldFlash in
             if shouldFlash { runCompletionFlash() }
+        }
+        .onChange(of: session.status) { _, _ in
+            updateRunningLogoPulse()
         }
         .onDisappear {
             completionFlashTask?.cancel()
             completionFlashTask = nil
             archiveFeedbackStartTask?.cancel()
             archiveFeedbackStartTask = nil
+            isRunningLogoPulsing = false
         }
         .animation(.spring(response: 0.2, dampingFraction: 0.78), value: isArchivePressing)
         .accessibilityLabel("Preview \(session.title)")
@@ -1157,6 +1164,7 @@ private struct PickyHUDDockIconView: View {
             PickyPiLogoGlyph()
                 .fill(statusColor, style: FillStyle(eoFill: true))
                 .frame(width: metrics.sessionLogoSide, height: metrics.sessionLogoSide)
+                .scaleEffect(runningLogoScale)
                 .shadow(color: statusColor.opacity(isSelected ? 0.20 : 0.10), radius: 2.2, x: 0, y: 0.8)
 
             Text(dockLabel)
@@ -1248,6 +1256,19 @@ private struct PickyHUDDockIconView: View {
         onArchive()
     }
 
+    private func updateRunningLogoPulse() {
+        guard session.status == .running else {
+            withAnimation(.easeOut(duration: 0.16)) {
+                isRunningLogoPulsing = false
+            }
+            return
+        }
+        guard !isRunningLogoPulsing else { return }
+        withAnimation(.easeInOut(duration: 1.05).repeatForever(autoreverses: true)) {
+            isRunningLogoPulsing = true
+        }
+    }
+
     private func runCompletionFlash() {
         completionFlashTask?.cancel()
         onDoneFlashConsumed()
@@ -1264,6 +1285,10 @@ private struct PickyHUDDockIconView: View {
             }
         }
         completionFlashTask = task
+    }
+
+    private var runningLogoScale: CGFloat {
+        session.status == .running ? (isRunningLogoPulsing ? 1.045 : 0.965) : 1
     }
 
     private var tileFillColor: Color {
@@ -1338,7 +1363,7 @@ private struct PickyHUDDockIconView: View {
 
     private static func compactDockLabel(_ string: String) -> String {
         let normalized = string
-            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return "Pickle" }
         let limit = containsHangul(normalized) ? 4 : 6

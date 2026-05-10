@@ -1045,8 +1045,11 @@ private struct PickyHUDDockIconView: View {
             .opacity(session.status == .cancelled ? 0.55 : 1)
             .scaleEffect(tileScale)
             .onHover { isHovered = $0 }
-            .animation(.easeOut(duration: 0.16), value: isHovered)
-            .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
+            // Do not attach implicit hover/shortcut animations to the whole tile.
+            // Session switches resize the outer HUD panel in the same update cycle;
+            // a whole-tile animation can then animate the dock slot's placement and
+            // make the Pickle rail appear to shift vertically. Keep animations scoped
+            // to drawing-only subviews such as `dockIconBackground` and badges.
             .overlay(alignment: .topLeading) {
                 if isArchivePressing {
                     archiveBadge

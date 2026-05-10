@@ -420,6 +420,7 @@ struct BlueCursorView: View {
     @ObservedObject private var overlayBubblePreferencesStore = PickyOverlayBubblePreferencesStore.shared
 
     static let cursorTrackingInterval: TimeInterval = 1.0 / 120.0
+    private static let shakeReactionRequiredDuration: TimeInterval = 1.0
 
     @State private var cursorPosition: CGPoint
     @State private var isCursorOnThisScreen: Bool
@@ -596,7 +597,7 @@ struct BlueCursorView: View {
             }
 
             if isCursorOnThisScreen, isShakeReactionActive {
-                PickyShakeReactionBubbleView(text: "꺄악")
+                PickyShakeReactionBubbleView(text: PickyShakeReactionText.current)
                     .overlay(
                         GeometryReader { geo in
                             Color.clear
@@ -828,7 +829,7 @@ struct BlueCursorView: View {
         lastShakeActiveAt = now
 
         if let shakeWindowStartAt,
-           now - shakeWindowStartAt >= 2.0,
+           now - shakeWindowStartAt >= Self.shakeReactionRequiredDuration,
            shakeDirectionChanges >= 6,
            now >= shakeReactionUntil {
             triggerShakeReaction(now: now)
@@ -1252,6 +1253,28 @@ struct BlueCursorView: View {
 
 
 // MARK: - Voice Prompt Bubble
+
+private enum PickyShakeReactionText {
+    static var current: String {
+        let identifier = (Locale.preferredLanguages.first ?? Locale.autoupdatingCurrent.identifier)
+            .replacingOccurrences(of: "_", with: "-")
+            .lowercased()
+        let languageCode = identifier.split(separator: "-").first.map(String.init) ?? "en"
+
+        switch languageCode {
+        case "ko": return "꺄악"
+        case "ja": return "きゃっ"
+        case "zh": return "啊！"
+        case "es": return "¡Ay!"
+        case "fr": return "Ah !"
+        case "de", "it": return "Ah!"
+        case "pt": return "Ai!"
+        case "vi": return "Á!"
+        case "th": return "ว้าย!"
+        default: return "Eek!"
+        }
+    }
+}
 
 private struct PickyShakeReactionBubbleView: View {
     let text: String

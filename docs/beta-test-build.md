@@ -16,6 +16,67 @@ Use this flow when all of the following are true:
 
 Do **not** use this flow for App Store/TestFlight distribution. This project currently prepares a signed/notarized zip, not an appcast, DMG, or automatic-update release.
 
+## GitHub Actions release automation
+
+The repo includes `.github/workflows/beta-notarized-release.yml` for CI-based beta distribution. It runs the same core flow as this guide on a macOS runner:
+
+1. import the Developer ID `.p12` certificate into a temporary keychain,
+2. run `./scripts/package-signed-app.sh` with `PICKY_RELEASE_CHANNEL=beta`,
+3. re-sign nested native Node add-ons and the final app with secure timestamps,
+4. submit the upload zip to Apple Notary service with `notarytool --wait`,
+5. staple and validate the app,
+6. create the final `*-notarized.zip`,
+7. upload the zip to the GitHub Release, and
+8. insert/update a release-note block between `<!-- picky-notarized-build:start -->` and `<!-- picky-notarized-build:end -->`.
+
+Supported triggers:
+
+- **Manual:** Actions → **Build notarized beta release** → Run workflow → provide an existing `tag_name`.
+- **Release publish:** publishing a GitHub Release automatically builds the release tag and attaches the notarized zip.
+
+The workflow uses `macos-15` by default. If an Apple Silicon runner is required, set repository variable `PICKY_MACOS_RUNNER` to the runner label available to the repository, for example `macos-15-xlarge`. GitHub documents runner labels and custom runner selection here: <https://docs.github.com/actions/using-jobs/choosing-the-runner-for-a-job>.
+
+### Required GitHub Actions secrets
+
+Add these under GitHub repository **Settings → Secrets and variables → Actions → Repository secrets**. GitHub's encrypted secrets documentation is here: <https://docs.github.com/actions/security-guides/using-secrets-in-github-actions>.
+
+| Secret | Example / value source |
+| --- | --- |
+| `PICKY_DEVELOPER_ID_CERT_BASE64` | Base64-encoded `.p12` export of the Developer ID Application certificate and private key. |
+| `PICKY_DEVELOPER_ID_CERT_PASSWORD` | Password used when exporting the `.p12`. |
+| `PICKY_CODE_SIGN_IDENTITY` | `Developer ID Application: Dasom Min (84KNP3KS9U)` |
+| `PICKY_DEVELOPMENT_TEAM` | `84KNP3KS9U` |
+| `PICKY_NOTARY_APPLE_ID` | Apple ID email used for notarization. |
+| `PICKY_NOTARY_APP_PASSWORD` | App-specific password for that Apple ID. |
+
+Create the base64 certificate secret from a local `.p12` file:
+
+```bash
+base64 -i DeveloperIDApplication.p12 | pbcopy
+```
+
+Then paste the clipboard into `PICKY_DEVELOPER_ID_CERT_BASE64`. Do not commit the `.p12` file or the decoded certificate. Apple documents Developer ID distribution and notarization as the path for distributing outside the Mac App Store: <https://developer.apple.com/developer-id/> and <https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution>.
+
+### Manual workflow run
+
+Before running CI, create and push a tag:
+
+```bash
+git tag picky-beta-YYYYMMDD
+git push origin picky-beta-YYYYMMDD
+```
+
+Run the workflow with:
+
+```text
+tag_name: picky-beta-YYYYMMDD
+release_channel: beta
+create_release_if_missing: true
+prerelease: true
+```
+
+The workflow creates the GitHub Release if missing, uploads the final `Picky-<version>-beta.<build>-<sha>-<timestamp>-notarized.zip`, and appends the SHA256/notary metadata to the release notes. GitHub's release automation APIs are documented here: <https://docs.github.com/rest/releases/releases>.
+
 ## Required local credentials
 
 Check the Developer ID signing identity:

@@ -1,0 +1,409 @@
+name: Build notarized beta release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Existing git tag to build and attach the notarized zip to"
+        required: true
+        type: string
+      release_name:
+        description: "Release title when the release must be created"
+        required: false
+        type: string
+      release_channel:
+        description: "Build metadata release channel"
+        required: true
+        default: "beta"
+        type: choice
+        options:
+          - beta
+          - alpha
+      create_release_if_missing:
+        description: "Create a GitHub Release for tag_name when one does not exist"
+        required: true
+        default: true
+        type: boolean
+      prerelease:
+        description: "Mark a newly-created release as a pre-release"
+        required: true
+        default: true
+        type: boolean
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: picky-notarized-release-${{ github.event.release.tag_name || inputs.tag_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  APP_NAME: Picky
+  NODE_VERSION: "22.11.0"
+  PNPM_VERSION: "10.15.1"
+
+jobs:
+  build-notarized-release:
+    name: Build, notarize, and publish beta zip
+    runs-on: ${{ vars.PICKY_MACOS_RUNNER || 'macos-15' }}
+    timeout-minutes: 90
+
+    steps:
+      - name: Resolve release target
+        id: release_meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_RELEASE_TAG: ${{ github.event.release.tag_name }}
+          EVENT_RELEASE_NAME: ${{ github.event.release.name }}
+          EVENT_RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+          INPUT_RELEASE_NAME: ${{ inputs.release_name }}
+          INPUT_RELEASE_CHANNEL: ${{ inputs.release_channel }}
+          INPUT_CREATE_RELEASE_IF_MISSING: ${{ inputs.create_release_if_missing }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${EVENT_NAME}" == "release" ]]; then
+            target_tag="${EVENT_RELEASE_TAG}"
+            release_name="${EVENT_RELEASE_NAME}"
+            release_channel="beta"
+            create_release_if_missing="false"
+            prerelease="${EVENT_RELEASE_PRERELEASE:-true}"
+          else
+            target_tag="${INPUT_TAG_NAME}"
+            release_name="${INPUT_RELEASE_NAME}"
+            release_channel="${INPUT_RELEASE_CHANNEL:-beta}"
+            create_release_if_missing="${INPUT_CREATE_RELEASE_IF_MISSING:-true}"
+            prerelease="${INPUT_PRERELEASE:-true}"
+          fi
+
+          if [[ -z "${target_tag}" ]]; then
+            echo "target tag is required" >&2
+            exit 1
+          fi
+
+          if [[ -z "${release_name}" ]]; then
+            release_name="Picky ${target_tag}"
+          fi
+
+          {
+            echo "target_tag=${target_tag}"
+            echo "target_ref=${target_tag}"
+            echo "release_channel=${release_channel}"
+            echo "create_release_if_missing=${create_release_if_missing}"
+            echo "prerelease=${prerelease}"
+            echo "release_name<<EOF"
+            echo "${release_name}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Check out release ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release_meta.outputs.target_ref }}
+          fetch-depth: 0
+
+      - name: Show toolchain versions
+        run: |
+          set -euo pipefail
+          sw_vers
+          xcodebuild -version
+          git --no-pager log -1 --oneline
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Validate signing and notarization secrets
+        env:
+          PICKY_DEVELOPER_ID_CERT_BASE64: ${{ secrets.PICKY_DEVELOPER_ID_CERT_BASE64 }}
+          PICKY_DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.PICKY_DEVELOPER_ID_CERT_PASSWORD }}
+          PICKY_CODE_SIGN_IDENTITY: ${{ secrets.PICKY_CODE_SIGN_IDENTITY }}
+          PICKY_DEVELOPMENT_TEAM: ${{ secrets.PICKY_DEVELOPMENT_TEAM }}
+          PICKY_NOTARY_APPLE_ID: ${{ secrets.PICKY_NOTARY_APPLE_ID }}
+          PICKY_NOTARY_APP_PASSWORD: ${{ secrets.PICKY_NOTARY_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${PICKY_DEVELOPER_ID_CERT_BASE64:?missing PICKY_DEVELOPER_ID_CERT_BASE64}"
+          : "${PICKY_DEVELOPER_ID_CERT_PASSWORD:?missing PICKY_DEVELOPER_ID_CERT_PASSWORD}"
+          : "${PICKY_CODE_SIGN_IDENTITY:?missing PICKY_CODE_SIGN_IDENTITY}"
+          : "${PICKY_DEVELOPMENT_TEAM:?missing PICKY_DEVELOPMENT_TEAM}"
+          : "${PICKY_NOTARY_APPLE_ID:?missing PICKY_NOTARY_APPLE_ID}"
+          : "${PICKY_NOTARY_APP_PASSWORD:?missing PICKY_NOTARY_APP_PASSWORD}"
+
+      - name: Import Developer ID certificate
+        env:
+          PICKY_DEVELOPER_ID_CERT_BASE64: ${{ secrets.PICKY_DEVELOPER_ID_CERT_BASE64 }}
+          PICKY_DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.PICKY_DEVELOPER_ID_CERT_PASSWORD }}
+          PICKY_CODE_SIGN_IDENTITY: ${{ secrets.PICKY_CODE_SIGN_IDENTITY }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}-picky-signing
+        run: |
+          set -euo pipefail
+          certificate_path="${RUNNER_TEMP}/picky-developer-id.p12"
+          keychain_path="${RUNNER_TEMP}/picky-signing.keychain-db"
+
+          printf '%s' "${PICKY_DEVELOPER_ID_CERT_BASE64}" | base64 --decode > "${certificate_path}"
+
+          security create-keychain -p "${KEYCHAIN_PASSWORD}" "${keychain_path}"
+          security set-keychain-settings -lut 21600 "${keychain_path}"
+          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${keychain_path}"
+          security import "${certificate_path}" \
+            -k "${keychain_path}" \
+            -P "${PICKY_DEVELOPER_ID_CERT_PASSWORD}" \
+            -A \
+            -t cert \
+            -f pkcs12
+          security list-keychains -d user -s "${keychain_path}" "${HOME}/Library/Keychains/login.keychain-db"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${KEYCHAIN_PASSWORD}" "${keychain_path}"
+          security find-identity -v -p codesigning "${keychain_path}"
+          security find-identity -v -p codesigning "${keychain_path}" | grep -F "${PICKY_CODE_SIGN_IDENTITY}"
+
+      - name: Build Developer ID signed app package
+        env:
+          PICKY_CODE_SIGN_IDENTITY: ${{ secrets.PICKY_CODE_SIGN_IDENTITY }}
+          PICKY_DEVELOPMENT_TEAM: ${{ secrets.PICKY_DEVELOPMENT_TEAM }}
+          PICKY_RELEASE_CHANNEL: ${{ steps.release_meta.outputs.release_channel }}
+        run: |
+          set -euo pipefail
+          ./scripts/package-signed-app.sh
+
+      - name: Re-sign, notarize, staple, and validate app
+        id: notarize
+        env:
+          PICKY_CODE_SIGN_IDENTITY: ${{ secrets.PICKY_CODE_SIGN_IDENTITY }}
+          PICKY_DEVELOPMENT_TEAM: ${{ secrets.PICKY_DEVELOPMENT_TEAM }}
+          PICKY_NOTARY_APPLE_ID: ${{ secrets.PICKY_NOTARY_APPLE_ID }}
+          PICKY_NOTARY_APP_PASSWORD: ${{ secrets.PICKY_NOTARY_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          app="${PWD}/build/package/export/${APP_NAME}.app"
+          upload_zip="${PWD}/build/package/${APP_NAME}-beta-notary-upload.zip"
+          notary_result="${PWD}/build/package/notary-submit-result.json"
+
+          signed_count=0
+          while IFS= read -r -d '' file; do
+            if /usr/bin/file "${file}" | /usr/bin/grep -q 'Mach-O'; then
+              /usr/bin/codesign \
+                --force \
+                --options runtime \
+                --timestamp \
+                --sign "${PICKY_CODE_SIGN_IDENTITY}" \
+                "${file}"
+              signed_count=$((signed_count + 1))
+            fi
+          done < <(/usr/bin/find "${app}/Contents/Resources/agentd" -type f -print0)
+          echo "Signed nested Mach-O files: ${signed_count}"
+
+          /usr/bin/codesign \
+            --force \
+            --deep \
+            --options runtime \
+            --timestamp \
+            --entitlements Picky/Picky.entitlements \
+            --sign "${PICKY_CODE_SIGN_IDENTITY}" \
+            "${app}"
+
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "${app}"
+          /usr/bin/codesign -d --entitlements :- "${app}" 2>/dev/null | /usr/bin/plutil -p -
+
+          rm -f "${upload_zip}"
+          (
+            cd build/package/export
+            /usr/bin/ditto -c -k --sequesterRsrc --keepParent "${APP_NAME}.app" "${upload_zip}"
+          )
+
+          xcrun notarytool submit "${upload_zip}" \
+            --apple-id "${PICKY_NOTARY_APPLE_ID}" \
+            --password "${PICKY_NOTARY_APP_PASSWORD}" \
+            --team-id "${PICKY_DEVELOPMENT_TEAM}" \
+            --wait \
+            --output-format json | tee "${notary_result}"
+
+          submission_id="$(python3 - "${notary_result}" <<'PY'
+          import json, sys
+          from pathlib import Path
+          print(json.loads(Path(sys.argv[1]).read_text())["id"])
+          PY
+          )"
+          submission_status="$(python3 - "${notary_result}" <<'PY'
+          import json, sys
+          from pathlib import Path
+          print(json.loads(Path(sys.argv[1]).read_text())["status"])
+          PY
+          )"
+
+          if [[ "${submission_status}" != "Accepted" ]]; then
+            echo "Notarization failed with status: ${submission_status}" >&2
+            exit 1
+          fi
+
+          xcrun stapler staple "${app}"
+          xcrun stapler validate "${app}"
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "${app}"
+          /usr/sbin/spctl -a -vvv --type execute "${app}"
+          /usr/bin/lipo -info "${app}/Contents/MacOS/${APP_NAME}"
+          cat "${app}/Contents/Resources/PickyBuildInfo.json"
+
+          echo "submission_id=${submission_id}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create final distribution zip
+        id: package
+        run: |
+          set -euo pipefail
+          build_info="build/package/export/${APP_NAME}.app/Contents/Resources/PickyBuildInfo.json"
+          read -r marketing_version build_number build_label release_channel git_sha < <(python3 - "${build_info}" <<'PY'
+          import json, sys
+          from pathlib import Path
+          info = json.loads(Path(sys.argv[1]).read_text())
+          print(info["marketingVersion"], info["buildNumber"], info["buildLabel"], info["releaseChannel"], info["gitSha"])
+          PY
+          )
+          final_zip="${PWD}/build/package/${APP_NAME}-${marketing_version}-${build_label}-notarized.zip"
+
+          rm -f "${final_zip}"
+          (
+            cd build/package/export
+            /usr/bin/ditto -c -k --sequesterRsrc --keepParent "${APP_NAME}.app" "${final_zip}"
+          )
+
+          tmp_dir="$(mktemp -d /tmp/picky-notarized-verify.XXXXXX)"
+          /usr/bin/ditto -x -k "${final_zip}" "${tmp_dir}"
+          xcrun stapler validate "${tmp_dir}/${APP_NAME}.app"
+          /usr/sbin/spctl -a -vvv --type execute "${tmp_dir}/${APP_NAME}.app"
+          rm -rf "${tmp_dir}"
+
+          sha256="$(shasum -a 256 "${final_zip}" | awk '{print $1}')"
+          final_zip_name="$(basename "${final_zip}")"
+
+          {
+            echo "final_zip=${final_zip}"
+            echo "final_zip_name=${final_zip_name}"
+            echo "sha256=${sha256}"
+            echo "marketing_version=${marketing_version}"
+            echo "build_number=${build_number}"
+            echo "build_label=${build_label}"
+            echo "release_channel=${release_channel}"
+            echo "git_sha=${git_sha}"
+          } >> "${GITHUB_OUTPUT}"
+
+          printf 'Final zip: %s\nSHA256: %s\n' "${final_zip}" "${sha256}"
+
+      - name: Ensure GitHub Release exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
+          RELEASE_NAME: ${{ steps.release_meta.outputs.release_name }}
+          CREATE_RELEASE_IF_MISSING: ${{ steps.release_meta.outputs.create_release_if_missing }}
+          PRERELEASE: ${{ steps.release_meta.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if gh release view "${TARGET_TAG}" >/dev/null 2>&1; then
+            gh release view "${TARGET_TAG}" --json tagName,name,isPrerelease,url
+            exit 0
+          fi
+
+          if [[ "${CREATE_RELEASE_IF_MISSING}" != "true" ]]; then
+            echo "GitHub Release does not exist for ${TARGET_TAG}, and create_release_if_missing=false" >&2
+            exit 1
+          fi
+
+          create_args=(release create "${TARGET_TAG}" --title "${RELEASE_NAME}" --notes "Automated ${APP_NAME} beta release.")
+          if [[ "${PRERELEASE}" == "true" ]]; then
+            create_args+=(--prerelease)
+          fi
+          gh "${create_args[@]}"
+
+      - name: Upload zip to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
+          FINAL_ZIP: ${{ steps.package.outputs.final_zip }}
+        run: |
+          set -euo pipefail
+          gh release upload "${TARGET_TAG}" "${FINAL_ZIP}" --clobber
+
+      - name: Update release notes with notarized build metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
+          FINAL_ZIP_NAME: ${{ steps.package.outputs.final_zip_name }}
+          SHA256: ${{ steps.package.outputs.sha256 }}
+          MARKETING_VERSION: ${{ steps.package.outputs.marketing_version }}
+          BUILD_NUMBER: ${{ steps.package.outputs.build_number }}
+          BUILD_LABEL: ${{ steps.package.outputs.build_label }}
+          RELEASE_CHANNEL: ${{ steps.package.outputs.release_channel }}
+          GIT_SHA: ${{ steps.package.outputs.git_sha }}
+          SUBMISSION_ID: ${{ steps.notarize.outputs.submission_id }}
+        run: |
+          set -euo pipefail
+          current_notes="${RUNNER_TEMP}/release-notes-current.md"
+          block="${RUNNER_TEMP}/picky-notarized-build.md"
+          updated_notes="${RUNNER_TEMP}/release-notes-updated.md"
+          download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TARGET_TAG}/${FINAL_ZIP_NAME}"
+
+          gh release view "${TARGET_TAG}" --json body --jq .body > "${current_notes}"
+
+          cat > "${block}" <<EOF
+          <!-- picky-notarized-build:start -->
+          ### Notarized macOS beta build
+
+          - Download: [${FINAL_ZIP_NAME}](${download_url})
+          - Version: ${MARKETING_VERSION} (${BUILD_NUMBER})
+          - Build label: ${BUILD_LABEL}
+          - Release channel: ${RELEASE_CHANNEL}
+          - Git SHA: ${GIT_SHA}
+          - SHA256: \`${SHA256}\`
+          - Apple notary submission ID: \`${SUBMISSION_ID}\`
+
+          Install:
+          1. Unzip the file.
+          2. Move \`${APP_NAME}.app\` to \`/Applications\`.
+          3. Open \`${APP_NAME}\` and grant requested macOS permissions.
+          <!-- picky-notarized-build:end -->
+          EOF
+          sed -i '' 's/^          //' "${block}"
+
+          python3 - "${current_notes}" "${block}" "${updated_notes}" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          current = Path(sys.argv[1]).read_text()
+          block = Path(sys.argv[2]).read_text().strip() + "\n"
+          out = Path(sys.argv[3])
+          pattern = re.compile(r"<!-- picky-notarized-build:start -->.*?<!-- picky-notarized-build:end -->\n?", re.S)
+          if pattern.search(current):
+              updated = pattern.sub(block, current)
+          else:
+              updated = current.rstrip()
+              updated = f"{updated}\n\n{block}" if updated else block
+          out.write_text(updated, encoding="utf-8")
+          PY
+
+          gh release edit "${TARGET_TAG}" --notes-file "${updated_notes}"
+
+      - name: Upload workflow artifact copy
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: picky-notarized-release-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            build/package/*-notarized.zip
+            build/package/notary-submit-result.json
+            build/package/Picky-beta-notary-upload.zip

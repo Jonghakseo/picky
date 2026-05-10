@@ -166,6 +166,11 @@ enum PickyHUDDockLayout {
         }
     }
 
+    static func numberShortcutForSessionIndex(_ index: Int) -> Int? {
+        guard index >= 0, index < 9 else { return nil }
+        return index + 1
+    }
+
     static func sessionIDForNumberShortcut(visibleIDs: [String], number: Int) -> String? {
         guard number >= 1, number <= visibleIDs.count else { return nil }
         return visibleIDs[number - 1]

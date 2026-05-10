@@ -32,6 +32,8 @@ struct PickyHUDView: View {
     @State private var isDockHovered = false
     @State private var closeExpansionTask: Task<Void, Never>?
     @State private var keyDownMonitor: Any?
+    @State private var modifierFlagsMonitor: Any?
+    @State private var isCommandShortcutHintVisible = false
     @State private var sizeReporter = PickyHUDSizeReporter()
 
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {
@@ -151,6 +153,7 @@ struct PickyHUDView: View {
                 openedSessionID: openedSessionID,
                 previewSessionID: hoverPreviewSessionID,
                 dockSide: placement.dockSide,
+                isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 pendingDoneFlashSessionIDs: viewModel.pendingDoneFlashSessionIDs,
                 onHoverSession: previewDockSession,
                 onOpenSession: toggleOpenSession,
@@ -288,14 +291,23 @@ struct PickyHUDView: View {
     }
 
     private func installCloseShortcutMonitor() {
-        guard keyDownMonitor == nil else { return }
-        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard handleKeyboardShortcut(event) else { return event }
-            return nil
+        if keyDownMonitor == nil {
+            keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                guard handleKeyboardShortcut(event) else { return event }
+                return nil
+            }
+        }
+
+        if modifierFlagsMonitor == nil {
+            modifierFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+                updateCommandShortcutHintVisibility(modifierFlags: event.modifierFlags)
+                return event
+            }
         }
     }
 
     private func handleKeyboardShortcut(_ event: NSEvent) -> Bool {
+        updateCommandShortcutHintVisibility(modifierFlags: event.modifierFlags)
         guard let keyWindow = NSApp.keyWindow as? PickyHUDPanel else { return false }
         if let panelIdentifier, keyWindow.identifier != panelIdentifier { return false }
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
@@ -339,9 +351,27 @@ struct PickyHUDView: View {
     }
 
     private func uninstallCloseShortcutMonitor() {
-        guard let keyDownMonitor else { return }
-        NSEvent.removeMonitor(keyDownMonitor)
-        self.keyDownMonitor = nil
+        if let keyDownMonitor {
+            NSEvent.removeMonitor(keyDownMonitor)
+            self.keyDownMonitor = nil
+        }
+        if let modifierFlagsMonitor {
+            NSEvent.removeMonitor(modifierFlagsMonitor)
+            self.modifierFlagsMonitor = nil
+        }
+        isCommandShortcutHintVisible = false
+    }
+
+    private func updateCommandShortcutHintVisibility(modifierFlags: NSEvent.ModifierFlags) {
+        guard let keyWindow = NSApp.keyWindow as? PickyHUDPanel else {
+            isCommandShortcutHintVisible = false
+            return
+        }
+        if let panelIdentifier, keyWindow.identifier != panelIdentifier {
+            isCommandShortcutHintVisible = false
+            return
+        }
+        isCommandShortcutHintVisible = modifierFlags.contains(.command)
     }
 
     private func cancelPendingClose() {
@@ -680,6 +710,7 @@ private struct PickyHUDDockRailView: View {
     let openedSessionID: String?
     let previewSessionID: String?
     let dockSide: PickyHUDDockSide
+    let isCommandShortcutHintVisible: Bool
     let pendingDoneFlashSessionIDs: Set<String>
     let onHoverSession: (String) -> Void
     let onOpenSession: (String) -> Void
@@ -729,6 +760,8 @@ private struct PickyHUDDockRailView: View {
                         isOpened: openedSessionID == session.id,
                         isPreviewed: previewSessionID == session.id,
                         dockSide: dockSide,
+                        shortcutNumber: PickyHUDDockLayout.numberShortcutForSessionIndex(index),
+                        isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                         shouldFlashCompletion: pendingDoneFlashSessionIDs.contains(session.id),
                         onHover: { onHoverSession(session.id) },
                         onOpen: { onOpenSession(session.id) },
@@ -885,6 +918,8 @@ private struct PickyHUDDockIconView: View {
     let isOpened: Bool
     let isPreviewed: Bool
     let dockSide: PickyHUDDockSide
+    let shortcutNumber: Int?
+    let isCommandShortcutHintVisible: Bool
     let shouldFlashCompletion: Bool
     let onHover: () -> Void
     let onOpen: () -> Void
@@ -912,6 +947,7 @@ private struct PickyHUDDockIconView: View {
         .scaleEffect(tileScale)
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.16), value: isHovered)
+        .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
         .overlay(alignment: .topTrailing) {
             statusDot.offset(x: -1.3, y: 1.3)
         }
@@ -920,6 +956,13 @@ private struct PickyHUDDockIconView: View {
                 archiveBadge
                     .offset(x: -5, y: -5)
                     .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            if isCommandShortcutHintVisible, let shortcutNumber {
+                commandShortcutBadge(number: shortcutNumber)
+                    .offset(x: -5, y: 5)
+                    .transition(.scale(scale: 0.88, anchor: .bottomLeading).combined(with: .opacity))
             }
         }
         .overlay(alignment: .center) {
@@ -996,6 +1039,33 @@ private struct PickyHUDDockIconView: View {
             .background(Circle().fill(DS.Colors.surface1.opacity(0.96)))
             .overlay(Circle().stroke(DS.Colors.warning.opacity(0.65), lineWidth: 1))
             .accessibilityHidden(true)
+    }
+
+    private func commandShortcutBadge(number: Int) -> some View {
+        HStack(spacing: 1.5) {
+            Image(systemName: "command")
+                .font(.system(size: 6.5, weight: .bold))
+            Text("\(number)")
+                .font(.system(size: 7.5, weight: .bold, design: .rounded))
+                .monospacedDigit()
+        }
+        .foregroundColor(DS.Colors.textPrimary)
+        .padding(.horizontal, 4.5)
+        .frame(height: 15)
+        .background(
+            Capsule(style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .fill(DS.Colors.surface1.opacity(0.70))
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .strokeBorder(DS.Colors.borderSubtle.opacity(0.72), lineWidth: 0.7)
+        )
+        .shadow(color: Color.black.opacity(0.18), radius: 4, x: 0, y: 1.5)
+        .accessibilityHidden(true)
     }
 
     private var dockIconBackground: some View {

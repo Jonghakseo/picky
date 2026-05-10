@@ -274,7 +274,7 @@ struct CompanionPanelSettingsView: View {
     private var cursorBubblesSection: some View {
         sectionHeader(section: .cursorBubbles, title: "Cursor & Bubbles", subtitle: "Control the Pi cursor overlay, animations, and nearby speech bubbles.") {
             VStack(alignment: .leading, spacing: 0) {
-                toggleRow("Show Pi cursor", isOn: $viewModel.settings.cursor.showPiCursor, divider: true)
+                toggleRow("Show Picky Cursor", isOn: $viewModel.settings.cursor.showPiCursor, divider: true)
                 toggleRow(
                     "Smooth cursor follow",
                     isOn: $viewModel.settings.cursor.enableFollowSpringAnimation,

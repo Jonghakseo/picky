@@ -293,7 +293,10 @@ struct BlueCursorView: View {
     @ObservedObject private var overlayBubblePreferencesStore = PickyOverlayBubblePreferencesStore.shared
 
     static let cursorTrackingInterval: TimeInterval = 1.0 / 120.0
-    static let shakeReactionRequiredDuration: TimeInterval = 3.5
+    static let shakeReactionRequiredDuration: TimeInterval = 2.0
+    static let shakeReactionMinimumSpeed: CGFloat = 720
+    static let shakeReactionMinimumDominantDelta: CGFloat = 5.5
+    static let shakeReactionRequiredDirectionChanges = 8
 
     @State private var cursorPosition: CGPoint
     @State private var isCursorOnThisScreen: Bool
@@ -675,7 +678,7 @@ struct BlueCursorView: View {
         let dominantDelta = abs(dx) >= abs(dy) ? dx : dy
         let distance = hypot(dx, dy)
         let speed = distance / CGFloat(dt)
-        let isActiveShakeSample = speed >= 420 && abs(dominantDelta) >= 2.5
+        let isActiveShakeSample = speed >= Self.shakeReactionMinimumSpeed && abs(dominantDelta) >= Self.shakeReactionMinimumDominantDelta
 
         guard isActiveShakeSample else {
             if let shakeWindowStartAt, now - max(lastShakeActiveAt, shakeWindowStartAt) > 0.25 {
@@ -703,7 +706,7 @@ struct BlueCursorView: View {
 
         if let shakeWindowStartAt,
            now - shakeWindowStartAt >= Self.shakeReactionRequiredDuration,
-           shakeDirectionChanges >= 6,
+           shakeDirectionChanges >= Self.shakeReactionRequiredDirectionChanges,
            now >= shakeReactionUntil {
             triggerShakeReaction(now: now)
         }

@@ -238,8 +238,11 @@ struct PickySettingsPolishTests {
         #expect(BlueCursorView.cursorTrackingInterval == 1.0 / 120.0)
     }
 
-    @Test func cursorShakeReactionRequiresLongSustainedShake() {
-        #expect(BlueCursorView.shakeReactionRequiredDuration == 3.5)
+    @Test func cursorShakeReactionRequiresIntentionalMovementIntensity() {
+        #expect(BlueCursorView.shakeReactionRequiredDuration == 2.0)
+        #expect(BlueCursorView.shakeReactionMinimumSpeed == 720)
+        #expect(BlueCursorView.shakeReactionMinimumDominantDelta == 5.5)
+        #expect(BlueCursorView.shakeReactionRequiredDirectionChanges == 8)
     }
 
     @Test func settingsRoundTripPreservesScreenContextScope() throws {

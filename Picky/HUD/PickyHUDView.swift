@@ -772,7 +772,7 @@ private struct PickyHUDCollapsibleContent<Content: View>: View {
 }
 
 enum PickyHUDArchiveHoldPolicy {
-    static let duration: TimeInterval = 1.5
+    static let duration: TimeInterval = 1.2
     static let feedbackStartDelay: TimeInterval = 0.2
     static let feedbackStartDelayNanoseconds: UInt64 = 200_000_000
     static let maximumDistance: CGFloat = 10

@@ -441,12 +441,31 @@ enum PickyHUDDockLayout {
         return raw.rounded(.toNearestOrEven)
     }
 
-    static func clampedHorizontalXOffset(_ xOffset: CGFloat, visibleFrame: CGRect, panelWidth: CGFloat) -> CGFloat {
-        let centeredX = visibleFrame.midX - (panelWidth / 2)
-        let minX = visibleFrame.minX + screenMargin
-        let maxX = visibleFrame.maxX - screenMargin - panelWidth
-        guard maxX >= minX else { return 0 }
-        return min(maxX - centeredX, max(minX - centeredX, xOffset))
+    /// Clamp the horizontal mode's X-axis nudge so the dock rail — which
+    /// sits centered inside the (much wider) panel — can slide all the way
+    /// to either screen edge. The transparent panel is allowed to overhang
+    /// the visible frame; only the dock's visible center is kept inside
+    /// `visibleFrame` minus `screenMargin`. Pass `dockRailLength` so the
+    /// clamp accounts for the dock's actual visible half-width; callers
+    /// without it (e.g. older tests) get a conservative fallback.
+    static func clampedHorizontalXOffset(
+        _ xOffset: CGFloat,
+        visibleFrame: CGRect,
+        panelWidth: CGFloat,
+        dockRailLength: CGFloat = 0
+    ) -> CGFloat {
+        let dockHalfLength = max(dockRailLength / 2, 0)
+        let minDockCenter = visibleFrame.minX + screenMargin + dockHalfLength
+        let maxDockCenter = visibleFrame.maxX - screenMargin - dockHalfLength
+        guard maxDockCenter >= minDockCenter else { return 0 }
+        // Panel center = visibleFrame.midX + xOffset (since panel is
+        // centered at xOffset == 0). Dock center == panel center because
+        // the dock is laid out with `.alignment(.center)` inside the panel,
+        // so clamping the dock center is equivalent to clamping xOffset.
+        let midX = visibleFrame.midX
+        let minXOffset = minDockCenter - midX
+        let maxXOffset = maxDockCenter - midX
+        return min(maxXOffset, max(minXOffset, xOffset))
     }
 
     static func horizontalPanelY(

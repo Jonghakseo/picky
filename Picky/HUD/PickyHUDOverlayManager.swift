@@ -96,6 +96,14 @@ final class PickyHUDOverlayManager {
         currentPositionsByDisplayID[String(displayID)] = position
     }
 
+    /// Number of session tiles currently rendered in the dock rail. Caps at
+    /// `visibleSessionLimit` to match `PickyHUDView.visibleSessions` so the
+    /// dock-length math used for horizontal X clamping matches what's on
+    /// screen.
+    private func visibleSessionCount() -> Int {
+        min(viewModel.sessions.count, PickyHUDDockLayout.visibleSessionLimit)
+    }
+
     func start() {
         viewModel.start()
         syncPanelsForCurrentScreens()
@@ -362,10 +370,16 @@ final class PickyHUDOverlayManager {
         let originX: CGFloat
         let originY: CGFloat
         if pos.side.orientation == .horizontal {
+            let horizontalDockLength = PickyHUDDockLayout.horizontalDockRailLength(
+                sessionCount: visibleSessionCount(),
+                isAddSlotExpanded: false,
+                metrics: dockMetrics
+            )
             safeXOffset = PickyHUDDockLayout.clampedHorizontalXOffset(
                 pos.xOffset,
                 visibleFrame: visibleFrame,
-                panelWidth: width
+                panelWidth: width,
+                dockRailLength: horizontalDockLength
             )
             safeYOffset = PickyHUDDockLayout.clampedHorizontalYOffset(
                 pos.yOffset,
@@ -551,11 +565,17 @@ final class PickyHUDOverlayManager {
 
         let dockMetrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
         if startPos.side.orientation == .horizontal {
+            let horizontalDockLength = PickyHUDDockLayout.horizontalDockRailLength(
+                sessionCount: visibleSessionCount(),
+                isAddSlotExpanded: false,
+                metrics: dockMetrics
+            )
             // -- X axis: along-axis position from screen center --
             pos.xOffset = PickyHUDDockLayout.clampedHorizontalXOffset(
                 startPos.xOffset + delta.x,
                 visibleFrame: visibleFrame,
-                panelWidth: width
+                panelWidth: width,
+                dockRailLength: horizontalDockLength
             )
             // -- Y axis: cross-axis nudge from anchored edge + top/bottom snap --
             let nextYOffsetRaw = startPos.yOffset + delta.y

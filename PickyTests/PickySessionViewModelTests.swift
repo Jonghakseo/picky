@@ -791,8 +791,27 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDDockLayout.horizontalPanelY(visibleFrame: visibleFrame, targetHeight: targetHeight, dockSide: .top) == visibleFrame.maxY - targetHeight - PickyHUDDockLayout.dockEdgeMargin)
         #expect(PickyHUDDockLayout.horizontalPanelY(visibleFrame: visibleFrame, targetHeight: targetHeight, dockSide: .bottom) == visibleFrame.minY + PickyHUDDockLayout.dockEdgeMargin)
 
+        // Clamp without a dock-rail length: the dock CENTER is allowed to
+        // reach `visibleFrame.maxX - screenMargin`, so the (transparent)
+        // panel overhangs the screen by ~half its width.
         let clampedRight = PickyHUDDockLayout.clampedHorizontalXOffset(10_000, visibleFrame: visibleFrame, panelWidth: panelWidth)
-        #expect(PickyHUDDockLayout.horizontalPanelX(visibleFrame: visibleFrame, panelWidth: panelWidth, xOffset: clampedRight) == visibleFrame.maxX - PickyHUDDockLayout.screenMargin - panelWidth)
+        #expect(
+            PickyHUDDockLayout.horizontalPanelX(visibleFrame: visibleFrame, panelWidth: panelWidth, xOffset: clampedRight)
+                == (visibleFrame.maxX - PickyHUDDockLayout.screenMargin - (panelWidth / 2)).rounded(.toNearestOrEven)
+        )
+
+        // With a dock-rail length passed in, the clamp keeps the dock fully
+        // visible: the dock CENTER stays at least `dockRailLength / 2 +
+        // screenMargin` from each visible-frame edge.
+        let dockLength: CGFloat = 200
+        let dockClampedRight = PickyHUDDockLayout.clampedHorizontalXOffset(
+            10_000,
+            visibleFrame: visibleFrame,
+            panelWidth: panelWidth,
+            dockRailLength: dockLength
+        )
+        let dockCenterX = visibleFrame.midX + dockClampedRight
+        #expect(dockCenterX == visibleFrame.maxX - PickyHUDDockLayout.screenMargin - (dockLength / 2))
     }
 
     @Test func hudDockHorizontalSideUsesFortySixtySnapHysteresis() throws {

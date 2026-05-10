@@ -87,27 +87,18 @@ describe("neutral prompt builder", () => {
     expect(pairWithoutInstructions.user).not.toContain("User-provided Picky instructions");
   });
 
-  it("puts pointer overlay instructions in the Picky bootstrap, not every turn", () => {
-    const prompt = buildMainAgentPrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")));
+  it("does not include pointer tag instructions in Picky prompts", () => {
+    const turnPrompt = buildMainAgentPrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")));
     const pair = buildMainAgentBootstrapPair();
-    expect(pair.user).toContain("append pointer tags");
-    expect(pair.user).toContain("[POINT:x,y:label]");
-    expect(pair.user).toContain("Coordinates are always screenshot pixels");
-    expect(pair.user).toContain("Screenshot coordinates use top-left origin");
-    expect(prompt.text).not.toContain("Pointer overlay rules");
-    expect(prompt.text).not.toContain("Coordinates are always screenshot pixels");
-    expect(prompt.text).not.toContain("[POINT:");
-  });
-
-  it("does not include pointer overlay instructions in Pickle handoff prompts", () => {
-    const prompt = buildPicklePrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")), {
+    const picklePrompt = buildPicklePrompt(PickyContextPacketSchema.parse(readJson("context/plain-text.context.json")), {
       title: "Pickle work",
       instructions: "Investigate without showing overlays",
     });
 
-    expect(prompt.text).toContain("# Picky Pickle task");
-    expect(prompt.text).toContain("Investigate without showing overlays");
-    expect(prompt.text).not.toContain("Pointer overlay rules");
+    expect(pair.user).not.toContain("[POINT:");
+    expect(pair.user).not.toContain("append pointer tags");
+    expect(turnPrompt.text).not.toContain("[POINT:");
+    expect(picklePrompt.text).not.toContain("[POINT:");
   });
 
   it("places the handoff title before Pickle boilerplate so auto-name sees it early", () => {

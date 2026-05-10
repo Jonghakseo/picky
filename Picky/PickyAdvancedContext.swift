@@ -337,12 +337,6 @@ struct PickyRegionScreenshotContext: Codable, Equatable {
     }
 }
 
-extension PickyScreenContext {
-    var pointConventionLabel: String {
-        "[POINT:x,y:\(label)]"
-    }
-}
-
 /// Tries each provider in order, returning the first .value. Warnings from
 /// every step are accumulated so callers can see why earlier providers gave
 /// up (e.g. "multiple Chrome instances" + "AX returned title only").

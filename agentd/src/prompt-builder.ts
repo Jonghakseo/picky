@@ -8,16 +8,6 @@ export interface BuiltPrompt {
 const neutralInstruction =
   "Use available Pi skills, extensions, MCPs, and local tools as appropriate. Treat all captured desktop data as neutral context; do not assume a workflow solely from a URL or app name.";
 
-const pointerOverlayGuidelines = [
-  "- When visually indicating a specific button, menu, text field, icon, or screen region would help the user, append pointer tags at the very end of your final answer instead of calling a tool.",
-  "- Pointer tags are visual indication only. They are click-through and must not be described as moving, clicking, dragging, typing, or controlling the real macOS cursor.",
-  "- Tag format: `[POINT:x,y:label]` for the primary cursor/focus screen, `[POINT:x,y:label:screen1]` when specifying a screenId, or `[POINT:none]` when no pointer would help.",
-  "- For multiple locations, append multiple `[POINT:...]` tags in the order they should be shown. Picky shows them sequentially, one second apart.",
-  "- Coordinates are always screenshot pixels from the attached screenshot image. Screenshot coordinates use top-left origin: x increases rightward, y increases downward.",
-  "- Choose `screenId` from the screenshot metadata for secondary displays. If omitted, Picky targets the primary cursor/focus screen.",
-  "- If the user's wording refers to 'here', 'this', or the mouse position, use the captured cursor metadata when available: screenshotPixel is top-left origin; globalPoint is AppKit bottom-left origin.",
-];
-
 export function buildInitialTaskPrompt(context: PickyContextPacket): BuiltPrompt {
   const lines = ["# Picky task", "", neutralInstruction, "", "## User request"];
   lines.push(context.transcript?.trim() || "(no transcript provided)");
@@ -123,15 +113,10 @@ export function buildMainAgentBootstrapPair(extraInstructions?: string, compactS
     "- Keep `picky_start_pickle.instructions` compact and action-oriented, ideally about 300 Korean characters: goal, essential constraints, known decisions, key paths/URLs/IDs, and expected output. Do not paste the full current prompt, captured context, screenshot metadata, prior transcript, or tool logs.",
     "- `picky_start_pickle` accepts an optional `cwd`; omit it to use Picky's configured Pickle default cwd. Only set `cwd` when the user explicitly asks for another local repo/path or the correct working directory is otherwise clear; use an absolute path.",
     "- For screen-understanding requests with multiple screenshots, inspect all screenshots and distinguish the primary cursor/focus screen from secondary screens.",
-    "- For visual navigation/help, use the pointer overlay rules below and append `[POINT:...]` tags when a concrete on-screen location would help.",
-    "- When the user mentions, asks about, or needs help understanding something on screen, prefer appending pointer tags when there is a concrete on-screen location to indicate.",
     "- When you hand off, tell the user in Korean that you are delegating to a Pickle and that progress can be checked in the Picky dock.",
     "- When a Pickle completion message is provided later, summarize the result briefly in Korean and tell the user to open the Pickle card for details.",
     "- If the captured context Source is `text`, treat the request text as deliberate typed input, not speech recognition or STT output. Do not say the text was misrecognized; if it is unclear, ask them to retype or clarify.",
     "- Do not expose internal tool logs. Do not hard-code workflows from URLs or app names; use the user's intent and context.",
-    "",
-    "Pointer overlay rules:",
-    ...pointerOverlayGuidelines,
     "",
     "## Direct reply style for Picky TTS",
     "",

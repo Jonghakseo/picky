@@ -10,7 +10,6 @@ import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-m
 import { buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
 import type { EventEnvelope, MainAgentRuntimeMode, ModelCycleDirection, OpenAIRealtimeAuthConfig, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
-import { parsePointerTags, type ParsedPointerTags } from "./application/pointer-tag-parser.js";
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
 import { SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
@@ -34,7 +33,6 @@ export interface SessionSupervisorOptions {
 
 type QuickReplyEvent = Extract<EventEnvelope, { type: "quickReply" }>;
 type QuickReplyMetadata = Pick<QuickReplyEvent, "originSource" | "replyKind" | "sessionId" | "inputId">;
-const POINTER_OVERLAY_SEQUENCE_INTERVAL_MS = 1_000;
 
 export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
@@ -255,23 +253,6 @@ export class SessionSupervisor extends EventEmitter {
 
   private contextForPointerRequest(): PickyContextPacket | undefined {
     return this.mainContext ?? [...this.sessionContexts.values()].at(-1);
-  }
-
-  private schedulePointerOverlaysFromTags(parsed: ParsedPointerTags, context: PickyContextPacket | undefined): void {
-    if (!context || parsed.points.length === 0) return;
-    const requests = parsed.points.flatMap((point, index) => {
-      try {
-        return [{ index, request: makePointerOverlayRequestForContext(context, point) }];
-      } catch (error) {
-        logAgentd("main pointer tag ignored", { contextId: context.id, error: error instanceof Error ? error.message : String(error) });
-        return [];
-      }
-    });
-    for (const item of requests) {
-      setTimeout(() => {
-        this.emit("pointerOverlayRequested", item.request);
-      }, item.index * POINTER_OVERLAY_SEQUENCE_INTERVAL_MS);
-    }
   }
 
   async prewarmMainAgent(cwd = process.cwd()): Promise<void> {
@@ -1038,11 +1019,9 @@ export class SessionSupervisor extends EventEmitter {
         if (this.suppressNextMainReply) {
           this.suppressNextMainReply = false;
         } else if (rawReply) {
-          const pointerContext = this.mainContext;
-          const parsedPointerTags = event.status === "completed" ? parsePointerTags(rawReply) : { text: rawReply, points: [], explicitNone: false };
-          const reply = cleanFinalAnswer(parsedPointerTags.text);
+          const reply = cleanFinalAnswer(rawReply);
           if (reply) {
-            logAgentd("main quick reply", { contextId: this.mainReplyContextId, textChars: reply.length, pointerTags: parsedPointerTags.points.length });
+            logAgentd("main quick reply", { contextId: this.mainReplyContextId, textChars: reply.length });
             await this.appendMainMessage("assistant", reply);
             this.emitQuickReply(this.mainReplyContextId, reply, {
               originSource: this.mainReplyContextId === this.mainContext?.id ? quickReplyOriginFromContextSource(this.mainContext.source) : "system",
@@ -1050,7 +1029,6 @@ export class SessionSupervisor extends EventEmitter {
               sessionId: this.pickleSessionIds.has(this.mainReplyContextId) ? this.mainReplyContextId : undefined,
             });
           }
-          this.schedulePointerOverlaysFromTags(parsedPointerTags, pointerContext);
         }
         this.schedulePickleCompletionDrain();
       }

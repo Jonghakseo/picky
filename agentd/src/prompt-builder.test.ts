@@ -38,7 +38,8 @@ describe("neutral prompt builder", () => {
     const pair = buildMainAgentBootstrapPair();
     expect(pair.user).toContain("picky_pickle_sessions");
     expect(pair.user).toContain("picky_steer_pickle");
-    expect(pair.user).toContain("instead of starting a duplicate Pickle");
+    expect(pair.user).toContain("explicitly or contextually following up on a specific existing Pickle");
+    expect(pair.user).toContain("Do not steer just because a Pickle is running in the same repo or cwd");
   });
 
   it("puts handoff cwd defaults in the Picky bootstrap", () => {

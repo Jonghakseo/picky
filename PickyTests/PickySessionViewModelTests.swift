@@ -670,6 +670,9 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: 36, modifiers: []) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: 76, modifiers: []) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: 36, modifiers: .command) == false)
+        #expect(PickyHUDKeyboardShortcutPolicy.isLatestResponseReportShortcut(keyCode: 15, charactersIgnoringModifiers: "r", modifiers: .command) == true)
+        #expect(PickyHUDKeyboardShortcutPolicy.isLatestResponseReportShortcut(keyCode: 15, charactersIgnoringModifiers: "r", modifiers: [.command, .shift]) == false)
+        #expect(PickyHUDKeyboardShortcutPolicy.isLatestResponseReportShortcut(keyCode: 0, charactersIgnoringModifiers: "R", modifiers: .command) == true)
         #expect(PickyHUDDockLayout.numberShortcutForSessionIndex(0) == 1)
         #expect(PickyHUDDockLayout.numberShortcutForSessionIndex(8) == 9)
         #expect(PickyHUDDockLayout.numberShortcutForSessionIndex(9) == nil)
@@ -2241,6 +2244,34 @@ struct PickySessionViewModelTests {
         #expect(call.fileURL.lastPathComponent == "response-msg-1.md")
         #expect(call.markdown == "# First")
         #expect(FileManager.default.fileExists(atPath: call.fileURL.path))
+    }
+
+    @Test func openLatestAgentResponseReportOpensNewestAgentTextOnly() async throws {
+        let generatedRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-latest-response-report-\(UUID().uuidString)", isDirectory: true)
+        let presenter = FakeReportPresenter()
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            reportPresenter: presenter,
+            generatedReportDirectory: generatedRoot
+        )
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "latest-response-session", title: "Latest", status: "completed"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "latest-response-session", messageId: "msg-1", text: "# First", seq: 1))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "latest-response-session", messageId: "msg-2", text: "# Second", seq: 2))))
+        try await settle()
+
+        #expect(viewModel.sessions.first?.latestAgentResponseReportMessageID == "msg-2")
+        #expect(viewModel.sessions.first?.hasLatestAgentResponseReport == true)
+
+        try await viewModel.openLatestAgentResponseReport(sessionID: "latest-response-session")
+
+        let call = try #require(presenter.calls.first)
+        #expect(call.sessionID == "latest-response-session:message:msg-2")
+        #expect(call.title == "Latest \u{2014} Response")
+        #expect(call.fileURL.lastPathComponent == "response-msg-2.md")
+        #expect(call.markdown == "# Second")
     }
 
     @Test func openReportByMessageIDThrowsWhenMessageHasNoMarkdownContent() async throws {

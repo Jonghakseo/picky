@@ -343,6 +343,16 @@ struct PickyHUDView: View {
             return true
         }
 
+        if PickyHUDKeyboardShortcutPolicy.isLatestResponseReportShortcut(
+            keyCode: event.keyCode,
+            charactersIgnoringModifiers: event.charactersIgnoringModifiers,
+            modifiers: flags
+        ), let activeSession,
+           activeSession.hasLatestAgentResponseReport {
+            openLatestAgentResponseReport(sessionID: activeSession.id)
+            return true
+        }
+
         if flags == .command,
            let number = Self.numberShortcutValue(for: event),
            PickyHUDDockLayout.sessionIDForNumberShortcut(visibleIDs: visibleIDs, number: number) != nil {
@@ -377,6 +387,11 @@ struct PickyHUDView: View {
 
     private func focusActiveComposer() {
         composerFocusRequestID &+= 1
+    }
+
+    private func openLatestAgentResponseReport(sessionID: String) {
+        cancelPendingClose()
+        Task { try? await viewModel.openLatestAgentResponseReport(sessionID: sessionID) }
     }
 
     private func isTextInputFocused(in window: NSWindow) -> Bool {
@@ -441,12 +456,23 @@ struct PickyHUDView: View {
 enum PickyHUDKeyboardShortcutPolicy {
     private static let leftBracketKeyCode: UInt16 = 33
     private static let rightBracketKeyCode: UInt16 = 30
+    private static let rKeyCode: UInt16 = 15
     private static let returnKeyCode: UInt16 = 36
     private static let keypadEnterKeyCode: UInt16 = 76
 
     static func isComposerFocusShortcut(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
         modifiers.intersection([.command, .shift, .option, .control]).isEmpty
             && (keyCode == returnKeyCode || keyCode == keypadEnterKeyCode)
+    }
+
+    static func isLatestResponseReportShortcut(
+        keyCode: UInt16,
+        charactersIgnoringModifiers: String?,
+        modifiers: NSEvent.ModifierFlags
+    ) -> Bool {
+        guard modifiers == .command else { return false }
+        if keyCode == rKeyCode { return true }
+        return charactersIgnoringModifiers?.lowercased() == "r"
     }
 
     static func cycleDirection(keyCode: UInt16, charactersIgnoringModifiers: String?) -> Int? {
@@ -1019,6 +1045,13 @@ private struct PickyHUDDockIconView: View {
                     .transition(.scale(scale: 0.88, anchor: .bottomLeading).combined(with: .opacity))
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if showsLatestResponseShortcutHint {
+                commandShortcutBadge(label: "R")
+                    .offset(x: 5, y: 5)
+                    .transition(.scale(scale: 0.88, anchor: .bottomTrailing).combined(with: .opacity))
+            }
+        }
         .overlay(alignment: .center) {
             archiveProgressRing
         }
@@ -1055,8 +1088,12 @@ private struct PickyHUDDockIconView: View {
         }
         .animation(.spring(response: 0.2, dampingFraction: 0.78), value: isArchivePressing)
         .accessibilityLabel("Preview \(session.title)")
-        .accessibilityHint("Click to open or close. Press and hold for 1.5 seconds to archive this Pickle.")
+        .accessibilityHint("Click to open or close. Press ⌘R to open the latest response as a report. Press and hold for 1.5 seconds to archive this Pickle.")
         .accessibilityAddTraits(.isButton)
+    }
+
+    private var showsLatestResponseShortcutHint: Bool {
+        isCommandShortcutHintVisible && isActive && session.hasLatestAgentResponseReport
     }
 
     private var archiveProgressRing: some View {
@@ -1096,10 +1133,14 @@ private struct PickyHUDDockIconView: View {
     }
 
     private func commandShortcutBadge(number: Int) -> some View {
+        commandShortcutBadge(label: "\(number)")
+    }
+
+    private func commandShortcutBadge(label: String) -> some View {
         HStack(spacing: 1.5) {
             Image(systemName: "command")
                 .font(.system(size: 6.5, weight: .bold))
-            Text("\(number)")
+            Text(label)
                 .font(.system(size: 7.5, weight: .bold, design: .rounded))
                 .monospacedDigit()
         }

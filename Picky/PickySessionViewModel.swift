@@ -155,6 +155,16 @@ final class PickySessionListViewModel: ObservableObject {
             linkBadgeArtifacts.filter { $0.linkBadgeKind == .github }
         }
 
+        var latestAgentResponseReportMessageID: String? {
+            messages.last { message in
+                message.kind == .agentText && message.openAsReportMarkdown != nil
+            }?.id
+        }
+
+        var hasLatestAgentResponseReport: Bool {
+            latestAgentResponseReportMessageID != nil
+        }
+
         /// Filtered link badges for the HUD: drop any GitHub artifact whose URL points to
         /// the PR we already render as a dedicated PR badge, so the same pull request does
         /// not show up twice in the row.
@@ -606,6 +616,18 @@ final class PickySessionListViewModel: ObservableObject {
         let priorMessages = session.messages.prefix(activityIndex)
         let priorUserText = priorMessages.last(where: { $0.kind == .userText })
         return .dateRange(start: priorUserText?.createdAt, end: activity.createdAt)
+    }
+
+    /// Opens the newest LLM response in the markdown report viewer. This backs
+    /// the HUD's ⌘R shortcut so users can expand the latest reply without aiming
+    /// for the hover-only bubble corner button.
+    func openLatestAgentResponseReport(sessionID: String) async throws {
+        guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
+              let messageID = session.latestAgentResponseReportMessageID else {
+            lastError = "Latest response is not available as a report"
+            throw PickySessionListViewModelError.missingReport
+        }
+        try await openReport(sessionID: sessionID, messageID: messageID)
     }
 
     /// Opens a specific message's text content in the markdown report viewer.

@@ -19,8 +19,9 @@ private struct PickyCursorStyle: Codable, Equatable {
     var glowOpacity = 0.3
     var glowBlur = 0.3
     var glowScale = 1.18
-    var glowSize = 16.9
+    var glowSize = 18.5
     var iconSize = 19.5
+    var mascotSize = 32.0
     var highlightOpacity = 0.12
     var highlightOffsetX = -0.4
     var highlightOffsetY = -0.4
@@ -48,6 +49,7 @@ private struct PickyCursorStyle: Codable, Equatable {
         glowScale = try container.decodeIfPresent(Double.self, forKey: .glowScale) ?? defaults.glowScale
         glowSize = try container.decodeIfPresent(Double.self, forKey: .glowSize) ?? defaults.glowSize
         iconSize = try container.decodeIfPresent(Double.self, forKey: .iconSize) ?? defaults.iconSize
+        mascotSize = try container.decodeIfPresent(Double.self, forKey: .mascotSize) ?? defaults.mascotSize
         highlightOpacity = try container.decodeIfPresent(Double.self, forKey: .highlightOpacity) ?? defaults.highlightOpacity
         highlightOffsetX = try container.decodeIfPresent(Double.self, forKey: .highlightOffsetX) ?? defaults.highlightOffsetX
         highlightOffsetY = try container.decodeIfPresent(Double.self, forKey: .highlightOffsetY) ?? defaults.highlightOffsetY
@@ -166,34 +168,213 @@ private final class PickyOverlayBubblePreferencesStore: ObservableObject {
     }
 }
 
-// Pi text cursor buddy icon. The `tint` parameter overrides the base style
-// color so the buddy can shift through mood colors (idle / listening /
-// processing / responding) without swapping in a different shape or asset.
-private struct PiCursorIconView: View {
+// Picky logo cursor buddy icon. The `tint` parameter overrides the base
+// vector color so the buddy can shift through mood colors (idle / listening /
+// processing / responding) without swapping in a different raster asset.
+//
+// The geometry is adapted from the desktop `picky_*.svg` candidates: the main
+// check + eyes from `picky_000.svg`, blink/smile eyes from `picky_000_1.svg`,
+// and wink motion from `picky_006.svg`. Keeping it as SwiftUI vector paths lets
+// the overlay recolor and animate the mascot per state at runtime.
+private struct PickyCursorMascotView: View {
     let style: PickyCursorStyle
     let tint: Color
+    let voiceState: CompanionVoiceState
 
     var body: some View {
-        ZStack {
-            piGlyph(color: tint.opacity(style.glowOpacity), size: style.glowSize)
+        TimelineView(.animation) { timeline in
+            let time = timeline.date.timeIntervalSinceReferenceDate
+            ZStack {
+                PickyCursorMascotGlyph(
+                    expression: expression(at: time),
+                    tint: tint.opacity(style.glowOpacity),
+                    checkProgress: checkProgress(at: time)
+                )
+                .frame(width: CGFloat(style.glowSize), height: CGFloat(style.glowSize))
                 .blur(radius: CGFloat(style.glowBlur))
-                .scaleEffect(CGFloat(style.glowScale))
+                .scaleEffect(CGFloat(style.glowScale) * internalScale(at: time))
 
-            piGlyph(color: tint, size: style.iconSize)
+                PickyCursorMascotGlyph(
+                    expression: expression(at: time),
+                    tint: tint,
+                    checkProgress: checkProgress(at: time)
+                )
+                .frame(width: CGFloat(style.mascotSize), height: CGFloat(style.mascotSize))
+                .scaleEffect(internalScale(at: time))
+                .rotationEffect(.degrees(internalRotation(at: time)))
 
-            piGlyph(color: .white.opacity(style.highlightOpacity), size: style.iconSize)
+                PickyCursorMascotGlyph(
+                    expression: expression(at: time),
+                    tint: .white.opacity(style.highlightOpacity),
+                    checkProgress: checkProgress(at: time)
+                )
+                .frame(width: CGFloat(style.mascotSize), height: CGFloat(style.mascotSize))
+                .scaleEffect(internalScale(at: time))
+                .rotationEffect(.degrees(internalRotation(at: time)))
                 .offset(x: CGFloat(style.highlightOffsetX), y: CGFloat(style.highlightOffsetY))
+            }
+            .frame(width: CGFloat(style.frameSize), height: CGFloat(style.frameSize))
         }
-        .frame(width: CGFloat(style.frameSize), height: CGFloat(style.frameSize))
     }
 
-    private func piGlyph(color: Color, size: Double) -> some View {
-        Text("π")
-            .font(.system(size: CGFloat(size), weight: .bold, design: .rounded))
-            .foregroundColor(color)
-            .lineLimit(1)
-            .minimumScaleFactor(0.5)
-            .frame(width: CGFloat(size), height: CGFloat(size), alignment: .center)
+    private func expression(at time: TimeInterval) -> PickyCursorMascotExpression {
+        switch voiceState {
+        case .idle:
+            return time.truncatingRemainder(dividingBy: 5.2) > 4.94 ? .blink : .normal
+        case .listening:
+            return time.truncatingRemainder(dividingBy: 1.4) < 0.7 ? .happy : .normal
+        case .processing:
+            return time.truncatingRemainder(dividingBy: 1.1) < 0.32 ? .wink : .normal
+        case .responding:
+            return time.truncatingRemainder(dividingBy: 2.0) < 1.35 ? .happy : .normal
+        }
+    }
+
+    private func checkProgress(at time: TimeInterval) -> CGFloat {
+        guard voiceState == .processing else { return 1.0 }
+        let phase = time.truncatingRemainder(dividingBy: 1.0)
+        return 0.62 + CGFloat(phase) * 0.38
+    }
+
+    private func internalScale(at time: TimeInterval) -> CGFloat {
+        switch voiceState {
+        case .idle:
+            return 1.0
+        case .listening:
+            return 1.0 + CGFloat((sin(time * 7.0) + 1.0) * 0.018)
+        case .processing:
+            return 1.02
+        case .responding:
+            return 1.0 + CGFloat((sin(time * 4.6) + 1.0) * 0.012)
+        }
+    }
+
+    private func internalRotation(at time: TimeInterval) -> Double {
+        switch voiceState {
+        case .processing:
+            return sin(time * 8.0) * 3.0
+        default:
+            return 0
+        }
+    }
+}
+
+private enum PickyCursorMascotExpression {
+    case normal
+    case blink
+    case happy
+    case wink
+}
+
+private struct PickyCursorMascotGlyph: View {
+    let expression: PickyCursorMascotExpression
+    let tint: Color
+    let checkProgress: CGFloat
+
+    var body: some View {
+        GeometryReader { geometry in
+            let side = min(geometry.size.width, geometry.size.height)
+            let scale = side / 512.0
+            let origin = CGPoint(
+                x: (geometry.size.width - side) / 2.0,
+                y: (geometry.size.height - side) / 2.0
+            )
+            ZStack {
+                checkPath(origin: origin, scale: scale)
+                    .trim(from: 0, to: min(max(checkProgress, 0), 1))
+                    .stroke(
+                        tint,
+                        style: StrokeStyle(
+                            lineWidth: 100 * scale,
+                            lineCap: .round,
+                            lineJoin: .round,
+                            miterLimit: 10
+                        )
+                    )
+
+                eyes(origin: origin, scale: scale)
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+    }
+
+    @ViewBuilder
+    private func eyes(origin: CGPoint, scale: CGFloat) -> some View {
+        switch expression {
+        case .normal:
+            normalEyes(origin: origin, scale: scale)
+                .fill(tint)
+        case .blink, .happy:
+            happyEyes(origin: origin, scale: scale)
+                .stroke(
+                    tint,
+                    style: StrokeStyle(lineWidth: 40 * scale, lineCap: .round, lineJoin: .round, miterLimit: 10)
+                )
+        case .wink:
+            Path(ellipseIn: ellipseRect(cx: 193.23, cy: 137.86, rx: 40, ry: 50, origin: origin, scale: scale))
+                .fill(tint)
+            winkEye(origin: origin, scale: scale)
+                .stroke(
+                    tint,
+                    style: StrokeStyle(lineWidth: 40 * scale, lineCap: .round, lineJoin: .round, miterLimit: 10)
+                )
+        }
+    }
+
+    private func checkPath(origin: CGPoint, scale: CGFloat) -> Path {
+        var path = Path()
+        path.move(to: point(102.5, 245.67, origin: origin, scale: scale))
+        path.addLine(to: point(193.23, 367.37, origin: origin, scale: scale))
+        path.addLine(to: point(425.04, 214.01, origin: origin, scale: scale))
+        return path
+    }
+
+    private func normalEyes(origin: CGPoint, scale: CGFloat) -> Path {
+        var path = Path()
+        path.addPath(Path(ellipseIn: ellipseRect(cx: 193.23, cy: 137.86, rx: 40, ry: 50, origin: origin, scale: scale)))
+        path.addPath(Path(ellipseIn: ellipseRect(cx: 308.32, cy: 137.86, rx: 40, ry: 50, origin: origin, scale: scale)))
+        return path
+    }
+
+    private func happyEyes(origin: CGPoint, scale: CGFloat) -> Path {
+        var path = Path()
+        path.move(to: point(213.06, 157.02, origin: origin, scale: scale))
+        path.addCurve(
+            to: point(153.40, 154.95, origin: origin, scale: scale),
+            control1: point(198.32, 171.79, origin: origin, scale: scale),
+            control2: point(170.26, 172.67, origin: origin, scale: scale)
+        )
+        path.move(to: point(272.13, 157.02, origin: origin, scale: scale))
+        path.addCurve(
+            to: point(331.79, 154.95, origin: origin, scale: scale),
+            control1: point(286.87, 171.79, origin: origin, scale: scale),
+            control2: point(314.93, 172.67, origin: origin, scale: scale)
+        )
+        return path
+    }
+
+    private func winkEye(origin: CGPoint, scale: CGFloat) -> Path {
+        var path = Path()
+        path.move(to: point(286.16, 161.03, origin: origin, scale: scale))
+        path.addCurve(
+            to: point(342.77, 128.01, origin: origin, scale: scale),
+            control1: point(297.11, 139.45, origin: origin, scale: scale),
+            control2: point(322.97, 127.26, origin: origin, scale: scale)
+        )
+        return path
+    }
+
+    private func ellipseRect(cx: CGFloat, cy: CGFloat, rx: CGFloat, ry: CGFloat, origin: CGPoint, scale: CGFloat) -> CGRect {
+        CGRect(
+            x: origin.x + (cx - rx) * scale,
+            y: origin.y + (cy - ry) * scale,
+            width: rx * 2 * scale,
+            height: ry * 2 * scale
+        )
+    }
+
+    private func point(_ x: CGFloat, _ y: CGFloat, origin: CGPoint, scale: CGFloat) -> CGPoint {
+        CGPoint(x: origin.x + x * scale, y: origin.y + y * scale)
     }
 }
 
@@ -445,17 +626,21 @@ struct BlueCursorView: View {
                     }
             }
 
-            // Blue pi cursor — shown for ALL voice states. Listening and
+            // Picky mascot cursor — shown for ALL voice states. Listening and
             // processing no longer swap in a separate waveform/spinner: the
             // icon itself shifts mood color (idle blue / listening cyan /
-            // processing amber / responding purple). Idle micro-behaviors
-            // stack as offset/rotation/scale on top of the cursor-tracking
-            // spring without disturbing it.
+            // processing amber / responding purple) and expression animation.
+            // Idle micro-behaviors stack as offset/rotation/scale on top of the
+            // cursor-tracking spring without disturbing it.
             //
             // During cursor following: fast spring animation for snappy tracking.
             // During navigation: NO implicit animation — the frame-by-frame bezier
             // timer controls position directly at 60fps for a smooth arc flight.
-            PiCursorIconView(style: cursorStyleStore.style, tint: moodColor)
+            PickyCursorMascotView(
+                style: cursorStyleStore.style,
+                tint: moodColor,
+                voiceState: companionManager.voiceState
+            )
                 .shadow(
                     color: moodColor.opacity(cursorStyleStore.style.outerShadowOpacity),
                     radius: (CGFloat(cursorStyleStore.style.outerShadowRadius) + (buddyFlightScale - 1.0) * CGFloat(cursorStyleStore.style.outerShadowFlightMultiplier)) * idleShadowMultiplier,
@@ -1114,7 +1299,7 @@ struct BlueCursorView: View {
 
     // MARK: - Mood Colors
 
-    /// Color the Pi icon takes for the current voice state. Replaces the
+    /// Color the Picky mascot takes for the current voice state. Replaces the
     /// previous waveform/spinner overlays — the icon itself shifts color
     /// instead of swapping in a different shape.
     private var moodColor: Color {

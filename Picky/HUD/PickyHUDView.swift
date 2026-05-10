@@ -306,11 +306,6 @@ struct PickyHUDView: View {
             return true
         }
 
-        if flags == [], event.keyCode == Self.escapeKeyCode, heldSession != nil, !Self.isTextInputFocused(in: keyWindow) {
-            closeHeldSession()
-            return true
-        }
-
         if flags == .command, let number = Self.numberShortcutValue(for: event), let next = PickyHUDDockLayout.heldSessionAfterNumberShortcut(visibleIDs: visibleIDs, number: number) {
             openHeldSession(next)
             return true
@@ -365,19 +360,7 @@ struct PickyHUDView: View {
         )
     }
 
-    private static func isTextInputFocused(in window: NSWindow) -> Bool {
-        guard let responder = window.firstResponder else { return false }
-        if responder is NSTextView || responder is NSTextField || responder is NSSearchField || responder is NSComboBox {
-            return true
-        }
-        if let fieldEditor = window.fieldEditor(false, for: nil), responder === fieldEditor {
-            return true
-        }
-        return false
-    }
-
     private static let wKeyCode: UInt16 = 13
-    private static let escapeKeyCode: UInt16 = 53
 }
 
 enum PickyHUDKeyboardShortcutPolicy {

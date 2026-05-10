@@ -59,11 +59,12 @@ type ActiveAssistantAudioItem = {
 const OPENAI_WS_READY_STATE_OPEN = 1;
 const DEFAULT_VOICE = "marin";
 const PICKY_TRANSCRIPTION_PROMPT = [
-  "이 음성은 Picky macOS 앱을 조작하는 한국어/영어 혼합 명령입니다.",
-  "\"Picky\"는 앱 이름이며 \"피키\" 또는 \"Picky야\"로 불릴 수 있습니다. \"비키\"나 \"미키\"처럼 들려도 문맥상 Picky일 수 있습니다.",
-  "\"Pickle\"은 Picky 안의 작업 세션 이름이고, \"Pi\"는 로컬 코딩 에이전트 이름입니다.",
-  "제품명과 개발 용어는 그대로 보존하고, 말한 내용을 요약하지 말고 그대로 전사하세요.",
-  "주요 용어: Picky, Pickle, Pi, HUD, dock, agentd, repo, branch, cwd, Codex, SwiftUI, Xcode, Vercel, Next.js, localhost.",
+  "This audio is a voice command for controlling the Picky macOS app. Users may speak in any language or mix languages, including English, Korean, Japanese, Chinese, Spanish, and developer jargon.",
+  "Transcribe in the original spoken language. Do not translate, summarize, or rewrite the speech.",
+  "Preserve product names and developer terms exactly in Latin characters when the context fits.",
+  "Picky is the app name and may be pronounced in many ways, including Picky, Picky-ya, 피키, or ピッキー. If it sounds like Bicky, Vicky, Mickey, 비키, or 미키, transcribe it as Picky when the context fits.",
+  "Pickle is the name for a task session inside Picky and may be pronounced like 피클 or ピックル. Pi is the local coding agent name and may sound like pie, 파이, or パイ.",
+  "Key terms: Picky, Pickle, Pi, HUD, dock, agentd, repo, branch, cwd, Codex, SwiftUI, Xcode, Vercel, Next.js, localhost.",
 ].join("\n");
 
 export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {

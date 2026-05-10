@@ -13,6 +13,27 @@ final class AzureOpenAITranscriptionProvider: BuddyTranscriptionProvider {
     static let defaultAPIVersion = "2024-02-01"
     private static let targetSampleRate = 16_000
 
+    private static func defaultTranscriptionPrompt(keyterms: [String]) -> String {
+        var seenKeyterms = Set<String>()
+        let uniqueKeyterms = keyterms.compactMap { keyterm -> String? in
+            let trimmed = keyterm.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            let normalized = trimmed.lowercased()
+            guard !seenKeyterms.contains(normalized) else { return nil }
+            seenKeyterms.insert(normalized)
+            return trimmed
+        }
+        let vocabulary = uniqueKeyterms.prefix(40).joined(separator: ", ")
+        let vocabularyLine = vocabulary.isEmpty ? "" : "\n주요 용어: \(vocabulary)."
+
+        return """
+        이 음성은 Picky macOS 앱을 조작하는 한국어/영어 혼합 명령입니다.
+        "Picky"는 앱 이름이며 "피키" 또는 "Picky야"로 불릴 수 있습니다. "비키"나 "미키"처럼 들려도 문맥상 Picky일 수 있습니다.
+        "Pickle"은 Picky 안의 작업 세션 이름이고, "Pi"는 로컬 코딩 에이전트 이름입니다.
+        제품명과 개발 용어는 그대로 보존하고, 말한 내용을 요약하지 말고 그대로 전사하세요.\(vocabularyLine)
+        """
+    }
+
     let displayName = "Azure OpenAI Speech to Text"
     let requiresSpeechRecognitionPermission = false
 
@@ -53,6 +74,7 @@ final class AzureOpenAITranscriptionProvider: BuddyTranscriptionProvider {
             configuration: configuration,
             transcriptionURL: transcriptionURL,
             preferredLanguage: preferredLanguage,
+            transcriptionPrompt: Self.defaultTranscriptionPrompt(keyterms: keyterms),
             urlSession: urlSession,
             targetSampleRate: Self.targetSampleRate,
             onTranscriptUpdate: onTranscriptUpdate,
@@ -68,6 +90,7 @@ private final class AzureOpenAITranscriptionSession: BuddyStreamingTranscription
     private let configuration: AzureOpenAIAudioConfiguration
     private let transcriptionURL: URL
     private let preferredLanguage: String?
+    private let transcriptionPrompt: String?
     private let urlSession: URLSession
     private let targetSampleRate: Int
     private let onTranscriptUpdate: (String) -> Void
@@ -85,6 +108,7 @@ private final class AzureOpenAITranscriptionSession: BuddyStreamingTranscription
         configuration: AzureOpenAIAudioConfiguration,
         transcriptionURL: URL,
         preferredLanguage: String?,
+        transcriptionPrompt: String?,
         urlSession: URLSession,
         targetSampleRate: Int,
         onTranscriptUpdate: @escaping (String) -> Void,
@@ -94,6 +118,7 @@ private final class AzureOpenAITranscriptionSession: BuddyStreamingTranscription
         self.configuration = configuration
         self.transcriptionURL = transcriptionURL
         self.preferredLanguage = preferredLanguage
+        self.transcriptionPrompt = transcriptionPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         self.urlSession = urlSession
         self.targetSampleRate = targetSampleRate
         self.onTranscriptUpdate = onTranscriptUpdate
@@ -133,13 +158,14 @@ private final class AzureOpenAITranscriptionSession: BuddyStreamingTranscription
             sampleRate: targetSampleRate
         )
 
-        transcriptionTask = Task { [configuration, transcriptionURL, preferredLanguage, urlSession, onFinalTranscriptReady] in
+        transcriptionTask = Task { [configuration, transcriptionURL, preferredLanguage, transcriptionPrompt, urlSession, onFinalTranscriptReady] in
             do {
                 let transcript = try await Self.transcribe(
                     wavData: wavData,
                     configuration: configuration,
                     transcriptionURL: transcriptionURL,
                     preferredLanguage: preferredLanguage,
+                    transcriptionPrompt: transcriptionPrompt,
                     urlSession: urlSession
                 )
                 guard !Task.isCancelled else { return }
@@ -161,12 +187,16 @@ private final class AzureOpenAITranscriptionSession: BuddyStreamingTranscription
         configuration: AzureOpenAIAudioConfiguration,
         transcriptionURL: URL,
         preferredLanguage: String?,
+        transcriptionPrompt: String?,
         urlSession: URLSession
     ) async throws -> String {
         let boundary = "PickyAzureOpenAIBoundary-\(UUID().uuidString)"
         var multipartBody = AzureOpenAIMultipartFormData(boundary: boundary)
         if let preferredLanguage = preferredLanguage?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
             multipartBody = multipartBody.addingField(name: "language", value: preferredLanguage)
+        }
+        if let transcriptionPrompt = transcriptionPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            multipartBody = multipartBody.addingField(name: "prompt", value: transcriptionPrompt)
         }
         let bodyData = multipartBody
             .addingFile(

@@ -125,6 +125,8 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     const sessionUpdate = sent.find((event) => event.type === "session.update")!;
     const toolNames = sessionUpdate.session.tools.map((tool: Record<string, unknown>) => tool.name);
 
+    expect(sessionUpdate.session.audio.input.transcription.prompt).toContain("Picky");
+    expect(sessionUpdate.session.audio.input.transcription.prompt).toContain("Pickle");
     expect(toolNames).toContain("picky_start_pickle");
     expect(toolNames).toContain("picky_pickle_sessions");
     expect(toolNames).toContain("picky_steer_pickle");
@@ -495,6 +497,8 @@ describe("OpenAIRealtimeMainRuntime Azure preview protocol", () => {
     expect(sessionUpdate.session).not.toHaveProperty("audio");
     expect(sessionUpdate.session.modalities).toEqual(["text", "audio"]);
     expect(sessionUpdate.session.voice).toBe("verse");
+    expect(sessionUpdate.session.input_audio_transcription.prompt).toContain("Picky");
+    expect(sessionUpdate.session.input_audio_transcription.prompt).toContain("Pickle");
     expect(responseCreate.response).toEqual({ modalities: ["text", "audio"] });
   });
 

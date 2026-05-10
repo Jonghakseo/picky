@@ -177,13 +177,13 @@ describe("neutral prompt builder", () => {
     expect(prompt.text).toContain("cursorGlobalAppKit=100,200");
   });
 
-  it("builds the Picky bootstrap pair with TTS-friendly Korean rules and a short OK ack", () => {
+  it("builds the Picky bootstrap pair with TTS-friendly reply rules and a short OK ack", () => {
     const pair = buildMainAgentBootstrapPair();
-    expect(pair.user).toContain("마크다운");
-    expect(pair.user).toContain("코드블록");
-    expect(pair.user).toContain("괄호");
+    expect(pair.user).toContain("natural Korean sentences");
+    expect(pair.user).toContain("no markdown, code blocks, bullet points, or tables");
+    expect(pair.user).toContain("parentheses");
     expect(pair.user).toContain("`( ... )`");
-    expect(pair.user).toContain("이 메시지는 사용자가 보낸 것이 아니");
+    expect(pair.user).toContain("This message was not sent by the user");
     expect(pair.assistant).toBe("OK");
   });
 });

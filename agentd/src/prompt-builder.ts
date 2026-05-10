@@ -98,8 +98,8 @@ export function buildMainAgentBootstrapPair(extraInstructions?: string, compactS
   const trimmedExtra = extraInstructions?.trim();
   const trimmedSummary = compactSummary?.trim();
   const user = [
-    "이 메시지는 사용자가 보낸 것이 아니라 Picky agentd가 Picky 세션 시작 시 한 번 주입하는 부트스트랩 안내입니다.",
-    "앞으로 들어오는 `# Picky turn` 메시지는 매 턴의 사용자 요청과 캡처 컨텍스트만 담습니다. 아래 상시 지침을 세션 내내 유지하세요.",
+    "This message was not sent by the user. It is a one-time bootstrap notice injected by Picky agentd when a Picky session starts.",
+    "Subsequent `# Picky turn` messages will only carry each turn's user request and captured context. Keep the standing instructions below in effect for the entire session.",
     "",
     "## Standing Picky instructions",
     "",
@@ -120,17 +120,17 @@ export function buildMainAgentBootstrapPair(extraInstructions?: string, compactS
     "",
     "## Direct reply style for Picky TTS",
     "",
-    "1. 답변은 마크다운, 코드블록, 글머리 기호, 표 없이 자연스러운 한국어 문장으로만 작성합니다. Picky가 텍스트를 그대로 음성으로 읽기 때문입니다.",
-    "2. URL, 파일 경로, 세션 ID, 코드 식별자처럼 음성으로 들으면 어색한 세부 정보가 꼭 필요하면 문장 끝에 괄호 `( ... )` 안에 넣어주세요. Picky의 TTS 레이어는 괄호 안 내용을 음성에서는 자동으로 제외하고, 화면에는 그대로 표시합니다.",
-    "3. 한 번에 1~3 문장으로 짧게 답하고, 사용자가 더 묻지 않는 한 추가 설명을 길게 늘어뜨리지 않습니다.",
-    "4. 피클에 맡기거나 도구를 호출해야 하는 상황에서는 위의 도구 사용 규칙을 그대로 따르고, 이 답변 스타일 규칙은 사용자에게 직접 말하는 텍스트 답변에만 적용합니다.",
+    "1. Write replies as natural Korean sentences only, with no markdown, code blocks, bullet points, or tables, because Picky reads the text aloud as-is.",
+    "2. If awkward-to-hear details like URLs, file paths, session IDs, or code identifiers are necessary, place them inside parentheses `( ... )` at the end of the sentence. Picky's TTS layer automatically skips parenthesised content during playback while still showing it on screen.",
+    "3. Reply concisely in 1-3 short sentences at a time, and do not stretch into longer explanations unless the user asks for more.",
+    "4. When delegating to a Pickle or calling a tool, follow the tool-use rules above as-is; apply this reply style only to the text answer that goes directly to the user.",
     "",
     ...(trimmedSummary
       ? [
           "",
           "## Previous Picky epoch summary",
           "",
-          "아래 요약은 Picky가 긴 Picky 세션을 새 Pi 세션으로 롤오버하면서 전달한 이전 대화 메모입니다. 참고만 하고, 사용자가 기존 위임 작업/진행 상황을 물으면 반드시 picky_pickle_sessions로 최신 상태를 확인하세요.",
+          "The summary below is a memo from a previous conversation that Picky carried over while rolling a long Picky session into a new Pi session. Use it only as reference; if the user asks about existing delegated work or progress, always check the latest state via picky_pickle_sessions.",
           "",
           trimmedSummary,
         ]
@@ -140,13 +140,13 @@ export function buildMainAgentBootstrapPair(extraInstructions?: string, compactS
           "",
           "## User-provided Picky instructions",
           "",
-          "아래는 사용자가 Picky 설정에서 직접 추가한 Picky 상시 지침입니다. 세션 내내 함께 유지하고, 위 기본 규칙과 충돌하면 사용자 지침을 우선하되 안전/투명성 규칙은 이어갑니다.",
+          "The following are standing Picky instructions the user added directly in Picky settings. Keep them in effect throughout the session; if they conflict with the base rules above, prefer the user's instructions while still honouring the safety and transparency rules.",
           "",
           trimmedExtra,
         ]
       : []),
     "",
-    "이해했으면 짧게 'OK' 한 마디로만 답하세요. 이 OK는 사용자에게 노출되지 않습니다.",
+    "If you understand, reply with just a short 'OK'. This OK is not shown to the user.",
   ].join("\n");
   const assistant = "OK";
   return { user, assistant };

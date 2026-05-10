@@ -87,13 +87,54 @@ mkdir -p "${EXPORT_DIR}"
 # its node child crash with `ENOENT: uv_cwd` next time it calls process.cwd(),
 # which silently kills any in-flight Pickle session. Set PICKY_PACKAGE_FORCE=1
 # to override (e.g. when you have already quit the app yourself).
-LIVE_PICKY_PIDS="$(/bin/ps -A -o pid=,command= 2>/dev/null | /usr/bin/awk -v needle="${EXPORT_DIR}/${APP_NAME}.app/" 'index($0, needle) { printf "%s ", $1 }')"
+#
+# Match the main binary and the agentd entry point exactly, not any process
+# whose command line happens to mention the .app path. macOS system services
+# (mdworker, lsd, tccd, quicklookd) briefly touch the bundle while signing
+# settles and would otherwise be flagged as "Picky still running".
+MAIN_BINARY="${EXPORT_DIR}/${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
+AGENTD_ENTRY="${EXPORT_DIR}/${APP_NAME}.app/Contents/Resources/agentd/dist/index.js"
+find_live_picky_pids() {
+  /bin/ps -A -o pid=,command= 2>/dev/null \
+    | /usr/bin/awk -v main="${MAIN_BINARY}" -v entry="${AGENTD_ENTRY}" \
+        '{
+          cmd = $0
+          sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "", cmd)
+          n = split(cmd, parts, /[[:space:]]+/)
+          for (i = 1; i <= n; i++) {
+            if (parts[i] == main || parts[i] == entry) {
+              printf "%s ", $1
+              next
+            }
+          }
+        }'
+}
+# Sample twice with a short delay so we don't trip on transient PIDs from
+# Spotlight / Launch Services / signature validation that briefly exec the
+# binary right after a quit. Only flag a PID that survives both samples.
+LIVE_PICKY_PIDS="$(find_live_picky_pids)"
 LIVE_PICKY_PIDS="${LIVE_PICKY_PIDS%% }"
+if [[ -n "${LIVE_PICKY_PIDS}" ]]; then
+  sleep 0.6
+  SECOND_SAMPLE="$(find_live_picky_pids)"
+  SECOND_SAMPLE="${SECOND_SAMPLE%% }"
+  STABLE_PIDS=""
+  for _pid in ${LIVE_PICKY_PIDS}; do
+    case " ${SECOND_SAMPLE} " in
+      *" ${_pid} "*) STABLE_PIDS="${STABLE_PIDS}${_pid} ";;
+    esac
+  done
+  LIVE_PICKY_PIDS="${STABLE_PIDS%% }"
+fi
 if [[ -n "${LIVE_PICKY_PIDS}" ]]; then
   if [[ "${PICKY_PACKAGE_FORCE:-0}" == "1" ]]; then
     echo "⚠️  Packaging forced while ${APP_NAME}.app is running (pids: ${LIVE_PICKY_PIDS}); the running daemon will likely crash." >&2
   else
     echo "❌ ${APP_NAME}.app is running from ${EXPORT_DIR} (pids: ${LIVE_PICKY_PIDS})." >&2
+    for _pid in ${LIVE_PICKY_PIDS}; do
+      _cmd="$(/bin/ps -A -o pid=,command= 2>/dev/null | /usr/bin/awk -v pid="${_pid}" '$1 == pid { sub(/^[[:space:]]*[0-9]+[[:space:]]+/, ""); print; exit }')"
+      echo "   pid=${_pid} cmd=${_cmd:-<exited>}" >&2
+    done
     echo "   Quit it first, or rerun with PICKY_PACKAGE_FORCE=1 to proceed anyway." >&2
     exit 1
   fi

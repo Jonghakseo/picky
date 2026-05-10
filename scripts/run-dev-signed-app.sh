@@ -112,6 +112,36 @@ quit_existing_app() {
     /usr/bin/killall "${APP_NAME}" >/dev/null 2>&1 || true
     sleep 0.5
   fi
+
+  # Clean up any orphaned agentd node child still pointing at EXPORT_DIR.
+  # Picky normally tears its daemon down on quit, but if the previous launch
+  # crashed or was force-killed the node child can stay alive and trip the
+  # package step's "is running" check on the next run.
+  local main_binary="${EXPORT_DIR}/${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
+  local agentd_entry="${EXPORT_DIR}/${APP_NAME}.app/Contents/Resources/agentd/dist/index.js"
+  local stale_pids
+  stale_pids="$(/bin/ps -A -o pid=,command= 2>/dev/null \
+    | /usr/bin/awk -v main="${main_binary}" -v entry="${agentd_entry}" \
+        '{
+          cmd = $0
+          sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "", cmd)
+          n = split(cmd, parts, /[[:space:]]+/)
+          for (i = 1; i <= n; i++) {
+            if (parts[i] == main || parts[i] == entry) {
+              printf "%s ", $1
+              next
+            }
+          }
+        }')"
+  stale_pids="${stale_pids%% }"
+  if [[ -n "${stale_pids}" ]]; then
+    echo "⏹️  Terminating orphaned ${APP_NAME} processes (pids: ${stale_pids})..."
+    # shellcheck disable=SC2086
+    /bin/kill ${stale_pids} >/dev/null 2>&1 || true
+    sleep 0.3
+    # shellcheck disable=SC2086
+    /bin/kill -9 ${stale_pids} >/dev/null 2>&1 || true
+  fi
 }
 
 IDENTITY_RECORD="$(choose_identity_record || true)"

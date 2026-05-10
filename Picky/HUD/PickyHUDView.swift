@@ -546,6 +546,10 @@ private struct PickyHUDMiniPreviewCardView: View {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .fill(DS.Colors.surface3.opacity(0.62))
                 )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
+                )
         }
         .task(id: "\(session.cwd ?? "")|\(session.updatedAt.timeIntervalSince1970)") {
             if gitStatus == nil, let cached = PickyGitRepositoryStatus.cached(cwd: session.cwd) {

@@ -2,13 +2,15 @@
 //  PickyHUDOverlayManager.swift
 //  Picky
 //
-//  Screen-edge HUD panel lifecycle and placement. One panel per attached
-//  display so the dock is always visible on every monitor; per-screen UI
-//  state (hover, pin, preview) lives inside each PickyHUDView's @State while
-//  the shared session model drives every panel in lockstep.
+//  Screen-edge HUD panel lifecycle and placement. Each display owns a status-bar
+//  dock rail panel plus a normal-level card panel so the rail remains always
+//  reachable while opened conversation cards behave like ordinary app windows.
+//  Per-display UI state is shared by both panels; the session model drives every
+//  display in lockstep.
 //
 
 import AppKit
+import Combine
 import SwiftUI
 
 final class PickyHUDPanel: NSPanel {
@@ -35,20 +37,28 @@ final class PickyHUDOverlayManager {
     private let viewModel: PickySessionListViewModel
     private let appearanceStore: PickyAppearanceStore
     private let settingsStore: PickySettingsStore
-    private let width: CGFloat = PickyHUDDockLayout.panelWidth
     private let collapsedHeight: CGFloat = 180
     private let minimumHeight: CGFloat = 48
+
+    private enum PanelKind {
+        case rail
+        case card
+    }
 
     /// Stable, per-display state. Keyed by `CGDirectDisplayID` because AppKit
     /// hands us new `NSScreen` instances whenever the screen configuration
     /// changes; the display ID survives those rebuilds as long as the physical
     /// monitor stays connected.
     private struct PanelEntry {
-        let panel: PickyHUDPanel
+        let railPanel: PickyHUDPanel
+        let cardPanel: PickyHUDPanel
         let placement: PickyHUDPlacement
         let displayState: PickyHUDDisplayState
-        var pendingShrinkTask: Task<Void, Never>?
-        var lastContentSize: CGSize
+        var pendingRailShrinkTask: Task<Void, Never>?
+        var pendingCardShrinkTask: Task<Void, Never>?
+        var lastRailContentSize: CGSize
+        var lastCardContentSize: CGSize
+        var heldSessionCancellable: AnyCancellable?
     }
 
     private struct ArchiveUndoToastEntry {
@@ -109,8 +119,10 @@ final class PickyHUDOverlayManager {
         stopSettingsObserver()
         viewModel.stop()
         for (_, entry) in panelsByDisplayID {
-            entry.pendingShrinkTask?.cancel()
-            entry.panel.orderOut(nil)
+            entry.pendingRailShrinkTask?.cancel()
+            entry.pendingCardShrinkTask?.cancel()
+            entry.railPanel.orderOut(nil)
+            entry.cardPanel.orderOut(nil)
         }
         for (_, entry) in archiveUndoToastsByDisplayID {
             entry.dismissTask?.cancel()
@@ -129,8 +141,10 @@ final class PickyHUDOverlayManager {
         // Tear down panels for displays that disappeared.
         for displayID in panelsByDisplayID.keys where !liveDisplayIDs.contains(displayID) {
             if let entry = panelsByDisplayID.removeValue(forKey: displayID) {
-                entry.pendingShrinkTask?.cancel()
-                entry.panel.orderOut(nil)
+                entry.pendingRailShrinkTask?.cancel()
+                entry.pendingCardShrinkTask?.cancel()
+                entry.railPanel.orderOut(nil)
+                entry.cardPanel.orderOut(nil)
             }
         }
         for displayID in archiveUndoToastsByDisplayID.keys where !liveDisplayIDs.contains(displayID) {
@@ -149,7 +163,8 @@ final class PickyHUDOverlayManager {
             }
             positionPanel(on: screen, displayID: displayID)
             if shouldOrderFront {
-                panelsByDisplayID[displayID]?.panel.orderFrontRegardless()
+                panelsByDisplayID[displayID]?.railPanel.orderFrontRegardless()
+                syncCardPanelVisibility(displayID: displayID)
             }
         }
         for displayID in archiveUndoToastsByDisplayID.keys {
@@ -158,37 +173,99 @@ final class PickyHUDOverlayManager {
     }
 
     private func makePanelEntry(displayID: CGDirectDisplayID) -> PanelEntry {
-        let hudPanel = PickyHUDPanel(
-            contentRect: NSRect(x: 0, y: 0, width: width, height: collapsedHeight),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        hudPanel.level = .statusBar
-        hudPanel.isOpaque = false
-        hudPanel.backgroundColor = .clear
-        hudPanel.hasShadow = false
-        hudPanel.hidesOnDeactivate = false
-        hudPanel.isExcludedFromWindowsMenu = true
-        hudPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        let panelIdentifier = NSUserInterfaceItemIdentifier("picky-hud-\(displayID)")
-        hudPanel.identifier = panelIdentifier
-
         let placement = PickyHUDPlacement(
             dockSide: position(for: displayID).side,
             dockSizePreset: currentDockSizePreset
         )
         let displayState = PickyHUDDisplayState()
-        let hudRoot = PickyHUDView(
-            viewModel: viewModel,
-            panelIdentifier: panelIdentifier,
+        let railIdentifier = NSUserInterfaceItemIdentifier("picky-hud-rail-\(displayID)")
+        let cardIdentifier = NSUserInterfaceItemIdentifier("picky-hud-card-\(displayID)")
+        let railPanel = makeHUDPanel(
+            identifier: railIdentifier,
+            level: .statusBar,
+            size: CGSize(width: railPanelWidth(for: displayID), height: collapsedHeight)
+        )
+        let cardPanel = makeHUDPanel(
+            identifier: cardIdentifier,
+            level: .normal,
+            size: CGSize(width: cardPanelWidth, height: collapsedHeight)
+        )
+
+        railPanel.contentView = makeHUDHostingView(
+            role: .rail,
+            panelIdentifier: railIdentifier,
+            pairedPanelIdentifier: cardIdentifier,
             placement: placement,
             displayState: displayState,
+            width: railPanelWidth(for: displayID),
+            displayID: displayID
+        )
+        cardPanel.contentView = makeHUDHostingView(
+            role: .card,
+            panelIdentifier: cardIdentifier,
+            pairedPanelIdentifier: railIdentifier,
+            placement: placement,
+            displayState: displayState,
+            width: cardPanelWidth,
+            displayID: displayID
+        )
+
+        var entry = PanelEntry(
+            railPanel: railPanel,
+            cardPanel: cardPanel,
+            placement: placement,
+            displayState: displayState,
+            pendingRailShrinkTask: nil,
+            pendingCardShrinkTask: nil,
+            lastRailContentSize: CGSize(width: railPanelWidth(for: displayID), height: collapsedHeight),
+            lastCardContentSize: CGSize(width: cardPanelWidth, height: collapsedHeight),
+            heldSessionCancellable: nil
+        )
+        entry.heldSessionCancellable = displayState.$heldSession.sink { [weak self] _ in
+            self?.syncCardPanelVisibility(displayID: displayID)
+        }
+        return entry
+    }
+
+    private func makeHUDPanel(identifier: NSUserInterfaceItemIdentifier, level: NSWindow.Level, size: CGSize) -> PickyHUDPanel {
+        let panel = PickyHUDPanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.level = level
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.hidesOnDeactivate = false
+        panel.isExcludedFromWindowsMenu = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.identifier = identifier
+        return panel
+    }
+
+    private func makeHUDHostingView(
+        role: PickyHUDPanelRole,
+        panelIdentifier: NSUserInterfaceItemIdentifier,
+        pairedPanelIdentifier: NSUserInterfaceItemIdentifier,
+        placement: PickyHUDPlacement,
+        displayState: PickyHUDDisplayState,
+        width: CGFloat,
+        displayID: CGDirectDisplayID
+    ) -> NSHostingView<some View> {
+        let root = PickyHUDView(
+            viewModel: viewModel,
+            panelIdentifier: panelIdentifier,
+            pairedPanelIdentifier: pairedPanelIdentifier,
+            placement: placement,
+            displayState: displayState,
+            role: role,
             onSizeChange: { [weak self] size in
-                // SwiftUI animates the card reveal itself. Grow the transparent NSPanel
-                // immediately, but defer shrinking it until the collapse animation has
-                // finished so shadows/content aren't clipped by the outer container.
-                self?.resizePanel(displayID: displayID, toContentSize: size, deferShrink: true)
+                // SwiftUI animates reveal/collapse itself. Grow the transparent NSPanel
+                // immediately, but defer shrinking until collapse finishes so shadows
+                // and content are not clipped by the outer container.
+                self?.resizePanel(displayID: displayID, kind: role == .rail ? .rail : .card, toContentSize: size, deferShrink: true)
             },
             onDockHandleDragChanged: { [weak self] delta in
                 self?.handleDockDragChanged(displayID: displayID, delta: delta)
@@ -206,18 +283,20 @@ final class PickyHUDOverlayManager {
             .frame(width: width)
             .environmentObject(appearanceStore)
             .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
-        let hostingView = NSHostingView(rootView: hudRoot)
+        let hostingView = NSHostingView(rootView: root)
         hostingView.frame = NSRect(x: 0, y: 0, width: width, height: collapsedHeight)
         hostingView.autoresizingMask = [.width, .height]
-        hudPanel.contentView = hostingView
+        return hostingView
+    }
 
-        return PanelEntry(
-            panel: hudPanel,
-            placement: placement,
-            displayState: displayState,
-            pendingShrinkTask: nil,
-            lastContentSize: CGSize(width: width, height: collapsedHeight)
-        )
+    private var cardPanelWidth: CGFloat {
+        PickyHUDDockLayout.detailWidth + (2 * PickyHUDExpansion.dockShadowHorizontalPadding)
+    }
+
+    private func railPanelWidth(for displayID: CGDirectDisplayID) -> CGFloat {
+        let preset = panelsByDisplayID[displayID]?.placement.dockSizePreset ?? currentDockSizePreset
+        let metrics = PickyHUDDockMetrics(preset: preset)
+        return metrics.railWidth + (2 * PickyHUDExpansion.dockShadowHorizontalPadding)
     }
 
     private func positionPanel(on screen: NSScreen, displayID: CGDirectDisplayID) {
@@ -227,8 +306,11 @@ final class PickyHUDOverlayManager {
         // card might keep the stale 1080 cap on the first frame after a screen
         // configuration change or an anchor drag.
         updatePlacement(for: screen, displayID: displayID)
-        let contentSize = entry.panel.contentView?.fittingSize ?? entry.lastContentSize
-        resizePanel(displayID: displayID, toContentSize: contentSize, deferShrink: false)
+        let railContentSize = entry.railPanel.contentView?.fittingSize ?? entry.lastRailContentSize
+        resizePanel(displayID: displayID, kind: .rail, toContentSize: railContentSize, deferShrink: false)
+        let cardContentSize = entry.cardPanel.contentView?.fittingSize ?? entry.lastCardContentSize
+        resizePanel(displayID: displayID, kind: .card, toContentSize: cardContentSize, deferShrink: false)
+        syncCardPanelVisibility(displayID: displayID)
     }
 
     private func updatePlacement(for screen: NSScreen, displayID: CGDirectDisplayID) {
@@ -277,44 +359,67 @@ final class PickyHUDOverlayManager {
 
     // MARK: - Resizing / placement
 
-    private func resizePanel(displayID: CGDirectDisplayID, toContentSize contentSize: CGSize, deferShrink: Bool) {
+    private func resizePanel(displayID: CGDirectDisplayID, kind: PanelKind, toContentSize contentSize: CGSize, deferShrink: Bool) {
         guard var entry = panelsByDisplayID[displayID] else { return }
         guard let screen = screen(for: displayID) else { return }
-        guard let targetFrame = targetFrame(for: screen, displayID: displayID, contentSize: contentSize) else { return }
+        guard let targetFrame = targetFrame(for: screen, displayID: displayID, kind: kind, contentSize: contentSize) else { return }
+        let panel = kind == .rail ? entry.railPanel : entry.cardPanel
 
         let shouldDeferShrink = PickyHUDExpansion.shouldDeferPanelShrink(
-            currentHeight: entry.panel.frame.height,
+            currentHeight: panel.frame.height,
             targetHeight: targetFrame.height,
             deferShrink: deferShrink
         )
 
         if shouldDeferShrink {
-            entry.pendingShrinkTask?.cancel()
-            entry.pendingShrinkTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(PickyHUDExpansion.panelShrinkDelay * 1_000_000_000))
-                guard !Task.isCancelled, let self else { return }
-                if var current = self.panelsByDisplayID[displayID] {
-                    current.pendingShrinkTask = nil
-                    self.panelsByDisplayID[displayID] = current
+            switch kind {
+            case .rail:
+                entry.pendingRailShrinkTask?.cancel()
+                entry.pendingRailShrinkTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: UInt64(PickyHUDExpansion.panelShrinkDelay * 1_000_000_000))
+                    guard !Task.isCancelled, let self else { return }
+                    if var current = self.panelsByDisplayID[displayID] {
+                        current.pendingRailShrinkTask = nil
+                        self.panelsByDisplayID[displayID] = current
+                    }
+                    self.resizePanel(displayID: displayID, kind: .rail, toContentSize: contentSize, deferShrink: false)
                 }
-                self.resizePanel(displayID: displayID, toContentSize: contentSize, deferShrink: false)
+                entry.lastRailContentSize = contentSize
+            case .card:
+                entry.pendingCardShrinkTask?.cancel()
+                entry.pendingCardShrinkTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: UInt64(PickyHUDExpansion.panelShrinkDelay * 1_000_000_000))
+                    guard !Task.isCancelled, let self else { return }
+                    if var current = self.panelsByDisplayID[displayID] {
+                        current.pendingCardShrinkTask = nil
+                        self.panelsByDisplayID[displayID] = current
+                    }
+                    self.resizePanel(displayID: displayID, kind: .card, toContentSize: contentSize, deferShrink: false)
+                }
+                entry.lastCardContentSize = contentSize
             }
-            entry.lastContentSize = contentSize
             panelsByDisplayID[displayID] = entry
             return
         }
 
-        entry.pendingShrinkTask?.cancel()
-        entry.pendingShrinkTask = nil
-        entry.lastContentSize = contentSize
+        switch kind {
+        case .rail:
+            entry.pendingRailShrinkTask?.cancel()
+            entry.pendingRailShrinkTask = nil
+            entry.lastRailContentSize = contentSize
+        case .card:
+            entry.pendingCardShrinkTask?.cancel()
+            entry.pendingCardShrinkTask = nil
+            entry.lastCardContentSize = contentSize
+        }
         panelsByDisplayID[displayID] = entry
 
-        if entry.panel.frame.integral != targetFrame.integral {
-            entry.panel.setFrame(targetFrame, display: true)
+        if panel.frame.integral != targetFrame.integral {
+            panel.setFrame(targetFrame, display: true)
         }
     }
 
-    private func targetFrame(for screen: NSScreen, displayID: CGDirectDisplayID, contentSize: CGSize) -> NSRect? {
+    private func targetFrame(for screen: NSScreen, displayID: CGDirectDisplayID, kind: PanelKind, contentSize: CGSize) -> NSRect? {
         let pos = position(for: displayID)
         let visibleFrame = screen.visibleFrame
         guard visibleFrame.width > 0, visibleFrame.height > 0 else { return nil }
@@ -340,11 +445,12 @@ final class PickyHUDOverlayManager {
             topPaddingFromContentTop: topPadding,
             anchorPercent: pos.anchorPercent
         )
-        let dockMetrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
+        let dockMetrics = PickyHUDDockMetrics(preset: panelsByDisplayID[displayID]?.placement.dockSizePreset ?? currentDockSizePreset)
+        let railWidth = railPanelWidth(for: displayID)
         let safeXOffset = PickyHUDDockLayout.clampedXOffset(
             pos.xOffset,
             visibleFrame: visibleFrame,
-            panelWidth: width,
+            panelWidth: railWidth,
             dockSide: pos.side,
             dockRailWidth: dockMetrics.railWidth
         )
@@ -353,18 +459,47 @@ final class PickyHUDOverlayManager {
             normalizedPosition.xOffset = safeXOffset
             setPosition(normalizedPosition, for: displayID)
         }
+        let railX = PickyHUDDockLayout.panelX(
+            visibleFrame: visibleFrame,
+            panelWidth: railWidth,
+            dockSide: pos.side,
+            xOffset: safeXOffset
+        )
+        let panelWidth: CGFloat
+        let panelX: CGFloat
+        switch kind {
+        case .rail:
+            panelWidth = railWidth
+            panelX = railX
+        case .card:
+            panelWidth = cardPanelWidth
+            switch pos.side {
+            case .right:
+                panelX = railX - PickyHUDDockLayout.panelGap - panelWidth
+            case .left:
+                panelX = railX + railWidth + PickyHUDDockLayout.panelGap
+            }
+        }
 
         return NSRect(
-            x: PickyHUDDockLayout.panelX(
-                visibleFrame: visibleFrame,
-                panelWidth: width,
-                dockSide: pos.side,
-                xOffset: safeXOffset
-            ),
+            x: panelX,
             y: originY,
-            width: width,
+            width: panelWidth,
             height: targetHeight
         )
+    }
+
+    private func syncCardPanelVisibility(displayID: CGDirectDisplayID) {
+        guard let entry = panelsByDisplayID[displayID] else { return }
+        guard entry.displayState.heldSession != nil else {
+            entry.cardPanel.orderOut(nil)
+            return
+        }
+        if screen(for: displayID) != nil {
+            let cardContentSize = entry.cardPanel.contentView?.fittingSize ?? entry.lastCardContentSize
+            resizePanel(displayID: displayID, kind: .card, toContentSize: cardContentSize, deferShrink: false)
+        }
+        entry.cardPanel.orderFrontRegardless()
     }
 
     // MARK: - Archive undo toast
@@ -497,10 +632,12 @@ final class PickyHUDOverlayManager {
         )
 
         // -- X axis: horizontal offset and side --
-        let dockMetrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
+        let preset = panelsByDisplayID[displayID]?.placement.dockSizePreset ?? currentDockSizePreset
+        let dockMetrics = PickyHUDDockMetrics(preset: preset)
+        let railWidth = railPanelWidth(for: displayID)
         let draggedDockCenterX = PickyHUDDockLayout.dockRailCenterX(
             visibleFrame: visibleFrame,
-            panelWidth: width,
+            panelWidth: railWidth,
             dockSide: startPos.side,
             xOffset: startPos.xOffset,
             dockRailWidth: dockMetrics.railWidth
@@ -513,7 +650,7 @@ final class PickyHUDOverlayManager {
         pos.xOffset = PickyHUDDockLayout.xOffset(
             forDockRailCenterX: draggedDockCenterX,
             visibleFrame: visibleFrame,
-            panelWidth: width,
+            panelWidth: railWidth,
             dockSide: pos.side,
             dockRailWidth: dockMetrics.railWidth
         )

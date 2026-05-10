@@ -910,20 +910,22 @@ private struct PickyHUDDockRailView: View {
         .accessibilityHint("Drag to move the Pickle dock. Crossing the middle of the screen switches the dock edge. Double-click to reset the dock to its default position.")
     }
 
-    /// Frosted-glass capsule that hosts the dock icons. Uses .ultraThinMaterial
+    /// Frosted-glass panel that hosts the dock icons. Uses .ultraThinMaterial
     /// so the desktop / app underneath actually shows through, then layers a
     /// gradient stroke (bright top, dimmer bottom) for the macOS-style top
     /// gloss, and an ambient shadow so the dock no longer disappears against
-    /// light backgrounds.
+    /// light backgrounds. Outer shape is a refined rounded rectangle (radius
+    /// scales with the preset) for a more polished panel feel than a full pill.
     private var dockGlassBackground: some View {
-        Capsule(style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: metrics.outerCornerRadius, style: .continuous)
+        return shape
             .fill(.ultraThinMaterial)
             .overlay(
-                Capsule(style: .continuous)
+                shape
                     .fill(DS.Colors.surface1.opacity(0.18))
             )
             .overlay(
-                Capsule(style: .continuous)
+                shape
                     .strokeBorder(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
             )
             .compositingGroup()

@@ -130,6 +130,10 @@ struct PickyHUDDockMetrics: Equatable {
     var railWidth: CGFloat { max(sessionTileWidth + (horizontalPadding * 2), scaled(PickyHUDDockLayout.railWidth)) }
     var iconSide: CGFloat { scaled(PickyHUDDockLayout.addSlotButtonSide) }
     var iconCornerRadius: CGFloat { scaled(12) }
+    /// Outer dock capsule corner radius. Reduced from a full capsule to a refined
+    /// rounded rectangle so the dock reads as a polished panel rather than a pill.
+    /// Scales with the preset: S ≈ 10pt, M ≈ 12pt, L = 14pt.
+    var outerCornerRadius: CGFloat { scaled(14) }
     var sessionTileWidth: CGFloat { max(40, scaled(54)) }
     var sessionTileHeight: CGFloat { max(42, scaled(54)) }
     var sessionTileCornerRadius: CGFloat { scaled(9) }

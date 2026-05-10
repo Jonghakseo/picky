@@ -293,7 +293,7 @@ struct BlueCursorView: View {
     @ObservedObject private var overlayBubblePreferencesStore = PickyOverlayBubblePreferencesStore.shared
 
     static let cursorTrackingInterval: TimeInterval = 1.0 / 120.0
-    private static let shakeReactionRequiredDuration: TimeInterval = 2.0
+    static let shakeReactionRequiredDuration: TimeInterval = 3.5
 
     @State private var cursorPosition: CGPoint
     @State private var isCursorOnThisScreen: Bool

@@ -238,6 +238,10 @@ struct PickySettingsPolishTests {
         #expect(BlueCursorView.cursorTrackingInterval == 1.0 / 120.0)
     }
 
+    @Test func cursorShakeReactionRequiresLongSustainedShake() {
+        #expect(BlueCursorView.shakeReactionRequiredDuration == 3.5)
+    }
+
     @Test func settingsRoundTripPreservesScreenContextScope() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         let project = root.appendingPathComponent("project", isDirectory: true)

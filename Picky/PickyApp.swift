@@ -32,6 +32,7 @@ enum PickyApp {
 final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarPanelManager: MenuBarPanelManager?
     private let settingsStore = PickySettingsStore()
+    private var settingsSaveObserver: NSObjectProtocol?
     /// Single source of truth for the user-selected light/dark mode. Both the menu bar
     /// companion panel and the HUD overlay observe this object so flipping the toggle
     /// in the companion footer flips the entire UI surface.
@@ -48,6 +49,20 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         )
     }()
     private lazy var daemonLauncher = PickyAgentDaemonLauncher(configuration: daemonConfiguration)
+    private lazy var updaterController: PickyUpdaterController = {
+        let settings = settingsStore.load()
+        let controller = PickyUpdaterController(
+            releaseChannel: AppBundleConfiguration.releaseChannel,
+            initialPreference: settings.updateChannel,
+            automaticChecksEnabled: settings.updatesAutomaticChecksEnabled
+        )
+        controller.willRelaunchApplication = { [weak self] in
+            // Sparkle is about to swap the .app bundle. Stop the bundled
+            // picky-agentd first so its Node child doesn't crash on cwd.
+            self?.daemonLauncher.stop()
+        }
+        return controller
+    }()
     private lazy var companionManager = CompanionManager(
         agentClient: WebSocketPickyAgentClient(
             configuration: WebSocketPickyAgentClient.Configuration(
@@ -80,7 +95,20 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
 
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 0])
         UNUserNotificationCenter.current().delegate = self
-        PickyAppMenuInstaller.install()
+        PickyAppMenuInstaller.install(updaterController: updaterController.standardController)
+        // Touch the lazy property so Sparkle starts checking on launch when
+        // the build channel allows it. Updater stays inert on alpha builds.
+        _ = updaterController
+        settingsSaveObserver = NotificationCenter.default.addObserver(
+            forName: .pickySettingsDidSave,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            let updated = self.settingsStore.load()
+            self.updaterController.updateChannelPreference(updated.updateChannel)
+            self.updaterController.updateAutomaticChecksPreference(updated.updatesAutomaticChecksEnabled)
+        }
 
         PickyAnalytics.configure()
         PickyAnalytics.trackAppOpened()
@@ -97,7 +125,11 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         PickyReportViewerPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
         PickyToolHistoryPresenter.shared.configure(appearanceStore: appearanceStore)
         PickyTerminalOverlayPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
-        menuBarPanelManager = MenuBarPanelManager(companionManager: companionManager, appearanceStore: appearanceStore)
+        menuBarPanelManager = MenuBarPanelManager(
+            companionManager: companionManager,
+            appearanceStore: appearanceStore,
+            updaterController: updaterController
+        )
         companionManager.start()
         // Auto-open the panel only when the user still needs to grant permissions.
         if !companionManager.allPermissionsGranted {
@@ -107,6 +139,10 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if let observer = settingsSaveObserver {
+            NotificationCenter.default.removeObserver(observer)
+            settingsSaveObserver = nil
+        }
         companionManager.stop()
         hudOverlayManager.stop()
         daemonLauncher.stop()

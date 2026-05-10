@@ -8,21 +8,45 @@
 //
 
 import AppKit
+import Sparkle
 
 @MainActor
 enum PickyAppMenuInstaller {
-    static func install(on app: NSApplication = .shared) {
-        app.mainMenu = makeMainMenu(appName: resolvedAppName())
+    static func install(
+        on app: NSApplication = .shared,
+        updaterController: SPUStandardUpdaterController? = nil
+    ) {
+        app.mainMenu = makeMainMenu(appName: resolvedAppName(), updaterController: updaterController)
     }
 
-    static func makeMainMenu(appName: String = "Picky") -> NSMenu {
+    static func makeMainMenu(
+        appName: String = "Picky",
+        updaterController: SPUStandardUpdaterController? = nil
+    ) -> NSMenu {
         let mainMenu = NSMenu(title: appName)
         // Keep the app menu key-equivalent-free; quitting stays behind the explicit
         // companion footer confirmation instead of becoming an accidental global shortcut.
-        mainMenu.addTopLevelMenu(title: appName, submenu: NSMenu(title: appName))
+        mainMenu.addTopLevelMenu(title: appName, submenu: makeAppMenu(updaterController: updaterController))
         mainMenu.addTopLevelMenu(title: "Edit", submenu: makeEditMenu())
         mainMenu.addTopLevelMenu(title: "Window", submenu: makeWindowMenu())
         return mainMenu
+    }
+
+    private static func makeAppMenu(updaterController: SPUStandardUpdaterController?) -> NSMenu {
+        let menu = NSMenu(title: "App")
+        // Sparkle ships SPUStandardUpdaterController.checkForUpdates(_:) as an
+        // IBAction. Wiring it directly here lets Sparkle handle validation
+        // (disabling the item while a check is in progress) automatically.
+        if let controller = updaterController {
+            let item = NSMenuItem(
+                title: "Check for Updates…",
+                action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+                keyEquivalent: ""
+            )
+            item.target = controller
+            menu.addItem(item)
+        }
+        return menu
     }
 
     private static func makeEditMenu() -> NSMenu {

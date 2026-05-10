@@ -58,7 +58,10 @@ struct CompanionPanelView: View {
                         Group {
                             switch selectedTab {
                             case .status:
-                                CompanionPanelStatusView(companionManager: companionManager)
+                                CompanionPanelStatusView(
+                                    companionManager: companionManager,
+                                    settingsViewModel: settingsViewModel
+                                )
                             case .messages:
                                 EmptyView()
                             case .settings:

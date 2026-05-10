@@ -35,4 +35,18 @@ enum AppBundleConfiguration {
         let raw = json["realtimeOptIn"] as? String ?? ""
         return raw == "1" || raw.lowercased() == "true"
     }
+
+    /// Release channel from `PickyBuildInfo.json` (`stable` / `beta` / `alpha`).
+    /// Local dev builds without the bundled JSON file fall back to `alpha`,
+    /// which intentionally disables Sparkle updates so unsigned local runs do
+    /// not try to swap themselves with a notarized GitHub Release.
+    static var releaseChannel: String {
+        guard let buildInfoPath = Bundle.main.path(forResource: "PickyBuildInfo", ofType: "json"),
+              let data = try? Data(contentsOf: URL(fileURLWithPath: buildInfoPath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let value = json["releaseChannel"] as? String else {
+            return "alpha"
+        }
+        return value.lowercased()
+    }
 }

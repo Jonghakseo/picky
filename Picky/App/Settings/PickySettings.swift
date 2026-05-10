@@ -343,6 +343,23 @@ struct PickyAzureOpenAIRealtimeURLComponents: Equatable {
     }
 }
 
+/// Sparkle update channel preference. `stable` only sees default-channel
+/// (no-channel) appcast items; `beta` additionally allows items tagged
+/// `<sparkle:channel>beta</sparkle:channel>`. See docs/auto-update.md.
+enum PickyUpdateChannel: String, Codable, CaseIterable, Identifiable {
+    case stable
+    case beta
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .stable: "Stable"
+        case .beta: "Beta"
+        }
+    }
+}
+
 enum PickyScreenContextScope: String, Codable, CaseIterable, Identifiable {
     case allScreens
     case focusedScreen
@@ -651,6 +668,12 @@ struct PickySettings: Codable, Equatable {
     /// S/M/L size preset for the Pickle dock rail only. The conversation card keeps
     /// its current width so the setting stays visually scoped to the dock.
     var hudDockSizePreset: PickyHUDDockSizePreset
+    /// Sparkle channel the user opts in to. `stable` is the safe default; `beta`
+    /// also receives builds tagged `<sparkle:channel>beta</sparkle:channel>`.
+    var updateChannel: PickyUpdateChannel
+    /// When false, Sparkle only checks for updates when the user picks
+    /// "Check for Updates…" from the menu or the Status panel.
+    var updatesAutomaticChecksEnabled: Bool
 
     static let dockTopAnchorPercentRange: ClosedRange<Double> = 2.0...70.0
     static let defaultDockTopAnchorPercent: Double = 22.0
@@ -694,7 +717,9 @@ struct PickySettings: Codable, Equatable {
         pushToTalkShortcut: PickyShortcutSpec = .defaultPushToTalk,
         quickInputShortcut: PickyShortcutSpec = .defaultQuickInput,
         hudDockPositions: [String: PickyHUDDockPosition] = [:],
-        hudDockSizePreset: PickyHUDDockSizePreset = .medium
+        hudDockSizePreset: PickyHUDDockSizePreset = .medium,
+        updateChannel: PickyUpdateChannel = .stable,
+        updatesAutomaticChecksEnabled: Bool = true
     ) {
         self.defaultCwd = defaultCwd
         self.mainAgentCwd = mainAgentCwd ?? defaultCwd
@@ -727,6 +752,8 @@ struct PickySettings: Codable, Equatable {
         self.quickInputShortcut = quickInputShortcut
         self.hudDockPositions = hudDockPositions
         self.hudDockSizePreset = hudDockSizePreset
+        self.updateChannel = updateChannel
+        self.updatesAutomaticChecksEnabled = updatesAutomaticChecksEnabled
     }
 
     static func defaults(appSupportRoot: URL = PickyAppSupport.defaultRoot()) -> PickySettings {
@@ -762,7 +789,9 @@ struct PickySettings: Codable, Equatable {
             pushToTalkShortcut: .defaultPushToTalk,
             quickInputShortcut: .defaultQuickInput,
             hudDockPositions: [:],
-            hudDockSizePreset: .medium
+            hudDockSizePreset: .medium,
+            updateChannel: .stable,
+            updatesAutomaticChecksEnabled: true
         )
     }
 
@@ -818,6 +847,8 @@ struct PickySettings: Codable, Equatable {
         case quickInputShortcut
         case hudDockPositions
         case hudDockSizePreset
+        case updateChannel
+        case updatesAutomaticChecksEnabled
     }
 
     init(from decoder: Decoder) throws {
@@ -851,6 +882,8 @@ struct PickySettings: Codable, Equatable {
         screenContextScope = try container.decodeIfPresent(PickyScreenContextScope.self, forKey: .screenContextScope) ?? defaults.screenContextScope
         useConversationCard = try container.decodeIfPresent(Bool.self, forKey: .useConversationCard) ?? defaults.useConversationCard
         hudDockSizePreset = try container.decodeIfPresent(PickyHUDDockSizePreset.self, forKey: .hudDockSizePreset) ?? defaults.hudDockSizePreset
+        updateChannel = try container.decodeIfPresent(PickyUpdateChannel.self, forKey: .updateChannel) ?? defaults.updateChannel
+        updatesAutomaticChecksEnabled = try container.decodeIfPresent(Bool.self, forKey: .updatesAutomaticChecksEnabled) ?? defaults.updatesAutomaticChecksEnabled
         if let storedScales = try container.decodeIfPresent(PickyFontScales.self, forKey: .fontScales) {
             fontScales = PickyFontScales(
                 markdownReport: PickyFontScales.clamped(storedScales.markdownReport),

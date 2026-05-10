@@ -9,6 +9,8 @@ import SwiftUI
 
 struct CompanionPanelStatusView: View {
     @ObservedObject var companionManager: CompanionManager
+    @ObservedObject var settingsViewModel: PickySettingsViewModel
+    @EnvironmentObject private var updaterController: PickyUpdaterController
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -18,6 +20,13 @@ struct CompanionPanelStatusView: View {
                     .background(DS.Colors.borderSubtle.opacity(0.4))
                     .padding(.vertical, 14)
                 contextSection
+                Divider()
+                    .background(DS.Colors.borderSubtle.opacity(0.4))
+                    .padding(.vertical, 14)
+                CompanionPanelUpdateSection(
+                    settingsViewModel: settingsViewModel,
+                    updaterController: updaterController
+                )
             } else {
                 CompanionPanelPermissionsCopyView(companionManager: companionManager)
                     .padding(.bottom, 14)
@@ -107,6 +116,109 @@ struct CompanionPanelStatusView: View {
                 .foregroundColor(DS.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+/// Auto-update controls inside the Status tab. Renders the current build,
+/// channel picker, automatic-checks toggle, and a manual "Check Now" button.
+/// Alpha builds (sideloaded testers) see a static notice instead of the
+/// controls because Sparkle is not running. See docs/auto-update.md.
+private struct CompanionPanelUpdateSection: View {
+    @ObservedObject var settingsViewModel: PickySettingsViewModel
+    @ObservedObject var updaterController: PickyUpdaterController
+
+    private var buildLabel: String {
+        let version = AppBundleConfiguration.stringValue(forKey: "CFBundleShortVersionString") ?? "dev"
+        let build = AppBundleConfiguration.stringValue(forKey: "CFBundleVersion") ?? "0"
+        return "\(version) (\(build))"
+    }
+
+    private var channelLabel: String {
+        let raw = AppBundleConfiguration.releaseChannel
+        return raw.prefix(1).uppercased() + raw.dropFirst()
+    }
+
+    private static let lastCheckFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Updates")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(DS.Colors.textSecondary)
+                .textCase(.uppercase)
+                .tracking(0.4)
+
+            HStack(alignment: .firstTextBaseline, spacing: 9) {
+                Image(systemName: "app.badge")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .frame(width: 14, alignment: .center)
+                Text("\(buildLabel) · \(channelLabel) build")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if updaterController.isAvailable {
+                Picker("Channel", selection: channelBinding) {
+                    ForEach(PickyUpdateChannel.allCases) { channel in
+                        Text(channel.displayName).tag(channel)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
+                Toggle("Check automatically every 4 hours", isOn: automaticChecksBinding)
+                    .toggleStyle(.switch)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundColor(DS.Colors.textSecondary)
+
+                HStack(spacing: 8) {
+                    Button("Check Now") {
+                        updaterController.checkForUpdates()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!updaterController.canCheckForUpdates)
+
+                    if let last = updaterController.lastUpdateCheckDate {
+                        Text("Last checked \(Self.lastCheckFormatter.string(from: last))")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(DS.Colors.textTertiary)
+                    }
+                }
+            } else {
+                Text("Auto-update is disabled for alpha builds. Reinstall the latest DMG to upgrade.")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var channelBinding: Binding<PickyUpdateChannel> {
+        Binding(
+            get: { settingsViewModel.settings.updateChannel },
+            set: { newValue in
+                settingsViewModel.settings.updateChannel = newValue
+                _ = settingsViewModel.save()
+            }
+        )
+    }
+
+    private var automaticChecksBinding: Binding<Bool> {
+        Binding(
+            get: { settingsViewModel.settings.updatesAutomaticChecksEnabled },
+            set: { newValue in
+                settingsViewModel.settings.updatesAutomaticChecksEnabled = newValue
+                _ = settingsViewModel.save()
+            }
+        )
     }
 }
 

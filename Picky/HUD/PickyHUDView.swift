@@ -1039,7 +1039,6 @@ private struct PickyHUDDockIconView: View {
             .opacity(session.status == .cancelled ? 0.55 : 1)
             .scaleEffect(tileScale)
             .onHover { isHovered = $0 }
-            .animation(.easeInOut(duration: 0.18), value: isSoftHighlighted)
             .animation(.easeOut(duration: 0.16), value: isHovered)
             .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
             .overlay(alignment: .topLeading) {
@@ -1231,6 +1230,7 @@ private struct PickyHUDDockIconView: View {
             )
             .shadow(color: DS.Colors.warning.opacity(0.30 * archiveProgress), radius: 5, x: 0, y: 0)
             .shadow(color: DS.Colors.success.opacity(0.55 * completionFlashIntensity), radius: 6, x: 0, y: 0)
+            .animation(.easeInOut(duration: 0.18), value: isSoftHighlighted)
     }
 
     private func handleArchivePressing(_ isPressing: Bool) {

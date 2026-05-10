@@ -344,6 +344,18 @@ struct PickyHUDView: View {
             return true
         }
 
+        // Esc closes the expanded Pickle card just like Cmd+W, but only when no
+        // text input is focused. The composer's own .onKeyPress(.escape) handles
+        // autocomplete dismissal and stop-if-possible while the input is focused;
+        // intercepting here would steal that behavior.
+        if flags.isEmpty,
+           event.keyCode == Self.escKeyCode,
+           heldSession != nil,
+           !isTextInputFocused(in: keyWindow) {
+            closeHeldSession()
+            return true
+        }
+
         if PickyHUDKeyboardShortcutPolicy.isLatestResponseReportShortcut(
             keyCode: event.keyCode,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
@@ -452,6 +464,7 @@ struct PickyHUDView: View {
     }
 
     private static let wKeyCode: UInt16 = 13
+    private static let escKeyCode: UInt16 = 53
 }
 
 enum PickyHUDKeyboardShortcutPolicy {

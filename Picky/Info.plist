@@ -12,5 +12,13 @@
 	<string>Picky captures screenshots only during invocation so Pi can receive neutral desktop context.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Picky uses local speech recognition to transcribe your voice when you invoke it.</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/Jonghakseo/picky/releases/download/auto-update/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string></string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>14400</integer>
 </dict>
 </plist>

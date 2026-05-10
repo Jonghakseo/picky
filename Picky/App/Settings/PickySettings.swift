@@ -433,32 +433,30 @@ struct PickyNotificationPreferences: Codable, Equatable {
 }
 
 /// User-configurable behavior toggles for the Pi cursor buddy overlay.
-/// Defaults preserve the existing playful behavior for current users.
 struct PickyCursorPreferences: Codable, Equatable {
     var showPiCursor: Bool
-    var enableOvershootReaction: Bool
+    var enableFollowSpringAnimation: Bool
     var enableIdleAnimations: Bool
 
     static let defaults = PickyCursorPreferences(
         showPiCursor: true,
-        enableOvershootReaction: true,
+        enableFollowSpringAnimation: true,
         enableIdleAnimations: true
     )
 
     enum CodingKeys: String, CodingKey {
         case showPiCursor
-        case enableOvershootReaction
-        case enableVelocityReaction
+        case enableFollowSpringAnimation
         case enableIdleAnimations
     }
 
     init(
         showPiCursor: Bool,
-        enableOvershootReaction: Bool,
+        enableFollowSpringAnimation: Bool = true,
         enableIdleAnimations: Bool
     ) {
         self.showPiCursor = showPiCursor
-        self.enableOvershootReaction = enableOvershootReaction
+        self.enableFollowSpringAnimation = enableFollowSpringAnimation
         self.enableIdleAnimations = enableIdleAnimations
     }
 
@@ -466,16 +464,14 @@ struct PickyCursorPreferences: Codable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let defaults = PickyCursorPreferences.defaults
         showPiCursor = try container.decodeIfPresent(Bool.self, forKey: .showPiCursor) ?? defaults.showPiCursor
-        enableOvershootReaction = try container.decodeIfPresent(Bool.self, forKey: .enableOvershootReaction)
-            ?? container.decodeIfPresent(Bool.self, forKey: .enableVelocityReaction)
-            ?? defaults.enableOvershootReaction
+        enableFollowSpringAnimation = try container.decodeIfPresent(Bool.self, forKey: .enableFollowSpringAnimation) ?? defaults.enableFollowSpringAnimation
         enableIdleAnimations = try container.decodeIfPresent(Bool.self, forKey: .enableIdleAnimations) ?? defaults.enableIdleAnimations
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(showPiCursor, forKey: .showPiCursor)
-        try container.encode(enableOvershootReaction, forKey: .enableOvershootReaction)
+        try container.encode(enableFollowSpringAnimation, forKey: .enableFollowSpringAnimation)
         try container.encode(enableIdleAnimations, forKey: .enableIdleAnimations)
     }
 }

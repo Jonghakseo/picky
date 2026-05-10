@@ -416,46 +416,6 @@ struct BlueCursorView: View {
     @State private var voicePromptBubbleSize: CGSize = .zero
     @State private var cursorOpacity: Double = 1.0
 
-    // MARK: - Idle Micro-Behaviors
-
-    /// Transient offset/rotation/scale stacked on top of cursor following so
-    /// the buddy can do small idle animations (look around, yawn, bob, tilt)
-    /// without disturbing the normal mouse-tracking spring.
-    @State private var idleOffsetX: CGFloat = 0
-    @State private var idleOffsetY: CGFloat = 0
-    @State private var idleRotation: Double = 0
-    @State private var idleScale: CGFloat = 1.0
-    @State private var idleShadowMultiplier: CGFloat = 1.0
-    @State private var idleScheduleTimer: Timer?
-    @State private var idleBehaviorActive: Bool = false
-    @State private var lastCursorMoveAt: Date = Date()
-    /// Anchor mouse location for slow-motion detection. Compared cumulatively
-    /// (not per-tick) so slow drag/scroll motion still trips the threshold —
-    /// per-tick delta against `cursorPosition` would miss anything below
-    /// ~62 px/sec because `cursorPosition` is resynced to mouse each tick.
-    @State private var lastStillMouseLocation: CGPoint?
-
-    // MARK: - Mouse Movement Reactions
-
-    /// Short-lived transform driven by mouse stop events. Fast cursor movement
-    /// is sampled without adding lag; only a sudden stop produces one tiny
-    /// overshoot before settling back to the normal cursor-follow target.
-    @State private var motionOffsetX: CGFloat = 0
-    @State private var motionOffsetY: CGFloat = 0
-    @State private var motionRotation: Double = 0
-    @State private var motionScale: CGFloat = 1.0
-    @State private var lastCursorSamplePosition: CGPoint?
-    @State private var lastCursorSampleTime: TimeInterval = ProcessInfo.processInfo.systemUptime
-    @State private var lastFastCursorDirection: CGVector = .zero
-    @State private var wasCursorMovingFast: Bool = false
-    @State private var motionOvershootActive: Bool = false
-    @State private var lastOvershootAt: TimeInterval = 0
-    @State private var motionReactionGeneration: Int = 0
-
-    private enum IdleBehavior: CaseIterable {
-        case lookAround, yawn, bob, tilt, shiver, wiggle, pulseGlow, lazyOrbit, tetheredRoam, figureEight
-    }
-
     // MARK: - Buddy Navigation State
 
     /// The buddy's current behavioral mode (following cursor, navigating, or pointing).
@@ -649,17 +609,15 @@ struct BlueCursorView: View {
             )
                 .shadow(
                     color: moodColor.opacity(cursorStyleStore.style.outerShadowOpacity),
-                    radius: (CGFloat(cursorStyleStore.style.outerShadowRadius) + (buddyFlightScale - 1.0) * CGFloat(cursorStyleStore.style.outerShadowFlightMultiplier)) * idleShadowMultiplier,
+                    radius: CGFloat(cursorStyleStore.style.outerShadowRadius) + (buddyFlightScale - 1.0) * CGFloat(cursorStyleStore.style.outerShadowFlightMultiplier),
                     x: 0,
                     y: 0
                 )
-                .scaleEffect(buddyFlightScale * idleScale * motionScale)
-                .rotationEffect(.degrees(idleRotation + motionRotation))
+                .scaleEffect(buddyFlightScale)
                 .opacity(buddyIsVisibleOnThisScreen ? cursorOpacity : 0)
                 .position(cursorPosition)
-                .offset(x: idleOffsetX + motionOffsetX, y: idleOffsetY + motionOffsetY)
                 .animation(
-                    buddyNavigationMode == .followingCursor
+                    buddyNavigationMode == .followingCursor && cursorPreferencesStore.preferences.enableFollowSpringAnimation
                         ? .spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0)
                         : nil,
                     value: cursorPosition
@@ -678,15 +636,12 @@ struct BlueCursorView: View {
 
             startTrackingCursor()
             startNavigatingToCurrentPointerTargetIfNeeded()
-            scheduleNextIdleBehavior()
 
             self.cursorOpacity = 1.0
         }
         .onDisappear {
             timer?.invalidate()
             navigationAnimationTimer?.invalidate()
-            cancelIdleBehavior()
-            resetMouseMovementReaction(animated: false)
         }
         .onChange(of: companionManager.detectedElementScreenLocation) { newLocation in
             startNavigatingToPointerTargetIfPresent(screenLocation: newLocation)
@@ -697,23 +652,6 @@ struct BlueCursorView: View {
                 return
             }
             startNavigatingToPointerTargetIfPresent(screenLocation: companionManager.detectedElementScreenLocation)
-        }
-        .onChange(of: companionManager.voiceState) { newState in
-            if newState == .idle {
-                scheduleNextIdleBehavior()
-            } else {
-                cancelIdleBehavior()
-            }
-        }
-        .onChange(of: cursorPreferencesStore.preferences) { preferences in
-            if !preferences.showPiCursor || !preferences.enableOvershootReaction {
-                resetMouseMovementReaction(animated: true)
-            }
-            if preferences.showPiCursor && preferences.enableIdleAnimations {
-                scheduleNextIdleBehavior()
-            } else {
-                cancelIdleBehavior()
-            }
         }
     }
 
@@ -760,167 +698,11 @@ struct BlueCursorView: View {
             // already follows the cursor. So during any non-following mode we
             // simply yield position control to the navigation timer.
             if self.buddyNavigationMode != .followingCursor {
-                self.resetMouseMovementReaction(animated: true)
-                // Keep the still-anchor in sync during flight so the next
-                // followingCursor tick doesn't see a fake jump as motion.
-                self.lastStillMouseLocation = mouseLocation
                 return
             }
 
-            // Normal cursor following
-            let newPosition = self.cursorBuddyPosition(for: mouseLocation)
-
-            // Detect cursor motion against a fixed anchor (not per-tick) so
-            // slow drag motion accumulates above the threshold. Comparing
-            // per-tick against `cursorPosition` would miss anything below
-            // ~62 px/sec because `cursorPosition` re-syncs to the mouse each
-            // tick, hiding cumulative drift.
-            let anchor = self.lastStillMouseLocation ?? mouseLocation
-            let dx = mouseLocation.x - anchor.x
-            let dy = mouseLocation.y - anchor.y
-            if hypot(dx, dy) > 2.0 {
-                self.lastCursorMoveAt = Date()
-                self.lastStillMouseLocation = mouseLocation
-                if self.idleBehaviorActive {
-                    self.cancelIdleBehavior()
-                    self.scheduleNextIdleBehavior()
-                }
-            } else if self.lastStillMouseLocation == nil {
-                self.lastStillMouseLocation = mouseLocation
-            }
-
-            self.updateMouseMovementReaction(for: newPosition)
-            self.cursorPosition = newPosition
+            cursorPosition = cursorBuddyPosition(for: mouseLocation)
         }
-    }
-
-    // MARK: - Mouse Movement Reactions
-
-    private func updateMouseMovementReaction(for targetPosition: CGPoint) {
-        let now = ProcessInfo.processInfo.systemUptime
-
-        guard cursorPreferencesStore.preferences.showPiCursor,
-              cursorPreferencesStore.preferences.enableOvershootReaction,
-              isCursorOnThisScreen,
-              !companionManager.isQuickInputPanelVisible,
-              !companionManager.inkOverlayState.isActive,
-              companionManager.voiceState == .idle else {
-            resetMouseMovementReaction(animated: true)
-            return
-        }
-
-        guard let previousPosition = lastCursorSamplePosition else {
-            lastCursorSamplePosition = targetPosition
-            lastCursorSampleTime = now
-            return
-        }
-
-        defer {
-            lastCursorSamplePosition = targetPosition
-            lastCursorSampleTime = now
-        }
-
-        let sample = PickyCursorMotionReaction.sample(
-            previousPosition: previousPosition,
-            currentPosition: targetPosition,
-            previousTime: lastCursorSampleTime,
-            currentTime: now
-        )
-
-        if PickyCursorMotionReaction.isMeaningfulMovement(sample) {
-            if motionOvershootActive {
-                motionReactionGeneration += 1
-                motionOvershootActive = false
-                settleMouseMovementReaction(animated: true)
-            }
-
-            if PickyCursorMotionReaction.isFastMovement(sample) {
-                wasCursorMovingFast = true
-                lastFastCursorDirection = sample.direction
-            }
-        } else if PickyCursorMotionReaction.shouldTriggerStopOvershoot(
-            sample: sample,
-            wasCursorMovingFast: wasCursorMovingFast,
-            overshootActive: motionOvershootActive,
-            now: now,
-            lastOvershootAt: lastOvershootAt
-        ) {
-            runCursorStopOvershoot(now: now)
-        } else if sample.speed < PickyCursorMotionReaction.stoppedSpeed, !motionOvershootActive {
-            settleMouseMovementReaction(animated: true)
-            wasCursorMovingFast = false
-        } else if !motionOvershootActive {
-            settleMouseMovementReaction(animated: true)
-        }
-    }
-
-    private func runCursorStopOvershoot(now: TimeInterval) {
-        let direction = lastFastCursorDirection
-        guard hypot(direction.dx, direction.dy) > 0.01 else {
-            settleMouseMovementReaction(animated: true)
-            wasCursorMovingFast = false
-            return
-        }
-
-        lastOvershootAt = now
-        wasCursorMovingFast = false
-        motionOvershootActive = true
-        motionReactionGeneration += 1
-        let generation = motionReactionGeneration
-
-        withAnimation(.interpolatingSpring(stiffness: 520, damping: 19)) {
-            motionOffsetX = direction.dx * PickyCursorMotionReaction.overshootDistance
-            motionOffsetY = direction.dy * PickyCursorMotionReaction.overshootDistance
-            motionRotation = PickyCursorMotionReaction.overshootRotation(for: direction)
-            motionScale = 1.035
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.09) {
-            guard self.motionReactionGeneration == generation,
-                  self.motionOvershootActive else { return }
-            self.settleMouseMovementReaction(animated: true)
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
-                guard self.motionReactionGeneration == generation else { return }
-                self.motionOvershootActive = false
-            }
-        }
-    }
-
-    private func settleMouseMovementReaction(animated: Bool) {
-        let changes = {
-            motionOffsetX = 0
-            motionOffsetY = 0
-            motionRotation = 0
-            motionScale = 1.0
-        }
-
-        if animated {
-            withAnimation(.interpolatingSpring(stiffness: 360, damping: 24)) {
-                changes()
-            }
-        } else {
-            changes()
-        }
-    }
-
-    private func resetMouseMovementReaction(animated: Bool) {
-        let hasReactionState = motionOffsetX != 0
-            || motionOffsetY != 0
-            || motionRotation != 0
-            || motionScale != 1.0
-            || motionOvershootActive
-            || wasCursorMovingFast
-            || lastCursorSamplePosition != nil
-            || hypot(lastFastCursorDirection.dx, lastFastCursorDirection.dy) > 0.01
-        guard hasReactionState else { return }
-
-        motionReactionGeneration += 1
-        motionOvershootActive = false
-        wasCursorMovingFast = false
-        lastFastCursorDirection = .zero
-        lastCursorSamplePosition = nil
-        settleMouseMovementReaction(animated: animated)
     }
 
     /// Picks a bubble center position around the cursor that stays inside the
@@ -1027,7 +809,6 @@ struct BlueCursorView: View {
         navigationBubbleText = ""
         navigationBubbleOpacity = 0.0
         navigationBubbleScale = 1.0
-        scheduleNextIdleBehavior()
     }
 
     /// Starts animating the buddy toward a detected UI element location.
@@ -1052,8 +833,6 @@ struct BlueCursorView: View {
         activePointerID = pointerID
         buddyNavigationMode = .navigatingToTarget
         isReturningToCursor = false
-        cancelIdleBehavior()
-        resetMouseMovementReaction(animated: true)
 
         animateBezierFlightArc(to: clampedTarget, pointerID: pointerID) {
             guard self.buddyNavigationMode == .navigatingToTarget,
@@ -1294,13 +1073,11 @@ struct BlueCursorView: View {
         buddyNavigationMode = .followingCursor
         isReturningToCursor = false
         buddyFlightScale = 1.0
-        resetMouseMovementReaction(animated: true)
         navigationBubbleText = ""
         navigationBubbleOpacity = 0.0
         navigationBubbleScale = 1.0
         activePointerID = nil
         companionManager.clearDetectedElementLocation(pointerID: pointerID)
-        scheduleNextIdleBehavior()
     }
 
     // MARK: - Mood Colors
@@ -1318,343 +1095,7 @@ struct BlueCursorView: View {
         }
     }
 
-    // MARK: - Idle Micro-Behaviors
 
-    /// Whether the buddy is in a state where idle micro-behaviors may run.
-    /// Used both to gate scheduling and to short-circuit a behavior mid-step.
-    private var isIdleEligibleForScheduling: Bool {
-        cursorPreferencesStore.preferences.showPiCursor
-            && cursorPreferencesStore.preferences.enableIdleAnimations
-            && companionManager.voiceState == .idle
-            && buddyNavigationMode == .followingCursor
-            && activePointerID == nil
-            && !companionManager.isQuickInputPanelVisible
-            && isCursorOnThisScreen
-    }
-
-    /// Arm the next idle behavior fire. When eligibility currently fails (most
-    /// commonly because the cursor isn't on this screen at startup), still arm
-    /// a longer retry timer so this view can recover the moment the cursor
-    /// returns. Without this retry, a BlueCursorView whose `.onAppear` fired
-    /// before the cursor reached its screen would stay silent forever — until
-    /// the user toggled a cursor preference to force a re-schedule.
-    private func scheduleNextIdleBehavior(delayRange: ClosedRange<Double> = 4...10) {
-        idleScheduleTimer?.invalidate()
-        let effectiveRange = isIdleEligibleForScheduling ? delayRange : 12.0...24.0
-        let delay = Double.random(in: effectiveRange)
-        idleScheduleTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { _ in
-            self.runRandomIdleBehaviorIfEligible()
-        }
-    }
-
-    private func cancelIdleBehavior() {
-        idleScheduleTimer?.invalidate()
-        idleScheduleTimer = nil
-        idleBehaviorActive = false
-        withAnimation(.easeOut(duration: 0.25)) {
-            idleOffsetX = 0
-            idleOffsetY = 0
-            idleRotation = 0
-            idleScale = 1.0
-            idleShadowMultiplier = 1.0
-        }
-    }
-
-    private func runRandomIdleBehaviorIfEligible() {
-        guard isIdleEligibleForScheduling else {
-            scheduleNextIdleBehavior(delayRange: 12...24)
-            return
-        }
-        // Require the cursor to have been settled for 6 seconds so the
-        // behavior doesn't kick in while the user is actively moving the mouse.
-        if Date().timeIntervalSince(lastCursorMoveAt) < 6 {
-            scheduleNextIdleBehavior(delayRange: 6...10)
-            return
-        }
-        let behavior = IdleBehavior.allCases.randomElement() ?? .lookAround
-        idleBehaviorActive = true
-        switch behavior {
-        case .lookAround:  runLookAroundBehavior()
-        case .yawn:        runYawnBehavior()
-        case .bob:         runBobBehavior()
-        case .tilt:        runTiltBehavior()
-        case .shiver:      runShiverBehavior()
-        case .wiggle:      runWiggleBehavior()
-        case .pulseGlow:   runPulseGlowBehavior()
-        case .lazyOrbit:   runLazyOrbitBehavior()
-        case .tetheredRoam: runTetheredRoamBehavior()
-        case .figureEight: runFigureEightBehavior()
-        }
-    }
-
-    private func finishIdleBehavior() {
-        withAnimation(.easeOut(duration: 0.3)) {
-            idleOffsetX = 0
-            idleOffsetY = 0
-            idleRotation = 0
-            idleScale = 1.0
-            idleShadowMultiplier = 1.0
-        }
-        idleBehaviorActive = false
-        scheduleNextIdleBehavior()
-    }
-
-    private func runShiverBehavior() {
-        let tickInterval: TimeInterval = 0.06
-        let totalTicks = 6
-        var tick = 0
-        idleScheduleTimer?.invalidate()
-        idleScheduleTimer = Timer.scheduledTimer(withTimeInterval: tickInterval, repeats: true) { _ in
-            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
-                self.idleScheduleTimer?.invalidate()
-                self.finishIdleBehavior()
-                return
-            }
-            tick += 1
-            if tick >= totalTicks {
-                self.idleScheduleTimer?.invalidate()
-                self.finishIdleBehavior()
-                return
-            }
-            let amp: CGFloat = tick % 2 == 0 ? 1.0 : -1.0
-            withAnimation(.linear(duration: tickInterval)) {
-                self.idleRotation = Double(amp * 2.5)
-                self.idleScale = 1.0 + CGFloat(abs(amp)) * 0.04
-            }
-        }
-    }
-
-    private func runWiggleBehavior() {
-        let steps: [Double] = [10, -10, 7, -7, 4, 0]
-        var index = 0
-        func nextStep() {
-            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
-                self.finishIdleBehavior()
-                return
-            }
-            guard index < steps.count else {
-                self.finishIdleBehavior()
-                return
-            }
-            let rotation = steps[index]
-            index += 1
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.4)) {
-                self.idleRotation = rotation
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.38) {
-                nextStep()
-            }
-        }
-        nextStep()
-    }
-
-    private func runPulseGlowBehavior() {
-        let phases: [CGFloat] = [1.0, 1.25, 1.0, 1.15, 1.0]
-        var index = 0
-        func nextPhase() {
-            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
-                self.finishIdleBehavior()
-                return
-            }
-            guard index < phases.count else {
-                self.finishIdleBehavior()
-                return
-            }
-            withAnimation(.easeInOut(duration: 0.5)) {
-                self.idleShadowMultiplier = phases[index]
-            }
-            index += 1
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
-                nextPhase()
-            }
-        }
-        nextPhase()
-    }
-
-    private func runLazyOrbitBehavior() {
-        let steps = 42
-        let interval: TimeInterval = 0.12
-        let radiusX = CGFloat.random(in: 8...14)
-        let radiusY = CGFloat.random(in: 5...10)
-        let direction = Bool.random() ? 1.0 : -1.0
-        var step = 0
-        func nextStep() {
-            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
-                self.finishIdleBehavior()
-                return
-            }
-            guard step < steps else {
-                self.finishIdleBehavior()
-                return
-            }
-            let phase = Double(step) / Double(steps) * 2.0 * Double.pi * direction
-            withAnimation(.easeInOut(duration: interval * 1.4)) {
-                self.idleOffsetX = CGFloat(cos(phase)) * radiusX
-                self.idleOffsetY = CGFloat(sin(phase)) * radiusY
-                self.idleRotation = sin(phase) * 5.0
-            }
-            step += 1
-            DispatchQueue.main.asyncAfter(deadline: .now() + interval) {
-                nextStep()
-            }
-        }
-        nextStep()
-    }
-
-    private func runTetheredRoamBehavior() {
-        let points = (0..<4).map { _ in
-            CGPoint(
-                x: CGFloat.random(in: -18...18),
-                y: CGFloat.random(in: -14...14)
-            )
-        } + [.zero]
-        var index = 0
-        func nextPoint() {
-            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
-                self.finishIdleBehavior()
-                return
-            }
-            guard index < points.count else {
-                self.finishIdleBehavior()
-                return
-            }
-            let point = points[index]
-            let rotation = max(-6, min(6, Double(point.x) * 0.35))
-            index += 1
-            withAnimation(.easeInOut(duration: 0.85)) {
-                self.idleOffsetX = point.x
-                self.idleOffsetY = point.y
-                self.idleRotation = rotation
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.95) {
-                nextPoint()
-            }
-        }
-        nextPoint()
-    }
-
-    private func runFigureEightBehavior() {
-        let steps = 50
-        let interval: TimeInterval = 0.1
-        let radiusX = CGFloat.random(in: 10...16)
-        let radiusY = CGFloat.random(in: 4...8)
-        var step = 0
-        func nextStep() {
-            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
-                self.finishIdleBehavior()
-                return
-            }
-            guard step <= steps else {
-                self.finishIdleBehavior()
-                return
-            }
-            let phase = Double(step) / Double(steps) * 2.0 * Double.pi
-            withAnimation(.easeInOut(duration: interval * 1.5)) {
-                self.idleOffsetX = CGFloat(sin(phase)) * radiusX
-                self.idleOffsetY = CGFloat(sin(phase * 2.0)) * radiusY
-                self.idleRotation = cos(phase) * 4.0
-            }
-            step += 1
-            DispatchQueue.main.asyncAfter(deadline: .now() + interval) {
-                nextStep()
-            }
-        }
-        nextStep()
-    }
-
-    private func runLookAroundBehavior() {
-        let steps: [Double] = [-12, 12, -8, 0]
-        var index = 0
-        func nextStep() {
-            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
-                self.finishIdleBehavior()
-                return
-            }
-            guard index < steps.count else {
-                self.finishIdleBehavior()
-                return
-            }
-            let rotation = steps[index]
-            index += 1
-            withAnimation(.easeInOut(duration: 0.4)) {
-                self.idleRotation = rotation
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                nextStep()
-            }
-        }
-        nextStep()
-    }
-
-    private func runYawnBehavior() {
-        guard idleBehaviorActive, isIdleEligibleForScheduling else {
-            finishIdleBehavior()
-            return
-        }
-        withAnimation(.easeInOut(duration: 0.45)) {
-            idleScale = 1.4
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
-                self.finishIdleBehavior()
-                return
-            }
-            withAnimation(.easeOut(duration: 0.35)) {
-                self.idleScale = 1.0
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                self.finishIdleBehavior()
-            }
-        }
-    }
-
-    private func runBobBehavior() {
-        let bobSteps = 5  // up, down, up, down, settle
-        var step = 0
-        func nextStep() {
-            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
-                self.finishIdleBehavior()
-                return
-            }
-            if step >= bobSteps {
-                self.finishIdleBehavior()
-                return
-            }
-            let dy: CGFloat = step == bobSteps - 1 ? 0 : (step % 2 == 0 ? -6 : 6)
-            withAnimation(.easeInOut(duration: 0.45)) {
-                self.idleOffsetY = dy
-            }
-            step += 1
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                nextStep()
-            }
-        }
-        nextStep()
-    }
-
-    private func runTiltBehavior() {
-        let steps: [Double] = [10, -8, 5, 0]
-        var index = 0
-        func nextStep() {
-            guard self.idleBehaviorActive, self.isIdleEligibleForScheduling else {
-                self.finishIdleBehavior()
-                return
-            }
-            guard index < steps.count else {
-                self.finishIdleBehavior()
-                return
-            }
-            let rotation = steps[index]
-            index += 1
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.5)) {
-                self.idleRotation = rotation
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                nextStep()
-            }
-        }
-        nextStep()
-    }
 
 }
 

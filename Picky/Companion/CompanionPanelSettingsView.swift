@@ -276,8 +276,8 @@ struct CompanionPanelSettingsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 toggleRow("Show Pi cursor", isOn: $viewModel.settings.cursor.showPiCursor, divider: true)
                 toggleRow(
-                    "Overshoot on stop",
-                    isOn: $viewModel.settings.cursor.enableOvershootReaction,
+                    "Smooth cursor follow",
+                    isOn: $viewModel.settings.cursor.enableFollowSpringAnimation,
                     divider: true,
                     isEnabled: viewModel.settings.cursor.showPiCursor
                 )
@@ -299,7 +299,7 @@ struct CompanionPanelSettingsView: View {
                 )
 
                 if !viewModel.settings.cursor.showPiCursor {
-                    Text("Overshoot and idle animations are disabled while the Pi cursor is hidden.")
+                    Text("Smooth follow and idle animations are disabled while the Pi cursor is hidden.")
                         .font(.system(size: 10.5, weight: .medium))
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)

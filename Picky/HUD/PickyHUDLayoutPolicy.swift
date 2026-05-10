@@ -166,9 +166,14 @@ enum PickyHUDDockLayout {
         }
     }
 
-    static func heldSessionAfterNumberShortcut(visibleIDs: [String], number: Int) -> PickyHUDDockHold? {
+    static func sessionIDForNumberShortcut(visibleIDs: [String], number: Int) -> String? {
         guard number >= 1, number <= visibleIDs.count else { return nil }
-        return .open(visibleIDs[number - 1])
+        return visibleIDs[number - 1]
+    }
+
+    static func heldSessionAfterNumberShortcut(current: PickyHUDDockHold?, visibleIDs: [String], number: Int) -> PickyHUDDockHold? {
+        guard let targetID = sessionIDForNumberShortcut(visibleIDs: visibleIDs, number: number) else { return current }
+        return heldSessionAfterClick(current: current, clicked: targetID)
     }
 
     static func heldSessionAfterCycleShortcut(current: PickyHUDDockHold?, visibleIDs: [String], direction: Int) -> PickyHUDDockHold? {

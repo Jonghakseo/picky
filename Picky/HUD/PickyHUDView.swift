@@ -306,8 +306,19 @@ struct PickyHUDView: View {
             return true
         }
 
-        if flags == .command, let number = Self.numberShortcutValue(for: event), let next = PickyHUDDockLayout.heldSessionAfterNumberShortcut(visibleIDs: visibleIDs, number: number) {
-            openHeldSession(next)
+        if flags == .command,
+           let number = Self.numberShortcutValue(for: event),
+           PickyHUDDockLayout.sessionIDForNumberShortcut(visibleIDs: visibleIDs, number: number) != nil {
+            let next = PickyHUDDockLayout.heldSessionAfterNumberShortcut(
+                current: heldSession,
+                visibleIDs: visibleIDs,
+                number: number
+            )
+            if let next {
+                openHeldSession(next)
+            } else {
+                closeHeldSession()
+            }
             return true
         }
 

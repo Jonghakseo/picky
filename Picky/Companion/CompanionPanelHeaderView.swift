@@ -22,9 +22,11 @@ struct CompanionPanelHeaderView: View {
                 .shadow(color: statusDotColor.opacity(0.6), radius: 3)
                 .accessibilityLabel(statusAccessibilityLabel)
 
-            Text("Picky")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(DS.Colors.textPrimary)
+            Image("PickyHeaderLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 61, height: 16, alignment: .leading)
+                .accessibilityLabel("Picky")
 
             Spacer()
 

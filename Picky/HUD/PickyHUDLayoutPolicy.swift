@@ -116,6 +116,45 @@ enum PickyHUDDockHold: Equatable {
     }
 }
 
+struct PickyHUDDockMetrics: Equatable {
+    let preset: PickyHUDDockSizePreset
+    let scale: CGFloat
+
+    init(preset: PickyHUDDockSizePreset) {
+        self.preset = preset
+        self.scale = CGFloat(preset.scale)
+    }
+
+    static let medium = PickyHUDDockMetrics(preset: .medium)
+
+    var railWidth: CGFloat { scaled(PickyHUDDockLayout.railWidth) }
+    var iconSide: CGFloat { scaled(PickyHUDDockLayout.addSlotButtonSide) }
+    var iconCornerRadius: CGFloat { scaled(12) }
+    var iconLabelFontSize: CGFloat { max(9.5, PickyHUDTypography.Size.status * scale) }
+    var sessionSpacing: CGFloat { max(5, scaled(7)) }
+    var horizontalPadding: CGFloat { max(5, scaled(6)) }
+    var topPadding: CGFloat { max(3, scaled(4)) }
+    var bottomPadding: CGFloat { max(8, scaled(10)) }
+    var addSlotTopPadding: CGFloat { max(5, scaled(7)) }
+    var addSlotButtonSide: CGFloat { iconSide }
+    var collapsedAddSlotVisualHeight: CGFloat { max(10, scaled(PickyHUDDockLayout.collapsedAddSlotVisualHeight)) }
+    var addSlotCollapsedExpansionReserve: CGFloat { max(0, addSlotButtonSide - collapsedAddSlotVisualHeight) }
+    var handleAreaHeight: CGFloat { max(12, scaled(PickyHUDExpansion.dockHandleAreaHeight)) }
+    var handleIdleWidth: CGFloat { max(16, scaled(18)) }
+    var handleActiveWidth: CGFloat { max(22, scaled(24)) }
+    var handleHeight: CGFloat { max(2.5, scaled(3)) }
+    var plusFontSize: CGFloat { max(11, scaled(13)) }
+    var collapsedDashWidth: CGFloat { max(16, scaled(18)) }
+    var collapsedDashHeight: CGFloat { max(1, 1 * scale) }
+    var statusDotSide: CGFloat { max(6, scaled(8)) }
+    var archiveRingSide: CGFloat { max(36, scaled(42)) }
+    var archiveBadgeSide: CGFloat { max(12, scaled(14)) }
+
+    private func scaled(_ value: CGFloat) -> CGFloat {
+        (value * scale).rounded(.toNearestOrAwayFromZero)
+    }
+}
+
 enum PickyHUDDockLayout {
     static let visibleSessionLimit = 12
     static let panelWidth: CGFloat = 540
@@ -138,18 +177,19 @@ enum PickyHUDDockLayout {
     static let collapsedAddSlotVisualHeight: CGFloat = 14
 
     static var addSlotCollapsedExpansionReserve: CGFloat {
-        max(0, addSlotButtonSide - collapsedAddSlotVisualHeight)
+        PickyHUDDockMetrics.medium.addSlotCollapsedExpansionReserve
     }
 
-    static func addSlotFrameHeight(isExpanded: Bool) -> CGFloat {
-        isExpanded ? addSlotButtonSide : collapsedAddSlotVisualHeight
+    static func addSlotFrameHeight(isExpanded: Bool, metrics: PickyHUDDockMetrics = .medium) -> CGFloat {
+        isExpanded ? metrics.addSlotButtonSide : metrics.collapsedAddSlotVisualHeight
     }
 
     static func contentSizeReservingAddSlotExpansion(
         measuredSize: CGSize,
         activeSessionID: String?,
         hasVisibleSessions: Bool,
-        isAddSlotExpanded: Bool
+        isAddSlotExpanded: Bool,
+        metrics: PickyHUDDockMetrics = .medium
     ) -> CGSize {
         guard activeSessionID == nil,
               hasVisibleSessions,
@@ -158,7 +198,7 @@ enum PickyHUDDockLayout {
 
         return CGSize(
             width: measuredSize.width,
-            height: measuredSize.height + addSlotCollapsedExpansionReserve
+            height: measuredSize.height + metrics.addSlotCollapsedExpansionReserve
         )
     }
 
@@ -270,7 +310,8 @@ enum PickyHUDDockLayout {
         visibleFrame: CGRect,
         panelWidth: CGFloat,
         dockSide: PickyHUDDockSide,
-        xOffset: CGFloat = 0
+        xOffset: CGFloat = 0,
+        dockRailWidth: CGFloat = railWidth
     ) -> CGFloat {
         let x = panelX(
             visibleFrame: visibleFrame,
@@ -280,9 +321,9 @@ enum PickyHUDDockLayout {
         )
         switch dockSide {
         case .right:
-            return x + panelWidth - PickyHUDExpansion.outerPadding - (railWidth / 2)
+            return x + panelWidth - PickyHUDExpansion.outerPadding - (dockRailWidth / 2)
         case .left:
-            return x + PickyHUDExpansion.outerPadding + (railWidth / 2)
+            return x + PickyHUDExpansion.outerPadding + (dockRailWidth / 2)
         }
     }
 
@@ -305,7 +346,8 @@ enum PickyHUDDockLayout {
         forDockRailCenterX dockRailCenterX: CGFloat,
         visibleFrame: CGRect,
         panelWidth: CGFloat,
-        dockSide: PickyHUDDockSide
+        dockSide: PickyHUDDockSide,
+        dockRailWidth: CGFloat = railWidth
     ) -> CGFloat {
         let naturalPanelX = panelX(
             visibleFrame: visibleFrame,
@@ -315,15 +357,16 @@ enum PickyHUDDockLayout {
         let naturalDockRailCenterX: CGFloat
         switch dockSide {
         case .right:
-            naturalDockRailCenterX = naturalPanelX + panelWidth - PickyHUDExpansion.outerPadding - (railWidth / 2)
+            naturalDockRailCenterX = naturalPanelX + panelWidth - PickyHUDExpansion.outerPadding - (dockRailWidth / 2)
         case .left:
-            naturalDockRailCenterX = naturalPanelX + PickyHUDExpansion.outerPadding + (railWidth / 2)
+            naturalDockRailCenterX = naturalPanelX + PickyHUDExpansion.outerPadding + (dockRailWidth / 2)
         }
         return clampedXOffset(
             dockRailCenterX - naturalDockRailCenterX,
             visibleFrame: visibleFrame,
             panelWidth: panelWidth,
-            dockSide: dockSide
+            dockSide: dockSide,
+            dockRailWidth: dockRailWidth
         )
     }
 
@@ -332,6 +375,10 @@ enum PickyHUDDockLayout {
     /// visible so the handle is always grabbable.
     static let dockOverhangLimit: CGFloat = (railWidth / 2).rounded(.down)
 
+    static func dockOverhangLimit(forRailWidth dockRailWidth: CGFloat) -> CGFloat {
+        (dockRailWidth / 2).rounded(.down)
+    }
+
     /// Clamp an X offset so the dock can move inward freely but only slide up to
     /// `dockOverhangLimit` past the screen edge. The dock capsule itself never
     /// fully disappears, but users can tuck it partially off-screen if they want.
@@ -339,19 +386,21 @@ enum PickyHUDDockLayout {
         _ xOffset: CGFloat,
         visibleFrame: CGRect,
         panelWidth: CGFloat,
-        dockSide: PickyHUDDockSide
+        dockSide: PickyHUDDockSide,
+        dockRailWidth: CGFloat = railWidth
     ) -> CGFloat {
+        let overhangLimit = dockOverhangLimit(forRailWidth: dockRailWidth)
         switch dockSide {
         case .right:
             let minX = visibleFrame.minX + screenMargin
             let naturalX = visibleFrame.maxX - panelWidth - dockRightEdgeMargin
             let maxShiftLeft = naturalX - minX
-            return max(-maxShiftLeft, min(dockOverhangLimit, xOffset))
+            return max(-maxShiftLeft, min(overhangLimit, xOffset))
         case .left:
             let maxX = visibleFrame.maxX - screenMargin - panelWidth
             let naturalX = visibleFrame.minX + dockLeftEdgeMargin
             let maxShiftRight = maxX - naturalX
-            return min(maxShiftRight, max(-dockOverhangLimit, xOffset))
+            return min(maxShiftRight, max(-overhangLimit, xOffset))
         }
     }
 

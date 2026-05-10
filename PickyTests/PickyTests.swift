@@ -77,6 +77,16 @@ struct PickyTests {
         #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: true) == PickyHUDDockLayout.addSlotButtonSide)
         #expect(PickyHUDDockLayout.addSlotCollapsedExpansionReserve == PickyHUDDockLayout.addSlotButtonSide - PickyHUDDockLayout.collapsedAddSlotVisualHeight)
 
+        let smallMetrics = PickyHUDDockMetrics(preset: .small)
+        let mediumMetrics = PickyHUDDockMetrics(preset: .medium)
+        let largeMetrics = PickyHUDDockMetrics(preset: .large)
+        #expect(mediumMetrics.railWidth == PickyHUDDockLayout.railWidth)
+        #expect(mediumMetrics.addSlotButtonSide == PickyHUDDockLayout.addSlotButtonSide)
+        #expect(smallMetrics.railWidth < mediumMetrics.railWidth)
+        #expect(largeMetrics.railWidth > mediumMetrics.railWidth)
+        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false, metrics: smallMetrics) == smallMetrics.collapsedAddSlotVisualHeight)
+        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: true, metrics: largeMetrics) == largeMetrics.addSlotButtonSide)
+
         #expect(PickyHUDDockLayout.contentSizeReservingAddSlotExpansion(
             measuredSize: CGSize(width: 50, height: 120),
             activeSessionID: nil,

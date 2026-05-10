@@ -200,6 +200,38 @@ struct PickySettingsPolishTests {
         #expect(settings.cursor.enableFollowSpringAnimation)
     }
 
+    @Test func settingsLoadDefaultsHUDDockSizePresetToMediumWhenLegacyFileLacksField() throws {
+        let legacyJSON = """
+        {
+          "defaultCwd": "/tmp",
+          "worktreeParent": "",
+          "preferredToolVisibility": "visible in context only",
+          "readOnlyInvestigationPreference": true,
+          "daemonPath": "/tmp/agentd",
+          "logPath": "/tmp/logs"
+        }
+        """.data(using: .utf8)!
+
+        let settings = try JSONDecoder().decode(PickySettings.self, from: legacyJSON)
+
+        #expect(settings.hudDockSizePreset == .medium)
+    }
+
+    @Test func settingsRoundTripPreservesHUDDockSizePreset() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.defaultCwd = project.path
+        settings.worktreeParent = project.path
+        settings.hudDockSizePreset = .large
+
+        try store.save(settings)
+
+        #expect(store.load().hudDockSizePreset == .large)
+    }
+
     @Test func settingsRoundTripPreservesOverlayBubblePreferences() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         let project = root.appendingPathComponent("project", isDirectory: true)

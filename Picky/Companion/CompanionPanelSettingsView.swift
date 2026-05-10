@@ -64,7 +64,7 @@ enum CompanionPanelSettingsRoute: Hashable {
         switch self {
         case .index: nil
         case .mainAgent: "Runtime, cwd, reasoning, and captured screen context."
-        case .pickle: "Default folder for Pickles."
+        case .pickle: "Default folder and dock size."
         case .notification: "Banners for session events."
         case .cursorBubbles: "Pi cursor visibility, small animations, and speech bubbles."
         case .voice: "Speech providers and language."
@@ -246,17 +246,24 @@ struct CompanionPanelSettingsView: View {
 
     private var pickleSection: some View {
         sectionHeader(section: .pickle, title: "Pickle") {
-            VStack(alignment: .leading, spacing: 6) {
-                fieldLabel("Default cwd")
-                cwdField(
-                    placeholder: "~/",
-                    text: $pickleCwdDraft,
-                    onChange: { newValue in
-                        updateDraftStatus(for: .pickle, isDirty: newValue != viewModel.settings.defaultCwd)
-                    },
-                    onSubmit: commitPickleCwdField,
-                    onChoose: choosePickleDirectory
-                )
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    fieldLabel("Default cwd")
+                    cwdField(
+                        placeholder: "~/",
+                        text: $pickleCwdDraft,
+                        onChange: { newValue in
+                            updateDraftStatus(for: .pickle, isDirty: newValue != viewModel.settings.defaultCwd)
+                        },
+                        onSubmit: commitPickleCwdField,
+                        onChoose: choosePickleDirectory
+                    )
+                }
+
+                Divider()
+                    .background(DS.Colors.borderSubtle.opacity(0.3))
+
+                dockSizePresetPicker
             }
         }
     }
@@ -745,6 +752,28 @@ struct CompanionPanelSettingsView: View {
             .foregroundColor(DS.Colors.textTertiary)
     }
 
+    private var dockSizePresetPicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            fieldLabel("Dock size")
+            Picker("Dock size", selection: $viewModel.settings.hudDockSizePreset) {
+                ForEach(PickyHUDDockSizePreset.allCases) { preset in
+                    Text(preset.displayName).tag(preset)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+            .onChange(of: viewModel.settings.hudDockSizePreset) { _, _ in
+                saveImmediately(for: .pickle)
+            }
+
+            Text("M matches the current Pickle dock size.")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundColor(DS.Colors.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private func toggleRow(_ title: String, isOn: Binding<Bool>, divider: Bool, isEnabled: Bool = true) -> some View {
         VStack(spacing: 0) {
             HStack {
@@ -941,11 +970,16 @@ struct CompanionPanelSettingsView: View {
         if section == .mainAgent, mainAgentCwdDraft != viewModel.settings.mainAgentCwd {
             viewModel.settings.mainAgentCwd = mainAgentCwdDraft
         }
+        let shouldPreserveDirtyPickleDraft = section == .pickle && pickleCwdDraft != viewModel.settings.defaultCwd
         let succeeded = viewModel.save()
         if succeeded {
-            syncDraft(for: section)
-            saveStatuses.markSaved(section)
-            scheduleSaveStatusReset(for: section)
+            if !shouldPreserveDirtyPickleDraft {
+                syncDraft(for: section)
+                saveStatuses.markSaved(section)
+                scheduleSaveStatusReset(for: section)
+            } else {
+                saveStatuses.markDirty(section)
+            }
         } else {
             saveStatuses.markDirty(section)
             saveStatusResets[section]?.cancel()

@@ -23,6 +23,9 @@ final class PickyHUDPlacement: ObservableObject {
     /// drags across the screen midpoint or resets the handle so SwiftUI can mirror
     /// the card/dock order without rebuilding the hosting view.
     @Published var dockSide: PickyHUDDockSide
+    /// S/M/L size preset for the dock rail. The overlay manager updates this from
+    /// Settings without rebuilding the hosting view, preserving HUD hover/open state.
+    @Published var dockSizePreset: PickyHUDDockSizePreset
 
     /// Default fallback used while the placement hasn't been hydrated yet (e.g. during
     /// the brief window between panel creation and the first `syncPanelsForCurrentScreens`
@@ -32,9 +35,11 @@ final class PickyHUDPlacement: ObservableObject {
 
     init(
         availableCardMaxHeight: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight,
-        dockSide: PickyHUDDockSide = .right
+        dockSide: PickyHUDDockSide = .right,
+        dockSizePreset: PickyHUDDockSizePreset = .medium
     ) {
         self.availableCardMaxHeight = availableCardMaxHeight
         self.dockSide = dockSide
+        self.dockSizePreset = dockSizePreset
     }
 }

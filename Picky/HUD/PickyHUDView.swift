@@ -38,6 +38,10 @@ struct PickyHUDView: View {
     @State private var isDockAddSlotExpanded = false
     @State private var sizeReporter = PickyHUDSizeReporter()
 
+    private var dockMetrics: PickyHUDDockMetrics {
+        PickyHUDDockMetrics(preset: placement.dockSizePreset)
+    }
+
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {
         Array(viewModel.sessions.prefix(PickyHUDDockLayout.visibleSessionLimit).reversed())
     }
@@ -97,7 +101,8 @@ struct PickyHUDView: View {
             measuredSize: size,
             activeSessionID: activeID,
             hasVisibleSessions: !visibleSessions.isEmpty,
-            isAddSlotExpanded: isDockAddSlotExpanded
+            isAddSlotExpanded: isDockAddSlotExpanded,
+            metrics: dockMetrics
         )
 
         sizeReporter.handleMeasuredSize(
@@ -166,6 +171,7 @@ struct PickyHUDView: View {
                 dockSide: placement.dockSide,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                 pendingDoneFlashSessionIDs: viewModel.pendingDoneFlashSessionIDs,
+                metrics: dockMetrics,
                 onHoverSession: previewDockSession,
                 onOpenSession: toggleOpenSession,
                 onArchiveSession: archiveSession,
@@ -177,7 +183,7 @@ struct PickyHUDView: View {
                 onDockHandleDragEnded: onDockHandleDragEnded,
                 onDockHandleDoubleClick: onDockHandleDoubleClick
             )
-            .frame(width: PickyHUDDockLayout.railWidth)
+            .frame(width: dockMetrics.railWidth)
             .zIndex(10)
             // Keep rail state changes instantaneous; the conversation card handles
             // its own sizing and scroll stabilization when it appears.
@@ -747,6 +753,7 @@ private struct PickyHUDDockRailView: View {
     let dockSide: PickyHUDDockSide
     let isCommandShortcutHintVisible: Bool
     let pendingDoneFlashSessionIDs: Set<String>
+    let metrics: PickyHUDDockMetrics
     let onHoverSession: (String) -> Void
     let onOpenSession: (String) -> Void
     let onArchiveSession: (String) -> Void
@@ -772,9 +779,9 @@ private struct PickyHUDDockRailView: View {
             dockAnchorHandle
             sessionsAndAddSlot
         }
-        .padding(.horizontal, 6)
-        .padding(.top, 4)
-        .padding(.bottom, 10)
+        .padding(.horizontal, metrics.horizontalPadding)
+        .padding(.top, metrics.topPadding)
+        .padding(.bottom, metrics.bottomPadding)
         .background(dockGlassBackground)
         .onHover(perform: onDockHoverChanged)
     }
@@ -787,7 +794,7 @@ private struct PickyHUDDockRailView: View {
             // one) since there are no sessions to keep it compact for.
             addAgentSlotButton
         } else {
-            VStack(spacing: 7) {
+            VStack(spacing: metrics.sessionSpacing) {
                 ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
                     PickyHUDDockIconView(
                         session: session,
@@ -799,6 +806,7 @@ private struct PickyHUDDockRailView: View {
                         shortcutNumber: PickyHUDDockLayout.numberShortcutForSessionIndex(index),
                         isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                         shouldFlashCompletion: pendingDoneFlashSessionIDs.contains(session.id),
+                        metrics: metrics,
                         onHover: { onHoverSession(session.id) },
                         onOpen: { onOpenSession(session.id) },
                         onArchive: { onArchiveSession(session.id) },
@@ -807,7 +815,7 @@ private struct PickyHUDDockRailView: View {
                 }
             }
             collapsibleAddAgentSlot
-                .padding(.top, 7)
+                .padding(.top, metrics.addSlotTopPadding)
         }
     }
 
@@ -835,13 +843,13 @@ private struct PickyHUDDockRailView: View {
         // 6pt horizontal padding on each side) so the handle row spans the
         // entire top of the capsule.
         .frame(maxWidth: .infinity)
-        .frame(height: PickyHUDExpansion.dockHandleAreaHeight)
+        .frame(height: metrics.handleAreaHeight)
         .overlay {
             // Quiet by default — the pill should hint at draggability without
             // shouting. Hover and drag expand and darken it for a clear cue.
             Capsule(style: .continuous)
                 .fill(DS.Colors.textTertiary.opacity(isActive ? 0.7 : 0.22))
-                .frame(width: isActive ? 24 : 18, height: 3)
+                .frame(width: isActive ? metrics.handleActiveWidth : metrics.handleIdleWidth, height: metrics.handleHeight)
                 .animation(.easeOut(duration: 0.14), value: isHandleHovered)
                 .animation(.easeOut(duration: 0.14), value: isHandleDragging)
                 .allowsHitTesting(false)
@@ -884,20 +892,20 @@ private struct PickyHUDDockRailView: View {
     private var addAgentSlotButton: some View {
         Button(action: onCreatePickle) {
             ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                     .fill(.ultraThinMaterial)
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                     .fill(Color.primary.opacity(0.04))
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                     .strokeBorder(
                         DS.Colors.textTertiary.opacity(0.7),
                         style: StrokeStyle(lineWidth: 1, dash: [3.5, 3])
                     )
                 Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: metrics.plusFontSize, weight: .medium))
                     .foregroundColor(DS.Colors.textSecondary)
             }
-            .frame(width: PickyHUDDockLayout.addSlotButtonSide, height: PickyHUDDockLayout.addSlotButtonSide)
+            .frame(width: metrics.addSlotButtonSide, height: metrics.addSlotButtonSide)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -910,31 +918,31 @@ private struct PickyHUDDockRailView: View {
         Button(action: onCreatePickle) {
             ZStack {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                         .fill(.ultraThinMaterial)
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                         .fill(Color.primary.opacity(0.04))
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                         .strokeBorder(
                             DS.Colors.textTertiary.opacity(0.7),
                             style: StrokeStyle(lineWidth: 1, dash: [3.5, 3])
                         )
                     Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: metrics.plusFontSize, weight: .medium))
                         .foregroundColor(DS.Colors.textSecondary)
                 }
-                .frame(width: PickyHUDDockLayout.addSlotButtonSide, height: PickyHUDDockLayout.addSlotButtonSide)
+                .frame(width: metrics.addSlotButtonSide, height: metrics.addSlotButtonSide)
                 .opacity(isAddSlotExpanded ? 1 : 0)
 
                 Capsule(style: .continuous)
                     .fill(DS.Colors.textSecondary.opacity(0.78))
-                    .frame(width: 18, height: 1)
+                    .frame(width: metrics.collapsedDashWidth, height: metrics.collapsedDashHeight)
                     .shadow(color: Color.black.opacity(0.12), radius: 1, y: 0.4)
                     .opacity(isAddSlotExpanded ? 0 : 1)
             }
             .frame(
-                width: PickyHUDDockLayout.addSlotButtonSide,
-                height: PickyHUDDockLayout.addSlotFrameHeight(isExpanded: isAddSlotExpanded)
+                width: metrics.addSlotButtonSide,
+                height: PickyHUDDockLayout.addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
             )
             .contentShape(Rectangle())
         }
@@ -961,6 +969,7 @@ private struct PickyHUDDockIconView: View {
     let shortcutNumber: Int?
     let isCommandShortcutHintVisible: Bool
     let shouldFlashCompletion: Bool
+    let metrics: PickyHUDDockMetrics
     let onHover: () -> Void
     let onOpen: () -> Void
     let onArchive: () -> Void
@@ -982,7 +991,7 @@ private struct PickyHUDDockIconView: View {
                 .foregroundColor(isActive ? DS.Colors.textPrimary : DS.Colors.textSecondary)
                 .opacity(isArchivePressing ? 0.64 : 1)
         }
-        .frame(width: 36, height: 36)
+        .frame(width: metrics.iconSide, height: metrics.iconSide)
         .opacity(session.status == .cancelled ? 0.55 : 1)
         .scaleEffect(tileScale)
         .onHover { isHovered = $0 }
@@ -1051,7 +1060,7 @@ private struct PickyHUDDockIconView: View {
                 .opacity(0.18)
             archiveRingArc(progress: archiveProgress)
         }
-        .frame(width: 42, height: 42)
+        .frame(width: metrics.archiveRingSide, height: metrics.archiveRingSide)
         .opacity(isArchivePressing || archiveProgress > 0 ? 1 : 0)
         .shadow(color: DS.Colors.warning.opacity(0.34), radius: 4, x: 0, y: 0)
         .allowsHitTesting(false)
@@ -1073,9 +1082,9 @@ private struct PickyHUDDockIconView: View {
 
     private var archiveBadge: some View {
         Image(systemName: "archivebox.fill")
-            .font(.system(size: 7.5, weight: .bold))
+            .font(.system(size: max(6.5, 7.5 * metrics.scale), weight: .bold))
             .foregroundColor(DS.Colors.warningText)
-            .frame(width: 14, height: 14)
+            .frame(width: metrics.archiveBadgeSide, height: metrics.archiveBadgeSide)
             .background(Circle().fill(DS.Colors.surface1.opacity(0.96)))
             .overlay(Circle().stroke(DS.Colors.warning.opacity(0.65), lineWidth: 1))
             .accessibilityHidden(true)
@@ -1116,22 +1125,22 @@ private struct PickyHUDDockIconView: View {
         // The completion flash temporarily boosts the success-tinted glaze + stroke
         // and adds an ambient glow so a Done transition feels celebratory without
         // disturbing the layout.
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
+        RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
             .fill(.ultraThinMaterial)
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                     .fill(statusColor.opacity(isActive ? 0.22 : 0.0))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                     .fill(Color.primary.opacity(isActive ? 0.0 : 0.04))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                     .fill(DS.Colors.warning.opacity(0.20 * archiveProgress))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                     .fill(DS.Colors.success.opacity(0.34 * completionFlashIntensity))
             )
             .overlay {
@@ -1140,10 +1149,10 @@ private struct PickyHUDDockIconView: View {
                         baseColor: statusColor,
                         highlightColor: statusLoadingHighlightColor,
                         duration: statusBorderAnimationDuration,
-                        cornerRadius: 12
+                        cornerRadius: metrics.iconCornerRadius
                     )
                 } else {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                         .stroke(
                             isActive ? statusColor.opacity(0.55) : statusColor.opacity(0.30),
                             lineWidth: isActive ? 1.0 : 0.7
@@ -1151,11 +1160,11 @@ private struct PickyHUDDockIconView: View {
                 }
             }
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                     .strokeBorder(DS.Colors.warning.opacity(0.76 * archiveProgress), lineWidth: 1.35)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                     .strokeBorder(DS.Colors.success.opacity(0.85 * completionFlashIntensity), lineWidth: 1.4)
             )
             .shadow(color: DS.Colors.warning.opacity(0.30 * archiveProgress), radius: 5, x: 0, y: 0)
@@ -1227,8 +1236,8 @@ private struct PickyHUDDockIconView: View {
     private var statusDot: some View {
         Circle()
             .fill(statusColor)
-            .frame(width: 8, height: 8)
-            .overlay(Circle().stroke(DS.Colors.surface1.opacity(0.94), lineWidth: 2))
+            .frame(width: metrics.statusDotSide, height: metrics.statusDotSide)
+            .overlay(Circle().stroke(DS.Colors.surface1.opacity(0.94), lineWidth: max(1.5, 2 * metrics.scale)))
             .accessibilityHidden(true)
     }
 
@@ -1284,8 +1293,8 @@ private struct PickyHUDDockIconView: View {
 
     private var labelFont: Font {
         Self.containsHangul(initials)
-            ? .system(size: PickyHUDTypography.Size.status, weight: .bold)
-            : .system(size: PickyHUDTypography.Size.status, weight: .bold, design: .monospaced)
+            ? .system(size: metrics.iconLabelFontSize, weight: .bold)
+            : .system(size: metrics.iconLabelFontSize, weight: .bold, design: .monospaced)
     }
 
     private var tileScale: CGFloat {
@@ -1294,7 +1303,7 @@ private struct PickyHUDDockIconView: View {
     }
 
     private var miniPreviewXOffset: CGFloat {
-        let iconHalfWidth: CGFloat = 18
+        let iconHalfWidth = metrics.iconSide / 2
         let distance = (PickyHUDMiniPreviewCardView.totalWidth / 2) + iconHalfWidth + PickyHUDDockLayout.panelGap
         return dockSide == .right ? -distance : distance
     }

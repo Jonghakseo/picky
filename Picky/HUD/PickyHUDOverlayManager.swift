@@ -59,6 +59,8 @@ final class PickyHUDOverlayManager {
     private var panelsByDisplayID: [CGDirectDisplayID: PanelEntry] = [:]
     private var archiveUndoToastsByDisplayID: [CGDirectDisplayID: ArchiveUndoToastEntry] = [:]
     private var screenParametersObserver: NSObjectProtocol?
+    private var settingsObserver: NSObjectProtocol?
+    private var currentDockSizePreset: PickyHUDDockSizePreset
 
     /// Per-display dock position state. Each display remembers its own side,
     /// anchor percent, and horizontal offset so users can place the dock
@@ -78,6 +80,7 @@ final class PickyHUDOverlayManager {
         self.settingsStore = settingsStore
         let settings = settingsStore.load()
         self.currentPositionsByDisplayID = settings.hudDockPositions
+        self.currentDockSizePreset = settings.hudDockSizePreset
     }
 
     /// Get the live position for a display. Returns defaults for unknown displays.
@@ -97,10 +100,12 @@ final class PickyHUDOverlayManager {
         viewModel.start()
         syncPanelsForCurrentScreens()
         startScreenParametersObserver()
+        startSettingsObserver()
     }
 
     func stop() {
         stopScreenParametersObserver()
+        stopSettingsObserver()
         viewModel.stop()
         for (_, entry) in panelsByDisplayID {
             entry.pendingShrinkTask?.cancel()
@@ -168,7 +173,10 @@ final class PickyHUDOverlayManager {
         let panelIdentifier = NSUserInterfaceItemIdentifier("picky-hud-\(displayID)")
         hudPanel.identifier = panelIdentifier
 
-        let placement = PickyHUDPlacement(dockSide: position(for: displayID).side)
+        let placement = PickyHUDPlacement(
+            dockSide: position(for: displayID).side,
+            dockSizePreset: currentDockSizePreset
+        )
         let hudRoot = PickyHUDView(
             viewModel: viewModel,
             panelIdentifier: panelIdentifier,
@@ -328,11 +336,13 @@ final class PickyHUDOverlayManager {
             topPaddingFromContentTop: topPadding,
             anchorPercent: pos.anchorPercent
         )
+        let dockMetrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
         let safeXOffset = PickyHUDDockLayout.clampedXOffset(
             pos.xOffset,
             visibleFrame: visibleFrame,
             panelWidth: width,
-            dockSide: pos.side
+            dockSide: pos.side,
+            dockRailWidth: dockMetrics.railWidth
         )
         if safeXOffset != pos.xOffset {
             var normalizedPosition = pos
@@ -341,11 +351,11 @@ final class PickyHUDOverlayManager {
         }
 
         return NSRect(
-            x: PickyHUDDockLayout.clampedPanelX(
+            x: PickyHUDDockLayout.panelX(
                 visibleFrame: visibleFrame,
                 panelWidth: width,
                 dockSide: pos.side,
-                xOffset: pos.xOffset
+                xOffset: safeXOffset
             ),
             y: originY,
             width: width,
@@ -483,11 +493,13 @@ final class PickyHUDOverlayManager {
         )
 
         // -- X axis: horizontal offset and side --
+        let dockMetrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
         let draggedDockCenterX = PickyHUDDockLayout.dockRailCenterX(
             visibleFrame: visibleFrame,
             panelWidth: width,
             dockSide: startPos.side,
-            xOffset: startPos.xOffset
+            xOffset: startPos.xOffset,
+            dockRailWidth: dockMetrics.railWidth
         ) + delta.x
         pos.side = PickyHUDDockLayout.dockSide(
             forDockRailCenterX: draggedDockCenterX,
@@ -498,7 +510,8 @@ final class PickyHUDOverlayManager {
             forDockRailCenterX: draggedDockCenterX,
             visibleFrame: visibleFrame,
             panelWidth: width,
-            dockSide: pos.side
+            dockSide: pos.side,
+            dockRailWidth: dockMetrics.railWidth
         )
 
         setPosition(pos, for: displayID)
@@ -544,6 +557,36 @@ final class PickyHUDOverlayManager {
             NotificationCenter.default.removeObserver(screenParametersObserver)
         }
         screenParametersObserver = nil
+    }
+
+    private func startSettingsObserver() {
+        settingsObserver = NotificationCenter.default.addObserver(
+            forName: .pickySettingsDidSave,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let settings = self.settingsStore.load()
+                self.applyDockSizePreset(settings.hudDockSizePreset)
+            }
+        }
+    }
+
+    private func stopSettingsObserver() {
+        if let settingsObserver {
+            NotificationCenter.default.removeObserver(settingsObserver)
+        }
+        settingsObserver = nil
+    }
+
+    private func applyDockSizePreset(_ preset: PickyHUDDockSizePreset) {
+        guard preset != currentDockSizePreset else { return }
+        currentDockSizePreset = preset
+        for displayID in panelsByDisplayID.keys {
+            panelsByDisplayID[displayID]?.placement.dockSizePreset = preset
+        }
+        syncPanelsForCurrentScreens()
     }
 }
 

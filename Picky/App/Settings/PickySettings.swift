@@ -396,6 +396,32 @@ struct PickyHUDDockPosition: Codable, Equatable {
     }
 }
 
+/// User-facing size preset for the Pickle HUD dock rail. Medium intentionally
+/// maps to the pre-existing dimensions so upgrading users keep the current size.
+enum PickyHUDDockSizePreset: String, Codable, CaseIterable, Identifiable {
+    case small = "s"
+    case medium = "m"
+    case large = "l"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .small: "S"
+        case .medium: "M"
+        case .large: "L"
+        }
+    }
+
+    var scale: Double {
+        switch self {
+        case .small: 0.88
+        case .medium: 1.0
+        case .large: 1.16
+        }
+    }
+}
+
 /// User zoom level for the markdown report viewer and the Pi terminal overlay.
 /// Each surface keeps its own multiplier so increasing terminal cell density does not
 /// also blow up the markdown body. Bounded by `PickyFontScales.minimum`/`.maximum`
@@ -554,6 +580,9 @@ struct PickySettings: Codable, Equatable {
     /// the dock independently on each screen. Falls back to `PickyHUDDockPosition.defaults()`
     /// when a display has not yet been configured.
     var hudDockPositions: [String: PickyHUDDockPosition]
+    /// S/M/L size preset for the Pickle dock rail only. The conversation card keeps
+    /// its current width so the setting stays visually scoped to the dock.
+    var hudDockSizePreset: PickyHUDDockSizePreset
 
     static let dockTopAnchorPercentRange: ClosedRange<Double> = 2.0...70.0
     static let defaultDockTopAnchorPercent: Double = 22.0
@@ -596,7 +625,8 @@ struct PickySettings: Codable, Equatable {
         useConversationCard: Bool = true,
         pushToTalkShortcut: PickyShortcutSpec = .defaultPushToTalk,
         quickInputShortcut: PickyShortcutSpec = .defaultQuickInput,
-        hudDockPositions: [String: PickyHUDDockPosition] = [:]
+        hudDockPositions: [String: PickyHUDDockPosition] = [:],
+        hudDockSizePreset: PickyHUDDockSizePreset = .medium
     ) {
         self.defaultCwd = defaultCwd
         self.mainAgentCwd = mainAgentCwd ?? defaultCwd
@@ -628,6 +658,7 @@ struct PickySettings: Codable, Equatable {
         self.pushToTalkShortcut = pushToTalkShortcut
         self.quickInputShortcut = quickInputShortcut
         self.hudDockPositions = hudDockPositions
+        self.hudDockSizePreset = hudDockSizePreset
     }
 
     static func defaults(appSupportRoot: URL = PickyAppSupport.defaultRoot()) -> PickySettings {
@@ -662,7 +693,8 @@ struct PickySettings: Codable, Equatable {
             useConversationCard: true,
             pushToTalkShortcut: .defaultPushToTalk,
             quickInputShortcut: .defaultQuickInput,
-            hudDockPositions: [:]
+            hudDockPositions: [:],
+            hudDockSizePreset: .medium
         )
     }
 
@@ -717,6 +749,7 @@ struct PickySettings: Codable, Equatable {
         case pushToTalkShortcut
         case quickInputShortcut
         case hudDockPositions
+        case hudDockSizePreset
     }
 
     init(from decoder: Decoder) throws {
@@ -749,6 +782,7 @@ struct PickySettings: Codable, Equatable {
         mainAgentExtraInstructions = try container.decodeIfPresent(String.self, forKey: .mainAgentExtraInstructions) ?? defaults.mainAgentExtraInstructions
         screenContextScope = try container.decodeIfPresent(PickyScreenContextScope.self, forKey: .screenContextScope) ?? defaults.screenContextScope
         useConversationCard = try container.decodeIfPresent(Bool.self, forKey: .useConversationCard) ?? defaults.useConversationCard
+        hudDockSizePreset = try container.decodeIfPresent(PickyHUDDockSizePreset.self, forKey: .hudDockSizePreset) ?? defaults.hudDockSizePreset
         if let storedScales = try container.decodeIfPresent(PickyFontScales.self, forKey: .fontScales) {
             fontScales = PickyFontScales(
                 markdownReport: PickyFontScales.clamped(storedScales.markdownReport),

@@ -87,6 +87,15 @@ struct PickyTests {
         #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false, metrics: smallMetrics) == smallMetrics.collapsedAddSlotVisualHeight)
         #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: true, metrics: largeMetrics) == largeMetrics.addSlotButtonSide)
 
+        #expect(PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 0, isAddSlotExpanded: false, metrics: mediumMetrics) == mediumMetrics.addSlotButtonSide)
+        #expect(PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics) ==
+            (3 * mediumMetrics.sessionTileHeight) + (2 * mediumMetrics.sessionSpacing) + mediumMetrics.addSlotTopPadding + mediumMetrics.collapsedAddSlotVisualHeight
+        )
+        #expect(PickyHUDDockLayout.dockRailHeight(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics) ==
+            mediumMetrics.topPadding + mediumMetrics.handleAreaHeight + 2 + PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics) + mediumMetrics.bottomPadding
+        )
+        #expect(PickyHUDDockLayout.dockRailHeight(sessionCount: 3, isAddSlotExpanded: true, metrics: mediumMetrics) - PickyHUDDockLayout.dockRailHeight(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics) == mediumMetrics.addSlotCollapsedExpansionReserve)
+
         #expect(PickyHUDDockLayout.contentSizeReservingAddSlotExpansion(
             measuredSize: CGSize(width: 50, height: 120),
             activeSessionID: nil,

@@ -193,6 +193,24 @@ enum PickyHUDDockLayout {
         isExpanded ? metrics.addSlotButtonSide : metrics.collapsedAddSlotVisualHeight
     }
 
+    static func dockRailSessionsHeight(sessionCount: Int, isAddSlotExpanded: Bool, metrics: PickyHUDDockMetrics = .medium) -> CGFloat {
+        guard sessionCount > 0 else { return metrics.addSlotButtonSide }
+        let sessionRowsHeight = CGFloat(sessionCount) * metrics.sessionTileHeight
+        let sessionGapsHeight = CGFloat(max(0, sessionCount - 1)) * metrics.sessionSpacing
+        return sessionRowsHeight
+            + sessionGapsHeight
+            + metrics.addSlotTopPadding
+            + addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
+    }
+
+    static func dockRailHeight(sessionCount: Int, isAddSlotExpanded: Bool, metrics: PickyHUDDockMetrics = .medium) -> CGFloat {
+        metrics.topPadding
+            + metrics.handleAreaHeight
+            + 2
+            + dockRailSessionsHeight(sessionCount: sessionCount, isAddSlotExpanded: isAddSlotExpanded, metrics: metrics)
+            + metrics.bottomPadding
+    }
+
     static func contentSizeReservingAddSlotExpansion(
         measuredSize: CGSize,
         activeSessionID: String?,

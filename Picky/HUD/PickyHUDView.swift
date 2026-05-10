@@ -821,8 +821,17 @@ private struct PickyHUDDockRailView: View {
         .padding(.horizontal, metrics.horizontalPadding)
         .padding(.top, metrics.topPadding)
         .padding(.bottom, metrics.bottomPadding)
+        .frame(width: metrics.railWidth, height: railHeight, alignment: .top)
         .background(dockGlassBackground)
         .onHover(perform: onDockHoverChanged)
+    }
+
+    private var railHeight: CGFloat {
+        PickyHUDDockLayout.dockRailHeight(
+            sessionCount: sessions.count,
+            isAddSlotExpanded: isAddSlotExpanded,
+            metrics: metrics
+        )
     }
 
     @ViewBuilder

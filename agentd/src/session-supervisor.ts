@@ -2022,8 +2022,12 @@ function isCompactSlashCommand(text: string): boolean {
   return /^\s*\/compact(\s|$)/.test(text);
 }
 
+function isReloadSlashCommand(text: string): boolean {
+  return /^\s*\/reload(\s|$)/.test(text);
+}
+
 function isNoTurnStateRestoringSlashCommand(text: string): boolean {
-  return isNameSlashCommand(text) || isCompactSlashCommand(text);
+  return isNameSlashCommand(text) || isCompactSlashCommand(text) || isReloadSlashCommand(text);
 }
 
 // Matches `/name`, `/name args` where name is an identifier-like token without `/` or `:`.

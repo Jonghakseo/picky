@@ -731,7 +731,7 @@ describe("PiSdkRuntime", () => {
     expect(fakeSession.prompts).toEqual([]);
     expect(events).toContainEqual({ type: "status", status: "running", summary: "Reloading Pi resources…" });
     expect(events).toContainEqual({ type: "log", line: "pi resources reloaded" });
-    expect(events).toContainEqual({ type: "status", status: "completed", summary: "Pi resources reloaded", noTurnRan: true, preserveSessionState: true });
+    expect(events).toContainEqual({ type: "status", status: "completed", summary: "Pi resources reloaded", noTurnRan: true });
   });
 
   it("rejects /reload while the active agent is running", async () => {

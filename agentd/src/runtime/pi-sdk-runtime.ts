@@ -746,7 +746,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       try {
         await session.reload();
         this.emit({ type: "log", line: "pi resources reloaded" });
-        this.emit({ type: "status", status: "completed", summary: "Pi resources reloaded", noTurnRan: true, preserveSessionState: true });
+        this.emit({ type: "status", status: "completed", summary: "Pi resources reloaded", noTurnRan: true });
       } catch (error) {
         const message = messageOf(error);
         logAgentd("slash /reload failed", { sessionId: this.id, error: message });

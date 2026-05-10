@@ -835,6 +835,60 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("Still working");
   });
 
+  it("shows /reload loading state and settles without an agent turn", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "조사 완료입니다." });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+    expect(supervisor.get(pickle.id)?.status).toBe("completed");
+
+    runtime.handle!.onFollowUp = (handle, prompt) => {
+      if (prompt.text === "/reload") {
+        handle.emit({ type: "status", status: "running", summary: "Reloading Pi resources…" });
+        handle.emit({ type: "status", status: "completed", summary: "Pi resources reloaded", noTurnRan: true });
+      }
+    };
+
+    await supervisor.followUp(pickle.id, "/reload");
+    await settle();
+
+    const updated = supervisor.get(pickle.id)!;
+    expect(updated.status).toBe("completed");
+    expect(updated.lastSummary).toBe("Pi resources reloaded");
+    expect(userTexts(updated)).not.toContain("/reload");
+  });
+
+  it("restores the previous state when /reload is rejected before running", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "조사 완료입니다." });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+    expect(supervisor.get(pickle.id)?.lastSummary).toBe("조사 완료입니다.");
+
+    runtime.handle!.onFollowUp = (handle, prompt) => {
+      if (prompt.text === "/reload") {
+        handle.emit({ type: "status", status: "completed", summary: "/reload is unavailable while the agent is running", noTurnRan: true, preserveSessionState: true });
+      }
+    };
+
+    await supervisor.followUp(pickle.id, "/reload");
+    await settle();
+
+    const updated = supervisor.get(pickle.id)!;
+    expect(updated.status).toBe("completed");
+    expect(updated.lastSummary).toBe("조사 완료입니다.");
+  });
+
   it("records a compact completion system message after automatic overflow compaction", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

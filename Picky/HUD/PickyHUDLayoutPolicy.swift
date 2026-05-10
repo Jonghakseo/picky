@@ -134,6 +134,16 @@ enum PickyHUDDockLayout {
     static let closeDelay: TimeInterval = 0.4
     static let closeDelayNanoseconds: UInt64 = 400_000_000
     static let defaultGitSectionExpanded = true
+    static let addSlotButtonSide: CGFloat = 36
+    static let collapsedAddSlotVisualHeight: CGFloat = 14
+
+    /// The hover-revealed add slot must reserve its full button height even while
+    /// collapsed. If the layout height follows the visual state (14pt dash -> 36pt
+    /// button), the dock capsule reports a new intrinsic height on hover and the
+    /// top-anchored panel visibly bumps.
+    static func addSlotFrameHeight(isExpanded: Bool) -> CGFloat {
+        addSlotButtonSide
+    }
 
     static func activeSessionID(visibleIDs: [String], held: PickyHUDDockHold?, previewID: String?) -> String? {
         if let held, visibleIDs.contains(held.sessionID) { return held.sessionID }

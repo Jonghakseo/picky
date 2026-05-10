@@ -72,6 +72,13 @@ struct PickyTests {
         #expect(!PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 200, targetHeight: 180, deferShrink: false))
     }
 
+    @Test func dockAddSlotReservesStableHeightAcrossHoverStates() throws {
+        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false) == PickyHUDDockLayout.addSlotButtonSide)
+        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: true) == PickyHUDDockLayout.addSlotButtonSide)
+        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false) == PickyHUDDockLayout.addSlotFrameHeight(isExpanded: true))
+        #expect(PickyHUDDockLayout.collapsedAddSlotVisualHeight < PickyHUDDockLayout.addSlotButtonSide)
+    }
+
     @Test func quickInputPanelUsesCompactShadowOutset() throws {
         #expect(QuickInputPanelLayout.mainShadowOpacity == 0.08)
         #expect(QuickInputPanelLayout.mainShadowRadius == 4)

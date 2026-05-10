@@ -886,7 +886,7 @@ private struct PickyHUDDockRailView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(DS.Colors.textSecondary)
             }
-            .frame(width: 36, height: 36)
+            .frame(width: PickyHUDDockLayout.addSlotButtonSide, height: PickyHUDDockLayout.addSlotButtonSide)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -912,7 +912,7 @@ private struct PickyHUDDockRailView: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(DS.Colors.textSecondary)
                 }
-                .frame(width: 36, height: 36)
+                .frame(width: PickyHUDDockLayout.addSlotButtonSide, height: PickyHUDDockLayout.addSlotButtonSide)
                 .opacity(isAddSlotExpanded ? 1 : 0)
 
                 Capsule(style: .continuous)
@@ -921,7 +921,10 @@ private struct PickyHUDDockRailView: View {
                     .shadow(color: Color.black.opacity(0.12), radius: 1, y: 0.4)
                     .opacity(isAddSlotExpanded ? 0 : 1)
             }
-            .frame(width: 36, height: isAddSlotExpanded ? 36 : 14)
+            .frame(
+                width: PickyHUDDockLayout.addSlotButtonSide,
+                height: PickyHUDDockLayout.addSlotFrameHeight(isExpanded: isAddSlotExpanded)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

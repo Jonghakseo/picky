@@ -1464,13 +1464,15 @@ export class SessionSupervisor extends EventEmitter {
   private async incrementActivityNow(sessionId: string, category: ToolCategory): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
-    const current = session.activitySummary ?? zeroActivitySummary();
-    const next = { ...current, [category]: current[category] + 1 };
+    // activitySummary mirrors the in-progress turn so the HUD live strip resets on each
+    // turn boundary. Per-turn snapshots are committed as agent_activity messages by
+    // commitTurnActivityNow when the turn ends.
     const currentTurn = this.turnActivity.get(sessionId) ?? zeroActivitySummary();
-    this.turnActivity.set(sessionId, { ...currentTurn, [category]: currentTurn[category] + 1 });
-    await this.patch(sessionId, { activitySummary: next });
+    const nextTurn = { ...currentTurn, [category]: currentTurn[category] + 1 };
+    this.turnActivity.set(sessionId, nextTurn);
+    await this.patch(sessionId, { activitySummary: nextTurn });
     const seq = this.nextSeq(sessionId);
-    await this.chainEmit(sessionId, async () => { this.emit("activityUpdated", sessionId, next, seq); });
+    await this.chainEmit(sessionId, async () => { this.emit("activityUpdated", sessionId, nextTurn, seq); });
   }
 
   private async commitTurnActivity(sessionId: string): Promise<void> {
@@ -1485,6 +1487,10 @@ export class SessionSupervisor extends EventEmitter {
     if (!snapshot || activityTotal(snapshot) <= 0) return;
     await this.messageBuilder.recordActivitySnapshot(sessionId, snapshot);
     this.turnActivity.delete(sessionId);
+    const reset = zeroActivitySummary();
+    await this.patch(sessionId, { activitySummary: reset });
+    const seq = this.nextSeq(sessionId);
+    await this.chainEmit(sessionId, async () => { this.emit("activityUpdated", sessionId, reset, seq); });
   }
 
   private async tryResumeRuntimeHandle(session: PickyAgentSession): Promise<RuntimeSessionHandle | undefined> {

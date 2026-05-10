@@ -158,7 +158,8 @@ describe("SessionSupervisor", () => {
       { read: 0, bash: 1, edit: 0, write: 0, thinking: 0, other: 0 },
       { read: 0, bash: 0, edit: 1, write: 0, thinking: 0, other: 0 },
     ]);
-    expect(supervisor.get(session.id)?.activitySummary).toEqual({ read: 0, bash: 1, edit: 1, write: 0, thinking: 0, other: 0 });
+    // activitySummary tracks the live turn only, so it resets to zero once each turn commits.
+    expect(supervisor.get(session.id)?.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });
   });
 
   it("classifies read, bash, edit, write, and unknown tools in the activity summary", async () => {
@@ -241,7 +242,7 @@ describe("SessionSupervisor", () => {
     expect(events).toEqual([]);
   });
 
-  it("dedupes tool calls per turn but keeps cumulative activity across follow-ups", async () => {
+  it("dedupes tool calls per turn and resets the live activity summary at each turn boundary", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-activity-followup-test-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
@@ -252,11 +253,15 @@ describe("SessionSupervisor", () => {
     runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running" });
     await waitUntil(() => supervisor.get(session.id)?.activitySummary?.bash === 1);
 
+    runtime.handle!.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => supervisor.get(session.id)?.activitySummary?.bash === 0);
+    expect(supervisor.get(session.id)?.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });
+
     await supervisor.followUp(session.id, "next turn");
     runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running" });
-    await waitUntil(() => supervisor.get(session.id)?.activitySummary?.bash === 2);
+    await waitUntil(() => supervisor.get(session.id)?.activitySummary?.bash === 1);
 
-    expect(supervisor.get(session.id)?.activitySummary).toEqual({ read: 0, bash: 2, edit: 0, write: 0, thinking: 0, other: 0 });
+    expect(supervisor.get(session.id)?.activitySummary).toEqual({ read: 0, bash: 1, edit: 0, write: 0, thinking: 0, other: 0 });
   });
 
   it("preserves enqueuedAt for unchanged queue items", async () => {

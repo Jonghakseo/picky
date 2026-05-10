@@ -398,6 +398,8 @@ struct BlueCursorView: View {
     @ObservedObject private var cursorPreferencesStore = PickyCursorPreferencesStore.shared
     @ObservedObject private var overlayBubblePreferencesStore = PickyOverlayBubblePreferencesStore.shared
 
+    static let cursorTrackingInterval: TimeInterval = 1.0 / 120.0
+
     @State private var cursorPosition: CGPoint
     @State private var isCursorOnThisScreen: Bool
 
@@ -455,6 +457,12 @@ struct BlueCursorView: View {
         "found it!"
     ]
 
+    private var cursorFollowAnimation: Animation? {
+        cursorPreferencesStore.preferences.enableFollowSpringAnimation
+            ? .spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0)
+            : nil
+    }
+
     var body: some View {
         ZStack {
             // Nearly transparent background (helps with compositing)
@@ -502,7 +510,7 @@ struct BlueCursorView: View {
                         }
                     )
                     .position(cursorBubbleCenter(for: voicePromptBubbleSize))
-                    .animation(.spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0), value: cursorPosition)
+                    .animation(cursorFollowAnimation, value: cursorPosition)
                     .animation(.easeOut(duration: 0.2), value: companionManager.voiceState)
                     .animation(.easeOut(duration: 0.16), value: companionManager.voicePromptBubbleState)
                     .onPreferenceChange(VoicePromptBubbleSizePreferenceKey.self) { newSize in
@@ -549,7 +557,7 @@ struct BlueCursorView: View {
                         }
                     )
                     .position(cursorBubbleCenter(for: responseBubbleSize))
-                    .animation(.spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0), value: cursorPosition)
+                    .animation(cursorFollowAnimation, value: cursorPosition)
                     .animation(.easeOut(duration: 0.2), value: companionManager.voiceState)
                     .onPreferenceChange(ResponseBubbleSizePreferenceKey.self) { newSize in
                         responseBubbleSize = newSize
@@ -584,7 +592,7 @@ struct BlueCursorView: View {
                     .scaleEffect(navigationBubbleScale)
                     .opacity(navigationBubbleOpacity)
                     .position(cursorBubbleCenter(for: navigationBubbleSize, horizontalGap: 10, verticalGap: 18))
-                    .animation(.spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0), value: cursorPosition)
+                    .animation(cursorFollowAnimation, value: cursorPosition)
                     .animation(.spring(response: 0.4, dampingFraction: 0.6), value: navigationBubbleScale)
                     .animation(.easeOut(duration: 0.5), value: navigationBubbleOpacity)
                     .onPreferenceChange(NavigationBubbleSizePreferenceKey.self) { newSize in
@@ -599,7 +607,7 @@ struct BlueCursorView: View {
             // Idle micro-behaviors stack as offset/rotation/scale on top of the
             // cursor-tracking spring without disturbing it.
             //
-            // During cursor following: fast spring animation for snappy tracking.
+            // During cursor following: optional spring animation for smooth tracking.
             // During navigation: NO implicit animation — the frame-by-frame bezier
             // timer controls position directly at 60fps for a smooth arc flight.
             PickyCursorMascotView(
@@ -617,9 +625,7 @@ struct BlueCursorView: View {
                 .opacity(buddyIsVisibleOnThisScreen ? cursorOpacity : 0)
                 .position(cursorPosition)
                 .animation(
-                    buddyNavigationMode == .followingCursor && cursorPreferencesStore.preferences.enableFollowSpringAnimation
-                        ? .spring(response: 0.3, dampingFraction: 0.65, blendDuration: 0)
-                        : nil,
+                    buddyNavigationMode == .followingCursor ? cursorFollowAnimation : nil,
                     value: cursorPosition
                 )
                 .animation(.easeInOut(duration: 0.45), value: companionManager.voiceState)
@@ -689,7 +695,7 @@ struct BlueCursorView: View {
     // MARK: - Cursor Tracking
 
     private func startTrackingCursor() {
-        timer = Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { _ in
+        timer = Timer.scheduledTimer(withTimeInterval: Self.cursorTrackingInterval, repeats: true) { _ in
             let mouseLocation = self.effectiveCursorGlobalPoint
             self.isCursorOnThisScreen = self.screenFrame.contains(mouseLocation)
 

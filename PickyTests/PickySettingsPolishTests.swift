@@ -183,6 +183,23 @@ struct PickySettingsPolishTests {
         #expect(settings.overlayBubbles.showPickyResponseBubble)
     }
 
+    @Test func settingsLoadDefaultsCursorFollowSpringToEnabledWhenLegacyFileLacksField() throws {
+        let legacyJSON = """
+        {
+          "defaultCwd": "/tmp",
+          "worktreeParent": "",
+          "preferredToolVisibility": "visible in context only",
+          "readOnlyInvestigationPreference": true,
+          "daemonPath": "/tmp/agentd",
+          "logPath": "/tmp/logs"
+        }
+        """.data(using: .utf8)!
+
+        let settings = try JSONDecoder().decode(PickySettings.self, from: legacyJSON)
+
+        #expect(settings.cursor.enableFollowSpringAnimation)
+    }
+
     @Test func settingsRoundTripPreservesOverlayBubblePreferences() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         let project = root.appendingPathComponent("project", isDirectory: true)
@@ -200,6 +217,25 @@ struct PickySettingsPolishTests {
 
         #expect(store.load().overlayBubbles.showUserSpeechRecognitionBubble == false)
         #expect(store.load().overlayBubbles.showPickyResponseBubble == true)
+    }
+
+    @Test func settingsRoundTripPreservesCursorFollowSpringPreference() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.defaultCwd = project.path
+        settings.worktreeParent = project.path
+        settings.cursor.enableFollowSpringAnimation = false
+
+        try store.save(settings)
+
+        #expect(store.load().cursor.enableFollowSpringAnimation == false)
+    }
+
+    @Test func cursorTrackingRefreshesAt120FPS() {
+        #expect(BlueCursorView.cursorTrackingInterval == 1.0 / 120.0)
     }
 
     @Test func settingsRoundTripPreservesScreenContextScope() throws {

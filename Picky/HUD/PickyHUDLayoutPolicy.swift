@@ -215,6 +215,35 @@ enum PickyHUDDockLayout {
             + metrics.bottomPadding
     }
 
+    /// Long-axis (X) length of the dock rail in horizontal orientation.
+    /// Mirrors `dockRailHeight` but uses symmetric leading/trailing padding
+    /// (small `topPadding` on both sides instead of vertical's larger
+    /// `bottomPadding`) and drops `addSlotTopPadding` between the last
+    /// session and the collapsed `+` slot — horizontal needs less internal
+    /// breathing room than vertical because the dock is short on the cross
+    /// axis and any extra padding reads as wasted space.
+    static func horizontalDockRailLength(
+        sessionCount: Int,
+        isAddSlotExpanded: Bool,
+        metrics: PickyHUDDockMetrics = .medium
+    ) -> CGFloat {
+        let sessionsAndSlot: CGFloat = {
+            guard sessionCount > 0 else { return metrics.addSlotButtonSide }
+            let sessionRows = CGFloat(sessionCount) * metrics.sessionTileWidth
+            let sessionGaps = CGFloat(max(0, sessionCount - 1)) * metrics.sessionSpacing
+            // 2pt parent-HStack spacing between the sessions row and the slot.
+            return sessionRows
+                + sessionGaps
+                + 2
+                + addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
+        }()
+        return metrics.topPadding
+            + metrics.handleAreaHeight
+            + 2
+            + sessionsAndSlot
+            + metrics.topPadding
+    }
+
     static func contentSizeReservingAddSlotExpansion(
         measuredSize: CGSize,
         activeSessionID: String?,

@@ -248,7 +248,7 @@ struct PickyHUDView: View {
             )
             .frame(
                 width: placement.dockSide.orientation == .horizontal
-                    ? PickyHUDDockLayout.dockRailHeight(
+                    ? PickyHUDDockLayout.horizontalDockRailLength(
                         sessionCount: visibleSessions.count,
                         isAddSlotExpanded: isDockAddSlotExpanded,
                         metrics: dockMetrics
@@ -903,10 +903,15 @@ private struct PickyHUDDockRailView: View {
                     dockAnchorHandle
                     sessionsAndAddSlot
                 }
-                .padding(.leading, metrics.topPadding)
-                .padding(.trailing, metrics.bottomPadding)
+                // Symmetric leading/trailing in horizontal so the dock doesn't
+                // look lopsided. Vertical's larger `bottomPadding` exists to
+                // give the `+` button breathing room below the dash; in
+                // horizontal the equivalent breathing room comes from the
+                // empty panel area to the right of the dock, not from internal
+                // padding.
+                .padding(.horizontal, metrics.topPadding)
                 .padding(.vertical, metrics.horizontalPadding)
-                .frame(width: railHeight, height: metrics.railWidth, alignment: .leading)
+                .frame(width: railHeight, height: metrics.railWidth, alignment: .center)
             } else {
                 // The handle is the first child INSIDE the dock capsule (after a small top
                 // padding) so the dock body itself acts as the hit target. The capsule
@@ -928,7 +933,14 @@ private struct PickyHUDDockRailView: View {
     }
 
     private var railHeight: CGFloat {
-        PickyHUDDockLayout.dockRailHeight(
+        if dockSide.orientation == .horizontal {
+            return PickyHUDDockLayout.horizontalDockRailLength(
+                sessionCount: sessions.count,
+                isAddSlotExpanded: isAddSlotExpanded,
+                metrics: metrics
+            )
+        }
+        return PickyHUDDockLayout.dockRailHeight(
             sessionCount: sessions.count,
             isAddSlotExpanded: isAddSlotExpanded,
             metrics: metrics
@@ -947,8 +959,10 @@ private struct PickyHUDDockRailView: View {
                 HStack(spacing: metrics.sessionSpacing) {
                     sessionIcons
                 }
+                // No extra leading pad in horizontal — the parent HStack's
+                // 2pt spacing is enough separation between the last session
+                // and the collapsed `|` slot.
                 collapsibleAddAgentSlot
-                    .padding(.leading, metrics.addSlotTopPadding)
             } else {
                 VStack(spacing: metrics.sessionSpacing) {
                     sessionIcons

@@ -60,7 +60,14 @@ struct PickyTerminalExitSyncSchedulerTests {
         var fired = 0
         scheduler.scheduleOnExit { fired += 1 }
         #expect(fired == 0)
-        try await Task.sleep(nanoseconds: 200_000_000)
+        // Poll instead of using a fixed sleep: under heavy parallel test
+        // load a 50ms RunLoop timer can be delayed well past 200ms, which
+        // made this assertion flaky. 2s is plenty of slack for the timer
+        // to actually fire while keeping the success path fast.
+        let deadline = Date().addingTimeInterval(2.0)
+        while fired == 0, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
         #expect(fired == 1)
         #expect(!scheduler.hasPendingSync)
     }

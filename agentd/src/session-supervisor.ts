@@ -814,8 +814,7 @@ export class SessionSupervisor extends EventEmitter {
     if (pickleSessions.length > 0) {
       lines.push("", "Recent Pickle sessions:");
       for (const session of pickleSessions) {
-        const summary = session.finalAnswer ?? session.lastSummary;
-        lines.push(`- ${session.id} | ${session.title} | status=${session.status}${summary ? ` | ${truncateMainSummaryText(summary, 240)}` : ""}`);
+        lines.push(`- ${session.id} | ${session.title} | status=${session.status}`);
       }
     }
     return truncateMainSummaryText(lines.join("\n"), MAIN_AGENT_COMPACT_SUMMARY_LIMIT);

@@ -9,12 +9,6 @@ import AppKit
 import Combine
 import SwiftUI
 
-enum PickyHUDPanelRole {
-    case combined
-    case rail
-    case card
-}
-
 @MainActor
 final class PickyHUDDisplayState: ObservableObject {
     @Published var heldSession: PickyHUDDockHold?
@@ -28,22 +22,18 @@ final class PickyHUDDisplayState: ObservableObject {
     @Published var isCommandShortcutHintVisible = false
     @Published var composerFocusRequestID = 0
     @Published var isDockAddSlotExpanded = false
-    let combinedSizeReporter = PickyHUDSizeReporter()
-    let railSizeReporter = PickyHUDSizeReporter()
-    let cardSizeReporter = PickyHUDSizeReporter()
+    let sizeReporter = PickyHUDSizeReporter()
 }
 
 struct PickyHUDView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     var panelIdentifier: NSUserInterfaceItemIdentifier?
-    var pairedPanelIdentifier: NSUserInterfaceItemIdentifier?
     /// Per-panel reactive placement state. The overlay manager updates
     /// `placement.availableCardMaxHeight` whenever the dock anchor or the screen
     /// configuration changes; the conversation card binds to it so it grows or
     /// shrinks within whatever space remains below the dock's top edge.
     @ObservedObject var placement: PickyHUDPlacement = PickyHUDPlacement()
     @ObservedObject var displayState: PickyHUDDisplayState = PickyHUDDisplayState()
-    var role: PickyHUDPanelRole = .combined
     var onSizeChange: (CGSize) -> Void = { _ in }
     /// Live delta callback for the dock anchor handle. Argument is the cursor's
     /// screen delta from drag start in both X and Y (`NSEvent.mouseLocation` based).
@@ -56,18 +46,6 @@ struct PickyHUDView: View {
 
     private var dockMetrics: PickyHUDDockMetrics {
         PickyHUDDockMetrics(preset: placement.dockSizePreset)
-    }
-
-    private var sizeReporter: PickyHUDSizeReporter {
-        switch role {
-        case .combined: displayState.combinedSizeReporter
-        case .rail: displayState.railSizeReporter
-        case .card: displayState.cardSizeReporter
-        }
-    }
-
-    private var acceptedPanelIdentifiers: Set<NSUserInterfaceItemIdentifier> {
-        Set([panelIdentifier, pairedPanelIdentifier].compactMap { $0 })
     }
 
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {
@@ -93,7 +71,7 @@ struct PickyHUDView: View {
     }
 
     var body: some View {
-        roleContent
+        hudContent
             // Measure the HUD's intrinsic content height before the hosting view
             // applies the current panel height. Without this, active streaming
             // updates can report the already-clipped height and prevent growth.
@@ -119,42 +97,21 @@ struct PickyHUDView: View {
                 displayState.closeExpansionTask?.cancel()
                 displayState.closeExpansionTask = nil
                 uninstallCloseShortcutMonitor()
-                sizeReporter.cancelPendingReport()
+                displayState.sizeReporter.cancelPendingReport()
             }
-    }
-
-    @ViewBuilder
-    private var roleContent: some View {
-        switch role {
-        case .combined:
-            hudContent
-        case .rail:
-            dockRail
-                .padding(PickyHUDExpansion.dockShadowInsets)
-        case .card:
-            conversationCard
-                .padding(PickyHUDExpansion.dockShadowInsets)
-                .onHover(perform: handleHUDHover)
-        }
     }
 
     private func handleHUDSizeChange(_ size: CGSize) {
         let activeID = activeSession?.id
-        let panelSize: CGSize
-        switch role {
-        case .combined, .rail:
-            panelSize = PickyHUDDockLayout.contentSizeReservingAddSlotExpansion(
-                measuredSize: size,
-                activeSessionID: activeID,
-                hasVisibleSessions: !visibleSessions.isEmpty,
-                isAddSlotExpanded: displayState.isDockAddSlotExpanded,
-                metrics: dockMetrics
-            )
-        case .card:
-            panelSize = size
-        }
+        let panelSize = PickyHUDDockLayout.contentSizeReservingAddSlotExpansion(
+            measuredSize: size,
+            activeSessionID: activeID,
+            hasVisibleSessions: !visibleSessions.isEmpty,
+            isAddSlotExpanded: displayState.isDockAddSlotExpanded,
+            metrics: dockMetrics
+        )
 
-        sizeReporter.handleMeasuredSize(
+        displayState.sizeReporter.handleMeasuredSize(
             panelSize,
             activeSessionID: activeID,
             shouldHoldHeight: shouldHoldPanelHeightDuringActiveTurn,
@@ -377,9 +334,7 @@ struct PickyHUDView: View {
     private func handleKeyboardShortcut(_ event: NSEvent) -> Bool {
         updateCommandShortcutHintVisibility(modifierFlags: event.modifierFlags)
         guard let keyWindow = NSApp.keyWindow as? PickyHUDPanel else { return false }
-        if !acceptedPanelIdentifiers.isEmpty {
-            guard let identifier = keyWindow.identifier, acceptedPanelIdentifiers.contains(identifier) else { return false }
-        }
+        if let panelIdentifier, keyWindow.identifier != panelIdentifier { return false }
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         let visibleIDs = visibleSessions.map(\.id)
 
@@ -468,11 +423,9 @@ struct PickyHUDView: View {
             displayState.isCommandShortcutHintVisible = false
             return
         }
-        if !acceptedPanelIdentifiers.isEmpty {
-            guard let identifier = keyWindow.identifier, acceptedPanelIdentifiers.contains(identifier) else {
-                displayState.isCommandShortcutHintVisible = false
-                return
-            }
+        if let panelIdentifier, keyWindow.identifier != panelIdentifier {
+            displayState.isCommandShortcutHintVisible = false
+            return
         }
         displayState.isCommandShortcutHintVisible = modifierFlags.contains(.command)
     }

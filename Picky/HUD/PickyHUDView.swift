@@ -166,13 +166,43 @@ struct PickyHUDView: View {
     private var horizontalHUDContent: some View {
         VStack(alignment: .center, spacing: PickyHUDDockLayout.panelGap) {
             if placement.dockSide == .bottom {
-                conversationCard
+                cardOrPreviewReserve
             }
             dockRail
             if placement.dockSide == .top {
-                conversationCard
+                cardOrPreviewReserve
             }
         }
+    }
+
+    /// Either the active conversation card, or — when nothing is open — a
+    /// transparent placeholder of preview height. The placeholder mirrors the
+    /// vertical mode's behavior of always reserving 540pt of panel width: it
+    /// keeps the NSPanel tall enough that the dock-icon hover preview can pop
+    /// into the area below/above the dock without being clipped at the panel
+    /// boundary.
+    @ViewBuilder
+    private var cardOrPreviewReserve: some View {
+        if activeSession != nil {
+            conversationCard
+        } else {
+            Color.clear
+                .frame(
+                    width: PickyHUDDockLayout.detailWidth,
+                    height: horizontalPreviewReserveHeight
+                )
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var horizontalPreviewReserveHeight: CGFloat {
+        // Match the Y distance in `PickyHUDDockIconView.miniPreviewOffset`
+        // (preview half-height + panelGap) plus another preview half-height
+        // for the card's own extent on the far side of its center, plus a
+        // small breathing margin so the preview doesn't sit flush against
+        // the panel's outer shadow inset.
+        let estimatedPreviewHalfHeight = max(20, 25 * dockMetrics.scale)
+        return (estimatedPreviewHalfHeight * 2) + PickyHUDDockLayout.panelGap + 8
     }
 
     @ViewBuilder
@@ -987,13 +1017,20 @@ private struct PickyHUDDockRailView: View {
             // shouting. Hover and drag expand and darken it for a clear cue.
             Capsule(style: .continuous)
                 .fill(DS.Colors.textTertiary.opacity(isActive ? 0.7 : 0.22))
-                .frame(width: isActive ? metrics.handleActiveWidth : metrics.handleIdleWidth, height: metrics.handleHeight)
+                .frame(
+                    width: dockSide.orientation == .horizontal
+                        ? metrics.handleHeight
+                        : (isActive ? metrics.handleActiveWidth : metrics.handleIdleWidth),
+                    height: dockSide.orientation == .horizontal
+                        ? (isActive ? metrics.handleActiveWidth : metrics.handleIdleWidth)
+                        : metrics.handleHeight
+                )
                 .animation(.easeOut(duration: 0.14), value: isHandleHovered)
                 .animation(.easeOut(duration: 0.14), value: isHandleDragging)
                 .allowsHitTesting(false)
         }
         .accessibilityLabel("HUD dock handle")
-        .accessibilityHint("Drag to move the Pickle dock. Crossing the middle of the screen switches the dock edge. Double-click to reset the dock to its default position.")
+        .accessibilityHint("Drag to move the Pickle dock. Crossing the middle of the screen switches the dock edge. Double-click to toggle between vertical and horizontal layouts.")
     }
 
     /// Frosted-glass panel that hosts the dock icons. Uses .ultraThinMaterial
@@ -1076,13 +1113,20 @@ private struct PickyHUDDockRailView: View {
 
                 Capsule(style: .continuous)
                     .fill(DS.Colors.textSecondary.opacity(0.78))
-                    .frame(width: metrics.collapsedDashWidth, height: metrics.collapsedDashHeight)
+                    .frame(
+                        width: dockSide.orientation == .horizontal ? metrics.collapsedDashHeight : metrics.collapsedDashWidth,
+                        height: dockSide.orientation == .horizontal ? metrics.collapsedDashWidth : metrics.collapsedDashHeight
+                    )
                     .shadow(color: Color.black.opacity(0.12), radius: 1, y: 0.4)
                     .opacity(isAddSlotExpanded ? 0 : 1)
             }
             .frame(
-                width: metrics.addSlotButtonSide,
-                height: PickyHUDDockLayout.addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
+                width: dockSide.orientation == .horizontal
+                    ? PickyHUDDockLayout.addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
+                    : metrics.addSlotButtonSide,
+                height: dockSide.orientation == .horizontal
+                    ? metrics.addSlotButtonSide
+                    : PickyHUDDockLayout.addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
             )
             .contentShape(Rectangle())
         }
@@ -1156,7 +1200,7 @@ private struct PickyHUDDockIconView: View {
         .overlay(alignment: .center) {
             if isPreviewed {
                 PickyHUDMiniPreviewCardView(session: session, metrics: metrics)
-                    .offset(x: miniPreviewXOffset)
+                    .offset(x: miniPreviewOffset.width, y: miniPreviewOffset.height)
                     .transition(.opacity)
                     .allowsHitTesting(false)
             }
@@ -1471,10 +1515,36 @@ private struct PickyHUDDockIconView: View {
         return isHovered ? 1.03 : 1.0
     }
 
-    private var miniPreviewXOffset: CGFloat {
+    /// Preview pops out on the side OPPOSITE the conversation card so it never
+    /// overlaps the open HUD or the neighboring dock icons.
+    /// - vertical: card sits inward, preview points outward (left for `.right`,
+    ///   right for `.left`).
+    /// - horizontal: card sits opposite the anchored edge (`.top` -> card below
+    ///   the dock, so preview goes above), so preview points back toward the
+    ///   anchored edge (negative Y for `.top`, positive Y for `.bottom`).
+    /// Preview pops into the same area where the conversation card opens so it
+    /// lands in the panel region that already has room reserved for it.
+    /// - vertical: card sits inward, preview also points inward (left for
+    ///   `.right`, right for `.left`).
+    /// - horizontal: card sits opposite the anchored edge (`.top` -> card
+    ///   below, so preview points down too; `.bottom` -> card above, preview
+    ///   points up).
+    private var miniPreviewOffset: CGSize {
         let iconHalfWidth = metrics.sessionTileWidth / 2
-        let distance = (metrics.previewCardWidth / 2) + iconHalfWidth + PickyHUDDockLayout.panelGap
-        return dockSide == .right ? -distance : distance
+        let iconHalfHeight = metrics.sessionTileHeight / 2
+        let xDistance = (metrics.previewCardWidth / 2) + iconHalfWidth + PickyHUDDockLayout.panelGap
+        // Preview is a single-line title+status card, so its height is dominated
+        // by `titleFontSize + secondaryFontSize + verticalPadding * 2` from
+        // `PickyHUDMiniPreviewCardView`. ~50pt at medium scale matches what the
+        // card actually renders to within a few points across S/M/L presets.
+        let estimatedPreviewHalfHeight = max(20, 25 * metrics.scale)
+        let yDistance = estimatedPreviewHalfHeight + iconHalfHeight + PickyHUDDockLayout.panelGap
+        switch dockSide {
+        case .right: return CGSize(width: -xDistance, height: 0)
+        case .left: return CGSize(width: xDistance, height: 0)
+        case .top: return CGSize(width: 0, height: yDistance)
+        case .bottom: return CGSize(width: 0, height: -yDistance)
+        }
     }
 
     private static func compactDockLabel(_ string: String) -> String {

@@ -358,6 +358,7 @@ final class PickyHUDOverlayManager {
         let targetHeight = clampedHeight.rounded(.up)
 
         let safeXOffset: CGFloat
+        let safeYOffset: CGFloat
         let originX: CGFloat
         let originY: CGFloat
         if pos.side.orientation == .horizontal {
@@ -365,6 +366,13 @@ final class PickyHUDOverlayManager {
                 pos.xOffset,
                 visibleFrame: visibleFrame,
                 panelWidth: width
+            )
+            safeYOffset = PickyHUDDockLayout.clampedHorizontalYOffset(
+                pos.yOffset,
+                visibleFrame: visibleFrame,
+                panelHeight: targetHeight,
+                dockSide: pos.side,
+                dockRailHeight: dockMetrics.railWidth
             )
             originX = PickyHUDDockLayout.horizontalPanelX(
                 visibleFrame: visibleFrame,
@@ -374,7 +382,8 @@ final class PickyHUDOverlayManager {
             originY = PickyHUDDockLayout.horizontalPanelY(
                 visibleFrame: visibleFrame,
                 targetHeight: targetHeight,
-                dockSide: pos.side
+                dockSide: pos.side,
+                yOffset: safeYOffset
             )
         } else {
             safeXOffset = PickyHUDDockLayout.clampedXOffset(
@@ -384,6 +393,7 @@ final class PickyHUDOverlayManager {
                 dockSide: pos.side,
                 dockRailWidth: dockMetrics.railWidth
             )
+            safeYOffset = 0
             originX = PickyHUDDockLayout.panelX(
                 visibleFrame: visibleFrame,
                 panelWidth: width,
@@ -397,9 +407,10 @@ final class PickyHUDOverlayManager {
                 anchorPercent: pos.anchorPercent
             )
         }
-        if safeXOffset != pos.xOffset {
+        if safeXOffset != pos.xOffset || safeYOffset != pos.yOffset {
             var normalizedPosition = pos
             normalizedPosition.xOffset = safeXOffset
+            normalizedPosition.yOffset = safeYOffset
             setPosition(normalizedPosition, for: displayID)
         }
 
@@ -509,6 +520,7 @@ final class PickyHUDOverlayManager {
         var pos = position(for: displayID)
         pos.side = pos.side.orientationToggled(anchorPercent: pos.anchorPercent)
         pos.xOffset = 0
+        pos.yOffset = 0
         setPosition(pos, for: displayID)
         // Only update the placement for this display so other monitors stay put.
         if let entry = panelsByDisplayID[displayID] {
@@ -539,19 +551,42 @@ final class PickyHUDOverlayManager {
 
         let dockMetrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
         if startPos.side.orientation == .horizontal {
+            // -- X axis: along-axis position from screen center --
             pos.xOffset = PickyHUDDockLayout.clampedHorizontalXOffset(
                 startPos.xOffset + delta.x,
                 visibleFrame: visibleFrame,
                 panelWidth: width
             )
+            // -- Y axis: cross-axis nudge from anchored edge + top/bottom snap --
+            let nextYOffsetRaw = startPos.yOffset + delta.y
+            // Panel height is unknown during the drag, but for snap purposes we
+            // only care about the dock CENTER's screen Y. Approximate using the
+            // rail thickness — that's what `horizontalPanelY` derives from too.
+            let railThickness = dockMetrics.railWidth
             let startDockCenterY: CGFloat = startPos.side == .top
-                ? visibleFrame.maxY - PickyHUDDockLayout.dockEdgeMargin - (dockMetrics.railWidth / 2)
-                : visibleFrame.minY + PickyHUDDockLayout.dockEdgeMargin + (dockMetrics.railWidth / 2)
+                ? visibleFrame.maxY - PickyHUDDockLayout.dockEdgeMargin - (railThickness / 2)
+                : visibleFrame.minY + PickyHUDDockLayout.dockEdgeMargin + (railThickness / 2)
+            let draggedDockCenterY = startDockCenterY + delta.y
             pos.side = PickyHUDDockLayout.horizontalDockSide(
-                forDockRailCenterY: startDockCenterY + delta.y,
+                forDockRailCenterY: draggedDockCenterY,
                 visibleFrame: visibleFrame,
                 currentSide: pos.side
             )
+            // Reset cross-axis offset when the snap flips edges so the dock
+            // lands cleanly on the new edge instead of carrying over a stale
+            // overshoot from the dragged-from edge.
+            if pos.side != startPos.side {
+                pos.yOffset = 0
+            } else {
+                let panelHeight = panelsByDisplayID[displayID]?.panel.frame.height ?? railThickness
+                pos.yOffset = PickyHUDDockLayout.clampedHorizontalYOffset(
+                    nextYOffsetRaw,
+                    visibleFrame: visibleFrame,
+                    panelHeight: panelHeight,
+                    dockSide: pos.side,
+                    dockRailHeight: railThickness
+                )
+            }
         } else {
             // -- Y axis: anchor percent --
             let dPct = -(Double(delta.y) / Double(visibleFrame.height)) * 100.0

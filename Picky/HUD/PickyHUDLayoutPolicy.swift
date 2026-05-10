@@ -420,12 +420,21 @@ enum PickyHUDDockLayout {
         return min(maxX - centeredX, max(minX - centeredX, xOffset))
     }
 
-    static func horizontalPanelY(visibleFrame: CGRect, targetHeight: CGFloat, dockSide: PickyHUDDockSide) -> CGFloat {
+    static func horizontalPanelY(
+        visibleFrame: CGRect,
+        targetHeight: CGFloat,
+        dockSide: PickyHUDDockSide,
+        yOffset: CGFloat = 0
+    ) -> CGFloat {
         switch dockSide {
         case .top:
-            return (visibleFrame.maxY - targetHeight - dockEdgeMargin).rounded(.toNearestOrEven)
+            // +yOffset = drag up (panel.y increases, dock peeks past the top edge).
+            // -yOffset = drag down (dock slides into the screen toward center).
+            return (visibleFrame.maxY - targetHeight - dockEdgeMargin + yOffset).rounded(.toNearestOrEven)
         case .bottom:
-            return (visibleFrame.minY + dockEdgeMargin).rounded(.toNearestOrEven)
+            // +yOffset = drag up (dock slides toward center).
+            // -yOffset = drag down past the bottom edge for overhang.
+            return (visibleFrame.minY + dockEdgeMargin + yOffset).rounded(.toNearestOrEven)
         case .left, .right:
             return dockTopAnchoredPointAlignedPanelY(
                 visibleFrame: visibleFrame,
@@ -433,6 +442,36 @@ enum PickyHUDDockLayout {
                 topPaddingFromContentTop: dockBodyTopOffsetFallback,
                 anchorPercent: PickySettings.defaultDockTopAnchorPercent
             )
+        }
+    }
+
+    /// Cross-axis nudge clamp for horizontal mode. Mirrors `clampedXOffset`'s
+    /// asymmetry: small overhang allowed past the anchored edge, free movement
+    /// inward (the snap math then flips top<->bottom once the dock crosses the
+    /// screen midline).
+    static func clampedHorizontalYOffset(
+        _ yOffset: CGFloat,
+        visibleFrame: CGRect,
+        panelHeight: CGFloat,
+        dockSide: PickyHUDDockSide,
+        dockRailHeight: CGFloat
+    ) -> CGFloat {
+        let overhangLimit = dockOverhangLimit(forRailWidth: dockRailHeight)
+        switch dockSide {
+        case .top:
+            let minY = visibleFrame.minY + screenMargin
+            let naturalY = visibleFrame.maxY - panelHeight - dockEdgeMargin
+            // Drag down (negative yOffset) limited by visible bottom; drag up
+            // (positive yOffset) limited by overhang past top edge.
+            let maxShiftDown = naturalY - minY
+            return max(-maxShiftDown, min(overhangLimit, yOffset))
+        case .bottom:
+            let maxY = visibleFrame.maxY - screenMargin - panelHeight
+            let naturalY = visibleFrame.minY + dockEdgeMargin
+            let maxShiftUp = maxY - naturalY
+            return min(maxShiftUp, max(-overhangLimit, yOffset))
+        case .left, .right:
+            return 0
         }
     }
 

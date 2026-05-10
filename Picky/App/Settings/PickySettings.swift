@@ -421,13 +421,41 @@ struct PickyHUDDockPosition: Codable, Equatable {
 
     var side: PickyHUDDockSide
     var anchorPercent: Double
+    /// Cross-axis nudge in vertical mode (left/right pixel delta from the
+    /// natural pinned X) and along-axis pixel delta from screen center in
+    /// horizontal mode.
     var xOffset: CGFloat
+    /// Cross-axis nudge in horizontal mode (Y pixel delta from the natural
+    /// top/bottom pinned position). Unused in vertical mode. Defaults to 0
+    /// so existing per-display settings on disk decode without migration.
+    var yOffset: CGFloat
+
+    init(
+        side: PickyHUDDockSide,
+        anchorPercent: Double,
+        xOffset: CGFloat,
+        yOffset: CGFloat = 0
+    ) {
+        self.side = side
+        self.anchorPercent = anchorPercent
+        self.xOffset = xOffset
+        self.yOffset = yOffset
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        side = try container.decode(PickyHUDDockSide.self, forKey: .side)
+        anchorPercent = try container.decode(Double.self, forKey: .anchorPercent)
+        xOffset = try container.decode(CGFloat.self, forKey: .xOffset)
+        yOffset = try container.decodeIfPresent(CGFloat.self, forKey: .yOffset) ?? 0
+    }
 
     static func defaults() -> PickyHUDDockPosition {
         PickyHUDDockPosition(
             side: .right,
             anchorPercent: PickySettings.defaultDockTopAnchorPercent,
-            xOffset: 0
+            xOffset: 0,
+            yOffset: 0
         )
     }
 

@@ -73,10 +73,20 @@ final class MenuBarPanelManager: NSObject {
         button.target = self
     }
 
-    /// Renders the Pi glyph as a menu bar template icon, matching the
-    /// rounded `π` used by the HUD conversation badge.
+    /// Loads the bundled status bar vector as a menu bar template icon.
     private func makePickyMenuBarIcon() -> NSImage {
         let iconSize: CGFloat = 18
+        if let image = NSImage(named: NSImage.Name("PickyStatusBarIcon")) {
+            image.size = NSSize(width: iconSize, height: iconSize)
+            image.isTemplate = true
+            return image
+        }
+
+        return makeFallbackPickyMenuBarIcon(iconSize: iconSize)
+    }
+
+    /// Fallback glyph used only if the bundled status bar asset cannot be loaded.
+    private func makeFallbackPickyMenuBarIcon(iconSize: CGFloat) -> NSImage {
         let image = NSImage(size: NSSize(width: iconSize, height: iconSize), flipped: false) { _ in
             let baseFont = NSFont.systemFont(ofSize: iconSize * 0.78, weight: .bold)
             let roundedFont: NSFont = {

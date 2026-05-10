@@ -23,7 +23,7 @@ struct CompanionPanelFooterView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "power")
                         .font(.system(size: 11, weight: .medium))
-                    Text("Quit Picky")
+                    Text("Quit")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundColor(DS.Colors.destructiveText.opacity(0.82))
@@ -35,9 +35,9 @@ struct CompanionPanelFooterView: View {
 
             CompanionPanelAppearanceToggle()
         }
-        .alert("Quit Picky?", isPresented: $isQuitConfirmationPresented) {
+        .alert("Quit?", isPresented: $isQuitConfirmationPresented) {
             Button("Cancel", role: .cancel) {}
-            Button("Quit Picky", role: .destructive) {
+            Button("Quit", role: .destructive) {
                 NSApp.terminate(nil)
             }
         } message: {

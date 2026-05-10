@@ -221,13 +221,13 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
-  private async pendingRuntimeHandle(sessionId: string): Promise<RuntimeSessionHandle | undefined> {
+  private async pendingRuntimeHandle(sessionId: string, action = "pending runtime"): Promise<RuntimeSessionHandle | undefined> {
     const pending = this.pendingRuntimeHandles.get(sessionId);
     if (!pending) return undefined;
     try {
       return await pending;
     } catch (error) {
-      logAgentd("slash commands pending runtime failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
+      logAgentd(`${action} pending runtime failed`, { sessionId, error: error instanceof Error ? error.message : String(error) });
       return undefined;
     }
   }
@@ -1164,7 +1164,9 @@ export class SessionSupervisor extends EventEmitter {
 
   private async runtimeHandleForSessionCommand(sessionId: string, action: string): Promise<RuntimeSessionHandle> {
     const session = this.mustGet(sessionId);
-    const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
+    const handle = this.runtimeHandles.get(sessionId)
+      ?? await this.pendingRuntimeHandle(sessionId, action)
+      ?? await this.tryResumeRuntimeHandle(session);
     if (!handle) {
       const reason = "Runtime session is not attached";
       await this.appendLog(sessionId, `${action} rejected: ${reason}`);
@@ -1618,6 +1620,8 @@ export class SessionSupervisor extends EventEmitter {
   private async attachRuntimeHandle(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {
     this.runtimeHandles.set(sessionId, handle);
     handle.subscribe((event) => void this.applyRuntimeEvent(sessionId, event));
+    const currentAssistantRun = handle.getAssistantRunMetadata?.();
+    if (currentAssistantRun) await this.patch(sessionId, { currentAssistantRun });
     await this.applyQueueUpdate(sessionId, handle.getSteeringMessages(), handle.getFollowUpMessages());
   }
 

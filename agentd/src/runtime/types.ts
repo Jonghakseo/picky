@@ -81,6 +81,7 @@ export interface RuntimeSessionHandle {
    */
   injectInitialBootstrap?(messages: { user: string; assistant: string }): Promise<void>;
   setThinkingLevel?(level: ThinkingLevel): void;
+  getAssistantRunMetadata?(): RuntimeAssistantRunMetadata | undefined;
   cycleThinkingLevel?(): RuntimeAssistantRunMetadata | undefined;
   cycleModel?(direction: ModelCycleDirection): Promise<RuntimeAssistantRunMetadata | undefined>;
   listSlashCommands?(): RuntimeSlashCommand[] | Promise<RuntimeSlashCommand[]>;

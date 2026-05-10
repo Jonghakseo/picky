@@ -55,6 +55,10 @@ export class MockRuntimeSession implements RuntimeSessionHandle {
     this.emit({ type: "status", status: "cancelled", summary: "Cancelled by app" });
   }
 
+  getAssistantRunMetadata(): RuntimeAssistantRunMetadata {
+    return this.currentAssistantRunMetadata();
+  }
+
   cycleThinkingLevel(): RuntimeAssistantRunMetadata {
     this.thinkingIndex = (this.thinkingIndex + 1) % this.thinkingLevels.length;
     return this.currentAssistantRunMetadata();

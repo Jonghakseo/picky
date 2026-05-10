@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { PickyAgentSession, PickyContextPacket } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { BuiltPrompt } from "./prompt-builder.js";
-import type { AgentRuntime, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, ThinkingLevel } from "./runtime/types.js";
+import type { AgentRuntime, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, ThinkingLevel } from "./runtime/types.js";
 import type { TaskRouteDecision, TaskRouter } from "./task-router.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
@@ -453,7 +453,7 @@ describe("SessionSupervisor", () => {
   });
 
   it("prewarms an empty manual Pickle session and waits for the first instruction", async () => {
-    const runtime = new ManualRuntime({ supportsPrewarm: true });
+    const runtime = new ManualRuntime({ supportsPrewarm: true, assistantRunMetadata: { model: "anthropic/claude-opus-4-7", thinkingLevel: "high" } });
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-empty-pickle-"));
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
     await supervisor.load();
@@ -467,6 +467,7 @@ describe("SessionSupervisor", () => {
     expect(session.cwd).toBe("/tmp/manual-project");
     expect(session.title).toBe("New Pickle · manual-project");
     expect(session.notifyMainOnCompletion).toBe(false);
+    expect(session.currentAssistantRun).toEqual({ model: "anthropic/claude-opus-4-7", thinkingLevel: "high" });
     expect(supervisor.isPickleSession(session.id)).toBe(true);
     expect(supervisor.listPickleSessions().map((pickle) => pickle.id)).toEqual([session.id]);
     expect(session.logs).toContain("manual pickle: waiting for first instruction");
@@ -3244,13 +3245,16 @@ class ManualRuntime implements AgentRuntime {
   prewarmCalls = 0;
   prewarmOptions: Array<{ cwd?: string; sessionId?: string }> = [];
   prewarm?: (options: { cwd?: string; sessionId?: string }) => Promise<RuntimeSessionHandle>;
+  private readonly assistantRunMetadata?: RuntimeAssistantRunMetadata;
 
-  constructor(options: { supportsPrewarm?: boolean } = {}) {
+  constructor(options: { supportsPrewarm?: boolean; assistantRunMetadata?: RuntimeAssistantRunMetadata } = {}) {
+    this.assistantRunMetadata = options.assistantRunMetadata;
     if (options.supportsPrewarm) {
       this.prewarm = async (prewarmOptions) => {
         this.prewarmCalls += 1;
         this.prewarmOptions.push(prewarmOptions);
         this.handle = new ManualHandle(prewarmOptions.sessionId ?? "manual");
+        this.handle.assistantRunMetadata = this.assistantRunMetadata;
         return this.handle;
       };
     }
@@ -3260,6 +3264,7 @@ class ManualRuntime implements AgentRuntime {
     this.createCalls += 1;
     this.createPrompts.push(prompt);
     this.handle = new ManualHandle(options.sessionId ?? "manual");
+    this.handle.assistantRunMetadata = this.assistantRunMetadata;
     return this.handle;
   }
 
@@ -3281,6 +3286,7 @@ class ManualHandle implements RuntimeSessionHandle {
   newSessionCalls = 0;
   sessionFilePath?: string;
   slashCommands: RuntimeSlashCommand[] = [];
+  assistantRunMetadata?: RuntimeAssistantRunMetadata;
   onFollowUp?: (handle: ManualHandle, prompt: BuiltPrompt) => void;
   onSteer?: (handle: ManualHandle, prompt: BuiltPrompt) => void;
   constructor(readonly id: string) {}
@@ -3337,6 +3343,9 @@ class ManualHandle implements RuntimeSessionHandle {
   }
   setThinkingLevel(level: ThinkingLevel): void {
     this.thinkingLevels.push(level);
+  }
+  getAssistantRunMetadata(): RuntimeAssistantRunMetadata | undefined {
+    return this.assistantRunMetadata;
   }
   clearQueue(): { steering: string[]; followUp: string[] } {
     const result = { steering: [...this.queuedSteerTexts], followUp: [...this.queuedFollowUpTexts] };

@@ -284,6 +284,10 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     logAgentd("pi thinking level set", { sessionId: this.id, level });
   }
 
+  getAssistantRunMetadata(): RuntimeAssistantRunMetadata | undefined {
+    return this.currentAssistantRunMetadata();
+  }
+
   cycleThinkingLevel(): RuntimeAssistantRunMetadata | undefined {
     const session = this.runtime.session as unknown as { cycleThinkingLevel?: () => ThinkingLevel | undefined };
     if (typeof session.cycleThinkingLevel !== "function") {

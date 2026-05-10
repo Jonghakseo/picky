@@ -16,6 +16,7 @@ import type { TaskRouter } from "./task-router.js";
 import { isMainRealtimeRuntime, type AgentRuntime, type RuntimeBashExecutionResult, type RuntimeEvent, type RuntimeSessionHandle, type RuntimeSlashCommand, type ThinkingLevel } from "./runtime/types.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
+import { selectPickleResponseForReport } from "./domain/pickle-response-selector.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
@@ -249,6 +250,31 @@ export class SessionSupervisor extends EventEmitter {
     const overlayRequest = makePointerOverlayRequestForContext(context, request);
     this.emit("pointerOverlayRequested", overlayRequest);
     return { request: overlayRequest };
+  }
+
+  async requestOpenPickleReport(request: { sessionId: string }): Promise<{
+    sessionId: string;
+    messageId: string;
+    source: "finalAnswer" | "agentText";
+    status: PickyAgentSession["status"];
+    charCount: number;
+  }> {
+    const session = this.get(request.sessionId);
+    if (!session) throw new Error(`Pickle session not found: ${request.sessionId}`);
+    if (!this.isPickleSession(session.id)) throw new Error(`Session is not a Pickle: ${request.sessionId}`);
+
+    const selection = selectPickleResponseForReport(session);
+    if (!selection) throw new Error("Pickle has no response yet.");
+
+    this.emit("pickleReportOpenRequested", {
+      sessionId: session.id,
+      messageId: selection.messageId,
+      title: session.title,
+      markdown: selection.markdown,
+      source: selection.source,
+    });
+    logAgentd("pickle report open requested", { sessionId: session.id, source: selection.source, charCount: selection.markdown.length });
+    return { sessionId: session.id, messageId: selection.messageId, source: selection.source, status: session.status, charCount: selection.markdown.length };
   }
 
   private contextForPointerRequest(): PickyContextPacket | undefined {

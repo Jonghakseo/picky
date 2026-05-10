@@ -991,12 +991,37 @@ final class PickySessionListViewModel: ObservableObject {
                 card.lastTerminalSyncOutcome = outcome
                 card.updatedAt = Date()
             }
+        case .pickleReportOpenRequested(let request):
+            pickySessionLog("pickle report open requested session=\(request.sessionId) message=\(request.messageId) source=\(request.source.rawValue) chars=\(request.markdown.count)")
+            presentRemotePickleReport(request)
         case .quickReply, .mainMessagesSnapshot, .mainMessageAppended, .mainAgentModelsSnapshot,
              .mainRealtimeStateChanged, .mainRealtimeInputTranscriptDelta, .mainRealtimeInputTranscriptCompleted,
              .mainRealtimeOutputAudioDelta, .mainRealtimeOutputAudioDone,
              .mainRealtimeOutputTranscriptDelta, .mainRealtimeOutputTranscriptCompleted, .mainRealtimeTurnDone,
              .pointerOverlayRequested, .hello, .unknown:
             break
+        }
+    }
+
+    private func presentRemotePickleReport(_ request: PickyPickleReportOpenRequest) {
+        let titleSuffix: String
+        let fileNamePrefix: String
+        switch request.source {
+        case .finalAnswer:
+            titleSuffix = "Final Answer"
+            fileNamePrefix = "final-answer"
+        case .agentText:
+            titleSuffix = "Response"
+            fileNamePrefix = "response"
+        }
+        let windowKey = "\(request.sessionId):response:\(request.messageId)"
+        let fileName = "\(fileNamePrefix)-\(sanitizedReportFileComponent(request.messageId)).md"
+        let title = "\(request.title) \u{2014} \(titleSuffix)"
+        do {
+            try openGeneratedReport(windowKey: windowKey, title: title, fileName: fileName, markdown: request.markdown)
+        } catch {
+            pickySessionLog("pickle report open failed session=\(request.sessionId) error=\(error.localizedDescription)")
+            lastError = error.localizedDescription
         }
     }
 

@@ -55,6 +55,7 @@ export class AgentdServer {
     this.options.supervisor.on("mainRealtimeOutputTranscriptCompleted", (inputId, transcript) => this.broadcast({ type: "mainRealtimeOutputTranscriptCompleted", ...(inputId ? { inputId } : {}), transcript }));
     this.options.supervisor.on("mainRealtimeTurnDone", (inputId, status, finalTranscript) => this.broadcast({ type: "mainRealtimeTurnDone", ...(inputId ? { inputId } : {}), status, ...(finalTranscript ? { finalTranscript } : {}) }));
     this.options.supervisor.on("pointerOverlayRequested", (request) => this.broadcast({ type: "pointerOverlayRequested", request }));
+    this.options.supervisor.on("pickleReportOpenRequested", (payload: { sessionId: string; messageId: string; title: string; markdown: string; source: "finalAnswer" | "agentText" }) => this.broadcast({ type: "pickleReportOpenRequested", ...payload }));
     this.options.supervisor.on("artifact", (sessionId, artifact) => this.broadcast({ type: "artifactUpdated", sessionId, artifact }));
     this.options.supervisor.on("terminalSessionSyncOutcome", (sessionId, outcome) => this.broadcast({
       type: "terminalSessionSyncOutcome",
@@ -304,6 +305,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, artifactId: event.artifact.id, kind: event.artifact.kind };
     case "pointerOverlayRequested":
       return { eventId: event.id, type: event.type, requestId: event.request.id, screenId: event.request.screenId };
+    case "pickleReportOpenRequested":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, messageId: event.messageId, source: event.source, markdownChars: event.markdown.length };
     case "slashCommandsSnapshot":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, commands: event.commands.length };
     case "sessionMessageAppended":

@@ -303,6 +303,8 @@ private extension PickyEventEnvelope {
             return "type=artifactUpdated id=\(id) session=\(sessionId) artifact=\(artifact.id) kind=\(artifact.kind)"
         case .pointerOverlayRequested(let request):
             return "type=pointerOverlayRequested id=\(id) request=\(request.id) screen=\(request.screenId ?? "primary")"
+        case .pickleReportOpenRequested(let request):
+            return "type=pickleReportOpenRequested id=\(id) session=\(request.sessionId) message=\(request.messageId) source=\(request.source.rawValue) markdownChars=\(request.markdown.count)"
         case .slashCommandsSnapshot(let sessionId, let commands):
             return "type=slashCommandsSnapshot id=\(id) session=\(sessionId) commands=\(commands.count)"
         case .sessionMessageAppended(let sessionId, _, let seq):

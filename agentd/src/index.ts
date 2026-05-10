@@ -9,6 +9,7 @@ import { SelectableMainRuntime } from "./runtime/selectable-main-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyPickleSessionsTool, createPickyStartPickleTool, createPickySteerPickleTool, type PickyHandoffRequest, type PickyPickleSteerRequest } from "./application/handoff-tool.js";
 import { createPickyAskUserQuestionTool } from "./application/ask-user-question-tool.js";
+import { createPickyOpenPickleResponseTool } from "./application/open-pickle-response-tool.js";
 import { PickySkillCatalog } from "./application/skill-catalog.js";
 import { installExtensionCrashGuard } from "./extension-crash-guard.js";
 import { removeConnectionInfo, writeConnectionInfo } from "./connection-info-store.js";
@@ -66,6 +67,7 @@ const piMainRuntime = useMockRuntime
         createPickyStartPickleTool(startPickleFromMainContext),
         createPickyPickleSessionsTool(() => supervisor.listPickleSessions()),
         createPickySteerPickleTool(steerPickleSession),
+        createPickyOpenPickleResponseTool((request) => supervisor.requestOpenPickleReport(request)),
       ],
     });
 

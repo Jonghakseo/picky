@@ -195,6 +195,7 @@ enum PickyEvent: Equatable {
     case extensionUiRequest(PickyExtensionUiRequest)
     case artifactUpdated(sessionId: String, artifact: PickyArtifact)
     case pointerOverlayRequested(PickyPointerOverlayRequest)
+    case pickleReportOpenRequested(PickyPickleReportOpenRequest)
     case slashCommandsSnapshot(sessionId: String, commands: [PickySlashCommand])
     case sessionMessageAppended(sessionId: String, message: PickySessionMessage, seq: Int)
     case sessionMessageReplaced(sessionId: String, messageId: String, message: PickySessionMessage, seq: Int)
@@ -211,6 +212,7 @@ enum PickyEvent: Equatable {
         case models
         case state, delta, transcript, audioBase64, status, finalTranscript
         case baselineFound, importedMessageCount, activeLastMessageId, baselinePiMessageId
+        case title, markdown, source
     }
 
     init(type: String, decoder: Decoder) throws {
@@ -270,6 +272,15 @@ enum PickyEvent: Equatable {
         case "pointerOverlayRequested":
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self = .pointerOverlayRequested(try c.decode(PickyPointerOverlayRequest.self, forKey: .request))
+        case "pickleReportOpenRequested":
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self = .pickleReportOpenRequested(PickyPickleReportOpenRequest(
+                sessionId: try c.decode(String.self, forKey: .sessionId),
+                messageId: try c.decode(String.self, forKey: .messageId),
+                title: try c.decode(String.self, forKey: .title),
+                markdown: try c.decode(String.self, forKey: .markdown),
+                source: try c.decode(PickyPickleReportSource.self, forKey: .source)
+            ))
         case "slashCommandsSnapshot":
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self = .slashCommandsSnapshot(
@@ -384,6 +395,19 @@ struct PickyErrorEvent: Decodable, Equatable {
     let code: String
     let message: String
     let commandId: String?
+}
+
+enum PickyPickleReportSource: String, Decodable, Equatable {
+    case finalAnswer
+    case agentText
+}
+
+struct PickyPickleReportOpenRequest: Decodable, Equatable {
+    let sessionId: String
+    let messageId: String
+    let title: String
+    let markdown: String
+    let source: PickyPickleReportSource
 }
 
 struct PickyTerminalSessionSyncOutcome: Decodable, Equatable {

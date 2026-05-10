@@ -10,6 +10,7 @@ import SwiftUI
 struct PickyConversationListView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
+    var isCommandShortcutHintVisible = false
     @State private var hasAppeared = false
 
     var body: some View {
@@ -150,7 +151,8 @@ struct PickyConversationListView: View {
         case .agentText:
             PickyAgentBubbleView(
                 message: message,
-                onOpenAsReport: openMessageReportAction(for: message)
+                onOpenAsReport: openMessageReportAction(for: message),
+                isLatestResponseShortcutHintVisible: shouldShowLatestResponseShortcutHint(for: message)
             )
         case .agentThinking:
             PickyTypingBubbleView(message: message, initiallyCollapsed: PickyPiSettingsReader.hideThinkingBlock(cwd: session.cwd))
@@ -198,6 +200,10 @@ struct PickyConversationListView: View {
         return { [weak viewModel] in
             Task { try? await viewModel?.openReport(sessionID: sessionID, messageID: messageID) }
         }
+    }
+
+    private func shouldShowLatestResponseShortcutHint(for message: PickySessionMessage) -> Bool {
+        isCommandShortcutHintVisible && message.id == session.latestAgentResponseReportMessageID
     }
 
     private func openCurrentTurnToolHistory() {

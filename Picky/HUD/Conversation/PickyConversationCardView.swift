@@ -21,6 +21,7 @@ struct PickyConversationCardView: View {
     var maxHeight: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight
     var isPreviewMode = false
     var focusRequestID = 0
+    var isCommandShortcutHintVisible = false
     @State private var droppedFilePaths: [String] = []
     @State private var isFileDropTargeted = false
 
@@ -28,7 +29,11 @@ struct PickyConversationCardView: View {
         VStack(alignment: .leading, spacing: 10) {
             PickyConversationHeaderView(viewModel: viewModel, session: session, onArchiveSession: onArchiveSession)
             PickyConversationContextLineView(session: session)
-            PickyConversationListView(session: session, viewModel: viewModel)
+            PickyConversationListView(
+                session: session,
+                viewModel: viewModel,
+                isCommandShortcutHintVisible: isCommandShortcutHintVisible
+            )
             PickyConversationComposerView(
                 session: session,
                 viewModel: viewModel,

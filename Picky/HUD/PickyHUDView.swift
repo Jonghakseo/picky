@@ -152,7 +152,8 @@ struct PickyHUDView: View {
                 onArchiveSession: archiveSession,
                 maxHeight: placement.availableCardMaxHeight,
                 isPreviewMode: false,
-                focusRequestID: composerFocusRequestID
+                focusRequestID: composerFocusRequestID,
+                isCommandShortcutHintVisible: isCommandShortcutHintVisible
             )
             .id(activeSession.id)
             .frame(width: PickyHUDDockLayout.detailWidth)
@@ -1045,13 +1046,6 @@ private struct PickyHUDDockIconView: View {
                     .transition(.scale(scale: 0.88, anchor: .bottomLeading).combined(with: .opacity))
             }
         }
-        .overlay(alignment: .bottomTrailing) {
-            if showsLatestResponseShortcutHint {
-                commandShortcutBadge(label: "R")
-                    .offset(x: 5, y: 5)
-                    .transition(.scale(scale: 0.88, anchor: .bottomTrailing).combined(with: .opacity))
-            }
-        }
         .overlay(alignment: .center) {
             archiveProgressRing
         }
@@ -1088,12 +1082,8 @@ private struct PickyHUDDockIconView: View {
         }
         .animation(.spring(response: 0.2, dampingFraction: 0.78), value: isArchivePressing)
         .accessibilityLabel("Preview \(session.title)")
-        .accessibilityHint("Click to open or close. Press ⌘R to open the latest response as a report. Press and hold for 1.5 seconds to archive this Pickle.")
+        .accessibilityHint("Click to open or close. Press and hold for 1.5 seconds to archive this Pickle.")
         .accessibilityAddTraits(.isButton)
-    }
-
-    private var showsLatestResponseShortcutHint: Bool {
-        isCommandShortcutHintVisible && isActive && session.hasLatestAgentResponseReport
     }
 
     private var archiveProgressRing: some View {

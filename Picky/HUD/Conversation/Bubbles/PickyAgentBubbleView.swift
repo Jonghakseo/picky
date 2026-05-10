@@ -10,6 +10,7 @@ import SwiftUI
 struct PickyAgentBubbleView: View {
     let message: PickySessionMessage
     var onOpenAsReport: (() -> Void)? = nil
+    var isLatestResponseShortcutHintVisible = false
 
     var body: some View {
         HStack {
@@ -27,10 +28,35 @@ struct PickyAgentBubbleView: View {
                 agentBubbleShape
                     .stroke(DS.Colors.borderSubtle.opacity(0.72), lineWidth: 0.7)
             )
+            .overlay(alignment: .bottomTrailing) {
+                if isLatestResponseShortcutHintVisible {
+                    latestResponseShortcutBadge
+                        .offset(x: -6, y: -6)
+                        .transition(.scale(scale: 0.88, anchor: .bottomTrailing).combined(with: .opacity))
+                }
+            }
             .openAsReportHoverIcon(onOpen: hoverIconAction, alignment: .topTrailing)
+            .animation(.easeOut(duration: 0.12), value: isLatestResponseShortcutHintVisible)
             Spacer(minLength: 48)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var latestResponseShortcutBadge: some View {
+        HStack(spacing: 1.5) {
+            Image(systemName: "command")
+                .font(.system(size: 6.5, weight: .bold))
+            Text("R")
+                .font(.system(size: 7.5, weight: .bold, design: .rounded))
+        }
+        .foregroundColor(DS.Colors.textPrimary)
+        .padding(.horizontal, 4.5)
+        .frame(height: 15)
+        .background(Capsule(style: .continuous).fill(.ultraThinMaterial))
+        .overlay(Capsule(style: .continuous).fill(DS.Colors.surface1.opacity(0.70)))
+        .overlay(Capsule(style: .continuous).strokeBorder(DS.Colors.borderSubtle.opacity(0.72), lineWidth: 0.7))
+        .shadow(color: Color.black.opacity(0.18), radius: 4, x: 0, y: 1.5)
+        .accessibilityHidden(true)
     }
 
     private var agentBubbleShape: UnevenRoundedRectangle {

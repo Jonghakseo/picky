@@ -179,7 +179,7 @@ describe("neutral prompt builder", () => {
 
   it("builds the Picky bootstrap pair with TTS-friendly reply rules and a short OK ack", () => {
     const pair = buildMainAgentBootstrapPair();
-    expect(pair.user).toContain("natural Korean sentences");
+    expect(pair.user).toContain("natural user's language sentences");
     expect(pair.user).toContain("no markdown, code blocks, bullet points, or tables");
     expect(pair.user).toContain("parentheses");
     expect(pair.user).toContain("`( ... )`");

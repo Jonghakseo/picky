@@ -2228,7 +2228,7 @@ describe("SessionSupervisor", () => {
     await supervisor.prewarmMainAgent("/tmp/project");
     expect(mainRuntime.handle?.bootstrapInjections).toHaveLength(1);
     const injection = mainRuntime.handle!.bootstrapInjections[0]!;
-    expect(injection.user).toContain("natural Korean sentences");
+    expect(injection.user).toContain("natural user's language sentences");
     expect(injection.assistant).toBe("OK");
   });
 

@@ -120,7 +120,7 @@ export function buildMainAgentBootstrapPair(extraInstructions?: string, compactS
     "",
     "## Direct reply style for Picky TTS",
     "",
-    "1. Write replies as natural Korean sentences only, with no markdown, code blocks, bullet points, or tables, because Picky reads the text aloud as-is.",
+    "1. Write replies as natural user's language sentences only, with no markdown, code blocks, bullet points, or tables, because Picky reads the text aloud as-is.",
     "2. If awkward-to-hear details like URLs, file paths, session IDs, or code identifiers are necessary, place them inside parentheses `( ... )` at the end of the sentence. Picky's TTS layer automatically skips parenthesised content during playback while still showing it on screen.",
     "3. Reply concisely in 1-3 short sentences at a time, and do not stretch into longer explanations unless the user asks for more.",
     "4. When delegating to a Pickle or calling a tool, follow the tool-use rules above as-is; apply this reply style only to the text answer that goes directly to the user.",

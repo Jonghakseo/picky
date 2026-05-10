@@ -17,6 +17,7 @@ on:
         default: "beta"
         type: choice
         options:
+          - stable
           - beta
           - alpha
       create_release_if_missing:
@@ -305,6 +306,59 @@ jobs:
 
           printf 'Final dmg: %s\nSHA256: %s\n' "${final_dmg}" "${sha256}"
 
+      - name: Sign Sparkle update zip
+        id: sparkle
+        if: ${{ steps.release_meta.outputs.release_channel != 'alpha' }}
+        env:
+          PICKY_SPARKLE_ED_PRIVATE_KEY: ${{ secrets.PICKY_SPARKLE_ED_PRIVATE_KEY }}
+          MARKETING_VERSION: ${{ steps.package.outputs.marketing_version }}
+          BUILD_LABEL: ${{ steps.package.outputs.build_label }}
+        run: |
+          set -euo pipefail
+          : "${PICKY_SPARKLE_ED_PRIVATE_KEY:?missing PICKY_SPARKLE_ED_PRIVATE_KEY (Sparkle EdDSA private key)}"
+
+          # The .app under build/package/export was already notarized and
+          # stapled by the previous step, so we can wrap it in a Sparkle
+          # enclosure zip without round-tripping through the notary again.
+          update_zip_name="${APP_NAME}-${MARKETING_VERSION}-${BUILD_LABEL}-update.zip"
+          update_zip="${PWD}/build/package/${update_zip_name}"
+          rm -f "${update_zip}"
+          (
+            cd build/package/export
+            /usr/bin/ditto -c -k --sequesterRsrc --keepParent "${APP_NAME}.app" "${update_zip}"
+          )
+
+          sparkle_bin="$(/usr/bin/find "${HOME}/Library/Developer/Xcode/DerivedData" -path '*/SourcePackages/artifacts/sparkle/Sparkle/bin' -type d -print -quit 2>/dev/null || true)"
+          if [[ -z "${sparkle_bin}" || ! -x "${sparkle_bin}/sign_update" ]]; then
+            echo "sign_update binary not found under DerivedData; the build step did not resolve Sparkle" >&2
+            exit 1
+          fi
+
+          ed_key_file="${RUNNER_TEMP}/picky-sparkle-ed-private.key"
+          printf '%s' "${PICKY_SPARKLE_ED_PRIVATE_KEY}" > "${ed_key_file}"
+          chmod 600 "${ed_key_file}"
+          trap 'rm -f "${ed_key_file}"' EXIT
+
+          # sign_update emits attrs in the form
+          #   sparkle:edSignature="..." length="..."
+          sparkle_attrs="$("${sparkle_bin}/sign_update" -f "${ed_key_file}" "${update_zip}")"
+          echo "sign_update output: ${sparkle_attrs}"
+
+          ed_signature="$(printf '%s' "${sparkle_attrs}" | /usr/bin/sed -nE 's/.*sparkle:edSignature="([^"]+)".*/\1/p')"
+          length_bytes="$(printf '%s' "${sparkle_attrs}" | /usr/bin/sed -nE 's/.*length="([0-9]+)".*/\1/p')"
+
+          if [[ -z "${ed_signature}" || -z "${length_bytes}" ]]; then
+            echo "failed to parse sign_update output" >&2
+            exit 1
+          fi
+
+          {
+            echo "update_zip=${update_zip}"
+            echo "update_zip_name=${update_zip_name}"
+            echo "ed_signature=${ed_signature}"
+            echo "length_bytes=${length_bytes}"
+          } >> "${GITHUB_OUTPUT}"
+
       - name: Ensure GitHub Release exists
         env:
           GH_TOKEN: ${{ github.token }}
@@ -338,6 +392,85 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "${TARGET_TAG}" "${FINAL_DMG}" --clobber
+
+      - name: Upload Sparkle update zip to release
+        if: ${{ steps.release_meta.outputs.release_channel != 'alpha' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
+          UPDATE_ZIP: ${{ steps.sparkle.outputs.update_zip }}
+        run: |
+          set -euo pipefail
+          gh release upload "${TARGET_TAG}" "${UPDATE_ZIP}" --clobber
+
+      - name: Update Sparkle appcast.xml
+        if: ${{ steps.release_meta.outputs.release_channel != 'alpha' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
+          UPDATE_ZIP_NAME: ${{ steps.sparkle.outputs.update_zip_name }}
+          ED_SIGNATURE: ${{ steps.sparkle.outputs.ed_signature }}
+          LENGTH_BYTES: ${{ steps.sparkle.outputs.length_bytes }}
+          MARKETING_VERSION: ${{ steps.package.outputs.marketing_version }}
+          BUILD_NUMBER: ${{ steps.package.outputs.build_number }}
+          RELEASE_CHANNEL: ${{ steps.package.outputs.release_channel }}
+        run: |
+          set -euo pipefail
+          appcast_dir="${RUNNER_TEMP}/picky-appcast"
+          mkdir -p "${appcast_dir}"
+          appcast_path="${appcast_dir}/appcast.xml"
+          download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TARGET_TAG}/${UPDATE_ZIP_NAME}"
+          pub_date="$(/bin/date -R)"
+
+          # Pull the existing feed off the auto-update release. Bootstrap a
+          # fresh shell only when no appcast has been published yet.
+          if ! gh release download auto-update --pattern appcast.xml --dir "${appcast_dir}" 2>/dev/null; then
+            cat > "${appcast_path}" <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+            <channel>
+              <title>Picky</title>
+              <link>https://github.com/Jonghakseo/picky</link>
+              <description>Picky release feed</description>
+              <language>en</language>
+            </channel>
+          </rss>
+          XML
+            sed -i '' 's/^          //' "${appcast_path}"
+          fi
+
+          if [[ "${RELEASE_CHANNEL}" == "beta" ]]; then
+            channel_tag=$'\n        <sparkle:channel>beta</sparkle:channel>'
+          else
+            channel_tag=""
+          fi
+
+          new_item_file="${RUNNER_TEMP}/picky-appcast-item.xml"
+          cat > "${new_item_file}" <<XML
+              <item>
+                <title>Picky ${MARKETING_VERSION}</title>${channel_tag}
+                <pubDate>${pub_date}</pubDate>
+                <sparkle:version>${BUILD_NUMBER}</sparkle:version>
+                <sparkle:shortVersionString>${MARKETING_VERSION}</sparkle:shortVersionString>
+                <sparkle:minimumSystemVersion>14.2</sparkle:minimumSystemVersion>
+                <enclosure url="${download_url}" sparkle:edSignature="${ED_SIGNATURE}" length="${LENGTH_BYTES}" type="application/octet-stream" />
+              </item>
+          XML
+
+          python3 - "${appcast_path}" "${new_item_file}" <<'PY'
+          import sys
+          from pathlib import Path
+          appcast = Path(sys.argv[1])
+          new_item = Path(sys.argv[2]).read_text()
+          text = appcast.read_text()
+          marker = "</language>"
+          if marker not in text:
+              raise SystemExit("appcast missing </language> marker \u2014 cannot inject item")
+          text = text.replace(marker, marker + "\n" + new_item, 1)
+          appcast.write_text(text)
+          PY
+
+          gh release upload auto-update "${appcast_path}" --clobber
 
       - name: Update release notes with notarized build metadata
         env:

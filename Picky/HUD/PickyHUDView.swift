@@ -35,6 +35,7 @@ struct PickyHUDView: View {
     @State private var modifierFlagsMonitor: Any?
     @State private var isCommandShortcutHintVisible = false
     @State private var composerFocusRequestID = 0
+    @State private var isDockAddSlotExpanded = false
     @State private var sizeReporter = PickyHUDSizeReporter()
 
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {
@@ -91,9 +92,17 @@ struct PickyHUDView: View {
     }
 
     private func handleHUDSizeChange(_ size: CGSize) {
+        let activeID = activeSession?.id
+        let panelSize = PickyHUDDockLayout.contentSizeReservingAddSlotExpansion(
+            measuredSize: size,
+            activeSessionID: activeID,
+            hasVisibleSessions: !visibleSessions.isEmpty,
+            isAddSlotExpanded: isDockAddSlotExpanded
+        )
+
         sizeReporter.handleMeasuredSize(
-            size,
-            activeSessionID: activeSession?.id,
+            panelSize,
+            activeSessionID: activeID,
             shouldHoldHeight: shouldHoldPanelHeightDuringActiveTurn,
             onSizeChange: onSizeChange
         )
@@ -162,6 +171,7 @@ struct PickyHUDView: View {
                 onArchiveSession: archiveSession,
                 onCreatePickle: chooseFolderForEmptyPickle,
                 onDockHoverChanged: handleDockHover,
+                onAddSlotExpandedChanged: { isDockAddSlotExpanded = $0 },
                 onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:),
                 onDockHandleDragChanged: onDockHandleDragChanged,
                 onDockHandleDragEnded: onDockHandleDragEnded,
@@ -742,6 +752,7 @@ private struct PickyHUDDockRailView: View {
     let onArchiveSession: (String) -> Void
     let onCreatePickle: () -> Void
     let onDockHoverChanged: (Bool) -> Void
+    let onAddSlotExpandedChanged: (Bool) -> Void
     let onDoneFlashConsumed: (String) -> Void
     let onDockHandleDragChanged: (CGPoint) -> Void
     let onDockHandleDragEnded: () -> Void
@@ -930,6 +941,7 @@ private struct PickyHUDDockRailView: View {
         .buttonStyle(.plain)
         .pointerCursor()
         .onHover { hovering in
+            onAddSlotExpandedChanged(hovering)
             withAnimation(PickyHUDExpansion.animation) {
                 isAddSlotExpanded = hovering
             }

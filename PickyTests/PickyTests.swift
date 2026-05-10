@@ -72,11 +72,29 @@ struct PickyTests {
         #expect(!PickyHUDExpansion.shouldDeferPanelShrink(currentHeight: 200, targetHeight: 180, deferShrink: false))
     }
 
-    @Test func dockAddSlotReservesStableHeightAcrossHoverStates() throws {
-        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false) == PickyHUDDockLayout.addSlotButtonSide)
+    @Test func dockAddSlotUsesCompactCollapsedHitAreaAndReservesPanelRoomOnly() throws {
+        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false) == PickyHUDDockLayout.collapsedAddSlotVisualHeight)
         #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: true) == PickyHUDDockLayout.addSlotButtonSide)
-        #expect(PickyHUDDockLayout.addSlotFrameHeight(isExpanded: false) == PickyHUDDockLayout.addSlotFrameHeight(isExpanded: true))
-        #expect(PickyHUDDockLayout.collapsedAddSlotVisualHeight < PickyHUDDockLayout.addSlotButtonSide)
+        #expect(PickyHUDDockLayout.addSlotCollapsedExpansionReserve == PickyHUDDockLayout.addSlotButtonSide - PickyHUDDockLayout.collapsedAddSlotVisualHeight)
+
+        #expect(PickyHUDDockLayout.contentSizeReservingAddSlotExpansion(
+            measuredSize: CGSize(width: 50, height: 120),
+            activeSessionID: nil,
+            hasVisibleSessions: true,
+            isAddSlotExpanded: false
+        ) == CGSize(width: 50, height: 120 + PickyHUDDockLayout.addSlotCollapsedExpansionReserve))
+        #expect(PickyHUDDockLayout.contentSizeReservingAddSlotExpansion(
+            measuredSize: CGSize(width: 50, height: 120),
+            activeSessionID: nil,
+            hasVisibleSessions: true,
+            isAddSlotExpanded: true
+        ) == CGSize(width: 50, height: 120))
+        #expect(PickyHUDDockLayout.contentSizeReservingAddSlotExpansion(
+            measuredSize: CGSize(width: 50, height: 120),
+            activeSessionID: "session",
+            hasVisibleSessions: true,
+            isAddSlotExpanded: false
+        ) == CGSize(width: 50, height: 120))
     }
 
     @Test func quickInputPanelUsesCompactShadowOutset() throws {

@@ -180,6 +180,7 @@ private struct PickyCursorMascotView: View {
     let style: PickyCursorStyle
     let tint: Color
     let voiceState: CompanionVoiceState
+    let idleMouthAnimationsEnabled: Bool
 
     var body: some View {
         TimelineView(.animation) { timeline in
@@ -187,6 +188,7 @@ private struct PickyCursorMascotView: View {
             ZStack {
                 PickyCursorMascotGlyph(
                     expression: expression(at: time),
+                    mouth: mouth(at: time),
                     tint: tint.opacity(style.glowOpacity),
                     mouthApexOffset: mouthApexOffset(at: time)
                 )
@@ -196,6 +198,7 @@ private struct PickyCursorMascotView: View {
 
                 PickyCursorMascotGlyph(
                     expression: expression(at: time),
+                    mouth: mouth(at: time),
                     tint: tint,
                     mouthApexOffset: mouthApexOffset(at: time)
                 )
@@ -205,6 +208,7 @@ private struct PickyCursorMascotView: View {
 
                 PickyCursorMascotGlyph(
                     expression: expression(at: time),
+                    mouth: mouth(at: time),
                     tint: .white.opacity(style.highlightOpacity),
                     mouthApexOffset: mouthApexOffset(at: time)
                 )
@@ -220,13 +224,27 @@ private struct PickyCursorMascotView: View {
     private func expression(at time: TimeInterval) -> PickyCursorMascotExpression {
         switch voiceState {
         case .idle:
-            return time.truncatingRemainder(dividingBy: 5.2) > 4.94 ? .blink : .normal
+            return .normal
         case .listening:
             return time.truncatingRemainder(dividingBy: 1.4) < 0.7 ? .happy : .normal
         case .processing:
             return time.truncatingRemainder(dividingBy: 1.1) < 0.32 ? .wink : .normal
         case .responding:
             return time.truncatingRemainder(dividingBy: 2.0) < 1.35 ? .happy : .normal
+        }
+    }
+
+    private func mouth(at time: TimeInterval) -> PickyCursorMascotMouth {
+        guard voiceState == .idle, idleMouthAnimationsEnabled else { return .normal }
+        let phase = time.truncatingRemainder(dividingBy: 18.0)
+        switch phase {
+        case 0.4..<1.2: return .pout
+        case 3.4..<4.2: return .smallBeak
+        case 6.4..<7.2: return .sharpSmirk
+        case 9.4..<10.2: return .flatHmm
+        case 12.4..<13.2: return .bigSmile
+        case 15.4..<16.2: return .smallO
+        default: return .normal
         }
     }
 
@@ -273,8 +291,19 @@ private enum PickyCursorMascotExpression {
     case wink
 }
 
+private enum PickyCursorMascotMouth {
+    case normal
+    case pout
+    case smallBeak
+    case sharpSmirk
+    case flatHmm
+    case bigSmile
+    case smallO
+}
+
 private struct PickyCursorMascotGlyph: View {
     let expression: PickyCursorMascotExpression
+    let mouth: PickyCursorMascotMouth
     let tint: Color
     let mouthApexOffset: CGPoint
 
@@ -328,11 +357,52 @@ private struct PickyCursorMascotGlyph: View {
     }
 
     private func mouthPath(origin: CGPoint, scale: CGFloat) -> Path {
-        var path = Path()
-        path.move(to: point(102.5, 245.67, origin: origin, scale: scale))
-        path.addLine(to: point(193.23 + mouthApexOffset.x, 367.37 + mouthApexOffset.y, origin: origin, scale: scale))
-        path.addLine(to: point(425.04, 214.01, origin: origin, scale: scale))
-        return path
+        switch mouth {
+        case .normal:
+            var path = Path()
+            path.move(to: point(102.5, 245.67, origin: origin, scale: scale))
+            path.addLine(to: point(193.23 + mouthApexOffset.x, 367.37 + mouthApexOffset.y, origin: origin, scale: scale))
+            path.addLine(to: point(425.04, 214.01, origin: origin, scale: scale))
+            return path
+        case .pout:
+            var path = Path()
+            path.move(to: point(128, 346, origin: origin, scale: scale))
+            path.addQuadCurve(
+                to: point(333, 346, origin: origin, scale: scale),
+                control: point(230, 294, origin: origin, scale: scale)
+            )
+            return path
+        case .smallBeak:
+            var path = Path()
+            path.move(to: point(102.5, 252, origin: origin, scale: scale))
+            path.addLine(to: point(224, 300, origin: origin, scale: scale))
+            path.addLine(to: point(425.04, 214.01, origin: origin, scale: scale))
+            return path
+        case .sharpSmirk:
+            var path = Path()
+            path.move(to: point(96, 284, origin: origin, scale: scale))
+            path.addLine(to: point(250, 330, origin: origin, scale: scale))
+            path.addLine(to: point(425.04, 205, origin: origin, scale: scale))
+            return path
+        case .flatHmm:
+            var path = Path()
+            path.move(to: point(116, 316, origin: origin, scale: scale))
+            path.addLine(to: point(243, 344, origin: origin, scale: scale))
+            path.addLine(to: point(372, 304, origin: origin, scale: scale))
+            return path
+        case .bigSmile:
+            var path = Path()
+            path.move(to: point(128, 326, origin: origin, scale: scale))
+            path.addQuadCurve(
+                to: point(397, 262, origin: origin, scale: scale),
+                control: point(230, 448, origin: origin, scale: scale)
+            )
+            return path
+        case .smallO:
+            var path = Path()
+            path.addEllipse(in: ellipseRect(cx: 244, cy: 352, rx: 54, ry: 48, origin: origin, scale: scale))
+            return path
+        }
     }
 
     private func normalEyes(origin: CGPoint, scale: CGFloat) -> Path {
@@ -603,9 +673,8 @@ struct BlueCursorView: View {
             // Picky mascot cursor — shown for ALL voice states. Listening and
             // processing no longer swap in a separate waveform/spinner: the
             // icon itself shifts mood color (idle blue / listening cyan /
-            // processing amber / responding purple) and expression animation.
-            // Idle micro-behaviors stack as offset/rotation/scale on top of the
-            // cursor-tracking spring without disturbing it.
+            // processing amber / responding purple). Idle animation is limited
+            // to mouth-shape variants so the cursor never drifts or rotates.
             //
             // During cursor following: optional spring animation for smooth tracking.
             // During navigation: NO implicit animation — the frame-by-frame bezier
@@ -613,7 +682,8 @@ struct BlueCursorView: View {
             PickyCursorMascotView(
                 style: cursorStyleStore.style,
                 tint: moodColor,
-                voiceState: companionManager.voiceState
+                voiceState: companionManager.voiceState,
+                idleMouthAnimationsEnabled: cursorPreferencesStore.preferences.enableIdleAnimations
             )
                 .shadow(
                     color: moodColor.opacity(cursorStyleStore.style.outerShadowOpacity),

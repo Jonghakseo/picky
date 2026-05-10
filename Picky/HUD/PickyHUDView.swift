@@ -912,14 +912,6 @@ private struct PickyHUDDockIconView: View {
                 .font(labelFont)
                 .foregroundColor(isActive ? DS.Colors.textPrimary : DS.Colors.textSecondary)
                 .opacity(isArchivePressing ? 0.64 : 1)
-            HStack(spacing: 0) {
-                Capsule(style: .continuous)
-                    .fill(statusColor)
-                    .frame(width: 2, height: 18)
-                Spacer()
-            }
-            .padding(.leading, 3)
-            .allowsHitTesting(false)
         }
         .frame(width: 36, height: 36)
         .opacity(session.status == .cancelled ? 0.55 : 1)

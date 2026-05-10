@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Existing git tag to build and attach the notarized zip to"
+        description: "Existing git tag to build and attach the notarized dmg to"
         required: true
         type: string
       release_name:
@@ -50,7 +50,7 @@ env:
 
 jobs:
   build-notarized-release:
-    name: Build, notarize, and publish beta zip
+    name: Build, notarize, and publish beta dmg
     runs-on: ${{ vars.PICKY_MACOS_RUNNER || 'macos-15' }}
     timeout-minutes: 90
 
@@ -259,13 +259,19 @@ jobs:
           /usr/bin/lipo -info "${app}/Contents/MacOS/${APP_NAME}"
           cat "${app}/Contents/Resources/PickyBuildInfo.json"
 
-          echo "submission_id=${submission_id}" >> "${GITHUB_OUTPUT}"
+          echo "app_submission_id=${submission_id}" >> "${GITHUB_OUTPUT}"
 
-      - name: Create final distribution zip
+      - name: Create, sign, notarize, and staple DMG
         id: package
+        env:
+          PICKY_CODE_SIGN_IDENTITY: ${{ secrets.PICKY_CODE_SIGN_IDENTITY }}
+          PICKY_DEVELOPMENT_TEAM: ${{ secrets.PICKY_DEVELOPMENT_TEAM }}
+          PICKY_NOTARY_APPLE_ID: ${{ secrets.PICKY_NOTARY_APPLE_ID }}
+          PICKY_NOTARY_APP_PASSWORD: ${{ secrets.PICKY_NOTARY_APP_PASSWORD }}
         run: |
           set -euo pipefail
-          build_info="build/package/export/${APP_NAME}.app/Contents/Resources/PickyBuildInfo.json"
+          app="${PWD}/build/package/export/${APP_NAME}.app"
+          build_info="${app}/Contents/Resources/PickyBuildInfo.json"
           read -r marketing_version build_number build_label release_channel git_sha < <(python3 - "${build_info}" <<'PY'
           import json, sys
           from pathlib import Path
@@ -273,35 +279,75 @@ jobs:
           print(info["marketingVersion"], info["buildNumber"], info["buildLabel"], info["releaseChannel"], info["gitSha"])
           PY
           )
-          final_zip="${PWD}/build/package/${APP_NAME}-${marketing_version}-${build_label}-notarized.zip"
+          final_dmg="${PWD}/build/package/${APP_NAME}-${marketing_version}-${build_label}.dmg"
+          dmg_staging="${RUNNER_TEMP}/picky-dmg-staging"
+          dmg_notary_result="${PWD}/build/package/dmg-notary-submit-result.json"
 
-          rm -f "${final_zip}"
-          (
-            cd build/package/export
-            /usr/bin/ditto -c -k --sequesterRsrc --keepParent "${APP_NAME}.app" "${final_zip}"
-          )
+          rm -rf "${dmg_staging}"
+          mkdir -p "${dmg_staging}"
+          /usr/bin/ditto "${app}" "${dmg_staging}/${APP_NAME}.app"
+          ln -s /Applications "${dmg_staging}/Applications"
 
-          tmp_dir="$(mktemp -d /tmp/picky-notarized-verify.XXXXXX)"
-          /usr/bin/ditto -x -k "${final_zip}" "${tmp_dir}"
-          xcrun stapler validate "${tmp_dir}/${APP_NAME}.app"
-          /usr/sbin/spctl -a -vvv --type execute "${tmp_dir}/${APP_NAME}.app"
-          rm -rf "${tmp_dir}"
+          rm -f "${final_dmg}"
+          /usr/bin/hdiutil create \
+            -volname "${APP_NAME}" \
+            -srcfolder "${dmg_staging}" \
+            -ov \
+            -format UDZO \
+            "${final_dmg}"
 
-          sha256="$(shasum -a 256 "${final_zip}" | awk '{print $1}')"
-          final_zip_name="$(basename "${final_zip}")"
+          /usr/bin/codesign \
+            --force \
+            --timestamp \
+            --sign "${PICKY_CODE_SIGN_IDENTITY}" \
+            "${final_dmg}"
+          /usr/bin/codesign --verify --verbose=2 "${final_dmg}"
+
+          xcrun notarytool submit "${final_dmg}" \
+            --apple-id "${PICKY_NOTARY_APPLE_ID}" \
+            --password "${PICKY_NOTARY_APP_PASSWORD}" \
+            --team-id "${PICKY_DEVELOPMENT_TEAM}" \
+            --wait \
+            --output-format json | tee "${dmg_notary_result}"
+
+          dmg_submission_id="$(python3 - "${dmg_notary_result}" <<'PY'
+          import json, sys
+          from pathlib import Path
+          print(json.loads(Path(sys.argv[1]).read_text())["id"])
+          PY
+          )"
+          dmg_submission_status="$(python3 - "${dmg_notary_result}" <<'PY'
+          import json, sys
+          from pathlib import Path
+          print(json.loads(Path(sys.argv[1]).read_text())["status"])
+          PY
+          )"
+
+          if [[ "${dmg_submission_status}" != "Accepted" ]]; then
+            echo "DMG notarization failed with status: ${dmg_submission_status}" >&2
+            exit 1
+          fi
+
+          xcrun stapler staple "${final_dmg}"
+          xcrun stapler validate "${final_dmg}"
+          /usr/sbin/spctl -a -vvv --type open --context context:primary-signature "${final_dmg}"
+
+          sha256="$(shasum -a 256 "${final_dmg}" | awk '{print $1}')"
+          final_dmg_name="$(basename "${final_dmg}")"
 
           {
-            echo "final_zip=${final_zip}"
-            echo "final_zip_name=${final_zip_name}"
+            echo "final_dmg=${final_dmg}"
+            echo "final_dmg_name=${final_dmg_name}"
             echo "sha256=${sha256}"
             echo "marketing_version=${marketing_version}"
             echo "build_number=${build_number}"
             echo "build_label=${build_label}"
             echo "release_channel=${release_channel}"
             echo "git_sha=${git_sha}"
+            echo "dmg_submission_id=${dmg_submission_id}"
           } >> "${GITHUB_OUTPUT}"
 
-          printf 'Final zip: %s\nSHA256: %s\n' "${final_zip}" "${sha256}"
+          printf 'Final dmg: %s\nSHA256: %s\n' "${final_dmg}" "${sha256}"
 
       - name: Ensure GitHub Release exists
         env:
@@ -328,33 +374,34 @@ jobs:
           fi
           gh "${create_args[@]}"
 
-      - name: Upload zip to GitHub Release
+      - name: Upload dmg to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
-          FINAL_ZIP: ${{ steps.package.outputs.final_zip }}
+          FINAL_DMG: ${{ steps.package.outputs.final_dmg }}
         run: |
           set -euo pipefail
-          gh release upload "${TARGET_TAG}" "${FINAL_ZIP}" --clobber
+          gh release upload "${TARGET_TAG}" "${FINAL_DMG}" --clobber
 
       - name: Update release notes with notarized build metadata
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
-          FINAL_ZIP_NAME: ${{ steps.package.outputs.final_zip_name }}
+          FINAL_DMG_NAME: ${{ steps.package.outputs.final_dmg_name }}
           SHA256: ${{ steps.package.outputs.sha256 }}
           MARKETING_VERSION: ${{ steps.package.outputs.marketing_version }}
           BUILD_NUMBER: ${{ steps.package.outputs.build_number }}
           BUILD_LABEL: ${{ steps.package.outputs.build_label }}
           RELEASE_CHANNEL: ${{ steps.package.outputs.release_channel }}
           GIT_SHA: ${{ steps.package.outputs.git_sha }}
-          SUBMISSION_ID: ${{ steps.notarize.outputs.submission_id }}
+          APP_SUBMISSION_ID: ${{ steps.notarize.outputs.app_submission_id }}
+          DMG_SUBMISSION_ID: ${{ steps.package.outputs.dmg_submission_id }}
         run: |
           set -euo pipefail
           current_notes="${RUNNER_TEMP}/release-notes-current.md"
           block="${RUNNER_TEMP}/picky-notarized-build.md"
           updated_notes="${RUNNER_TEMP}/release-notes-updated.md"
-          download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TARGET_TAG}/${FINAL_ZIP_NAME}"
+          download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TARGET_TAG}/${FINAL_DMG_NAME}"
 
           gh release view "${TARGET_TAG}" --json body --jq .body > "${current_notes}"
 
@@ -362,17 +409,18 @@ jobs:
           <!-- picky-notarized-build:start -->
           ### Notarized macOS beta build
 
-          - Download: [${FINAL_ZIP_NAME}](${download_url})
+          - Download: [${FINAL_DMG_NAME}](${download_url})
           - Version: ${MARKETING_VERSION} (${BUILD_NUMBER})
           - Build label: ${BUILD_LABEL}
           - Release channel: ${RELEASE_CHANNEL}
           - Git SHA: ${GIT_SHA}
           - SHA256: \`${SHA256}\`
-          - Apple notary submission ID: \`${SUBMISSION_ID}\`
+          - Apple notary submission ID (app): \`${APP_SUBMISSION_ID}\`
+          - Apple notary submission ID (dmg): \`${DMG_SUBMISSION_ID}\`
 
           Install:
-          1. Unzip the file.
-          2. Move \`${APP_NAME}.app\` to \`/Applications\`.
+          1. Double-click the dmg to mount it.
+          2. Drag \`${APP_NAME}.app\` onto the \`Applications\` shortcut.
           3. Open \`${APP_NAME}\` and grant requested macOS permissions.
           <!-- picky-notarized-build:end -->
           EOF
@@ -404,6 +452,7 @@ jobs:
           name: picky-notarized-release-${{ github.run_id }}
           if-no-files-found: ignore
           path: |
-            build/package/*-notarized.zip
+            build/package/*.dmg
             build/package/notary-submit-result.json
+            build/package/dmg-notary-submit-result.json
             build/package/Picky-beta-notary-upload.zip

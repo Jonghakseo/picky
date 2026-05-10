@@ -46,7 +46,6 @@ final class PickyHUDOverlayManager {
     private struct PanelEntry {
         let panel: PickyHUDPanel
         let placement: PickyHUDPlacement
-        let displayState: PickyHUDDisplayState
         var pendingShrinkTask: Task<Void, Never>?
         var lastContentSize: CGSize
     }
@@ -178,12 +177,10 @@ final class PickyHUDOverlayManager {
             dockSide: position(for: displayID).side,
             dockSizePreset: currentDockSizePreset
         )
-        let displayState = PickyHUDDisplayState()
         let hudRoot = PickyHUDView(
             viewModel: viewModel,
             panelIdentifier: panelIdentifier,
             placement: placement,
-            displayState: displayState,
             onSizeChange: { [weak self] size in
                 // SwiftUI animates the card reveal itself. Grow the transparent NSPanel
                 // immediately, but defer shrinking it until the collapse animation has
@@ -214,7 +211,6 @@ final class PickyHUDOverlayManager {
         return PanelEntry(
             panel: hudPanel,
             placement: placement,
-            displayState: displayState,
             pendingShrinkTask: nil,
             lastContentSize: CGSize(width: width, height: collapsedHeight)
         )

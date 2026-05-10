@@ -1513,7 +1513,15 @@ final class CompanionManager: ObservableObject {
     fileprivate func runSpeakEffect(speechID: UUID, text: String, contextID: String?) {
         deferredInteractionSpeechTask?.cancel()
         deferredInteractionSpeechTask = nil
-        startOrDeferInteractionSpeech(speechID: speechID, text: text, contextID: contextID, requestedAt: Date())
+        // Strip parenthesised supplementary detail right before synthesis so
+        // every interaction-coordinator-routed reply (the modern path through
+        // PickyQueuedSpeechReply) skips URLs, paths, and identifiers that
+        // Picky placed in `(...)`. Visible text keeps the parens intact — the
+        // queued reply still holds the original `text`. Legacy callers go
+        // through `speakSystemMessage` and pre-strip there, so this is the
+        // only remaining funnel that needed the transform.
+        let spoken = stripParentheticalsForSpeech(text)
+        startOrDeferInteractionSpeech(speechID: speechID, text: spoken, contextID: contextID, requestedAt: Date())
     }
 
     private func startOrDeferInteractionSpeech(speechID: UUID, text: String, contextID: String?, requestedAt: Date) {

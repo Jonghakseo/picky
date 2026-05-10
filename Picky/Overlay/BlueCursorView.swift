@@ -180,6 +180,7 @@ private struct PickyCursorMascotView: View {
     let style: PickyCursorStyle
     let tint: Color
     let voiceState: CompanionVoiceState
+    let idleAnimationsEnabled: Bool
 
     var body: some View {
         TimelineView(.animation) { timeline in
@@ -220,6 +221,7 @@ private struct PickyCursorMascotView: View {
     private func expression(at time: TimeInterval) -> PickyCursorMascotExpression {
         switch voiceState {
         case .idle:
+            guard idleAnimationsEnabled else { return .normal }
             return time.truncatingRemainder(dividingBy: 5.2) > 4.94 ? .blink : .normal
         case .listening:
             return time.truncatingRemainder(dividingBy: 1.4) < 0.7 ? .happy : .normal
@@ -613,7 +615,8 @@ struct BlueCursorView: View {
             PickyCursorMascotView(
                 style: cursorStyleStore.style,
                 tint: moodColor,
-                voiceState: companionManager.voiceState
+                voiceState: companionManager.voiceState,
+                idleAnimationsEnabled: cursorPreferencesStore.preferences.enableIdleAnimations
             )
                 .shadow(
                     color: moodColor.opacity(cursorStyleStore.style.outerShadowOpacity),

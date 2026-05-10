@@ -291,7 +291,7 @@ private struct PickyCursorMascotGlyph: View {
                     .stroke(
                         tint,
                         style: StrokeStyle(
-                            lineWidth: 100 * scale,
+                            lineWidth: 80 * scale,
                             lineCap: .round,
                             lineJoin: .round,
                             miterLimit: 10

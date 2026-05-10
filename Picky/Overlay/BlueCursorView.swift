@@ -19,14 +19,14 @@ private struct PickyCursorStyle: Codable, Equatable {
     var glowOpacity = 0.3
     var glowBlur = 0.3
     var glowScale = 1.18
-    var glowSize = 18.5
+    var glowSize = 14.0
     var iconSize = 19.5
-    var mascotSize = 32.0
+    var mascotSize = 25.0
     var highlightOpacity = 0.12
     var highlightOffsetX = -0.4
     var highlightOffsetY = -0.4
     var outerShadowOpacity = 0.6
-    var outerShadowRadius = 10.0
+    var outerShadowRadius = 8.0
     var outerShadowFlightMultiplier = 90.0
 
     var cursorColor: Color { Color(hex: colorHex) }
@@ -172,10 +172,10 @@ private final class PickyOverlayBubblePreferencesStore: ObservableObject {
 // vector color so the buddy can shift through mood colors (idle / listening /
 // processing / responding) without swapping in a different raster asset.
 //
-// The geometry is adapted from the desktop `picky_*.svg` candidates: the main
-// check + eyes from `picky_000.svg`, blink/smile eyes from `picky_000_1.svg`,
-// and wink motion from `picky_006.svg`. Keeping it as SwiftUI vector paths lets
-// the overlay recolor and animate the mascot per state at runtime.
+// The geometry is adapted from the desktop `picky_*.svg` symbol candidates:
+// two upper circles are the eyes, and the large lower V/check stroke is the
+// mouth. Keeping it as SwiftUI vector paths lets the overlay recolor and
+// animate the mascot per state at runtime.
 private struct PickyCursorMascotView: View {
     let style: PickyCursorStyle
     let tint: Color
@@ -188,7 +188,7 @@ private struct PickyCursorMascotView: View {
                 PickyCursorMascotGlyph(
                     expression: expression(at: time),
                     tint: tint.opacity(style.glowOpacity),
-                    checkProgress: checkProgress(at: time)
+                    mouthApexOffset: mouthApexOffset(at: time)
                 )
                 .frame(width: CGFloat(style.glowSize), height: CGFloat(style.glowSize))
                 .blur(radius: CGFloat(style.glowBlur))
@@ -197,7 +197,7 @@ private struct PickyCursorMascotView: View {
                 PickyCursorMascotGlyph(
                     expression: expression(at: time),
                     tint: tint,
-                    checkProgress: checkProgress(at: time)
+                    mouthApexOffset: mouthApexOffset(at: time)
                 )
                 .frame(width: CGFloat(style.mascotSize), height: CGFloat(style.mascotSize))
                 .scaleEffect(internalScale(at: time))
@@ -206,7 +206,7 @@ private struct PickyCursorMascotView: View {
                 PickyCursorMascotGlyph(
                     expression: expression(at: time),
                     tint: .white.opacity(style.highlightOpacity),
-                    checkProgress: checkProgress(at: time)
+                    mouthApexOffset: mouthApexOffset(at: time)
                 )
                 .frame(width: CGFloat(style.mascotSize), height: CGFloat(style.mascotSize))
                 .scaleEffect(internalScale(at: time))
@@ -230,10 +230,17 @@ private struct PickyCursorMascotView: View {
         }
     }
 
-    private func checkProgress(at time: TimeInterval) -> CGFloat {
-        guard voiceState == .processing else { return 1.0 }
-        let phase = time.truncatingRemainder(dividingBy: 1.0)
-        return 0.62 + CGFloat(phase) * 0.38
+    private func mouthApexOffset(at time: TimeInterval) -> CGPoint {
+        switch voiceState {
+        case .idle:
+            return .zero
+        case .listening:
+            return CGPoint(x: 0, y: CGFloat(-18 + sin(time * 5.0) * 3.0))
+        case .processing:
+            return CGPoint(x: CGFloat(sin(time * 6.0) * 5.0), y: -6)
+        case .responding:
+            return CGPoint(x: 0, y: CGFloat(-12 + sin(time * 4.2) * 4.0))
+        }
     }
 
     private func internalScale(at time: TimeInterval) -> CGFloat {
@@ -269,7 +276,7 @@ private enum PickyCursorMascotExpression {
 private struct PickyCursorMascotGlyph: View {
     let expression: PickyCursorMascotExpression
     let tint: Color
-    let checkProgress: CGFloat
+    let mouthApexOffset: CGPoint
 
     var body: some View {
         GeometryReader { geometry in
@@ -280,8 +287,7 @@ private struct PickyCursorMascotGlyph: View {
                 y: (geometry.size.height - side) / 2.0
             )
             ZStack {
-                checkPath(origin: origin, scale: scale)
-                    .trim(from: 0, to: min(max(checkProgress, 0), 1))
+                mouthPath(origin: origin, scale: scale)
                     .stroke(
                         tint,
                         style: StrokeStyle(
@@ -321,10 +327,10 @@ private struct PickyCursorMascotGlyph: View {
         }
     }
 
-    private func checkPath(origin: CGPoint, scale: CGFloat) -> Path {
+    private func mouthPath(origin: CGPoint, scale: CGFloat) -> Path {
         var path = Path()
         path.move(to: point(102.5, 245.67, origin: origin, scale: scale))
-        path.addLine(to: point(193.23, 367.37, origin: origin, scale: scale))
+        path.addLine(to: point(193.23 + mouthApexOffset.x, 367.37 + mouthApexOffset.y, origin: origin, scale: scale))
         path.addLine(to: point(425.04, 214.01, origin: origin, scale: scale))
         return path
     }

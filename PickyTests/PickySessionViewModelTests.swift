@@ -592,7 +592,7 @@ struct PickySessionViewModelTests {
         #expect(PickyConversationScrollPolicy.initialScrollDelayNanoseconds == 16_000_000)
     }
 
-    @Test func hudSizeReporterReportsActiveSessionSwitchImmediatelyThenCoalescesPreferenceBursts() async throws {
+    @Test func hudSizeReporterReportsActiveSessionSwitchAndPanelGrowthImmediately() async throws {
         let reporter = PickyHUDSizeReporter(coalescingDelayNanoseconds: 1_000_000)
         var reports: [CGSize] = []
 
@@ -602,11 +602,24 @@ struct PickySessionViewModelTests {
         reporter.handleMeasuredSize(CGSize(width: 100, height: 120), activeSessionID: "agent-a", shouldHoldHeight: false) { reports.append($0) }
         #expect(reports == [CGSize(width: 100, height: 120)])
 
-        reporter.handleMeasuredSize(CGSize(width: 100, height: 140), activeSessionID: "agent-a", shouldHoldHeight: false) { reports.append($0) }
         reporter.handleMeasuredSize(CGSize(width: 100, height: 160), activeSessionID: "agent-a", shouldHoldHeight: false) { reports.append($0) }
+        #expect(reports == [CGSize(width: 100, height: 120), CGSize(width: 100, height: 160)])
+    }
+
+    @Test func hudSizeReporterStillCoalescesPanelShrinkBursts() async throws {
+        let reporter = PickyHUDSizeReporter(coalescingDelayNanoseconds: 1_000_000)
+        var reports: [CGSize] = []
+
+        reporter.handleMeasuredSize(CGSize(width: 100, height: 200), activeSessionID: "agent-a", shouldHoldHeight: false) { reports.append($0) }
+        #expect(reports == [CGSize(width: 100, height: 200)])
+        reports.removeAll()
+
+        reporter.handleMeasuredSize(CGSize(width: 100, height: 180), activeSessionID: "agent-a", shouldHoldHeight: false) { reports.append($0) }
+        reporter.handleMeasuredSize(CGSize(width: 100, height: 160), activeSessionID: "agent-a", shouldHoldHeight: false) { reports.append($0) }
+        #expect(reports.isEmpty)
         try await Task.sleep(nanoseconds: 10_000_000)
 
-        #expect(reports == [CGSize(width: 100, height: 120), CGSize(width: 100, height: 160)])
+        #expect(reports == [CGSize(width: 100, height: 160)])
     }
 
     @Test func hudSizeReporterKeepsRunningPanelHeightFromShrinking() async throws {

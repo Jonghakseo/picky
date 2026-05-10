@@ -626,15 +626,20 @@ final class PickyHUDSizeReporter {
         )
 
         guard activeSessionChanged || !lastReportedHUDSize.isApproximatelyEqual(to: targetSize) else { return }
+        let shouldGrowPanelImmediately = lastReportedHUDSize.height > 0
+            && targetSize.height > lastReportedHUDSize.height + 1
         lastReportedHUDSize = targetSize
 
-        if activeSessionChanged {
+        if activeSessionChanged || shouldGrowPanelImmediately {
             // First hover opens the conversation card while the NSPanel is still at
             // its dock-only collapsed height. If we coalesce this resize for a frame,
             // SwiftUI can draw the newly inserted ScrollView/TextEditor against the
             // stale panel bounds, exposing transient pre-scroll layout outside the
-            // card. Grow the outer panel immediately for session switches; keep
-            // coalescing only for streaming/content churn after the card is visible.
+            // card. The same rule applies to in-card expansions (for example, opening
+            // a collapsed turn): SwiftUI starts laying out the taller subtree in the
+            // current transaction, so the transparent outer panel must grow before the
+            // next frame instead of after the coalescing delay. Keep coalescing for
+            // shrink/steady churn after the card is visible.
             cancelPendingReport()
             onSizeChange(targetSize)
             return

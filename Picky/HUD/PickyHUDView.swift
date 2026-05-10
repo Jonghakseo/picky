@@ -1170,11 +1170,23 @@ private struct PickyHUDDockIconView: View {
 
     private var dockIconContent: some View {
         VStack(spacing: max(1, 2 * metrics.scale)) {
-            PickyPiLogoGlyph()
-                .fill(statusColor, style: FillStyle(eoFill: true))
-                .frame(width: metrics.sessionLogoSide, height: metrics.sessionLogoSide)
-                .scaleEffect(runningLogoScale)
-                .shadow(color: statusColor.opacity(isSelected ? 0.20 : 0.10), radius: 2.2, x: 0, y: 0.8)
+            ZStack {
+                // Running halo: thin ring behind the logo that pulses
+                // with scale + opacity so the active Pickle stands out
+                // without overwhelming the tile design.
+                if session.status == .running {
+                    Circle()
+                        .stroke(statusColor.opacity(isRunningLogoPulsing ? 0.52 : 0.16), lineWidth: 1.0)
+                        .frame(width: metrics.sessionLogoSide, height: metrics.sessionLogoSide)
+                        .scaleEffect(isRunningLogoPulsing ? 1.12 : 1.0)
+                }
+
+                PickyPiLogoGlyph()
+                    .fill(statusColor, style: FillStyle(eoFill: true))
+                    .frame(width: metrics.sessionLogoSide, height: metrics.sessionLogoSide)
+                    .scaleEffect(runningLogoScale)
+                    .shadow(color: statusColor.opacity(isSelected ? 0.20 : 0.10), radius: 2.2, x: 0, y: 0.8)
+            }
 
             Text(dockLabel)
                 .font(dockLabelFont)

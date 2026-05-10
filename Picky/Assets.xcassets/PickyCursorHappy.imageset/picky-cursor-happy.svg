@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="_레이어_1" data-name="레이어 1" xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: none;
+        stroke: #69f;
+        stroke-linecap: round;
+        stroke-miterlimit: 10;
+        stroke-width: 80px;
+      }
+
+      .cls-2 {
+        fill: #69f;
+      }
+    </style>
+  </defs>
+  <polyline class="cls-1" points="102.5 245.67 256 367.37 425.04 245.67"/>
+  <g>
+    <ellipse class="cls-2" cx="201.78" cy="158.58" rx="40" ry="50"/>
+    <ellipse class="cls-2" cx="310.22" cy="158.58" rx="40" ry="50"/>
+  </g>
+</svg>

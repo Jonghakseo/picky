@@ -186,36 +186,50 @@ private struct PickyCursorMascotView: View {
     var body: some View {
         TimelineView(.animation) { timeline in
             let time = timeline.date.timeIntervalSinceReferenceDate
+            let expression = expression(at: time)
+            let assetName = assetName(for: expression)
+
             ZStack {
-                PickyCursorMascotGlyph(
-                    expression: expression(at: time),
-                    tint: tint.opacity(style.glowOpacity),
-                    mouthApexOffset: mouthApexOffset(at: time)
-                )
-                .frame(width: CGFloat(style.glowSize), height: CGFloat(style.glowSize))
-                .blur(radius: CGFloat(style.glowBlur))
-                .scaleEffect(CGFloat(style.glowScale) * internalScale(at: time))
+                cursorAsset(named: assetName, tint: tint.opacity(style.glowOpacity))
+                    .frame(width: CGFloat(style.glowSize), height: CGFloat(style.glowSize))
+                    .blur(radius: CGFloat(style.glowBlur))
+                    .scaleEffect(CGFloat(style.glowScale) * internalScale(at: time))
 
-                PickyCursorMascotGlyph(
-                    expression: expression(at: time),
-                    tint: tint,
-                    mouthApexOffset: mouthApexOffset(at: time)
-                )
-                .frame(width: CGFloat(style.mascotSize), height: CGFloat(style.mascotSize))
-                .scaleEffect(internalScale(at: time))
-                .rotationEffect(.degrees(internalRotation(at: time)))
+                cursorAsset(named: assetName, tint: tint)
+                    .frame(width: CGFloat(style.mascotSize), height: CGFloat(style.mascotSize))
+                    .scaleEffect(internalScale(at: time))
+                    .rotationEffect(.degrees(internalRotation(at: time)))
 
-                PickyCursorMascotGlyph(
-                    expression: expression(at: time),
-                    tint: .white.opacity(style.highlightOpacity),
-                    mouthApexOffset: mouthApexOffset(at: time)
-                )
-                .frame(width: CGFloat(style.mascotSize), height: CGFloat(style.mascotSize))
-                .scaleEffect(internalScale(at: time))
-                .rotationEffect(.degrees(internalRotation(at: time)))
-                .offset(x: CGFloat(style.highlightOffsetX), y: CGFloat(style.highlightOffsetY))
+                cursorAsset(named: assetName, tint: .white.opacity(style.highlightOpacity))
+                    .frame(width: CGFloat(style.mascotSize), height: CGFloat(style.mascotSize))
+                    .scaleEffect(internalScale(at: time))
+                    .rotationEffect(.degrees(internalRotation(at: time)))
+                    .offset(x: CGFloat(style.highlightOffsetX), y: CGFloat(style.highlightOffsetY))
             }
             .frame(width: CGFloat(style.frameSize), height: CGFloat(style.frameSize))
+        }
+    }
+
+    private func cursorAsset(named assetName: String, tint: Color) -> some View {
+        Image(assetName)
+            .resizable()
+            .renderingMode(.template)
+            .foregroundStyle(tint)
+            .scaledToFit()
+    }
+
+    private func assetName(for expression: PickyCursorMascotExpression) -> String {
+        switch expression {
+        case .normal:
+            return "PickyCursorNormal"
+        case .blink:
+            return "PickyCursorBlink"
+        case .happy:
+            return "PickyCursorHappy"
+        case .wink:
+            return "PickyCursorWink"
+        case .startled:
+            return "PickyCursorStartled"
         }
     }
 
@@ -231,20 +245,6 @@ private struct PickyCursorMascotView: View {
             return time.truncatingRemainder(dividingBy: 1.1) < 0.32 ? .wink : .normal
         case .responding:
             return time.truncatingRemainder(dividingBy: 2.0) < 1.35 ? .happy : .normal
-        }
-    }
-
-    private func mouthApexOffset(at time: TimeInterval) -> CGPoint {
-        if isStartled { return .zero }
-        switch voiceState {
-        case .idle:
-            return .zero
-        case .listening:
-            return CGPoint(x: 0, y: CGFloat(-18 + sin(time * 5.0) * 3.0))
-        case .processing:
-            return CGPoint(x: CGFloat(sin(time * 6.0) * 5.0), y: -6)
-        case .responding:
-            return CGPoint(x: 0, y: CGFloat(-12 + sin(time * 4.2) * 4.0))
         }
     }
 
@@ -278,133 +278,6 @@ private enum PickyCursorMascotExpression {
     case wink
     case startled
 }
-
-private struct PickyCursorMascotGlyph: View {
-    let expression: PickyCursorMascotExpression
-    let tint: Color
-    let mouthApexOffset: CGPoint
-
-    var body: some View {
-        GeometryReader { geometry in
-            let side = min(geometry.size.width, geometry.size.height)
-            let scale = side / 512.0
-            let origin = CGPoint(
-                x: (geometry.size.width - side) / 2.0,
-                y: (geometry.size.height - side) / 2.0
-            )
-            ZStack {
-                mouthPath(origin: origin, scale: scale)
-                    .stroke(
-                        tint,
-                        style: StrokeStyle(
-                            lineWidth: (expression == .startled ? 52 : 80) * scale,
-                            lineCap: .round,
-                            lineJoin: .round,
-                            miterLimit: 10
-                        )
-                    )
-
-                eyes(origin: origin, scale: scale)
-            }
-        }
-        .aspectRatio(1, contentMode: .fit)
-    }
-
-    @ViewBuilder
-    private func eyes(origin: CGPoint, scale: CGFloat) -> some View {
-        switch expression {
-        case .normal:
-            normalEyes(origin: origin, scale: scale)
-                .fill(tint)
-        case .blink, .happy:
-            happyEyes(origin: origin, scale: scale)
-                .stroke(
-                    tint,
-                    style: StrokeStyle(lineWidth: 40 * scale, lineCap: .round, lineJoin: .round, miterLimit: 10)
-                )
-        case .wink:
-            Path(ellipseIn: ellipseRect(cx: 193.23, cy: 137.86, rx: 40, ry: 50, origin: origin, scale: scale))
-                .fill(tint)
-            winkEye(origin: origin, scale: scale)
-                .stroke(
-                    tint,
-                    style: StrokeStyle(lineWidth: 40 * scale, lineCap: .round, lineJoin: .round, miterLimit: 10)
-                )
-        case .startled:
-            startledEyes(origin: origin, scale: scale)
-                .fill(tint)
-        }
-    }
-
-    private func mouthPath(origin: CGPoint, scale: CGFloat) -> Path {
-        if expression == .startled {
-            var path = Path()
-            path.addEllipse(in: ellipseRect(cx: 250, cy: 320, rx: 54, ry: 66, origin: origin, scale: scale))
-            return path
-        }
-        var path = Path()
-        path.move(to: point(102.5, 245.67, origin: origin, scale: scale))
-        path.addLine(to: point(193.23 + mouthApexOffset.x, 367.37 + mouthApexOffset.y, origin: origin, scale: scale))
-        path.addLine(to: point(425.04, 214.01, origin: origin, scale: scale))
-        return path
-    }
-
-    private func normalEyes(origin: CGPoint, scale: CGFloat) -> Path {
-        var path = Path()
-        path.addPath(Path(ellipseIn: ellipseRect(cx: 193.23, cy: 137.86, rx: 40, ry: 50, origin: origin, scale: scale)))
-        path.addPath(Path(ellipseIn: ellipseRect(cx: 308.32, cy: 137.86, rx: 40, ry: 50, origin: origin, scale: scale)))
-        return path
-    }
-
-    private func startledEyes(origin: CGPoint, scale: CGFloat) -> Path {
-        var path = Path()
-        path.addPath(Path(ellipseIn: ellipseRect(cx: 193.23, cy: 137.86, rx: 48, ry: 58, origin: origin, scale: scale)))
-        path.addPath(Path(ellipseIn: ellipseRect(cx: 308.32, cy: 137.86, rx: 48, ry: 58, origin: origin, scale: scale)))
-        return path
-    }
-
-    private func happyEyes(origin: CGPoint, scale: CGFloat) -> Path {
-        var path = Path()
-        path.move(to: point(213.06, 157.02, origin: origin, scale: scale))
-        path.addCurve(
-            to: point(153.40, 154.95, origin: origin, scale: scale),
-            control1: point(198.32, 171.79, origin: origin, scale: scale),
-            control2: point(170.26, 172.67, origin: origin, scale: scale)
-        )
-        path.move(to: point(272.13, 157.02, origin: origin, scale: scale))
-        path.addCurve(
-            to: point(331.79, 154.95, origin: origin, scale: scale),
-            control1: point(286.87, 171.79, origin: origin, scale: scale),
-            control2: point(314.93, 172.67, origin: origin, scale: scale)
-        )
-        return path
-    }
-
-    private func winkEye(origin: CGPoint, scale: CGFloat) -> Path {
-        var path = Path()
-        path.move(to: point(286.16, 161.03, origin: origin, scale: scale))
-        path.addCurve(
-            to: point(342.77, 128.01, origin: origin, scale: scale),
-            control1: point(297.11, 139.45, origin: origin, scale: scale),
-            control2: point(322.97, 127.26, origin: origin, scale: scale)
-        )
-        return path
-    }
-
-    private func ellipseRect(cx: CGFloat, cy: CGFloat, rx: CGFloat, ry: CGFloat, origin: CGPoint, scale: CGFloat) -> CGRect {
-        CGRect(
-            x: origin.x + (cx - rx) * scale,
-            y: origin.y + (cy - ry) * scale,
-            width: rx * 2 * scale,
-            height: ry * 2 * scale
-        )
-    }
-
-    private func point(_ x: CGFloat, _ y: CGFloat, origin: CGPoint, scale: CGFloat) -> CGPoint {
-        CGPoint(x: origin.x + x * scale, y: origin.y + y * scale)
-    }
-}
-
 
 // SwiftUI view for the blue glowing cursor pointer.
 // Each screen gets its own BlueCursorView. The view checks whether

@@ -79,7 +79,7 @@ struct PickyHUDView: View {
             .frame(
                 maxWidth: .infinity,
                 maxHeight: .infinity,
-                alignment: placement.dockSide == .left ? .topLeading : .topTrailing
+                alignment: hudFrameAlignment
             )
             // Do not implicitly animate the initial card insertion. The card contains
             // ScrollView/TextEditor subtrees that perform one-frame measurement and
@@ -122,7 +122,29 @@ struct PickyHUDView: View {
         }
     }
 
+    private var hudFrameAlignment: Alignment {
+        switch placement.dockSide {
+        case .left: .topLeading
+        case .right: .topTrailing
+        case .top: .top
+        case .bottom: .bottom
+        }
+    }
+
     private var hudContent: some View {
+        Group {
+            switch placement.dockSide.orientation {
+            case .vertical:
+                verticalHUDContent
+            case .horizontal:
+                horizontalHUDContent
+            }
+        }
+        .padding(PickyHUDExpansion.dockShadowInsets)
+        .onHover(perform: handleHUDHover)
+    }
+
+    private var verticalHUDContent: some View {
         // alignment: .top so the card and the dock-rail stack both anchor at the HStack
         // top edge. The conversation card sits inward from the dock side, keeping the
         // rail pinned to the chosen screen edge whether the dock is left or right.
@@ -139,8 +161,18 @@ struct PickyHUDView: View {
                 conversationCard
             }
         }
-        .padding(PickyHUDExpansion.dockShadowInsets)
-        .onHover(perform: handleHUDHover)
+    }
+
+    private var horizontalHUDContent: some View {
+        VStack(alignment: .center, spacing: PickyHUDDockLayout.panelGap) {
+            if placement.dockSide == .bottom {
+                conversationCard
+            }
+            dockRail
+            if placement.dockSide == .top {
+                conversationCard
+            }
+        }
     }
 
     @ViewBuilder
@@ -184,7 +216,16 @@ struct PickyHUDView: View {
                 onDockHandleDragEnded: onDockHandleDragEnded,
                 onDockHandleDoubleClick: onDockHandleDoubleClick
             )
-            .frame(width: dockMetrics.railWidth)
+            .frame(
+                width: placement.dockSide.orientation == .horizontal
+                    ? PickyHUDDockLayout.dockRailHeight(
+                        sessionCount: visibleSessions.count,
+                        isAddSlotExpanded: isDockAddSlotExpanded,
+                        metrics: dockMetrics
+                    )
+                    : dockMetrics.railWidth,
+                height: placement.dockSide.orientation == .horizontal ? dockMetrics.railWidth : nil
+            )
             .zIndex(10)
             // Keep rail state changes instantaneous; the conversation card handles
             // its own sizing and scroll stabilization when it appears.
@@ -826,19 +867,32 @@ private struct PickyHUDDockRailView: View {
     @State private var isHandleDragging = false
 
     var body: some View {
-        // The handle is the first child INSIDE the dock capsule (after a small top
-        // padding) so the dock body itself acts as the hit target. The capsule
-        // background is opaque, which sidesteps SwiftUI's transparent-view hit-
-        // testing quirks: clicks anywhere in the handle's row hit the NSView
-        // backing the handle, not the empty space outside an external pill.
-        VStack(spacing: 2) {
-            dockAnchorHandle
-            sessionsAndAddSlot
+        Group {
+            if dockSide.orientation == .horizontal {
+                HStack(spacing: 2) {
+                    dockAnchorHandle
+                    sessionsAndAddSlot
+                }
+                .padding(.leading, metrics.topPadding)
+                .padding(.trailing, metrics.bottomPadding)
+                .padding(.vertical, metrics.horizontalPadding)
+                .frame(width: railHeight, height: metrics.railWidth, alignment: .leading)
+            } else {
+                // The handle is the first child INSIDE the dock capsule (after a small top
+                // padding) so the dock body itself acts as the hit target. The capsule
+                // background is opaque, which sidesteps SwiftUI's transparent-view hit-
+                // testing quirks: clicks anywhere in the handle's row hit the NSView
+                // backing the handle, not the empty space outside an external pill.
+                VStack(spacing: 2) {
+                    dockAnchorHandle
+                    sessionsAndAddSlot
+                }
+                .padding(.horizontal, metrics.horizontalPadding)
+                .padding(.top, metrics.topPadding)
+                .padding(.bottom, metrics.bottomPadding)
+                .frame(width: metrics.railWidth, height: railHeight, alignment: .top)
+            }
         }
-        .padding(.horizontal, metrics.horizontalPadding)
-        .padding(.top, metrics.topPadding)
-        .padding(.bottom, metrics.bottomPadding)
-        .frame(width: metrics.railWidth, height: railHeight, alignment: .top)
         .background(dockGlassBackground)
         .onHover(perform: onDockHoverChanged)
     }
@@ -859,28 +913,41 @@ private struct PickyHUDDockRailView: View {
             // one) since there are no sessions to keep it compact for.
             addAgentSlotButton
         } else {
-            VStack(spacing: metrics.sessionSpacing) {
-                ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
-                    PickyHUDDockIconView(
-                        session: session,
-                        index: index,
-                        isActive: activeSessionID == session.id,
-                        isOpened: openedSessionID == session.id,
-                        isPreviewed: previewSessionID == session.id,
-                        dockSide: dockSide,
-                        shortcutNumber: PickyHUDDockLayout.numberShortcutForSessionIndex(index),
-                        isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-                        shouldFlashCompletion: pendingDoneFlashSessionIDs.contains(session.id),
-                        metrics: metrics,
-                        onHover: { onHoverSession(session.id) },
-                        onOpen: { onOpenSession(session.id) },
-                        onArchive: { onArchiveSession(session.id) },
-                        onDoneFlashConsumed: { onDoneFlashConsumed(session.id) }
-                    )
+            if dockSide.orientation == .horizontal {
+                HStack(spacing: metrics.sessionSpacing) {
+                    sessionIcons
                 }
+                collapsibleAddAgentSlot
+                    .padding(.leading, metrics.addSlotTopPadding)
+            } else {
+                VStack(spacing: metrics.sessionSpacing) {
+                    sessionIcons
+                }
+                collapsibleAddAgentSlot
+                    .padding(.top, metrics.addSlotTopPadding)
             }
-            collapsibleAddAgentSlot
-                .padding(.top, metrics.addSlotTopPadding)
+        }
+    }
+
+    @ViewBuilder
+    private var sessionIcons: some View {
+        ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
+            PickyHUDDockIconView(
+                session: session,
+                index: index,
+                isActive: activeSessionID == session.id,
+                isOpened: openedSessionID == session.id,
+                isPreviewed: previewSessionID == session.id,
+                dockSide: dockSide,
+                shortcutNumber: PickyHUDDockLayout.numberShortcutForSessionIndex(index),
+                isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+                shouldFlashCompletion: pendingDoneFlashSessionIDs.contains(session.id),
+                metrics: metrics,
+                onHover: { onHoverSession(session.id) },
+                onOpen: { onOpenSession(session.id) },
+                onArchive: { onArchiveSession(session.id) },
+                onDoneFlashConsumed: { onDoneFlashConsumed(session.id) }
+            )
         }
     }
 
@@ -907,8 +974,14 @@ private struct PickyHUDDockRailView: View {
         // Fill the capsule's available inner width (railWidth minus the dock's
         // 6pt horizontal padding on each side) so the handle row spans the
         // entire top of the capsule.
-        .frame(maxWidth: .infinity)
-        .frame(height: metrics.handleAreaHeight)
+        .frame(
+            maxWidth: dockSide.orientation == .horizontal ? nil : .infinity,
+            maxHeight: dockSide.orientation == .horizontal ? .infinity : nil
+        )
+        .frame(
+            width: dockSide.orientation == .horizontal ? metrics.handleAreaHeight : nil,
+            height: dockSide.orientation == .horizontal ? nil : metrics.handleAreaHeight
+        )
         .overlay {
             // Quiet by default — the pill should hint at draggability without
             // shouting. Hover and drag expand and darken it for a clear cue.

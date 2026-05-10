@@ -230,7 +230,11 @@ final class PickyHUDOverlayManager {
     private func updatePlacement(for screen: NSScreen, displayID: CGDirectDisplayID) {
         guard let entry = panelsByDisplayID[displayID] else { return }
         let pos = position(for: displayID)
-        let next = computeAvailableCardMaxHeight(for: screen, anchorPercent: pos.anchorPercent)
+        let next = computeAvailableCardMaxHeight(
+            for: screen,
+            dockSide: pos.side,
+            anchorPercent: pos.anchorPercent
+        )
         // Avoid spamming SwiftUI re-renders with identical values; @Published
         // publishes on every assignment regardless of equality.
         if abs(entry.placement.availableCardMaxHeight - next) > 0.5 {
@@ -244,19 +248,35 @@ final class PickyHUDOverlayManager {
     /// Largest height the conversation card may take on the given screen, derived
     /// from the live anchor percent and the visible frame. Card content beyond this
     /// scrolls inside `PickyConversationListView` rather than overflowing the panel.
-    private func computeAvailableCardMaxHeight(for screen: NSScreen, anchorPercent: Double) -> CGFloat {
+    private func computeAvailableCardMaxHeight(
+        for screen: NSScreen,
+        dockSide: PickyHUDDockSide,
+        anchorPercent: Double
+    ) -> CGFloat {
         let visibleFrame = screen.visibleFrame
         guard visibleFrame.height > 0 else {
             return PickyHUDPlacement.defaultAvailableCardMaxHeight
         }
         let topPadding = PickyHUDExpansion.dockBodyTopOffsetFromContentTop
-        let dockAnchoredCap = PickyHUDDockLayout.dockTopAnchoredPointAlignedMaxPanelHeight(
-            visibleFrame: visibleFrame,
-            topPaddingFromContentTop: topPadding,
-            anchorPercent: anchorPercent
-        )
         let visibleHeightCap = (visibleFrame.height - 160).rounded(.down)
-        let panelCap = min(dockAnchoredCap, visibleHeightCap)
+        let panelCap: CGFloat
+        switch dockSide.orientation {
+        case .horizontal:
+            // Horizontal mode stacks the dock and card vertically inside the
+            // panel. The card's max height has to leave room for the dock
+            // rail's cross-axis thickness and the gap between the two so the
+            // measured panel height never exceeds `visibleHeightCap` (which
+            // `targetFrame` uses as the panel cap in horizontal mode).
+            let dockMetrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
+            panelCap = max(0, visibleHeightCap - dockMetrics.railWidth - PickyHUDDockLayout.panelGap)
+        case .vertical:
+            let dockAnchoredCap = PickyHUDDockLayout.dockTopAnchoredPointAlignedMaxPanelHeight(
+                visibleFrame: visibleFrame,
+                topPaddingFromContentTop: topPadding,
+                anchorPercent: anchorPercent
+            )
+            panelCap = min(dockAnchoredCap, visibleHeightCap)
+        }
         // Subtract the outer vertical padding (top + bottom). The card sits at HStack
         // top alongside the dock-stack VStack, so the card's max usable height is the
         // panel content height minus the outer vertical padding only — the handle
@@ -321,29 +341,62 @@ final class PickyHUDOverlayManager {
         // Without this, fractional anchor math can land in `origin.y` for short HUDs
         // but in `height` for capped HUDs; NSPanel then floors one and ceils the other,
         // making the dock jump by 1pt while hovering between sessions.
-        let dockAnchoredCap = PickyHUDDockLayout.dockTopAnchoredPointAlignedMaxPanelHeight(
-            visibleFrame: visibleFrame,
-            topPaddingFromContentTop: topPadding,
-            anchorPercent: pos.anchorPercent
-        )
+        let dockMetrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
         let visibleHeightCap = (visibleFrame.height - 160).rounded(.down)
-        let cap = max(minimumHeight, min(visibleHeightCap, dockAnchoredCap).rounded(.down))
+        let cap: CGFloat
+        if pos.side.orientation == .horizontal {
+            cap = max(minimumHeight, visibleHeightCap)
+        } else {
+            let dockAnchoredCap = PickyHUDDockLayout.dockTopAnchoredPointAlignedMaxPanelHeight(
+                visibleFrame: visibleFrame,
+                topPaddingFromContentTop: topPadding,
+                anchorPercent: pos.anchorPercent
+            )
+            cap = max(minimumHeight, min(visibleHeightCap, dockAnchoredCap).rounded(.down))
+        }
         let clampedHeight = min(max(contentSize.height, minimumHeight), cap)
         let targetHeight = clampedHeight.rounded(.up)
-        let originY = PickyHUDDockLayout.dockTopAnchoredPointAlignedPanelY(
-            visibleFrame: visibleFrame,
-            targetHeight: targetHeight,
-            topPaddingFromContentTop: topPadding,
-            anchorPercent: pos.anchorPercent
-        )
-        let dockMetrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
-        let safeXOffset = PickyHUDDockLayout.clampedXOffset(
-            pos.xOffset,
-            visibleFrame: visibleFrame,
-            panelWidth: width,
-            dockSide: pos.side,
-            dockRailWidth: dockMetrics.railWidth
-        )
+
+        let safeXOffset: CGFloat
+        let originX: CGFloat
+        let originY: CGFloat
+        if pos.side.orientation == .horizontal {
+            safeXOffset = PickyHUDDockLayout.clampedHorizontalXOffset(
+                pos.xOffset,
+                visibleFrame: visibleFrame,
+                panelWidth: width
+            )
+            originX = PickyHUDDockLayout.horizontalPanelX(
+                visibleFrame: visibleFrame,
+                panelWidth: width,
+                xOffset: safeXOffset
+            )
+            originY = PickyHUDDockLayout.horizontalPanelY(
+                visibleFrame: visibleFrame,
+                targetHeight: targetHeight,
+                dockSide: pos.side
+            )
+        } else {
+            safeXOffset = PickyHUDDockLayout.clampedXOffset(
+                pos.xOffset,
+                visibleFrame: visibleFrame,
+                panelWidth: width,
+                dockSide: pos.side,
+                dockRailWidth: dockMetrics.railWidth
+            )
+            originX = PickyHUDDockLayout.panelX(
+                visibleFrame: visibleFrame,
+                panelWidth: width,
+                dockSide: pos.side,
+                xOffset: safeXOffset
+            )
+            originY = PickyHUDDockLayout.dockTopAnchoredPointAlignedPanelY(
+                visibleFrame: visibleFrame,
+                targetHeight: targetHeight,
+                topPaddingFromContentTop: topPadding,
+                anchorPercent: pos.anchorPercent
+            )
+        }
         if safeXOffset != pos.xOffset {
             var normalizedPosition = pos
             normalizedPosition.xOffset = safeXOffset
@@ -351,12 +404,7 @@ final class PickyHUDOverlayManager {
         }
 
         return NSRect(
-            x: PickyHUDDockLayout.panelX(
-                visibleFrame: visibleFrame,
-                panelWidth: width,
-                dockSide: pos.side,
-                xOffset: safeXOffset
-            ),
+            x: originX,
             y: originY,
             width: width,
             height: targetHeight
@@ -458,7 +506,9 @@ final class PickyHUDOverlayManager {
 
     private func handleDockHandleDoubleClick(displayID: CGDirectDisplayID) {
         dragStartPositionsByDisplayID = nil
-        let pos = PickyHUDDockPosition.defaults()
+        var pos = position(for: displayID)
+        pos.side = pos.side.orientationToggled(anchorPercent: pos.anchorPercent)
+        pos.xOffset = 0
         setPosition(pos, for: displayID)
         // Only update the placement for this display so other monitors stay put.
         if let entry = panelsByDisplayID[displayID] {
@@ -478,7 +528,6 @@ final class PickyHUDOverlayManager {
 
         var pos = position(for: displayID)
 
-        // -- Y axis: anchor percent --
         if dragStartPositionsByDisplayID == nil {
             dragStartPositionsByDisplayID = currentPositionsByDisplayID
         }
@@ -487,32 +536,50 @@ final class PickyHUDOverlayManager {
             in: startPositions,
             displayKey: String(displayID)
         )
-        let dPct = -(Double(delta.y) / Double(visibleFrame.height)) * 100.0
-        pos.anchorPercent = PickySettings.clampedDockTopAnchorPercent(
-            startPos.anchorPercent + dPct
-        )
 
-        // -- X axis: horizontal offset and side --
         let dockMetrics = PickyHUDDockMetrics(preset: currentDockSizePreset)
-        let draggedDockCenterX = PickyHUDDockLayout.dockRailCenterX(
-            visibleFrame: visibleFrame,
-            panelWidth: width,
-            dockSide: startPos.side,
-            xOffset: startPos.xOffset,
-            dockRailWidth: dockMetrics.railWidth
-        ) + delta.x
-        pos.side = PickyHUDDockLayout.dockSide(
-            forDockRailCenterX: draggedDockCenterX,
-            visibleFrame: visibleFrame,
-            currentSide: pos.side
-        )
-        pos.xOffset = PickyHUDDockLayout.xOffset(
-            forDockRailCenterX: draggedDockCenterX,
-            visibleFrame: visibleFrame,
-            panelWidth: width,
-            dockSide: pos.side,
-            dockRailWidth: dockMetrics.railWidth
-        )
+        if startPos.side.orientation == .horizontal {
+            pos.xOffset = PickyHUDDockLayout.clampedHorizontalXOffset(
+                startPos.xOffset + delta.x,
+                visibleFrame: visibleFrame,
+                panelWidth: width
+            )
+            let startDockCenterY: CGFloat = startPos.side == .top
+                ? visibleFrame.maxY - PickyHUDDockLayout.dockEdgeMargin - (dockMetrics.railWidth / 2)
+                : visibleFrame.minY + PickyHUDDockLayout.dockEdgeMargin + (dockMetrics.railWidth / 2)
+            pos.side = PickyHUDDockLayout.horizontalDockSide(
+                forDockRailCenterY: startDockCenterY + delta.y,
+                visibleFrame: visibleFrame,
+                currentSide: pos.side
+            )
+        } else {
+            // -- Y axis: anchor percent --
+            let dPct = -(Double(delta.y) / Double(visibleFrame.height)) * 100.0
+            pos.anchorPercent = PickySettings.clampedDockTopAnchorPercent(
+                startPos.anchorPercent + dPct
+            )
+
+            // -- X axis: horizontal offset and side --
+            let draggedDockCenterX = PickyHUDDockLayout.dockRailCenterX(
+                visibleFrame: visibleFrame,
+                panelWidth: width,
+                dockSide: startPos.side,
+                xOffset: startPos.xOffset,
+                dockRailWidth: dockMetrics.railWidth
+            ) + delta.x
+            pos.side = PickyHUDDockLayout.dockSide(
+                forDockRailCenterX: draggedDockCenterX,
+                visibleFrame: visibleFrame,
+                currentSide: pos.side
+            )
+            pos.xOffset = PickyHUDDockLayout.xOffset(
+                forDockRailCenterX: draggedDockCenterX,
+                visibleFrame: visibleFrame,
+                panelWidth: width,
+                dockSide: pos.side,
+                dockRailWidth: dockMetrics.railWidth
+            )
+        }
 
         setPosition(pos, for: displayID)
         repositionAllPanels()

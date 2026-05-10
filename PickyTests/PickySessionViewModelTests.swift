@@ -771,6 +771,41 @@ struct PickySessionViewModelTests {
     @Test func hudDockSideTogglesBetweenScreenEdges() throws {
         #expect(PickyHUDDockSide.right.toggled == .left)
         #expect(PickyHUDDockSide.left.toggled == .right)
+        #expect(PickyHUDDockSide.top.toggled == .bottom)
+        #expect(PickyHUDDockSide.bottom.toggled == .top)
+    }
+
+    @Test func hudDockSideTogglesOrientationForHandleDoubleClick() throws {
+        #expect(PickyHUDDockSide.right.orientationToggled(anchorPercent: 20) == .top)
+        #expect(PickyHUDDockSide.left.orientationToggled(anchorPercent: 60) == .bottom)
+        #expect(PickyHUDDockSide.top.orientationToggled(anchorPercent: 20) == .right)
+        #expect(PickyHUDDockSide.bottom.orientationToggled(anchorPercent: 60) == .right)
+    }
+
+    @Test func hudDockHorizontalPanelPlacementUsesTopBottomEdgesAndClampedCenterOffset() throws {
+        let visibleFrame = CGRect(x: 100, y: 80, width: 1200, height: 800)
+        let panelWidth: CGFloat = 540
+        let targetHeight: CGFloat = 220
+
+        #expect(PickyHUDDockLayout.horizontalPanelX(visibleFrame: visibleFrame, panelWidth: panelWidth) == visibleFrame.midX - (panelWidth / 2))
+        #expect(PickyHUDDockLayout.horizontalPanelY(visibleFrame: visibleFrame, targetHeight: targetHeight, dockSide: .top) == visibleFrame.maxY - targetHeight - PickyHUDDockLayout.dockEdgeMargin)
+        #expect(PickyHUDDockLayout.horizontalPanelY(visibleFrame: visibleFrame, targetHeight: targetHeight, dockSide: .bottom) == visibleFrame.minY + PickyHUDDockLayout.dockEdgeMargin)
+
+        let clampedRight = PickyHUDDockLayout.clampedHorizontalXOffset(10_000, visibleFrame: visibleFrame, panelWidth: panelWidth)
+        #expect(PickyHUDDockLayout.horizontalPanelX(visibleFrame: visibleFrame, panelWidth: panelWidth, xOffset: clampedRight) == visibleFrame.maxX - PickyHUDDockLayout.screenMargin - panelWidth)
+    }
+
+    @Test func hudDockHorizontalSideUsesFortySixtySnapHysteresis() throws {
+        let visibleFrame = CGRect(x: 100, y: 80, width: 1200, height: 800)
+        let snapBottomY = visibleFrame.minY + visibleFrame.height * PickyHUDDockLayout.dockSideSnapBottomThreshold
+        let snapTopY = visibleFrame.minY + visibleFrame.height * PickyHUDDockLayout.dockSideSnapTopThreshold
+
+        #expect(PickyHUDDockLayout.horizontalDockSide(forDockRailCenterY: snapBottomY - 0.1, visibleFrame: visibleFrame, currentSide: .top) == .bottom)
+        #expect(PickyHUDDockLayout.horizontalDockSide(forDockRailCenterY: snapBottomY, visibleFrame: visibleFrame, currentSide: .top) == .top)
+        #expect(PickyHUDDockLayout.horizontalDockSide(forDockRailCenterY: visibleFrame.midY, visibleFrame: visibleFrame, currentSide: .bottom) == .bottom)
+        #expect(PickyHUDDockLayout.horizontalDockSide(forDockRailCenterY: visibleFrame.midY, visibleFrame: visibleFrame, currentSide: .top) == .top)
+        #expect(PickyHUDDockLayout.horizontalDockSide(forDockRailCenterY: snapTopY, visibleFrame: visibleFrame, currentSide: .bottom) == .bottom)
+        #expect(PickyHUDDockLayout.horizontalDockSide(forDockRailCenterY: snapTopY + 0.1, visibleFrame: visibleFrame, currentSide: .bottom) == .top)
     }
 
     @Test func hudDockPanelXMirrorsBetweenLeftAndRightEdges() throws {

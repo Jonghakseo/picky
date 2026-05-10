@@ -357,19 +357,59 @@ enum PickyScreenContextScope: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-/// Horizontal screen edge where the Pickle HUD dock is anchored.
+/// Whether the dock rail runs vertically along a screen side or horizontally
+/// along the screen top/bottom. Derived from `PickyHUDDockSide`; the side enum
+/// is the source of truth so per-display state stays a single field on disk.
+enum PickyHUDDockOrientation: String, Codable, CaseIterable, Equatable {
+    case vertical
+    case horizontal
+}
+
+/// Screen edge where the Pickle HUD dock is anchored.
 /// Defaults to `.right` to preserve existing behavior for users without the key
-/// in their settings file. The dock handle double-click toggles this value.
+/// in their settings file. The dock handle double-click toggles between the
+/// vertical and horizontal layouts; `.left/.right` map to the vertical layout
+/// pinned to a screen side, `.top/.bottom` map to the horizontal layout pinned
+/// to a screen top/bottom edge.
 enum PickyHUDDockSide: String, Codable, CaseIterable, Identifiable {
     case right
     case left
+    case top
+    case bottom
 
     var id: String { rawValue }
 
+    var orientation: PickyHUDDockOrientation {
+        switch self {
+        case .left, .right: .vertical
+        case .top, .bottom: .horizontal
+        }
+    }
+
+    /// Flip to the opposite edge within the same orientation.
+    /// Used by the existing left/right snap math; horizontal callers can use the
+    /// new `.top/.bottom` symmetry the same way.
     var toggled: PickyHUDDockSide {
         switch self {
         case .right: .left
         case .left: .right
+        case .top: .bottom
+        case .bottom: .top
+        }
+    }
+
+    /// Switch orientation while preserving a sensible side on the new axis.
+    /// `anchorPercent` is interpreted as the long-axis position (Y% in vertical,
+    /// X% in horizontal); a value below 50 in vertical mode means the dock is
+    /// in the upper half of the screen, so flipping to horizontal lands on `.top`.
+    func orientationToggled(anchorPercent: Double) -> PickyHUDDockSide {
+        switch self {
+        case .left, .right:
+            return anchorPercent < 50 ? .top : .bottom
+        case .top, .bottom:
+            // Always return to `.right` when toggling back to vertical so the
+            // dock lands somewhere predictable; users can drag to `.left` again.
+            return .right
         }
     }
 }

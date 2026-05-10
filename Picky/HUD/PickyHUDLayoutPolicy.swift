@@ -318,6 +318,11 @@ enum PickyHUDDockLayout {
             raw = visibleFrame.maxX - panelWidth - dockRightEdgeMargin + xOffset
         case .left:
             raw = visibleFrame.minX + dockLeftEdgeMargin + xOffset
+        case .top, .bottom:
+            // Vertical-only helper; horizontal callers use `horizontalPanelX`.
+            // Fall back to the `.right` placement so accidental misuse stays on
+            // screen instead of producing NaN.
+            raw = visibleFrame.maxX - panelWidth - dockRightEdgeMargin + xOffset
         }
         return raw.rounded(.toNearestOrEven)
     }
@@ -351,7 +356,7 @@ enum PickyHUDDockLayout {
             xOffset: xOffset
         )
         switch dockSide {
-        case .right:
+        case .right, .top, .bottom:
             return x + panelWidth - PickyHUDExpansion.outerPadding - (dockRailWidth / 2)
         case .left:
             return x + PickyHUDExpansion.outerPadding + (dockRailWidth / 2)
@@ -387,7 +392,7 @@ enum PickyHUDDockLayout {
         )
         let naturalDockRailCenterX: CGFloat
         switch dockSide {
-        case .right:
+        case .right, .top, .bottom:
             naturalDockRailCenterX = naturalPanelX + panelWidth - PickyHUDExpansion.outerPadding - (dockRailWidth / 2)
         case .left:
             naturalDockRailCenterX = naturalPanelX + PickyHUDExpansion.outerPadding + (dockRailWidth / 2)
@@ -399,6 +404,55 @@ enum PickyHUDDockLayout {
             dockSide: dockSide,
             dockRailWidth: dockRailWidth
         )
+    }
+
+    static func horizontalPanelX(visibleFrame: CGRect, panelWidth: CGFloat, xOffset: CGFloat = 0) -> CGFloat {
+        let safeOffset = clampedHorizontalXOffset(xOffset, visibleFrame: visibleFrame, panelWidth: panelWidth)
+        let raw = visibleFrame.midX - (panelWidth / 2) + safeOffset
+        return raw.rounded(.toNearestOrEven)
+    }
+
+    static func clampedHorizontalXOffset(_ xOffset: CGFloat, visibleFrame: CGRect, panelWidth: CGFloat) -> CGFloat {
+        let centeredX = visibleFrame.midX - (panelWidth / 2)
+        let minX = visibleFrame.minX + screenMargin
+        let maxX = visibleFrame.maxX - screenMargin - panelWidth
+        guard maxX >= minX else { return 0 }
+        return min(maxX - centeredX, max(minX - centeredX, xOffset))
+    }
+
+    static func horizontalPanelY(visibleFrame: CGRect, targetHeight: CGFloat, dockSide: PickyHUDDockSide) -> CGFloat {
+        switch dockSide {
+        case .top:
+            return (visibleFrame.maxY - targetHeight - dockEdgeMargin).rounded(.toNearestOrEven)
+        case .bottom:
+            return (visibleFrame.minY + dockEdgeMargin).rounded(.toNearestOrEven)
+        case .left, .right:
+            return dockTopAnchoredPointAlignedPanelY(
+                visibleFrame: visibleFrame,
+                targetHeight: targetHeight,
+                topPaddingFromContentTop: dockBodyTopOffsetFallback,
+                anchorPercent: PickySettings.defaultDockTopAnchorPercent
+            )
+        }
+    }
+
+    private static var dockBodyTopOffsetFallback: CGFloat {
+        PickyHUDExpansion.dockBodyTopOffsetFromContentTop
+    }
+
+    static let dockSideSnapTopThreshold: CGFloat = 0.60
+    static let dockSideSnapBottomThreshold: CGFloat = 0.40
+
+    static func horizontalDockSide(
+        forDockRailCenterY dockRailCenterY: CGFloat,
+        visibleFrame: CGRect,
+        currentSide: PickyHUDDockSide
+    ) -> PickyHUDDockSide {
+        guard visibleFrame.height > 0 else { return currentSide }
+        let relativeY = (dockRailCenterY - visibleFrame.minY) / visibleFrame.height
+        if relativeY > dockSideSnapTopThreshold { return .top }
+        if relativeY < dockSideSnapBottomThreshold { return .bottom }
+        return currentSide
     }
 
     /// Maximum number of points the dock capsule may slide past the screen edge
@@ -422,7 +476,7 @@ enum PickyHUDDockLayout {
     ) -> CGFloat {
         let overhangLimit = dockOverhangLimit(forRailWidth: dockRailWidth)
         switch dockSide {
-        case .right:
+        case .right, .top, .bottom:
             let minX = visibleFrame.minX + screenMargin
             let naturalX = visibleFrame.maxX - panelWidth - dockRightEdgeMargin
             let maxShiftLeft = naturalX - minX

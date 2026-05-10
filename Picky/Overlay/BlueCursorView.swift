@@ -26,8 +26,8 @@ private struct PickyCursorStyle: Codable, Equatable {
     var highlightOffsetX = -0.4
     var highlightOffsetY = -0.4
     var outerShadowOpacity = 0.6
-    var outerShadowRadius = 8.0
-    var outerShadowFlightMultiplier = 90.0
+    var outerShadowRadius = 4.0
+    var outerShadowFlightMultiplier = 45.0
 
     var cursorColor: Color { Color(hex: colorHex) }
     var listeningColor: Color { Color(hex: listeningColorHex) }
@@ -293,7 +293,7 @@ struct BlueCursorView: View {
     @ObservedObject private var overlayBubblePreferencesStore = PickyOverlayBubblePreferencesStore.shared
 
     static let cursorTrackingInterval: TimeInterval = 1.0 / 120.0
-    private static let shakeReactionRequiredDuration: TimeInterval = 1.0
+    private static let shakeReactionRequiredDuration: TimeInterval = 2.0
 
     @State private var cursorPosition: CGPoint
     @State private var isCursorOnThisScreen: Bool

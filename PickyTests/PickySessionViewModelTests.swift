@@ -625,11 +625,11 @@ struct PickySessionViewModelTests {
 
     @Test func hudDockPreviewOpensImmediatelyAndClosesAfterDockLeaveTimeout() throws {
         #expect(PickyHUDDockLayout.closeDelay == 0.4)
-        #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: nil, sessionID: "a", pinnedID: nil) == "a")
-        #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: "a", sessionID: "b", pinnedID: "a") == "b")
-        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", pinnedID: nil, isDockHovered: false) == nil)
-        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", pinnedID: nil, isDockHovered: true) == "a")
-        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "b", pinnedID: "a", isDockHovered: false) == nil)
+        #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: nil, sessionID: "a") == "a")
+        #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: "a", sessionID: "b") == "b")
+        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", isDockHovered: false) == nil)
+        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "a", isDockHovered: true) == "a")
+        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "b", isDockHovered: false) == nil)
         #expect(PickyHUDDockLayout.heldSessionAfterCloseTimeout(current: .open("opened"), isHUDHovered: true) == .open("opened"))
         #expect(PickyHUDDockLayout.heldSessionAfterCloseTimeout(current: .open("opened"), isHUDHovered: false) == .open("opened"))
     }
@@ -638,20 +638,14 @@ struct PickySessionViewModelTests {
         let visibleIDs = ["first", "pinned", "opened", "hovered"]
         #expect(PickyHUDDockLayout.previewSessionID(hoveredID: "hovered", heldID: "opened") == nil)
         #expect(PickyHUDDockLayout.previewSessionID(hoveredID: "hovered", heldID: nil) == "hovered")
-        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, held: .pinned("pinned"), previewID: "hovered") == "pinned")
         #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, held: .open("opened"), previewID: "hovered") == "opened")
-        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, held: .pinned("missing"), previewID: nil) == nil)
+        #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, held: .open("missing"), previewID: nil) == nil)
     }
 
-    @Test func hudDockHeldStateIsExclusiveAcrossClickAndDoubleClick() throws {
+    @Test func hudDockHeldStateIsExclusiveAcrossClicks() throws {
         #expect(PickyHUDDockLayout.heldSessionAfterClick(current: nil, clicked: "agent-a") == .open("agent-a"))
         #expect(PickyHUDDockLayout.heldSessionAfterClick(current: .open("agent-a"), clicked: "agent-a") == nil)
         #expect(PickyHUDDockLayout.heldSessionAfterClick(current: .open("agent-a"), clicked: "agent-b") == .open("agent-b"))
-        #expect(PickyHUDDockLayout.heldSessionAfterClick(current: .pinned("agent-a"), clicked: "agent-a") == nil)
-        #expect(PickyHUDDockLayout.heldSessionAfterClick(current: .pinned("agent-a"), clicked: "agent-b") == .open("agent-b"))
-        #expect(PickyHUDDockLayout.heldSessionAfterDoubleClick(current: nil, doubleClicked: "agent-a") == .pinned("agent-a"))
-        #expect(PickyHUDDockLayout.heldSessionAfterDoubleClick(current: .open("agent-a"), doubleClicked: "agent-a") == .pinned("agent-a"))
-        #expect(PickyHUDDockLayout.heldSessionAfterDoubleClick(current: .pinned("agent-a"), doubleClicked: "agent-b") == .pinned("agent-b"))
     }
 
     @Test func hudDockKeyboardShortcutsOpenNumberedSessionsAndCycle() throws {
@@ -667,15 +661,13 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDDockLayout.heldSessionAfterCycleShortcut(current: .open("agent-a"), visibleIDs: visibleIDs, direction: 1) == .open("agent-b"))
         #expect(PickyHUDDockLayout.heldSessionAfterCycleShortcut(current: .open("agent-c"), visibleIDs: visibleIDs, direction: 1) == .open("agent-a"))
         #expect(PickyHUDDockLayout.heldSessionAfterCycleShortcut(current: .open("agent-a"), visibleIDs: visibleIDs, direction: -1) == .open("agent-c"))
-        #expect(PickyHUDDockLayout.heldSessionAfterCycleShortcut(current: .pinned("agent-b"), visibleIDs: visibleIDs, direction: -1) == .open("agent-a"))
         #expect(PickyHUDDockLayout.heldSessionAfterCycleShortcut(current: .open("missing"), visibleIDs: visibleIDs, direction: 1) == .open("agent-a"))
         #expect(PickyHUDDockLayout.heldSessionAfterCycleShortcut(current: .open("agent-a"), visibleIDs: [], direction: 1) == .open("agent-a"))
     }
 
-    @Test func hudDockCloseTimeoutKeepsOpenAndPinnedHolds() throws {
+    @Test func hudDockCloseTimeoutKeepsOpenHolds() throws {
         #expect(PickyHUDDockLayout.heldSessionAfterCloseTimeout(current: .open("opened"), isHUDHovered: true) == .open("opened"))
         #expect(PickyHUDDockLayout.heldSessionAfterCloseTimeout(current: .open("opened"), isHUDHovered: false) == .open("opened"))
-        #expect(PickyHUDDockLayout.heldSessionAfterCloseTimeout(current: .pinned("pinned"), isHUDHovered: false) == .pinned("pinned"))
     }
 
     @Test func hudDockKeepsGitSectionExpansionBySessionAcrossHoverClose() throws {
@@ -686,8 +678,8 @@ struct PickySessionViewModelTests {
         #expect(!PickyHUDDockLayout.gitSectionExpansion(sessionID: "agent-a", storedValues: storedValues))
         #expect(PickyHUDDockLayout.gitSectionExpansion(sessionID: "agent-b", storedValues: storedValues))
 
-        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "agent-a", pinnedID: nil, isDockHovered: false) == nil)
-        #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: nil, sessionID: "agent-a", pinnedID: nil) == "agent-a")
+        #expect(PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(current: "agent-a", isDockHovered: false) == nil)
+        #expect(PickyHUDDockLayout.previewSessionIDAfterDockHover(current: nil, sessionID: "agent-a") == "agent-a")
         #expect(!PickyHUDDockLayout.gitSectionExpansion(sessionID: "agent-a", storedValues: storedValues))
     }
 

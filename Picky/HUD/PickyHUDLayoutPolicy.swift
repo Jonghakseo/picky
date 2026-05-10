@@ -103,21 +103,16 @@ enum PickyHUDExpansion {
 
 enum PickyHUDDockHold: Equatable {
     case open(String)
-    case pinned(String)
 
     var sessionID: String {
         switch self {
-        case let .open(sessionID), let .pinned(sessionID):
+        case let .open(sessionID):
             return sessionID
         }
     }
 
     func isOpen(sessionID: String) -> Bool {
         self == .open(sessionID)
-    }
-
-    func isPinned(sessionID: String) -> Bool {
-        self == .pinned(sessionID)
     }
 }
 
@@ -150,11 +145,11 @@ enum PickyHUDDockLayout {
         heldID == nil ? hoveredID : nil
     }
 
-    static func previewSessionIDAfterDockHover(current: String?, sessionID: String, pinnedID: String?) -> String? {
+    static func previewSessionIDAfterDockHover(current: String?, sessionID: String) -> String? {
         sessionID
     }
 
-    static func previewSessionIDAfterCloseTimeout(current: String?, pinnedID: String?, isDockHovered: Bool) -> String? {
+    static func previewSessionIDAfterCloseTimeout(current: String?, isDockHovered: Bool) -> String? {
         isDockHovered ? current : nil
     }
 
@@ -164,19 +159,10 @@ enum PickyHUDDockLayout {
 
     static func heldSessionAfterClick(current: PickyHUDDockHold?, clicked: String) -> PickyHUDDockHold? {
         switch current {
-        case .open(clicked), .pinned(clicked):
+        case .open(clicked):
             return nil
-        case .open, .pinned, nil:
+        case .open, nil:
             return .open(clicked)
-        }
-    }
-
-    static func heldSessionAfterDoubleClick(current: PickyHUDDockHold?, doubleClicked: String) -> PickyHUDDockHold? {
-        switch current {
-        case .pinned(doubleClicked):
-            return nil
-        case .open, .pinned, nil:
-            return .pinned(doubleClicked)
         }
     }
 

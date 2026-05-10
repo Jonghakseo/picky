@@ -46,11 +46,6 @@ struct PickyHUDView: View {
         )
     }
 
-    private var pinnedSessionID: String? {
-        if case let .pinned(sessionID) = heldSession { return sessionID }
-        return nil
-    }
-
     private var openedSessionID: String? {
         if case let .open(sessionID) = heldSession { return sessionID }
         return nil
@@ -153,14 +148,12 @@ struct PickyHUDView: View {
             PickyHUDDockRailView(
                 sessions: visibleSessions,
                 activeSessionID: activeSession?.id,
-                pinnedSessionID: pinnedSessionID,
                 openedSessionID: openedSessionID,
                 previewSessionID: hoverPreviewSessionID,
                 dockSide: placement.dockSide,
                 pendingDoneFlashSessionIDs: viewModel.pendingDoneFlashSessionIDs,
                 onHoverSession: previewDockSession,
                 onOpenSession: toggleOpenSession,
-                onPinSession: pinSession,
                 onArchiveSession: archiveSession,
                 onCreatePickle: chooseFolderForEmptyPickle,
                 onDockHoverChanged: handleDockHover,
@@ -232,8 +225,7 @@ struct PickyHUDView: View {
         suppressedHoverSessionID = nil
         hoverPreviewSessionID = PickyHUDDockLayout.previewSessionIDAfterDockHover(
             current: hoverPreviewSessionID,
-            sessionID: sessionID,
-            pinnedID: pinnedSessionID
+            sessionID: sessionID
         )
     }
 
@@ -251,13 +243,6 @@ struct PickyHUDView: View {
             hoverPreviewSessionID = nil
             suppressedHoverSessionID = nil
         }
-    }
-
-    private func pinSession(_ sessionID: String) {
-        cancelPendingClose()
-        heldSession = PickyHUDDockLayout.heldSessionAfterDoubleClick(current: heldSession, doubleClicked: sessionID)
-        hoverPreviewSessionID = nil
-        suppressedHoverSessionID = nil
     }
 
     private func archiveSession(_ sessionID: String) {
@@ -283,7 +268,6 @@ struct PickyHUDView: View {
                 let isStillInsideHUD = isPointerInsideHUDSurface
                 hoverPreviewSessionID = PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(
                     current: hoverPreviewSessionID,
-                    pinnedID: pinnedSessionID,
                     isDockHovered: isDockHovered
                 )
                 heldSession = PickyHUDDockLayout.heldSessionAfterCloseTimeout(
@@ -461,7 +445,7 @@ private struct PickyHUDMiniPreviewCardView: View {
                 .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(DS.Colors.surface1.opacity(0.68))
+                        .fill(DS.Colors.surface3.opacity(0.62))
                 )
         }
         .task(id: "\(session.cwd ?? "")|\(session.updatedAt.timeIntervalSince1970)") {
@@ -699,14 +683,12 @@ enum PickyHUDArchiveHoldPolicy {
 private struct PickyHUDDockRailView: View {
     let sessions: [PickySessionListViewModel.SessionCard]
     let activeSessionID: String?
-    let pinnedSessionID: String?
     let openedSessionID: String?
     let previewSessionID: String?
     let dockSide: PickyHUDDockSide
     let pendingDoneFlashSessionIDs: Set<String>
     let onHoverSession: (String) -> Void
     let onOpenSession: (String) -> Void
-    let onPinSession: (String) -> Void
     let onArchiveSession: (String) -> Void
     let onCreatePickle: () -> Void
     let onDockHoverChanged: (Bool) -> Void
@@ -750,14 +732,12 @@ private struct PickyHUDDockRailView: View {
                         session: session,
                         index: index,
                         isActive: activeSessionID == session.id,
-                        isPinned: pinnedSessionID == session.id,
                         isOpened: openedSessionID == session.id,
                         isPreviewed: previewSessionID == session.id,
                         dockSide: dockSide,
                         shouldFlashCompletion: pendingDoneFlashSessionIDs.contains(session.id),
                         onHover: { onHoverSession(session.id) },
                         onOpen: { onOpenSession(session.id) },
-                        onPin: { onPinSession(session.id) },
                         onArchive: { onArchiveSession(session.id) },
                         onDoneFlashConsumed: { onDoneFlashConsumed(session.id) }
                     )
@@ -908,14 +888,12 @@ private struct PickyHUDDockIconView: View {
     let session: PickySessionListViewModel.SessionCard
     let index: Int
     let isActive: Bool
-    let isPinned: Bool
     let isOpened: Bool
     let isPreviewed: Bool
     let dockSide: PickyHUDDockSide
     let shouldFlashCompletion: Bool
     let onHover: () -> Void
     let onOpen: () -> Void
-    let onPin: () -> Void
     let onArchive: () -> Void
     let onDoneFlashConsumed: () -> Void
 
@@ -951,16 +929,6 @@ private struct PickyHUDDockIconView: View {
         .overlay(alignment: .topTrailing) {
             statusDot.offset(x: -1.3, y: 1.3)
         }
-        .overlay(alignment: .bottomTrailing) {
-            if isPinned {
-                Image(systemName: "pin.fill")
-                    .font(.system(size: 6.5, weight: .bold))
-                    .foregroundColor(DS.Colors.accentText)
-                    .frame(width: 12, height: 12)
-                    .background(Circle().fill(DS.Colors.surface1.opacity(0.96)))
-                    .offset(x: 5, y: 5)
-            }
-        }
         .overlay(alignment: .topLeading) {
             if isArchivePressing {
                 archiveBadge
@@ -985,7 +953,6 @@ private struct PickyHUDDockIconView: View {
             PickyHUDDockIconClickHost(
                 onHover: onHover,
                 onOpen: onOpen,
-                onPin: onPin,
                 onArchivePressing: handleArchivePressing,
                 onArchive: completeArchiveHold
             )
@@ -1005,7 +972,7 @@ private struct PickyHUDDockIconView: View {
         }
         .animation(.spring(response: 0.2, dampingFraction: 0.78), value: isArchivePressing)
         .accessibilityLabel("Preview \(session.title)")
-        .accessibilityHint("Click to open or close. Double-click to pin or unpin. Press and hold for 1.5 seconds to archive this Pickle.")
+        .accessibilityHint("Click to open or close. Press and hold for 1.5 seconds to archive this Pickle.")
         .accessibilityAddTraits(.isButton)
     }
 
@@ -1299,14 +1266,12 @@ private struct PickyHUDAnimatedStatusBorderView: View {
 private struct PickyHUDDockIconClickHost: NSViewRepresentable {
     var onHover: () -> Void
     var onOpen: () -> Void
-    var onPin: () -> Void
     var onArchivePressing: (Bool) -> Void
     var onArchive: () -> Void
 
     final class Coordinator {
         var onHover: (() -> Void)?
         var onOpen: (() -> Void)?
-        var onPin: (() -> Void)?
         var onArchivePressing: ((Bool) -> Void)?
         var onArchive: (() -> Void)?
     }
@@ -1316,7 +1281,6 @@ private struct PickyHUDDockIconClickHost: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         context.coordinator.onHover = onHover
         context.coordinator.onOpen = onOpen
-        context.coordinator.onPin = onPin
         context.coordinator.onArchivePressing = onArchivePressing
         context.coordinator.onArchive = onArchive
         let view = PickyHUDDockIconClickNSView()
@@ -1327,7 +1291,6 @@ private struct PickyHUDDockIconClickHost: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         context.coordinator.onHover = onHover
         context.coordinator.onOpen = onOpen
-        context.coordinator.onPin = onPin
         context.coordinator.onArchivePressing = onArchivePressing
         context.coordinator.onArchive = onArchive
     }
@@ -1399,11 +1362,8 @@ private final class PickyHUDDockIconClickNSView: NSView {
         mouseDownPoint = nil
         didCompleteArchiveHold = false
         guard !completedArchive else { return }
-        if event.clickCount >= 2 {
-            coordinator?.onPin?()
-        } else {
-            coordinator?.onOpen?()
-        }
+        guard event.clickCount < 2 else { return }
+        coordinator?.onOpen?()
     }
 
     private func cancelArchiveHoldFeedback() {

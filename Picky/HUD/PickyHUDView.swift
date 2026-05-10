@@ -34,6 +34,7 @@ struct PickyHUDView: View {
     @State private var keyDownMonitor: Any?
     @State private var modifierFlagsMonitor: Any?
     @State private var isCommandShortcutHintVisible = false
+    @State private var composerFocusRequestID = 0
     @State private var sizeReporter = PickyHUDSizeReporter()
 
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {
@@ -136,7 +137,8 @@ struct PickyHUDView: View {
                 session: activeSession,
                 onArchiveSession: archiveSession,
                 maxHeight: placement.availableCardMaxHeight,
-                isPreviewMode: false
+                isPreviewMode: false,
+                focusRequestID: composerFocusRequestID
             )
             .id(activeSession.id)
             .frame(width: PickyHUDDockLayout.detailWidth)
@@ -313,6 +315,13 @@ struct PickyHUDView: View {
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         let visibleIDs = visibleSessions.map(\.id)
 
+        if PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: event.keyCode, modifiers: flags),
+           activeSession != nil,
+           !isTextInputFocused(in: keyWindow) {
+            focusActiveComposer()
+            return true
+        }
+
         if flags == .command, event.keyCode == Self.wKeyCode, heldSession != nil {
             closeHeldSession()
             return true
@@ -348,6 +357,15 @@ struct PickyHUDView: View {
         heldSession = next
         hoverPreviewSessionID = nil
         suppressedHoverSessionID = nil
+    }
+
+    private func focusActiveComposer() {
+        composerFocusRequestID &+= 1
+    }
+
+    private func isTextInputFocused(in window: NSWindow) -> Bool {
+        guard let firstResponder = window.firstResponder else { return false }
+        return firstResponder is NSTextView || firstResponder is NSTextField
     }
 
     private func uninstallCloseShortcutMonitor() {
@@ -407,6 +425,13 @@ struct PickyHUDView: View {
 enum PickyHUDKeyboardShortcutPolicy {
     private static let leftBracketKeyCode: UInt16 = 33
     private static let rightBracketKeyCode: UInt16 = 30
+    private static let returnKeyCode: UInt16 = 36
+    private static let keypadEnterKeyCode: UInt16 = 76
+
+    static func isComposerFocusShortcut(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
+        modifiers.intersection([.command, .shift, .option, .control]).isEmpty
+            && (keyCode == returnKeyCode || keyCode == keypadEnterKeyCode)
+    }
 
     static func cycleDirection(keyCode: UInt16, charactersIgnoringModifiers: String?) -> Int? {
         switch keyCode {

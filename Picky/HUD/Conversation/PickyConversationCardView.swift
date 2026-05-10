@@ -20,6 +20,7 @@ struct PickyConversationCardView: View {
     /// placement provider.
     var maxHeight: CGFloat = PickyHUDPlacement.defaultAvailableCardMaxHeight
     var isPreviewMode = false
+    var focusRequestID = 0
     @State private var droppedFilePaths: [String] = []
     @State private var isFileDropTargeted = false
 
@@ -32,7 +33,8 @@ struct PickyConversationCardView: View {
                 session: session,
                 viewModel: viewModel,
                 droppedFilePaths: $droppedFilePaths,
-                isFileDropTargeted: isFileDropTargeted
+                isFileDropTargeted: isFileDropTargeted,
+                focusRequestID: focusRequestID
             )
         }
         .frame(width: PickyHUDDockLayout.detailContentWidth, alignment: .topLeading)

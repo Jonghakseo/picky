@@ -29,6 +29,7 @@ struct PickyConversationComposerView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     @Binding private var droppedFilePaths: [String]
     let isFileDropTargeted: Bool
+    let focusRequestID: Int
     @State private var draft: String = ""
     @State private var selectedSlashCommandIndex: Int = 0
     @State private var isSlashCommandAutocompleteDismissed: Bool = false
@@ -40,12 +41,14 @@ struct PickyConversationComposerView: View {
         session: PickySessionListViewModel.SessionCard,
         viewModel: PickySessionListViewModel,
         droppedFilePaths: Binding<[String]> = .constant([]),
-        isFileDropTargeted: Bool = false
+        isFileDropTargeted: Bool = false,
+        focusRequestID: Int = 0
     ) {
         self.session = session
         self.viewModel = viewModel
         self._droppedFilePaths = droppedFilePaths
         self.isFileDropTargeted = isFileDropTargeted
+        self.focusRequestID = focusRequestID
     }
 
     var body: some View {
@@ -61,6 +64,9 @@ struct PickyConversationComposerView: View {
         .onDisappear { removeKeyDownMonitor() }
         .onChange(of: viewModel.composerDraftRequest(for: session.id)) { _, request in
             applyComposerDraftRequestIfNeeded(request)
+        }
+        .onChange(of: focusRequestID) { _, _ in
+            focusComposerIfPossible()
         }
         .onChange(of: droppedFilePaths) { _, paths in
             guard !paths.isEmpty else { return }
@@ -410,8 +416,13 @@ struct PickyConversationComposerView: View {
         selectedSlashCommandIndex = 0
         isSlashCommandAutocompleteDismissed = true
         appliedComposerDraftRequestID = request.id
-        isFocused = true
+        focusComposerIfPossible()
         viewModel.consumeComposerDraftRequest(sessionID: session.id, requestID: request.id)
+    }
+
+    private func focusComposerIfPossible() {
+        guard !isComposerInputDisabled else { return }
+        isFocused = true
     }
 
     var placeholderText: String { placeholder }

@@ -492,34 +492,41 @@ enum PickyHUDKeyboardShortcutPolicy {
 }
 
 private struct PickyHUDMiniPreviewCardView: View {
-    static let cardWidth: CGFloat = 238
-    static var totalWidth: CGFloat { cardWidth }
-
     let session: PickySessionListViewModel.SessionCard
+    let metrics: PickyHUDDockMetrics
     @State private var gitStatus: PickyGitRepositoryStatus?
 
-    init(session: PickySessionListViewModel.SessionCard) {
+    init(session: PickySessionListViewModel.SessionCard, metrics: PickyHUDDockMetrics) {
         self.session = session
+        self.metrics = metrics
         _gitStatus = State(initialValue: PickyGitRepositoryStatus.cached(cwd: session.cwd))
     }
 
+    private var scale: CGFloat { metrics.scale }
+    private var cornerRadius: CGFloat { max(12, 16 * scale) }
+    private var titleFontSize: CGFloat { max(12, 14 * scale) }
+    private var secondaryFontSize: CGFloat { max(10, 11 * scale) }
+    private var statusDotSide: CGFloat { max(6, 7 * scale) }
+    private var horizontalPadding: CGFloat { max(8, 10 * scale) }
+    private var verticalPadding: CGFloat { max(7, 9 * scale) }
+
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: max(6, 8 * scale)) {
             Circle()
                 .fill(statusColor)
-                .frame(width: 7, height: 7)
+                .frame(width: statusDotSide, height: statusDotSide)
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 7) {
+            VStack(alignment: .leading, spacing: max(2, 3 * scale)) {
+                HStack(spacing: max(5, 7 * scale)) {
                     Text(session.title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: titleFontSize, weight: .semibold))
                         .foregroundColor(DS.Colors.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .layoutPriority(1)
                     Text(statusLabel)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: secondaryFontSize, weight: .medium))
                         .foregroundColor(DS.Colors.textSecondary)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
@@ -529,14 +536,14 @@ private struct PickyHUDMiniPreviewCardView: View {
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .frame(width: Self.cardWidth)
+        .padding(.horizontal, horizontalPadding)
+        .padding(.vertical, verticalPadding)
+        .frame(width: metrics.previewCardWidth)
         .background {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .fill(DS.Colors.surface3.opacity(0.62))
                 )
         }
@@ -555,18 +562,18 @@ private struct PickyHUDMiniPreviewCardView: View {
     @ViewBuilder
     private var contextLine: some View {
         if let gitStatus {
-            HStack(spacing: 4) {
+            HStack(spacing: max(3, 4 * scale)) {
                 Text(gitStatus.repositoryDisplayName)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .font(.system(size: secondaryFontSize, weight: .medium, design: .monospaced))
                     .foregroundColor(DS.Colors.textSecondary)
                     .lineLimit(1)
                     .layoutPriority(2)
                 Text("·")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .font(.system(size: secondaryFontSize, weight: .medium, design: .monospaced))
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: true, vertical: false)
                 Text(gitStatus.branchDisplayName)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .font(.system(size: secondaryFontSize, weight: .medium, design: .monospaced))
                     .foregroundColor(DS.Colors.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -574,7 +581,7 @@ private struct PickyHUDMiniPreviewCardView: View {
             }
         } else if let cwd = session.compactCwdDescription {
             Text(cwd)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(.system(size: secondaryFontSize, weight: .medium, design: .monospaced))
                 .foregroundColor(DS.Colors.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -1051,7 +1058,7 @@ private struct PickyHUDDockIconView: View {
         }
         .overlay(alignment: .center) {
             if isPreviewed {
-                PickyHUDMiniPreviewCardView(session: session)
+                PickyHUDMiniPreviewCardView(session: session, metrics: metrics)
                     .offset(x: miniPreviewXOffset)
                     .transition(.opacity)
                     .allowsHitTesting(false)
@@ -1340,7 +1347,7 @@ private struct PickyHUDDockIconView: View {
 
     private var miniPreviewXOffset: CGFloat {
         let iconHalfWidth = metrics.iconSide / 2
-        let distance = (PickyHUDMiniPreviewCardView.totalWidth / 2) + iconHalfWidth + PickyHUDDockLayout.panelGap
+        let distance = (metrics.previewCardWidth / 2) + iconHalfWidth + PickyHUDDockLayout.panelGap
         return dockSide == .right ? -distance : distance
     }
 

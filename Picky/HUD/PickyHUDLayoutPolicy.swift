@@ -149,6 +149,11 @@ struct PickyHUDDockMetrics: Equatable {
     var statusDotSide: CGFloat { max(6, scaled(8)) }
     var archiveRingSide: CGFloat { max(36, scaled(42)) }
     var archiveBadgeSide: CGFloat { max(12, scaled(14)) }
+    /// Width of the dock-icon hover preview card. Scales together with the dock
+    /// rail itself so the preview never looks oversized next to a Small dock or
+    /// undersized next to a Large dock. Lower bound keeps the title/status row
+    /// readable when the preset is shrunk to Small.
+    var previewCardWidth: CGFloat { max(200, scaled(238)) }
 
     private func scaled(_ value: CGFloat) -> CGFloat {
         (value * scale).rounded(.toNearestOrAwayFromZero)

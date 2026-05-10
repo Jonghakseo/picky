@@ -6,7 +6,24 @@
 //
 
 import AppKit
+import Combine
 import SwiftUI
+
+@MainActor
+final class PickyHUDDisplayState: ObservableObject {
+    @Published var heldSession: PickyHUDDockHold?
+    @Published var hoverPreviewSessionID: String?
+    var suppressedHoverSessionID: String?
+    var isHUDHovered = false
+    var isDockHovered = false
+    var closeExpansionTask: Task<Void, Never>?
+    var keyDownMonitor: Any?
+    var modifierFlagsMonitor: Any?
+    @Published var isCommandShortcutHintVisible = false
+    @Published var composerFocusRequestID = 0
+    @Published var isDockAddSlotExpanded = false
+    let sizeReporter = PickyHUDSizeReporter()
+}
 
 struct PickyHUDView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
@@ -16,6 +33,7 @@ struct PickyHUDView: View {
     /// configuration changes; the conversation card binds to it so it grows or
     /// shrinks within whatever space remains below the dock's top edge.
     @ObservedObject var placement: PickyHUDPlacement = PickyHUDPlacement()
+    @ObservedObject var displayState: PickyHUDDisplayState = PickyHUDDisplayState()
     var onSizeChange: (CGSize) -> Void = { _ in }
     /// Live delta callback for the dock anchor handle. Argument is the cursor's
     /// screen delta from drag start in both X and Y (`NSEvent.mouseLocation` based).
@@ -25,18 +43,6 @@ struct PickyHUDView: View {
     var onDockHandleDragEnded: () -> Void = { }
     var onDockHandleDoubleClick: () -> Void = { }
     var onArchiveUndoRequested: (_ sessionID: String, _ title: String) -> Void = { _, _ in }
-    @State private var heldSession: PickyHUDDockHold?
-    @State private var hoverPreviewSessionID: String?
-    @State private var suppressedHoverSessionID: String?
-    @State private var isHUDHovered = false
-    @State private var isDockHovered = false
-    @State private var closeExpansionTask: Task<Void, Never>?
-    @State private var keyDownMonitor: Any?
-    @State private var modifierFlagsMonitor: Any?
-    @State private var isCommandShortcutHintVisible = false
-    @State private var composerFocusRequestID = 0
-    @State private var isDockAddSlotExpanded = false
-    @State private var sizeReporter = PickyHUDSizeReporter()
 
     private var dockMetrics: PickyHUDDockMetrics {
         PickyHUDDockMetrics(preset: placement.dockSizePreset)
@@ -49,13 +55,13 @@ struct PickyHUDView: View {
     private var activeSessionID: String? {
         PickyHUDDockLayout.activeSessionID(
             visibleIDs: visibleSessions.map(\.id),
-            held: heldSession,
+            held: displayState.heldSession,
             previewID: nil
         )
     }
 
     private var openedSessionID: String? {
-        if case let .open(sessionID) = heldSession { return sessionID }
+        if case let .open(sessionID) = displayState.heldSession { return sessionID }
         return nil
     }
 
@@ -88,10 +94,10 @@ struct PickyHUDView: View {
             .onPreferenceChange(PickyHUDSizePreferenceKey.self, perform: handleHUDSizeChange)
             .onAppear(perform: installCloseShortcutMonitor)
             .onDisappear {
-                closeExpansionTask?.cancel()
-                closeExpansionTask = nil
+                displayState.closeExpansionTask?.cancel()
+                displayState.closeExpansionTask = nil
                 uninstallCloseShortcutMonitor()
-                sizeReporter.cancelPendingReport()
+                displayState.sizeReporter.cancelPendingReport()
             }
     }
 
@@ -101,11 +107,11 @@ struct PickyHUDView: View {
             measuredSize: size,
             activeSessionID: activeID,
             hasVisibleSessions: !visibleSessions.isEmpty,
-            isAddSlotExpanded: isDockAddSlotExpanded,
+            isAddSlotExpanded: displayState.isDockAddSlotExpanded,
             metrics: dockMetrics
         )
 
-        sizeReporter.handleMeasuredSize(
+        displayState.sizeReporter.handleMeasuredSize(
             panelSize,
             activeSessionID: activeID,
             shouldHoldHeight: shouldHoldPanelHeightDuringActiveTurn,
@@ -152,8 +158,8 @@ struct PickyHUDView: View {
                 onArchiveSession: archiveSession,
                 maxHeight: placement.availableCardMaxHeight,
                 isPreviewMode: false,
-                focusRequestID: composerFocusRequestID,
-                isCommandShortcutHintVisible: isCommandShortcutHintVisible
+                focusRequestID: displayState.composerFocusRequestID,
+                isCommandShortcutHintVisible: displayState.isCommandShortcutHintVisible
             )
             .id(activeSession.id)
             .frame(width: PickyHUDDockLayout.detailWidth)
@@ -168,9 +174,9 @@ struct PickyHUDView: View {
                 sessions: visibleSessions,
                 activeSessionID: activeSession?.id,
                 openedSessionID: openedSessionID,
-                previewSessionID: hoverPreviewSessionID,
+                previewSessionID: displayState.hoverPreviewSessionID,
                 dockSide: placement.dockSide,
-                isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+                isCommandShortcutHintVisible: displayState.isCommandShortcutHintVisible,
                 pendingDoneFlashSessionIDs: viewModel.pendingDoneFlashSessionIDs,
                 metrics: dockMetrics,
                 onHoverSession: previewDockSession,
@@ -178,7 +184,7 @@ struct PickyHUDView: View {
                 onArchiveSession: archiveSession,
                 onCreatePickle: chooseFolderForEmptyPickle,
                 onDockHoverChanged: handleDockHover,
-                onAddSlotExpandedChanged: { isDockAddSlotExpanded = $0 },
+                onAddSlotExpandedChanged: { displayState.isDockAddSlotExpanded = $0 },
                 onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:),
                 onDockHandleDragChanged: onDockHandleDragChanged,
                 onDockHandleDragEnded: onDockHandleDragEnded,
@@ -195,11 +201,11 @@ struct PickyHUDView: View {
     }
 
     private var isPointerInsideHUDSurface: Bool {
-        isHUDHovered || isDockHovered
+        displayState.isHUDHovered || displayState.isDockHovered
     }
 
     private func handleHUDHover(_ isHovering: Bool) {
-        isHUDHovered = isHovering
+        displayState.isHUDHovered = isHovering
         if isHovering {
             cancelPendingClose()
         } else {
@@ -208,7 +214,7 @@ struct PickyHUDView: View {
     }
 
     private func handleDockHover(_ isHovering: Bool) {
-        isDockHovered = isHovering
+        displayState.isDockHovered = isHovering
         if isHovering {
             cancelPendingClose()
         } else {
@@ -217,7 +223,7 @@ struct PickyHUDView: View {
     }
 
     private func isHoverPreviewSession(_ sessionID: String) -> Bool {
-        hoverPreviewSessionID == sessionID && heldSession?.sessionID != sessionID
+        displayState.hoverPreviewSessionID == sessionID && displayState.heldSession?.sessionID != sessionID
     }
 
     private func chooseFolderForEmptyPickle() {
@@ -237,16 +243,16 @@ struct PickyHUDView: View {
     }
 
     private func previewDockSession(_ sessionID: String) {
-        isDockHovered = true
+        displayState.isDockHovered = true
         cancelPendingClose()
-        if heldSession?.sessionID == sessionID {
-            if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
+        if displayState.heldSession?.sessionID == sessionID {
+            if displayState.hoverPreviewSessionID == sessionID { displayState.hoverPreviewSessionID = nil }
             return
         }
-        if suppressedHoverSessionID == sessionID { return }
-        suppressedHoverSessionID = nil
-        hoverPreviewSessionID = PickyHUDDockLayout.previewSessionIDAfterDockHover(
-            current: hoverPreviewSessionID,
+        if displayState.suppressedHoverSessionID == sessionID { return }
+        displayState.suppressedHoverSessionID = nil
+        displayState.hoverPreviewSessionID = PickyHUDDockLayout.previewSessionIDAfterDockHover(
+            current: displayState.hoverPreviewSessionID,
             sessionID: sessionID
         )
     }
@@ -254,16 +260,16 @@ struct PickyHUDView: View {
     private func toggleOpenSession(_ sessionID: String) {
         cancelPendingClose()
         let nextHeldSession = PickyHUDDockLayout.heldSessionAfterClick(
-            current: heldSession,
+            current: displayState.heldSession,
             clicked: sessionID
         )
-        heldSession = nextHeldSession
+        displayState.heldSession = nextHeldSession
         if nextHeldSession == nil {
-            if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
-            suppressedHoverSessionID = sessionID
+            if displayState.hoverPreviewSessionID == sessionID { displayState.hoverPreviewSessionID = nil }
+            displayState.suppressedHoverSessionID = sessionID
         } else {
-            hoverPreviewSessionID = nil
-            suppressedHoverSessionID = nil
+            displayState.hoverPreviewSessionID = nil
+            displayState.suppressedHoverSessionID = nil
         }
     }
 
@@ -271,15 +277,15 @@ struct PickyHUDView: View {
         cancelPendingClose()
         let title = (visibleSessions + viewModel.sessions).first(where: { $0.id == sessionID })?.title ?? "Pickle"
         viewModel.archive(sessionID: sessionID)
-        if heldSession?.sessionID == sessionID { heldSession = nil }
-        if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
-        if suppressedHoverSessionID == sessionID { suppressedHoverSessionID = nil }
+        if displayState.heldSession?.sessionID == sessionID { displayState.heldSession = nil }
+        if displayState.hoverPreviewSessionID == sessionID { displayState.hoverPreviewSessionID = nil }
+        if displayState.suppressedHoverSessionID == sessionID { displayState.suppressedHoverSessionID = nil }
         onArchiveUndoRequested(sessionID, title)
     }
 
     private func scheduleCloseIfNeeded() {
-        closeExpansionTask?.cancel()
-        closeExpansionTask = Task {
+        displayState.closeExpansionTask?.cancel()
+        displayState.closeExpansionTask = Task {
             do {
                 try await Task.sleep(nanoseconds: PickyHUDDockLayout.closeDelayNanoseconds)
             } catch {
@@ -288,37 +294,37 @@ struct PickyHUDView: View {
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 let isStillInsideHUD = isPointerInsideHUDSurface
-                hoverPreviewSessionID = PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(
-                    current: hoverPreviewSessionID,
-                    isDockHovered: isDockHovered
+                displayState.hoverPreviewSessionID = PickyHUDDockLayout.previewSessionIDAfterCloseTimeout(
+                    current: displayState.hoverPreviewSessionID,
+                    isDockHovered: displayState.isDockHovered
                 )
-                heldSession = PickyHUDDockLayout.heldSessionAfterCloseTimeout(
-                    current: heldSession,
+                displayState.heldSession = PickyHUDDockLayout.heldSessionAfterCloseTimeout(
+                    current: displayState.heldSession,
                     isHUDHovered: isStillInsideHUD
                 )
-                if !isStillInsideHUD { suppressedHoverSessionID = nil }
-                closeExpansionTask = nil
+                if !isStillInsideHUD { displayState.suppressedHoverSessionID = nil }
+                displayState.closeExpansionTask = nil
             }
         }
     }
 
     private func closeHeldSession() {
-        guard let sessionID = heldSession?.sessionID else { return }
-        heldSession = nil
-        if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
-        suppressedHoverSessionID = sessionID
+        guard let sessionID = displayState.heldSession?.sessionID else { return }
+        displayState.heldSession = nil
+        if displayState.hoverPreviewSessionID == sessionID { displayState.hoverPreviewSessionID = nil }
+        displayState.suppressedHoverSessionID = sessionID
     }
 
     private func installCloseShortcutMonitor() {
-        if keyDownMonitor == nil {
-            keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        if displayState.keyDownMonitor == nil {
+            displayState.keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 guard handleKeyboardShortcut(event) else { return event }
                 return nil
             }
         }
 
-        if modifierFlagsMonitor == nil {
-            modifierFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+        if displayState.modifierFlagsMonitor == nil {
+            displayState.modifierFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
                 updateCommandShortcutHintVisibility(modifierFlags: event.modifierFlags)
                 return event
             }
@@ -339,7 +345,7 @@ struct PickyHUDView: View {
             return true
         }
 
-        if flags == .command, event.keyCode == Self.wKeyCode, heldSession != nil {
+        if flags == .command, event.keyCode == Self.wKeyCode, displayState.heldSession != nil {
             closeHeldSession()
             return true
         }
@@ -358,7 +364,7 @@ struct PickyHUDView: View {
            let number = Self.numberShortcutValue(for: event),
            PickyHUDDockLayout.sessionIDForNumberShortcut(visibleIDs: visibleIDs, number: number) != nil {
             let next = PickyHUDDockLayout.heldSessionAfterNumberShortcut(
-                current: heldSession,
+                current: displayState.heldSession,
                 visibleIDs: visibleIDs,
                 number: number
             )
@@ -371,7 +377,7 @@ struct PickyHUDView: View {
         }
 
         if flags == [.command, .shift], let direction = Self.cycleDirection(for: event) {
-            let next = PickyHUDDockLayout.heldSessionAfterCycleShortcut(current: heldSession, visibleIDs: visibleIDs, direction: direction)
+            let next = PickyHUDDockLayout.heldSessionAfterCycleShortcut(current: displayState.heldSession, visibleIDs: visibleIDs, direction: direction)
             if let next { openHeldSession(next) }
             return next != nil
         }
@@ -381,13 +387,13 @@ struct PickyHUDView: View {
 
     private func openHeldSession(_ next: PickyHUDDockHold) {
         cancelPendingClose()
-        heldSession = next
-        hoverPreviewSessionID = nil
-        suppressedHoverSessionID = nil
+        displayState.heldSession = next
+        displayState.hoverPreviewSessionID = nil
+        displayState.suppressedHoverSessionID = nil
     }
 
     private func focusActiveComposer() {
-        composerFocusRequestID &+= 1
+        displayState.composerFocusRequestID &+= 1
     }
 
     private func openLatestAgentResponseReport(sessionID: String) {
@@ -401,32 +407,32 @@ struct PickyHUDView: View {
     }
 
     private func uninstallCloseShortcutMonitor() {
-        if let keyDownMonitor {
+        if let keyDownMonitor = displayState.keyDownMonitor {
             NSEvent.removeMonitor(keyDownMonitor)
-            self.keyDownMonitor = nil
+            displayState.keyDownMonitor = nil
         }
-        if let modifierFlagsMonitor {
+        if let modifierFlagsMonitor = displayState.modifierFlagsMonitor {
             NSEvent.removeMonitor(modifierFlagsMonitor)
-            self.modifierFlagsMonitor = nil
+            displayState.modifierFlagsMonitor = nil
         }
-        isCommandShortcutHintVisible = false
+        displayState.isCommandShortcutHintVisible = false
     }
 
     private func updateCommandShortcutHintVisibility(modifierFlags: NSEvent.ModifierFlags) {
         guard let keyWindow = NSApp.keyWindow as? PickyHUDPanel else {
-            isCommandShortcutHintVisible = false
+            displayState.isCommandShortcutHintVisible = false
             return
         }
         if let panelIdentifier, keyWindow.identifier != panelIdentifier {
-            isCommandShortcutHintVisible = false
+            displayState.isCommandShortcutHintVisible = false
             return
         }
-        isCommandShortcutHintVisible = modifierFlags.contains(.command)
+        displayState.isCommandShortcutHintVisible = modifierFlags.contains(.command)
     }
 
     private func cancelPendingClose() {
-        closeExpansionTask?.cancel()
-        closeExpansionTask = nil
+        displayState.closeExpansionTask?.cancel()
+        displayState.closeExpansionTask = nil
     }
 
     private static func numberShortcutValue(for event: NSEvent) -> Int? {

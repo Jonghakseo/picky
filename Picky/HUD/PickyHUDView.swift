@@ -417,8 +417,7 @@ enum PickyHUDKeyboardShortcutPolicy {
 
 private struct PickyHUDMiniPreviewCardView: View {
     static let cardWidth: CGFloat = 238
-    static let shadowPadding: CGFloat = 18
-    static var totalWidth: CGFloat { cardWidth + (shadowPadding * 2) }
+    static var totalWidth: CGFloat { cardWidth }
 
     let session: PickySessionListViewModel.SessionCard
     @State private var gitStatus: PickyGitRepositoryStatus?
@@ -460,14 +459,8 @@ private struct PickyHUDMiniPreviewCardView: View {
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.ultraThinMaterial)
-                .overlay(DS.Colors.surface1.opacity(0.62))
+                .overlay(DS.Colors.surface1.opacity(0.68))
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(DS.Colors.borderStrong.opacity(0.72), lineWidth: 0.7)
-        )
-        .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 5)
-        .padding(Self.shadowPadding)
         .task(id: "\(session.cwd ?? "")|\(session.updatedAt.timeIntervalSince1970)") {
             if gitStatus == nil, let cached = PickyGitRepositoryStatus.cached(cwd: session.cwd) {
                 gitStatus = cached

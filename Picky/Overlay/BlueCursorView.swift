@@ -181,6 +181,7 @@ private struct PickyCursorMascotView: View {
     let tint: Color
     let voiceState: CompanionVoiceState
     let idleAnimationsEnabled: Bool
+    let isStartled: Bool
 
     var body: some View {
         TimelineView(.animation) { timeline in
@@ -219,6 +220,7 @@ private struct PickyCursorMascotView: View {
     }
 
     private func expression(at time: TimeInterval) -> PickyCursorMascotExpression {
+        if isStartled { return .startled }
         switch voiceState {
         case .idle:
             guard idleAnimationsEnabled else { return .normal }
@@ -233,6 +235,7 @@ private struct PickyCursorMascotView: View {
     }
 
     private func mouthApexOffset(at time: TimeInterval) -> CGPoint {
+        if isStartled { return .zero }
         switch voiceState {
         case .idle:
             return .zero
@@ -273,6 +276,7 @@ private enum PickyCursorMascotExpression {
     case blink
     case happy
     case wink
+    case startled
 }
 
 private struct PickyCursorMascotGlyph: View {
@@ -293,7 +297,7 @@ private struct PickyCursorMascotGlyph: View {
                     .stroke(
                         tint,
                         style: StrokeStyle(
-                            lineWidth: 80 * scale,
+                            lineWidth: (expression == .startled ? 52 : 80) * scale,
                             lineCap: .round,
                             lineJoin: .round,
                             miterLimit: 10
@@ -326,10 +330,18 @@ private struct PickyCursorMascotGlyph: View {
                     tint,
                     style: StrokeStyle(lineWidth: 40 * scale, lineCap: .round, lineJoin: .round, miterLimit: 10)
                 )
+        case .startled:
+            startledEyes(origin: origin, scale: scale)
+                .fill(tint)
         }
     }
 
     private func mouthPath(origin: CGPoint, scale: CGFloat) -> Path {
+        if expression == .startled {
+            var path = Path()
+            path.addEllipse(in: ellipseRect(cx: 250, cy: 320, rx: 54, ry: 66, origin: origin, scale: scale))
+            return path
+        }
         var path = Path()
         path.move(to: point(102.5, 245.67, origin: origin, scale: scale))
         path.addLine(to: point(193.23 + mouthApexOffset.x, 367.37 + mouthApexOffset.y, origin: origin, scale: scale))
@@ -341,6 +353,13 @@ private struct PickyCursorMascotGlyph: View {
         var path = Path()
         path.addPath(Path(ellipseIn: ellipseRect(cx: 193.23, cy: 137.86, rx: 40, ry: 50, origin: origin, scale: scale)))
         path.addPath(Path(ellipseIn: ellipseRect(cx: 308.32, cy: 137.86, rx: 40, ry: 50, origin: origin, scale: scale)))
+        return path
+    }
+
+    private func startledEyes(origin: CGPoint, scale: CGFloat) -> Path {
+        var path = Path()
+        path.addPath(Path(ellipseIn: ellipseRect(cx: 193.23, cy: 137.86, rx: 48, ry: 58, origin: origin, scale: scale)))
+        path.addPath(Path(ellipseIn: ellipseRect(cx: 308.32, cy: 137.86, rx: 48, ry: 58, origin: origin, scale: scale)))
         return path
     }
 
@@ -418,7 +437,17 @@ struct BlueCursorView: View {
     @State private var timer: Timer?
     @State private var responseBubbleSize: CGSize = .zero
     @State private var voicePromptBubbleSize: CGSize = .zero
+    @State private var shakeReactionBubbleSize: CGSize = .zero
     @State private var cursorOpacity: Double = 1.0
+
+    @State private var shakeWindowStartAt: TimeInterval?
+    @State private var lastShakeSampleLocation: CGPoint?
+    @State private var lastShakeSampleAt: TimeInterval = ProcessInfo.processInfo.systemUptime
+    @State private var lastShakeActiveAt: TimeInterval = 0
+    @State private var lastShakeDirection: Int = 0
+    @State private var lastShakeDirectionChangeAt: TimeInterval = 0
+    @State private var shakeDirectionChanges: Int = 0
+    @State private var shakeReactionUntil: TimeInterval = 0
 
     // MARK: - Buddy Navigation State
 
@@ -566,6 +595,21 @@ struct BlueCursorView: View {
                     }
             }
 
+            if isCursorOnThisScreen, isShakeReactionActive {
+                PickyShakeReactionBubbleView(text: "꺄악")
+                    .overlay(
+                        GeometryReader { geo in
+                            Color.clear
+                                .preference(key: ShakeReactionBubbleSizePreferenceKey.self, value: geo.size)
+                        }
+                    )
+                    .position(cursorBubbleCenter(for: shakeReactionBubbleSize, horizontalGap: 10, verticalGap: 16))
+                    .animation(cursorFollowAnimation, value: cursorPosition)
+                    .onPreferenceChange(ShakeReactionBubbleSizePreferenceKey.self) { newSize in
+                        shakeReactionBubbleSize = newSize
+                    }
+            }
+
             // Navigation pointer bubble — shown when buddy arrives at a detected element.
             // Pops in with a scale-bounce (0.5x → 1.0x spring) and a bright initial
             // glow that settles, creating a "materializing" effect.
@@ -616,7 +660,8 @@ struct BlueCursorView: View {
                 style: cursorStyleStore.style,
                 tint: moodColor,
                 voiceState: companionManager.voiceState,
-                idleAnimationsEnabled: cursorPreferencesStore.preferences.enableIdleAnimations
+                idleAnimationsEnabled: cursorPreferencesStore.preferences.enableIdleAnimations,
+                isStartled: isShakeReactionActive
             )
                 .shadow(
                     color: moodColor.opacity(cursorStyleStore.style.outerShadowOpacity),
@@ -651,6 +696,8 @@ struct BlueCursorView: View {
         .onDisappear {
             timer?.invalidate()
             navigationAnimationTimer?.invalidate()
+            resetShakeDetection()
+            shakeReactionUntil = 0
         }
         .onChange(of: companionManager.detectedElementScreenLocation) { newLocation in
             startNavigatingToPointerTargetIfPresent(screenLocation: newLocation)
@@ -670,6 +717,20 @@ struct BlueCursorView: View {
 
     private func cursorBuddyPosition(for screenPoint: CGPoint) -> CGPoint {
         PickyOverlayGeometry.cursorBuddyPosition(for: screenPoint, in: screenFrame)
+    }
+
+    private var isShakeReactionActive: Bool {
+        ProcessInfo.processInfo.systemUptime < shakeReactionUntil
+    }
+
+    private var isShakeDetectionEligible: Bool {
+        cursorPreferencesStore.preferences.showPiCursor
+            && companionManager.voiceState == .idle
+            && buddyNavigationMode == .followingCursor
+            && activePointerID == nil
+            && isCursorOnThisScreen
+            && !companionManager.isQuickInputPanelVisible
+            && !companionManager.inkOverlayState.isActive
     }
 
     /// Whether the buddy pi icon should be visible on this screen.
@@ -707,10 +768,91 @@ struct BlueCursorView: View {
             // already follows the cursor. So during any non-following mode we
             // simply yield position control to the navigation timer.
             if self.buddyNavigationMode != .followingCursor {
+                self.resetShakeDetection()
                 return
             }
 
+            updateShakeDetection(mouseLocation: mouseLocation)
             cursorPosition = cursorBuddyPosition(for: mouseLocation)
+        }
+    }
+
+    private func updateShakeDetection(mouseLocation: CGPoint) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard isShakeDetectionEligible else {
+            resetShakeDetection()
+            return
+        }
+
+        guard let previousLocation = lastShakeSampleLocation else {
+            lastShakeSampleLocation = mouseLocation
+            lastShakeSampleAt = now
+            return
+        }
+
+        defer {
+            lastShakeSampleLocation = mouseLocation
+            lastShakeSampleAt = now
+        }
+
+        let dt = max(now - lastShakeSampleAt, Self.cursorTrackingInterval)
+        let dx = mouseLocation.x - previousLocation.x
+        let dy = mouseLocation.y - previousLocation.y
+        let dominantDelta = abs(dx) >= abs(dy) ? dx : dy
+        let distance = hypot(dx, dy)
+        let speed = distance / CGFloat(dt)
+        let isActiveShakeSample = speed >= 420 && abs(dominantDelta) >= 2.5
+
+        guard isActiveShakeSample else {
+            if let shakeWindowStartAt, now - max(lastShakeActiveAt, shakeWindowStartAt) > 0.25 {
+                resetShakeDetection(keepingLastSample: true)
+            }
+            return
+        }
+
+        if shakeWindowStartAt == nil || now - lastShakeActiveAt > 0.25 {
+            shakeWindowStartAt = now
+            shakeDirectionChanges = 0
+            lastShakeDirection = 0
+            lastShakeDirectionChangeAt = 0
+        }
+
+        let direction = dominantDelta > 0 ? 1 : -1
+        if lastShakeDirection != 0,
+           direction != lastShakeDirection,
+           now - lastShakeDirectionChangeAt > 0.08 {
+            shakeDirectionChanges += 1
+            lastShakeDirectionChangeAt = now
+        }
+        lastShakeDirection = direction
+        lastShakeActiveAt = now
+
+        if let shakeWindowStartAt,
+           now - shakeWindowStartAt >= 2.0,
+           shakeDirectionChanges >= 6,
+           now >= shakeReactionUntil {
+            triggerShakeReaction(now: now)
+        }
+    }
+
+    private func triggerShakeReaction(now: TimeInterval) {
+        shakeReactionUntil = now + 1.35
+        resetShakeDetection(keepingLastSample: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            guard ProcessInfo.processInfo.systemUptime >= self.shakeReactionUntil else { return }
+            self.shakeReactionUntil = 0
+        }
+    }
+
+    private func resetShakeDetection(keepingLastSample: Bool = false) {
+        shakeWindowStartAt = nil
+        lastShakeActiveAt = 0
+        lastShakeDirection = 0
+        lastShakeDirectionChangeAt = 0
+        shakeDirectionChanges = 0
+        if !keepingLastSample {
+            lastShakeSampleLocation = nil
+            lastShakeSampleAt = ProcessInfo.processInfo.systemUptime
         }
     }
 
@@ -1110,6 +1252,29 @@ struct BlueCursorView: View {
 
 
 // MARK: - Voice Prompt Bubble
+
+private struct PickyShakeReactionBubbleView: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(DS.Colors.overlayCursorBlue)
+                    .shadow(color: Color.black.opacity(0.28), radius: 12, x: 0, y: 4)
+                    .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.48), radius: 8, x: 0, y: 0)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.white.opacity(0.38), lineWidth: 0.8)
+            )
+            .fixedSize()
+    }
+}
 
 private struct VoicePromptCursorBubbleView: View {
     let text: String

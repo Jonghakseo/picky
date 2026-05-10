@@ -8,7 +8,7 @@ export function logAgentd(event: string, fields: Record<string, LogField> = {}):
     .filter((entry): entry is [string, Exclude<LogField, undefined>] => entry[1] !== undefined)
     .map(([key, value]) => `${key}=${formatValue(value)}`)
     .join(" ");
-  console.log(`picky-agentd ${event}${suffix ? ` ${suffix}` : ""}`);
+  console.log(`${new Date().toISOString()} picky-agentd ${event}${suffix ? ` ${suffix}` : ""}`);
 }
 
 function formatValue(value: Exclude<LogField, undefined>): string {

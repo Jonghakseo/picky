@@ -82,6 +82,23 @@ fi
 mkdir -p "${BUILD_ROOT}"
 mkdir -p "${EXPORT_DIR}"
 
+# Refuse to repackage while a Picky launched from EXPORT_DIR is still alive.
+# Removing or replacing Contents/Resources/agentd under a running daemon makes
+# its node child crash with `ENOENT: uv_cwd` next time it calls process.cwd(),
+# which silently kills any in-flight Pickle session. Set PICKY_PACKAGE_FORCE=1
+# to override (e.g. when you have already quit the app yourself).
+LIVE_PICKY_PIDS="$(/bin/ps -A -o pid=,command= 2>/dev/null | /usr/bin/awk -v needle="${EXPORT_DIR}/${APP_NAME}.app/" 'index($0, needle) { printf "%s ", $1 }')"
+LIVE_PICKY_PIDS="${LIVE_PICKY_PIDS%% }"
+if [[ -n "${LIVE_PICKY_PIDS}" ]]; then
+  if [[ "${PICKY_PACKAGE_FORCE:-0}" == "1" ]]; then
+    echo "⚠️  Packaging forced while ${APP_NAME}.app is running (pids: ${LIVE_PICKY_PIDS}); the running daemon will likely crash." >&2
+  else
+    echo "❌ ${APP_NAME}.app is running from ${EXPORT_DIR} (pids: ${LIVE_PICKY_PIDS})." >&2
+    echo "   Quit it first, or rerun with PICKY_PACKAGE_FORCE=1 to proceed anyway." >&2
+    exit 1
+  fi
+fi
+
 if [[ "${PICKY_CLEAN:-1}" == "1" ]]; then
   rm -rf "${DERIVED_DATA_PATH}"
   rm -rf "${EXPORT_DIR:?}"/*

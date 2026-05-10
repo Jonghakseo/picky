@@ -146,13 +146,23 @@ export class AgentdServer {
   }
 
   private broadcast(event: EventPayload): void {
-    for (const client of this.clients) this.send(client, event);
+    if (this.clients.size === 0) return;
+    let bytes = 0;
+    let type: string | undefined;
+    for (const client of this.clients) {
+      const sent = this.send(client, event);
+      bytes = sent.bytes;
+      type = sent.type;
+    }
+    logAgentd("event broadcast", { type, clients: this.clients.size, bytes });
   }
 
-  private send(ws: WebSocket, payload: EventPayload): void {
+  private send(ws: WebSocket, payload: EventPayload): { bytes: number; type: string } {
     const event: EventEnvelope = sanitizeForJson({ id: `event-${randomUUID()}`, protocolVersion: PROTOCOL_VERSION, timestamp: new Date().toISOString(), ...payload } as EventEnvelope);
+    const json = JSON.stringify(event);
     logAgentd("event sent", eventLogFields(event));
-    ws.send(JSON.stringify(event));
+    ws.send(json);
+    return { bytes: Buffer.byteLength(json, "utf8"), type: event.type };
   }
 }
 

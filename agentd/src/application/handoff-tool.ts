@@ -27,13 +27,10 @@ interface PickleSessionSummary {
   title: string;
   status: PickyAgentSession["status"];
   updatedAt: string;
-  lastSummary?: string;
-  finalAnswer?: string;
-  pendingInput: boolean;
-  recentLogs: string[];
-  artifacts: Array<{ kind: string; title: string; path?: string; url?: string }>;
-  changedFiles: Array<{ path: string; status: string; summary?: string }>;
   cwd?: string;
+  pendingInput: boolean;
+  lastSummary?: string;
+  changedFilesCount: number;
 }
 
 type PickleToolNames = {
@@ -184,13 +181,10 @@ function summarizePickleSession(session: PickyAgentSession): PickleSessionSummar
     title: session.title,
     status: session.status,
     updatedAt: session.updatedAt,
-    lastSummary: session.lastSummary,
     cwd: session.cwd,
-    finalAnswer: session.finalAnswer,
     pendingInput: Boolean(session.pendingExtensionUiRequest),
-    recentLogs: session.logs.slice(-3).map((line) => truncate(line, 240)),
-    artifacts: session.artifacts.map((artifact) => ({ kind: artifact.kind, title: artifact.title, path: artifact.path, url: artifact.url })),
-    changedFiles: session.changedFiles,
+    lastSummary: session.lastSummary ? truncate(session.lastSummary, 200) : undefined,
+    changedFilesCount: session.changedFiles.length,
   };
 }
 
@@ -200,16 +194,10 @@ function formatPickleSessions(sessions: PickleSessionSummary[], pagination: { pa
   const lines = [`Pickles page ${pagination.page} (${sessions.length} shown, page size ${pagination.pageSize}${nextPageHint}):`];
   for (const session of sessions) {
     const pendingInput = session.pendingInput ? "; waiting for input" : "";
-    const summary = session.lastSummary ? `; summary=${truncate(session.lastSummary, 160)}` : "";
-    const finalAnswer = session.finalAnswer ? `; final=${truncate(session.finalAnswer, 160)}` : "";
+    const summary = session.lastSummary ? `; summary=${session.lastSummary}` : "";
     const cwd = session.cwd ? `; cwd=${truncate(session.cwd, 120)}` : "";
-    lines.push(`- ${session.id} | ${session.title} | status=${session.status}${pendingInput}; updated=${session.updatedAt}${cwd}${summary}${finalAnswer}`);
-    if (session.recentLogs.length > 0) {
-      lines.push(`  recent logs: ${session.recentLogs.join(" / ")}`);
-    }
-    if (session.artifacts.length > 0) {
-      lines.push(`  artifacts: ${session.artifacts.map((artifact) => `${artifact.kind}:${artifact.title}`).join(", ")}`);
-    }
+    const changed = session.changedFilesCount > 0 ? `; changedFiles=${session.changedFilesCount}` : "";
+    lines.push(`- ${session.id} | ${session.title} | status=${session.status}${pendingInput}; updated=${session.updatedAt}${cwd}${changed}${summary}`);
   }
   return lines.join("\n");
 }

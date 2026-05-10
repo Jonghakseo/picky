@@ -117,9 +117,9 @@ struct PickyConversationHeaderView: View {
             )
             .frame(width: 22, height: 22)
             .overlay(
-                Text("π")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(statusColor)
+                PickyPiLogoGlyph()
+                    .fill(statusColor, style: FillStyle(eoFill: true))
+                    .frame(width: 15, height: 15)
             )
             .overlay(alignment: .topTrailing) {
                 statusCornerIndicator
@@ -223,6 +223,82 @@ struct PickyConversationHeaderView: View {
 
     private func cycleModel() {
         Task { try? await viewModel.cycleModel(sessionID: session.id) }
+    }
+}
+
+private struct PickyPiLogoGlyph: Shape {
+    func path(in rect: CGRect) -> Path {
+        let scale = min(rect.width, rect.height) / 512
+        let xOffset = rect.midX - 256 * scale
+        let yOffset = rect.midY - 256 * scale
+        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: xOffset + x * scale, y: yOffset + y * scale)
+        }
+
+        var path = Path()
+        path.move(to: point(481, 195.71))
+        path.addLines([
+            point(435.32, 152.47),
+            point(420.72, 91.29),
+            point(359.54, 76.69),
+            point(316.30, 31.01),
+            point(256.01, 48.95),
+            point(195.72, 31.01),
+            point(152.48, 76.69),
+            point(91.30, 91.29),
+            point(76.70, 152.47),
+            point(31.02, 195.71),
+            point(48.96, 256.00),
+            point(31.02, 316.29),
+            point(76.70, 359.53),
+            point(91.30, 420.71),
+            point(152.48, 435.31),
+            point(195.72, 480.99),
+            point(256.01, 463.05),
+            point(316.30, 480.99),
+            point(359.54, 435.31),
+            point(420.72, 420.71),
+            point(435.32, 359.53),
+            point(481.00, 316.29),
+            point(463.06, 256.00),
+            point(481.00, 195.71)
+        ])
+        path.closeSubpath()
+
+        addEye(to: &path, centerX: 179.10, point: point)
+        addEye(to: &path, centerX: 332.90, point: point)
+        return path
+    }
+
+    private func addEye(
+        to path: inout Path,
+        centerX: CGFloat,
+        point: (CGFloat, CGFloat) -> CGPoint
+    ) {
+        let leftX = centerX - 37.91
+        let rightX = centerX + 37.91
+        path.move(to: point(centerX, 291.39))
+        path.addCurve(
+            to: point(leftX, 244.00),
+            control1: point(centerX - 20.94, 291.39),
+            control2: point(leftX, 270.17)
+        )
+        path.addCurve(
+            to: point(centerX, 196.61),
+            control1: point(leftX, 217.83),
+            control2: point(centerX - 20.94, 196.61)
+        )
+        path.addCurve(
+            to: point(rightX, 244.00),
+            control1: point(centerX + 20.94, 196.61),
+            control2: point(rightX, 217.83)
+        )
+        path.addCurve(
+            to: point(centerX, 291.39),
+            control1: point(rightX, 270.17),
+            control2: point(centerX + 20.94, 291.39)
+        )
+        path.closeSubpath()
     }
 }
 

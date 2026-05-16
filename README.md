@@ -1,71 +1,80 @@
 # Picky
 
-Picky is a local-first macOS command center for Pi sessions. It provides a macOS shell for menu bar presence, global push-to-talk, permission handling, screen capture, overlay windows, and long-running HUD sessions while routing captured context to a local `picky-agentd` daemon backed by the Pi SDK.
+**Your local-first command center for Pi on macOS.**
 
-Current status: the app captures neutral desktop context, launches/connects to `picky-agentd` over a local WebSocket protocol, supervises long-running Pickles, and shows session state through the Picky dock. A mock daemon runtime remains available for local UI development and tests.
+Picky lets you ask Pi for help from anywhere on your Mac. Hold a shortcut, speak or type what you need, and Picky gives Pi the local context it needs to continue the work in visible, long-running **Pickle** sessions.
 
-## Requirements
+Picky is designed to stay lightweight: it lives in the menu bar, captures context only when you invoke it, and keeps your work local.
 
-- macOS 14.2+
-- Xcode 15+
-- Node.js 22+ and pnpm 10.15+ for local `picky-agentd` development
+## Why Picky?
 
-## Build and test
+Working with an agent is easier when it can see the same work surface you do — without turning into a cloud dashboard or forcing every task into a chat window.
 
-```bash
-xcodebuild -project Picky.xcodeproj -scheme Picky -destination "platform=macOS,arch=$(uname -m)" build
-xcodebuild -project Picky.xcodeproj -scheme Picky -destination "platform=macOS,arch=$(uname -m)" test
-cd agentd && pnpm install && pnpm test && pnpm run build
+Picky helps you:
+
+- **Start from anywhere** — use push-to-talk or quick text input without switching apps.
+- **Share useful context** — send the current app, window, selected text, browser page, screenshots, and workspace when you ask.
+- **Track long-running work** — keep multiple Pickles visible in the Picky dock while they run.
+- **Follow up naturally** — reply to an existing Pickle instead of starting over.
+- **Stay local-first** — Picky runs against your local Pi environment and does not require a SaaS backend.
+
+## How it feels to use
+
+```text
+Hold shortcut → ask Picky → watch the Pickle work
 ```
 
-Normal local build/test does not require an Apple Developer Team ID. Signed distribution builds inject `PICKY_DEVELOPMENT_TEAM` through the packaging scripts instead of committing a Team ID to the Xcode project.
+1. Invoke Picky with voice or text.
+2. Picky gathers the current desktop context.
+3. Pi decides how to handle the request and, when needed, starts a Pickle you can monitor, reopen, follow up on, or resume in Pi.
 
-## Distribution identity
+## Highlights
 
-The upstream appcast URL, bundle identifier, logging subsystem, and keychain service currently use the maintainer's personal namespace (`Jonghakseo` / `com.jonghakseo.picky`). Forks or downstream distributions should replace those identifiers, Sparkle appcast URL, signing settings, and feedback Slack configuration with their own values before shipping.
+| Feature | What it means |
+| --- | --- |
+| Menu bar companion | Lightweight status, settings, messages, feedback, and setup from the macOS menu bar. |
+| Push-to-talk | Hold a global shortcut and speak naturally. |
+| Quick text input | Start a request without leaving your current app. |
+| Context capture | Picky captures neutral desktop context only when invoked. |
+| Pickle dock | Long-running Pi work appears as visible cards with status, logs, artifacts, and follow-up controls. |
+| Pi resume | Open or copy a Pi resume command when you want to continue in a terminal. |
+| Local-first design | Picky stays thin; Pi chooses the skills, extensions, MCPs, and tools for the job. |
+
+## Getting started
+
+Picky is currently a macOS app for local Pi users and testers.
+
+You will need:
+
+- macOS 14.2 or newer
+- Pi installed locally
+- A Picky build from the project/test distribution channel, or a local build from source
+
+On first launch, click the Picky icon in the menu bar and follow the setup checklist. Picky will guide you through the required macOS permissions and Pi runtime check.
+
+For the complete walkthrough, see the [User Manual](docs/user-manual.md).
 
 ## Permissions
 
-Picky asks for the local macOS permissions needed by its shell:
+Picky asks for macOS permissions that support its local command-center behavior:
 
-- Microphone — push-to-talk voice capture
-- Speech Recognition — Apple Speech transcription
-- Accessibility — global push-to-talk and quick-input shortcuts (defaults: Control+Option and double-tap Control)
-- Screen Recording / Screen Content — screenshots for neutral context packets
+| Permission | Used for |
+| --- | --- |
+| Microphone | Push-to-talk voice capture. |
+| Speech Recognition | Apple Speech transcription, if selected. |
+| Accessibility | Global shortcuts and interaction helpers. |
+| Screen Recording / Screen Content | Screenshots and screen context when you invoke Picky. |
 
-## Architecture snapshot
+Picky does not continuously capture your screen. Context is gathered for the request flow you start.
 
-- `Picky/` contains the macOS app shell. Current modules group app/menu bar code, settings, shortcuts, quick input, context capture, companion voice/dictation UI, overlay windows, pointer overlays, HUD/session UI, and session selection/archive helpers.
-- `Picky/PickyAgentProtocol.swift`, `Picky/PickyAgentClient.swift`, and `Picky/PickyAgentDaemonLauncher.swift` define and launch the app-to-daemon boundary.
-- `Picky/Context/` and `Picky/PickyAdvancedContext.swift` build neutral context packets: transcript, app/window metadata, browser URL/title/selection, screenshots, cwd, and selected session.
-- `Picky/HUD/` plus `Picky/PickySessionViewModel.swift` render and manage long-running Pickle cards, follow-ups, archive/search, artifacts, and Pi terminal resume via the in-app terminal overlay or copied `pi --session ...` command.
-- `agentd/` is the TypeScript daemon. It owns WebSocket transport, session supervision, Pi SDK/runtime adapters, event normalization, extension UI bridging, session metadata, and artifacts.
-- `pi-extensions/picky-handoff/` contains the optional Pi slash-command bridge for pinning an idle Pi conversation to Picky as a completed Pickle card.
-- Picky does not hard-code Sentry/Slack/DB routing. It passes context; Pi skills/extensions decide the workflow.
+## Learn more
 
-## Optional Pi handoff command
-
-Picky writes a local capability file for Pi extensions while `picky-agentd` is running:
-
-```text
-~/Library/Application Support/Picky/agentd-connection.json
-```
-
-To enable handoff commands in Pi during local development:
-
-```bash
-mkdir -p ~/.pi/agent/extensions
-ln -sfn "$PWD/pi-extensions/picky-handoff" ~/.pi/agent/extensions/picky-handoff
-```
-
-After restarting Pi or running `/reload`, use:
-
-```text
-/handoff-to-picky continue this investigation in Picky and produce a final report
-```
-
-This is allowed only while Pi is idle. It creates a completed Pickle card in Picky using the current Pi session file, cwd, and recent branch excerpt as neutral context; it does not start a new Pickle run.
+- [User Manual](docs/user-manual.md) — setup, shortcuts, settings, Pickles, feedback, and daily usage.
+- [Architecture](ARCHITECTURE.md) — app/daemon/Pi boundaries and internal data flow.
+- [Maintenance Guide](AGENTS.md) — development workflow, build/test commands, and agent instructions.
+- [Auto-update Notes](docs/auto-update.md) — Sparkle update behavior and distribution details.
+- [Alpha Test Build](docs/alpha-test-build.md) / [Beta Test Build](docs/beta-test-build.md) — packaging and test distribution notes.
 
 ## License
 
-See `LICENSE` for licensing details.
+See [LICENSE](LICENSE) for licensing details.

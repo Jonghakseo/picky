@@ -25,6 +25,33 @@ local ~/.pi/agent skills/extensions/MCP/tools
 
 Default daemon port is `127.0.0.1:17631`. Mock runtime is available via `PICKY_AGENTD_RUNTIME=mock`.
 
+## Distribution identity
+
+The upstream appcast URL, bundle identifier, logging subsystem, and keychain service currently use the maintainer's personal namespace (`Jonghakseo` / `com.jonghakseo.picky`). Forks or downstream distributions must replace those identifiers, Sparkle appcast URL, signing settings, and feedback Slack configuration with their own values before shipping.
+
+## Optional Pi handoff command
+
+Picky writes a local capability file for Pi extensions while `picky-agentd` is running:
+
+```text
+~/Library/Application Support/Picky/agentd-connection.json
+```
+
+For local development, enable the bundled handoff command by symlinking it into the local Pi extensions directory:
+
+```bash
+mkdir -p ~/.pi/agent/extensions
+ln -sfn "$PWD/pi-extensions/picky-handoff" ~/.pi/agent/extensions/picky-handoff
+```
+
+After restarting Pi or running `/reload`, use:
+
+```text
+/handoff-to-picky continue this investigation in Picky and produce a final report
+```
+
+This is allowed only while Pi is idle. It creates a completed Pickle card in Picky using the current Pi session file, cwd, and recent branch excerpt as neutral context; it does not start a new Pickle run.
+
 ## Code navigation index
 
 When the user asks about a feature, start here before broad searching:

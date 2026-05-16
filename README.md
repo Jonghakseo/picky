@@ -6,9 +6,9 @@
 
 **Your local-first command center for Pi on macOS.**
 
-Picky lets you ask Pi for help from anywhere on your Mac. Hold a shortcut, speak or type what you need, and Picky gives Pi the local context it needs to continue the work in visible, long-running **Pickle** sessions.
+Picky lets you ask Pi for help from wherever your cursor is. Hold a shortcut, speak or type what you need, and Picky appears in place with the local context Pi needs to continue the work in visible, long-running **Pickle** sessions.
 
-Picky is designed to stay lightweight: it appears next to your cursor when you invoke it, captures context only for that request, and keeps your work local.
+Picky is designed to stay lightweight: it follows your cursor, captures context only for the request you start, and keeps your work local.
 
 ## Why Picky?
 
@@ -36,7 +36,7 @@ Hold shortcut → ask Picky → watch the Pickle work
 
 | Feature | What it means |
 | --- | --- |
-| Menu bar companion | Lightweight status, settings, messages, feedback, and setup from the macOS menu bar. |
+| Cursor-side companion | Voice and text input appear beside your cursor so you can ask for help without switching context. |
 | Push-to-talk | Hold a global shortcut and speak naturally. |
 | Quick text input | Start a request without leaving your current app. |
 | Context capture | Picky captures neutral desktop context only when invoked. |
@@ -54,7 +54,7 @@ You will need:
 - Pi installed locally
 - A Picky build from the project/test distribution channel, or a local build from source
 
-On first launch, click the Picky icon in the menu bar and follow the setup checklist. Picky will guide you through the required macOS permissions and Pi runtime check.
+On first launch, open Picky and follow the setup checklist. Picky will guide you through the required macOS permissions and Pi runtime check.
 
 For the complete walkthrough, see the [User Manual](docs/user-manual.md).
 

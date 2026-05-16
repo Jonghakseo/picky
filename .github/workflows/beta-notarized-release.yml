@@ -1,0 +1,650 @@
+name: Build notarized release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Existing git tag to build and attach the notarized dmg to"
+        required: true
+        type: string
+      release_name:
+        description: "Release title when the release must be created"
+        required: false
+        type: string
+      release_channel:
+        description: "Build metadata release channel"
+        required: true
+        default: "stable"
+        type: choice
+        options:
+          - stable
+          - beta
+          - alpha
+      create_release_if_missing:
+        description: "Create a GitHub Release for tag_name when one does not exist"
+        required: true
+        default: true
+        type: boolean
+      prerelease:
+        description: "Mark a newly-created release as a pre-release"
+        required: true
+        default: false
+        type: boolean
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: picky-notarized-release-${{ github.event.release.tag_name || inputs.tag_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  APP_NAME: Picky
+  NODE_VERSION: "22.11.0"
+  PNPM_VERSION: "10.15.1"
+  PICKY_RELEASE_SLACK_CHANNEL_ID: C0B41QL02SU
+
+jobs:
+  build-notarized-release:
+    name: Build, notarize, and publish dmg
+    runs-on: ${{ vars.PICKY_MACOS_RUNNER || 'macos-15' }}
+    timeout-minutes: 90
+
+    steps:
+      - name: Resolve release target
+        id: release_meta
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_RELEASE_TAG: ${{ github.event.release.tag_name }}
+          EVENT_RELEASE_NAME: ${{ github.event.release.name }}
+          EVENT_RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+          INPUT_RELEASE_NAME: ${{ inputs.release_name }}
+          INPUT_RELEASE_CHANNEL: ${{ inputs.release_channel }}
+          INPUT_CREATE_RELEASE_IF_MISSING: ${{ inputs.create_release_if_missing }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${EVENT_NAME}" == "release" ]]; then
+            target_tag="${EVENT_RELEASE_TAG}"
+            release_name="${EVENT_RELEASE_NAME}"
+            prerelease="${EVENT_RELEASE_PRERELEASE:-false}"
+            if [[ "${prerelease}" == "true" ]]; then
+              release_channel="beta"
+            else
+              release_channel="stable"
+            fi
+            create_release_if_missing="false"
+          else
+            target_tag="${INPUT_TAG_NAME}"
+            release_name="${INPUT_RELEASE_NAME}"
+            release_channel="${INPUT_RELEASE_CHANNEL:-stable}"
+            create_release_if_missing="${INPUT_CREATE_RELEASE_IF_MISSING:-true}"
+            prerelease="${INPUT_PRERELEASE:-false}"
+          fi
+
+          if [[ -z "${target_tag}" ]]; then
+            echo "target tag is required" >&2
+            exit 1
+          fi
+
+          if [[ -z "${release_name}" ]]; then
+            release_name="Picky ${target_tag}"
+          fi
+
+          marketing_version=""
+          version_candidate="${target_tag#v}"
+          if [[ "${version_candidate}" =~ ^[0-9]+([.][0-9A-Za-z][0-9A-Za-z-]*)*$ ]]; then
+            marketing_version="${version_candidate}"
+          fi
+
+          {
+            echo "target_tag=${target_tag}"
+            echo "target_ref=${target_tag}"
+            echo "release_channel=${release_channel}"
+            echo "marketing_version=${marketing_version}"
+            echo "create_release_if_missing=${create_release_if_missing}"
+            echo "prerelease=${prerelease}"
+            echo "release_name<<EOF"
+            echo "${release_name}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Check out release ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release_meta.outputs.target_ref }}
+          fetch-depth: 0
+
+      - name: Show toolchain versions
+        id: toolchain
+        run: |
+          set -euo pipefail
+          sw_vers
+          xcodebuild -version
+          git --no-pager log -1 --oneline
+          xcode_version="$(xcodebuild -version | tr '\n' '-' | /usr/bin/sed -E 's/[^A-Za-z0-9._-]+/_/g; s/_+$//')"
+          echo "xcode_version=${xcode_version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Cache SwiftPM checkouts and artifacts
+        uses: actions/cache@v4
+        with:
+          path: build/package/spm-cache
+          key: spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.xcode_version }}-${{ hashFiles('Picky.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.xcode_version }}-
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Validate signing and notarization secrets
+        env:
+          PICKY_DEVELOPER_ID_CERT_BASE64: ${{ secrets.PICKY_DEVELOPER_ID_CERT_BASE64 }}
+          PICKY_DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.PICKY_DEVELOPER_ID_CERT_PASSWORD }}
+          PICKY_CODE_SIGN_IDENTITY: ${{ secrets.PICKY_CODE_SIGN_IDENTITY }}
+          PICKY_DEVELOPMENT_TEAM: ${{ secrets.PICKY_DEVELOPMENT_TEAM }}
+          PICKY_NOTARY_APPLE_ID: ${{ secrets.PICKY_NOTARY_APPLE_ID }}
+          PICKY_NOTARY_APP_PASSWORD: ${{ secrets.PICKY_NOTARY_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${PICKY_DEVELOPER_ID_CERT_BASE64:?missing PICKY_DEVELOPER_ID_CERT_BASE64}"
+          : "${PICKY_DEVELOPER_ID_CERT_PASSWORD:?missing PICKY_DEVELOPER_ID_CERT_PASSWORD}"
+          : "${PICKY_CODE_SIGN_IDENTITY:?missing PICKY_CODE_SIGN_IDENTITY}"
+          : "${PICKY_DEVELOPMENT_TEAM:?missing PICKY_DEVELOPMENT_TEAM}"
+          : "${PICKY_NOTARY_APPLE_ID:?missing PICKY_NOTARY_APPLE_ID}"
+          : "${PICKY_NOTARY_APP_PASSWORD:?missing PICKY_NOTARY_APP_PASSWORD}"
+
+      - name: Import Developer ID certificate
+        env:
+          PICKY_DEVELOPER_ID_CERT_BASE64: ${{ secrets.PICKY_DEVELOPER_ID_CERT_BASE64 }}
+          PICKY_DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.PICKY_DEVELOPER_ID_CERT_PASSWORD }}
+          PICKY_CODE_SIGN_IDENTITY: ${{ secrets.PICKY_CODE_SIGN_IDENTITY }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}-picky-signing
+        run: |
+          set -euo pipefail
+          certificate_path="${RUNNER_TEMP}/picky-developer-id.p12"
+          keychain_path="${RUNNER_TEMP}/picky-signing.keychain-db"
+
+          printf '%s' "${PICKY_DEVELOPER_ID_CERT_BASE64}" | base64 --decode > "${certificate_path}"
+
+          security create-keychain -p "${KEYCHAIN_PASSWORD}" "${keychain_path}"
+          security set-keychain-settings -lut 21600 "${keychain_path}"
+          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${keychain_path}"
+          security import "${certificate_path}" \
+            -k "${keychain_path}" \
+            -P "${PICKY_DEVELOPER_ID_CERT_PASSWORD}" \
+            -A \
+            -t cert \
+            -f pkcs12
+          security list-keychains -d user -s "${keychain_path}" "${HOME}/Library/Keychains/login.keychain-db"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${KEYCHAIN_PASSWORD}" "${keychain_path}"
+          security find-identity -v -p codesigning "${keychain_path}"
+          security find-identity -v -p codesigning "${keychain_path}" | grep -F "${PICKY_CODE_SIGN_IDENTITY}"
+
+      - name: Build Developer ID signed app package
+        env:
+          PICKY_CODE_SIGN_IDENTITY: ${{ secrets.PICKY_CODE_SIGN_IDENTITY }}
+          PICKY_DEVELOPMENT_TEAM: ${{ secrets.PICKY_DEVELOPMENT_TEAM }}
+          PICKY_RELEASE_CHANNEL: ${{ steps.release_meta.outputs.release_channel }}
+          PICKY_MARKETING_VERSION: ${{ steps.release_meta.outputs.marketing_version }}
+          # In-app feedback Slack settings are baked into PickyFeedbackSecrets.json
+          # by package-signed-app.sh and sealed by the subsequent re-sign step.
+          PICKY_SLACK_BOT_TOKEN: ${{ secrets.PICKY_SLACK_BOT_TOKEN }}
+          PICKY_SLACK_CHANNEL_ID: ${{ secrets.PICKY_SLACK_CHANNEL_ID }}
+          # The release pipeline ships a notarized DMG and builds a separate
+          # Sparkle update zip downstream, so the script's export zip is dead
+          # weight on CI and slows down every run.
+          PICKY_CREATE_ZIP: "0"
+        run: |
+          set -euo pipefail
+          ./scripts/package-signed-app.sh
+
+      - name: Re-sign nested Mach-O files and final app
+        env:
+          PICKY_CODE_SIGN_IDENTITY: ${{ secrets.PICKY_CODE_SIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          app="${PWD}/build/package/export/${APP_NAME}.app"
+
+          signed_count=0
+          while IFS= read -r -d '' file; do
+            if /usr/bin/file "${file}" | /usr/bin/grep -q 'Mach-O'; then
+              /usr/bin/codesign \
+                --force \
+                --options runtime \
+                --timestamp \
+                --sign "${PICKY_CODE_SIGN_IDENTITY}" \
+                "${file}"
+              signed_count=$((signed_count + 1))
+            fi
+          done < <(/usr/bin/find "${app}/Contents/Resources/agentd" -type f -print0)
+          echo "Signed nested Mach-O files: ${signed_count}"
+
+          /usr/bin/codesign \
+            --force \
+            --deep \
+            --options runtime \
+            --timestamp \
+            --entitlements Picky/Picky.entitlements \
+            --sign "${PICKY_CODE_SIGN_IDENTITY}" \
+            "${app}"
+
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "${app}"
+          /usr/bin/codesign -d --entitlements :- "${app}" 2>/dev/null | /usr/bin/plutil -p -
+          /usr/bin/lipo -info "${app}/Contents/MacOS/${APP_NAME}"
+          cat "${app}/Contents/Resources/PickyBuildInfo.json"
+
+      - name: Create, sign, notarize, and staple DMG
+        id: package
+        env:
+          PICKY_CODE_SIGN_IDENTITY: ${{ secrets.PICKY_CODE_SIGN_IDENTITY }}
+          PICKY_DEVELOPMENT_TEAM: ${{ secrets.PICKY_DEVELOPMENT_TEAM }}
+          PICKY_NOTARY_APPLE_ID: ${{ secrets.PICKY_NOTARY_APPLE_ID }}
+          PICKY_NOTARY_APP_PASSWORD: ${{ secrets.PICKY_NOTARY_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          app="${PWD}/build/package/export/${APP_NAME}.app"
+          build_info="${app}/Contents/Resources/PickyBuildInfo.json"
+          read -r marketing_version build_number build_label release_channel git_sha < <(python3 - "${build_info}" <<'PY'
+          import json, sys
+          from pathlib import Path
+          info = json.loads(Path(sys.argv[1]).read_text())
+          print(info["marketingVersion"], info["buildNumber"], info["buildLabel"], info["releaseChannel"], info["gitSha"])
+          PY
+          )
+          final_dmg="${PWD}/build/package/${APP_NAME}-${marketing_version}-${build_label}.dmg"
+          dmg_notary_result="${PWD}/build/package/dmg-notary-submit-result.json"
+
+          ./scripts/dmg/create-styled-dmg.sh \
+            --app "${app}" \
+            --output "${final_dmg}" \
+            --volname "${APP_NAME}"
+
+          /usr/bin/codesign \
+            --force \
+            --timestamp \
+            --sign "${PICKY_CODE_SIGN_IDENTITY}" \
+            "${final_dmg}"
+          /usr/bin/codesign --verify --verbose=2 "${final_dmg}"
+
+          xcrun notarytool submit "${final_dmg}" \
+            --apple-id "${PICKY_NOTARY_APPLE_ID}" \
+            --password "${PICKY_NOTARY_APP_PASSWORD}" \
+            --team-id "${PICKY_DEVELOPMENT_TEAM}" \
+            --wait \
+            --output-format json | tee "${dmg_notary_result}"
+
+          dmg_submission_id="$(python3 - "${dmg_notary_result}" <<'PY'
+          import json, sys
+          from pathlib import Path
+          print(json.loads(Path(sys.argv[1]).read_text())["id"])
+          PY
+          )"
+          dmg_submission_status="$(python3 - "${dmg_notary_result}" <<'PY'
+          import json, sys
+          from pathlib import Path
+          print(json.loads(Path(sys.argv[1]).read_text())["status"])
+          PY
+          )"
+
+          if [[ "${dmg_submission_status}" != "Accepted" ]]; then
+            echo "DMG notarization failed with status: ${dmg_submission_status}" >&2
+            exit 1
+          fi
+
+          xcrun stapler staple "${final_dmg}"
+          xcrun stapler validate "${final_dmg}"
+          /usr/sbin/spctl -a -vvv --type open --context context:primary-signature "${final_dmg}"
+
+          sha256="$(shasum -a 256 "${final_dmg}" | awk '{print $1}')"
+          final_dmg_name="$(basename "${final_dmg}")"
+
+          {
+            echo "final_dmg=${final_dmg}"
+            echo "final_dmg_name=${final_dmg_name}"
+            echo "sha256=${sha256}"
+            echo "marketing_version=${marketing_version}"
+            echo "build_number=${build_number}"
+            echo "build_label=${build_label}"
+            echo "release_channel=${release_channel}"
+            echo "git_sha=${git_sha}"
+            echo "dmg_submission_id=${dmg_submission_id}"
+          } >> "${GITHUB_OUTPUT}"
+
+          printf 'Final dmg: %s\nSHA256: %s\n' "${final_dmg}" "${sha256}"
+
+      - name: Sign Sparkle update zip
+        id: sparkle
+        if: ${{ steps.release_meta.outputs.release_channel != 'alpha' }}
+        env:
+          PICKY_SPARKLE_ED_PRIVATE_KEY: ${{ secrets.PICKY_SPARKLE_ED_PRIVATE_KEY }}
+          MARKETING_VERSION: ${{ steps.package.outputs.marketing_version }}
+          BUILD_LABEL: ${{ steps.package.outputs.build_label }}
+        run: |
+          set -euo pipefail
+          : "${PICKY_SPARKLE_ED_PRIVATE_KEY:?missing PICKY_SPARKLE_ED_PRIVATE_KEY (Sparkle EdDSA private key)}"
+
+          # The .app under build/package/export was already notarized and
+          # stapled by the previous step, so we can wrap it in a Sparkle
+          # enclosure zip without round-tripping through the notary again.
+          update_zip_name="${APP_NAME}-${MARKETING_VERSION}-${BUILD_LABEL}-update.zip"
+          update_zip="${PWD}/build/package/${update_zip_name}"
+          rm -f "${update_zip}"
+          (
+            cd build/package/export
+            /usr/bin/ditto -c -k --sequesterRsrc --keepParent "${APP_NAME}.app" "${update_zip}"
+          )
+
+          # package-signed-app.sh isolates DerivedData under build/package/DerivedData
+          # and (since SwiftPM cache split-out) keeps Sparkle artifacts under
+          # build/package/spm-cache. Search the cache root first, then the
+          # legacy DerivedData layouts.
+          sparkle_bin=""
+          for derived_root in \
+            "${PWD}/build/package/spm-cache" \
+            "${PWD}/build/package/DerivedData" \
+            "${HOME}/Library/Developer/Xcode/DerivedData"; do
+            [[ -d "${derived_root}" ]] || continue
+            candidate="$(/usr/bin/find "${derived_root}" -path '*/artifacts/sparkle/Sparkle/bin' -type d -print -quit 2>/dev/null || true)"
+            if [[ -n "${candidate}" && -x "${candidate}/sign_update" ]]; then
+              sparkle_bin="${candidate}"
+              break
+            fi
+          done
+          if [[ -z "${sparkle_bin}" ]]; then
+            echo "sign_update binary not found under DerivedData; the build step did not resolve Sparkle" >&2
+            exit 1
+          fi
+          echo "Using sparkle bin: ${sparkle_bin}"
+
+          ed_key_file="${RUNNER_TEMP}/picky-sparkle-ed-private.key"
+          printf '%s' "${PICKY_SPARKLE_ED_PRIVATE_KEY}" > "${ed_key_file}"
+          chmod 600 "${ed_key_file}"
+          trap 'rm -f "${ed_key_file}"' EXIT
+
+          # sign_update emits attrs in the form
+          #   sparkle:edSignature="..." length="..."
+          sparkle_attrs="$("${sparkle_bin}/sign_update" -f "${ed_key_file}" "${update_zip}")"
+          echo "sign_update output: ${sparkle_attrs}"
+
+          ed_signature="$(printf '%s' "${sparkle_attrs}" | /usr/bin/sed -nE 's/.*sparkle:edSignature="([^"]+)".*/\1/p')"
+          length_bytes="$(printf '%s' "${sparkle_attrs}" | /usr/bin/sed -nE 's/.*length="([0-9]+)".*/\1/p')"
+
+          if [[ -z "${ed_signature}" || -z "${length_bytes}" ]]; then
+            echo "failed to parse sign_update output" >&2
+            exit 1
+          fi
+
+          {
+            echo "update_zip=${update_zip}"
+            echo "update_zip_name=${update_zip_name}"
+            echo "ed_signature=${ed_signature}"
+            echo "length_bytes=${length_bytes}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Ensure GitHub Release exists
+        id: github_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
+          RELEASE_NAME: ${{ steps.release_meta.outputs.release_name }}
+          CREATE_RELEASE_IF_MISSING: ${{ steps.release_meta.outputs.create_release_if_missing }}
+          PRERELEASE: ${{ steps.release_meta.outputs.prerelease }}
+          RELEASE_CHANNEL: ${{ steps.release_meta.outputs.release_channel }}
+        run: |
+          set -euo pipefail
+          if gh release view "${TARGET_TAG}" >/dev/null 2>&1; then
+            gh release view "${TARGET_TAG}" --json tagName,name,isPrerelease,url
+            release_url="$(gh release view "${TARGET_TAG}" --json url --jq .url)"
+            echo "release_url=${release_url}" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if [[ "${CREATE_RELEASE_IF_MISSING}" != "true" ]]; then
+            echo "GitHub Release does not exist for ${TARGET_TAG}, and create_release_if_missing=false" >&2
+            exit 1
+          fi
+
+          create_args=(release create "${TARGET_TAG}" --title "${RELEASE_NAME}" --notes "Automated ${APP_NAME} ${RELEASE_CHANNEL} release.")
+          if [[ "${PRERELEASE}" == "true" ]]; then
+            create_args+=(--prerelease)
+          fi
+          gh "${create_args[@]}"
+          release_url="$(gh release view "${TARGET_TAG}" --json url --jq .url)"
+          echo "release_url=${release_url}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload dmg to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
+          FINAL_DMG: ${{ steps.package.outputs.final_dmg }}
+        run: |
+          set -euo pipefail
+          gh release upload "${TARGET_TAG}" "${FINAL_DMG}" --clobber
+
+      - name: Upload Sparkle update zip to release
+        if: ${{ steps.release_meta.outputs.release_channel != 'alpha' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
+          UPDATE_ZIP: ${{ steps.sparkle.outputs.update_zip }}
+        run: |
+          set -euo pipefail
+          gh release upload "${TARGET_TAG}" "${UPDATE_ZIP}" --clobber
+
+      - name: Update Sparkle appcast.xml
+        if: ${{ steps.release_meta.outputs.release_channel != 'alpha' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
+          UPDATE_ZIP_NAME: ${{ steps.sparkle.outputs.update_zip_name }}
+          ED_SIGNATURE: ${{ steps.sparkle.outputs.ed_signature }}
+          LENGTH_BYTES: ${{ steps.sparkle.outputs.length_bytes }}
+          MARKETING_VERSION: ${{ steps.package.outputs.marketing_version }}
+          BUILD_NUMBER: ${{ steps.package.outputs.build_number }}
+          RELEASE_CHANNEL: ${{ steps.package.outputs.release_channel }}
+        run: |
+          set -euo pipefail
+          appcast_dir="${RUNNER_TEMP}/picky-appcast"
+          mkdir -p "${appcast_dir}"
+          appcast_path="${appcast_dir}/appcast.xml"
+          download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TARGET_TAG}/${UPDATE_ZIP_NAME}"
+
+          # Pull the existing feed off the auto-update release. The helper
+          # bootstraps a fresh appcast if this is the first published update.
+          gh release download auto-update --pattern appcast.xml --dir "${appcast_dir}" 2>/dev/null || true
+
+          python3 scripts/update-sparkle-appcast.py \
+            --appcast "${appcast_path}" \
+            --repository "${GITHUB_REPOSITORY}" \
+            --marketing-version "${MARKETING_VERSION}" \
+            --build-number "${BUILD_NUMBER}" \
+            --release-channel "${RELEASE_CHANNEL}" \
+            --download-url "${download_url}" \
+            --ed-signature "${ED_SIGNATURE}" \
+            --length-bytes "${LENGTH_BYTES}"
+
+          gh release upload auto-update "${appcast_path}" --clobber
+
+      - name: Update release notes with notarized build metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
+          FINAL_DMG_NAME: ${{ steps.package.outputs.final_dmg_name }}
+          SHA256: ${{ steps.package.outputs.sha256 }}
+          MARKETING_VERSION: ${{ steps.package.outputs.marketing_version }}
+          BUILD_NUMBER: ${{ steps.package.outputs.build_number }}
+          BUILD_LABEL: ${{ steps.package.outputs.build_label }}
+          RELEASE_CHANNEL: ${{ steps.package.outputs.release_channel }}
+          GIT_SHA: ${{ steps.package.outputs.git_sha }}
+          DMG_SUBMISSION_ID: ${{ steps.package.outputs.dmg_submission_id }}
+        run: |
+          set -euo pipefail
+          current_notes="${RUNNER_TEMP}/release-notes-current.md"
+          block="${RUNNER_TEMP}/picky-notarized-build.md"
+          updated_notes="${RUNNER_TEMP}/release-notes-updated.md"
+          download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TARGET_TAG}/${FINAL_DMG_NAME}"
+
+          gh release view "${TARGET_TAG}" --json body --jq .body > "${current_notes}"
+
+          cat > "${block}" <<EOF
+          <!-- picky-notarized-build:start -->
+          ### Notarized macOS ${RELEASE_CHANNEL} build
+
+          - Download: [${FINAL_DMG_NAME}](${download_url})
+          - Version: ${MARKETING_VERSION} (${BUILD_NUMBER})
+          - Build label: ${BUILD_LABEL}
+          - Release channel: ${RELEASE_CHANNEL}
+          - Git SHA: ${GIT_SHA}
+          - SHA256: \`${SHA256}\`
+          - Apple notary submission ID: \`${DMG_SUBMISSION_ID}\`
+
+          Install:
+          1. Double-click the dmg to mount it.
+          2. Drag \`${APP_NAME}.app\` onto the \`Applications\` shortcut.
+          3. Open \`${APP_NAME}\` and grant requested macOS permissions.
+          <!-- picky-notarized-build:end -->
+          EOF
+          sed -i '' 's/^          //' "${block}"
+
+          python3 - "${current_notes}" "${block}" "${updated_notes}" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          current = Path(sys.argv[1]).read_text()
+          block = Path(sys.argv[2]).read_text().strip() + "\n"
+          out = Path(sys.argv[3])
+          pattern = re.compile(r"<!-- picky-notarized-build:start -->.*?<!-- picky-notarized-build:end -->\n?", re.S)
+          if pattern.search(current):
+              updated = pattern.sub(block, current)
+          else:
+              updated = current.rstrip()
+              updated = f"{updated}\n\n{block}" if updated else block
+          out.write_text(updated, encoding="utf-8")
+          PY
+
+          gh release edit "${TARGET_TAG}" --notes-file "${updated_notes}"
+
+      - name: Notify Slack that notarized DMG is ready
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.PICKY_SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ env.PICKY_RELEASE_SLACK_CHANNEL_ID }}
+          TARGET_TAG: ${{ steps.release_meta.outputs.target_tag }}
+          RELEASE_NAME: ${{ steps.release_meta.outputs.release_name }}
+          RELEASE_URL: ${{ steps.github_release.outputs.release_url }}
+          FINAL_DMG_NAME: ${{ steps.package.outputs.final_dmg_name }}
+          SHA256: ${{ steps.package.outputs.sha256 }}
+          MARKETING_VERSION: ${{ steps.package.outputs.marketing_version }}
+          BUILD_NUMBER: ${{ steps.package.outputs.build_number }}
+          BUILD_LABEL: ${{ steps.package.outputs.build_label }}
+          RELEASE_CHANNEL: ${{ steps.package.outputs.release_channel }}
+          GIT_SHA: ${{ steps.package.outputs.git_sha }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SLACK_BOT_TOKEN}" ]]; then
+            echo "PICKY_SLACK_BOT_TOKEN is not configured; skipping Slack notification." >&2
+            exit 0
+          fi
+
+          release_url="${RELEASE_URL:-https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TARGET_TAG}}"
+          dmg_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TARGET_TAG}/${FINAL_DMG_NAME}"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          short_sha="${GIT_SHA:0:7}"
+          payload_path="${RUNNER_TEMP}/picky-slack-release-notification.json"
+          export release_url dmg_url run_url short_sha
+
+          python3 - "${payload_path}" <<'PY'
+          import json
+          import os
+          import sys
+
+          payload_path = sys.argv[1]
+          release_url = os.environ["release_url"]
+          dmg_url = os.environ["dmg_url"]
+          run_url = os.environ["run_url"]
+          short_sha = os.environ["short_sha"]
+          final_dmg_name = os.environ["FINAL_DMG_NAME"]
+          target_tag = os.environ["TARGET_TAG"]
+          release_name = os.environ["RELEASE_NAME"]
+          marketing_version = os.environ["MARKETING_VERSION"]
+          build_number = os.environ["BUILD_NUMBER"]
+          build_label = os.environ["BUILD_LABEL"]
+          release_channel = os.environ["RELEASE_CHANNEL"]
+          sha256 = os.environ["SHA256"]
+
+          text = f"✅ Picky notarized DMG is ready: {final_dmg_name}"
+          payload = {
+              "channel": os.environ["SLACK_CHANNEL_ID"],
+              "text": text,
+              "unfurl_links": False,
+              "unfurl_media": False,
+              "blocks": [
+                  {
+                      "type": "header",
+                      "text": {"type": "plain_text", "text": "✅ Picky notarized DMG is ready", "emoji": True},
+                  },
+                  {
+                      "type": "section",
+                      "text": {
+                          "type": "mrkdwn",
+                          "text": f"*<{release_url}|{release_name}>*\nDMG asset has been notarized, stapled, uploaded, and the release notes were updated.",
+                      },
+                  },
+                  {
+                      "type": "section",
+                      "fields": [
+                          {"type": "mrkdwn", "text": f"*Version*\n{marketing_version} ({build_number})"},
+                          {"type": "mrkdwn", "text": f"*Channel*\n{release_channel}"},
+                          {"type": "mrkdwn", "text": f"*Tag*\n`{target_tag}`"},
+                          {"type": "mrkdwn", "text": f"*Build label*\n`{build_label}`"},
+                          {"type": "mrkdwn", "text": f"*Git SHA*\n`{short_sha}`"},
+                          {"type": "mrkdwn", "text": f"*DMG*\n<{dmg_url}|{final_dmg_name}>"},
+                      ],
+                  },
+                  {
+                      "type": "context",
+                      "elements": [
+                          {"type": "mrkdwn", "text": f"SHA256: `{sha256}`"},
+                          {"type": "mrkdwn", "text": f"<{run_url}|GitHub Actions run>"},
+                      ],
+                  },
+              ],
+          }
+          with open(payload_path, "w", encoding="utf-8") as f:
+              json.dump(payload, f)
+          PY
+
+          response="$(curl -fsS \
+            -X POST "https://slack.com/api/chat.postMessage" \
+            -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+            -H "Content-Type: application/json; charset=utf-8" \
+            --data @"${payload_path}")"
+
+          python3 -c 'import json, sys; data = json.load(sys.stdin); ok = data.get("ok"); err = data.get("error", "unknown_error"); sys.exit(0 if ok else f"Slack notification failed: {err}")' <<<"${response}"
+
+      - name: Upload workflow artifact copy
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: picky-notarized-release-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            build/package/*.dmg
+            build/package/dmg-notary-submit-result.json

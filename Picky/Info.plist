@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Picky reads the active browser tab's URL and title only at capture time so the local agent receives accurate desktop context.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Picky uses your microphone only when you hold Control+Option to dictate a local agent task.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Picky captures screenshots only during invocation so Pi can receive neutral desktop context.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Picky uses local speech recognition to transcribe your voice when you invoke it.</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/Jonghakseo/picky/releases/download/auto-update/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>2uvHqgzUGmmkNqQ+BWcySWRHCL4GeHQB7HgZKlvgBgE=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>14400</integer>
+</dict>
+</plist>

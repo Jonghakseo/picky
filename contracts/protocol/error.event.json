@@ -1,0 +1,9 @@
+{
+  "id": "event-error-001",
+  "protocolVersion": "2026-05-09",
+  "timestamp": "2026-05-01T00:00:04.000Z",
+  "type": "error",
+  "code": "bad_message",
+  "message": "Malformed JSON",
+  "commandId": "cmd-bad-001"
+}

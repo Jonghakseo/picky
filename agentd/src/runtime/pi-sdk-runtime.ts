@@ -1,0 +1,1367 @@
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { extname } from "node:path";
+import {
+  type AgentSession,
+  type AgentSessionRuntime,
+  type CreateAgentSessionRuntimeFactory,
+  type CreateAgentSessionFromServicesOptions,
+  type CreateAgentSessionServicesOptions,
+  type ToolDefinition,
+  createAgentSessionFromServices,
+  createAgentSessionRuntime,
+  createAgentSessionServices,
+  getAgentDir,
+  SessionManager,
+} from "@mariozechner/pi-coding-agent";
+import type { BuiltPrompt } from "../prompt-builder.js";
+import { ExtensionUiBridge } from "../application/extension-ui-bridge.js";
+import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
+import type { AgentRuntime, AnswerExtensionUiOptions, RuntimeAssistantRunMetadata, RuntimeBashExecutionResult, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
+import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
+import { logAgentd } from "../local-log.js";
+import {
+  isCompacting as piIsCompacting,
+  readModelMetadata as piReadModelMetadata,
+  readThinkingLevel as piReadThinkingLevel,
+  tryCompact as piTryCompact,
+  tryCycleModel as piTryCycleModel,
+  tryCycleThinkingLevel as piTryCycleThinkingLevel,
+  tryGetBashSurface as piTryGetBashSurface,
+  tryGetContextUsage as piTryGetContextUsage,
+  tryReload as piTryReload,
+  trySetThinkingLevel as piTrySetThinkingLevel,
+  type PiUserBashEvent,
+} from "./pi-capabilities.js";
+
+// Picky exposes a curated subset of Pi's BUILTIN_SLASH_COMMANDS. Each entry must be backed by a
+// public AgentSession API call inside handleBuiltinSlashCommand below; do not list a command we
+// cannot actually execute, otherwise users will see autocomplete suggestions that silently fall
+// through to the LLM as plain user text.
+const PICKY_BUILTIN_SLASH_COMMANDS: ReadonlyArray<{ name: string; description: string }> = [
+  { name: "new", description: "Start a fresh Pi session in this Picky card" },
+  { name: "name", description: "Set the Pi session display name (usage: /name <session name>)" },
+  { name: "compact", description: "Manually compact the session context (optional: /compact <focus instructions>)" },
+  { name: "reload", description: "Reload Pi skills, extensions, prompts, and context files" },
+];
+
+// Soft cap for the per-session `slashExpansions` map. A long-lived Pi session can submit many
+// slash commands; in pathological cases Pi may never emit the matching role="custom" echo (e.g.
+// extension changes mid-session), which would leak the mapping. The cap is generous enough to
+// cover realistic concurrent in-flight slash commands while keeping memory bounded.
+const SLASH_EXPANSION_MAP_CAP = 64;
+
+interface PiSdkRuntimeOptions {
+  agentDir?: string;
+  createRuntime?: typeof createAgentSessionRuntime;
+  createServices?: typeof createAgentSessionServices;
+  createSessionFromServices?: typeof createAgentSessionFromServices;
+  getAgentDir?: typeof getAgentDir;
+  resourceLoaderOptions?: CreateAgentSessionServicesOptions["resourceLoaderOptions"];
+  customTools?: ToolDefinition[];
+  thinkingLevel?: ThinkingLevel;
+  modelPattern?: string;
+  disableBlockingDialogs?: boolean;
+}
+
+export class PiSdkRuntime implements AgentRuntime {
+  private thinkingLevel?: ThinkingLevel;
+  private modelPattern?: string;
+  private customTools: ToolDefinition[];
+
+  constructor(private readonly options: PiSdkRuntimeOptions = {}) {
+    this.thinkingLevel = options.thinkingLevel;
+    this.modelPattern = normalizeModelPattern(options.modelPattern);
+    this.customTools = options.customTools ?? [];
+  }
+
+  setThinkingLevel(level: ThinkingLevel): void {
+    this.thinkingLevel = level;
+  }
+
+  /// Replace the customTools list used at the next session creation. Existing
+  /// sessions keep their original tools until the supervisor aborts and resets
+  /// the main handle.
+  setCustomTools(tools: ToolDefinition[]): void {
+    this.customTools = tools;
+  }
+
+  setModelPattern(pattern?: string): boolean {
+    const next = normalizeModelPattern(pattern);
+    const changed = this.modelPattern !== next;
+    this.modelPattern = next;
+    return changed;
+  }
+
+  async listAvailableModels(options: { cwd?: string } = {}): Promise<RuntimeModelOption[]> {
+    const createServices = this.options.createServices ?? createAgentSessionServices;
+    const agentDir = this.options.agentDir ?? (this.options.getAgentDir ?? getAgentDir)();
+    const services = await createServices({ cwd: options.cwd ?? process.cwd(), agentDir, resourceLoaderOptions: this.options.resourceLoaderOptions });
+    const available = await availableModelsFromServices(services);
+    return available.map(runtimeModelOptionFromModel).filter((option): option is RuntimeModelOption => Boolean(option));
+  }
+
+  async create(prompt: BuiltPrompt, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
+    logAgentd("pi runtime create", { sessionId: options.sessionId, cwd: options.cwd, promptChars: prompt.text.length, images: prompt.imagePaths?.length ?? 0 });
+    const handle = await this.createHandle(options);
+    handle.scheduleInitialPrompt(prompt);
+    return handle;
+  }
+
+  async prewarm(options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
+    logAgentd("pi runtime prewarm", { sessionId: options.sessionId, cwd: options.cwd });
+    const handle = await this.createHandle(options);
+    setTimeout(() => handle.reportDiagnostics(), 0);
+    return handle;
+  }
+
+  async resume(sessionFilePath: string, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
+    logAgentd("pi runtime resume", { sessionId: options.sessionId, cwd: options.cwd, sessionFilePath });
+    const handle = await this.createHandle({ ...options, sessionFilePath });
+    setTimeout(() => handle.reportDiagnostics(), 0);
+    return handle;
+  }
+
+  private async createHandle(options: { cwd?: string; sessionId?: string; sessionFilePath?: string }): Promise<PiSdkRuntimeSession> {
+    const cwd = options.cwd ?? process.cwd();
+    const sessionId = options.sessionId ?? "picky-pi-session";
+    const createServices = this.options.createServices ?? createAgentSessionServices;
+    const createSessionFromServices = this.options.createSessionFromServices ?? createAgentSessionFromServices;
+    const createRuntimeImpl = this.options.createRuntime ?? createAgentSessionRuntime;
+    const agentDir = this.options.agentDir ?? (this.options.getAgentDir ?? getAgentDir)();
+    const customTools = this.customTools;
+
+    const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd: runtimeCwd, sessionManager, sessionStartEvent }) => {
+      const services = await createServices({ cwd: runtimeCwd, agentDir, resourceLoaderOptions: this.options.resourceLoaderOptions });
+      const fixedModel = await modelFromServices(services, this.modelPattern);
+      const scopedModels = fixedModel
+        ? [{ model: fixedModel as ScopedModelOption["model"], ...(this.thinkingLevel ? { thinkingLevel: this.thinkingLevel } : {}) }]
+        : await scopedModelsFromServices(services);
+      return {
+        ...(await createSessionFromServices({
+          services,
+          sessionManager,
+          sessionStartEvent,
+          customTools,
+          thinkingLevel: this.thinkingLevel,
+          scopedModels,
+          ...(fixedModel ? { model: fixedModel as ScopedModelOption["model"] } : {}),
+        })),
+        services,
+        diagnostics: services.diagnostics,
+      };
+    };
+
+    const runtime = await createRuntimeImpl(createRuntime, {
+      cwd,
+      agentDir,
+      sessionManager: options.sessionFilePath ? SessionManager.open(options.sessionFilePath, undefined, cwd) : SessionManager.create(cwd),
+    });
+
+    const handle = new PiSdkRuntimeSession(sessionId, runtime, this.thinkingLevel, { disableBlockingDialogs: this.options.disableBlockingDialogs ?? false });
+    await handle.bindCurrentSession();
+    return handle;
+  }
+}
+
+interface ExpectedInputDelivery {
+  id: string;
+  text: string;
+  originatedBy: "user" | "main_agent" | "internal" | "pi_extension";
+  suppress: boolean;
+}
+
+class PiSdkRuntimeSession implements RuntimeSessionHandle {
+  private listeners = new Set<(event: RuntimeEvent) => void>();
+  private unsubscribe?: () => void;
+  private uiBridge: ExtensionUiBridge;
+  private readonly transcriptRepairLogLine?: string;
+  private queuedSteeringCount = 0;
+  private queuedFollowUpCount = 0;
+  private pendingExtensionUiRequestIds = new Set<string>();
+  private pendingTerminalError?: Extract<RuntimeEvent, { type: "status" }>;
+  private pendingTerminalErrorTimer?: ReturnType<typeof setTimeout>;
+  private initialPromptTimer?: ReturnType<typeof setTimeout>;
+  private expectedInputDeliveries: ExpectedInputDelivery[] = [];
+  // Pi expands slash commands like `/skill:<name>` server-side before enqueueing, so the queue
+  // snapshot and the matching role="custom" message_start carry the expansion (e.g. the SKILL.md
+  // body) instead of the raw text the user typed. We learn `expansion -> raw` mappings from Pi's
+  // queue updates (including the first synchronous queue_update Pi emits before preflightResult)
+  // and from a post-acceptance queue diff, then translate every outbound view of the queue
+  // (queue_update events, getSteeringMessages/getFollowUpMessages) so downstream code sees the raw
+  // text consistently and suppress the duplicate role="custom" echo when it arrives.
+  private slashExpansions = new Map<string, { raw: string; count: number }>();
+  private pendingSlashSubmissions: Array<{ raw: string; beforeQueue?: ReadonlyMap<string, number> }> = [];
+  // After an explicit abort() we synthesize a `status: cancelled` event right away. Pi will
+  // still drain the aborted turn and eventually emit its own turn_end/agent_end with
+  // stopReason="aborted" (normalized to another `status: cancelled`). That duplicate arrives
+  // asynchronously, so if the user has already steered the cancelled session into a new turn,
+  // the late event overwrites the freshly-running state and stamps a second "Cancelled by user"
+  // bubble on top of the steer. Mark that we are expecting one such drain after each abort and
+  // suppress the matching event in runtimeEventFromPiEvent.
+  private pendingAbortAcknowledgement = false;
+
+  constructor(readonly id: string, private readonly runtime: AgentSessionRuntime, private configuredThinkingLevel?: ThinkingLevel, private readonly bridgeOptions: { disableBlockingDialogs?: boolean } = {}) {
+    this.uiBridge = this.createBridge();
+    this.transcriptRepairLogLine = repairDanglingToolCalls(runtime.session);
+    this.runtime.setRebindSession(async () => this.bindCurrentSession());
+  }
+
+  scheduleInitialPrompt(prompt: BuiltPrompt): void {
+    if (this.initialPromptTimer) clearTimeout(this.initialPromptTimer);
+    this.initialPromptTimer = setTimeout(() => {
+      this.initialPromptTimer = undefined;
+      this.reportDiagnostics();
+      void this.prompt(prompt);
+    }, 0);
+  }
+
+  async prompt(prompt: BuiltPrompt): Promise<void> {
+    logAgentd("pi prompt", { sessionId: this.id, promptChars: prompt.text.length, images: prompt.imagePaths?.length ?? 0 });
+    if (await this.handleBuiltinSlashCommand(prompt.text)) return;
+    const wasStreaming = this.runtime.session.isStreaming;
+    const expected = this.expectInputDelivery(prompt.text);
+    try {
+      await this.runtime.session.prompt(prompt.text, { images: await imageOptions(prompt.imagePaths), source: "rpc" });
+    } catch (error) {
+      this.cancelExpectedInputDelivery(expected.id);
+      this.emit({ type: "status", status: "failed", summary: messageOf(error) });
+      return;
+    }
+    if (this.maybeEmitImmediateCompletion(wasStreaming)) this.cancelExpectedInputDelivery(expected.id);
+  }
+
+  async followUp(prompt: BuiltPrompt): Promise<void> {
+    logAgentd("pi follow-up", { sessionId: this.id, promptChars: prompt.text.length, images: prompt.imagePaths?.length ?? 0 });
+    try {
+      await this.promptWithOptions(prompt, "followUp");
+    } catch (error) {
+      this.emit({ type: "status", status: "failed", summary: messageOf(error) });
+      throw error;
+    }
+  }
+
+  async interrupt(prompt: BuiltPrompt): Promise<void> {
+    logAgentd("pi interrupt", { sessionId: this.id, wasStreaming: this.runtime.session.isStreaming, promptChars: prompt.text.length });
+    try {
+      if (this.runtime.session.isStreaming) {
+        await this.runtime.session.abort();
+      }
+      await this.promptWithOptions(prompt);
+    } catch (error) {
+      this.emit({ type: "status", status: "failed", summary: messageOf(error) });
+      throw error;
+    }
+  }
+
+  async steer(prompt: BuiltPrompt): Promise<RuntimeSteerResult> {
+    logAgentd("pi steer", { sessionId: this.id, promptChars: prompt.text.length, images: prompt.imagePaths?.length ?? 0 });
+    try {
+      const handledSynchronously = await this.promptWithOptions(prompt, "steer");
+      return { handledSynchronously };
+    } catch (error) {
+      this.emit({ type: "status", status: "failed", summary: messageOf(error) });
+      throw error;
+    }
+  }
+
+  async abort(): Promise<void> {
+    logAgentd("pi abort", { sessionId: this.id });
+    if (this.initialPromptTimer) {
+      clearTimeout(this.initialPromptTimer);
+      this.initialPromptTimer = undefined;
+    }
+    // Set before awaiting Pi so a late turn_end/agent_end that races us still sees the flag.
+    this.pendingAbortAcknowledgement = true;
+    await this.runtime.session.abort();
+    this.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
+  }
+
+  async executeUserBash(command: string, options: { excludeFromContext?: boolean; onOutputChunk?: (chunk: string) => void } = {}): Promise<RuntimeBashExecutionResult> {
+    const trimmedCommand = command.trim();
+    if (!trimmedCommand) throw new Error("Bash command cannot be empty");
+    const bash = piTryGetBashSurface(this.runtime.session, this.id);
+    if (!bash) throw new Error("Pi runtime does not support direct bash execution");
+    if (bash.isBashRunning) throw new Error("A bash command is already running");
+
+    const excludeFromContext = options.excludeFromContext === true;
+    const toolCallId = `user-bash-${randomUUID()}`;
+    logAgentd("pi user bash", { sessionId: this.id, commandChars: trimmedCommand.length, excludeFromContext });
+    this.emit({ type: "tool", toolCallId, name: "bash", status: "running", preview: trimmedCommand, argsPreview: `$ ${trimmedCommand}` });
+
+    try {
+      const eventResult = await emitUserBash(bash, { command: trimmedCommand, excludeFromContext, cwd: this.runtime.cwd });
+      const result = normalizeBashExecutionResult(eventResult?.result)
+        ?? await bash.executeBash(trimmedCommand, (chunk: string) => {
+          options.onOutputChunk?.(chunk);
+          this.emit({ type: "tool", toolCallId, name: "bash", status: "running", preview: trimmedCommand, resultPreview: sliceUtf16(chunk, 500) });
+        }, { excludeFromContext, operations: eventResult?.operations });
+
+      if (eventResult?.result) bash.recordBashResult(trimmedCommand, result, { excludeFromContext });
+      this.emit({
+        type: "tool",
+        toolCallId,
+        name: "bash",
+        status: result.exitCode && result.exitCode !== 0 ? "failed" : "succeeded",
+        preview: trimmedCommand,
+        resultPreview: bashResultPreview(result),
+      });
+      return result;
+    } catch (error) {
+      const message = messageOf(error);
+      this.emit({ type: "tool", toolCallId, name: "bash", status: "failed", preview: trimmedCommand, resultPreview: message });
+      throw error;
+    }
+  }
+
+  async newSession(): Promise<{ cancelled: boolean }> {
+    logAgentd("pi new session", { sessionId: this.id, cwd: this.runtime.cwd });
+    const result = await this.runtime.newSession();
+    if (result.cancelled) return result;
+    await this.bindCurrentSession();
+    this.emit({ type: "session_replaced", reason: "new", cwd: this.runtime.cwd, sessionFilePath: this.getSessionFilePath() });
+    this.reportDiagnostics();
+    this.emit({ type: "status", status: "completed", summary: "New session started", noTurnRan: true, preserveSessionState: true });
+    return result;
+  }
+
+  async answerExtensionUi(requestId: string, value: unknown, options?: AnswerExtensionUiOptions): Promise<void> {
+    this.pendingExtensionUiRequestIds.delete(requestId);
+    const delivered = this.uiBridge.answer(requestId, normalizeAnswer(value));
+    if (delivered) return;
+    if (options?.ignoreUnknown) {
+      logAgentd("pi runtime answerExtensionUi ignored unknown request", { sessionId: this.id, requestId });
+      return;
+    }
+    throw new Error(`Unknown extension UI request: ${requestId}`);
+  }
+
+  setThinkingLevel(level: ThinkingLevel): void {
+    if (!piTrySetThinkingLevel(this.runtime.session, this.id, level)) {
+      this.emit({ type: "log", line: "pi thinking level change skipped: active session does not support setThinkingLevel" });
+      return;
+    }
+    this.configuredThinkingLevel = level;
+    logAgentd("pi thinking level set", { sessionId: this.id, level });
+  }
+
+  getAssistantRunMetadata(): RuntimeAssistantRunMetadata | undefined {
+    return this.currentAssistantRunMetadata();
+  }
+
+  cycleThinkingLevel(): RuntimeAssistantRunMetadata | undefined {
+    const level = piTryCycleThinkingLevel(this.runtime.session, this.id);
+    if (level === undefined) {
+      // Distinguish "capability missing" from "current model does not support thinking" via the
+      // logged warning trail in pi-capabilities (warnOnceForAbsence). The user-facing log line
+      // intentionally stays the same so we don't reveal which fallback fired.
+      this.emit({ type: "log", line: "pi thinking level cycle skipped: capability unavailable or current model does not support thinking" });
+      return this.currentAssistantRunMetadata();
+    }
+    this.configuredThinkingLevel = level;
+    logAgentd("pi thinking level cycled", { sessionId: this.id, level });
+    return this.currentAssistantRunMetadata();
+  }
+
+  async cycleModel(direction: ModelCycleDirection): Promise<RuntimeAssistantRunMetadata | undefined> {
+    const result = await piTryCycleModel(this.runtime.session, this.id, direction);
+    if (!result) {
+      this.emit({ type: "log", line: "pi model cycle skipped: capability unavailable or only one model available" });
+      return this.currentAssistantRunMetadata();
+    }
+    if (result.thinkingLevel) this.configuredThinkingLevel = result.thinkingLevel;
+    const metadata = this.currentAssistantRunMetadata();
+    logAgentd("pi model cycled", { sessionId: this.id, direction, model: metadata?.model, thinkingLevel: metadata?.thinkingLevel });
+    return metadata;
+  }
+
+  private currentAssistantRunMetadata(): RuntimeAssistantRunMetadata | undefined {
+    const model = currentModelId(this.runtime.session);
+    const thinkingLevel = currentThinkingLevel(this.runtime.session) ?? this.configuredThinkingLevel;
+    const metadata = {
+      ...(model ? { model } : {}),
+      ...(thinkingLevel ? { thinkingLevel } : {}),
+    };
+    return metadata.model || metadata.thinkingLevel ? metadata : undefined;
+  }
+
+  async listSlashCommands(): Promise<RuntimeSlashCommand[]> {
+    const commands: RuntimeSlashCommand[] = [
+      ...PICKY_BUILTIN_SLASH_COMMANDS.map((command) => ({ ...command, source: "builtin" as const })),
+    ];
+    // Trade-off: we expose every extension command in autocomplete instead of trying to
+    // filter out ones that depend on Pi TUI surfaces Picky does not implement.
+    //
+    // Why we don't filter:
+    //   - Pi SDK assigns the agentDir itself (e.g. ~/.pi/agent) as the baseDir for every
+    //     auto-discovered local extension under ~/.pi/agent/extensions/*. A directory-level
+    //     `ui.custom` scan therefore flags ALL local extensions if any single sibling uses it,
+    //     producing false positives for clean extensions like /github:pr-merge.
+    //   - ExtensionUiBridge already implements the common surfaces (notify/confirm/select/
+    //     input/editor/askUserQuestion/setStatus/setTitle/...) and silently no-ops the
+    //     overlay-only ones (setWidget/setHeader/setFooter/addAutocompleteProvider/...).
+    //   - The only hard failure is `ui.custom`, which throws PickyOverlayUnsupportedError.
+    //     extension-crash-guard.ts swallows that (and any extension TypeError such as a missing
+    //     `theme.fg`) so daemon stays alive; the user just sees the command no-op or error.
+    //
+    // Cost we accept: a few overlay-heavy commands (e.g. /widgets, /sub:peek, /subagents) show
+    // up in autocomplete but produce only an error or empty effect when invoked.
+    for (const command of this.runtime.session.extensionRunner.getRegisteredCommands()) {
+      commands.push({ name: command.invocationName, description: command.description, source: "extension" });
+    }
+    for (const template of this.runtime.session.promptTemplates) {
+      commands.push({ name: template.name, description: template.description, source: "prompt" });
+    }
+    for (const skill of this.runtime.session.resourceLoader.getSkills().skills) {
+      commands.push({ name: `skill:${skill.name}`, description: skill.description, source: "skill" });
+    }
+    return commands;
+  }
+
+  clearQueue(): { steering: string[]; followUp: string[] } {
+    const cleared = this.runtime.session.clearQueue();
+    // Drop cached slash-command expansion mappings whose Pi-side entries were just cleared.
+    // Without this the mapping would leak indefinitely whenever the user discards a queued
+    // slash command before Pi delivers its role="custom" echo.
+    for (const entry of [...cleared.steering, ...cleared.followUp]) this.slashExpansions.delete(this.normalizedSlashExpansionKey(entry));
+    return cleared;
+  }
+
+  getSteeringMessages(): readonly string[] {
+    return this.runtime.session.getSteeringMessages().map((entry) => this.translateQueueEntry(entry));
+  }
+
+  getFollowUpMessages(): readonly string[] {
+    return this.runtime.session.getFollowUpMessages().map((entry) => this.translateQueueEntry(entry));
+  }
+
+  private translateQueueEntry(text: string): string {
+    return this.slashExpansions.get(this.normalizedSlashExpansionKey(text))?.raw ?? text;
+  }
+
+  private normalizedSlashExpansionKey(text: string): string {
+    return text.trim();
+  }
+
+  private registerSlashExpansion(expansion: string, rawText: string): void {
+    const expansionKey = this.normalizedSlashExpansionKey(expansion);
+    const raw = rawText.trim();
+    if (!expansionKey || !raw || expansionKey === raw) return;
+    const existing = this.slashExpansions.get(expansionKey);
+    if (existing) {
+      existing.count += 1;
+      return;
+    }
+    // Bound the map: if it grows past the cap, drop the oldest entries so a long-lived
+    // session that repeatedly invokes slash commands without ever receiving custom echoes
+    // (e.g. extensions that don't echo, or unrelated cleanup paths) cannot leak memory.
+    while (this.slashExpansions.size >= SLASH_EXPANSION_MAP_CAP) {
+      const oldestKey = this.slashExpansions.keys().next().value;
+      if (oldestKey === undefined) break;
+      this.slashExpansions.delete(oldestKey);
+    }
+    this.slashExpansions.set(expansionKey, { raw, count: 1 });
+    logAgentd("pi slash expansion captured", {
+      sessionId: this.id,
+      rawChars: raw.length,
+      expansionChars: expansionKey.length,
+    });
+  }
+
+  private consumeSlashExpansion(expansion: string): boolean {
+    const expansionKey = this.normalizedSlashExpansionKey(expansion);
+    const existing = this.slashExpansions.get(expansionKey);
+    if (!existing) return false;
+    existing.count -= 1;
+    if (existing.count <= 0) this.slashExpansions.delete(expansionKey);
+    return true;
+  }
+
+  private removePendingSlashSubmission(pending: { raw: string; beforeQueue?: ReadonlyMap<string, number> } | undefined): void {
+    if (!pending) return;
+    const index = this.pendingSlashSubmissions.indexOf(pending);
+    if (index >= 0) this.pendingSlashSubmissions.splice(index, 1);
+  }
+
+  // Snapshot Pi's queues right before submitting a slash-prefixed prompt so we can diff after
+  // acceptance to learn which queue entry Pi created from our raw text. The before-set keeps us
+  // from re-mapping entries that were already queued by an earlier prompt.
+  private snapshotQueueForSlashExpansion(rawText: string): ReadonlyMap<string, number> | undefined {
+    if (!rawText.trim().startsWith("/")) return undefined;
+    const counts = new Map<string, number>();
+    for (const entry of [...this.runtime.session.getSteeringMessages(), ...this.runtime.session.getFollowUpMessages()]) {
+      const key = this.normalizedSlashExpansionKey(entry);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }
+
+  private rememberSlashExpansionFromQueue(beforeQueue: ReadonlyMap<string, number> | undefined, rawText: string): void {
+    if (!beforeQueue) return;
+    const after = [
+      ...this.runtime.session.getSteeringMessages(),
+      ...this.runtime.session.getFollowUpMessages(),
+    ];
+    const raw = rawText.trim();
+    const hasPendingRaw = this.pendingSlashSubmissions.some((submission) => submission.raw === raw);
+    const seen = new Map<string, number>();
+    for (const entry of after) {
+      const entryKey = this.normalizedSlashExpansionKey(entry);
+      const occurrence = (seen.get(entryKey) ?? 0) + 1;
+      seen.set(entryKey, occurrence);
+      if (entryKey === raw) continue;
+      if (occurrence <= (beforeQueue.get(entryKey) ?? 0)) continue;
+      if (this.slashExpansions.has(entryKey) && !hasPendingRaw) continue;
+      this.registerSlashExpansion(entry, raw);
+    }
+  }
+
+  private rememberPendingSlashExpansionsFromQueueUpdate(entries: readonly string[]): void {
+    const seen = new Map<string, number>();
+    for (const entry of entries) {
+      const entryKey = this.normalizedSlashExpansionKey(entry);
+      const occurrence = (seen.get(entryKey) ?? 0) + 1;
+      seen.set(entryKey, occurrence);
+      if (!entryKey || this.slashExpansions.has(entryKey)) continue;
+      const pending = this.pendingSlashSubmissions.find((submission) => submission.raw !== entryKey && occurrence > (submission.beforeQueue?.get(entryKey) ?? 0));
+      if (!pending) continue;
+      this.registerSlashExpansion(entry, pending.raw);
+      this.removePendingSlashSubmission(pending);
+    }
+  }
+
+  get steeringMode(): PickyQueueMode {
+    return this.runtime.session.steeringMode;
+  }
+
+  get followUpMode(): PickyQueueMode {
+    return this.runtime.session.followUpMode;
+  }
+
+  get isStreaming(): boolean {
+    return this.runtime.session.isStreaming;
+  }
+
+  async injectInitialBootstrap(messages: { user: string; assistant: string }): Promise<void> {
+    const session = this.runtime.session;
+    const existing = (session.state.messages ?? []) as unknown[];
+    if (existing.length > 0) {
+      logAgentd("pi inject bootstrap skipped", { sessionId: this.id, reason: "non-empty session", existingCount: existing.length });
+      return;
+    }
+
+    const model = asRecord((session.state as unknown as Record<string, unknown>).model);
+    const api = stringValue(model.api);
+    const provider = stringValue(model.provider);
+    const modelId = stringValue(model.id);
+    if (!api || !provider || !modelId) {
+      logAgentd("pi inject bootstrap skipped", { sessionId: this.id, reason: "model metadata missing" });
+      return;
+    }
+
+    const now = Date.now();
+    const userMessage = {
+      role: "user" as const,
+      content: messages.user,
+      timestamp: now,
+    };
+    const assistantMessage = {
+      role: "assistant" as const,
+      content: [{ type: "text" as const, text: messages.assistant }],
+      api,
+      provider,
+      model: modelId,
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop" as const,
+      timestamp: now,
+    };
+
+    try {
+      session.sessionManager.appendMessage(userMessage as never);
+      session.sessionManager.appendMessage(assistantMessage as never);
+      session.state.messages = [...existing, userMessage, assistantMessage] as never;
+      logAgentd("pi inject bootstrap", {
+        sessionId: this.id,
+        userChars: messages.user.length,
+        assistantChars: messages.assistant.length,
+        provider,
+        model: modelId,
+      });
+    } catch (error) {
+      logAgentd("pi inject bootstrap failed", { sessionId: this.id, error: messageOf(error) });
+      throw error;
+    }
+  }
+
+  async bindCurrentSession(): Promise<void> {
+    logAgentd("pi bind session", { sessionId: this.id });
+    this.unsubscribe?.();
+    // Mark "no current subscription" before the await so a concurrent re-entrant caller can
+    // detect a race and abandon its late path. Without this, a `bindCurrentSession()` invoked
+    // by `setRebindSession` (fired by Pi internals) while an initial bind is still awaiting
+    // `session.bindExtensions` would leak both subscribers into Pi's `_eventListeners`,
+    // causing every text_delta / turn_end / agent_end to fire twice — accumulating `mainDraft`
+    // to 2x the assistant text and producing a single full-doubled TTS playback that matches
+    // the user-reported "풀로 두 번 발화" symptom.
+    this.unsubscribe = undefined;
+    this.pendingExtensionUiRequestIds.clear();
+    this.uiBridge = this.createBridge();
+    const session = this.runtime.session;
+    await session.bindExtensions({ uiContext: this.uiBridge.createContext(), onError: (error) => this.emit({ type: "log", line: `extension error: ${messageOf(error)}` }) });
+    if (this.unsubscribe) {
+      // Another `bindCurrentSession()` won the race during the `await`. Yield ownership to it
+      // instead of stacking a second subscriber on the same Pi session — a second subscriber
+      // would be unreachable to the next unsubscribe (we only keep one cleanup handle).
+      logAgentd("pi bind session reentry detected; abandoning late path", { sessionId: this.id });
+      return;
+    }
+    this.unsubscribe = session.subscribe((event: unknown) => {
+      const runtimeEvent = this.runtimeEventFromPiEvent(event);
+      if (runtimeEvent) this.emit(runtimeEvent);
+      // General pi's footer recomputes context usage on every render. It therefore advances at
+      // intermediate transcript boundaries (assistant/tool-result message_end), not only when the
+      // whole agent run becomes terminal. Mirror those stable boundaries here so Picky's HUD keeps
+      // pace during multi-turn/tool-heavy Pickles without sampling every text delta.
+      if (shouldEmitContextUsageSnapshotAfterPiEvent(event, runtimeEvent)) {
+        this.emitContextUsageSnapshot();
+      }
+    });
+  }
+
+  private emitContextUsageSnapshot(options: { resetAfterCompaction?: boolean } = {}): void {
+    let usage;
+    try {
+      usage = piTryGetContextUsage(this.runtime.session, this.id);
+    } catch (error) {
+      logAgentd("context usage read failed", { sessionId: this.id, error: messageOf(error) });
+      if (options.resetAfterCompaction) this.emit({ type: "context_usage", usage: undefined });
+      return;
+    }
+    if (usage === undefined) {
+      if (options.resetAfterCompaction) this.emit({ type: "context_usage", usage: undefined });
+      return;
+    }
+    this.emit({
+      type: "context_usage",
+      usage: options.resetAfterCompaction ? { ...usage, tokens: null, percent: null } : usage,
+    });
+  }
+
+  reportDiagnostics(): void {
+    if (this.transcriptRepairLogLine) this.emit({ type: "log", line: this.transcriptRepairLogLine });
+    for (const diagnostic of this.runtime.diagnostics) {
+      this.emit({ type: "log", line: `pi diagnostic: ${JSON.stringify(diagnostic)}` });
+    }
+    const sessionFile = this.runtime.session.sessionFile;
+    if (sessionFile) {
+      logAgentd("pi session file", { sessionId: this.id, sessionFile });
+      this.emit({ type: "log", line: `pi session: ${sessionFile}` });
+    }
+  }
+
+  getSessionFilePath(): string | undefined {
+    return this.runtime.session.sessionFile ?? undefined;
+  }
+
+  subscribe(listener: (event: RuntimeEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private runtimeEventFromPiEvent(event: unknown): RuntimeEvent | undefined {
+    const record = asRecord(event);
+    if (record.type === "queue_update") {
+      const rawSteering = Array.isArray(record.steering) ? (record.steering as readonly string[]) : [];
+      const rawFollowUp = Array.isArray(record.followUp) ? (record.followUp as readonly string[]) : [];
+      this.rememberPendingSlashExpansionsFromQueueUpdate([...rawSteering, ...rawFollowUp]);
+      // Translate Pi-side queue entries back to the raw text the user typed so downstream code
+      // sees the raw slash command instead of its server-side expansion. We intentionally do NOT
+      // drop expansion mappings here even when Pi dequeues the entry, because the matching
+      // role="custom" message_start typically arrives just after the queue_update and still
+      // needs the mapping to suppress its duplicate echo. Cleanup happens on custom-echo
+      // consumption, clearQueue, and an upper size cap.
+      const steering = rawSteering.map((entry) => this.translateQueueEntry(entry));
+      const followUp = rawFollowUp.map((entry) => this.translateQueueEntry(entry));
+      this.queuedSteeringCount = steering.length;
+      this.queuedFollowUpCount = followUp.length;
+      return { type: "queue_update", steering, followUp };
+    }
+
+    const inputMessageEvent = this.runtimeEventFromInputMessagePiEvent(record);
+    if (inputMessageEvent) return inputMessageEvent;
+
+    const recoveryEvent = this.runtimeEventFromRecoveryPiEvent(record);
+    if (recoveryEvent) return recoveryEvent;
+
+    const runtimeEvent = runtimeEventFromPiEvent(event, {
+      hasQueuedSteering: this.queuedSteeringCount > 0,
+      hasQueuedFollowUp: this.queuedFollowUpCount > 0,
+      hasPendingExtensionUiRequest: this.pendingExtensionUiRequestIds.size > 0,
+      currentModel: currentModelId(this.runtime.session),
+      currentThinkingLevel: currentThinkingLevel(this.runtime.session) ?? this.configuredThinkingLevel,
+    });
+
+    if (runtimeEvent?.type === "extension_ui" && runtimeEvent.waitsForInput) {
+      const requestId = typeof runtimeEvent.request.id === "string" ? runtimeEvent.request.id : undefined;
+      if (requestId) this.pendingExtensionUiRequestIds.add(requestId);
+    }
+
+    if (runtimeEvent?.type === "status") {
+      // The aborted turn's natural terminal event from Pi is redundant with the synthetic
+      // cancelled we already emitted from abort(); drop it so it cannot land after a follow-up
+      // steer has revived the session and stamp a second "Cancelled by user" bubble.
+      if (runtimeEvent.status === "cancelled" && this.pendingAbortAcknowledgement && isAbortedTerminalPiEvent(record)) {
+        this.pendingAbortAcknowledgement = false;
+        return undefined;
+      }
+      if (runtimeEvent.status === "failed" && record.type === "agent_end" && lastAssistantStopReason(record.messages) === "error") {
+        this.deferTerminalError(runtimeEvent);
+        return undefined;
+      }
+      this.cancelDeferredTerminalError();
+    }
+
+    return runtimeEvent;
+  }
+
+  private runtimeEventFromInputMessagePiEvent(event: Record<string, unknown>): RuntimeEvent | undefined {
+    if (event.type !== "message_start") return undefined;
+    const message = asRecord(event.message);
+    const role = stringValue(message.role);
+    if (role !== "user" && role !== "custom") return undefined;
+
+    const text = textFromPiMessageContent(message.content).trim();
+    if (!text) return undefined;
+
+    if (role === "user") {
+      const expected = this.consumeExpectedInputDelivery(text);
+      if (expected?.suppress !== false) return undefined;
+      return { type: "input_message", role, text, originatedBy: expected.originatedBy };
+    }
+
+    // Pi extensions emit role="custom" messages to surface the expansion of slash commands
+    // like `/skill:<name>` (the SKILL.md body) into the conversation. The user already sees
+    // their raw `/skill:...` text as a user bubble via the supervisor's pendingQueueDeliveries
+    // drain, so this echo is a duplicate. Suppress it when we have evidence (queue diff) that
+    // this custom text is the expansion of a recently-submitted slash command.
+    if (this.consumeSlashExpansion(text)) return undefined;
+
+    const display = message.display;
+    return {
+      type: "input_message",
+      role,
+      text,
+      originatedBy: "pi_extension",
+      ...(typeof display === "boolean" ? { display } : {}),
+      ...(typeof message.customType === "string" ? { customType: message.customType } : {}),
+    };
+  }
+
+  private expectInputDelivery(text: string, originatedBy: "user" | "main_agent" | "internal" = "internal", suppress = true): ExpectedInputDelivery {
+    const delivery = { id: randomUUID(), text, originatedBy, suppress };
+    this.expectedInputDeliveries.push(delivery);
+    return delivery;
+  }
+
+  private consumeExpectedInputDelivery(text: string): ExpectedInputDelivery {
+    const exactIndex = this.expectedInputDeliveries.findIndex((delivery) => delivery.text === text);
+    if (exactIndex >= 0) return this.expectedInputDeliveries.splice(exactIndex, 1)[0]!;
+    const slashIndex = this.expectedInputDeliveries.findIndex((delivery) => delivery.text.trim().startsWith("/"));
+    if (slashIndex >= 0) return this.expectedInputDeliveries.splice(slashIndex, 1)[0]!;
+    return { id: "pi-extension", text, originatedBy: "pi_extension", suppress: false };
+  }
+
+  private cancelExpectedInputDelivery(id: string): void {
+    const index = this.expectedInputDeliveries.findIndex((delivery) => delivery.id === id);
+    if (index >= 0) this.expectedInputDeliveries.splice(index, 1);
+  }
+
+  private isExpectedInputQueued(text: string): boolean {
+    // Use the translated views so slash-command expansions resolve back to the raw text we
+    // submitted; otherwise the lookup never matches and the expected delivery gets cancelled
+    // prematurely, which strands the role="user" message_start without its suppression target.
+    return this.getSteeringMessages().includes(text) || this.getFollowUpMessages().includes(text);
+  }
+
+  private runtimeEventFromRecoveryPiEvent(event: Record<string, unknown>): RuntimeEvent | undefined {
+    if (event.type === "auto_retry_start") {
+      this.cancelDeferredTerminalError();
+      const attempt = numberValue(event.attempt);
+      const maxAttempts = numberValue(event.maxAttempts);
+      const summary = attempt && maxAttempts ? `Retrying after transient Pi error (${attempt}/${maxAttempts})…` : "Retrying after transient Pi error…";
+      return { type: "status", status: "running", summary };
+    }
+    if (event.type === "auto_retry_end") {
+      this.cancelDeferredTerminalError();
+      if (event.success === false) return { type: "status", status: "failed", summary: stringValue(event.finalError) ?? "Pi runtime retry failed" };
+      return undefined;
+    }
+    if (event.type === "compaction_start") {
+      this.cancelDeferredTerminalError();
+      const reason = stringValue(event.reason);
+      return { type: "status", status: "running", summary: reason === "overflow" ? "Compacting after context overflow…" : "Compacting session…", compactionStarted: true, ...(reason ? { compactionReason: reason } : {}) };
+    }
+    if (event.type === "compaction_end") {
+      const reason = stringValue(event.reason);
+      const errorMessage = stringValue(event.errorMessage);
+      if (event.willRetry === true) {
+        this.cancelDeferredTerminalError();
+        return { type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, ...(reason ? { compactionReason: reason } : {}) };
+      }
+      if (reason === "overflow" && errorMessage) {
+        this.cancelDeferredTerminalError();
+        return { type: "status", status: "failed", summary: errorMessage, compactionFailed: true, ...(reason ? { compactionReason: reason } : {}) };
+      }
+      if (errorMessage) {
+        this.cancelDeferredTerminalError();
+        return { type: "status", status: "completed", summary: errorMessage, noTurnRan: true, compactionFailed: true, ...(reason ? { compactionReason: reason } : {}) };
+      }
+      if (event.aborted === true) {
+        return { type: "status", status: "completed", summary: "Compaction cancelled", noTurnRan: true, ...(reason ? { compactionReason: reason } : {}) };
+      }
+      return { type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, ...(reason ? { compactionReason: reason } : {}) };
+    }
+    return undefined;
+  }
+
+  private deferTerminalError(event: Extract<RuntimeEvent, { type: "status" }>): void {
+    this.cancelDeferredTerminalError();
+    this.pendingTerminalError = event;
+    this.pendingTerminalErrorTimer = setTimeout(() => {
+      const pending = this.pendingTerminalError;
+      this.pendingTerminalError = undefined;
+      this.pendingTerminalErrorTimer = undefined;
+      if (pending) this.emit(pending);
+    }, 0);
+  }
+
+  private cancelDeferredTerminalError(): void {
+    if (this.pendingTerminalErrorTimer) clearTimeout(this.pendingTerminalErrorTimer);
+    this.pendingTerminalError = undefined;
+    this.pendingTerminalErrorTimer = undefined;
+  }
+
+  private async promptWithOptions(prompt: BuiltPrompt, streamingBehavior?: "steer" | "followUp"): Promise<boolean> {
+    if (await this.handleBuiltinSlashCommand(prompt.text)) return true;
+    return this.promptUntilAccepted(prompt.text, {
+      images: await imageOptions(prompt.imagePaths),
+      source: "rpc",
+      streamingBehavior,
+    });
+  }
+
+  // Pi exposes session.setSessionName(), runtime.newSession(), and session.compact() as public
+  // APIs but only its TUI interactive-mode wires them to /name, /new, and /compact slash commands.
+  // Picky doesn't run that mode, so we intercept the built-in slash commands here before they would otherwise be
+  // forwarded to the LLM as ordinary user text. The synthetic completed/noTurnRan status keeps
+  // higher layers from treating the call as a real agent turn (no Pickle-completion notification,
+  // no artifact materialization).
+  private async handleBuiltinSlashCommand(text: string): Promise<boolean> {
+    const trimmed = text.trim();
+    if (trimmed === "/new") {
+      try {
+        const result = await this.newSession();
+        if (result.cancelled) {
+          this.emit({ type: "log", line: "/new cancelled by extension" });
+          this.emit({ type: "status", status: "completed", summary: "/new cancelled", noTurnRan: true, preserveSessionState: true });
+        }
+      } catch (error) {
+        const message = messageOf(error);
+        logAgentd("slash /new failed", { sessionId: this.id, error: message });
+        this.emit({ type: "status", status: "failed", summary: `/new failed: ${message}`, noTurnRan: true });
+      }
+      return true;
+    }
+    if (trimmed === "/name" || trimmed.startsWith("/name ")) {
+      const name = trimmed.replace(/^\/name\s*/, "").trim();
+      if (!name) {
+        this.emit({ type: "log", line: "/name requires a name argument (usage: /name <session name>)" });
+        this.emit({ type: "status", status: "completed", summary: "/name: missing argument", noTurnRan: true, preserveSessionState: true });
+        return true;
+      }
+      try {
+        this.runtime.session.setSessionName(name);
+        this.emit({ type: "log", line: `session renamed to "${name}"` });
+        // Pi emits session_info_changed internally, so the title flips via the normalized event.
+        this.emit({ type: "status", status: "completed", summary: `Session renamed to ${name}`, noTurnRan: true, preserveSessionState: true });
+      } catch (error) {
+        const message = messageOf(error);
+        logAgentd("slash /name failed", { sessionId: this.id, error: message });
+        this.emit({ type: "log", line: `/name failed: ${message}` });
+        this.emit({ type: "status", status: "completed", summary: `/name failed: ${message}`, noTurnRan: true, preserveSessionState: true });
+      }
+      return true;
+    }
+    if (trimmed === "/compact" || trimmed.startsWith("/compact ")) {
+      const instructions = trimmed.replace(/^\/compact\s*/, "").trim() || undefined;
+      if (this.runtime.session.isStreaming) {
+        this.emit({ type: "log", line: "/compact rejected: cannot compact while the agent is running" });
+        this.emit({ type: "status", status: "completed", summary: "/compact is unavailable while the agent is running", noTurnRan: true, preserveSessionState: true });
+        return true;
+      }
+      this.emit({ type: "status", status: "running", summary: instructions ? `Compacting (${instructions})…` : "Compacting session…" });
+      try {
+        const outcome = await piTryCompact(this.runtime.session, this.id, instructions);
+        if (!outcome.supported) {
+          this.emit({ type: "status", status: "failed", summary: "/compact is not supported by this Pi runtime", noTurnRan: true });
+          return true;
+        }
+        this.emitContextUsageSnapshot({ resetAfterCompaction: true });
+        this.emit({ type: "log", line: instructions ? `compact completed with instructions: ${instructions}` : "compact completed" });
+        this.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true });
+      } catch (error) {
+        const message = messageOf(error);
+        logAgentd("slash /compact failed", { sessionId: this.id, error: message });
+        this.emit({ type: "status", status: "failed", summary: `/compact failed: ${message}`, noTurnRan: true });
+      }
+      return true;
+    }
+    if (trimmed === "/reload") {
+      if (this.runtime.session.isStreaming) {
+        this.emit({ type: "log", line: "/reload rejected: wait for the current response to finish" });
+        this.emit({ type: "status", status: "completed", summary: "/reload is unavailable while the agent is running", noTurnRan: true, preserveSessionState: true });
+        return true;
+      }
+      if (piIsCompacting(this.runtime.session)) {
+        this.emit({ type: "log", line: "/reload rejected: wait for compaction to finish" });
+        this.emit({ type: "status", status: "completed", summary: "/reload is unavailable while the session is compacting", noTurnRan: true, preserveSessionState: true });
+        return true;
+      }
+      this.pendingExtensionUiRequestIds.clear();
+      this.emit({ type: "status", status: "running", summary: "Reloading Pi resources…" });
+      try {
+        const outcome = await piTryReload(this.runtime.session, this.id);
+        if (!outcome.supported) {
+          this.emit({ type: "status", status: "failed", summary: "/reload is not supported by this Pi runtime", noTurnRan: true });
+          return true;
+        }
+        this.emit({ type: "log", line: "pi resources reloaded" });
+        this.emit({ type: "status", status: "completed", summary: "Pi resources reloaded", noTurnRan: true });
+      } catch (error) {
+        const message = messageOf(error);
+        logAgentd("slash /reload failed", { sessionId: this.id, error: message });
+        this.emit({ type: "status", status: "failed", summary: `/reload failed: ${message}`, noTurnRan: true });
+      }
+      return true;
+    }
+    return false;
+  }
+
+  private async promptUntilAccepted(
+    text: string,
+    options: { images?: Awaited<ReturnType<typeof imageOptions>>; source: "rpc"; streamingBehavior?: "steer" | "followUp" },
+  ): Promise<boolean> {
+    const wasStreaming = this.runtime.session.isStreaming;
+    let accepted = false;
+    let promptResolved = false;
+    let settled = false;
+    let resolveAccepted!: () => void;
+    let rejectAccepted!: (error: unknown) => void;
+    const acceptedPromise = new Promise<void>((resolve, reject) => {
+      resolveAccepted = resolve;
+      rejectAccepted = reject;
+    });
+    const resolveOnce = () => {
+      if (settled) return;
+      settled = true;
+      resolveAccepted();
+    };
+    const rejectOnce = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      rejectAccepted(error);
+    };
+
+    const expected = this.expectInputDelivery(text);
+    const queueBeforeSlashExpansion = this.snapshotQueueForSlashExpansion(text);
+    const pendingSlashSubmission = queueBeforeSlashExpansion ? { raw: text.trim(), beforeQueue: queueBeforeSlashExpansion } : undefined;
+    if (pendingSlashSubmission) this.pendingSlashSubmissions.push(pendingSlashSubmission);
+    const promptPromise = this.runtime.session.prompt(text, {
+      ...options,
+      preflightResult: (success: boolean) => {
+        if (!success) {
+          this.cancelExpectedInputDelivery(expected.id);
+          this.removePendingSlashSubmission(pendingSlashSubmission);
+          return;
+        }
+        accepted = true;
+        resolveOnce();
+      },
+    });
+
+    void promptPromise
+      .then(() => {
+        promptResolved = true;
+        resolveOnce();
+      })
+      .catch((error) => {
+        promptResolved = true;
+        this.cancelExpectedInputDelivery(expected.id);
+        this.removePendingSlashSubmission(pendingSlashSubmission);
+        if (accepted) {
+          this.emit({ type: "status", status: "failed", summary: messageOf(error) });
+          return;
+        }
+        rejectOnce(error);
+      });
+
+    await acceptedPromise;
+    // Microtask ordering race: when Pi handles `/slash` extension commands, `session.prompt()`
+    // suspends at its internal `await _tryExecuteExtensionCommand` and then synchronously runs
+    // `preflightResult(true)` -> `return` upon resume. That order schedules our awaiting
+    // `acceptedPromise` continuation BEFORE the `.then` handler that sets `promptResolved`, so
+    // a naive check here would always observe `promptResolved === false` for synchronously
+    // handled prompts under the real Pi runtime (the silent-slash test happens to pass because
+    // its FakeSession.prompt has no internal awaits and queues the .then handler first).
+    // Yield once to let any already-scheduled `promptPromise.then` microtask run so we can
+    // tell synchronous-handle paths apart from agent-turn paths.
+    await Promise.resolve();
+    // Pi has accepted/queued the prompt by now. Diff Pi's queue against the pre-prompt snapshot
+    // to learn whether Pi expanded our raw slash command into a different queue entry. The
+    // resulting map is what lets the rest of this class translate Pi's queue snapshot back to
+    // the raw text the user typed.
+    this.rememberSlashExpansionFromQueue(queueBeforeSlashExpansion, text);
+    this.removePendingSlashSubmission(pendingSlashSubmission);
+    const handledSynchronously = promptResolved ? this.maybeEmitImmediateCompletion(wasStreaming) : false;
+    if (handledSynchronously || (promptResolved && !this.isExpectedInputQueued(text))) this.cancelExpectedInputDelivery(expected.id);
+    return handledSynchronously;
+  }
+
+  // Pi handles `/slash` extension commands and input handlers that return `handled` synchronously
+  // inside `session.prompt()` without emitting any agent_start / turn_end / agent_end events. The
+  // prompt promise resolves immediately and `isStreaming` stays false, so the caller would otherwise
+  // be stuck in a permanent "running" state on the Picky side. Synthesize a completed status when we
+  // detect that no agent turn was actually started, and report whether we did so to the caller so
+  // higher layers (e.g. session-supervisor.steer) can avoid resurrecting the session as `running`.
+  // The `noTurnRan: true` marker tells RuntimeEventHandler to release the loading state without
+  // running terminal side effects (notifying Picky, re-materializing artifacts), since
+  // no real agent turn produced any new state to report.
+  private maybeEmitImmediateCompletion(wasStreaming: boolean): boolean {
+    if (wasStreaming) return false;
+    if (this.runtime.session.isStreaming) return false;
+    this.emit({ type: "status", status: "completed", summary: "Handled without agent turn", noTurnRan: true });
+    return true;
+  }
+
+  private createBridge(): ExtensionUiBridge {
+    const bridge = new ExtensionUiBridge(this.id, { disableBlockingDialogs: this.bridgeOptions.disableBlockingDialogs ?? false });
+    bridge.on("request", (request, waitsForInput) => {
+      const waits = Boolean(waitsForInput);
+      if (bridge !== this.uiBridge) {
+        if (waits) bridge.answer(request.id, { cancelled: true });
+        return;
+      }
+      if (waits) this.pendingExtensionUiRequestIds.add(request.id);
+      this.emit({ type: "extension_ui", request, waitsForInput: waits });
+    });
+    return bridge;
+  }
+
+  private emit(event: RuntimeEvent): void {
+    for (const listener of this.listeners) listener(event);
+  }
+}
+
+async function imageOptions(imagePaths: string[] | undefined): Promise<Array<{ type: "image"; data: string; mimeType: string }> | undefined> {
+  if (!imagePaths || imagePaths.length === 0) return undefined;
+  return Promise.all(
+    imagePaths.map(async (imagePath) => ({
+      type: "image" as const,
+      mimeType: mediaTypeFromPath(imagePath),
+      data: await readFile(imagePath, "base64"),
+    })),
+  );
+}
+
+function mediaTypeFromPath(path: string): string {
+  const extension = extname(path).toLowerCase();
+  if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
+  if (extension === ".webp") return "image/webp";
+  return "image/png";
+}
+
+async function emitUserBash(bash: { emitUserBash?: (event: PiUserBashEvent) => Promise<{ result?: unknown; operations?: unknown } | undefined> }, event: PiUserBashEvent): Promise<{ result?: RuntimeBashExecutionResult; operations?: unknown } | undefined> {
+  if (typeof bash.emitUserBash !== "function") return undefined;
+  const result = await bash.emitUserBash(event);
+  if (!result) return undefined;
+  const normalized = normalizeBashExecutionResult(result.result);
+  return {
+    ...(normalized ? { result: normalized } : {}),
+    ...(result.operations ? { operations: result.operations } : {}),
+  };
+}
+
+function normalizeBashExecutionResult(value: unknown): RuntimeBashExecutionResult | undefined {
+  const record = asRecord(value);
+  if (!record || typeof record.output !== "string") return undefined;
+  return {
+    output: record.output,
+    exitCode: typeof record.exitCode === "number" ? record.exitCode : undefined,
+    cancelled: record.cancelled === true,
+    truncated: record.truncated === true,
+    ...(typeof record.fullOutputPath === "string" ? { fullOutputPath: record.fullOutputPath } : {}),
+  };
+}
+
+function bashResultPreview(result: RuntimeBashExecutionResult): string {
+  const prefix = result.cancelled ? "cancelled" : result.exitCode && result.exitCode !== 0 ? `exit ${result.exitCode}` : "ok";
+  const output = result.output.trim();
+  return output ? `${prefix}: ${sliceUtf16(output, 500)}` : prefix;
+}
+
+function sliceUtf16(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, Math.max(0, maxChars - 1))}…`;
+}
+
+function shouldEmitContextUsageSnapshotAfterPiEvent(event: unknown, runtimeEvent: RuntimeEvent | undefined): boolean {
+  if (runtimeEvent?.type === "status" && ["completed", "failed", "cancelled", "waiting_for_input"].includes(runtimeEvent.status)) return true;
+
+  const record = asRecord(event);
+  if (record.type !== "message_end") return false;
+  const role = stringValue(asRecord(record.message).role);
+  return role === "assistant" || role === "toolResult" || role === "custom" || role === "bashExecution";
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function textFromPiMessageContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) {
+    if (content === undefined || content === null) return "";
+    return typeof content === "object" ? JSON.stringify(content) : String(content);
+  }
+  return content
+    .map((block) => {
+      const record = asRecord(block);
+      if (record.type === "text" && typeof record.text === "string") return record.text;
+      return "";
+    })
+    .join("");
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
+function lastAssistantStopReason(messages: unknown): string | undefined {
+  if (!Array.isArray(messages)) return undefined;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = asRecord(messages[index]);
+    if (message.role === "assistant") return stringValue(message.stopReason);
+  }
+  return undefined;
+}
+
+function isAbortedTerminalPiEvent(record: Record<string, unknown>): boolean {
+  if (record.type === "turn_end") return stringValue(asRecord(record.message).stopReason) === "aborted";
+  if (record.type === "agent_end") return lastAssistantStopReason(record.messages) === "aborted";
+  return false;
+}
+
+type ScopedModelOption = NonNullable<CreateAgentSessionFromServicesOptions["scopedModels"]>[number];
+
+async function scopedModelsFromServices(services: Awaited<ReturnType<NonNullable<PiSdkRuntimeOptions["createServices"]>>>): Promise<ScopedModelOption[]> {
+  const settingsManager = asRecord(services.settingsManager);
+  const getEnabledModels = settingsManager.getEnabledModels;
+  if (typeof getEnabledModels !== "function") return [];
+
+  const patterns = getEnabledModels.call(services.settingsManager);
+  if (!Array.isArray(patterns) || patterns.length === 0) return [];
+
+  const available = await availableModelsFromServices(services);
+  if (available.length === 0) return [];
+
+  const scoped: ScopedModelOption[] = [];
+  for (const patternValue of patterns) {
+    if (typeof patternValue !== "string") continue;
+    const parsed = parseScopedModelPattern(patternValue);
+    const model = findScopedModel(parsed.modelPattern, available);
+    if (!model || scoped.some((entry) => modelsEqual(entry.model, model))) continue;
+    scoped.push({ model: model as ScopedModelOption["model"], ...(parsed.thinkingLevel ? { thinkingLevel: parsed.thinkingLevel } : {}) });
+  }
+  return scoped;
+}
+
+async function availableModelsFromServices(services: Awaited<ReturnType<NonNullable<PiSdkRuntimeOptions["createServices"]>>>): Promise<unknown[]> {
+  const modelRegistry = asRecord(services.modelRegistry);
+  const getAvailable = modelRegistry.getAvailable;
+  if (typeof getAvailable !== "function") return [];
+  const available = await getAvailable.call(services.modelRegistry);
+  return Array.isArray(available) ? available : [];
+}
+
+async function modelFromServices(services: Awaited<ReturnType<NonNullable<PiSdkRuntimeOptions["createServices"]>>>, pattern: string | undefined): Promise<unknown | undefined> {
+  if (!pattern) return undefined;
+  const available = await availableModelsFromServices(services);
+  const model = findScopedModel(pattern, available);
+  if (!model) logAgentd("pi fixed model not found", { pattern, available: available.length });
+  return model;
+}
+
+function runtimeModelOptionFromModel(model: unknown): RuntimeModelOption | undefined {
+  const record = asRecord(model);
+  const provider = stringValue(record.provider);
+  const modelId = stringValue(record.id) ?? stringValue(record.model);
+  if (!provider || !modelId) return undefined;
+  const name = stringValue(record.name);
+  return {
+    provider,
+    modelId,
+    displayName: name && name !== modelId ? `${name} (${provider}/${modelId})` : `${provider}/${modelId}`,
+    pattern: `${provider}/${modelId}`,
+  };
+}
+
+function normalizeModelPattern(pattern: string | undefined): string | undefined {
+  const trimmed = pattern?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function parseScopedModelPattern(pattern: string): { modelPattern: string; thinkingLevel?: ThinkingLevel } {
+  const trimmed = pattern.trim();
+  const colonIndex = trimmed.lastIndexOf(":");
+  if (colonIndex === -1) return { modelPattern: trimmed };
+  const suffix = trimmed.slice(colonIndex + 1);
+  const thinkingLevel = parseThinkingLevel(suffix);
+  if (!thinkingLevel) return { modelPattern: trimmed };
+  return { modelPattern: trimmed.slice(0, colonIndex), thinkingLevel };
+}
+
+function findScopedModel(pattern: string, available: unknown[]): unknown | undefined {
+  const normalized = pattern.trim().toLowerCase();
+  if (!normalized) return undefined;
+  const exact = available.find((model) => {
+    const record = asRecord(model);
+    const provider = stringValue(record.provider)?.toLowerCase();
+    const id = stringValue(record.id)?.toLowerCase();
+    return id === normalized || (provider && id && `${provider}/${id}` === normalized);
+  });
+  if (exact) return exact;
+  return available.find((model) => {
+    const record = asRecord(model);
+    const id = stringValue(record.id)?.toLowerCase();
+    const name = stringValue(record.name)?.toLowerCase();
+    return id?.includes(normalized) || name?.includes(normalized);
+  });
+}
+
+function modelsEqual(left: unknown, right: unknown): boolean {
+  const leftRecord = asRecord(left);
+  const rightRecord = asRecord(right);
+  return stringValue(leftRecord.provider) === stringValue(rightRecord.provider)
+    && stringValue(leftRecord.id) === stringValue(rightRecord.id);
+}
+
+function currentModelId(session: AgentSession): string | undefined {
+  const directModel = asRecord((session as unknown as Record<string, unknown>).model);
+  const stateModel = asRecord(asRecord((session as unknown as Record<string, unknown>).state).model);
+  return stringValue(directModel.id) ?? stringValue(directModel.model) ?? stringValue(stateModel.id) ?? stringValue(stateModel.model);
+}
+
+function currentThinkingLevel(session: AgentSession): ThinkingLevel | undefined {
+  return piReadThinkingLevel(session);
+}
+
+function parseThinkingLevel(value: unknown): ThinkingLevel | undefined {
+  if (value === "off" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh") return value;
+  return undefined;
+}
+
+function repairDanglingToolCalls(session: AgentSession): string | undefined {
+  const messages = (session.state.messages ?? []) as unknown[];
+  const repair = repairDanglingToolCallsInMessages(messages);
+  if (repair.count === 0) return undefined;
+  const names = [...new Set(repair.toolNames)].join(", ");
+  return `pi transcript repaired: skipped ${repair.count} interrupted tool call(s)${names ? ` (${names})` : ""} from a previous runtime`;
+}
+
+function repairDanglingToolCallsInMessages(messages: unknown[]): { count: number; toolNames: string[] } {
+  let pending: { message: Record<string, unknown>; calls: Array<{ id: string; name: string }>; matchedIds: Set<string> } | undefined;
+  let count = 0;
+  const toolNames: string[] = [];
+
+  const repairPending = () => {
+    if (!pending) return;
+    const missing = pending.calls.filter((call) => !pending!.matchedIds.has(call.id));
+    if (missing.length === 0) return;
+    repairAssistantMessageWithDanglingToolCalls(pending.message, pending.matchedIds, missing);
+    count += missing.length;
+    toolNames.push(...missing.map((call) => call.name));
+  };
+
+  for (const value of messages) {
+    const message = asRecord(value);
+    if (pending) {
+      const toolCallId = message.role === "toolResult" ? stringValue(message.toolCallId) : undefined;
+      if (toolCallId && pending.calls.some((call) => call.id === toolCallId)) {
+        pending.matchedIds.add(toolCallId);
+        if (pending.calls.every((call) => pending!.matchedIds.has(call.id))) pending = undefined;
+        continue;
+      }
+      repairPending();
+      pending = undefined;
+    }
+
+    if (message.role !== "assistant") continue;
+    const calls = toolCallsFromContent(message.content);
+    if (calls.length > 0) pending = { message, calls, matchedIds: new Set() };
+  }
+
+  if (pending) repairPending();
+  return { count, toolNames };
+}
+
+function repairAssistantMessageWithDanglingToolCalls(message: Record<string, unknown>, matchedIds: Set<string>, missing: Array<{ id: string; name: string }>): void {
+  const content = Array.isArray(message.content) ? message.content : [];
+  const textBlocks = content.filter((block) => asRecord(block).type === "text");
+  const matchedToolCallBlocks = content.filter((block) => {
+    const record = asRecord(block);
+    return record.type === "toolCall" && typeof record.id === "string" && matchedIds.has(record.id);
+  });
+  const names = [...new Set(missing.map((call) => call.name))].join(", ") || "tool";
+  const note = {
+    type: "text",
+    text: `[Picky note: previous ${names} tool call${missing.length === 1 ? "" : "s"} did not finish because the local Picky runtime restarted. Continue from the current filesystem state and rerun any needed checks.]`,
+  };
+  message.content = [...textBlocks, note, ...matchedToolCallBlocks];
+  if (matchedToolCallBlocks.length === 0 && message.stopReason === "toolUse") message.stopReason = "end_turn";
+}
+
+function toolCallsFromContent(content: unknown): Array<{ id: string; name: string }> {
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((block) => {
+    const record = asRecord(block);
+    const id = stringValue(record.id);
+    if (record.type !== "toolCall" || !id) return [];
+    return [{ id, name: stringValue(record.name) ?? "tool" }];
+  });
+}
+
+function normalizeAnswer(value: unknown): { value?: unknown; confirmed?: boolean; cancelled?: boolean } {
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if ("value" in record || "confirmed" in record || "cancelled" in record) {
+      return record as { value?: unknown; confirmed?: boolean; cancelled?: boolean };
+    }
+  }
+  return { value };
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+

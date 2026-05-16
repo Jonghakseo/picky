@@ -1,0 +1,102 @@
+//
+//  PickyArtifactReporter.swift
+//  Picky
+//
+//  Local report/artifact helpers for safe HUD opening and tests.
+//
+
+import Foundation
+
+struct PickyArtifactReportBuilder {
+    func markdown(for session: PickyAgentSession) -> String {
+        var lines: [String] = ["# \(session.title)", "", "Status: `\(session.status.rawValue)`", ""]
+        if let cwd = session.cwd { lines.append("CWD: `\(cwd)`"); lines.append("") }
+        let finalAnswer = session.finalAnswer ?? session.lastSummary
+        if let finalAnswer, !finalAnswer.isEmpty {
+            lines.append("## Final answer")
+            lines.append(finalAnswer)
+            lines.append("")
+        }
+        let toolCounts = toolCallCounts(session.tools)
+        if !toolCounts.isEmpty {
+            lines.append("## Tool summary")
+            for tool in toolCounts {
+                lines.append("- `\(tool.name)`: \(tool.count)")
+            }
+            lines.append("")
+        }
+        if !session.artifacts.isEmpty {
+            lines.append("## Artifacts")
+            for artifact in session.artifacts {
+                if let url = artifact.url {
+                    lines.append("- [\(artifact.title)](\(url.absoluteString))")
+                } else if let path = artifact.path {
+                    lines.append("- \(artifact.title): `\(path)`")
+                } else {
+                    lines.append("- \(artifact.title)")
+                }
+            }
+            lines.append("")
+        }
+        let prURLs = PickyArtifactReportBuilder.githubPullRequestURLs(in: [session.finalAnswer, session.lastSummary, session.logs.joined(separator: "\n")].compactMap { $0 }.joined(separator: "\n"))
+        if !prURLs.isEmpty {
+            lines.append("## Pull requests")
+            lines.append(contentsOf: prURLs.map { "- \($0.absoluteString)" })
+            lines.append("")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func toolCallCounts(_ tools: [PickyToolActivity]) -> [(name: String, count: Int)] {
+        var counts: [String: Int] = [:]
+        var orderedNames: [String] = []
+        for tool in tools {
+            if counts[tool.name] == nil { orderedNames.append(tool.name) }
+            counts[tool.name, default: 0] += 1
+        }
+        return orderedNames.map { (name: $0, count: counts[$0] ?? 0) }
+    }
+
+    static func githubPullRequestURLs(in text: String) -> [URL] {
+        guard let regex = try? NSRegularExpression(pattern: #"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+"#) else { return [] }
+        let range = NSRange(text.startIndex..., in: text)
+        var seen = Set<String>()
+        return regex.matches(in: text, range: range).compactMap { match in
+            guard let matchRange = Range(match.range, in: text) else { return nil }
+            let value = String(text[matchRange])
+            guard seen.insert(value).inserted else { return nil }
+            return URL(string: value)
+        }
+    }
+}
+
+enum PickyArtifactOpeningError: LocalizedError, Equatable {
+    case missingPath
+    case escapedAppSupportRoot(String)
+    case missingFile(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingPath: "Artifact has no local path."
+        case .escapedAppSupportRoot(let path): "Artifact path is outside Picky app support: \(path)"
+        case .missingFile(let path): "Artifact file is missing: \(path)"
+        }
+    }
+}
+
+struct PickyArtifactPathValidator {
+    let appSupportRoot: URL
+    var fileManager: FileManager = .default
+
+    func validateReadableFile(path: String) throws -> URL {
+        let root = appSupportRoot.standardizedFileURL.path
+        let url = URL(fileURLWithPath: path).standardizedFileURL
+        guard url.path == root || url.path.hasPrefix(root + "/") else {
+            throw PickyArtifactOpeningError.escapedAppSupportRoot(path)
+        }
+        guard fileManager.fileExists(atPath: url.path) else {
+            throw PickyArtifactOpeningError.missingFile(path)
+        }
+        return url
+    }
+}

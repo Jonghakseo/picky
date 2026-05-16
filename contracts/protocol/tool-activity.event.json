@@ -1,0 +1,14 @@
+{
+  "id": "event-tool-001",
+  "protocolVersion": "2026-05-09",
+  "timestamp": "2026-05-01T00:00:02.000Z",
+  "type": "toolActivityUpdated",
+  "sessionId": "session-001",
+  "tool": {
+    "toolCallId": "tool-001",
+    "name": "read",
+    "status": "running",
+    "preview": "Reading project files",
+    "startedAt": "2026-05-01T00:00:02.000Z"
+  }
+}

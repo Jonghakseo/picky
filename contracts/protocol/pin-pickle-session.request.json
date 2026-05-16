@@ -1,0 +1,15 @@
+{
+  "id": "cmd-pin-pickle-session-001",
+  "protocolVersion": "2026-05-09",
+  "type": "pinPickleSession",
+  "title": "Pinned Pi session",
+  "context": {
+    "id": "context-pin-pickle-001",
+    "source": "text",
+    "capturedAt": "2026-05-02T00:00:00.000Z",
+    "transcript": "Pin this completed Pi session",
+    "screenshots": [],
+    "inkMarks": [],
+    "warnings": []
+  }
+}

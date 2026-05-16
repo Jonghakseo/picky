@@ -1,0 +1,11 @@
+{
+  "id": "context-screen-001",
+  "source": "text",
+  "capturedAt": "2026-05-01T00:00:00.000Z",
+  "transcript": "Use the visible screens as context",
+  "screenshots": [
+    { "id": "shot-left", "label": "left-display", "path": "/tmp/picky/left.png", "screenId": "screen1", "bounds": { "x": 0, "y": 0, "width": 1512, "height": 982 } },
+    { "id": "shot-right", "label": "right-display", "path": "/tmp/picky/right.png", "screenId": "screen2", "bounds": { "x": 1512, "y": 0, "width": 1920, "height": 1080 } }
+  ],
+  "warnings": []
+}

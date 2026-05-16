@@ -1,0 +1,17 @@
+{
+  "id": "event-session-message-replaced",
+  "protocolVersion": "2026-05-09",
+  "timestamp": "2026-05-05T00:00:01.000Z",
+  "type": "sessionMessageReplaced",
+  "sessionId": "session-001",
+  "messageId": "message-001",
+  "message": {
+    "id": "message-001",
+    "kind": "agent_text",
+    "createdAt": "2026-05-05T00:00:01.000Z",
+    "originatedBy": "main_agent",
+    "text": "Updated answer",
+    "assistantRun": { "model": "openai-codex/gpt-5.5", "thinkingLevel": "high" }
+  },
+  "seq": 2
+}

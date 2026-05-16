@@ -1,0 +1,117 @@
+//
+//  BuddyTranscriptionProvider.swift
+//  Picky
+//
+//  Shared protocol surface for voice transcription backends.
+//
+
+import AVFoundation
+import Foundation
+
+protocol BuddyStreamingTranscriptionSession: AnyObject {
+    var finalTranscriptFallbackDelaySeconds: TimeInterval { get }
+    func appendAudioBuffer(_ audioBuffer: AVAudioPCMBuffer)
+    func requestFinalTranscript()
+    func cancel()
+}
+
+protocol BuddyTranscriptionProvider {
+    var displayName: String { get }
+    var requiresSpeechRecognitionPermission: Bool { get }
+    var isConfigured: Bool { get }
+    var unavailableExplanation: String? { get }
+
+    func startStreamingSession(
+        keyterms: [String],
+        onTranscriptUpdate: @escaping (String) -> Void,
+        onFinalTranscriptReady: @escaping (String) -> Void,
+        onError: @escaping (Error) -> Void
+    ) async throws -> any BuddyStreamingTranscriptionSession
+}
+
+enum BuddyTranscriptionProviderFactory {
+    static func makeDefaultProvider(
+        settings: PickySettings = PickySettingsStore().load(),
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> any BuddyTranscriptionProvider {
+        let requestedProvider = providerName(from: settings.sttProvider)
+
+        if requestedProvider == "openai" {
+            let language = settings.openAISTTPreferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                ?? AzureOpenAIKeychainStore.value(for: "OPENAI_STT_LANGUAGE", environment: environment)
+            let modelName = settings.openAISTTModel.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                ?? AzureOpenAIKeychainStore.value(for: "OPENAI_STT_MODEL", environment: environment)
+                ?? OpenAITranscriptionProvider.defaultModelName
+            let apiKey = settings.openAISTTAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                ?? AzureOpenAIKeychainStore.value(for: "OPENAI_API_KEY", environment: environment)
+            let baseURL = OpenAIAudioConfiguration.parseBaseURLOverride(settings.openAISTTBaseURL)
+                ?? OpenAIAudioConfiguration.parseBaseURLOverride(
+                    AzureOpenAIKeychainStore.value(for: "OPENAI_STT_BASE_URL", environment: environment)
+                )
+                ?? OpenAIAudioConfiguration.parseBaseURLOverride(
+                    AzureOpenAIKeychainStore.value(for: "OPENAI_BASE_URL", environment: environment)
+                )
+                ?? OpenAIAudioConfiguration.defaultBaseURL
+            let provider = OpenAITranscriptionProvider(
+                configuration: OpenAIAudioConfiguration(apiKey: apiKey, baseURL: baseURL),
+                preferredLanguage: language,
+                modelName: modelName
+            )
+            print("🎙️ Transcription: using provider \(provider.displayName), model: \(modelName), language: \(language ?? "auto")")
+            return provider
+        }
+
+        if requestedProvider == "elevenlabs" || requestedProvider == "eleven-labs" {
+            let language = settings.elevenLabsSTTLanguage.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                ?? AzureOpenAIKeychainStore.value(for: "ELEVENLABS_STT_LANGUAGE", environment: environment)
+            let modelID = settings.elevenLabsSTTModel.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                ?? AzureOpenAIKeychainStore.value(for: "ELEVENLABS_STT_MODEL", environment: environment)
+                ?? ElevenLabsTranscriptionProvider.defaultModelID
+            let apiKey = settings.elevenLabsSTTAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                ?? (environment.isEmpty ? nil : AzureOpenAIKeychainStore.value(for: "ELEVENLABS_API_KEY", environment: environment))
+            let provider = ElevenLabsTranscriptionProvider(
+                configuration: ElevenLabsTranscriptionConfiguration(apiKey: apiKey),
+                modelID: modelID,
+                preferredLanguage: language
+            )
+            print("🎙️ Transcription: using provider \(provider.displayName), model: \(modelID), language: \(language ?? "auto")")
+            return provider
+        }
+
+        if requestedProvider == "azure" || requestedProvider == "azure-openai" {
+            let language = settings.azureSTTPreferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            let provider = AzureOpenAITranscriptionProvider(
+                configuration: .fromTranscriptionEndpointURL(
+                    settings.azureOpenAIEndpoint,
+                    apiKey: settings.azureOpenAIAPIKey
+                ),
+                preferredLanguage: language
+            )
+            print("🎙️ Transcription: using provider \(provider.displayName), language: \(language ?? "auto")")
+            return provider
+        }
+
+        let provider = AppleSpeechTranscriptionProvider()
+        print("🎙️ Transcription: using local provider \(provider.displayName)")
+        return provider
+    }
+
+    private static func providerName(from selection: PickyVoiceProviderSelection) -> String? {
+        switch selection {
+        case .local:
+            return "local"
+        case .openai:
+            return "openai"
+        case .azure:
+            return "azure"
+        case .elevenLabs:
+            return "elevenlabs"
+        }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
+    }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "event-ui-001",
+  "protocolVersion": "2026-05-09",
+  "timestamp": "2026-05-01T00:00:03.000Z",
+  "type": "extensionUiRequest",
+  "request": {
+    "id": "ui-001",
+    "sessionId": "session-001",
+    "method": "confirm",
+    "title": "Confirm action",
+    "prompt": "Proceed?",
+    "createdAt": "2026-05-01T00:00:03.000Z"
+  }
+}

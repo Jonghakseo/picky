@@ -1,0 +1,19 @@
+{
+  "id": "event-session-001",
+  "protocolVersion": "2026-05-09",
+  "timestamp": "2026-05-01T00:00:01.000Z",
+  "type": "sessionUpdated",
+  "session": {
+    "id": "session-001",
+    "title": "Summarize the current work",
+    "status": "running",
+    "cwd": "/Users/example/project",
+    "createdAt": "2026-05-01T00:00:00.000Z",
+    "updatedAt": "2026-05-01T00:00:01.000Z",
+    "lastSummary": "Started",
+    "logs": [],
+    "tools": [],
+    "artifacts": [],
+    "changedFiles": []
+  }
+}

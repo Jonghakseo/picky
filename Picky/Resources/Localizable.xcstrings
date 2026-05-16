@@ -1,0 +1,4697 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "agent.summary.pointingScreen": {
+      "comment": "Format: 'Pointing at: <label>'. Arg is the element label.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pointing at: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "가리키는 중: %@"
+          }
+        }
+      }
+    },
+    "agent.summary.pointingScreenAnon": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pointing at the screen…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 위치를 가리키는 중…"
+          }
+        }
+      }
+    },
+    "agent.summary.preparingResponse": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing response…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "응답 준비 중…"
+          }
+        }
+      }
+    },
+    "common.findApp": {
+      "comment": "Button that reveals Picky in Finder so the user can drag it into a system permission list.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Find App"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱 위치 찾기"
+          }
+        }
+      }
+    },
+    "common.grant": {
+      "comment": "Generic 'Grant' button label used by every permission row.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grant"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "허용하기"
+          }
+        }
+      }
+    },
+    "common.granted": {
+      "comment": "Status pill shown when a permission is granted.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Granted"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "허용됨"
+          }
+        }
+      }
+    },
+    "common.install": {
+      "comment": "Generic 'Install' button (opens an install destination in a browser).",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치하기"
+          }
+        }
+      }
+    },
+    "common.quit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "종료"
+          }
+        }
+      }
+    },
+    "common.ready": {
+      "comment": "Status pill for non-permission readiness (e.g. Pi runtime detected).",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ready"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "준비됨"
+          }
+        }
+      }
+    },
+    "common.recheck": {
+      "comment": "Re-run a local check for something Picky depends on.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recheck"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 확인"
+          }
+        }
+      }
+    },
+    "common.save": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save changes"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "변경사항 저장"
+          }
+        }
+      }
+    },
+    "common.saved": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장됨"
+          }
+        }
+      }
+    },
+    "dictation.noSpeech": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No speech detected. Press and hold the button a little longer while speaking."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성이 감지되지 않았어요. 버튼을 누른 상태에서 조금 더 길게 말해 주세요."
+          }
+        }
+      }
+    },
+    "directMessage.steerDelivered": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delivered the steering message to the selected Pickle."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 Pickle에 스티어링 메시지를 전달했어요."
+          }
+        }
+      }
+    },
+    "error.directMessage.contextEmpty": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t send message: Context capture returned no packet."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메시지를 전송하지 못했어요: 컨텍스트 캐프쳐가 비어있어요."
+          }
+        }
+      }
+    },
+    "error.directMessage.deliverFailed": {
+      "comment": "Format: 'Couldn't deliver message: <reason>'.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t deliver message: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메시지를 전달하지 못했어요: %@"
+          }
+        }
+      }
+    },
+    "error.directMessage.fallback": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t send the message."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메시지를 보내지 못했어요."
+          }
+        }
+      }
+    },
+    "error.directMessage.sendFailed": {
+      "comment": "Format: 'Couldn't send message: <reason>'. Arg is the reason from the daemon.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t send message: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메시지를 전송하지 못했어요: %@"
+          }
+        }
+      }
+    },
+    "error.directMessage.startFailed": {
+      "comment": "Format: 'Couldn't start a new message session: <reason>'.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t start a new message session: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 메시지 세션을 시작하지 못했어요: %@"
+          }
+        }
+      }
+    },
+    "feedback.addFiles": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add files…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 추가…"
+          }
+        }
+      }
+    },
+    "feedback.attachmentsHint": {
+      "comment": "Format args: 1) max count integer 2) per-file size string 3) total size string.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional. Up to %1$lld images or videos, %2$@ each, %3$@ total."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택 항목이에요. 이미지·비디오 최대 %1$lld개, 개별 %2$@, 합계 %3$@까지."
+          }
+        }
+      }
+    },
+    "feedback.field.attach": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Attach screenshots/videos"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스크린샷/비디오 첨부"
+          }
+        }
+      }
+    },
+    "feedback.field.category": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Category"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "카테고리"
+          }
+        }
+      }
+    },
+    "feedback.field.message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내용"
+          }
+        }
+      }
+    },
+    "feedback.notConfigured": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Feedback channel not configured yet."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피드백 채널이 아직 설정되지 않았어요."
+          }
+        }
+      }
+    },
+    "feedback.placeholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What happened, or what were you hoping for?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무슨 일이 있었나요? 어떤 게 필요하셨나요?"
+          }
+        }
+      }
+    },
+    "feedback.send": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보내기"
+          }
+        }
+      }
+    },
+    "feedback.sending": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sending…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보내는 중…"
+          }
+        }
+      }
+    },
+    "feedback.sent": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sent — thanks!"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보냈어요 — 고마워요!"
+          }
+        }
+      }
+    },
+    "footer.quit.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky will stop running in the menu bar and ongoing local sessions may be interrupted."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky가 메뉴바에서 종료되며, 진행 중인 로컬 세션이 중단될 수 있어요."
+          }
+        }
+      }
+    },
+    "hud.archiveToast.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session archived"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션을 아카이브했어요"
+          }
+        }
+      }
+    },
+    "hud.archiveToast.undo": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Undo"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "되돌리기"
+          }
+        }
+      }
+    },
+    "hud.compact.done.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Older context was summarized. The agent can continue with a cleaner transcript."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 컨텍스트를 요약했어요. 에이전트가 더 깔끔한 대화로 이어갈 수 있어요."
+          }
+        }
+      }
+    },
+    "hud.compact.done.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session compacted"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션이 압축됐어요"
+          }
+        }
+      }
+    },
+    "hud.compact.failed.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-compaction failed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자동 압축에 실패했어요"
+          }
+        }
+      }
+    },
+    "hud.compact.running": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compacting…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대화 압축하는 중…"
+          }
+        }
+      }
+    },
+    "hud.composer.steerTarget": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next Picky screen input will go to this Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 Picky 화면 입력은 이 Pickle로 전달돼요"
+          }
+        }
+      }
+    },
+    "hud.conversation.clearAll": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear all"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모두 지우기"
+          }
+        }
+      }
+    },
+    "hud.conversation.viewAsTui": {
+      "comment": "Hint above a hidden-history fold. Format arg is the integer count of hidden older messages. Opens the Pi terminal overlay panel.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Pi terminal · %lld more"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TUI창으로 전체 대화 보기 · %lld개 더"
+          }
+        }
+      }
+    },
+    "hud.inlineTerminal.failed.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi terminal could not start"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi 터미널을 시작할 수 없어요"
+          }
+        }
+      }
+    },
+    "hud.inlineTerminal.singleton.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close the active TUI Pickle, or move the TUI screen here."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "활성 TUI Pickle을 닫거나 TUI 화면을 여기로 옮겨주세요."
+          }
+        }
+      }
+    },
+    "hud.inlineTerminal.singleton.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TUI can only be open in one Pickle at a time."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TUI는 한 번에 하나의 Pickle에서만 열 수 있어요."
+          }
+        }
+      }
+    },
+    "hud.inlineTerminal.tab.chat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "채팅"
+          }
+        }
+      }
+    },
+    "hud.inlineTerminal.tab.tui": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TUI"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TUI"
+          }
+        }
+      }
+    },
+    "hud.inlineTerminal.unavailable.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Pickle does not have a Pi session file yet."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Pickle에는 아직 Pi 세션 파일이 없어요."
+          }
+        }
+      }
+    },
+    "hud.inlineTerminal.unavailable.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi terminal is unavailable"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi 터미널을 사용할 수 없어요"
+          }
+        }
+      }
+    },
+    "hud.menu.archive": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아카이브"
+          }
+        }
+      }
+    },
+    "hud.menu.copyResume": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy resume command"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "재개 명령 복사"
+          }
+        }
+      }
+    },
+    "hud.menu.duplicate": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Duplicate"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복제"
+          }
+        }
+      }
+    },
+    "hud.menu.openTerminal": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Pi terminal"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi 터미널 열기"
+          }
+        }
+      }
+    },
+    "hud.menu.showChatUI": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show chat UI"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "채팅 UI 보기"
+          }
+        }
+      }
+    },
+    "hud.menu.showTerminalInline": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Pi terminal inline"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi 터미널을 카드 안에서 보기"
+          }
+        }
+      }
+    },
+    "hud.menu.stopSession": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop session"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션 중단"
+          }
+        }
+      }
+    },
+    "hud.menu.syncFromPi": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync from Pi session"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi 세션에서 동기화"
+          }
+        }
+      }
+    },
+    "hud.questions.none": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No questions provided"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제공된 질문이 없어요"
+          }
+        }
+      }
+    },
+    "hud.sessionNote.placeholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Private notes for you only — not shared with pi…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "나만 볼 수 있는 메모 — pi에게 전달되지 않아요…"
+          }
+        }
+      }
+    },
+    "hud.toolHistory.empty": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No tool calls recorded yet"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 기록된 툴 호출이 없어요"
+          }
+        }
+      }
+    },
+    "messages.empty.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold Control+Option or type below. Your prompt and the Picky reply will appear here."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Control+Option을 누르고 있거나 아래에 직접 입력해 보세요. 프롬프트와 Picky의 응답이 여기에 표시돼요."
+          }
+        }
+      }
+    },
+    "messages.empty.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No messages yet"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 메시지가 없어요"
+          }
+        }
+      }
+    },
+    "messages.mainAgent.copyResume": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy resume command"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션 재개 명령 복사"
+          }
+        }
+      }
+    },
+    "messages.mainAgent.copyResume.copied": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copied"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복사됨"
+          }
+        }
+      }
+    },
+    "messages.mainAgent.openInPi": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open in Pi"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi 터미널 열기"
+          }
+        }
+      }
+    },
+    "messages.newSession": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New session"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 세션"
+          }
+        }
+      }
+    },
+    "messages.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Latest 100 prompts and replies."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최근 프롬프트와 응답 100개."
+          }
+        }
+      }
+    },
+    "messages.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Messages"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메시지"
+          }
+        }
+      }
+    },
+    "notif.session.completed.title": {
+      "comment": "Notification banner title shown when a Pickle finishes.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analysis finished"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "분석이 끝났어요"
+          }
+        }
+      }
+    },
+    "notif.session.failed.fallbackBody": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open logs for details."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자세한 내용은 로그에서 확인해 주세요."
+          }
+        }
+      }
+    },
+    "notif.session.failed.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky task failed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky 작업이 실패했어요"
+          }
+        }
+      }
+    },
+    "notif.session.waiting.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky is waiting for input"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky가 입력을 기다리고 있어요"
+          }
+        }
+      }
+    },
+    "onboarding.bubble.awaitingArchive": {
+      "comment": "Asks the user to actually perform the long-press archive gesture now. Shows after the inviteArchive intro bubble has had its reading dwell.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Now **long-press** the demo pickle to archive it."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이제 데모 피클을 **길게 눌러** 아카이브해 보세요."
+          }
+        }
+      }
+    },
+    "onboarding.bubble.awaitingPickleOpen": {
+      "comment": "Reminder to perform the dock-card open action.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "**Open the dock pickle** to keep going."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "**도크의 피클을 열어** 서 계속 진행해 주세요."
+          }
+        }
+      }
+    },
+    "onboarding.bubble.delegatingToPickle": {
+      "comment": "Picky speaks the prompt it would send to a Pickle. 'Hey Pickle' opens the line; keep it bolded as the attention marker.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "'**Hey Pickle** — can you summarize this page and write it up for me? Focus on the part they marked.'"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "'**Hey Pickle** — 이 페이지 요약해서 정리해 줄래요? 표시한 부분 위주로요.'"
+          }
+        }
+      }
+    },
+    "onboarding.bubble.explainingDelegation": {
+      "comment": "Sets up the idea of delegating to a Pickle.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For a page like this I can answer inline, or I can hand the work off to a **Pickle** in the dock."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이런 페이지는 제가 바로 답할 수도 있고, 도크의 **Pickle** 에 작업을 맡길 수도 있어요."
+          }
+        }
+      }
+    },
+    "onboarding.bubble.explainingPickle": {
+      "comment": "Short definition of what a Pickle is. The bold phrase emphasises that a Pickle is an independent Pi session.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A Pickle is an independent **Pi session** that runs in your dock — like a background tab for long work."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle은 도크에서 도는 독립된 **Pi 세션** 이에요 — 긴 작업을 위한 백그라운드 탭 같은 거죠."
+          }
+        }
+      }
+    },
+    "onboarding.bubble.explainingTriggers": {
+      "comment": "Explains the two shortcuts for talking to Picky. Each shortcut combo is bolded as one unit; the watch-only line is bolded as a third unit.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can talk to me with **Push-to-Talk (Control+Option)** or **Quick Input (double-tap Control)**. **For this demo I'll drive — just watch.**"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저를 부를 때는 **눌러서 말하기(Control+Option)** 또는 **퀵 인풋(Control 더블탭)을** 쓰면 돼요. **이번 데모는 제가 진행할 테니 편하게 보세요.**"
+          }
+        }
+      }
+    },
+    "onboarding.bubble.introducing": {
+      "comment": "Picky greets the user. Brand name 'Picky' stays as-is in every language and is highlighted.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hi! I'm **Picky**. I follow your cursor and help you get things done — right where you're working."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "안녕하세요! 저는 **Picky** 예요. 작업하는 바로 그 자리에서 커서를 따라다니며 도와드릴게요."
+          }
+        }
+      }
+    },
+    "onboarding.bubble.inviteArchive": {
+      "comment": "Introduces the long-press archive gesture.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When you're done with a Pickle, **long-press** it to archive."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle을 다 썼다면 **길게 누르기** 로 아카이브할 수 있어요."
+          }
+        }
+      }
+    },
+    "onboarding.bubble.inviteClose": {
+      "comment": "Asks the user to click the dock pickle again to close it.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Now **click the pickle in the dock again** to close it."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이제 **도크의 피클을 다시 클릭** 해서 닫아주세요."
+          }
+        }
+      }
+    },
+    "onboarding.bubble.inviteDrawing": {
+      "comment": "Invites the user to draw a highlight on the page. Bolded phrase is the gesture they have to perform.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Want to highlight something? **Click and draw a circle** anywhere on the patch notes to mark a region."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "강조하고 싶은 부분이 있나요? 패치노트 어디서든 **클릭 후 동그라미를 그려서** 영역을 표시해 보세요."
+          }
+        }
+      }
+    },
+    "onboarding.bubble.openedPickle": {
+      "comment": "Explains follow-up + terminal switch inside a Pickle. Bolded phrase is the keystroke (⌘T) plus the action.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inside a Pickle you can send follow-up messages or **switch to the terminal UI (⌘T)** to keep working."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle 안에서는 후속 메시지를 보내거나, **터미널 UI로도 전환(⌘T)** 해서 사용할 수 있어요."
+          }
+        }
+      }
+    },
+    "onboarding.bubble.openingPatchNotes": {
+      "comment": "Picky opens the patch notes URL. Bolded phrase is the specific release name.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opening **Pi 0.73.1 release notes** in your browser…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "**Pi 0.73.1 릴리즈 노트** 를 브라우저에서 열고 있어요…"
+          }
+        }
+      }
+    },
+    "onboarding.bubble.outro": {
+      "comment": "Closing bubble. Tells the user to ask Picky about usage; bolded phrases are the two shortcut combos to remember.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nice. If you’re unsure how to use Picky, just ask me — I can answer from Picky’s built-in guide. Call me anytime with **Push-to-Talk (Control+Option)** or **Quick Input (double-tap Control)**."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "좋아요. Picky 사용법이 궁금하면 언제든 저에게 물어보세요. Picky의 내장 가이드를 바탕으로 알려드릴게요. **눌러서 말하기(Control+Option)** 또는 **퀵 인풋(Control + Control)** 으로 저를 불러주세요."
+          }
+        }
+      }
+    },
+    "onboarding.bubble.pickleCompleted": {
+      "comment": "Pickle finished. Bolded phrase tells the user which action to take next.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle is done! **Click the pickle** in your dock to inspect what it produced."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle이 끝났어요! 도크에서 **피클을 클릭** 해서 결과를 확인해 보세요."
+          }
+        }
+      }
+    },
+    "onboarding.bubble.pickleRunning": {
+      "comment": "Pickle is working. Bolded phrase reminds the user that their highlight is the context being used.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "While the Pickle works, notice how **your highlighted area** gets carried along as context — see the preview above."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle이 일하는 동안 **표시해 둔 영역** 이 컨텍스트로 같이 따라가는 걸 위 미리보기에서 확인할 수 있어요."
+          }
+        }
+      }
+    },
+    "onboarding.bubble.preWelcome": {
+      "comment": "First onboarding bubble. **bold** markers wrap the phrase that gets the amber highlight; keep markers around the same idea in every language (here: that it makes no real LLM calls).",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This onboarding **never makes real LLM calls**. Relax and follow along."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 온보딩은 **실제 LLM 호출을 하지 않아요**. 편하게 따라와 주세요."
+          }
+        }
+      }
+    },
+    "onboarding.bubble.showingCapabilities": {
+      "comment": "Sets up the next beat where Picky opens Pi's release notes.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There is a bunch of things I can do. For example, I can pull up Pi's release notes."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저는 여러 가지 일을 할 수 있어요. 예를 들면 Pi의 릴리즈 노트를 띄워줄 수 있죠."
+          }
+        }
+      }
+    },
+    "onboarding.highlight.header": {
+      "comment": "Header of the floating panel that previews the screen capture sent with the highlighted region.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This is what gets sent as context"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이게 컨텍스트로 전송되는 내용이에요"
+          }
+        }
+      }
+    },
+    "onboarding.scenario.finalAnswer": {
+      "comment": "The Pickle's final answer rendered as markdown. Preserve the **bold** title and the bullet/code formatting.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "**Pi 0.73.1 — 3 highlights**\n\n- `pi update --self` now handles the package rename from `@mariozechner/pi-coding-agent` to `@earendil-works/pi-coding-agent`, so existing global installs migrate via the normal self-update flow.\n- OAuth providers can present multiple login choices through `/login` for provider-specific interactive sign-in.\n- `models.json` now accepts comments and trailing commas (JSONC), making custom provider/model configuration easier to maintain."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "**Pi 0.73.1 — 주요 변경 3가지**\n\n- `pi update --self`가 이제 `@mariozechner/pi-coding-agent`에서 `@earendil-works/pi-coding-agent`로의 패키지 이름 변경을 처리해서, 기존 글로벌 설치도 일반 self-update 흐름으로 자연스럽게 마이그레이션돼요.\n- OAuth 프로바이더가 `/login`을 통해 여러 로그인 선택지를 제공할 수 있어 provider별 대화식 로그인이 가능해졌어요.\n- `models.json`이 이제 주석과 trailing comma(JSONC)를 허용해서, 커스텀 provider/모델 설정 관리가 한결 편해졌어요."
+          }
+        }
+      }
+    },
+    "onboarding.scenario.summary.extracting": {
+      "comment": "Status pill while the demo Pickle is extracting changelog.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Extracting changelog"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "변경사항 정리 중"
+          }
+        }
+      }
+    },
+    "onboarding.scenario.summary.queued": {
+      "comment": "Status pill shown while the demo Pickle is queued.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Queued"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대기 중"
+          }
+        }
+      }
+    },
+    "onboarding.scenario.summary.reading": {
+      "comment": "Status pill while the demo Pickle is reading the page.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reading page"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "페이지 읽는 중"
+          }
+        }
+      }
+    },
+    "onboarding.scenario.summary.ready": {
+      "comment": "Status pill once the demo Pickle finishes.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Summary ready"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요약 완료"
+          }
+        }
+      }
+    },
+    "onboarding.scenario.thinking": {
+      "comment": "Thinking bubble shown inside the demo Pickle card.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reading pi.dev/news/releases/0.73.1 and pulling out the headline changes…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pi.dev/news/releases/0.73.1을 읽으면서 핵심 변경사항을 뽑고 있어요…"
+          }
+        }
+      }
+    },
+    "onboarding.scenario.title": {
+      "comment": "Title of the demo Pickle card shown in the dock during onboarding.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Summarize pi.dev/news/releases/0.73.1"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pi.dev/news/releases/0.73.1 요약"
+          }
+        }
+      }
+    },
+    "onboarding.scenario.userMessage": {
+      "comment": "The user-typed message that kicks off the demo Pickle.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "summarize this page"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 페이지 요약해줘"
+          }
+        }
+      }
+    },
+    "onboarding.skip.button": {
+      "comment": "Floating button label that ends the onboarding tour.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skip onboarding"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "온보딩 건너뛰기"
+          }
+        }
+      }
+    },
+    "onboarding.skip.shortcut": {
+      "comment": "Keycap label next to Skip onboarding. Keep lowercase 'esc' if possible.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "esc"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "esc"
+          }
+        }
+      }
+    },
+    "prereq.accessibility.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accessibility"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "손쉬운 사용"
+          }
+        }
+      }
+    },
+    "prereq.copy.contextHandoff": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It captures neutral desktop context when you press the hot key, then hands that context to your local agent client."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "단축키를 누르면 중립적인 데스크톱 컨텍스트를 캡처해서 로컬 에이전트 클라이언트에 전달해요."
+          }
+        }
+      }
+    },
+    "prereq.copy.noAccount": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No account, no payment — Picky uses your local Pi install."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "계정도 결제도 필요 없어요 — 로컬에 설치된 Pi를 사용해요."
+          }
+        }
+      }
+    },
+    "prereq.copy.runsLocally": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky runs locally."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky는 로컬에서 동작해요."
+          }
+        }
+      }
+    },
+    "prereq.heading": {
+      "comment": "Section header above the prerequisite list.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PREREQUISITES"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사전 요건"
+          }
+        }
+      }
+    },
+    "prereq.microphone.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microphone"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마이크"
+          }
+        }
+      }
+    },
+    "prereq.pi.detail.missing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install Pi to let Picky run sessions"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky가 세션을 실행할 수 있도록 Pi를 설치해 주세요"
+          }
+        }
+      }
+    },
+    "prereq.pi.detail.ready": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local Pi SDK and executable found"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 Pi SDK와 실행 파일을 찾았어요"
+          }
+        }
+      }
+    },
+    "prereq.pi.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi runtime"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi 런타임"
+          }
+        }
+      }
+    },
+    "prereq.screenContent.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screen Content"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 콘텐츠"
+          }
+        }
+      }
+    },
+    "prereq.screenRecording.detail.granted": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only takes a screenshot when you use the hotkey"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "단축키를 사용할 때만 스크린샷을 찍어요"
+          }
+        }
+      }
+    },
+    "prereq.screenRecording.detail.missing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit and reopen after granting"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "허용한 뒤 종료하고 다시 열어주세요"
+          }
+        }
+      }
+    },
+    "prereq.screenRecording.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screen Recording"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 기록"
+          }
+        }
+      }
+    },
+    "settings.general.language.label": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App language"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱 언어"
+          }
+        }
+      }
+    },
+    "settings.general.language.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some macOS-owned surfaces (the app menu, system dialogs) only follow this on the next launch. The rest of Picky retranslates immediately."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS가 관리하는 영역(앱 메뉴, 시스템 다이얼로그 등)은 다음 실행부터 적용돼요. 그 외 영역은 즉시 변경돼요."
+          }
+        }
+      }
+    },
+    "settings.general.shellCommand.label": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky CLI shell command"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky CLI 셸 명령어"
+          }
+        }
+      }
+    },
+    "settings.general.shellCommand.button": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install or manage `picky`…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`picky` 설치/관리…"
+          }
+        }
+      }
+    },
+    "settings.general.shellCommand.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installs a `/usr/local/bin/picky` wrapper so terminals, Raycast, Hammerspoon, and cron can talk to Picky. Re-run after moving Picky.app."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`/usr/local/bin/picky` 래퍼를 설치해 터미널/Raycast/Hammerspoon/cron 에서 Picky 를 호출할 수 있게 합니다. Picky.app 을 이동한 뒤엔 다시 실행하세요."
+          }
+        }
+      }
+    },
+    "settings.general.subtitle.index": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App language and other app-wide preferences."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱 언어 및 앱 전체 설정."
+          }
+        }
+      }
+    },
+    "settings.general.subtitle.section": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App-wide preferences. Adding a new language is a one-line code change plus catalog entries."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱 전체 설정이에요. 새 언어 추가는 한 줄 코드 변경과 카탈로그 항목만 추가하면 돼요."
+          }
+        }
+      }
+    },
+    "settings.general.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "General"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일반"
+          }
+        }
+      }
+    },
+    "settings.indexTitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정"
+          }
+        }
+      }
+    },
+    "settings.language.en": {
+      "comment": "Picker option for English. Shown in the destination language so each speaker recognises their own.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "English"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "English"
+          }
+        }
+      }
+    },
+    "settings.language.ko": {
+      "comment": "Picker option for Korean. Shown in the destination language.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한국어"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한국어"
+          }
+        }
+      }
+    },
+    "settings.language.system": {
+      "comment": "Picker option that follows the macOS system language.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System default"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시스템 설정 따름"
+          }
+        }
+      }
+    },
+    "settings.section.cursorBubbles.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi cursor visibility, small animations, and speech bubbles."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi 커서 가시성, 작은 애니메이션, 말풍선."
+          }
+        }
+      }
+    },
+    "settings.section.cursorBubbles.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cursor & Bubbles"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "커서 & 말풍선"
+          }
+        }
+      }
+    },
+    "tab.status": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상태"
+          }
+        }
+      }
+    },
+    "tab.messages": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Messages"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메시지"
+          }
+        }
+      }
+    },
+    "tab.settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정"
+          }
+        }
+      }
+    },
+    "common.choose": {
+      "comment": "Generic button label that opens a directory picker.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택"
+          }
+        }
+      }
+    },
+    "common.resetDefaults": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset to defaults"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본값으로 되돌리기"
+          }
+        }
+      }
+    },
+    "settings.field.pickyCwd": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky cwd"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky 작업 폴더"
+          }
+        }
+      }
+    },
+    "settings.field.pickyCwd.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applies to captured Picky context and the next Picky session."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "캘쳐되는 Picky 컨텍스트와 다음 Picky 세션에 적용돼요."
+          }
+        }
+      }
+    },
+    "settings.field.pickyCwd.workspaceWarning": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky's default workspace ships with an `AGENTS.md` describing how Picky should behave and which tools to call. If you change the cwd, we recommend copying `AGENTS.md` over too — otherwise Picky may not invoke its tools correctly."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky의 기본 실행 경로에는 Picky가 알아야 하는 지침들이 `AGENTS.md`로 작성되어 있어요. cwd를 옮길 경우 해당 지침도 함께 옮기시는 것을 권장드려요. Picky가 가진 도구들을 제대로 호출하지 못할 수 있어요."
+          }
+        }
+      }
+    },
+    "settings.field.defaultCwd": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default cwd"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 작업 폴더"
+          }
+        }
+      }
+    },
+    "settings.field.runtime": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runtime"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "런타임"
+          }
+        }
+      }
+    },
+    "settings.field.piModel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi model"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi 모델"
+          }
+        }
+      }
+    },
+    "settings.field.piModel.helpText": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Automatic to follow Pi settings, or pick a model to pin Picky. Reasoning level below is applied with the pinned model."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi 설정을 따르려면 Automatic을 선택하고, Picky에 고정하려면 모델을 고르세요. 아래의 추론 레벨은 고정 모델과 함께 적용돼요."
+          }
+        }
+      }
+    },
+    "settings.field.modelOption.automatic": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatic (Pi default)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자동 (Pi 기본값)"
+          }
+        }
+      }
+    },
+    "settings.field.modelOption.saved": {
+      "comment": "Format: 'Saved: <model name>'. Arg is the pinned model identifier.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장됨: %@"
+          }
+        }
+      }
+    },
+    "settings.field.reasoningLevel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reasoning level"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "추론 레벨"
+          }
+        }
+      }
+    },
+    "settings.field.reasoningLevel.pickleNote": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used only as the initial reasoning level for newly-created Pickles. Running Pickles can still cycle it independently."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새로 생성되는 Pickle의 초기 추론 레벨로만 사용돼요. 실행 중인 Pickle은 독립적으로 변경할 수 있어요."
+          }
+        }
+      }
+    },
+    "settings.field.screenContext": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screen context"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "화면 컨텍스트"
+          }
+        }
+      }
+    },
+    "settings.field.screenshotQuality": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screenshot quality"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스크린샷 품질"
+          }
+        }
+      }
+    },
+    "settings.field.screenshotQuality.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Controls the longest screenshot edge sent to Picky. Higher quality improves small text but uses more image tokens."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky에 전달되는 스크린샷의 가장 긴 변을 조절해요. 품질이 높을수록 작은 글자가 선명해지지만 이미지 토큰이 더 소요돼요."
+          }
+        }
+      }
+    },
+    "settings.field.agentsFile": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AGENTS.md"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AGENTS.md"
+          }
+        }
+      }
+    },
+    "settings.field.agentsFile.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit Picky's persona and Pickle routing rules directly in the AGENTS.md inside the main agent cwd. Pi loads it on every main-agent turn — reset or relaunch Picky to pick up mid-session changes."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메인 에이전트 실행 경로의 AGENTS.md를 직접 편집해서 Picky 페르소나와 Pickle 라우팅 규칙을 바꿔요. Pi가 매 턴마다 이 파일을 읽으며, 세션 중에 적용하려면 Picky를 초기화하거나 재시작해주세요."
+          }
+        }
+      }
+    },
+    "settings.action.openAgentsFile": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open AGENTS.md"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AGENTS.md 열기"
+          }
+        }
+      }
+    },
+    "settings.field.dockSize": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dock size"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "도크 크기"
+          }
+        }
+      }
+    },
+    "settings.field.dockSize.mediumNote": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "M matches the current Pickle dock size."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "M이 현재 Pickle 도크 크기와 같아요."
+          }
+        }
+      }
+    },
+    "settings.cursor.disabledNote": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smooth follow and idle animations are disabled while the Pi cursor is hidden."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi 커서가 숨겨져 있는 동안에는 부드러운 따라다니기와 유휴 애니메이션이 비활성화돼요."
+          }
+        }
+      }
+    },
+    "settings.tts.disabledNote": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn this off to keep Picky text replies visible without playing audio."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 옵션을 끌 수 있으며, Picky의 텍스트 응답은 소리 없이 그대로 표시돼요."
+          }
+        }
+      }
+    },
+    "settings.narration.disabledNote": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn this off to silence the agent's spoken filler lines during long tool calls. Other companion replies still play when TTS is on."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 옵션을 끄면 도구 실행 중 진행 상황을 알려주는 음성 멘트가 재생되지 않아요. 일반 음성 응답은 TTS가 켜져 있을 때 그대로 들려요."
+          }
+        }
+      }
+    },
+    "settings.voice.toggle.narrationEnabled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable progress narration"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진행 상황 음성 안내 활성화"
+          }
+        }
+      }
+    },
+    "settings.azure.realtimeUrlNote": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste the full Azure Realtime URL. Picky derives deployment, API version, and preview/GA shape from it."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure Realtime URL 전체를 붙여넣어주세요. Picky가 deployment, API 버전, preview/GA 형식을 자동으로 파악해요."
+          }
+        }
+      }
+    },
+    "settings.azure.ttsUrlNote": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TTS should use the /audio/speech URL. It can share the same Azure resource and key as STT, but usually has its own deployment. The model/deployment is parsed from the URL."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TTS는 /audio/speech URL을 사용해주세요. STT와 같은 Azure 리소스·키를 공유할 수 있지만 보통 자체 deployment을 사용해요. 모델/deployment은 URL에서 자동으로 파싱돼요."
+          }
+        }
+      }
+    },
+    "settings.field.realtimeProvider": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime provider"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime 제공자"
+          }
+        }
+      }
+    },
+    "settings.field.apiKey": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API key"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API 키"
+          }
+        }
+      }
+    },
+    "settings.field.azureRealtimeUrl": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure Realtime URL"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure Realtime URL"
+          }
+        }
+      }
+    },
+    "settings.field.model": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델"
+          }
+        }
+      }
+    },
+    "settings.field.voice": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성"
+          }
+        }
+      }
+    },
+    "settings.field.realtimeEffort": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime effort"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Realtime 수준"
+          }
+        }
+      }
+    },
+    "settings.macSpeechLink": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open macOS Speech Settings"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 음성 설정 열기"
+          }
+        }
+      }
+    },
+    "enum.thinking.off": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "끄기"
+          }
+        }
+      }
+    },
+    "enum.thinking.minimal": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minimal"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최소"
+          }
+        }
+      }
+    },
+    "enum.thinking.low": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Low"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "낮음"
+          }
+        }
+      }
+    },
+    "enum.thinking.medium": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Medium"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보통"
+          }
+        }
+      }
+    },
+    "enum.thinking.high": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "High"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "높음"
+          }
+        }
+      }
+    },
+    "enum.thinking.xhigh": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Extra High"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "매우 높음"
+          }
+        }
+      }
+    },
+    "enum.thinking.pickleAuto": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatic (Pi default)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자동 (Pi 기본값)"
+          }
+        }
+      }
+    },
+    "enum.screenScope.allScreens": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All screens"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 화면"
+          }
+        }
+      }
+    },
+    "enum.screenScope.focused": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Focused screen only"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "활성 화면만"
+          }
+        }
+      }
+    },
+    "settings.section.feedback.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bug, idea, or anything to the dev."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "버그·아이디어·하고 싶은 말 무엇이든."
+          }
+        }
+      }
+    },
+    "settings.section.feedback.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send feedback"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피드백 보내기"
+          }
+        }
+      }
+    },
+    "settings.section.notification.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Banners for session events."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "세션 이벤트에 대한 배너 알림."
+          }
+        }
+      }
+    },
+    "settings.section.notification.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notification"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "알림"
+          }
+        }
+      }
+    },
+    "settings.section.onboarding.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky will replay the takeover demo the next time it launches, with no real LLM calls."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky를 다음에 실행하면 데모를 다시 보여줘요. 실제 LLM 호출은 없어요."
+          }
+        }
+      }
+    },
+    "settings.section.onboarding.replay": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replay onboarding on next launch"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다음 실행 시 온보딩 다시 재생"
+          }
+        }
+      }
+    },
+    "settings.section.onboarding.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replay the interactive intro demo."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인터랙티브 인트로 데모를 다시 재생해요."
+          }
+        }
+      }
+    },
+    "settings.section.onboarding.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Onboarding"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "온보딩"
+          }
+        }
+      }
+    },
+    "settings.section.pickle.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default folder, model, reasoning, and dock size."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 폴더, 모델, 추론, 도크 크기."
+          }
+        }
+      }
+    },
+    "settings.section.pickle.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle"
+          }
+        }
+      }
+    },
+    "settings.section.picky.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runtime, cwd, reasoning, and captured screen context."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "런타임, 작업 디렉터리, 추론, 캡처 컨텍스트."
+          }
+        }
+      }
+    },
+    "settings.section.picky.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky"
+          }
+        }
+      }
+    },
+    "settings.section.shortcuts.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Push to Talk and Quick Input bindings."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "눌러서 말하기와 퀵 인풋 단축키 바인딩."
+          }
+        }
+      }
+    },
+    "settings.section.shortcuts.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shortcuts"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "단축키"
+          }
+        }
+      }
+    },
+    "settings.section.voice.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech providers and language."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 제공자와 언어 설정."
+          }
+        }
+      }
+    },
+    "settings.section.builtinTools.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Built-in tools"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내장 도구 설정"
+          }
+        }
+      }
+    },
+    "settings.section.builtinTools.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable or disable individual Picky built-in tools."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky의 내장 도구를 개별로 켜고/끌 수 있어요."
+          }
+        }
+      }
+    },
+    "settings.section.builtinTools.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Changes apply to the main agent immediately and interrupt any in-progress turn. Disabling a tool removes it from the agent's tool list entirely so it cannot be called."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "변경 증시 메인 에이전트에 적용되며, 진행 중이던 turn은 중단돼요. 도구를 끄면 에이전트의 도구 목록에서 완전히 제거되어 호출할 수 없어요."
+          }
+        }
+      }
+    },
+    "settings.builtinTools.tool.startPickle.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클 시작"
+          }
+        }
+      }
+    },
+    "settings.builtinTools.tool.startPickle.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delegate substantial work to a new Pickle in the dock. Core to Picky's delegation UX — disabling breaks Pickle creation from the main agent."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "독에서 새 피클에게 작업을 위임해요. Picky의 위임 UX의 핵심으로, 끄면 메인 에이전트에서 피클을 생성할 수 없어요."
+          }
+        }
+      }
+    },
+    "settings.builtinTools.tool.pickleSessions.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "List Pickles"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클 목록 조회"
+          }
+        }
+      }
+    },
+    "settings.builtinTools.tool.pickleSessions.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Let the main agent list current/recent Pickles so it can steer an existing one. Disabling makes it harder to reuse Pickles."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메인 에이전트가 현재/최근 피클 목록을 조회해 기존 피클을 조종할 수 있게 해요. 끄면 피클 재사용이 어려워져요."
+          }
+        }
+      }
+    },
+    "settings.builtinTools.tool.steerPickle.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steer Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클 조종"
+          }
+        }
+      }
+    },
+    "settings.builtinTools.tool.steerPickle.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send follow-up instructions to a running Pickle. Disabling forces the agent to create new Pickles for every change."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 중인 피클에 추가 지시를 보내요. 끄면 수정이 필요할 때마다 새 피클을 만들게 돼요."
+          }
+        }
+      }
+    },
+    "settings.builtinTools.tool.abortPickle.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abort Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클 중단"
+          }
+        }
+      }
+    },
+    "settings.builtinTools.tool.abortPickle.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Let the agent stop a running Pickle on your request. Disabling forces you to abort manually from the dock."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용자 요청으로 에이전트가 실행 중인 피클을 멈추게 해요. 끄면 독에서 직접 중단해야 해요."
+          }
+        }
+      }
+    },
+    "settings.builtinTools.tool.narrateProgress.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Narrate progress"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진행 상황 음성 안내"
+          }
+        }
+      }
+    },
+    "settings.builtinTools.tool.narrateProgress.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Let the agent speak a short filler line during long steps. Independent from the voice narration toggle (Voice tab) which controls audio playback."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "긴 작업 중에 에이전트가 짧은 멘트를 음성으로 알려주도록 해요. 음성 탭의 narration 토글(재생 여부)과 독립적으로 작동해요."
+          }
+        }
+      }
+    },
+    "settings.builtinTools.tool.readUserGuide.name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read user guide"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용자 가이드 읽기"
+          }
+        }
+      }
+    },
+    "settings.builtinTools.tool.readUserGuide.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Let the agent consult Picky's bundled manual before answering app-usage questions. Disabling makes the agent answer those from general knowledge."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트가 Picky 사용법 질문에 답하기 전 내장 매뉴얼을 참조하도록 해요. 끄면 일반 지식으로 답해요."
+          }
+        }
+      }
+    },
+    "settings.section.voice.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice (STT & TTS)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 (STT & TTS)"
+          }
+        }
+      }
+    },
+    "status.capturedHeading": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What Picky captures"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky가 캡처하는 것"
+          }
+        }
+      }
+    },
+    "status.captures.screenshots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screenshots only when you use the hotkey"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "단축키를 사용할 때만 스크린샷을 찍어요"
+          }
+        }
+      }
+    },
+    "status.captures.text": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selected text and browser context when available"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "가능하면 선택한 텍스트와 브라우저 컨텍스트도 가져와요"
+          }
+        }
+      }
+    },
+    "status.captures.workspace": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default workspace from Settings"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정의 기본 작업 폴더를 사용해요"
+          }
+        }
+      }
+    },
+    "status.extensions.action.install": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치"
+          }
+        }
+      }
+    },
+    "status.extensions.action.remove": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제거"
+          }
+        }
+      }
+    },
+    "status.extensions.action.update": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업데이트"
+          }
+        }
+      }
+    },
+    "status.extensions.heading": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi extensions"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi 확장"
+          }
+        }
+      }
+    },
+    "status.extensions.pickyHandoff.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adds the /handoff-to-picky slash command to your local Pi. Lets you pin an idle Pi conversation to Picky as a completed Pickle card."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 Pi에 /handoff-to-picky 명령을 추가해요. 대기 중인 Pi 세션을 Picky의 완료된 Pickle 카드로 옮길 수 있어요."
+          }
+        }
+      }
+    },
+    "status.extensions.pickyHandoff.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi handoff command"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi handoff 명령"
+          }
+        }
+      }
+    },
+    "status.extensions.state.conflict": {
+      "comment": "Format: 'Conflict — Symlink already points to /tmp/dev'. Arg is the conflict reason.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflict — %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "충돌 — %@"
+          }
+        }
+      }
+    },
+    "status.extensions.state.developerOverride": {
+      "comment": "Format: 'Developer override — /Users/me/repo/pi-extensions/foo'. Arg is the symlink target path.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Developer override — %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "개발자 오버라이드 — %@"
+          }
+        }
+      }
+    },
+    "status.extensions.state.installed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치됨"
+          }
+        }
+      }
+    },
+    "status.extensions.state.legacySymlink": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Legacy install — re-install to migrate to a copy."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 방식 설치 — 다시 설치하면 안전한 복사본으로 마이그레이션돼요."
+          }
+        }
+      }
+    },
+    "status.extensions.state.notInstalled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not installed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미설치"
+          }
+        }
+      }
+    },
+    "status.extensions.state.outdated": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update available"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업데이트 가능"
+          }
+        }
+      }
+    },
+    "status.feedback.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bug, idea, or anything to the dev."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "버그·아이디어·하고 싶은 말 무엇이든."
+          }
+        }
+      }
+    },
+    "status.feedback.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send feedback"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피드백 보내기"
+          }
+        }
+      }
+    },
+    "status.updates.alphaNotice": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-update is disabled for alpha builds. Reinstall the latest DMG to upgrade."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "알파 빌드는 자동 업데이트를 사용할 수 없어요. 최신 DMG를 다시 설치해 주세요."
+          }
+        }
+      }
+    },
+    "status.updates.autoCheck": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check automatically every 4 hours"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4시간마다 자동으로 확인"
+          }
+        }
+      }
+    },
+    "status.updates.buildLine": {
+      "comment": "Format: '0.4.0 · stable build'. First arg is the build label, second is the channel.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@ build"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@ 빌드"
+          }
+        }
+      }
+    },
+    "status.updates.channelLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Channel"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "채널"
+          }
+        }
+      }
+    },
+    "status.updates.checkNow": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check Now"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금 확인"
+          }
+        }
+      }
+    },
+    "status.updates.heading": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updates"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업데이트"
+          }
+        }
+      }
+    },
+    "status.updates.lastChecked": {
+      "comment": "Format: 'Last checked 2026-03-04 14:00'. Arg is the formatted date string.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last checked %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마지막 확인 %@"
+          }
+        }
+      }
+    },
+    "status.voice.idle.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold the shortcut, speak naturally, then release."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "단축키를 누른 채 자연스럽게 말한 뒤 손을 떼면 돼요."
+          }
+        }
+      }
+    },
+    "status.voice.idle.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ready when you are"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "준비됐어요"
+          }
+        }
+      }
+    },
+    "status.voice.listening.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep holding Control+Option while you speak."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "말하는 동안 Control+Option을 계속 누르고 있어주세요."
+          }
+        }
+      }
+    },
+    "status.voice.listening.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "듣고 있어요…"
+          }
+        }
+      }
+    },
+    "status.voice.processing.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky is collecting just enough context for Pi."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi에게 필요한 만큼만 컨텍스트를 모으고 있어요."
+          }
+        }
+      }
+    },
+    "status.voice.processing.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing context…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "컨텍스트를 준비하고 있어요…"
+          }
+        }
+      }
+    },
+    "status.voice.responding.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can interrupt by starting a new voice input."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 음성 입력을 시작하면 언제든 중단할 수 있어요."
+          }
+        }
+      }
+    },
+    "status.voice.responding.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Answering…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답하는 중…"
+          }
+        }
+      }
+    },
+    "common.cancel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소"
+          }
+        }
+      }
+    },
+    "common.change": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "변경"
+          }
+        }
+      }
+    },
+    "settings.notification.toggle.onSuccess": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On success"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "성공 시"
+          }
+        }
+      }
+    },
+    "settings.notification.toggle.onFailure": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On failure"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실패 시"
+          }
+        }
+      }
+    },
+    "settings.notification.toggle.onInputRequest": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On input request"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "입력 요청 시"
+          }
+        }
+      }
+    },
+    "settings.cursorBubbles.toggle.showCursor": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Picky Cursor"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky 커서 표시"
+          }
+        }
+      }
+    },
+    "settings.cursorBubbles.toggle.smoothFollow": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smooth cursor follow"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "부드러운 커서 추적"
+          }
+        }
+      }
+    },
+    "settings.cursorBubbles.toggle.idleAnimations": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Idle animations"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대기 애니메이션"
+          }
+        }
+      }
+    },
+    "settings.cursorBubbles.toggle.userSTT": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "User STT recognition"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사용자 음성 인식 표시"
+          }
+        }
+      }
+    },
+    "settings.cursorBubbles.toggle.pickyReply": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky reply text"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky 응답 텍스트"
+          }
+        }
+      }
+    },
+    "settings.field.runtime.realtimeNote": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky voice uses OpenAI/Azure Realtime audio. Pickle-hover voice follow-ups still go directly to Pickles."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky 음성은 OpenAI/Azure Realtime 오디오를 사용합니다. Pickle 위에서의 음성 후속 입력은 여전히 Pickle로 직접 전달됩니다."
+          }
+        }
+      }
+    },
+    "settings.field.runtime.localNote": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default local Pi Picky flow. Existing STT/TTS providers are unchanged."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 로컬 Pi Picky 흐름입니다. 기존 STT/TTS 제공자가 그대로 사용됩니다."
+          }
+        }
+      }
+    },
+    "settings.field.pickleModel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle model"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pickle 모델"
+          }
+        }
+      }
+    },
+    "settings.field.pickleModel.helpText": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used only as the initial model for newly-created Pickles. Running Pickles can still cycle models independently."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새로 생성되는 Pickle의 초기 모델로만 사용됩니다. 실행 중인 Pickle은 별도로 모델을 변경할 수 있습니다."
+          }
+        }
+      }
+    },
+    "settings.realtime.apiKey.placeholder.azure": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure OpenAI API key"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure OpenAI API 키"
+          }
+        }
+      }
+    },
+    "settings.voice.subgroup.stt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech to Text (STT)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 인식 (STT)"
+          }
+        }
+      }
+    },
+    "settings.voice.subgroup.tts": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text to Speech (TTS)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 합성 (TTS)"
+          }
+        }
+      }
+    },
+    "settings.voice.provider.stt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "STT provider"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "STT 제공자"
+          }
+        }
+      }
+    },
+    "settings.voice.provider.tts": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TTS provider"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TTS 제공자"
+          }
+        }
+      }
+    },
+    "settings.voice.toggle.ttsEnabled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable spoken replies (TTS)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "음성 응답 활성화 (TTS)"
+          }
+        }
+      }
+    },
+    "settings.voice.placeholder.languageAuto": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto detect, or e.g. ko / en"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자동 감지, 또는 예: ko / en"
+          }
+        }
+      }
+    },
+    "settings.voice.placeholder.languageAutoElevenLabs": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto detect, or ISO-639-1/639-3 e.g. ko / en / eng"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자동 감지, 또는 ISO-639-1/639-3 예: ko / en / eng"
+          }
+        }
+      }
+    },
+    "settings.voice.openaiBaseUrlNote": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI-compatible base URLs let you point Picky at a local proxy (LocalAI, openai-edge-tts, Together, etc). Picky speaks the standard /v1/audio/transcriptions protocol — proxy stability is your responsibility."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI 호환 base URL을 사용하면 로컬 프록시(LocalAI, openai-edge-tts, Together 등)로 Picky를 연결할 수 있습니다. Picky는 표준 /v1/audio/transcriptions 프로토콜을 사용하며, 프록시 안정성은 사용자 책임입니다."
+          }
+        }
+      }
+    },
+    "settings.voice.azure.stt.url": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure STT transcription URL"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure STT 전사 URL"
+          }
+        }
+      }
+    },
+    "settings.voice.azure.stt.apiKey": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure STT API key"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure STT API 키"
+          }
+        }
+      }
+    },
+    "settings.voice.azure.stt.language": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure STT preferred language"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure STT 선호 언어"
+          }
+        }
+      }
+    },
+    "settings.voice.azure.stt.apiKey.placeholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AZURE_OPENAI_API_KEY"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AZURE_OPENAI_API_KEY"
+          }
+        }
+      }
+    },
+    "settings.voice.openai.stt.apiKey": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI STT API key"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI STT API 키"
+          }
+        }
+      }
+    },
+    "settings.voice.openai.stt.model": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI STT model"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI STT 모델"
+          }
+        }
+      }
+    },
+    "settings.voice.openai.stt.language": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI STT preferred language"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI STT 선호 언어"
+          }
+        }
+      }
+    },
+    "settings.voice.openai.stt.baseUrl": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI STT base URL (optional)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI STT base URL (선택)"
+          }
+        }
+      }
+    },
+    "settings.voice.openai.stt.model.placeholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "gpt-4o-transcribe (default)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "gpt-4o-transcribe (기본값)"
+          }
+        }
+      }
+    },
+    "settings.voice.openai.stt.baseUrl.placeholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "https://api.openai.com (override for compatible proxies)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "https://api.openai.com (호환 프록시용 재정의)"
+          }
+        }
+      }
+    },
+    "settings.voice.elevenlabs.stt.apiKey": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ElevenLabs STT API key"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ElevenLabs STT API 키"
+          }
+        }
+      }
+    },
+    "settings.voice.elevenlabs.stt.model": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ElevenLabs STT model"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ElevenLabs STT 모델"
+          }
+        }
+      }
+    },
+    "settings.voice.elevenlabs.stt.language": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ElevenLabs STT language"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ElevenLabs STT 언어"
+          }
+        }
+      }
+    },
+    "settings.voice.elevenlabs.stt.apiKey.placeholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ELEVENLABS_API_KEY"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ELEVENLABS_API_KEY"
+          }
+        }
+      }
+    },
+    "settings.voice.elevenlabs.stt.model.placeholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "scribe_v2 (default; scribe_v1 is deprecated)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "scribe_v2 (기본값; scribe_v1 은 더 이상 권장되지 않음)"
+          }
+        }
+      }
+    },
+    "settings.voice.azure.tts.url": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure TTS speech URL"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure TTS speech URL"
+          }
+        }
+      }
+    },
+    "settings.voice.azure.tts.apiKey": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure TTS API key"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure TTS API 키"
+          }
+        }
+      }
+    },
+    "settings.voice.azure.tts.voice": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure TTS voice"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azure TTS 음성"
+          }
+        }
+      }
+    },
+    "settings.voice.azure.tts.apiKey.placeholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leave empty to reuse the STT API key"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "비워두면 STT API 키를 재사용합니다"
+          }
+        }
+      }
+    },
+    "settings.voice.azure.tts.voice.placeholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "nova, alloy, shimmer, etc."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "nova, alloy, shimmer 등"
+          }
+        }
+      }
+    },
+    "settings.voice.openai.tts.apiKey": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI TTS API key"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI TTS API 키"
+          }
+        }
+      }
+    },
+    "settings.voice.openai.tts.voice": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI TTS voice"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI TTS 음성"
+          }
+        }
+      }
+    },
+    "settings.voice.openai.tts.model": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI TTS model"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI TTS 모델"
+          }
+        }
+      }
+    },
+    "settings.voice.openai.tts.baseUrl": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI TTS base URL (optional)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI TTS base URL (선택)"
+          }
+        }
+      }
+    },
+    "settings.voice.openai.tts.apiKey.placeholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sk-… (leave empty to reuse the STT key)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "sk-… (비워두면 STT 키를 재사용)"
+          }
+        }
+      }
+    },
+    "settings.voice.openai.tts.model.placeholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "gpt-4o-mini-tts (default)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "gpt-4o-mini-tts (기본값)"
+          }
+        }
+      }
+    },
+    "settings.voice.openai.tts.baseUrl.placeholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "https://api.openai.com (override for compatible proxies)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "https://api.openai.com (호환 프록시용 재정의)"
+          }
+        }
+      }
+    },
+    "settings.shortcuts.pushToTalk.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Push to Talk"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Push to Talk"
+          }
+        }
+      }
+    },
+    "settings.shortcuts.pushToTalk.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hold to start a voice session. Release to send."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "누르고 있으면 음성 세션이 시작되고, 떼면 전송됩니다."
+          }
+        }
+      }
+    },
+    "settings.shortcuts.quickInput.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick Input"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick Input"
+          }
+        }
+      }
+    },
+    "settings.shortcuts.quickInput.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press to open the text composer."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "누르면 텍스트 입력 창이 열립니다."
+          }
+        }
+      }
+    },
+    "shortcuts.row.notSet": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not set"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미설정"
+          }
+        }
+      }
+    },
+    "settings.macSpeechLink.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose the system voice used by Picky's local TTS in System Settings → Accessibility → Spoken Content."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시스템 설정 → 손쉬운 사용 → 콘텐츠 말하기에서 Picky 로컬 TTS가 사용하는 시스템 음성을 선택하세요."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

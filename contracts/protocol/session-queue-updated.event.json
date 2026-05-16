@@ -1,0 +1,15 @@
+{
+  "id": "event-session-queue-updated",
+  "protocolVersion": "2026-05-09",
+  "timestamp": "2026-05-05T00:00:03.000Z",
+  "type": "sessionQueueUpdated",
+  "sessionId": "session-001",
+  "steering": [
+    { "text": "Prioritize tests", "enqueuedAt": "2026-05-05T00:00:03.000Z" }
+  ],
+  "followUp": [
+    { "text": "Summarize after completion", "enqueuedAt": "2026-05-05T00:00:03.000Z" }
+  ],
+  "steeringMode": "one-at-a-time",
+  "seq": 4
+}

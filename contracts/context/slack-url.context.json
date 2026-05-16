@@ -1,0 +1,10 @@
+{
+  "id": "context-url-002",
+  "source": "voice",
+  "capturedAt": "2026-05-01T00:00:00.000Z",
+  "transcript": "이 쓰레드 맥락 정리해줘",
+  "cwd": "/Users/example/app",
+  "browser": { "url": "https://acme.slack.com/archives/C123/p1711111111000000", "title": "Team thread" },
+  "screenshots": [],
+  "warnings": []
+}

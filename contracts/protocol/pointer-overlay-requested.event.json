@@ -1,0 +1,20 @@
+{
+  "id": "event-pointer-001",
+  "protocolVersion": "2026-05-09",
+  "timestamp": "2026-05-01T00:00:06.000Z",
+  "type": "pointerOverlayRequested",
+  "request": {
+    "id": "pointer-001",
+    "contextId": "context-route-001",
+    "sourceSessionId": "session-001",
+    "screenId": "screen1",
+    "screenIndex": 1,
+    "x": 640,
+    "y": 360,
+    "coordinateSpace": "screenshotPixel",
+    "label": "Start here",
+    "durationMs": 2500,
+    "screenBounds": { "x": 0, "y": 0, "width": 1728, "height": 1117 },
+    "screenshotSize": { "width": 1280, "height": 827 }
+  }
+}

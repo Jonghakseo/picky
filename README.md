@@ -4,44 +4,54 @@
 
 # Picky
 
-**Your local-first command center for Pi on macOS.**
+<p align="center">
+  <a href="./README.ko.md">한국어</a>
+</p>
 
-Picky lets you ask Pi for help from wherever your cursor is. Hold a shortcut, speak or type what you need, and Picky appears in place with the local context Pi needs to continue the work in visible, long-running **Pickle** sessions.
+**A local-first Pi companion for macOS that shows up right where your cursor is.**
 
-Picky is designed to stay lightweight: it follows your cursor, captures context only for the request you start, and keeps your work local.
+Picky lets you call Pi from the middle of whatever you are doing. Hold a shortcut, speak or type, and Picky pops up beside your cursor with the context Pi needs to help: the screen you are looking at, the current URL, selected text, screenshots, and your workspace.
+
+For quick things — translation, small questions, tiny fixes — Picky can answer in place. For work that needs time, it can hand the job to a **Pickle**: another Pi session that keeps running in the Picky Dock while you move on.
+
+Picky stays intentionally lightweight. It follows your cursor, gathers context only for the request you start, and keeps the work local. You can think of Picky as the main agent and Pickles as sub-agents, but the important part is simple: **they are all Pi sessions.**
 
 ## Why Picky?
 
-Working with an agent is easier when it can see the same work surface you do — without turning into a cloud dashboard or forcing every task into a chat window.
+Working with an agent often starts with a chore: copy the URL, paste the Slack thread, export the Notion page, take a screenshot, explain where to look, then finally ask the question.
+
+Picky removes that setup work. It gives Pi the context already on your screen, then lets Pi decide whether the request should be handled immediately or handed off to a longer-running Pickle.
 
 Picky helps you:
 
 - **Start from anywhere** — use push-to-talk or quick text input without switching apps.
-- **Share useful context** — send the current app, window, selected text, browser page, screenshots, and workspace when you ask.
-- **Track long-running work** — keep multiple Pickles visible in the Picky dock while they run.
-- **Follow up naturally** — reply to an existing Pickle instead of starting over.
-- **Stay local-first** — Picky runs against your local Pi environment and does not require a SaaS backend.
+- **Share the right context** — include the current app, window, selected text, browser page, screenshots, and workspace when you ask.
+- **Mark what matters** — point Picky at the part of the screen you mean instead of describing it from scratch.
+- **Track longer work** — keep multiple Pickles visible in the Picky Dock with status, logs, artifacts, and follow-up controls.
+- **Follow up naturally** — each Pickle is a Pi session, so you can continue the conversation whenever you need.
+- **Stay local-first** — Picky runs against your local Pi environment and does not require a backend.
 
 ## How it feels to use
 
 ```text
-Hold shortcut → ask Picky → watch the Pickle work
+Hold shortcut → mark something on screen → ask Picky → watch Pickle work
 ```
 
 1. Invoke Picky with voice or text.
-2. Picky gathers the current desktop context.
-3. Pi decides how to handle the request and, when needed, starts a Pickle you can monitor, reopen, follow up on, or resume in Pi.
+2. Picky checks what you are looking at — UI, URL, selected text, screenshots, and the area you marked.
+3. Pi handles the request directly or starts a Pickle you can monitor, reopen, follow up on, or resume in Pi.
 
 ## Highlights
 
 | Feature | What it means |
 | --- | --- |
-| Cursor-side companion | Voice and text input appear beside your cursor so you can ask for help without switching context. |
+| Cursor-side companion | Voice and text input appear beside your cursor so you can ask for help without breaking your flow. |
 | Push-to-talk | Hold a global shortcut and speak naturally. |
-| Quick text input | Start a request without leaving your current app. |
-| Context capture | Picky captures neutral desktop context only when invoked. |
-| Pickle dock | Long-running Pi work appears as visible cards with status, logs, artifacts, and follow-up controls. |
-| Pi resume | Open or copy a Pi resume command when you want to continue in a terminal. |
+| Quick text input | Type a request without leaving your current app. |
+| Context capture | Picky gathers context at the moment you send a message, not continuously. |
+| Screen marking | Highlight the area you mean so Pi can focus on the right part of the screen. |
+| Pickle Dock | Long-running Pi work appears as cards with status, logs, artifacts, and follow-up controls. |
+| Pi resume | Switch to the TUI or copy a Pi resume command when you want to continue in a terminal. |
 | Local-first design | Picky stays thin; Pi chooses the skills, extensions, MCPs, and tools for the job. |
 
 ## Getting started
@@ -56,7 +66,7 @@ You will need:
 
 On first launch, open Picky and follow the setup checklist. Picky will guide you through the required macOS permissions and Pi runtime check.
 
-For the complete walkthrough, see the [User Manual](docs/user-manual.md).
+For the full walkthrough, see the [User Manual](docs/user-manual.md). Picky can also read that manual through its built-in tools, so you can ask Picky to help with setup too.
 
 ## Permissions
 
@@ -69,7 +79,7 @@ Picky asks for macOS permissions that support its local command-center behavior:
 | Accessibility | Global shortcuts and interaction helpers. |
 | Screen Recording / Screen Content | Screenshots and screen context when you invoke Picky. |
 
-Picky does not continuously capture your screen. Context is gathered for the request flow you start.
+Picky does not continuously capture your screen. Context is gathered only for the flow you request.
 
 ## Learn more
 

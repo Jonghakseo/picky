@@ -48,8 +48,8 @@ struct PickyConversationListView: View {
                                 }
                                 turnGroupView(group)
                             }
-                            queueSection(items: visibleQueuedFollowUps, kind: .followUp, mode: session.followUpMode)
                             queueSection(items: visibleQueuedSteers, kind: .steer, mode: session.steeringMode)
+                            queueSection(items: visibleQueuedFollowUps, kind: .followUp, mode: session.followUpMode)
                         }
                         // Sentinel anchor pinned to the very end of the list. Scrolling
                         // to a real message id is fragile because turn cards collapse

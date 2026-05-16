@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
+    "commitlint": "commitlint"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^20.5.3",
+    "@commitlint/config-conventional": "^20.5.3"
+  }
+}

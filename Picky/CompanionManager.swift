@@ -66,6 +66,13 @@ struct CompanionVoicePresentationState: Equatable {
     let promptBubbleState: CompanionVoicePromptBubbleState
 }
 
+private enum PickySpeechPollResult {
+    case speaking
+    case finished
+    case timedOut
+    case inactive
+}
+
 enum CompanionVoicePresentationReducer {
     static func reduce(
         currentVoiceState: CompanionVoiceState,
@@ -260,6 +267,7 @@ final class CompanionManager: ObservableObject {
     private var speechPlaybackProvider: any PickySpeechPlaybackProvider
     private var ttsPlaybackEnabled: Bool
     private var narrationEnabled: Bool
+    private let speechWatchdogTimeoutOverride: TimeInterval?
     private let voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator
     private let realtimeVoiceInputManager = OpenAIRealtimeVoiceInputManager()
     private let realtimeAudioPlaybackEngine: any PickyRealtimeAudioPlaybacking
@@ -273,7 +281,8 @@ final class CompanionManager: ObservableObject {
         voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator? = nil,
         realtimeAudioPlaybackEngine: (any PickyRealtimeAudioPlaybacking)? = nil,
         inkCaptureCoordinator: any PickyInkCaptureCoordinating = PickyInkCaptureCenter.shared,
-        appearanceStore: PickyAppearanceStore? = nil
+        appearanceStore: PickyAppearanceStore? = nil,
+        speechWatchdogTimeout: TimeInterval? = nil
     ) {
         let initialSettings = PickySettingsStore().load()
         self.agentClient = agentClient
@@ -283,6 +292,7 @@ final class CompanionManager: ObservableObject {
         self.speechPlaybackProvider = speechPlaybackProvider ?? PickySpeechPlaybackProviderFactory.makeDefaultProvider(settings: initialSettings)
         self.ttsPlaybackEnabled = speechPlaybackProvider == nil ? initialSettings.ttsEnabled : true
         self.narrationEnabled = initialSettings.narrationEnabled
+        self.speechWatchdogTimeoutOverride = speechWatchdogTimeout
         self.voiceContextCaptureCoordinator = voiceContextCaptureCoordinator ?? PickyVoiceContextCaptureCoordinator()
         self.realtimeAudioPlaybackEngine = realtimeAudioPlaybackEngine ?? OpenAIRealtimeAudioPlaybackEngine()
         self.inkCaptureCoordinator = inkCaptureCoordinator
@@ -1605,6 +1615,15 @@ final class CompanionManager: ObservableObject {
         pendingAgentResponseStartedAt = nil
     }
 
+    private func speechWatchdogTimeout(for utterance: String) -> TimeInterval {
+        if let speechWatchdogTimeoutOverride {
+            return max(0.05, speechWatchdogTimeoutOverride)
+        }
+        let characterCount = max(1, utterance.trimmingCharacters(in: .whitespacesAndNewlines).count)
+        let estimatedDuration = Double(characterCount) / 8.0 + 8.0
+        return min(max(estimatedDuration, 12.0), 120.0)
+    }
+
     private func isInteractionTextReply(_ output: PickyOutputPhase) -> Bool {
         switch output {
         case .showingTextReply:
@@ -1913,19 +1932,35 @@ final class CompanionManager: ObservableObject {
             return
         }
 
+        let watchdogDeadline = Date().addingTimeInterval(speechWatchdogTimeout(for: text))
         responseStateTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 250_000_000)
                 guard !Task.isCancelled else { return }
-                let shouldFinish = await MainActor.run { [weak self] in
-                    guard let self, self.activeSpeechID == speechID else { return false }
-                    return !self.speechPlaybackProvider.isSpeaking
+                let pollResult = await MainActor.run { [weak self] in
+                    guard let self, self.activeSpeechID == speechID else { return PickySpeechPollResult.inactive }
+                    if !self.speechPlaybackProvider.isSpeaking { return .finished }
+                    if Date() >= watchdogDeadline { return .timedOut }
+                    return .speaking
                 }
-                guard shouldFinish else { continue }
-                await MainActor.run { [weak self] in
-                    self?.handleInteractionSpeechFinished(speechID: speechID, didFinish: true, contextID: contextID)
+                switch pollResult {
+                case .speaking:
+                    continue
+                case .inactive:
+                    return
+                case .finished:
+                    await MainActor.run { [weak self] in
+                        self?.handleInteractionSpeechFinished(speechID: speechID, didFinish: true, contextID: contextID)
+                    }
+                    return
+                case .timedOut:
+                    await MainActor.run { [weak self] in
+                        guard let self, self.activeSpeechID == speechID else { return }
+                        self.speechPlaybackProvider.stopSpeaking()
+                        self.handleInteractionSpeechFinished(speechID: speechID, didFinish: false, contextID: contextID)
+                    }
+                    return
                 }
-                return
             }
         }
     }
@@ -2419,22 +2454,38 @@ final class CompanionManager: ObservableObject {
             return
         }
 
+        let watchdogDeadline = Date().addingTimeInterval(speechWatchdogTimeout(for: utterance))
         responseStateTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 250_000_000)
                 guard !Task.isCancelled else { return }
-                let shouldFinish = await MainActor.run { [weak self] in
+                let pollResult = await MainActor.run { [weak self] in
                     guard let self,
                           self.activeSpeechID == speechID else {
-                        return false
+                        return PickySpeechPollResult.inactive
                     }
-                    return !self.speechPlaybackProvider.isSpeaking
+                    if !self.speechPlaybackProvider.isSpeaking { return .finished }
+                    if Date() >= watchdogDeadline { return .timedOut }
+                    return .speaking
                 }
-                guard shouldFinish else { continue }
-                await MainActor.run { [weak self] in
-                    self?.handleSpeechFinished(speechID: speechID, didFinish: true)
+                switch pollResult {
+                case .speaking:
+                    continue
+                case .inactive:
+                    return
+                case .finished:
+                    await MainActor.run { [weak self] in
+                        self?.handleSpeechFinished(speechID: speechID, didFinish: true)
+                    }
+                    return
+                case .timedOut:
+                    await MainActor.run { [weak self] in
+                        guard let self, self.activeSpeechID == speechID else { return }
+                        self.speechPlaybackProvider.stopSpeaking()
+                        self.handleSpeechFinished(speechID: speechID, didFinish: false)
+                    }
+                    return
                 }
-                return
             }
         }
     }

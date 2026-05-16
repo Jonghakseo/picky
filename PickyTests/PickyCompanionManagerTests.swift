@@ -888,6 +888,28 @@ struct PickyCompanionManagerTests {
         #expect(speechProvider.isSpeaking)
     }
 
+    @Test func interactionSpeechWatchdogClearsRespondingWhenProviderNeverFinishes() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider,
+            speechWatchdogTimeout: 0.05
+        )
+
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "context-cli",
+            text: "답변은 도착했지만 TTS 완료 콜백이 유실된 상황",
+            originSource: .cli,
+            replyKind: .main
+        )))
+        try await waitUntil { manager.voiceState == .responding }
+        #expect(speechProvider.isSpeaking)
+
+        try await waitUntil { manager.voiceState == .idle }
+        #expect(!speechProvider.isSpeaking)
+    }
+
     @Test func systemSpeechPathIsNotClippedBySafetyNetWhenInteractionSpeechIDIsNil() async throws {
         let speechProvider = FakeSpeechPlaybackProvider()
         let manager = CompanionManager(

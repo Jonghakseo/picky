@@ -732,7 +732,16 @@ struct PickyConversationComposerView: View {
     }
 
     var isStopButtonVisible: Bool {
-        [.running, .waiting_for_input].contains(session.status)
+        switch session.status {
+        case .running:
+            return true
+        case .waiting_for_input:
+            // A fresh manual Pickle parks on `waiting_for_input` with no
+            // messages yet; there is nothing to stop until the user submits.
+            return !session.messages.isEmpty
+        default:
+            return false
+        }
     }
 
     private var sendButtonIconName: String {

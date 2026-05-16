@@ -384,11 +384,27 @@ struct PickyConversationCardViewTests {
 
     @Test func composerStopButtonOnlyShowsForActiveTurns() {
         let viewModel = makeViewModel()
+        let userMessage = message("m1", kind: .userText, text: "hi")
 
-        for status in [PickySessionStatus.running, .waiting_for_input] {
-            let composer = PickyConversationComposerView(session: makeConversationSession(status: status), viewModel: viewModel)
-            #expect(composer.isStopButtonVisible)
-        }
+        let runningComposer = PickyConversationComposerView(
+            session: makeConversationSession(status: .running),
+            viewModel: viewModel
+        )
+        #expect(runningComposer.isStopButtonVisible)
+
+        // Fresh manual Pickle: waiting_for_input with no messages should hide stop.
+        let emptyWaitingComposer = PickyConversationComposerView(
+            session: makeConversationSession(status: .waiting_for_input),
+            viewModel: viewModel
+        )
+        #expect(!emptyWaitingComposer.isStopButtonVisible)
+
+        // Once the user has submitted at least one message, waiting_for_input keeps stop.
+        let activeWaitingComposer = PickyConversationComposerView(
+            session: makeConversationSession(status: .waiting_for_input, messages: [userMessage]),
+            viewModel: viewModel
+        )
+        #expect(activeWaitingComposer.isStopButtonVisible)
 
         for status in [PickySessionStatus.queued, .blocked, .completed, .failed, .cancelled] {
             let composer = PickyConversationComposerView(session: makeConversationSession(status: status), viewModel: viewModel)

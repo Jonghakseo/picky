@@ -2390,6 +2390,7 @@ final class CompanionManager: ObservableObject {
             #endif
             return
         }
+        latestAgentSessionSummary = utterance
         speakSystemMessage(utterance)
     }
 

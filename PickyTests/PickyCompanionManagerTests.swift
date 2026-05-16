@@ -290,6 +290,24 @@ struct PickyCompanionManagerTests {
         #expect(speechProvider.spokenUtterances == ["열어볼게요."])
     }
 
+    @Test func narrateProgressShowsCursorBubbleTextAndSpeaks() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+
+        manager.applyAgentEvent(.narrateProgressRequested(PickyNarrateProgressRequest(
+            text: "로그를 확인하고 있어요.",
+            sessionId: nil
+        )))
+
+        #expect(manager.latestAgentSessionSummary == "로그를 확인하고 있어요.")
+        #expect(manager.voiceState == .responding)
+        #expect(speechProvider.spokenUtterances == ["로그를 확인하고 있어요."])
+    }
+
     @Test @MainActor func realtimePlaybackStopBeforeFirstAudioIsSafe() {
         let engine = OpenAIRealtimeAudioPlaybackEngine()
 

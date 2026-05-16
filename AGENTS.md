@@ -102,4 +102,4 @@ Expected: `picky-agentd listening on 127.0.0.1:17631`; quitting the app closes t
 - Follow-up routing must be explicit and predictable; avoid surprising session capture.
 - Extension UI and confirmation flows should remain visible in the HUD, not hidden in logs.
 - When committing, include only your own changes. Never stage unrelated local edits.
-- Commit messages must pass commitlint Conventional Commits, e.g. `feat: add dock shortcut`.
+- Commit messages must pass commitlint Conventional Commits in English/ASCII only, e.g. `feat: add dock shortcut`.

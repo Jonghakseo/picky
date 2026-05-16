@@ -162,6 +162,28 @@ private func makeSessionUpdatedEvent(id: String, title: String = "Pickle", statu
     )
 }
 
+private func makeSessionSnapshotEvent(id: String, title: String = "Pickle", status: PickySessionStatus = .completed) -> PickyEventEnvelope {
+    PickyEventEnvelope(
+        id: "event-snapshot-\(id)",
+        protocolVersion: pickyAgentProtocolVersion,
+        timestamp: Date(),
+        event: .sessionSnapshot([
+            PickyAgentSession(
+                id: id,
+                title: title,
+                status: status,
+                cwd: "/tmp/ws",
+                createdAt: Date(),
+                updatedAt: Date(),
+                logs: [],
+                tools: [],
+                artifacts: [],
+                changedFiles: []
+            )
+        ])
+    )
+}
+
 private func makePickleBridgeRequestEvent(operation: String, sessionId: String? = nil, text: String? = nil, prompt: String? = nil, cwd: String? = nil) throws -> PickyEventEnvelope {
     var fields = "\"operation\": \"\(operation)\""
     if let sessionId { fields += ", \"sessionId\": \"\(sessionId)\"" }
@@ -677,6 +699,32 @@ struct PickyAgentClientRouterTests {
             #expect(error == .missingChildEndpoint(sessionId: "pickle-missing"))
         }
         #expect(primary.sentCommands.isEmpty)
+    }
+
+    @Test func pickleBridgeListIncludesPrimarySnapshotSessions() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+
+        await router.connect()
+        let sawSnapshot = Task<Bool, Never> {
+            for await event in router.events {
+                if case .protocolEvent(let envelope) = event,
+                   case .sessionSnapshot(let sessions) = envelope.event,
+                   sessions.contains(where: { $0.id == "legacy-pickle" }) {
+                    return true
+                }
+            }
+            return false
+        }
+        primary.emit(.protocolEvent(makeSessionSnapshotEvent(id: "legacy-pickle", title: "Legacy Pickle")))
+        #expect(await sawSnapshot.value)
+
+        primary.emit(.protocolEvent(try makePickleBridgeRequestEvent(operation: "listSessions")))
+        try await waitUntil { primary.sentCommands.contains(where: { $0.type == .completePickleBridgeRequest && $0.sessions?.first?.id == "legacy-pickle" }) }
     }
 
     @Test func handlesPickleBridgeListAndSteerThroughChildSessionCache() async throws {

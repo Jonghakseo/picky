@@ -457,7 +457,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         do {
             switch request.operation {
             case .listSessions:
-                await completePickleBridge(request, on: responseClient, sessions: childPickleSessions())
+                await completePickleBridge(request, on: responseClient, sessions: cachedPickleSessions())
             case .steer:
                 guard let sessionId = request.sessionId, let text = request.text else { throw PickyAgentClientRouterError.invalidBridgeRequest }
                 let client = try await connectedClient(for: sessionId)
@@ -486,9 +486,8 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         }
     }
 
-    private func childPickleSessions() -> [PickyAgentSession] {
+    private func cachedPickleSessions() -> [PickyAgentSession] {
         sessionCache.values
-            .filter { knownChildSessionIds.contains($0.id) }
             .sorted { $0.updatedAt > $1.updatedAt }
     }
 

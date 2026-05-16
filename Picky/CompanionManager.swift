@@ -1619,9 +1619,13 @@ final class CompanionManager: ObservableObject {
         if let speechWatchdogTimeoutOverride {
             return max(0.05, speechWatchdogTimeoutOverride)
         }
+
+        // This is a last-resort stuck-state recovery guard, not a normal TTS
+        // duration limiter. Keep it deliberately generous so slow voices,
+        // remote TTS latency, or long Korean replies are not cut off.
         let characterCount = max(1, utterance.trimmingCharacters(in: .whitespacesAndNewlines).count)
-        let estimatedDuration = Double(characterCount) / 8.0 + 8.0
-        return min(max(estimatedDuration, 12.0), 120.0)
+        let estimatedDuration = Double(characterCount) / 4.0 + 30.0
+        return min(max(estimatedDuration, 45.0), 300.0)
     }
 
     private func isInteractionTextReply(_ output: PickyOutputPhase) -> Bool {

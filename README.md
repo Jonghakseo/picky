@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/picky-header-logo.svg" alt="Picky" width="240" />
+</p>
+
 # Picky
 
 **Your local-first command center for Pi on macOS.**

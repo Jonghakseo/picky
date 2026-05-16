@@ -8,7 +8,7 @@
 
 Picky lets you ask Pi for help from anywhere on your Mac. Hold a shortcut, speak or type what you need, and Picky gives Pi the local context it needs to continue the work in visible, long-running **Pickle** sessions.
 
-Picky is designed to stay lightweight: it lives in the menu bar, captures context only when you invoke it, and keeps your work local.
+Picky is designed to stay lightweight: it appears next to your cursor when you invoke it, captures context only for that request, and keeps your work local.
 
 ## Why Picky?
 

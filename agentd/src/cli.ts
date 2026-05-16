@@ -21,6 +21,7 @@ Examples:
   $ picky pickle-create "Sentry 조사" --instructions "최근 24h 에러 그룹 정리"
   $ picky pickle-create --empty
   $ picky pickle-list --json
+  $ picky pickle-list --include-archived
   $ picky pickle-followup pickle-abc "production 환경으로 다시"
   $ picky pickle-abort pickle-abc
 
@@ -140,24 +141,27 @@ void pickleCreate;
 
 program
   .command("pickle-list")
-  .description("List all Pickle sessions known to the daemon.")
-  .option("--json", "Emit the raw session snapshot JSON to stdout")
-  .action(async (options: SharedOptions) => {
+  .description("List non-archived Pickle sessions shown in the Picky dock.")
+  .option("--json", "Emit the session snapshot JSON to stdout")
+  .option("--include-archived", "Include archived Pickle sessions hidden from the Picky dock")
+  .action(async (options: SharedOptions & { includeArchived?: boolean }) => {
     await runWithErrorHandling(async () => {
       const connection = await loadCliConnection();
       const snapshot = await sendCommand(connection, { type: "listSessions" }, {
         matchEvent: (event) => (event.type === "sessionSnapshot" ? event : null),
       });
+      if (snapshot.type !== "sessionSnapshot") return;
+      const sessions = options.includeArchived ? snapshot.sessions : snapshot.sessions.filter((session) => session.archived !== true);
+      const visibleSnapshot = { ...snapshot, sessions };
       if (options.json) {
-        process.stdout.write(`${JSON.stringify(snapshot, null, 2)}\n`);
+        process.stdout.write(`${JSON.stringify(visibleSnapshot, null, 2)}\n`);
         return;
       }
-      if (snapshot.type !== "sessionSnapshot") return;
-      if (snapshot.sessions.length === 0) {
+      if (sessions.length === 0) {
         process.stdout.write("(no sessions)\n");
         return;
       }
-      for (const session of snapshot.sessions) {
+      for (const session of sessions) {
         const cwd = session.cwd ? ` cwd=${session.cwd}` : "";
         process.stdout.write(`${session.id}\t${session.status}\t${session.title}${cwd}\n`);
       }

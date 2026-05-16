@@ -96,6 +96,21 @@ describe("handoff tools", () => {
     expect(details).toMatchObject({ pageSize: 2, hasMore: true, nextPage: 2 });
   });
 
+  it("hides archived Pickle sessions unless explicitly requested", async () => {
+    const archived = { ...makeSession(2, "completed"), archived: true };
+    const sessions = [makeSession(1, "running"), archived, makeSession(3, "blocked")];
+    const tool = createPickyPickleSessionsTool(() => sessions);
+
+    const defaultResult = await tool.execute("tool-1", {} as never, undefined, undefined, {} as never);
+    const defaultDetails = defaultResult.details as { sessions: Array<{ id: string; archived?: boolean }> };
+    expect(defaultDetails.sessions.map((session) => session.id)).toEqual(["pickle-1", "pickle-3"]);
+
+    const includeResult = await tool.execute("tool-2", { includeArchived: true } as never, undefined, undefined, {} as never);
+    const includeDetails = includeResult.details as { sessions: Array<{ id: string; archived?: boolean }> };
+    expect(includeDetails.sessions.map((session) => session.id)).toEqual(["pickle-1", "pickle-2", "pickle-3"]);
+    expect(includeDetails.sessions.find((session) => session.id === "pickle-2")?.archived).toBe(true);
+  });
+
   it("sends Pickle messages through the steering tool", async () => {
     let received: { sessionId: string; message: string } | undefined;
     const tool = createPickySteerPickleTool(async (request) => {

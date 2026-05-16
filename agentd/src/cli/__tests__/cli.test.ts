@@ -154,32 +154,50 @@ describe("picky cli", () => {
     });
   });
 
-  it("pickle-list prints sessions in tab-separated form", async () => {
+  it("pickle-list prints non-archived sessions in tab-separated form", async () => {
     server.onCommand("listSessions", (command, send) => {
       void command;
       send({
         type: "sessionSnapshot",
         sessions: [
           sessionFixture({ id: "p-1", title: "First", status: "running", cwd: "/tmp/a" }),
-          sessionFixture({ id: "p-2", title: "Second", status: "completed" }),
+          sessionFixture({ id: "p-2", title: "Second", status: "completed", archived: true }),
         ],
       });
     });
     const result = await runCli(["pickle-list"]);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("p-1\trunning\tFirst cwd=/tmp/a");
+    expect(result.stdout).not.toContain("p-2\tcompleted\tSecond");
+  });
+
+  it("pickle-list --include-archived includes archived sessions", async () => {
+    server.onCommand("listSessions", (command, send) => {
+      void command;
+      send({
+        type: "sessionSnapshot",
+        sessions: [
+          sessionFixture({ id: "p-1", title: "First", status: "running" }),
+          sessionFixture({ id: "p-2", title: "Second", status: "completed", archived: true }),
+        ],
+      });
+    });
+    const result = await runCli(["pickle-list", "--include-archived"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("p-1\trunning\tFirst");
     expect(result.stdout).toContain("p-2\tcompleted\tSecond");
   });
 
-  it("pickle-list --json emits the raw snapshot", async () => {
+  it("pickle-list --json emits the filtered snapshot", async () => {
     server.onCommand("listSessions", (command, send) => {
       void command;
-      send({ type: "sessionSnapshot", sessions: [] });
+      send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "visible" }), sessionFixture({ id: "archived", archived: true })] });
     });
     const result = await runCli(["pickle-list", "--json"]);
     expect(result.code).toBe(0);
     const parsed = JSON.parse(result.stdout);
-    expect(parsed).toMatchObject({ type: "sessionSnapshot", sessions: [] });
+    expect(parsed).toMatchObject({ type: "sessionSnapshot", sessions: [expect.objectContaining({ id: "visible" })] });
+    expect(parsed.sessions).toHaveLength(1);
   });
 
   it("submit surfaces server errorMessage with exit code 1", async () => {

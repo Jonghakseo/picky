@@ -487,10 +487,21 @@ struct PickyCompanionManagerTests {
         #expect(bubbleState.displayText.hasSuffix("…"))
     }
 
-    @Test func speechPlaybackPreparationAddsShortSilentPreroll() {
+    @Test func speechPlaybackPreparationDoesNotInjectEmbeddedSpeechMarkers() {
         let prepared = PickySpeechPlaybackPreparation.prepareForPlayback("안녕하세요")
 
-        #expect(prepared == "[[slnc 500]]안녕하세요")
+        #expect(prepared == "안녕하세요")
+    }
+
+    @Test func systemSpeechProviderDelaysPrerollWithoutEmbeddedMarkers() async throws {
+        let synthesizer = FakeNSSpeechSynthesizer()
+        let provider = PickySystemSpeechPlaybackProvider(speechSynthesizer: synthesizer, prerollDelay: 0.01)
+
+        #expect(provider.speak("안녕하세요") { _ in })
+        #expect(provider.isSpeaking)
+        #expect(synthesizer.spokenStrings.isEmpty)
+
+        try await waitUntil { synthesizer.spokenStrings == ["안녕하세요"] }
     }
 
     @Test func speechFallbackProviderUsesFallbackWhenPrimaryFailsAsynchronously() async throws {
@@ -996,10 +1007,10 @@ struct PickyCompanionManagerTests {
         #expect(finishCalls == 0)
     }
 
-    @Test func systemSpeechProviderReturnsFalseWhenStartSpeakingFails() async throws {
+    @Test func systemSpeechProviderReturnsFalseWhenImmediateStartSpeakingFails() async throws {
         let synthesizer = FakeNSSpeechSynthesizer()
         synthesizer.startSpeakingResult = false
-        let provider = PickySystemSpeechPlaybackProvider(speechSynthesizer: synthesizer)
+        let provider = PickySystemSpeechPlaybackProvider(speechSynthesizer: synthesizer, prerollDelay: 0)
         var finishCalls = 0
 
         let started = provider.speak("엔진이 시작을 거부한 상황") { _ in finishCalls += 1 }
@@ -1007,12 +1018,12 @@ struct PickyCompanionManagerTests {
         #expect(!started)
         #expect(!provider.isSpeaking)
         #expect(synthesizer.spokenStrings.count == 1)
-        #expect(finishCalls == 0)
+        #expect(finishCalls == 1)
     }
 
     @Test func systemSpeechProviderIgnoresStaleDelegateCallbacksAfterStop() async throws {
         let synthesizer = FakeNSSpeechSynthesizer()
-        let provider = PickySystemSpeechPlaybackProvider(speechSynthesizer: synthesizer)
+        let provider = PickySystemSpeechPlaybackProvider(speechSynthesizer: synthesizer, prerollDelay: 0)
         var finishes: [Bool] = []
 
         #expect(provider.speak("첫 번째 발화") { finishes.append($0) })
@@ -1082,6 +1093,14 @@ struct PickyCompanionManagerTests {
     @Test func stripParentheticalsKeepsTextWhenNoParenthesesPresent() async throws {
         let plain = "프로덕션으로 올린 명령을 몇 분 안에 모니터링해볼게요."
         #expect(stripParentheticalsForSpeech(plain) == plain)
+    }
+
+    @Test func speechSanitizerNeutralizesInlinePathsAndUrls() async throws {
+        let pathHeavy = "pi-extension 분석은 ~/Documents/pi-extension, agent 분석은 ~/.pi/agent, product 분석은 ~/product 에서 돌렸어요."
+        #expect(stripParentheticalsForSpeech(pathHeavy) == "pi-extension 분석은 해당 경로, agent 분석은 해당 경로, product 분석은 해당 경로에서 돌렸어요.")
+
+        let withURL = "결과는 https://example.com/report/123 에 있어요."
+        #expect(stripParentheticalsForSpeech(withURL) == "결과는 링크에 있어요.")
     }
 
     @Test func stripParentheticalsFallsBackWhenWholeMessageIsParenthesised() async throws {

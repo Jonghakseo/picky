@@ -344,13 +344,14 @@ private final class PickyNSSpeechSynthesizerDelegate: NSObject, NSSpeechSynthesi
 }
 
 enum PickySpeechPlaybackPreparation {
-    /// Short pre-roll for macOS system speech. NSSpeech honors the
-    /// `[[slnc N]]` command embedded in the spoken string; this guards against
-    /// output device wake-up clipping at the start of an utterance.
+    /// Short pre-roll for macOS system speech. Keep the pause outside the text
+    /// stream: embedded commands such as `[[slnc N]]` create speech markers,
+    /// and those markers can trigger invalid-range errors in Apple's TTS stack.
     static let prerollSilenceMilliseconds = 500
+    static let prerollSilenceSeconds = TimeInterval(prerollSilenceMilliseconds) / 1_000
 
     static func prepareForPlayback(_ utterance: String) -> String {
-        "[[slnc \(prerollSilenceMilliseconds)]]\(utterance)"
+        utterance
     }
 }
 
@@ -361,12 +362,18 @@ final class PickySystemSpeechPlaybackProvider: PickySpeechPlaybackProvider {
     private(set) var isSpeaking = false
 
     private let speechSynthesizer: any PickyNSSpeechSynthesizing
+    private let prerollDelay: TimeInterval
     private var speechSynthesizerDelegate: PickyNSSpeechSynthesizerDelegate?
     private var activeSpeechID: UUID?
     private var onFinish: ((Bool) -> Void)?
+    private var prerollTask: Task<Void, Never>?
 
-    init(speechSynthesizer: any PickyNSSpeechSynthesizing = NSSpeechSynthesizer()) {
+    init(
+        speechSynthesizer: any PickyNSSpeechSynthesizing = NSSpeechSynthesizer(),
+        prerollDelay: TimeInterval = PickySpeechPlaybackPreparation.prerollSilenceSeconds
+    ) {
         self.speechSynthesizer = speechSynthesizer
+        self.prerollDelay = max(0, prerollDelay)
     }
 
     @discardableResult
@@ -391,11 +398,32 @@ final class PickySystemSpeechPlaybackProvider: PickySpeechPlaybackProvider {
         self.onFinish = onFinish
         isSpeaking = true
 
-        let started = speechSynthesizer.startSpeaking(preparedUtterance)
-        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider start result=\(started) speechID=\(speechID) chars=\(trimmedUtterance.count) preparedChars=\(preparedUtterance.count) speakingAfterStart=\(speechSynthesizer.isSpeaking)")
+        guard prerollDelay > 0 else {
+            return startPreparedSpeech(speechID: speechID, utterance: preparedUtterance, originalCharacterCount: trimmedUtterance.count)
+        }
+
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider preroll scheduled speechID=\(speechID) delayMs=\(Int(prerollDelay * 1000)) chars=\(trimmedUtterance.count)")
+        prerollTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(prerollDelay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self, self.activeSpeechID == speechID else { return }
+                self.prerollTask = nil
+                _ = self.startPreparedSpeech(speechID: speechID, utterance: preparedUtterance, originalCharacterCount: trimmedUtterance.count)
+            }
+        }
+        return true
+    }
+
+    @discardableResult
+    private func startPreparedSpeech(speechID: UUID, utterance: String, originalCharacterCount: Int) -> Bool {
+        let started = speechSynthesizer.startSpeaking(utterance)
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider start result=\(started) speechID=\(speechID) chars=\(originalCharacterCount) preparedChars=\(utterance.count) speakingAfterStart=\(speechSynthesizer.isSpeaking)")
 
         guard started else {
+            let finish = onFinish
             clearActiveSpeech()
+            finish?(false)
             return false
         }
         return true
@@ -403,6 +431,8 @@ final class PickySystemSpeechPlaybackProvider: PickySpeechPlaybackProvider {
 
     func stopSpeaking() {
         PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider stop requested active=\(activeSpeechID?.uuidString ?? "none") speakingBefore=\(isSpeaking) engineSpeakingBefore=\(speechSynthesizer.isSpeaking) hasDelegate=\(speechSynthesizerDelegate != nil)")
+        prerollTask?.cancel()
+        prerollTask = nil
         speechSynthesizer.delegate = nil
         speechSynthesizer.stopSpeaking()
         clearActiveSpeech()
@@ -422,6 +452,8 @@ final class PickySystemSpeechPlaybackProvider: PickySpeechPlaybackProvider {
 
     private func clearActiveSpeech() {
         isSpeaking = false
+        prerollTask?.cancel()
+        prerollTask = nil
         speechSynthesizer.delegate = nil
         speechSynthesizerDelegate = nil
         activeSpeechID = nil

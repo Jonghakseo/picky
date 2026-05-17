@@ -1684,8 +1684,16 @@ final class CompanionManager: ObservableObject {
 
         // This is a last-resort stuck-state recovery guard, not a normal TTS
         // duration limiter. Keep it deliberately generous so slow voices,
-        // remote TTS latency, or long Korean replies are not cut off.
+        // remote TTS latency, or long Korean replies are not cut off. macOS
+        // Speech can occasionally miss NSSpeechSynthesizer's finish callback
+        // and keep reporting `isSpeaking` after audible playback ended,
+        // especially with path-like strings; use a tighter local fallback so
+        // the cursor bubble does not sit in `.responding` for ~30s+.
         let characterCount = max(1, utterance.trimmingCharacters(in: .whitespacesAndNewlines).count)
+        if speechPlaybackProvider is PickySystemSpeechPlaybackProvider {
+            let localEstimatedDuration = Double(characterCount) / 8.0 + 8.0
+            return min(localEstimatedDuration, 90.0)
+        }
         let estimatedDuration = Double(characterCount) / 4.0 + 10.0
         return min(estimatedDuration, 300.0)
     }
@@ -2793,18 +2801,30 @@ private final class CompanionInteractionEffectRunner: PickyInteractionEffectRunn
     }
 }
 
-/// Removes parenthesised passages so the TTS layer skips supplementary detail
-/// (URLs, paths, identifiers) that Picky placed in `(...)`. Handles
-/// both ASCII parentheses and the full-width Korean variants. Visible text
-/// keeps the parentheses intact.
+/// Removes or neutralizes speech-hostile supplementary detail so the TTS
+/// layer does not try to pronounce URLs, paths, and identifiers. Visible text
+/// keeps the original detail intact.
 func stripParentheticalsForSpeech(_ text: String) -> String {
-    let pattern = #"[\(\uFF08][^\(\)\uFF08\uFF09]*[\)\uFF09]"#
-    guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return text }
+    let parentheticalPattern = #"[\(\uFF08][^\(\)\uFF08\uFF09]*[\)\uFF09]"#
+    guard let parentheticalRegex = try? NSRegularExpression(pattern: parentheticalPattern, options: []) else { return text }
     let range = NSRange(text.startIndex..., in: text)
-    let stripped = regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "")
-    let collapsed = stripped
+    let withoutParentheticals = parentheticalRegex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "")
+
+    let withoutURLs = withoutParentheticals.replacingOccurrences(
+        of: #"(?i)(?:https?://|www\.)[^\s,.;:!?。，！？]+"#,
+        with: "링크",
+        options: .regularExpression
+    )
+    let withoutPaths = withoutURLs.replacingOccurrences(
+        of: #"(?<!\S)(?:~|\.{1,2}|/)[^\s,.;:!?。，！？]*[/][^\s,.;:!?。，！？]*(?=[\s,.;:!?。，！？]|$)"#,
+        with: "해당 경로",
+        options: .regularExpression
+    )
+    let collapsed = withoutPaths
         .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         .replacingOccurrences(of: " ([,.!?。，！？])", with: "$1", options: .regularExpression)
+        .replacingOccurrences(of: "해당 경로 에서", with: "해당 경로에서")
+        .replacingOccurrences(of: "링크 에", with: "링크에")
         .trimmingCharacters(in: .whitespacesAndNewlines)
     return collapsed.isEmpty ? text : collapsed
 }

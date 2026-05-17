@@ -113,6 +113,7 @@ final class SystemSpeechNarrationPlayer: NSObject, OnboardingNarrationPlayer {
     /// armed a fresh closure.
     private var activeOnFinish: (@MainActor (Bool) -> Void)?
     private var activeGeneration: Int = 0
+    private var prerollTask: Task<Void, Never>?
 
     init(synthesizer: NSSpeechSynthesizer = NSSpeechSynthesizer()) {
         self.synthesizer = synthesizer
@@ -138,23 +139,29 @@ final class SystemSpeechNarrationPlayer: NSObject, OnboardingNarrationPlayer {
             synthesizer.setVoice(voice)
         }
 
-        // Reuse the `[[slnc N]]` preroll command the regular Picky TTS path
-        // uses so the onboarding voice sounds identical, including the small
-        // intro pause before the first word.
+        // Keep the short intro pause outside the text stream. Embedded speech
+        // commands create speech markers, and Apple's TTS stack can report
+        // invalid marker ranges for some utterances.
         let prepared = PickySpeechPlaybackPreparation.prepareForPlayback(text)
 
         activeGeneration &+= 1
         let myGen = activeGeneration
         activeOnFinish = onFinish
 
-        let started = synthesizer.startSpeaking(prepared)
-        if !started {
-            // No compatible voice or audio device blocked: clear bookkeeping
-            // and return false so the controller can fake a finish itself.
-            if activeGeneration == myGen {
-                activeOnFinish = nil
+        prerollTask?.cancel()
+        prerollTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(PickySpeechPlaybackPreparation.prerollSilenceSeconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self, self.activeGeneration == myGen else { return }
+                self.prerollTask = nil
+                let started = self.synthesizer.startSpeaking(prepared)
+                if !started, self.activeGeneration == myGen {
+                    let finish = self.activeOnFinish
+                    self.activeOnFinish = nil
+                    finish?(false)
+                }
             }
-            return false
         }
         return true
     }
@@ -164,6 +171,8 @@ final class SystemSpeechNarrationPlayer: NSObject, OnboardingNarrationPlayer {
         // `stopSpeaking` may synchronously trigger can't re-enter the
         // controller's gate logic.
         activeOnFinish = nil
+        prerollTask?.cancel()
+        prerollTask = nil
         synthesizer.stopSpeaking()
     }
 

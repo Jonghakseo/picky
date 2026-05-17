@@ -161,10 +161,15 @@ export function tryRefreshSystemPromptFromActiveTools(session: AgentSession, ses
     warnOnceForAbsence(sessionId, "getActiveToolNames/setActiveToolsByName");
     return false;
   }
-  recordPresence(sessionId, "getActiveToolNames");
-  recordPresence(sessionId, "setActiveToolsByName");
-  candidate.setActiveToolsByName.call(session, candidate.getActiveToolNames.call(session));
-  return true;
+  try {
+    recordPresence(sessionId, "getActiveToolNames");
+    recordPresence(sessionId, "setActiveToolsByName");
+    candidate.setActiveToolsByName.call(session, candidate.getActiveToolNames.call(session));
+    return true;
+  } catch (error) {
+    logAgentd("pi capability refresh system prompt failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
+    return false;
+  }
 }
 
 export function isCompacting(session: AgentSession): boolean {

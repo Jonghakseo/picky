@@ -11,6 +11,7 @@ class FakeSession extends EventEmitter {
   aborts = 0;
   newSessions = 0;
   reloads = 0;
+  compactCalls: Array<string | undefined> = [];
   thinkingLevels: string[] = [];
   isStreaming = false;
   isCompacting = false;
@@ -87,6 +88,11 @@ class FakeSession extends EventEmitter {
 
   async reload(): Promise<void> {
     this.reloads += 1;
+  }
+
+  async compact(instructions?: string): Promise<void> {
+    this.compactCalls.push(instructions);
+    this.emit("event", { type: "compaction_end", reason: "manual", willRetry: false, aborted: false, result: { summary: "요약" } });
   }
 
   async executeBash(command: string, _onChunk?: (chunk: string) => void, options?: { excludeFromContext?: boolean }): Promise<{ output: string; exitCode: number; cancelled: boolean; truncated: boolean }> {
@@ -674,6 +680,34 @@ describe("PiSdkRuntime", () => {
     expect(fakeSession.setActiveToolsByNameCalls).toEqual([["read", "bash", "edit", "write"]]);
   });
 
+  it("does not refresh tools for no-op compaction_end events", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-noop-compaction" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    fakeSession.emit("event", { type: "compaction_end", reason: "threshold", willRetry: false, aborted: false });
+
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "threshold" });
+    expect(fakeSession.setActiveToolsByNameCalls).toEqual([]);
+  });
+
+  it("continues handling compaction_end when tool refresh throws", async () => {
+    const fakeSession = new FakeSession();
+    fakeSession.setActiveToolsByName = () => {
+      throw new Error("refresh failed");
+    };
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-refresh-failure" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    expect(() => fakeSession.emit("event", { type: "compaction_end", reason: "threshold", willRetry: false, aborted: false, result: { summary: "요약" } })).not.toThrow();
+
+    expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "threshold" });
+  });
+
   it("reports final failure when an agent_end error has no retry or compaction recovery", async () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);
@@ -1023,11 +1057,6 @@ describe("PiSdkRuntime", () => {
 
   it("intercepts /compact, forwards optional instructions, and resets context usage", async () => {
     const fakeSession = new FakeSession();
-    const compactCalls: Array<string | undefined> = [];
-    (fakeSession as unknown as { compact: (instructions?: string) => Promise<unknown> }).compact = async (instructions) => {
-      compactCalls.push(instructions);
-      return {};
-    };
     (fakeSession as unknown as { getContextUsage: () => { tokens: number; contextWindow: number; percent: number } }).getContextUsage = () => ({ tokens: 123_456, contextWindow: 200_000, percent: 62 });
     const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-compact" });
     const events: Array<{ type: string; status?: string; noTurnRan?: boolean; usage?: unknown }> = [];
@@ -1035,7 +1064,7 @@ describe("PiSdkRuntime", () => {
 
     await handle.followUp({ text: "/compact focus on bug area", imagePaths: [] });
 
-    expect(compactCalls).toEqual(["focus on bug area"]);
+    expect(fakeSession.compactCalls).toEqual(["focus on bug area"]);
     expect(fakeSession.setActiveToolsByNameCalls).toEqual([["read", "bash", "edit", "write"]]);
     expect(fakeSession.prompts).toEqual([]);
     const statuses = events.filter((event) => event.type === "status").map((event) => event.status);

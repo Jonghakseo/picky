@@ -812,7 +812,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     if (event.type === "compaction_end") {
       const reason = stringValue(event.reason);
       const errorMessage = stringValue(event.errorMessage);
-      if (!errorMessage && event.aborted !== true) {
+      if (!errorMessage && event.aborted !== true && event.result != null) {
         piTryRefreshSystemPromptFromActiveTools(this.runtime.session, this.id);
       }
       if (event.willRetry === true) {
@@ -918,7 +918,6 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
           return true;
         }
         this.emitContextUsageSnapshot({ resetAfterCompaction: true });
-        piTryRefreshSystemPromptFromActiveTools(this.runtime.session, this.id);
         this.emit({ type: "log", line: instructions ? `compact completed with instructions: ${instructions}` : "compact completed" });
         this.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true });
       } catch (error) {

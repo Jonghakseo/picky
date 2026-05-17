@@ -778,6 +778,70 @@ struct PickySessionViewModelTests {
         #expect(titles.contains(L10n.t("notif.session.waiting.title")))
     }
 
+    /// Two Pickles live side by side: A is still running, B has just blocked on
+    /// an askUserQuestion. The waiting notification must be addressed to B only —
+    /// dock-side routing keys off the notification identifier (`<sessionID>:waiting:<requestID>`),
+    /// so a regression that fires it for A would auto-open the wrong card.
+    @MainActor @Test func multiSessionPendingBannerTargetsOnlyTheWaitingSession() {
+        let notifications = PickyNoopNotificationCenter()
+        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
+            notifyOnCompleted: true,
+            notifyOnFailed: true,
+            notifyOnWaitingForInput: true
+        ))
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: notifications, notificationPreferencesProvider: preferences)
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "running-pickle", title: "Running task", status: "running", summary: "Working"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithPending(id: "waiting-pickle", status: "waiting_for_input", summary: "Pick one", updatedAt: "2026-05-01T00:00:05.000Z"))))
+
+        let waitingIdentifiers = notifications.delivered.map(\.identifier).filter { $0.contains(":waiting:") }
+        #expect(waitingIdentifiers == ["waiting-pickle:waiting:ui-form"])
+
+        // Card-side state stays partitioned: only the blocked Pickle exposes a pending request.
+        let runningCard = try? #require(viewModel.sessions.first(where: { $0.id == "running-pickle" }))
+        let waitingCard = try? #require(viewModel.sessions.first(where: { $0.id == "waiting-pickle" }))
+        #expect(runningCard?.pendingExtensionUiRequest == nil)
+        #expect(waitingCard?.pendingExtensionUiRequest?.id == "ui-form")
+    }
+
+    /// User answers an askUserQuestion (Pi continues), then Pi raises a *new*
+    /// askUserQuestion with a fresh request id. The waiting banner must fire again
+    /// because dedupe keys on `<sessionID>:waiting:<requestID>`. A regression that
+    /// keyed only by session id would leave the second question silent.
+    @MainActor @Test func pendingBannerRefiresWhenNewRequestIdArrivesAfterAnswer() {
+        let notifications = PickyNoopNotificationCenter()
+        let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
+            notifyOnCompleted: true,
+            notifyOnFailed: true,
+            notifyOnWaitingForInput: true
+        ))
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: notifications, notificationPreferencesProvider: preferences)
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithPending(requestId: "ui-form-1", status: "waiting_for_input", summary: "Q1", updatedAt: "2026-05-01T00:00:02.000Z"))))
+        // Daemon clears pending and resumes the Pickle (mimics post-answer sessionUpdated).
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(status: "running", summary: "Answered", updatedAt: "2026-05-01T00:00:05.000Z"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithPending(requestId: "ui-form-2", status: "waiting_for_input", summary: "Q2", updatedAt: "2026-05-01T00:00:10.000Z"))))
+
+        let waitingIdentifiers = notifications.delivered.map(\.identifier).filter { $0.contains(":waiting:") }
+        #expect(waitingIdentifiers == ["session-1:waiting:ui-form-1", "session-1:waiting:ui-form-2"])
+    }
+
+    /// Reattach / daemon hydration arrives via `sessionSnapshot`, not
+    /// `sessionUpdated`. The same `nil pendingExtensionUiRequest` semantics must
+    /// apply or a stale askUserQuestion form survives the snapshot replay.
+    @MainActor @Test func sessionSnapshotClearsStalePendingExtensionUiRequest() throws {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdatedWithPending(status: "waiting_for_input"))))
+        #expect(viewModel.sessions.first?.pendingExtensionUiRequest != nil)
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(status: "running", summary: "Reattached", updatedAt: "2026-05-01T00:00:10.000Z"))))
+
+        let card = try #require(viewModel.sessions.first)
+        #expect(card.pendingExtensionUiRequest == nil)
+        #expect(card.status == .running)
+    }
+
     @MainActor @Test func unpinnedAfterFollowUpDeliversCompletedNotification() {
         let notifications = PickyNoopNotificationCenter()
         let preferences = PickyStubNotificationPreferences(notificationPreferences: PickyNotificationPreferences(
@@ -3934,12 +3998,13 @@ private enum EventJSON {
 
     static func sessionUpdatedWithPending(
         id: String = "session-1",
+        requestId: String = "ui-form",
         status: String = "waiting_for_input",
         summary: String = "Waiting for input",
         updatedAt: String = "2026-05-01T00:00:02.000Z"
     ) -> String {
         """
-        {"id":"event-\(id)-pending","protocolVersion":"2026-05-09","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"Investigate current screen","status":"\(status)","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"pendingExtensionUiRequest":{"id":"ui-form","sessionId":"\(id)","method":"askUserQuestion","title":"Continue?","prompt":"Pick one","options":null,"questions":[{"id":"choice","type":"radio","prompt":"Choice","options":[{"value":"a","label":"A"}],"required":true}],"createdAt":"\(updatedAt)"}}}
+        {"id":"event-\(id)-pending","protocolVersion":"2026-05-09","timestamp":"\(updatedAt)","type":"sessionUpdated","session":{"id":"\(id)","title":"Investigate current screen","status":"\(status)","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":[],"tools":[],"artifacts":[],"changedFiles":[],"pendingExtensionUiRequest":{"id":"\(requestId)","sessionId":"\(id)","method":"askUserQuestion","title":"Continue?","prompt":"Pick one","options":null,"questions":[{"id":"choice","type":"radio","prompt":"Choice","options":[{"value":"a","label":"A"}],"required":true}],"createdAt":"\(updatedAt)"}}}
         """
     }
 

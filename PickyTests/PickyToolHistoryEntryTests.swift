@@ -211,4 +211,100 @@ struct PickyToolHistoryEntryTests {
         #expect(summary.count(of: .bash) == 2)
         #expect(summary.count(of: .other) == 1)
     }
+
+    @Test func readRangeFallsBackWhenOffsetOrLimitMissing() {
+        let offsetOnly = PickyToolActivity(
+            toolCallId: "r-1",
+            name: "read",
+            status: "succeeded",
+            argsPreview: #"{"path":"a.swift","offset":40}"#
+        )
+        guard case let .read(_, range1, _) = PickyToolHistoryRenderer.entry(from: offsetOnly, index: 1).detail else {
+            Issue.record("Expected read detail"); return
+        }
+        #expect(range1 == "from L40")
+
+        let limitOnly = PickyToolActivity(
+            toolCallId: "r-2",
+            name: "read",
+            status: "succeeded",
+            argsPreview: #"{"path":"a.swift","limit":120}"#
+        )
+        guard case let .read(_, range2, _) = PickyToolHistoryRenderer.entry(from: limitOnly, index: 1).detail else {
+            Issue.record("Expected read detail"); return
+        }
+        #expect(range2 == "first 120 lines")
+
+        let neither = PickyToolActivity(
+            toolCallId: "r-3",
+            name: "read",
+            status: "succeeded",
+            argsPreview: #"{"path":"a.swift"}"#
+        )
+        guard case let .read(_, range3, _) = PickyToolHistoryRenderer.entry(from: neither, index: 1).detail else {
+            Issue.record("Expected read detail"); return
+        }
+        #expect(range3 == nil)
+    }
+
+    @Test func statusMapsErrorAndUnknownStrings() {
+        let failed = PickyToolHistoryRenderer.entry(
+            from: PickyToolActivity(toolCallId: "s-1", name: "bash", status: "error", argsPreview: #"{"command":"x"}"#),
+            index: 1
+        )
+        #expect(failed.status == .failed)
+
+        let running = PickyToolHistoryRenderer.entry(
+            from: PickyToolActivity(toolCallId: "s-2", name: "bash", status: "in_progress", argsPreview: #"{"command":"x"}"#),
+            index: 1
+        )
+        // Anything other than succeeded/failed/error falls back to running, matching
+        // the renderer's defensive default so a never-before-seen status string still
+        // surfaces a row instead of being silently dropped.
+        #expect(running.status == .running)
+    }
+
+    @Test func recoverStringValueDecodesEscapeSequencesFromTruncatedJson() {
+        let truncated = #"{"command":"echo \"hi\"\nls -la /tmp\tend""#
+        let recovered = PickyToolHistoryRenderer.recoverStringValue(from: truncated, key: "command")
+        #expect(recovered == "echo \"hi\"\nls -la /tmp\tend")
+
+        // Missing key falls back to nil instead of fabricating.
+        #expect(PickyToolHistoryRenderer.recoverStringValue(from: truncated, key: "path") == nil)
+        #expect(PickyToolHistoryRenderer.recoverStringValue(from: nil, key: "command") == nil)
+    }
+
+    @Test func genericDetailFallsBackToRawArgsWhenJsonIsInvalid() {
+        let invalid = "{not-json: \"oh no\""
+        let tool = PickyToolActivity(
+            toolCallId: "g-1",
+            name: "mcp__unknown__doSomething",
+            status: "succeeded",
+            argsPreview: invalid,
+            resultPreview: "ok"
+        )
+        let entry = PickyToolHistoryRenderer.entry(from: tool, index: 1)
+        guard case let .generic(argsJSON, result) = entry.detail else {
+            Issue.record("Expected generic detail"); return
+        }
+        // prettyJSON should have returned nil, so the renderer keeps the raw preview
+        // verbatim instead of dropping context into the void.
+        #expect(argsJSON == invalid)
+        #expect(result == "ok")
+    }
+
+    @Test func durationReturnsNilWhenBoundsAreMissingOrInverted() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let onlyStart = PickyToolHistoryRenderer.entry(
+            from: PickyToolActivity(toolCallId: "d-1", name: "bash", status: "running", argsPreview: #"{"command":"x"}"#, startedAt: start),
+            index: 1
+        )
+        #expect(onlyStart.durationMs == nil)
+
+        let inverted = PickyToolHistoryRenderer.entry(
+            from: PickyToolActivity(toolCallId: "d-2", name: "bash", status: "succeeded", argsPreview: #"{"command":"x"}"#, startedAt: start, endedAt: start.addingTimeInterval(-1)),
+            index: 1
+        )
+        #expect(inverted.durationMs == nil)
+    }
 }

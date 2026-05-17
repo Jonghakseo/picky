@@ -106,9 +106,33 @@ struct PickyVoiceInteractionMachineTests {
         #expect(state.phase == .loading)
         #expect(state.context.transcript == "다시 보여주지 않을 STT")
         #expect(state.context.promptBubbleText == nil)
+        #expect(state.context.promptBubbleVisibility == .hidden)
         #expect(state.projection.voiceState == .processing)
         #expect(state.projection.promptBubbleState == .hidden)
         #expect(!state.effectsToRun.contains(.schedulePromptBubbleAutoHide))
+    }
+
+    @Test func hiddenPromptPolicySurvivesLateFinalTranscriptForSameInput() {
+        var state = reduce(
+            PickyVoiceInteractionState(),
+            .loadingStarted(
+                inputID: inputA,
+                transcript: "처음 보였던 STT",
+                targetSessionID: nil,
+                now: now,
+                promptBubbleVisibility: .hidden
+            )
+        )
+
+        state = reduce(state, .sttFinal(inputID: inputA, text: "  늦게 도착한 STT  ", now: now.addingTimeInterval(0.1)))
+
+        #expect(state.phase == .loading)
+        #expect(state.context.transcript == "늦게 도착한 STT")
+        #expect(state.context.promptBubbleText == nil)
+        #expect(state.context.promptBubbleVisibility == .hidden)
+        #expect(state.projection.promptBubbleState == .hidden)
+        #expect(!state.effectsToRun.contains(.schedulePromptBubbleAutoHide))
+        #expect(state.effectsToRun.contains(.captureContext(inputID: inputA, transcript: "늦게 도착한 STT", targetSessionID: nil)))
     }
 
     private func reduce(_ state: PickyVoiceInteractionState, _ event: PickyVoiceInteractionEvent) -> PickyVoiceInteractionState {

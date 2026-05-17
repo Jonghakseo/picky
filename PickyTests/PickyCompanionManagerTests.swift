@@ -334,6 +334,45 @@ struct PickyCompanionManagerTests {
         try await waitUntil { manager.voiceState == .processing }
         #expect(manager.currentVoicePromptPreview == "내 음성 인식 내역")
         #expect(manager.voicePromptBubbleState == .hidden)
+
+        manager.updateVoicePresentation(
+            isKeyboardRecording: false,
+            isMicrophoneRecording: false,
+            isFinalizing: false,
+            isPreparing: false
+        )
+        #expect(manager.voicePromptBubbleState == .hidden)
+    }
+
+    @Test func deferredReplyAfterPlanNarrationStartsWithoutRepeatingRecognizedPrompt() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "내 음성 인식 내역")
+        manager.applyAgentEvent(.narrateProgressRequested(PickyNarrateProgressRequest(
+            text: "작업 계획을 말할게요.",
+            sessionId: nil
+        )))
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "context-voice",
+            text: "최종 답변이에요.",
+            originSource: .voice,
+            replyKind: .main
+        )))
+
+        #expect(speechProvider.spokenUtterances == ["작업 계획을 말할게요."])
+        try await waitUntil { manager.latestAgentSessionSummary == "최종 답변이에요." }
+
+        speechProvider.finishSpeaking()
+
+        try await waitUntil { manager.voiceState == .processing && manager.voicePromptBubbleState == .hidden }
+        try await waitUntil { speechProvider.spokenUtterances == ["작업 계획을 말할게요.", "최종 답변이에요."] }
+        #expect(manager.voiceState == .responding)
+        #expect(manager.voicePromptBubbleState == .hidden)
     }
 
     @Test func injectedSpeechProviderControlsResponseLifecycle() async throws {

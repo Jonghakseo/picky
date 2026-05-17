@@ -22,11 +22,17 @@ struct PickyVoiceSpeechQueueItem: Equatable {
     let inputID: UUID?
 }
 
+enum PickyVoicePromptBubbleVisibility: Equatable {
+    case visible
+    case hidden
+}
+
 struct PickyVoiceInteractionContext: Equatable {
     var inputID: UUID?
     var targetSessionID: String?
     var transcript: String?
     var promptBubbleText: String?
+    var promptBubbleVisibility: PickyVoicePromptBubbleVisibility = .visible
     var responseBubbleText: String?
     var pendingSince: Date?
     var activeSpeechID: UUID?
@@ -78,11 +84,6 @@ struct PickyVoiceInteractionState: Equatable {
             return CompanionVoicePresentationState(voiceState: .responding, promptBubbleState: .hidden)
         }
     }
-}
-
-enum PickyVoicePromptBubbleVisibility: Equatable {
-    case visible
-    case hidden
 }
 
 enum PickyVoiceInteractionEvent: Equatable {
@@ -137,6 +138,10 @@ enum PickyVoiceInteractionMachine {
         func normalized(_ text: String?) -> String? {
             let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return trimmed.isEmpty ? nil : trimmed
+        }
+
+        func promptBubbleTextIfVisible(_ text: String?) -> String? {
+            state.context.promptBubbleVisibility == .visible ? normalized(text) : nil
         }
 
         func beginInput(inputID: UUID, targetSessionID: String?) {
@@ -210,17 +215,19 @@ enum PickyVoiceInteractionMachine {
         case .sttPartial(let inputID, let text):
             guard state.context.inputID == inputID else { break }
             state.context.transcript = text
-            state.context.promptBubbleText = normalized(text)
+            state.context.promptBubbleText = promptBubbleTextIfVisible(text)
 
         case .sttFinal(let inputID, let text, let now):
             guard state.context.inputID == inputID else { break }
             let transcript = normalized(text)
             state.phase = .loading
             state.context.transcript = transcript
-            state.context.promptBubbleText = transcript
+            state.context.promptBubbleText = promptBubbleTextIfVisible(text)
             state.context.pendingSince = now
             if let transcript {
-                effects.append(.schedulePromptBubbleAutoHide)
+                if state.context.promptBubbleVisibility == .visible {
+                    effects.append(.schedulePromptBubbleAutoHide)
+                }
                 effects.append(.captureContext(inputID: inputID, transcript: transcript, targetSessionID: state.context.targetSessionID))
             }
 
@@ -234,7 +241,8 @@ enum PickyVoiceInteractionMachine {
             state.context.inputID = inputID
             state.context.targetSessionID = targetSessionID
             state.context.transcript = normalizedTranscript
-            state.context.promptBubbleText = promptBubbleVisibility == .visible ? normalizedTranscript : nil
+            state.context.promptBubbleVisibility = promptBubbleVisibility
+            state.context.promptBubbleText = promptBubbleTextIfVisible(transcript)
             state.context.pendingSince = now
             state.context.responseBubbleText = nil
             state.context.activeSpeechID = nil

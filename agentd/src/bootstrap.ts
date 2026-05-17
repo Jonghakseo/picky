@@ -4,13 +4,10 @@ import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
-import { OpenAIRealtimeMainRuntime } from "./runtime/openai-realtime-main-runtime.js";
-import { SelectableMainRuntime } from "./runtime/selectable-main-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyAbortPickleTool, createPickyPickleSessionsTool, createPickyStartPickleTool, createPickySteerPickleTool, type PickyHandoffRequest, type PickyPickleAbortRequest, type PickyPickleSteerRequest } from "./application/handoff-tool.js";
 import { createPickyAskUserQuestionTool } from "./application/ask-user-question-tool.js";
 import { createReadPickyUserGuideTool, readPickyUserGuide } from "./application/user-guide-tool.js";
-import { PickySkillCatalog } from "./application/skill-catalog.js";
 import { stabilizeProcessCwd, type ProcessCwdStabilizerResult } from "./process-cwd.js";
 import { ThinkingLevelSchema, type ThinkingLevel } from "./protocol.js";
 import type { AgentRuntime } from "./runtime/types.js";
@@ -29,7 +26,6 @@ export interface AgentdConfig {
   mainAgentModelPattern?: string;
   pickleThinkingLevel?: ThinkingLevel;
   pickleModelPattern?: string;
-  mainAgentRuntimeMode: "pi" | "openai-realtime";
   useMockRuntime: boolean;
   sessionId?: string;
   sessionCwd?: string;
@@ -101,7 +97,6 @@ export function parseAgentdConfig(env: NodeJS.ProcessEnv): AgentdConfig {
     mainAgentModelPattern: env.PICKY_MAIN_AGENT_MODEL?.trim() || undefined,
     pickleThinkingLevel: parseThinkingLevel(env.PICKY_PICKLE_THINKING_LEVEL, { label: "pickle" }),
     pickleModelPattern: env.PICKY_PICKLE_MODEL?.trim() || undefined,
-    mainAgentRuntimeMode: env.PICKY_MAIN_AGENT_RUNTIME === "openai-realtime" ? "openai-realtime" : "pi",
     useMockRuntime: env.PICKY_AGENTD_RUNTIME === "mock",
     sessionId: env.PICKY_AGENTD_SESSION_ID?.trim() || undefined,
     sessionCwd: env.PICKY_AGENTD_SESSION_CWD?.trim() || undefined,
@@ -198,8 +193,8 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
   supervisorRef.current = supervisor;
 
   // Picky agentd extension bridge. Pi extensions loaded from the workspace's
-  // `.pi/extensions/` (notably `picky-narrate-progress`) run in this Node
-  // process and reach Picky's companion voice through this stable globalThis
+  // `.pi/extensions/` (notably `picky-tell-plan`) run in this Node process
+  // and reach Picky's companion voice through this stable globalThis
   // interface. Keep the shape narrow and additive so seeded extensions can
   // depend on it.
   installPickyAgentdBridge(supervisor);
@@ -261,7 +256,6 @@ function buildPrimaryMainRuntime(
     return { runtime: overridden, toolsBuilder: () => [] };
   }
 
-  const skillCatalog = new PickySkillCatalog();
   const requireSupervisor = (): SessionSupervisor => {
     if (!supervisorRef.current) throw new Error("Supervisor not constructed yet");
     return supervisorRef.current;
@@ -310,10 +304,10 @@ function buildPrimaryMainRuntime(
   // Picky built-in tools registered to the main agent. ask_user_question is
   // intentionally excluded — disableBlockingDialogs prevents it from working
   // on the main runtime and it is registered separately on Pickle child
-  // runtimes. Narration (`picky_narrate_progress`) used to live here, but is
-  // now provided by a Pi extension seeded into the workspace's
-  // `.pi/extensions/picky-narrate-progress.ts`, so it is scoped to the main
-  // agent's cwd and can enforce its own "narrate before any other tool" rule.
+  // runtimes. The plan narration (`picky_tell_plan`) used to live here, but
+  // is now provided by a Pi extension seeded into the workspace's
+  // `.pi/extensions/picky-tell-plan.ts`, so it is scoped to the main agent's
+  // cwd and enforces its own "announce the plan before any other tool" rule.
   // The user can disable individual entries from the settings UI; `toolsBuilder`
   // returns the subset that should be active given the current disabled set.
   const allBuiltinTools: import("@mariozechner/pi-coding-agent").ToolDefinition[] = [
@@ -336,23 +330,7 @@ function buildPrimaryMainRuntime(
     customTools: toolsBuilder(new Set()),
   });
 
-  const realtimeMainRuntime = new OpenAIRealtimeMainRuntime({
-    toolHandlers: {
-      handoff: startPickleFromMainContext,
-      listPickleSessions,
-      steerPickleSession,
-      searchSkills: (request) => skillCatalog.search(request),
-      getSkillDetails: (request) => skillCatalog.details(request),
-      readUserGuide: (request) => readPickyUserGuide(request),
-    },
-  });
-
-  const runtime = new SelectableMainRuntime({
-    initialMode: config.mainAgentRuntimeMode,
-    piRuntime: piMainRuntime,
-    realtimeRuntime: realtimeMainRuntime,
-  });
-  return { runtime, toolsBuilder };
+  return { runtime: piMainRuntime, toolsBuilder };
 }
 
 /**

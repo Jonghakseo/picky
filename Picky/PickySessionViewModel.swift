@@ -1625,9 +1625,6 @@ final class PickySessionListViewModel: ObservableObject {
                 card.updatedAt = Date()
             }
         case .quickReply, .mainMessagesSnapshot, .mainMessageAppended, .mainAgentSessionInfoUpdated, .mainAgentModelsSnapshot,
-             .mainRealtimeStateChanged, .mainRealtimeInputTranscriptDelta, .mainRealtimeInputTranscriptCompleted,
-             .mainRealtimeOutputAudioDelta, .mainRealtimeOutputAudioDone,
-             .mainRealtimeOutputTranscriptDelta, .mainRealtimeOutputTranscriptCompleted, .mainRealtimeTurnDone,
              .pointerOverlayRequested, .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested,
              .narrateProgressRequested, .hello, .unknown:
             break

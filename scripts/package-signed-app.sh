@@ -103,7 +103,6 @@ GIT_SHA="${GIT_SHA:-nogit}"
 BUILD_TIMESTAMP="${PICKY_BUILD_TIMESTAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
 BUILD_LABEL="${PICKY_BUILD_LABEL:-${RELEASE_CHANNEL}.${BUILD_NUMBER}-${GIT_SHA}-${BUILD_TIMESTAMP}}"
 SAFE_BUILD_LABEL="$(sanitize_version_part "${BUILD_LABEL}")"
-REALTIME_OPT_IN="${PICKY_REALTIME_OPT_IN:-0}"
 ENTITLEMENTS_PLIST="${BUILD_ROOT}/${APP_NAME}-${CONFIGURATION}.entitlements.plist"
 
 APP_PRODUCTS_DIR="${DERIVED_DATA_PATH}/Build/Products/${CONFIGURATION}"
@@ -294,13 +293,13 @@ mkdir -p "${PACKAGED_APP}"
   --exclude '/Contents/Resources/pi-extensions/' \
   "${BUILT_APP}/" "${PACKAGED_APP}/"
 
-/usr/bin/python3 - "${BUILD_INFO_PATH}" "${APP_NAME}" "${MARKETING_VERSION}" "${BUILD_NUMBER}" "${RELEASE_CHANNEL}" "${GIT_SHA}" "${BUILD_TIMESTAMP}" "${BUILD_LABEL}" "${CONFIGURATION}" "${REALTIME_OPT_IN}" <<'PY'
+/usr/bin/python3 - "${BUILD_INFO_PATH}" "${APP_NAME}" "${MARKETING_VERSION}" "${BUILD_NUMBER}" "${RELEASE_CHANNEL}" "${GIT_SHA}" "${BUILD_TIMESTAMP}" "${BUILD_LABEL}" "${CONFIGURATION}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
-keys = ["appName", "marketingVersion", "buildNumber", "releaseChannel", "gitSha", "buildTimestamp", "buildLabel", "configuration", "realtimeOptIn"]
+keys = ["appName", "marketingVersion", "buildNumber", "releaseChannel", "gitSha", "buildTimestamp", "buildLabel", "configuration"]
 path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(json.dumps(dict(zip(keys, sys.argv[2:])), indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY

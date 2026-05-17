@@ -20,17 +20,6 @@ enum CompanionVoiceState {
     case responding
 }
 
-enum PickyRealtimeVoiceError: LocalizedError {
-    case contextCaptureReturnedNil
-
-    var errorDescription: String? {
-        switch self {
-        case .contextCaptureReturnedNil:
-            "Context capture returned no packet."
-        }
-    }
-}
-
 enum CompanionVoicePromptBubbleState: Equatable {
     private static let recognizedPromptPreviewCharacterLimit = 280
 
@@ -277,8 +266,6 @@ final class CompanionManager: ObservableObject {
     private var narrationEnabled: Bool
     private let speechWatchdogTimeoutOverride: TimeInterval?
     private let voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator
-    private let realtimeVoiceInputManager = OpenAIRealtimeVoiceInputManager()
-    private let realtimeAudioPlaybackEngine: any PickyRealtimeAudioPlaybacking
 
     init(
         agentClient: any PickyAgentClient = LocalStubPickyAgentClient(),
@@ -287,7 +274,6 @@ final class CompanionManager: ObservableObject {
         buddyDictationManager: BuddyDictationManager? = nil,
         speechPlaybackProvider: (any PickySpeechPlaybackProvider)? = nil,
         voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator? = nil,
-        realtimeAudioPlaybackEngine: (any PickyRealtimeAudioPlaybacking)? = nil,
         inkCaptureCoordinator: any PickyInkCaptureCoordinating = PickyInkCaptureCenter.shared,
         appearanceStore: PickyAppearanceStore? = nil,
         speechWatchdogTimeout: TimeInterval? = nil
@@ -302,7 +288,6 @@ final class CompanionManager: ObservableObject {
         self.narrationEnabled = initialSettings.narrationEnabled
         self.speechWatchdogTimeoutOverride = speechWatchdogTimeout
         self.voiceContextCaptureCoordinator = voiceContextCaptureCoordinator ?? PickyVoiceContextCaptureCoordinator()
-        self.realtimeAudioPlaybackEngine = realtimeAudioPlaybackEngine ?? OpenAIRealtimeAudioPlaybackEngine()
         self.inkCaptureCoordinator = inkCaptureCoordinator
         self.quickInputPanelManager = QuickInputPanelManager(appearanceStore: appearanceStore)
         self.screenContextTargetSessionID = selectionStore.screenContextTargetSessionID
@@ -315,9 +300,6 @@ final class CompanionManager: ObservableObject {
         }
         self.inkCaptureCoordinator.shouldPassThroughMouseEvent = { [weak self] point, source in
             self?.shouldPassThroughInkMouseEvent(point: point, source: source) == true
-        }
-        self.realtimeAudioPlaybackEngine.onPlaybackDrained = { [weak self] in
-            self?.handleRealtimePlaybackDrained()
         }
     }
 
@@ -377,10 +359,6 @@ final class CompanionManager: ObservableObject {
     private var lastQuickReplyTTSDedupAt: Date?
     private var interactionSpeechID: UUID?
     private var interactionVoiceInputID: UUID?
-    private var realtimeVoiceInputID: UUID?
-    private var realtimeCanSendAudio = false
-    private var realtimeBufferedAudioChunks: [Data] = []
-    private var realtimeOutputTranscriptByInputID: [UUID: String] = [:]
     /// Tracks the physical push-to-talk hold separately from dictation state so
     /// audio stays suppressed even if recording fails before the key is released.
     private var isPushToTalkShortcutHeld = false
@@ -846,9 +824,6 @@ final class CompanionManager: ObservableObject {
         if speechPlaybackProvider.isSpeaking {
             stopCurrentSpeech()
         }
-        if !settings.ttsEnabled {
-            realtimeAudioPlaybackEngine.stop()
-        }
         speechPlaybackProvider = PickySpeechPlaybackProviderFactory.makeDefaultProvider(settings: settings)
         print("🎛️ Voice settings applied — STT: \(settings.sttProvider.rawValue), TTS: \(settings.ttsEnabled ? settings.ttsProvider.rawValue : "off"), Azure STT language: \(settings.azureSTTPreferredLanguage.isEmpty ? "auto" : settings.azureSTTPreferredLanguage)")
     }
@@ -883,16 +858,6 @@ final class CompanionManager: ObservableObject {
                 print("⚠️ Failed to apply Picky model: \(error.localizedDescription)")
             }
             do {
-                let effectiveRuntimeMode = AppBundleConfiguration.realtimeOptIn ? settings.mainAgentRuntimeMode : .pi
-                try await agentClient.send(PickyCommandEnvelope(
-                    type: .setMainAgentRuntimeMode,
-                    mode: effectiveRuntimeMode.agentdEnvironmentValue
-                ))
-                print("🎛️ Picky runtime mode applied — \(effectiveRuntimeMode.rawValue)")
-            } catch {
-                print("⚠️ Failed to apply Picky runtime mode: \(error.localizedDescription)")
-            }
-            do {
                 let disabledNames = settings.disabledBuiltinTools.map(\.rawValue).sorted()
                 try await agentClient.send(PickyCommandEnvelope(
                     type: .setDisabledBuiltinTools,
@@ -916,49 +881,6 @@ final class CompanionManager: ObservableObject {
             } catch {
                 print("⚠️ Failed to apply Picky narration enabled: \(error.localizedDescription)")
             }
-            if AppBundleConfiguration.realtimeOptIn, settings.mainAgentRuntimeMode == .openAIRealtime {
-                await configureRealtimeMainAgent(settings: settings)
-            }
-        }
-    }
-
-    private func configureRealtimeMainAgent(settings: PickySettings) async {
-        let realtime = settings.openAIRealtime.normalized()
-        guard !realtime.apiKey.isEmpty else {
-            print("🎛️ Realtime Picky not configured — API key missing")
-            return
-        }
-        let azureConfig: PickyOpenAIRealtimeAzureProtocolConfig?
-        let modelOrDeployment: String
-        if realtime.provider == .azureOpenAI {
-            guard let endpoint = realtime.azureRealtimeEndpointComponents else {
-                print("🎛️ Realtime Picky not configured — Azure Realtime URL missing or invalid")
-                return
-            }
-            azureConfig = PickyOpenAIRealtimeAzureProtocolConfig(
-                resourceEndpoint: endpoint.resourceEndpoint,
-                apiVersion: endpoint.apiVersion,
-                apiShape: endpoint.apiShape.protocolValue
-            )
-            modelOrDeployment = endpoint.deployment
-        } else {
-            azureConfig = nil
-            modelOrDeployment = realtime.modelOrDeployment.isEmpty ? "gpt-realtime-2" : realtime.modelOrDeployment
-        }
-        do {
-            try await agentClient.send(PickyCommandEnvelope(
-                type: .configureMainRealtimeAuth,
-                provider: realtime.provider.protocolValue,
-                apiKey: realtime.apiKey,
-                modelOrDeployment: modelOrDeployment,
-                voice: realtime.voice.isEmpty ? "marin" : realtime.voice,
-                reasoningEffort: realtime.reasoningEffort.rawValue,
-                transcriptionLanguage: realtime.transcriptionLanguage.isEmpty ? nil : realtime.transcriptionLanguage,
-                azure: azureConfig
-            ))
-            print("🎛️ Realtime Picky configured — provider: \(realtime.provider.rawValue), model: \(modelOrDeployment)")
-        } catch {
-            print("⚠️ Failed to configure Realtime Picky: \(error.localizedDescription)")
         }
     }
 
@@ -998,13 +920,13 @@ final class CompanionManager: ObservableObject {
             applyVoiceInteractionProjection(voiceInteractionState.projection)
         } else if isPushToTalkShortcutHeld || isKeyboardRecording || isMicrophoneRecording {
             if voiceInteractionState.phase != .pttInput, let interactionVoiceInputID {
-                reduceVoiceInteraction(.pttPressed(inputID: interactionVoiceInputID, targetSessionID: voiceFollowUpSessionIDForCurrentUtterance, mode: currentVoiceInteractionMode()))
+                reduceVoiceInteraction(.pttPressed(inputID: interactionVoiceInputID, targetSessionID: voiceFollowUpSessionIDForCurrentUtterance))
             } else {
                 applyVoiceInteractionProjection(CompanionVoicePresentationState(voiceState: .listening, promptBubbleState: voiceInteractionState.projection.promptBubbleState))
             }
         } else if isFinalizing || isPreparing || pendingAgentResponseStartedAt != nil {
             if voiceInteractionState.phase == .idle {
-                reduceVoiceInteraction(.loadingStarted(inputID: interactionVoiceInputID, transcript: currentVoicePromptPreview, targetSessionID: voiceFollowUpSessionIDForCurrentUtterance, mode: currentVoiceInteractionMode(), now: Date()))
+                reduceVoiceInteraction(.loadingStarted(inputID: interactionVoiceInputID, transcript: currentVoicePromptPreview, targetSessionID: voiceFollowUpSessionIDForCurrentUtterance, now: Date()))
             } else {
                 applyVoiceInteractionProjection(voiceInteractionState.projection)
             }
@@ -1046,10 +968,6 @@ final class CompanionManager: ObservableObject {
     private func applyVoiceInteractionProjection(_ projection: CompanionVoicePresentationState) {
         voiceState = projection.voiceState
         voicePromptBubbleState = projection.promptBubbleState
-    }
-
-    private func currentVoiceInteractionMode() -> PickyVoiceInteractionMode {
-        realtimeVoiceInputID != nil || PickySettingsStore().load().mainAgentRuntimeMode == .openAIRealtime ? .realtime : .standard
     }
 
     private func bindShortcutTransitions() {
@@ -1188,8 +1106,7 @@ final class CompanionManager: ObservableObject {
                 screenContextVoiceTargetByInputID[inputID] = screenContextTargetSessionID
             }
             interactionVoiceInputID = inputID
-            let voiceMode: PickyVoiceInteractionMode = shouldUseRealtimeMainVoiceTurn(targetSessionID: targetSessionID) ? .realtime : .standard
-            reduceVoiceInteraction(.pttPressed(inputID: inputID, targetSessionID: targetSessionID, mode: voiceMode))
+            reduceVoiceInteraction(.pttPressed(inputID: inputID, targetSessionID: targetSessionID))
             beginInkCapture(source: .voice)
             print("🎙️ Picky voice route — PTT pressed; screenContext=\(selectionStore.screenContextTargetSessionID ?? "<nil>") storeHover=\(selectionStore.hoveredVoiceFollowUpSessionID ?? "<nil>") prevTask=\(currentResponseTask != nil)")
             setVoiceFollowUpSessionIDForCurrentUtterance(targetSessionID, caller: "PTT-pressed")
@@ -1220,10 +1137,6 @@ final class CompanionManager: ObservableObject {
             PickyAnalytics.trackPushToTalkStarted()
 
             pendingKeyboardShortcutStartTask?.cancel()
-            if shouldUseRealtimeMainVoiceTurn(targetSessionID: targetSessionID) {
-                beginRealtimeMainVoiceTurn(inputID: inputID)
-                return
-            }
             pendingKeyboardShortcutStartTask = Task {
                 await buddyDictationManager.startPushToTalkFromKeyboardShortcut(
                     currentDraftText: "",
@@ -1260,173 +1173,13 @@ final class CompanionManager: ObservableObject {
             if let releasedInputID = interactionVoiceInputID {
                 reduceVoiceInteraction(.pttReleased(inputID: releasedInputID))
             }
-            if realtimeVoiceInputID == interactionVoiceInputID {
-                commitRealtimeMainVoiceTurn(inputID: interactionVoiceInputID)
-            } else {
-                buddyDictationManager.stopPushToTalkFromKeyboardShortcut()
-            }
-            if !buddyDictationManager.isDictationInProgress && realtimeVoiceInputID == nil {
+            buddyDictationManager.stopPushToTalkFromKeyboardShortcut()
+            if !buddyDictationManager.isDictationInProgress {
                 updateVoiceInputAudioSuppression(isVoiceInputActive: false)
             }
             updateVoicePresentation()
         case .none:
             break
-        }
-    }
-
-    private func shouldUseRealtimeMainVoiceTurn(targetSessionID: String?) -> Bool {
-        guard normalizedVoiceFollowUpSessionID(targetSessionID) == nil else { return false }
-        return PickySettingsStore().load().mainAgentRuntimeMode == .openAIRealtime
-    }
-
-    private func beginRealtimeMainVoiceTurn(inputID: UUID) {
-        let settings = PickySettingsStore().load()
-        let realtime = settings.openAIRealtime.normalized()
-        guard !realtime.apiKey.isEmpty else {
-            interactionCoordinator.accept(
-                .voiceStartFailed(message: "OpenAI Realtime API key is required.", inputID: inputID),
-                correlation: PickyInteractionCorrelation(inputID: inputID, source: .voice)
-            )
-            finishAwaitingAgentResponse(visibleText: "OpenAI Realtime API key가 필요합니다. Settings에서 입력해 주세요.", spokenText: nil)
-            completeVoiceInteractionIfCurrent(inputID: inputID)
-            return
-        }
-
-        realtimeVoiceInputID = inputID
-        realtimeCanSendAudio = false
-        realtimeBufferedAudioChunks.removeAll()
-        realtimeOutputTranscriptByInputID.removeAll()
-        currentResponseTask?.cancel()
-        beginAwaitingAgentResponse(recognizedTranscript: nil)
-
-        do {
-            try realtimeVoiceInputManager.start(inputID: inputID) { [weak self] data in
-                Task { @MainActor [weak self] in
-                    self?.sendRealtimeAudioChunk(data, inputID: inputID)
-                }
-            }
-        } catch {
-            realtimeVoiceInputID = nil
-            interactionCoordinator.accept(
-                .voiceStartFailed(message: error.localizedDescription, inputID: inputID),
-                correlation: PickyInteractionCorrelation(inputID: inputID, source: .voice)
-            )
-            finishAwaitingAgentResponse(visibleText: "Realtime microphone start failed: \(error.localizedDescription)", spokenText: nil)
-            return
-        }
-
-        currentResponseTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                await configureRealtimeMainAgent(settings: settings)
-                guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
-                    transcript: "",
-                    source: "voice",
-                    inkCapture: nil
-                ) else {
-                    throw PickyRealtimeVoiceError.contextCaptureReturnedNil
-                }
-                guard !Task.isCancelled, realtimeVoiceInputID == inputID else { return }
-                try await agentClient.send(PickyCommandEnvelope(
-                    type: .beginMainRealtimeVoiceTurn,
-                    context: captureResult.contextPacket,
-                    inputId: inputID
-                ))
-                realtimeCanSendAudio = true
-                flushBufferedRealtimeAudio(inputID: inputID)
-            } catch is CancellationError {
-                // Superseded by a newer utterance.
-            } catch {
-                realtimeVoiceInputID = nil
-                realtimeCanSendAudio = false
-                realtimeVoiceInputManager.stop()
-                interactionCoordinator.accept(
-                    .transcriptFailed(message: error.localizedDescription, inputID: inputID),
-                    correlation: PickyInteractionCorrelation(inputID: inputID, source: .voice)
-                )
-                finishAwaitingAgentResponse(visibleText: "Realtime turn failed: \(error.localizedDescription)", spokenText: nil)
-                completeVoiceInteractionIfCurrent(inputID: inputID)
-            }
-        }
-    }
-
-    private func sendRealtimeAudioChunk(_ data: Data, inputID: UUID) {
-        guard realtimeVoiceInputID == inputID else { return }
-        guard realtimeCanSendAudio else {
-            realtimeBufferedAudioChunks.append(data)
-            return
-        }
-        let audioBase64 = data.base64EncodedString()
-        Task { [agentClient] in
-            try? await agentClient.send(PickyCommandEnvelope(
-                type: .appendMainRealtimeInputAudio,
-                inputId: inputID,
-                audioBase64: audioBase64
-            ))
-        }
-    }
-
-    private func flushBufferedRealtimeAudio(inputID: UUID) {
-        guard realtimeVoiceInputID == inputID, realtimeCanSendAudio else { return }
-        let chunks = realtimeBufferedAudioChunks
-        realtimeBufferedAudioChunks.removeAll()
-        for chunk in chunks {
-            sendRealtimeAudioChunk(chunk, inputID: inputID)
-        }
-    }
-
-    private func commitRealtimeMainVoiceTurn(inputID: UUID?) {
-        guard let inputID, realtimeVoiceInputID == inputID else { return }
-        realtimeVoiceInputManager.stop()
-        beginAwaitingAgentResponse(recognizedTranscript: currentVoicePromptPreview)
-        interactionCoordinator.accept(
-            .agentSubmissionAccepted(contextID: nil, sessionID: "picky", inputID: inputID),
-            correlation: PickyInteractionCorrelation(inputID: inputID, sessionID: "picky", source: .agent)
-        )
-        let inkCapture = consumePendingInkCapture(inputID: inputID)
-        let beginTask = currentResponseTask
-        Task { @MainActor [weak self, agentClient] in
-            do {
-                await beginTask?.value
-                guard self?.realtimeVoiceInputID == inputID else { return }
-                let contextPacket: PickyContextPacket?
-                if let inkCapture {
-                    let captureResult = try await self?.voiceContextCaptureCoordinator.captureContext(
-                        transcript: "",
-                        source: "voice",
-                        inkCapture: inkCapture
-                    )
-                    contextPacket = captureResult?.contextPacket
-                } else {
-                    contextPacket = nil
-                }
-                try await agentClient.send(PickyCommandEnvelope(
-                    type: .commitMainRealtimeVoiceTurn,
-                    context: contextPacket,
-                    inputId: inputID
-                ))
-            } catch {
-                print("⚠️ Failed to commit realtime voice turn: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    private func cancelRealtimeMainVoiceTurn(inputID: UUID? = nil) {
-        let playedAudioMs = realtimeAudioPlaybackEngine.stopAndReturnPlayedAudioMs()
-        realtimeVoiceInputManager.stop()
-        realtimeVoiceInputID = nil
-        realtimeCanSendAudio = false
-        realtimeBufferedAudioChunks.removeAll()
-        Task { [agentClient] in
-            do {
-                try await agentClient.send(PickyCommandEnvelope(
-                    type: .cancelMainRealtimeVoiceTurn,
-                    inputId: inputID,
-                    playedAudioMs: playedAudioMs
-                ))
-            } catch {
-                print("⚠️ Failed to cancel realtime voice turn: \(error.localizedDescription)")
-            }
         }
     }
 
@@ -2238,61 +1991,6 @@ final class CompanionManager: ObservableObject {
         case .mainAgentModelsSnapshot(let models):
             mainAgentModelOptions = models
             isLoadingMainAgentModelOptions = false
-        case .mainRealtimeStateChanged(let event):
-            applyMainRealtimeState(event)
-        case .mainRealtimeInputTranscriptDelta(let inputId, let delta):
-            guard realtimeVoiceInputID == inputId else { break }
-            let updated = (currentVoicePromptPreview ?? "") + delta
-            currentVoicePromptPreview = updated
-            reduceVoiceInteraction(.sttPartial(inputID: inputId, text: updated))
-        case .mainRealtimeInputTranscriptCompleted(let inputId, let transcript):
-            guard realtimeVoiceInputID == inputId else { break }
-            lastTranscript = transcript
-            currentVoicePromptPreview = transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : transcript
-            reduceVoiceInteraction(.sttFinal(inputID: inputId, text: transcript, now: Date()))
-        case .mainRealtimeOutputAudioDelta(_, let audioBase64):
-            stopCurrentSpeech()
-            hideVoicePromptBubbleForRealtimeResponse()
-            reduceVoiceInteraction(.realtimeAudioStarted)
-            guard ttsPlaybackEnabled else {
-                realtimeAudioPlaybackEngine.stop()
-                clearPendingAgentResponseTiming()
-                break
-            }
-            realtimeAudioPlaybackEngine.enqueuePCM16Base64(audioBase64)
-            clearPendingAgentResponseTiming()
-            reduceVoiceInteraction(.realtimeAudioStarted)
-        case .mainRealtimeOutputAudioDone:
-            break
-        case .mainRealtimeOutputTranscriptDelta(let inputId, let delta):
-            hideVoicePromptBubbleForRealtimeResponse()
-            let key = inputId ?? realtimeVoiceInputID ?? UUID()
-            let updated = (realtimeOutputTranscriptByInputID[key] ?? "") + delta
-            realtimeOutputTranscriptByInputID[key] = updated
-            latestAgentSessionSummary = updated
-        case .mainRealtimeOutputTranscriptCompleted(let inputId, let transcript):
-            hideVoicePromptBubbleForRealtimeResponse()
-            let key = inputId ?? realtimeVoiceInputID ?? UUID()
-            realtimeOutputTranscriptByInputID[key] = transcript
-            latestAgentSessionSummary = transcript
-            realtimeOutputTranscriptByInputID.removeValue(forKey: key)
-        case .mainRealtimeTurnDone(let done):
-            if let inputId = done.inputId {
-                realtimeOutputTranscriptByInputID.removeValue(forKey: inputId)
-                if realtimeVoiceInputID == inputId {
-                    realtimeVoiceInputID = nil
-                    realtimeCanSendAudio = false
-                    realtimeBufferedAudioChunks.removeAll()
-                    completeVoiceInteractionIfCurrent(inputID: inputId)
-                }
-            }
-            if let final = done.finalTranscript, !final.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                latestAgentSessionSummary = final
-            }
-            if !realtimeAudioPlaybackEngine.isPlaying {
-                reduceVoiceInteraction(.realtimeTurnDone)
-                scheduleTransientHideIfNeeded()
-            }
         case .pointerOverlayRequested(let request):
             applyPointerOverlayRequest(request)
         case .narrateProgressRequested(let request):
@@ -2303,44 +2001,6 @@ final class CompanionManager: ObservableObject {
              .sessionMessageAppended, .sessionMessageReplaced, .sessionMessageRemoved, .sessionQueueUpdated, .sessionActivityUpdated, .terminalSessionSyncOutcome,
              .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested:
             break
-        }
-    }
-
-    private func hideVoicePromptBubbleForRealtimeResponse() {
-        currentVoicePromptPreview = nil
-        reduceVoiceInteraction(.promptBubbleAutoHide)
-    }
-
-    private func handleRealtimePlaybackDrained() {
-        guard realtimeVoiceInputID == nil else { return }
-        guard voiceState == .responding else { return }
-        reduceVoiceInteraction(.realtimeTurnDone)
-        scheduleTransientHideIfNeeded()
-    }
-
-    private func applyMainRealtimeState(_ event: PickyMainRealtimeStateEvent) {
-        reduceVoiceInteraction(.realtimeStateChanged(event.state))
-        switch event.state {
-        case .connecting:
-            latestAgentSessionSummary = "Realtime 연결 중…"
-        case .ready:
-            if realtimeVoiceInputID == nil && !realtimeAudioPlaybackEngine.isPlaying {
-                clearPendingAgentResponseTiming()
-                scheduleTransientHideIfNeeded()
-            }
-        case .listening:
-            break
-        case .thinking:
-            latestAgentSessionSummary = L10n.t("agent.summary.preparingResponse")
-        case .speaking:
-            clearPendingAgentResponseTiming()
-        case .failed:
-            clearPendingAgentResponseTiming()
-            latestAgentSessionSummary = event.message ?? "Realtime Picky failed"
-            realtimeVoiceInputID = nil
-            realtimeCanSendAudio = false
-            realtimeBufferedAudioChunks.removeAll()
-            scheduleTransientHideIfNeeded()
         }
     }
 
@@ -2453,15 +2113,11 @@ final class CompanionManager: ObservableObject {
         // overwrite a `done` Pickle's status back to `cancelled` on agentd.
         let isAgentResponseInFlight = pendingAgentResponseStartedAt != nil || voiceState == .responding
         let previousPickleSessionID = isAgentResponseInFlight ? voiceFollowUpSessionIDForCurrentUtterance : nil
-        if PickySettingsStore().load().mainAgentRuntimeMode == .openAIRealtime {
-            cancelRealtimeMainVoiceTurn(inputID: realtimeVoiceInputID)
-        } else {
-            Task { [agentClient] in
-                do {
-                    try await agentClient.send(PickyCommandEnvelope(type: .abortMainAgent))
-                } catch {
-                    print("⚠️ Failed to abort Picky for voice input: \(error)")
-                }
+        Task { [agentClient] in
+            do {
+                try await agentClient.send(PickyCommandEnvelope(type: .abortMainAgent))
+            } catch {
+                print("⚠️ Failed to abort Picky for voice input: \(error)")
             }
         }
         if let previousPickleSessionID {
@@ -2491,7 +2147,6 @@ final class CompanionManager: ObservableObject {
             inputID: interactionVoiceInputID,
             transcript: trimmedTranscript,
             targetSessionID: voiceFollowUpSessionIDForCurrentUtterance,
-            mode: currentVoiceInteractionMode(),
             now: startedAt
         ))
         scheduleRecognizedTranscriptAutoHide(trimmedTranscript: trimmedTranscript)
@@ -2726,7 +2381,7 @@ final class CompanionManager: ObservableObject {
         responseStateTask?.cancel()
         responseStateTask = nil
         if keepProcessing {
-            reduceVoiceInteraction(.loadingStarted(inputID: interactionVoiceInputID, transcript: currentVoicePromptPreview, targetSessionID: voiceFollowUpSessionIDForCurrentUtterance, mode: currentVoiceInteractionMode(), now: Date()))
+            reduceVoiceInteraction(.loadingStarted(inputID: interactionVoiceInputID, transcript: currentVoicePromptPreview, targetSessionID: voiceFollowUpSessionIDForCurrentUtterance, now: Date()))
         } else {
             scheduleTransientHideIfNeeded()
         }
@@ -2811,12 +2466,12 @@ func stripParentheticalsForSpeech(_ text: String) -> String {
     let withoutParentheticals = parentheticalRegex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "")
 
     let withoutURLs = withoutParentheticals.replacingOccurrences(
-        of: #"(?i)(?:https?://|www\.)[^\s,.;:!?。，！？]+"#,
+        of: #"(?i)(?:https?://|www\.)[^\s,，。！？!?]+"#,
         with: "링크",
         options: .regularExpression
     )
     let withoutPaths = withoutURLs.replacingOccurrences(
-        of: #"(?<!\S)(?:~|\.{1,2}|/)[^\s,.;:!?。，！？]*[/][^\s,.;:!?。，！？]*(?=[\s,.;:!?。，！？]|$)"#,
+        of: #"(?<!\S)(?:~/[^\s,，。！？!?]*|\.{1,2}/[^\s,，。！？!?]*|/[^\s,，。！？!?]+)(?=[\s,，。！？!?]|$)"#,
         with: "해당 경로",
         options: .regularExpression
     )

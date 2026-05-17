@@ -118,7 +118,6 @@ struct PickyAgentDaemonPoolTests {
                 "PICKY_DEFAULT_CWD": "/should/be/dropped",
                 "PICKY_MAIN_AGENT_CWD": "/should/be/dropped",
                 "PICKY_MAIN_AGENT_THINKING_LEVEL": "high",
-                "PICKY_MAIN_AGENT_RUNTIME": "openai-realtime",
                 "PICKY_AGENTD_ROOT": agentd.path,
                 "PATH": "/usr/bin",
             ],
@@ -133,7 +132,6 @@ struct PickyAgentDaemonPoolTests {
         #expect(env["PICKY_DEFAULT_CWD"] == nil)
         #expect(env["PICKY_MAIN_AGENT_CWD"] == nil)
         #expect(env["PICKY_MAIN_AGENT_THINKING_LEVEL"] == nil)
-        #expect(env["PICKY_MAIN_AGENT_RUNTIME"] == nil)
         #expect(env["PICKY_PICKLE_THINKING_LEVEL"] == "high")
         #expect(env["PICKY_PICKLE_MODEL"] == "anthropic/claude-sonnet-4-5")
     }

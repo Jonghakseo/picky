@@ -19,7 +19,6 @@ logAgentd("startup", {
   mode: config.mode,
   port: config.port,
   runtime: config.useMockRuntime ? "mock" : "pi",
-  mainAgentRuntimeMode: config.mainAgentRuntimeMode,
   appSupportDir: config.appSupportDir,
   defaultCwd: config.defaultCwd,
   mainAgentCwd: config.mainAgentCwd,

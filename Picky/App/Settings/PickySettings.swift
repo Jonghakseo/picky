@@ -116,272 +116,6 @@ enum PickyPickleAgentThinkingLevel: String, Codable, CaseIterable, Identifiable 
     }
 }
 
-enum PickyMainAgentRuntimeMode: String, Codable, CaseIterable, Identifiable {
-    case pi
-    case openAIRealtime
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .pi: "Pi (current)"
-        case .openAIRealtime: "OpenAI Realtime"
-        }
-    }
-
-    var agentdEnvironmentValue: String {
-        switch self {
-        case .pi: "pi"
-        case .openAIRealtime: "openai-realtime"
-        }
-    }
-}
-
-enum PickyOpenAIRealtimeProvider: String, Codable, CaseIterable, Identifiable {
-    case openAI
-    case azureOpenAI
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .openAI: "OpenAI"
-        case .azureOpenAI: "Azure OpenAI"
-        }
-    }
-
-    var protocolValue: String {
-        switch self {
-        case .openAI: "openai"
-        case .azureOpenAI: "azure_openai"
-        }
-    }
-}
-
-enum PickyAzureOpenAIRealtimeAPIShape: String, Codable, CaseIterable, Identifiable {
-    case ga
-    case preview
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .ga: "GA /openai/v1/realtime"
-        case .preview: "Preview /openai/realtime"
-        }
-    }
-
-    var protocolValue: String { rawValue }
-}
-
-enum PickyOpenAIRealtimeReasoningEffort: String, Codable, CaseIterable, Identifiable {
-    case low
-    case medium
-    case high
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .low: "Low"
-        case .medium: "Medium"
-        case .high: "High"
-        }
-    }
-}
-
-struct PickyOpenAIRealtimeSettings: Codable, Equatable {
-    var provider: PickyOpenAIRealtimeProvider
-    var apiKey: String
-    var modelOrDeployment: String
-    /// Preferred Azure Realtime input. The full WebSocket/HTTPS endpoint includes
-    /// api-version and deployment/model, so Azure users only need this URL plus an API key.
-    var azureRealtimeURL: String
-    /// Legacy split Azure fields kept for backward-compatible decode and protocol mapping.
-    var azureResourceEndpoint: String
-    var azureAPIVersion: String
-    var azureAPIShape: PickyAzureOpenAIRealtimeAPIShape
-    var voice: String
-    var reasoningEffort: PickyOpenAIRealtimeReasoningEffort
-    var transcriptionLanguage: String
-
-    static let defaults = PickyOpenAIRealtimeSettings(
-        provider: .openAI,
-        apiKey: "",
-        modelOrDeployment: "gpt-realtime-2",
-        azureRealtimeURL: "",
-        azureResourceEndpoint: "",
-        azureAPIVersion: "",
-        azureAPIShape: .ga,
-        voice: "marin",
-        reasoningEffort: .medium,
-        transcriptionLanguage: ""
-    )
-
-    init(
-        provider: PickyOpenAIRealtimeProvider,
-        apiKey: String,
-        modelOrDeployment: String,
-        azureRealtimeURL: String = "",
-        azureResourceEndpoint: String,
-        azureAPIVersion: String,
-        azureAPIShape: PickyAzureOpenAIRealtimeAPIShape,
-        voice: String,
-        reasoningEffort: PickyOpenAIRealtimeReasoningEffort,
-        transcriptionLanguage: String
-    ) {
-        self.provider = provider
-        self.apiKey = apiKey
-        self.modelOrDeployment = modelOrDeployment
-        self.azureRealtimeURL = azureRealtimeURL
-        self.azureResourceEndpoint = azureResourceEndpoint
-        self.azureAPIVersion = azureAPIVersion
-        self.azureAPIShape = azureAPIShape
-        self.voice = voice
-        self.reasoningEffort = reasoningEffort
-        self.transcriptionLanguage = transcriptionLanguage
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case provider
-        case apiKey
-        case modelOrDeployment
-        case azureRealtimeURL
-        case azureResourceEndpoint
-        case azureAPIVersion
-        case azureAPIShape
-        case voice
-        case reasoningEffort
-        case transcriptionLanguage
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let defaults = Self.defaults
-        provider = try container.decodeIfPresent(PickyOpenAIRealtimeProvider.self, forKey: .provider) ?? defaults.provider
-        apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? defaults.apiKey
-        modelOrDeployment = try container.decodeIfPresent(String.self, forKey: .modelOrDeployment) ?? defaults.modelOrDeployment
-        azureRealtimeURL = try container.decodeIfPresent(String.self, forKey: .azureRealtimeURL) ?? defaults.azureRealtimeURL
-        azureResourceEndpoint = try container.decodeIfPresent(String.self, forKey: .azureResourceEndpoint) ?? defaults.azureResourceEndpoint
-        azureAPIVersion = try container.decodeIfPresent(String.self, forKey: .azureAPIVersion) ?? defaults.azureAPIVersion
-        azureAPIShape = try container.decodeIfPresent(PickyAzureOpenAIRealtimeAPIShape.self, forKey: .azureAPIShape) ?? defaults.azureAPIShape
-        voice = try container.decodeIfPresent(String.self, forKey: .voice) ?? defaults.voice
-        reasoningEffort = try container.decodeIfPresent(PickyOpenAIRealtimeReasoningEffort.self, forKey: .reasoningEffort) ?? defaults.reasoningEffort
-        transcriptionLanguage = try container.decodeIfPresent(String.self, forKey: .transcriptionLanguage) ?? defaults.transcriptionLanguage
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(provider, forKey: .provider)
-        try container.encode(apiKey, forKey: .apiKey)
-        try container.encode(modelOrDeployment, forKey: .modelOrDeployment)
-        try container.encode(azureRealtimeURL, forKey: .azureRealtimeURL)
-        try container.encode(azureResourceEndpoint, forKey: .azureResourceEndpoint)
-        try container.encode(azureAPIVersion, forKey: .azureAPIVersion)
-        try container.encode(azureAPIShape, forKey: .azureAPIShape)
-        try container.encode(voice, forKey: .voice)
-        try container.encode(reasoningEffort, forKey: .reasoningEffort)
-        try container.encode(transcriptionLanguage, forKey: .transcriptionLanguage)
-    }
-
-    func normalized() -> PickyOpenAIRealtimeSettings {
-        var copy = self
-        copy.apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        copy.modelOrDeployment = modelOrDeployment.trimmingCharacters(in: .whitespacesAndNewlines)
-        copy.azureRealtimeURL = azureRealtimeURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        copy.azureResourceEndpoint = azureResourceEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-        copy.azureAPIVersion = azureAPIVersion.trimmingCharacters(in: .whitespacesAndNewlines)
-        copy.voice = voice.trimmingCharacters(in: .whitespacesAndNewlines)
-        copy.transcriptionLanguage = transcriptionLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
-        if copy.azureRealtimeURL.isEmpty,
-           let legacyURL = PickyAzureOpenAIRealtimeURLComponents.makeURL(
-               resourceEndpoint: copy.azureResourceEndpoint,
-               deployment: copy.modelOrDeployment,
-               apiVersion: copy.azureAPIVersion,
-               apiShape: copy.azureAPIShape
-           ) {
-            copy.azureRealtimeURL = legacyURL
-        }
-        return copy
-    }
-
-    var azureRealtimeEndpointComponents: PickyAzureOpenAIRealtimeURLComponents? {
-        PickyAzureOpenAIRealtimeURLComponents.parse(normalized().azureRealtimeURL)
-    }
-}
-
-struct PickyAzureOpenAIRealtimeURLComponents: Equatable {
-    var resourceEndpoint: String
-    var deployment: String
-    var apiVersion: String?
-    var apiShape: PickyAzureOpenAIRealtimeAPIShape
-
-    static func parse(_ rawValue: String) -> PickyAzureOpenAIRealtimeURLComponents? {
-        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              let components = URLComponents(string: trimmed),
-              let scheme = components.scheme?.lowercased(),
-              ["https", "wss"].contains(scheme),
-              let host = components.host,
-              !host.isEmpty else {
-            return nil
-        }
-        let endpointScheme = "https"
-        let portSuffix = components.port.map { ":\($0)" } ?? ""
-        let resourceEndpoint = "\(endpointScheme)://\(host)\(portSuffix)"
-        let path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let queryItems = components.queryItems ?? []
-        func query(_ name: String) -> String? {
-            queryItems.first { $0.name.lowercased() == name.lowercased() }?.value?.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        switch path {
-        case "openai/realtime":
-            guard let apiVersion = query("api-version"), !apiVersion.isEmpty,
-                  let deployment = query("deployment") ?? query("model"), !deployment.isEmpty else {
-                return nil
-            }
-            return PickyAzureOpenAIRealtimeURLComponents(
-                resourceEndpoint: resourceEndpoint,
-                deployment: deployment,
-                apiVersion: apiVersion,
-                apiShape: .preview
-            )
-        case "openai/v1/realtime":
-            guard let deployment = query("model") ?? query("deployment"), !deployment.isEmpty else {
-                return nil
-            }
-            return PickyAzureOpenAIRealtimeURLComponents(
-                resourceEndpoint: resourceEndpoint,
-                deployment: deployment,
-                apiVersion: query("api-version"),
-                apiShape: .ga
-            )
-        default:
-            return nil
-        }
-    }
-
-    static func makeURL(
-        resourceEndpoint: String,
-        deployment: String,
-        apiVersion: String,
-        apiShape: PickyAzureOpenAIRealtimeAPIShape
-    ) -> String? {
-        let endpoint = resourceEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let deployment = deployment.trimmingCharacters(in: .whitespacesAndNewlines)
-        let apiVersion = apiVersion.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !endpoint.isEmpty, !deployment.isEmpty else { return nil }
-        switch apiShape {
-        case .ga:
-            return "\(endpoint)/openai/v1/realtime?model=\(deployment)"
-        case .preview:
-            guard !apiVersion.isEmpty else { return nil }
-            return "\(endpoint)/openai/realtime?api-version=\(apiVersion)&deployment=\(deployment)"
-        }
-    }
-}
-
 /// Sparkle update channel preference. `stable` only sees default-channel
 /// (no-channel) appcast items; `beta` additionally allows items tagged
 /// `<sparkle:channel>beta</sparkle:channel>`. See docs/auto-update.md.
@@ -825,8 +559,6 @@ struct PickySettings: Codable, Equatable {
     var cursor: PickyCursorPreferences
     var overlayBubbles: PickyOverlayBubblePreferences
     var fontScales: PickyFontScales
-    var mainAgentRuntimeMode: PickyMainAgentRuntimeMode
-    var openAIRealtime: PickyOpenAIRealtimeSettings
     /// Empty means Picky follows Pi's own default model/settings. Non-empty is a
     /// provider/model pattern returned by picky-agentd, for example `anthropic/claude-sonnet-4-5`.
     var mainAgentModelPattern: String
@@ -924,8 +656,6 @@ struct PickySettings: Codable, Equatable {
         cursor: PickyCursorPreferences = .defaults,
         overlayBubbles: PickyOverlayBubblePreferences = .defaults,
         fontScales: PickyFontScales = .defaults,
-        mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi,
-        openAIRealtime: PickyOpenAIRealtimeSettings = .defaults,
         mainAgentModelPattern: String = "",
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .off,
         pickleAgentModelPattern: String = "",
@@ -978,8 +708,6 @@ struct PickySettings: Codable, Equatable {
         self.cursor = cursor
         self.overlayBubbles = overlayBubbles
         self.fontScales = fontScales
-        self.mainAgentRuntimeMode = mainAgentRuntimeMode
-        self.openAIRealtime = openAIRealtime
         self.mainAgentModelPattern = mainAgentModelPattern
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
         self.pickleAgentModelPattern = pickleAgentModelPattern
@@ -1046,8 +774,6 @@ struct PickySettings: Codable, Equatable {
             cursor: .defaults,
             overlayBubbles: .defaults,
             fontScales: .defaults,
-            mainAgentRuntimeMode: .pi,
-            openAIRealtime: .defaults,
             mainAgentModelPattern: "",
             mainAgentThinkingLevel: .off,
             pickleAgentModelPattern: "",
@@ -1092,7 +818,6 @@ struct PickySettings: Codable, Equatable {
         copy.elevenLabsSTTAPIKey = elevenLabsSTTAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.elevenLabsSTTModel = elevenLabsSTTModel.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.elevenLabsSTTLanguage = elevenLabsSTTLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
-        copy.openAIRealtime = openAIRealtime.normalized()
         copy.mainAgentModelPattern = mainAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.pickleAgentModelPattern = pickleAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.hudCardSizes = hudCardSizes.mapValues { $0.clamped() }
@@ -1134,8 +859,6 @@ struct PickySettings: Codable, Equatable {
         case cursor
         case overlayBubbles
         case fontScales
-        case mainAgentRuntimeMode
-        case openAIRealtime
         case mainAgentModelPattern
         case mainAgentThinkingLevel
         case pickleAgentModelPattern
@@ -1193,8 +916,6 @@ struct PickySettings: Codable, Equatable {
         notifications = try container.decodeIfPresent(PickyNotificationPreferences.self, forKey: .notifications) ?? defaults.notifications
         cursor = try container.decodeIfPresent(PickyCursorPreferences.self, forKey: .cursor) ?? defaults.cursor
         overlayBubbles = try container.decodeIfPresent(PickyOverlayBubblePreferences.self, forKey: .overlayBubbles) ?? defaults.overlayBubbles
-        mainAgentRuntimeMode = try container.decodeIfPresent(PickyMainAgentRuntimeMode.self, forKey: .mainAgentRuntimeMode) ?? defaults.mainAgentRuntimeMode
-        openAIRealtime = try container.decodeIfPresent(PickyOpenAIRealtimeSettings.self, forKey: .openAIRealtime) ?? defaults.openAIRealtime
         mainAgentModelPattern = try container.decodeIfPresent(String.self, forKey: .mainAgentModelPattern) ?? defaults.mainAgentModelPattern
         mainAgentThinkingLevel = try container.decodeIfPresent(PickyMainAgentThinkingLevel.self, forKey: .mainAgentThinkingLevel) ?? defaults.mainAgentThinkingLevel
         pickleAgentModelPattern = try container.decodeIfPresent(String.self, forKey: .pickleAgentModelPattern) ?? defaults.pickleAgentModelPattern

@@ -67,17 +67,6 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var mainAgentThinkingLevel: PickyMainAgentThinkingLevel?
     var mainAgentModelPattern: String?
     var direction: PickyModelCycleDirection?
-    var mode: String?
-    var provider: String?
-    var apiKey: String?
-    var modelOrDeployment: String?
-    var voice: String?
-    var reasoningEffort: String?
-    var transcriptionLanguage: String?
-    var azure: PickyOpenAIRealtimeAzureProtocolConfig?
-    var inputId: UUID?
-    var audioBase64: String?
-    var playedAudioMs: Double?
     var kind: PickyQueueClearKind?
     /// Pi message id observed when a Picky terminal overlay was opened. The daemon imports only
     /// active Pi transcript messages after this id when syncing the terminal session back.
@@ -108,17 +97,6 @@ struct PickyCommandEnvelope: Codable, Equatable {
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel? = nil,
         mainAgentModelPattern: String? = nil,
         direction: PickyModelCycleDirection? = nil,
-        mode: String? = nil,
-        provider: String? = nil,
-        apiKey: String? = nil,
-        modelOrDeployment: String? = nil,
-        voice: String? = nil,
-        reasoningEffort: String? = nil,
-        transcriptionLanguage: String? = nil,
-        azure: PickyOpenAIRealtimeAzureProtocolConfig? = nil,
-        inputId: UUID? = nil,
-        audioBase64: String? = nil,
-        playedAudioMs: Double? = nil,
         kind: PickyQueueClearKind? = nil,
         baselinePiMessageId: String? = nil,
         disabledBuiltinTools: [String]? = nil
@@ -147,28 +125,12 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
         self.mainAgentModelPattern = mainAgentModelPattern
         self.direction = direction
-        self.mode = mode
-        self.provider = provider
-        self.apiKey = apiKey
-        self.modelOrDeployment = modelOrDeployment
-        self.voice = voice
-        self.reasoningEffort = reasoningEffort
-        self.transcriptionLanguage = transcriptionLanguage
-        self.azure = azure
-        self.inputId = inputId
-        self.audioBase64 = audioBase64
-        self.playedAudioMs = playedAudioMs
         self.kind = kind
         self.baselinePiMessageId = baselinePiMessageId
         self.disabledBuiltinTools = disabledBuiltinTools
     }
 }
 
-struct PickyOpenAIRealtimeAzureProtocolConfig: Codable, Equatable {
-    var resourceEndpoint: String
-    var apiVersion: String?
-    var apiShape: String
-}
 
 enum PickyQueueClearKind: String, Codable, Equatable {
     case steering, followUp, all
@@ -199,12 +161,6 @@ enum PickyCommandType: String, Codable, Equatable {
     case listMainAgentModels
     case setDefaultCwd
     case setMainAgentModel
-    case setMainAgentRuntimeMode
-    case configureMainRealtimeAuth
-    case beginMainRealtimeVoiceTurn
-    case appendMainRealtimeInputAudio
-    case commitMainRealtimeVoiceTurn
-    case cancelMainRealtimeVoiceTurn
     case resetMainAgent
     case abortMainAgent
     case setMainAgentThinkingLevel
@@ -253,14 +209,6 @@ enum PickyEvent: Equatable {
     case mainMessageAppended(PickyMainAgentMessage)
     case mainAgentSessionInfoUpdated(sessionFilePath: String?, cwd: String?)
     case mainAgentModelsSnapshot([PickyMainAgentModelOption])
-    case mainRealtimeStateChanged(PickyMainRealtimeStateEvent)
-    case mainRealtimeInputTranscriptDelta(inputId: UUID, delta: String)
-    case mainRealtimeInputTranscriptCompleted(inputId: UUID, transcript: String)
-    case mainRealtimeOutputAudioDelta(inputId: UUID?, audioBase64: String)
-    case mainRealtimeOutputAudioDone(inputId: UUID?)
-    case mainRealtimeOutputTranscriptDelta(inputId: UUID?, delta: String)
-    case mainRealtimeOutputTranscriptCompleted(inputId: UUID?, transcript: String)
-    case mainRealtimeTurnDone(PickyMainRealtimeTurnDoneEvent)
     case sessionSnapshot([PickyAgentSession])
     case sessionUpdated(PickyAgentSession)
     case sessionResourcesReloaded(sessionId: String)
@@ -301,28 +249,6 @@ enum PickyEvent: Equatable {
         case "mainAgentModelsSnapshot":
             let payload = try PickyMainAgentModelsSnapshotPayload(from: decoder)
             self = .mainAgentModelsSnapshot(payload.models)
-        case "mainRealtimeStateChanged":
-            self = .mainRealtimeStateChanged(try PickyMainRealtimeStateEvent(from: decoder))
-        case "mainRealtimeInputTranscriptDelta":
-            let payload = try PickyMainRealtimeInputTranscriptDeltaPayload(from: decoder)
-            self = .mainRealtimeInputTranscriptDelta(inputId: payload.inputId, delta: payload.delta)
-        case "mainRealtimeInputTranscriptCompleted":
-            let payload = try PickyMainRealtimeInputTranscriptCompletedPayload(from: decoder)
-            self = .mainRealtimeInputTranscriptCompleted(inputId: payload.inputId, transcript: payload.transcript)
-        case "mainRealtimeOutputAudioDelta":
-            let payload = try PickyMainRealtimeOutputAudioDeltaPayload(from: decoder)
-            self = .mainRealtimeOutputAudioDelta(inputId: payload.inputId, audioBase64: payload.audioBase64)
-        case "mainRealtimeOutputAudioDone":
-            let payload = try PickyMainRealtimeOutputAudioDonePayload(from: decoder)
-            self = .mainRealtimeOutputAudioDone(inputId: payload.inputId)
-        case "mainRealtimeOutputTranscriptDelta":
-            let payload = try PickyMainRealtimeOutputTranscriptDeltaPayload(from: decoder)
-            self = .mainRealtimeOutputTranscriptDelta(inputId: payload.inputId, delta: payload.delta)
-        case "mainRealtimeOutputTranscriptCompleted":
-            let payload = try PickyMainRealtimeOutputTranscriptCompletedPayload(from: decoder)
-            self = .mainRealtimeOutputTranscriptCompleted(inputId: payload.inputId, transcript: payload.transcript)
-        case "mainRealtimeTurnDone":
-            self = .mainRealtimeTurnDone(try PickyMainRealtimeTurnDoneEvent(from: decoder))
         case "sessionSnapshot":
             let payload = try PickySessionSnapshotPayload(from: decoder)
             self = .sessionSnapshot(payload.sessions)
@@ -392,12 +318,6 @@ private struct PickyMainMessagesSnapshotPayload: Decodable { let messages: [Pick
 private struct PickyMainMessageAppendedPayload: Decodable { let message: PickyMainAgentMessage }
 private struct PickyMainAgentSessionInfoUpdatedPayload: Decodable { let sessionFilePath: String?; let cwd: String? }
 private struct PickyMainAgentModelsSnapshotPayload: Decodable { let models: [PickyMainAgentModelOption] }
-private struct PickyMainRealtimeInputTranscriptDeltaPayload: Decodable { let inputId: UUID; let delta: String }
-private struct PickyMainRealtimeInputTranscriptCompletedPayload: Decodable { let inputId: UUID; let transcript: String }
-private struct PickyMainRealtimeOutputAudioDeltaPayload: Decodable { let inputId: UUID?; let audioBase64: String }
-private struct PickyMainRealtimeOutputAudioDonePayload: Decodable { let inputId: UUID? }
-private struct PickyMainRealtimeOutputTranscriptDeltaPayload: Decodable { let inputId: UUID?; let delta: String }
-private struct PickyMainRealtimeOutputTranscriptCompletedPayload: Decodable { let inputId: UUID?; let transcript: String }
 private struct PickySessionSnapshotPayload: Decodable { let sessions: [PickyAgentSession] }
 private struct PickySessionUpdatedPayload: Decodable { let session: PickyAgentSession }
 private struct PickySessionResourcesReloadedPayload: Decodable { let sessionId: String }
@@ -413,24 +333,6 @@ private struct PickySessionMessageRemovedPayload: Decodable { let sessionId: Str
 private struct PickySessionQueueUpdatedPayload: Decodable { let sessionId: String; let steering: [PickyQueueItem]; let followUp: [PickyQueueItem]; let steeringMode: PickyQueueMode?; let followUpMode: PickyQueueMode?; let seq: Int }
 private struct PickySessionActivityUpdatedPayload: Decodable { let sessionId: String; let activitySummary: PickyActivitySummary; let seq: Int }
 
-enum PickyMainRealtimeState: String, Codable, Equatable {
-    case connecting, ready, listening, thinking, speaking, failed
-}
-
-struct PickyMainRealtimeStateEvent: Decodable, Equatable {
-    let state: PickyMainRealtimeState
-    let message: String?
-}
-
-enum PickyMainRealtimeTurnStatus: String, Codable, Equatable {
-    case completed, cancelled, failed, incomplete
-}
-
-struct PickyMainRealtimeTurnDoneEvent: Decodable, Equatable {
-    let inputId: UUID?
-    let status: PickyMainRealtimeTurnStatus
-    let finalTranscript: String?
-}
 
 struct PickyHelloEvent: Decodable, Equatable {
     let serverName: String
@@ -581,7 +483,7 @@ struct PickyMainAgentModelOption: Codable, Equatable, Identifiable {
 
 /// Snapshot of where Picky's always-on main agent currently has its Pi
 /// session file and cwd. Both fields can be nil before agentd has prewarmed a
-/// real Pi session, after a `/new`, or while a runtime mode switch is in
+/// real Pi session, after a `/new`, or while a model/session reset is in
 /// flight. Used by the Messages tab to expose `Open in Pi` / `Copy resume
 /// command` escape hatches.
 struct PickyMainAgentSessionInfo: Equatable {

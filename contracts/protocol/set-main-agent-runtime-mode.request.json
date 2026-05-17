@@ -1,6 +1,0 @@
-{
-  "id": "cmd-runtime-mode",
-  "protocolVersion": "2026-05-09",
-  "type": "setMainAgentRuntimeMode",
-  "mode": "openai-realtime"
-}

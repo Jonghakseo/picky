@@ -105,7 +105,6 @@ describe("composeAgentdServices", () => {
       defaultCwd: "/tmp",
       mainAgentCwd: "/tmp",
       mainAgentThinkingLevel: "medium",
-      mainAgentRuntimeMode: "pi",
       useMockRuntime: true,
       ...overrides,
     };

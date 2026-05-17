@@ -2480,22 +2480,6 @@
         }
       }
     },
-    "settings.azure.realtimeUrlNote": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Paste the full Azure Realtime URL. Picky derives deployment, API version, and preview/GA shape from it."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Azure Realtime URL 전체를 붙여넣어주세요. Picky가 deployment, API 버전, preview/GA 형식을 자동으로 파악해요."
-          }
-        }
-      }
-    },
     "settings.azure.ttsUrlNote": {
       "localizations": {
         "en": {
@@ -2512,22 +2496,6 @@
         }
       }
     },
-    "settings.field.realtimeProvider": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Realtime provider"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Realtime 제공자"
-          }
-        }
-      }
-    },
     "settings.field.apiKey": {
       "localizations": {
         "en": {
@@ -2540,22 +2508,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "API 키"
-          }
-        }
-      }
-    },
-    "settings.field.azureRealtimeUrl": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Azure Realtime URL"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Azure Realtime URL"
           }
         }
       }
@@ -2588,22 +2540,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "음성"
-          }
-        }
-      }
-    },
-    "settings.field.realtimeEffort": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Realtime effort"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Realtime 수준"
           }
         }
       }
@@ -3924,22 +3860,6 @@
         }
       }
     },
-    "settings.field.runtime.realtimeNote": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Picky voice uses OpenAI/Azure Realtime audio. Pickle-hover voice follow-ups still go directly to Pickles."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Picky 음성은 OpenAI/Azure Realtime 오디오를 사용합니다. Pickle 위에서의 음성 후속 입력은 여전히 Pickle로 직접 전달됩니다."
-          }
-        }
-      }
-    },
     "settings.field.runtime.localNote": {
       "localizations": {
         "en": {
@@ -3984,22 +3904,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "새로 생성되는 Pickle의 초기 모델로만 사용됩니다. 실행 중인 Pickle은 별도로 모델을 변경할 수 있습니다."
-          }
-        }
-      }
-    },
-    "settings.realtime.apiKey.placeholder.azure": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Azure OpenAI API key"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Azure OpenAI API 키"
           }
         }
       }

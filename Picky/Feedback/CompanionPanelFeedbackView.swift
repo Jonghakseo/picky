@@ -377,10 +377,7 @@ struct CompanionPanelFeedbackView: View {
         return "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
     }
 
-    private var runtimeModeLabel: String {
-        let mode = viewModel.settings.mainAgentRuntimeMode
-        return mode == .openAIRealtime ? "Realtime" : "Pi"
-    }
+    private var runtimeModeLabel: String { "Pi" }
 
     private var metadataLine: String {
         "Picky \(appVersion) (build \(appBuild)) · macOS \(osVersionString) · runtime: \(runtimeModeLabel)"

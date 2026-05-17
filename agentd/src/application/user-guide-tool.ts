@@ -42,11 +42,11 @@ export const PICKY_DEEP_LINK_ROUTES: ReadonlyArray<readonly [string, string]> = 
   ["picky://panel/messages", "Menu bar panel → Messages tab (main-agent chat with Picky)."],
   ["picky://panel/settings", "Menu bar panel → Settings tab index."],
   ["picky://settings/general", "Settings → General (language, appearance, default cwd)."],
-  ["picky://settings/mainAgent", "Settings → Picky main agent (runtime, model, screen context)."],
+  ["picky://settings/mainAgent", "Settings → Picky main agent (model, screen context)."],
   ["picky://settings/pickle", "Settings → Pickle agent (model, reasoning level, HUD dock size)."],
   ["picky://settings/notification", "Settings → Notifications."],
   ["picky://settings/cursorBubbles", "Settings → Cursor & speech bubbles."],
-  ["picky://settings/voice", "Settings → Voice (speech provider, Realtime)."],
+  ["picky://settings/voice", "Settings → Voice (speech providers)."],
   ["picky://settings/shortcuts", "Settings → Global shortcuts (Push-to-Talk, Quick Input)."],
   ["picky://settings/onboarding", "Settings → Onboarding replay (hidden index entry)."],
 ] as const;

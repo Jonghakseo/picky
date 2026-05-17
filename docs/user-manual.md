@@ -614,7 +614,6 @@ Settings are stored at:
 | Setting | Values / behavior |
 | --- | --- |
 | Picky cwd | Applies to captured Picky context and the next Picky session. Defaults to the seeded Picky workspace at `~/Library/Application Support/Picky/Workspace`. Must be an existing directory. See **Customizing the Picky workspace** below. |
-| Runtime | Pi or OpenAI Realtime, when realtime opt-in is enabled. |
 | Pi model | Automatic or a pinned model pattern. |
 | Reasoning level | Off, Minimal, Low, Medium, High, Extra High. |
 | Screen context | All screens or Focused screen only. Default is **Focused screen only** so Picky captures only the display the cursor is on. |
@@ -645,17 +644,6 @@ The seeded `AGENTS.md` instructs the main agent to keep itself in sync with how 
 In practice you can shape Picky just by talking to it ("always start Pickles for the picky repo from `~/Documents/picky` and follow the AGENTS guide there") and let Picky persist the rule. You can still hand-edit `AGENTS.md` whenever you want full control.
 
 To run Picky with a completely different persona or workflow set, change **Picky cwd** in Settings to any folder that contains its own `AGENTS.md` and `.pi/*` subdirectories.
-
-Realtime-specific settings, when enabled:
-
-| Setting | Notes |
-| --- | --- |
-| Realtime provider | OpenAI or Azure OpenAI. |
-| API key | Provider API key. |
-| Azure Realtime URL | Full Azure Realtime URL; Picky derives deployment/API version/shape. |
-| Model | OpenAI realtime model for direct OpenAI. |
-| Voice | Realtime voice for direct OpenAI. |
-| Realtime effort | Low, Medium, High. |
 
 ### 13.3 Pickle
 

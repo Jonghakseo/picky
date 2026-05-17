@@ -24,7 +24,7 @@ struct PickySettingsSanitizerTests {
 
     @Test func masksNestedSecrets() throws {
         let input: [String: Any] = [
-            "openAIRealtime": [
+            "legacyNestedProvider": [
                 "apiKey": "another-secret",
                 "voice": "marin"
             ]
@@ -32,7 +32,7 @@ struct PickySettingsSanitizerTests {
         let data = try JSONSerialization.data(withJSONObject: input)
         let sanitized = try PickySettingsSanitizer.sanitize(jsonData: data)
         let object = try #require(JSONSerialization.jsonObject(with: sanitized) as? [String: Any])
-        let nested = try #require(object["openAIRealtime"] as? [String: Any])
+        let nested = try #require(object["legacyNestedProvider"] as? [String: Any])
         #expect((nested["apiKey"] as? String)?.hasPrefix("<masked:") == true)
         #expect(nested["voice"] as? String == "marin")
     }

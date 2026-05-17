@@ -27,7 +27,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
     var mainAgentModelPattern: String = ""
     var pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel = .automatic
     var pickleAgentModelPattern: String = ""
-    var mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi
     var runtime: String?
     var workingDirectory: URL
     var executableURL: URL
@@ -57,7 +56,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
         mainAgentModelPattern: String = "",
         pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel = .automatic,
         pickleAgentModelPattern: String = "",
-        mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         bundleResourceURL: URL? = Bundle.main.resourceURL,
         fileManager: FileManager = .default
@@ -78,7 +76,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
             mainAgentModelPattern: mainAgentModelPattern,
             pickleAgentThinkingLevel: pickleAgentThinkingLevel,
             pickleAgentModelPattern: pickleAgentModelPattern,
-            mainAgentRuntimeMode: mainAgentRuntimeMode,
             runtime: environment["PICKY_AGENTD_RUNTIME"]
             // Intentionally do not stash `environment` as baseEnvironment for primary mode:
             // the lazy daemonConfiguration in PickyApp.swift is built once at app launch, and
@@ -101,7 +98,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
         mainAgentModelPattern: String,
         pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel,
         pickleAgentModelPattern: String,
-        mainAgentRuntimeMode: PickyMainAgentRuntimeMode,
         runtime: String?,
         baseEnvironment: [String: String]? = nil
     ) -> PickyAgentDaemonConfiguration {
@@ -117,8 +113,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 mainAgentModelPattern: mainAgentModelPattern,
                 pickleAgentThinkingLevel: pickleAgentThinkingLevel,
                 pickleAgentModelPattern: pickleAgentModelPattern,
-                mainAgentRuntimeMode: mainAgentRuntimeMode,
-                runtime: runtime,
+                    runtime: runtime,
                 workingDirectory: root,
                 executableURL: URL(fileURLWithPath: "/usr/bin/env"),
                 arguments: ["pnpm", "--dir", root.path, "exec", "tsx", "src/index.ts"],
@@ -139,8 +134,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 mainAgentModelPattern: mainAgentModelPattern,
                 pickleAgentThinkingLevel: pickleAgentThinkingLevel,
                 pickleAgentModelPattern: pickleAgentModelPattern,
-                mainAgentRuntimeMode: mainAgentRuntimeMode,
-                runtime: runtime,
+                    runtime: runtime,
                 workingDirectory: root,
                 executableURL: URL(fileURLWithPath: "/usr/bin/env"),
                 arguments: ["node", entryPoint],
@@ -161,8 +155,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 mainAgentModelPattern: mainAgentModelPattern,
                 pickleAgentThinkingLevel: pickleAgentThinkingLevel,
                 pickleAgentModelPattern: pickleAgentModelPattern,
-                mainAgentRuntimeMode: mainAgentRuntimeMode,
-                runtime: runtime,
+                    runtime: runtime,
                 workingDirectory: root,
                 executableURL: URL(fileURLWithPath: "/usr/bin/env"),
                 arguments: ["node", root.appendingPathComponent("dist/index.js").path],
@@ -185,8 +178,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 mainAgentModelPattern: mainAgentModelPattern,
                 pickleAgentThinkingLevel: pickleAgentThinkingLevel,
                 pickleAgentModelPattern: pickleAgentModelPattern,
-                mainAgentRuntimeMode: mainAgentRuntimeMode,
-                runtime: runtime,
+                    runtime: runtime,
                 workingDirectory: root,
                 executableURL: URL(fileURLWithPath: "/usr/bin/env"),
                 arguments: ["node", root.appendingPathComponent("dist/index.js").path],
@@ -233,7 +225,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
             mainAgentModelPattern: "",
             pickleAgentThinkingLevel: pickleAgentThinkingLevel,
             pickleAgentModelPattern: pickleAgentModelPattern,
-            mainAgentRuntimeMode: .pi,
             runtime: environment["PICKY_AGENTD_RUNTIME"]
         )
         configuration.role = .child(sessionId: sessionId, sessionCwd: sessionCwd, primaryUrl: primaryUrl)
@@ -273,7 +264,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
         env["PICKY_MAIN_AGENT_THINKING_LEVEL"] = mainAgentThinkingLevel.rawValue
         applyMainAgentModelEnvironment(to: &env)
         applyPickleAgentEnvironment(to: &env)
-        env["PICKY_MAIN_AGENT_RUNTIME"] = mainAgentRuntimeMode.agentdEnvironmentValue
         // Scrub any leaked child-only env so a primary never falls into child mode by
         // accident if the user's shell happened to export them.
         env.removeValue(forKey: "PICKY_AGENTD_SESSION_ID")
@@ -301,7 +291,6 @@ struct PickyAgentDaemonConfiguration: Equatable {
         env.removeValue(forKey: "PICKY_MAIN_AGENT_CWD")
         env.removeValue(forKey: "PICKY_MAIN_AGENT_THINKING_LEVEL")
         env.removeValue(forKey: "PICKY_MAIN_AGENT_MODEL")
-        env.removeValue(forKey: "PICKY_MAIN_AGENT_RUNTIME")
     }
 
     private func applyMainAgentModelEnvironment(to env: inout [String: String]) {

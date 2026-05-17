@@ -45,24 +45,6 @@ interface RuntimeEventHandlerDependencies {
 const THINKING_PREVIEW_CHAR_LIMIT = 240;
 const THINKING_DRAFT_CHAR_LIMIT = THINKING_PREVIEW_CHAR_LIMIT * 4;
 
-type MainRealtimeRuntimeEvent = Extract<RuntimeEvent, { type: `main_realtime_${string}` }>;
-
-function isMainRealtimeRuntimeEvent(event: RuntimeEvent): event is MainRealtimeRuntimeEvent {
-  switch (event.type) {
-    case "main_realtime_state":
-    case "main_realtime_input_transcript_delta":
-    case "main_realtime_input_transcript_completed":
-    case "main_realtime_output_audio_delta":
-    case "main_realtime_output_audio_done":
-    case "main_realtime_output_transcript_delta":
-    case "main_realtime_output_transcript_completed":
-    case "main_realtime_turn_done":
-      return true;
-    default:
-      return false;
-  }
-}
-
 export class RuntimeEventHandler {
   private readonly assistantDrafts = new Map<string, string>();
   private readonly thinkingDrafts = new Map<string, string>();
@@ -112,7 +94,6 @@ export class RuntimeEventHandler {
     // runtimes already flush assistant text via assistant_delta + terminal status, so this event
     // has no meaning here and must be ignored before falling through to applyToolEvent.
     if (event.type === "turn_text_complete") return;
-    if (isMainRealtimeRuntimeEvent(event)) return;
     return this.applyToolEvent(sessionId, event);
   }
 

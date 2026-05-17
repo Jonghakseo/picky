@@ -32,6 +32,7 @@ if [[ "${PICKY_AGENTD_SKIP_INSTALL:-0}" != "1" ]]; then
 fi
 
 echo "🛠️  Building picky-agentd TypeScript..."
+rm -rf "${AGENTD_DIR}/dist"
 "${PNPM_BIN}" --dir "${AGENTD_DIR}" run build
 
 echo "📦 Creating production agentd runtime at ${RUNTIME_DIR}..."

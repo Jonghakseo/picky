@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { BrowserMetadataSchema, CommandEnvelopeSchema, EventEnvelopeSchema, OpenAIRealtimeAuthConfigSchema } from "./protocol.js";
+import { BrowserMetadataSchema, CommandEnvelopeSchema, EventEnvelopeSchema } from "./protocol.js";
 
 const contractsRoot = join(process.cwd(), "..", "contracts", "protocol");
 
@@ -116,35 +116,6 @@ describe("protocol contract fixtures", () => {
     if (parsed.type === "steer") expect(parsed.context?.screenshots[0]?.path).toBe("/tmp/shot.png");
   });
 
-  it("parses realtime commit commands with optional final ink context", () => {
-    const parsed = CommandEnvelopeSchema.parse({
-      id: "cmd-realtime-commit-context",
-      protocolVersion: "2026-05-09",
-      type: "commitMainRealtimeVoiceTurn",
-      inputId: "input-1",
-      context: {
-        id: "context-realtime-ink",
-        source: "voice",
-        capturedAt: "2026-05-09T00:00:00.000Z",
-        screenshots: [{ id: "shot-1", label: "Main", path: "/tmp/annotated.jpg" }],
-        inkMarks: [{
-          id: "ink-1",
-          source: "voice",
-          kind: "freehand-highlight",
-          screenId: "screen1",
-          points: [{ x: 10, y: 20 }, { x: 30, y: 40 }],
-          bounds: { x: 10, y: 20, width: 20, height: 20 },
-          strokeWidth: 12,
-          opacity: 0.75,
-        }],
-        warnings: [],
-      },
-    });
-
-    expect(parsed.type).toBe("commitMainRealtimeVoiceTurn");
-    if (parsed.type === "commitMainRealtimeVoiceTurn") expect(parsed.context?.inkMarks).toHaveLength(1);
-  });
-
   it("parses clearQueue commands for every queue kind", () => {
     for (const kind of ["steering", "followUp", "all"] as const) {
       expect(() =>
@@ -233,72 +204,6 @@ describe("protocol contract fixtures", () => {
 
     expect(() => EventEnvelopeSchema.parse(base)).not.toThrow();
     expect(() => EventEnvelopeSchema.parse({ ...base, steeringMode: "one-at-a-time", followUpMode: "all" })).not.toThrow();
-  });
-
-  it("parses realtime runtime mode and auth commands", () => {
-    expect(CommandEnvelopeSchema.parse({
-      id: "cmd-runtime-mode",
-      protocolVersion: "2026-05-09",
-      type: "setMainAgentRuntimeMode",
-      mode: "openai-realtime",
-    })).toMatchObject({ type: "setMainAgentRuntimeMode", mode: "openai-realtime" });
-
-    expect(CommandEnvelopeSchema.parse({
-      id: "cmd-realtime-auth",
-      protocolVersion: "2026-05-09",
-      type: "configureMainRealtimeAuth",
-      provider: "openai",
-      apiKey: "sk-test",
-      modelOrDeployment: "gpt-realtime-1.5",
-      voice: "marin",
-      reasoningEffort: "medium",
-    })).toMatchObject({ type: "configureMainRealtimeAuth", modelOrDeployment: "gpt-realtime-1.5" });
-  });
-
-  it("validates Azure OpenAI realtime auth config shape", () => {
-    expect(OpenAIRealtimeAuthConfigSchema.parse({
-      provider: "azure_openai",
-      apiKey: "azure-key",
-      modelOrDeployment: "deployment",
-      voice: "marin",
-      azure: { resourceEndpoint: "https://x.openai.azure.com", apiShape: "ga" },
-    })).toMatchObject({ provider: "azure_openai" });
-
-    expect(() => OpenAIRealtimeAuthConfigSchema.parse({
-      provider: "azure_openai",
-      apiKey: "azure-key",
-      modelOrDeployment: "deployment",
-      voice: "marin",
-    })).toThrow(/Azure OpenAI realtime config is required/);
-  });
-
-  it("parses realtime voice and output events", () => {
-    expect(EventEnvelopeSchema.parse({
-      id: "event-realtime-state",
-      protocolVersion: "2026-05-09",
-      timestamp: "2026-05-09T00:00:00.000Z",
-      type: "mainRealtimeStateChanged",
-      state: "speaking",
-    })).toMatchObject({ type: "mainRealtimeStateChanged", state: "speaking" });
-
-    expect(EventEnvelopeSchema.parse({
-      id: "event-realtime-audio",
-      protocolVersion: "2026-05-09",
-      timestamp: "2026-05-09T00:00:00.000Z",
-      type: "mainRealtimeOutputAudioDelta",
-      inputId: "input-1",
-      audioBase64: "AAAA",
-    })).toMatchObject({ type: "mainRealtimeOutputAudioDelta", audioBase64: "AAAA" });
-
-    expect(EventEnvelopeSchema.parse({
-      id: "event-realtime-done",
-      protocolVersion: "2026-05-09",
-      timestamp: "2026-05-09T00:00:00.000Z",
-      type: "mainRealtimeTurnDone",
-      inputId: "input-1",
-      status: "completed",
-      finalTranscript: "완료",
-    })).toMatchObject({ type: "mainRealtimeTurnDone", finalTranscript: "완료" });
   });
 
   it("rejects invalid protocol versions", () => {

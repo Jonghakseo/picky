@@ -233,6 +233,7 @@ export class AgentdServer {
       setMainAgentModel: (cmd) => this.options.supervisor.setMainAgentModel(cmd.mainAgentModelPattern),
       setMainAgentRuntimeMode: (cmd) => this.options.supervisor.setMainAgentRuntimeMode(cmd.mode),
       setDisabledBuiltinTools: (cmd) => this.options.supervisor.setDisabledBuiltinTools(cmd.disabledBuiltinTools),
+      setMainAgentNarrationEnabled: (cmd) => this.options.supervisor.setNarrationEnabled(cmd.enabled),
       configureMainRealtimeAuth: (cmd) => this.options.supervisor.configureMainRealtimeAuth(cmd),
       beginMainRealtimeVoiceTurn: (cmd) => this.options.supervisor.beginMainRealtimeVoiceTurn(cmd.inputId, cmd.context),
       appendMainRealtimeInputAudio: (cmd) => this.options.supervisor.appendMainRealtimeInputAudio(cmd.inputId, cmd.audioBase64),
@@ -579,6 +580,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, modelPatternChars: command.mainAgentModelPattern.length };
     case "setDisabledBuiltinTools":
       return { commandId: command.id, type: command.type, count: command.disabledBuiltinTools.length };
+    case "setMainAgentNarrationEnabled":
+      return { commandId: command.id, type: command.type, enabled: command.enabled ? 1 : 0 };
     case "configureMainRealtimeAuth":
       return { commandId: command.id, type: command.type, provider: command.provider, modelOrDeployment: command.modelOrDeployment, voice: command.voice, keyPresent: command.apiKey ? 1 : 0, endpointHost: endpointHostForLog(command.azure?.resourceEndpoint) };
     case "beginMainRealtimeVoiceTurn":

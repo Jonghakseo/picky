@@ -2895,6 +2895,38 @@ describe("SessionSupervisor", () => {
     expect(replies).toEqual([]);
   });
 
+  // Picky's narrationEnabled setting (Voice tab) propagates to agentd so the seeded
+  // picky_tell_plan extension can hide its tool from the main agent when the user
+  // turns it off. The supervisor stores the current value (defaults to true), fires
+  // change listeners on every setNarrationEnabled call, and exposes a getter so the
+  // installPickyAgentdBridge in bootstrap.ts can surface it to extensions.
+  it("tracks narrationEnabled state and notifies listeners on every change", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+    const changes: boolean[] = [];
+    const unsubscribe = supervisor.onNarrationEnabledChange((enabled) => changes.push(enabled));
+
+    // Default state is enabled so the tool stays exposed on a fresh install until
+    // the user explicitly opts out.
+    expect(supervisor.getNarrationEnabled()).toBe(true);
+
+    supervisor.setNarrationEnabled(false);
+    expect(supervisor.getNarrationEnabled()).toBe(false);
+    supervisor.setNarrationEnabled(true);
+    expect(supervisor.getNarrationEnabled()).toBe(true);
+
+    // Idempotent: setting the same value again must NOT fire a listener again,
+    // otherwise downstream subscribers (the extension) would thrash setActiveTools
+    // on every settings broadcast even when nothing changed.
+    supervisor.setNarrationEnabled(true);
+
+    expect(changes).toEqual([false, true]);
+
+    unsubscribe();
+    supervisor.setNarrationEnabled(false);
+    expect(changes).toEqual([false, true]);
+  });
+
   // Defense-in-depth for the user-reported full-text-twice TTS bug. The persisted Pi session
   // JSONL recorded exactly one assistant message (stopReason:"stop") yet TTS played the full
   // reply twice, proving the duplication happens at `applyMainRuntimeEvent` emit time on a

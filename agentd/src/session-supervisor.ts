@@ -66,6 +66,15 @@ export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
   private disabledBuiltinTools: Set<string> = new Set();
+  // Mirrors the Picky settings toggle that controls whether the seeded
+  // `picky_tell_plan` extension exposes its tool and enforces the
+  // "announce the plan before any other tool" gate. Defaults to true so a
+  // fresh install keeps the planning announcement until the user opts out.
+  // Listeners get the new value on every actual change (idempotent set is
+  // a no-op) and the bootstrap bridge surfaces both the getter and the
+  // subscription to the extension.
+  private narrationEnabled = true;
+  private readonly narrationEnabledListeners = new Set<(enabled: boolean) => void>();
   private readonly artifactMaterializer: ArtifactMaterializer;
   private readonly runtimeEventHandler: RuntimeEventHandler;
   private mainHandle?: RuntimeSessionHandle;
@@ -475,6 +484,43 @@ export class SessionSupervisor extends EventEmitter {
 
   getDisabledBuiltinTools(): ReadonlySet<string> {
     return this.disabledBuiltinTools;
+  }
+
+  /**
+   * Current value of the Picky narration toggle. The seeded `picky_tell_plan`
+   * extension reads this through the bootstrap bridge to decide whether to
+   * expose its tool (`pi.setActiveTools`) and enforce the "announce the plan
+   * before any other tool" gate.
+   */
+  getNarrationEnabled(): boolean {
+    return this.narrationEnabled;
+  }
+
+  /**
+   * Update the narration toggle. Idempotent: setting the same value does not
+   * fire change listeners again, so downstream subscribers (the extension)
+   * do not thrash `setActiveTools` whenever Picky rebroadcasts settings.
+   */
+  setNarrationEnabled(enabled: boolean): void {
+    if (this.narrationEnabled === enabled) return;
+    this.narrationEnabled = enabled;
+    logAgentd("narration enabled changed", { enabled });
+    for (const listener of this.narrationEnabledListeners) {
+      try {
+        listener(enabled);
+      } catch (error) {
+        logAgentd("narration enabled listener error", { error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+  }
+
+  /**
+   * Subscribe to narration toggle changes. Returns an unsubscribe function.
+   * Listeners only fire on actual transitions, not on idempotent sets.
+   */
+  onNarrationEnabledChange(listener: (enabled: boolean) => void): () => void {
+    this.narrationEnabledListeners.add(listener);
+    return () => this.narrationEnabledListeners.delete(listener);
   }
 
   async setMainAgentRuntimeMode(mode: MainAgentRuntimeMode): Promise<void> {

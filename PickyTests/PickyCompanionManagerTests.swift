@@ -88,6 +88,27 @@ private final class FakeSpeechPlaybackProvider: PickySpeechPlaybackProvider {
 }
 
 @MainActor
+private final class FakeAVSpeechSynthesizer: PickyAVSpeechSynthesizing {
+    var delegate: AVSpeechSynthesizerDelegate?
+    var isSpeaking = false
+    var verifiesStartSynchronously = true
+    var isSpeakingAfterSpeak = true
+    private(set) var spokenUtterances: [AVSpeechUtterance] = []
+    private(set) var stopCount = 0
+
+    func speak(_ utterance: AVSpeechUtterance) {
+        spokenUtterances.append(utterance)
+        isSpeaking = isSpeakingAfterSpeak
+    }
+
+    func stopSpeaking(at boundary: AVSpeechBoundary) -> Bool {
+        stopCount += 1
+        isSpeaking = false
+        return true
+    }
+}
+
+@MainActor
 private final class FakeRealtimeAudioPlaybackEngine: PickyRealtimeAudioPlaybacking {
     var isPlaying = false
     var playedAudioMs: Double = 0
@@ -886,6 +907,94 @@ struct PickyCompanionManagerTests {
         try await Task.sleep(nanoseconds: 500_000_000)
         #expect(manager.voiceState == .responding)
         #expect(speechProvider.isSpeaking)
+    }
+
+    @Test func interactionSpeechWatchdogClearsRespondingWhenProviderNeverFinishes() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider,
+            speechWatchdogTimeout: 0.05
+        )
+
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "context-cli",
+            text: "답변은 도착했지만 TTS 완료 콜백이 유실된 상황",
+            originSource: .cli,
+            replyKind: .main
+        )))
+        try await waitUntil { manager.voiceState == .responding }
+        #expect(speechProvider.isSpeaking)
+
+        try await waitUntil { manager.voiceState == .idle }
+        #expect(!speechProvider.isSpeaking)
+    }
+
+    @Test func interactionSpeechStartFailureClearsRespondingState() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        speechProvider.shouldStartSpeaking = false
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
+            contextId: "context-cli",
+            text: "TTS 시작 실패 상황",
+            originSource: .cli,
+            replyKind: .main
+        )))
+
+        try await waitUntil { manager.voiceState == .idle }
+        #expect(!speechProvider.isSpeaking)
+    }
+
+    @Test func systemSpeechProviderRefusesBlankTextWithoutStickingSpeakingState() async throws {
+        let synthesizer = FakeAVSpeechSynthesizer()
+        let provider = PickySystemSpeechPlaybackProvider(speechSynthesizer: synthesizer)
+        var finishCalls = 0
+
+        let started = provider.speak(" \n\t ") { _ in finishCalls += 1 }
+
+        #expect(!started)
+        #expect(!provider.isSpeaking)
+        #expect(synthesizer.spokenUtterances.isEmpty)
+        #expect(finishCalls == 0)
+    }
+
+    @Test func systemSpeechProviderReturnsFalseWhenAVSpeechDoesNotStart() async throws {
+        let synthesizer = FakeAVSpeechSynthesizer()
+        synthesizer.isSpeakingAfterSpeak = false
+        let provider = PickySystemSpeechPlaybackProvider(speechSynthesizer: synthesizer)
+        var finishCalls = 0
+
+        let started = provider.speak("시작 콜백이 오지 않고 엔진도 말하지 않는 상황") { _ in finishCalls += 1 }
+
+        #expect(!started)
+        #expect(!provider.isSpeaking)
+        #expect(synthesizer.spokenUtterances.count == 1)
+        #expect(finishCalls == 0)
+    }
+
+    @Test func systemSpeechProviderIgnoresStaleDelegateCallbacksForPreviousUtterance() async throws {
+        let synthesizer = FakeAVSpeechSynthesizer()
+        let provider = PickySystemSpeechPlaybackProvider(speechSynthesizer: synthesizer)
+        var finishes: [Bool] = []
+
+        #expect(provider.speak("첫 번째 발화") { finishes.append($0) })
+        let staleUtterance = try #require(synthesizer.spokenUtterances.first)
+        #expect(provider.speak("두 번째 발화") { finishes.append($0) })
+        let currentUtterance = try #require(synthesizer.spokenUtterances.last)
+
+        provider.handleSynthesizerDelegateEvent(.didFinish, utterance: staleUtterance)
+        #expect(provider.isSpeaking)
+        #expect(finishes.isEmpty)
+
+        provider.handleSynthesizerDelegateEvent(.didFinish, utterance: currentUtterance)
+        #expect(!provider.isSpeaking)
+        #expect(finishes == [true])
     }
 
     @Test func systemSpeechPathIsNotClippedBySafetyNetWhenInteractionSpeechIDIsNil() async throws {

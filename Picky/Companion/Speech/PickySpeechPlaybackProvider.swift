@@ -316,32 +316,65 @@ final class PickyFallbackSpeechPlaybackProvider: PickySpeechPlaybackProvider {
     }
 }
 
-private final class PickyAVSpeechSynthesizerDelegate: NSObject, AVSpeechSynthesizerDelegate {
-    private let onFinish: @MainActor (Bool) -> Void
+@MainActor
+protocol PickyAVSpeechSynthesizing: AnyObject {
+    var delegate: AVSpeechSynthesizerDelegate? { get set }
+    var isSpeaking: Bool { get }
+    var verifiesStartSynchronously: Bool { get }
 
-    init(onFinish: @escaping @MainActor (Bool) -> Void) {
-        self.onFinish = onFinish
+    func speak(_ utterance: AVSpeechUtterance)
+    func stopSpeaking(at boundary: AVSpeechBoundary) -> Bool
+}
+
+extension AVSpeechSynthesizer: PickyAVSpeechSynthesizing {
+    var verifiesStartSynchronously: Bool { false }
+}
+
+enum PickyAVSpeechSynthesizerDelegateEvent {
+    case didStart
+    case willSpeak
+    case didFinish
+    case didCancel
+}
+
+private final class PickyAVSpeechSynthesizerDelegate: NSObject, AVSpeechSynthesizerDelegate {
+    private let onEvent: @MainActor (PickyAVSpeechSynthesizerDelegateEvent, AVSpeechUtterance) -> Void
+
+    init(onEvent: @escaping @MainActor (PickyAVSpeechSynthesizerDelegateEvent, AVSpeechUtterance) -> Void) {
+        self.onEvent = onEvent
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider delegate didStart synthesizerSpeaking=\(synthesizer.isSpeaking)")
+        dispatch(.didStart, utterance: utterance)
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider delegate willSpeak range=\(characterRange) synthesizerSpeaking=\(synthesizer.isSpeaking)")
+        dispatch(.willSpeak, utterance: utterance)
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider delegate didFinish synthesizerSpeaking=\(synthesizer.isSpeaking)")
-        Task { @MainActor [onFinish] in
-            onFinish(true)
-        }
+        dispatch(.didFinish, utterance: utterance)
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider delegate didCancel synthesizerSpeaking=\(synthesizer.isSpeaking)")
-        Task { @MainActor [onFinish] in
-            onFinish(false)
+        dispatch(.didCancel, utterance: utterance)
+    }
+
+    private func dispatch(_ event: PickyAVSpeechSynthesizerDelegateEvent, utterance: AVSpeechUtterance) {
+        Task { @MainActor [onEvent] in
+            onEvent(event, utterance)
         }
     }
 }
 
 enum PickySpeechPlaybackPreparation {
-    /// Short pre-roll for macOS system speech. Some output devices need a tiny
-    /// amount of generated audio time before the first audible phoneme; without
-    /// it, the start of short TTS replies can be clipped.
+    /// Short pre-roll for macOS system speech. AVSpeech uses
+    /// `preUtteranceDelay` to guard against output device wake-up clipping;
+    /// this replaces the old NSSpeech `[[slnc 500]]` prefix.
     static let prerollSilenceMilliseconds = 500
 
     static func prepareForPlayback(_ utterance: String) -> String {
@@ -355,39 +388,117 @@ final class PickySystemSpeechPlaybackProvider: PickySpeechPlaybackProvider {
 
     private(set) var isSpeaking = false
 
-    private let speechSynthesizer = AVSpeechSynthesizer()
+    private let speechSynthesizer: any PickyAVSpeechSynthesizing
     private var speechSynthesizerDelegate: PickyAVSpeechSynthesizerDelegate?
+    private var activeSpeechID: UUID?
+    private var activeUtterance: AVSpeechUtterance?
+    private var activeSpeechDidStart = false
+    private var startVerificationTask: Task<Void, Never>?
+    private var onFinish: ((Bool) -> Void)?
+
+    init(speechSynthesizer: any PickyAVSpeechSynthesizing = AVSpeechSynthesizer()) {
+        self.speechSynthesizer = speechSynthesizer
+    }
 
     @discardableResult
     func speak(_ utterance: String, onFinish: @escaping (Bool) -> Void) -> Bool {
-        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider speak requested chars=\(utterance.count) existingSpeaking=\(isSpeaking) engineSpeaking=\(speechSynthesizer.isSpeaking)")
+        let trimmedUtterance = utterance.trimmingCharacters(in: .whitespacesAndNewlines)
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider speak requested chars=\(utterance.count) trimmedChars=\(trimmedUtterance.count) existingSpeaking=\(isSpeaking) engineSpeaking=\(speechSynthesizer.isSpeaking)")
         stopSpeaking()
+        guard !trimmedUtterance.isEmpty else {
+            PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider refused empty utterance")
+            return false
+        }
 
-        let delegate = PickyAVSpeechSynthesizerDelegate { [weak self] didFinish in
-            PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider finish closure didFinish=\(didFinish) currentSpeaking=\(self?.isSpeaking ?? false) engineSpeaking=\(self?.speechSynthesizer.isSpeaking ?? false)")
-            self?.isSpeaking = false
-            self?.speechSynthesizer.delegate = nil
-            self?.speechSynthesizerDelegate = nil
-            onFinish(didFinish)
+        let speechID = UUID()
+        let spokenUtterance = AVSpeechUtterance(string: trimmedUtterance)
+        spokenUtterance.preUtteranceDelay = Double(PickySpeechPlaybackPreparation.prerollSilenceMilliseconds) / 1000.0
+
+        let delegate = PickyAVSpeechSynthesizerDelegate { [weak self] event, delegateUtterance in
+            self?.handleSynthesizerDelegateEvent(event, utterance: delegateUtterance)
         }
         speechSynthesizer.delegate = delegate
         speechSynthesizerDelegate = delegate
-
-        let spokenUtterance = AVSpeechUtterance(string: utterance)
-        spokenUtterance.preUtteranceDelay = Double(PickySpeechPlaybackPreparation.prerollSilenceMilliseconds) / 1000.0
+        activeSpeechID = speechID
+        activeUtterance = spokenUtterance
+        activeSpeechDidStart = false
+        self.onFinish = onFinish
         isSpeaking = true
-        speechSynthesizer.speak(spokenUtterance)
-        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider start requested chars=\(utterance.count) preDelayMs=\(PickySpeechPlaybackPreparation.prerollSilenceMilliseconds) speakingAfterStart=\(isSpeaking) engineSpeakingAfterStart=\(speechSynthesizer.isSpeaking)")
 
+        speechSynthesizer.speak(spokenUtterance)
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider start requested speechID=\(speechID) chars=\(trimmedUtterance.count) preDelayMs=\(PickySpeechPlaybackPreparation.prerollSilenceMilliseconds) speakingAfterStart=\(isSpeaking) engineSpeakingAfterStart=\(speechSynthesizer.isSpeaking)")
+
+        guard !speechSynthesizer.verifiesStartSynchronously || speechSynthesizer.isSpeaking else {
+            PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider start verification failed speechID=\(speechID) engineSpeakingAfterStart=false")
+            clearActiveSpeech()
+            return false
+        }
+
+        scheduleStartVerification(speechID: speechID)
         return true
     }
 
     func stopSpeaking() {
-        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider stop requested speakingBefore=\(isSpeaking) engineSpeakingBefore=\(speechSynthesizer.isSpeaking) hasDelegate=\(speechSynthesizerDelegate != nil)")
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider stop requested active=\(activeSpeechID?.uuidString ?? "none") speakingBefore=\(isSpeaking) engineSpeakingBefore=\(speechSynthesizer.isSpeaking) hasDelegate=\(speechSynthesizerDelegate != nil)")
         speechSynthesizer.delegate = nil
-        isSpeaking = false
         let stopped = speechSynthesizer.stopSpeaking(at: .immediate)
+        clearActiveSpeech()
         PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider stop completed stopped=\(stopped) speakingAfter=\(isSpeaking) engineSpeakingAfter=\(speechSynthesizer.isSpeaking)")
+    }
+
+    func handleSynthesizerDelegateEvent(_ event: PickyAVSpeechSynthesizerDelegateEvent, utterance: AVSpeechUtterance) {
+        guard let activeSpeechID,
+              let activeUtterance,
+              activeUtterance === utterance else {
+            PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider ignored stale delegate event=\(event) active=\(activeSpeechID?.uuidString ?? "none")")
+            return
+        }
+
+        switch event {
+        case .didStart, .willSpeak:
+            PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider accepted delegate event=\(event) speechID=\(activeSpeechID)")
+            activeSpeechDidStart = true
+            isSpeaking = true
+        case .didFinish:
+            finishActiveSpeech(speechID: activeSpeechID, didFinish: true)
+        case .didCancel:
+            finishActiveSpeech(speechID: activeSpeechID, didFinish: false)
+        }
+    }
+
+    private func finishActiveSpeech(speechID: UUID, didFinish: Bool) {
+        guard activeSpeechID == speechID else { return }
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider finish closure didFinish=\(didFinish) speechID=\(speechID) currentSpeaking=\(isSpeaking) engineSpeaking=\(speechSynthesizer.isSpeaking)")
+        let finish = onFinish
+        clearActiveSpeech()
+        finish?(didFinish)
+    }
+
+    private func scheduleStartVerification(speechID: UUID) {
+        startVerificationTask?.cancel()
+        startVerificationTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 750_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self,
+                      self.activeSpeechID == speechID,
+                      !self.activeSpeechDidStart,
+                      !self.speechSynthesizer.isSpeaking else { return }
+                PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider delayed start verification failed speechID=\(speechID)")
+                self.finishActiveSpeech(speechID: speechID, didFinish: false)
+            }
+        }
+    }
+
+    private func clearActiveSpeech() {
+        startVerificationTask?.cancel()
+        startVerificationTask = nil
+        isSpeaking = false
+        speechSynthesizer.delegate = nil
         speechSynthesizerDelegate = nil
+        activeSpeechID = nil
+        activeUtterance = nil
+        activeSpeechDidStart = false
+        onFinish = nil
     }
 }

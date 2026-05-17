@@ -2453,13 +2453,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Turn this off to silence the agent's spoken filler lines during long tool calls. Other companion replies still play when TTS is on."
+            "value": "Turn this off to hide the picky_tell_plan tool from the agent and skip the spoken plan before tool calls. Other companion replies still play when TTS is on."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 옵션을 끄면 도구 실행 중 진행 상황을 알려주는 음성 멘트가 재생되지 않아요. 일반 음성 응답은 TTS가 켜져 있을 때 그대로 들려요."
+            "value": "이 옵션을 끄면 도구 호출 전 들려주는 작업 계획 음성과 함께 picky_tell_plan 도구 자체가 에이전트에게 숨겨져요. 일반 음성 응답은 TTS가 켜져 있을 때 그대로 들려요."
           }
         }
       }
@@ -2469,13 +2469,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enable progress narration"
+            "value": "Enable plan narration"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "진행 상황 음성 안내 활성화"
+            "value": "작업 계획 음성 안내 활성화"
           }
         }
       }
@@ -3180,38 +3180,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "사용자 요청으로 에이전트가 실행 중인 피클을 멈추게 해요. 끄면 독에서 직접 중단해야 해요."
-          }
-        }
-      }
-    },
-    "settings.builtinTools.tool.narrateProgress.name": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Narrate progress"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "진행 상황 음성 안내"
-          }
-        }
-      }
-    },
-    "settings.builtinTools.tool.narrateProgress.description": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Let the agent speak a short filler line before long steps. Independent from the voice narration toggle (Voice tab) which controls audio playback."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "긴 작업 전에 에이전트가 짧은 멘트를 음성으로 알려주도록 해요. 음성 탭의 narration 토글(재생 여부)과 독립적으로 작동해요."
           }
         }
       }

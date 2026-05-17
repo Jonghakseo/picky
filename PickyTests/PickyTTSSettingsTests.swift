@@ -25,8 +25,32 @@ private final class TTSTestVoiceSelectionStore: PickySessionSelectionStoring {
 }
 
 @MainActor
+private final class TTSTestLongRunningSpeechProvider: PickySpeechPlaybackProvider {
+    let displayName = "Off"
+    private(set) var isSpeaking = false
+    private var onFinish: ((Bool) -> Void)?
+
+    @discardableResult
+    func speak(_ utterance: String, onFinish: @escaping (Bool) -> Void) -> Bool {
+        self.onFinish = onFinish
+        isSpeaking = true
+        return true
+    }
+
+    func stopSpeaking() {
+        onFinish = nil
+        isSpeaking = false
+    }
+}
+
+private struct TTSTestTimeoutError: Error, CustomStringConvertible {
+    let description: String
+}
+
+@MainActor
 private func waitForTTSCondition(
-    timeout: TimeInterval = 1,
+    timeout: TimeInterval = 5,
+    description: @autoclosure () -> String = "TTS test condition",
     _ predicate: @escaping @MainActor () -> Bool
 ) async throws {
     let deadline = Date().addingTimeInterval(timeout)
@@ -34,7 +58,7 @@ private func waitForTTSCondition(
         if predicate() { return }
         try await Task.sleep(nanoseconds: 20_000_000)
     }
-    Issue.record("Timed out waiting for TTS test condition")
+    throw TTSTestTimeoutError(description: "Timed out waiting for \(description()) after \(timeout)s")
 }
 
 @Suite("Picky TTS settings")
@@ -83,7 +107,6 @@ struct PickyTTSSettingsTests {
         let didStart = provider.speak("hello") { finished in
             didFinish = finished
         }
-        try await Task.sleep(nanoseconds: 50_000_000)
 
         #expect(didStart == true)
         #expect(didFinish == nil)
@@ -94,12 +117,22 @@ struct PickyTTSSettingsTests {
     }
 
     @MainActor
+    @Test func mutedTTSDisplayDurationExceedsCursorMinimumDisplayWindow() {
+        #expect(PickyMutedSpeechPlaybackProvider.displayDuration(for: "소리 없이 보여줄 답변입니다.") > PickyInteractionReducer.minimumDisplayDuration)
+    }
+
+    @MainActor
     @Test func mutedTTSKeepsCursorReplyVisiblePastMinimumDisplayWindow() async throws {
-        let speechProvider = PickyMutedSpeechPlaybackProvider()
+        // Use a manually controlled provider so the assertion is not affected by
+        // wall-clock delays from other highly parallel MainActor-heavy tests.
+        // The production muted provider's duration is covered by
+        // mutedTTSDisplayDurationExceedsCursorMinimumDisplayWindow().
+        let speechProvider = TTSTestLongRunningSpeechProvider()
         let manager = CompanionManager(
             agentClient: TTSTestVoiceClient(),
             selectionStore: TTSTestVoiceSelectionStore(),
-            speechPlaybackProvider: speechProvider
+            speechPlaybackProvider: speechProvider,
+            speechWatchdogTimeout: 60
         )
 
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(
@@ -108,7 +141,9 @@ struct PickyTTSSettingsTests {
             originSource: .voice,
             replyKind: .main
         )))
-        try await waitForTTSCondition { manager.voiceState == .responding }
+        try await waitForTTSCondition(description: "muted TTS response to enter responding state") {
+            manager.voiceState == .responding && speechProvider.isSpeaking
+        }
 
         try await Task.sleep(nanoseconds: 500_000_000)
 

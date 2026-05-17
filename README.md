@@ -81,14 +81,6 @@ Picky asks for macOS permissions that support its local command-center behavior:
 
 Picky does not continuously capture your screen. Context is gathered only for the flow you request.
 
-## Learn more
-
-- [User Manual](docs/user-manual.md) — setup, shortcuts, settings, Pickles, feedback, and daily usage.
-- [Architecture](ARCHITECTURE.md) — app/daemon/Pi boundaries and internal data flow.
-- [Maintenance Guide](AGENTS.md) — development workflow, build/test commands, and agent instructions.
-- [Auto-update Notes](docs/auto-update.md) — Sparkle update behavior and distribution details.
-- [Alpha Test Build](docs/alpha-test-build.md) / [Beta Test Build](docs/beta-test-build.md) — packaging and test distribution notes.
-
 ## License
 
 See [LICENSE](LICENSE) for licensing details.

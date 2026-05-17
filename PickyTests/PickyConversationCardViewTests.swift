@@ -672,7 +672,7 @@ struct PickyConversationCardViewTests {
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
         client.emit(.protocolEvent(.fixture(eventJSON: sessionUpdatedJSON(id: "x", status: "running"))))
-        try await settle()
+        try await waitForSession(viewModel, id: "x")
 
         await #expect(throws: SendFailure.self) {
             try await viewModel.steer(text: "test", sessionID: "x")
@@ -687,7 +687,7 @@ struct PickyConversationCardViewTests {
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
         client.emit(.protocolEvent(.fixture(eventJSON: sessionUpdatedJSON(id: "x", status: "running"))))
-        try await settle()
+        try await waitForSession(viewModel, id: "x")
 
         try await viewModel.steer(text: "test", sessionID: "x")
 
@@ -702,7 +702,7 @@ struct PickyConversationCardViewTests {
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
         client.emit(.protocolEvent(.fixture(eventJSON: sessionUpdatedJSON(id: "x", status: "completed"))))
-        try await settle()
+        try await waitForSession(viewModel, id: "x")
 
         try await viewModel.followUp(text: "test", sessionID: "x")
 
@@ -749,7 +749,7 @@ struct PickyConversationCardViewTests {
         defer { viewModel.stop() }
 
         client.emit(.protocolEvent(.fixture(eventJSON: sessionUpdatedJSON(id: "pickle-voice", status: "running"))))
-        try await settle()
+        try await waitForSession(viewModel, id: "pickle-voice")
 
         let session = try #require(viewModel.sessions.first(where: { $0.id == "pickle-voice" }))
         let card = PickyConversationCardView(viewModel: viewModel, session: session)
@@ -1235,6 +1235,24 @@ private func toolActivity(
 
 private func settle() async throws {
     try await Task.sleep(nanoseconds: 20_000_000)
+}
+
+@MainActor
+private func waitForSession(
+    _ viewModel: PickySessionListViewModel,
+    id: String,
+    timeout: Duration = .seconds(1),
+    interval: Duration = .milliseconds(5)
+) async throws {
+    let clock = ContinuousClock()
+    let deadline = clock.now + timeout
+    while !viewModel.sessions.contains(where: { $0.id == id }) {
+        if clock.now >= deadline {
+            Issue.record("Timed out waiting for session \(id)")
+            throw CancellationError()
+        }
+        try await Task.sleep(for: interval)
+    }
 }
 
 private func sessionUpdatedJSON(id: String = "session-1", status: String = "running") -> String {

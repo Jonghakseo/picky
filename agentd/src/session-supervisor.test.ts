@@ -647,7 +647,7 @@ describe("SessionSupervisor", () => {
     await supervisor.load();
 
     const creating = supervisor.createEmptyPickleSession({ ...context("manual"), source: "system", transcript: undefined });
-    await waitUntil(() => supervisor.get("empty-pickle-early-input")?.status === "waiting_for_input");
+    await waitForPendingPrewarm(runtime);
 
     const steering = supervisor.steerPickleSession("empty-pickle-early-input", "첫 작업 시작해줘");
     await settle();
@@ -670,7 +670,7 @@ describe("SessionSupervisor", () => {
     await supervisor.load();
 
     const creating = supervisor.createEmptyPickleSession({ ...context("manual"), source: "system", transcript: undefined });
-    await waitUntil(() => supervisor.get("pending-steer-abort")?.status === "waiting_for_input");
+    await waitForPendingPrewarm(runtime);
 
     const steering = supervisor.steerPickleSession("pending-steer-abort", "do not run");
     await settle();
@@ -695,7 +695,7 @@ describe("SessionSupervisor", () => {
     await supervisor.load();
 
     const creating = supervisor.createEmptyPickleSession({ ...context("manual"), source: "system", transcript: undefined });
-    await waitUntil(() => supervisor.get("pending-followup-abort")?.status === "waiting_for_input");
+    await waitForPendingPrewarm(runtime);
 
     const following = supervisor.followUp("pending-followup-abort", "do not follow");
     await settle();
@@ -718,7 +718,7 @@ describe("SessionSupervisor", () => {
     await supervisor.load();
 
     const creating = supervisor.createEmptyPickleSession({ ...context("manual"), source: "system", transcript: undefined });
-    await waitUntil(() => supervisor.get("pending-bash-abort")?.status === "waiting_for_input");
+    await waitForPendingPrewarm(runtime);
 
     const bash = supervisor.followUp("pending-bash-abort", "!pwd");
     await settle();
@@ -741,7 +741,7 @@ describe("SessionSupervisor", () => {
     await supervisor.load();
 
     const creating = supervisor.createEmptyPickleSession({ ...context("manual"), source: "system", transcript: undefined });
-    await waitUntil(() => supervisor.get("pending-prewarm-reject")?.status === "waiting_for_input");
+    await waitForPendingPrewarm(runtime);
     const steering = supervisor.steerPickleSession("pending-prewarm-reject", "will fail");
     await settle();
 
@@ -787,7 +787,7 @@ describe("SessionSupervisor", () => {
     await supervisor.load();
 
     const creating = supervisor.createEmptyPickleSession({ ...context("manual"), source: "system", transcript: undefined });
-    await waitUntil(() => supervisor.get("pending-consecutive-inputs")?.status === "waiting_for_input");
+    await waitForPendingPrewarm(runtime);
 
     const first = supervisor.steerPickleSession("pending-consecutive-inputs", "first");
     const second = supervisor.followUp("pending-consecutive-inputs", "second");
@@ -1446,7 +1446,11 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(pickle.id)?.status).toBe("completed");
 
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Auto-compaction failed: Summarization failed: server overloaded", noTurnRan: true, compactionFailed: true, compactionReason: "threshold" });
-    await settle();
+    await waitUntil(() => {
+      const updated = supervisor.get(pickle.id);
+      return updated?.lastSummary === "Auto-compaction failed: Summarization failed: server overloaded"
+        && (updated.messages ?? []).some((message) => message.kind === "system" && message.text?.startsWith("Auto-compaction failed") === true);
+    });
 
     const updated = supervisor.get(pickle.id)!;
     expect(updated.status).toBe("completed");
@@ -1498,13 +1502,13 @@ describe("SessionSupervisor", () => {
     };
 
     await supervisor.followUp(pickle.id, "/compact");
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.lastSummary === "Session compacted");
     expect(supervisor.get(pickle.id)?.status).toBe("completed");
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("Session compacted");
     expect((supervisor.get(pickle.id)?.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(true);
 
     await supervisor.followUp(pickle.id, "/name 컴팩션 후 이름");
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.title === "컴팩션 후 이름" && supervisor.get(pickle.id)?.status === "completed");
 
     expect(supervisor.get(pickle.id)?.status).toBe("completed");
     expect(supervisor.get(pickle.id)?.title).toBe("컴팩션 후 이름");
@@ -1758,7 +1762,7 @@ describe("SessionSupervisor", () => {
 
     runtime.handle?.emit({ type: "thinking_delta", delta: "I need to inspect\n" });
     runtime.handle?.emit({ type: "thinking_delta", delta: "the HUD current work state." });
-    await settle();
+    await waitUntil(() => supervisor.get(session.id)?.thinkingPreview === "I need to inspect the HUD current work state.");
 
     expect(supervisor.get(session.id)?.thinkingPreview).toBe("I need to inspect the HUD current work state.");
 
@@ -1945,7 +1949,7 @@ describe("SessionSupervisor", () => {
     await supervisor.load();
 
     const creating = supervisor.createEmptyPickleSession(context("manual pickle"));
-    await waitUntil(() => supervisor.get("empty-pickle-abort")?.status === "waiting_for_input");
+    await waitForPendingPrewarm(runtime);
     await supervisor.abort("empty-pickle-abort");
     expect(supervisor.get("empty-pickle-abort")?.status).toBe("cancelled");
 
@@ -1986,7 +1990,7 @@ describe("SessionSupervisor", () => {
     await supervisor.followUp(pickle.id, "다시 확인해줘");
     sideRuntime.handle?.emit({ type: "assistant_delta", delta: "재조사 완료" });
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
+    await waitUntil(() => mainRuntime.prewarmCalls === 1 && (mainRuntime.handle?.followUps.length ?? 0) === 1);
 
     expect(mainRuntime.prewarmCalls).toBe(1);
     expect(mainRuntime.handle?.followUps).toHaveLength(1);
@@ -2012,7 +2016,7 @@ describe("SessionSupervisor", () => {
 
     sideRuntime.handle?.emit({ type: "assistant_delta", delta: "Bridged answer" });
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
+    await waitUntil(() => forwarded.length === 1);
 
     expect(forwarded).toHaveLength(1);
     expect(forwarded[0].sessionId).toBe(pickle.id);
@@ -3177,7 +3181,7 @@ describe("SessionSupervisor", () => {
       mainRuntime.handle?.emit({ type: "assistant_delta", inputId: "main-turn-3", delta: "빠른 대체 응답" });
       mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-3", status: replacementTerminalStatus, summary: "Replacement ended" });
       mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-2", status: "cancelled", summary: "Old turn aborted late" });
-      await settle();
+      await waitUntil(() => replies.some((reply) => reply.contextId === "context-새 입력" && reply.text === "빠른 대체 응답"));
 
       expect(replies).toEqual([{ contextId: "context-새 입력", text: "빠른 대체 응답" }]);
       expect(supervisor.listMainMessages().map((message) => ({ role: message.role, text: message.text }))).toEqual([
@@ -3582,7 +3586,7 @@ describe("SessionSupervisor", () => {
       waitsForInput: false,
       request: { id: "notify-1", sessionId: session.id, method: "notify", createdAt: "2026-05-01T00:00:00.000Z", prompt: "Long extension update", notifyType: "warning" },
     });
-    await settle();
+    await waitUntil(() => appended.some((message) => message.text === "Long extension update" && message.notifyType === "warning"));
 
     const updated = supervisor.get(session.id);
     expect(updated?.status).toBe("running");
@@ -3952,7 +3956,7 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(session.id)?.status).toBe("completed");
 
     runtime.handle?.emit({ type: "input_message", role: "user", text: "extension follow-up", originatedBy: "pi_extension" });
-    await settle();
+    await waitUntil(() => supervisor.get(session.id)?.status === "running");
 
     expect(supervisor.get(session.id)?.status).toBe("running");
     expect(supervisor.get(session.id)?.finalAnswer).toBeUndefined();
@@ -4699,7 +4703,11 @@ describe("SessionSupervisor", () => {
     runtime.handle?.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running" });
     runtime.handle?.emit({ type: "assistant_delta", delta: " done" });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await waitUntil(() => (supervisor.get(session.id)?.messages ?? []).length === 3);
+    await waitUntil(() => {
+      const messages = supervisor.get(session.id)?.messages ?? [];
+      return messages.filter((message) => message.kind === "agent_text").length === 2
+        && messages.some((message) => message.kind === "agent_activity");
+    });
 
     expect(events.map((event) => event.type)).toContain("append");
     expect(events.some((event) => event.type === "replace" || event.type === "remove")).toBe(true);
@@ -5057,6 +5065,10 @@ class DeferredPrewarmRuntime implements AgentRuntime {
     this.rejectPrewarm = undefined;
   }
 
+  hasPendingPrewarm(): boolean {
+    return Boolean(this.resolvePrewarm || this.rejectPrewarm);
+  }
+
   async create(_prompt: BuiltPrompt, options: { sessionId?: string }): Promise<RuntimeSessionHandle> {
     this.createCalls += 1;
     this.handle = new ManualHandle(options.sessionId ?? "manual");
@@ -5238,6 +5250,10 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
     if (Date.now() > deadline) throw new Error("Timed out waiting for condition");
     await delay(10);
   }
+}
+
+async function waitForPendingPrewarm(runtime: DeferredPrewarmRuntime): Promise<void> {
+  await waitUntil(() => runtime.hasPendingPrewarm());
 }
 
 async function delay(milliseconds: number): Promise<void> {

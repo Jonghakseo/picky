@@ -653,6 +653,10 @@ final class PickySessionListViewModel: ObservableObject {
     func ensureSlashCommandsLoaded(sessionID: String) {
         guard slashCommandsBySessionID[sessionID] == nil else { return }
         guard !slashCommandRequestedSessionIDs.contains(sessionID) else { return }
+        requestSlashCommands(sessionID: sessionID)
+    }
+
+    private func requestSlashCommands(sessionID: String) {
         slashCommandRequestedSessionIDs.insert(sessionID)
         let epoch = slashCommandsEpochBySessionID[sessionID] ?? 0
         let command = PickyCommandEnvelope(type: .listSlashCommands, sessionId: sessionID)
@@ -664,9 +668,11 @@ final class PickySessionListViewModel: ObservableObject {
             do {
                 try await client.send(command)
             } catch {
-                slashCommandRequestedSessionIDs.remove(sessionID)
                 slashCommandRequestEpochByID.removeValue(forKey: command.id)
                 slashCommandRequestSessionByID.removeValue(forKey: command.id)
+                if !slashCommandRequestSessionByID.values.contains(sessionID) {
+                    slashCommandRequestedSessionIDs.remove(sessionID)
+                }
                 lastError = error.localizedDescription
             }
         }
@@ -1525,17 +1531,32 @@ final class PickySessionListViewModel: ObservableObject {
             invalidateSlashCommandCache(sessionID: sessionId, refreshIfPreviouslyRequested: true)
         case .slashCommandsSnapshot(let sessionId, let requestId, let commands):
             let currentEpoch = slashCommandsEpochBySessionID[sessionId] ?? 0
-            guard let requestId,
-                  let requestSessionId = slashCommandRequestSessionByID.removeValue(forKey: requestId),
-                  let requestEpoch = slashCommandRequestEpochByID.removeValue(forKey: requestId),
-                  requestSessionId == sessionId else {
-                pickySessionLog("slash commands snapshot discarded session=\(sessionId) reason=unknown-request commands=\(commands.count)")
-                break
+            let requestEpoch: UInt64?
+            if let requestId {
+                guard let requestSessionId = slashCommandRequestSessionByID.removeValue(forKey: requestId),
+                      let matchedRequestEpoch = slashCommandRequestEpochByID.removeValue(forKey: requestId),
+                      requestSessionId == sessionId else {
+                    pickySessionLog("slash commands snapshot discarded session=\(sessionId) reason=unknown-request commands=\(commands.count)")
+                    break
+                }
+                requestEpoch = matchedRequestEpoch
+            } else {
+                let matchingRequestIDs = slashCommandRequestSessionByID
+                    .filter { entry in
+                        entry.value == sessionId && slashCommandRequestEpochByID[entry.key] == currentEpoch
+                    }
+                    .map(\.key)
+                guard !matchingRequestIDs.isEmpty else {
+                    pickySessionLog("slash commands snapshot discarded session=\(sessionId) reason=no-request-id-without-inflight commands=\(commands.count)")
+                    break
+                }
+                requestEpoch = currentEpoch
             }
             guard requestEpoch == currentEpoch else {
-                pickySessionLog("slash commands snapshot discarded session=\(sessionId) requestEpoch=\(requestEpoch) currentEpoch=\(currentEpoch) commands=\(commands.count)")
+                pickySessionLog("slash commands snapshot discarded session=\(sessionId) requestEpoch=\(requestEpoch ?? 0) currentEpoch=\(currentEpoch) commands=\(commands.count)")
                 break
             }
+            clearSlashCommandRequests(sessionID: sessionId)
             pickySessionLog("slash commands snapshot session=\(sessionId) epoch=\(currentEpoch) commands=\(commands.count)")
             slashCommandsBySessionID[sessionId] = commands
             slashCommandRequestedSessionIDs.insert(sessionId)
@@ -1651,20 +1672,20 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     /// Safety-net retry for the composer's "Loading commands…" state. If a previous request was
-    /// dropped silently (e.g. its snapshot arrived after the cache epoch advanced from a
-    /// concurrent cwd/piSessionFile/runtime-reattach update, or the websocket lost a frame),
-    /// the in-flight tracking is cleared and a fresh request is sent so the autocomplete unsticks
-    /// without forcing the user to close and reopen the HUD. No-op if commands are already loaded.
+    /// dropped silently (e.g. transport loss), send another request in the same cache epoch so a
+    /// slow-but-valid response from either request can still hydrate autocomplete instead of being
+    /// starved by polling. No-op if commands are already loaded.
     func refreshSlashCommandsIfStillLoading(sessionID: String) {
         guard slashCommandsBySessionID[sessionID] == nil else { return }
-        let staleRequestIDs = slashCommandRequestSessionByID.filter { $0.value == sessionID }.map(\.key)
-        for requestID in staleRequestIDs {
+        requestSlashCommands(sessionID: sessionID)
+    }
+
+    private func clearSlashCommandRequests(sessionID: String) {
+        let requestIDs = slashCommandRequestSessionByID.filter { $0.value == sessionID }.map(\.key)
+        for requestID in requestIDs {
             slashCommandRequestSessionByID.removeValue(forKey: requestID)
             slashCommandRequestEpochByID.removeValue(forKey: requestID)
         }
-        slashCommandsEpochBySessionID[sessionID] = (slashCommandsEpochBySessionID[sessionID] ?? 0) &+ 1
-        slashCommandRequestedSessionIDs.remove(sessionID)
-        ensureSlashCommandsLoaded(sessionID: sessionID)
     }
 
     private func pruneSlashCommandCache(knownSessionIDs: Set<String>) {

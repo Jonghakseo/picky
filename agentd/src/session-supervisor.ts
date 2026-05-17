@@ -1215,7 +1215,7 @@ export class SessionSupervisor extends EventEmitter {
         await this.patchMainState({ contextUsage: undefined });
       }
       if (["completed", "failed", "cancelled"].includes(event.status)) {
-        if (this.pendingInterruptedMainTurns > 0 && event.status === "cancelled") {
+        if (this.pendingInterruptedMainTurns > 0 && (event.status === "cancelled" || this.interruptedReplacementTurnStarted)) {
           this.pendingInterruptedMainTurns -= 1;
           this.interruptedMainBufferedDraft = "";
           if (!this.interruptedReplacementTurnStarted) this.mainDraft = "";

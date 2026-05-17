@@ -2939,6 +2939,36 @@ describe("SessionSupervisor", () => {
     expect(replies).toEqual([{ contextId: "context-두 번째 질문", text: "두 번째 응답" }]);
   });
 
+  it("does not attach an aborted previous main reply to the newer input", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-interrupt-aborted-reply-"));
+    const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    const replies: Array<{ contextId: string; text: string }> = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+
+    await supervisor.prewarmMainAgent("/tmp/project");
+    await supervisor.route(context("이전 입력"));
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Started" });
+    await supervisor.route(context("새 입력"));
+
+    // Pi may flush partial assistant text from the aborted previous turn before its
+    // cancelled terminal event arrives. That stale text must not become the answer to
+    // `새 입력` just because the supervisor already switched `mainReplyContextId`.
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "이전 입력에 대한 늦은 답변" });
+    mainRuntime.handle?.emit({ type: "status", status: "cancelled", summary: "Interrupted turn aborted" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "새 입력에 대한 답변" });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(mainRuntime.handle?.interrupts).toHaveLength(1);
+    expect(replies).toEqual([{ contextId: "context-새 입력", text: "새 입력에 대한 답변" }]);
+    expect(supervisor.listMainMessages().map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: "user", text: "이전 입력" },
+      { role: "user", text: "새 입력" },
+      { role: "assistant", text: "새 입력에 대한 답변" },
+    ]);
+  });
+
   it("prewarms Picky without creating a visible session", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });

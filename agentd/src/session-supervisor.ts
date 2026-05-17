@@ -102,7 +102,13 @@ export class SessionSupervisor extends EventEmitter {
   private lastMainQuickReplyContextId?: string;
   private lastMainQuickReplyAt?: number;
   private suppressNextMainReply = false;
-  private suppressInterruptedMainCompletion = false;
+  // When a newer Picky input interrupts an active main-agent turn, Pi can still flush
+  // assistant deltas and the aborted terminal event from the previous turn after
+  // `mainReplyContextId` has already been switched to the newer input. Buffer deltas until the
+  // terminal boundary tells us whether they belonged to the cancelled previous turn (discard) or
+  // to the replacement turn (replay into `mainDraft`).
+  private interruptedMainTurnSuppressions = 0;
+  private interruptedMainBufferedDraft = "";
   private pickleSessionIds = new Set<string>();
   // Session ids that this supervisor does NOT host locally but that should still be tagged as
   // Pickle-completion contexts when the main agent's reply turn ends. Populated by
@@ -524,7 +530,8 @@ export class SessionSupervisor extends EventEmitter {
     this.mainIsProcessing = false;
     this.mainTerminalProcessed = false;
     this.suppressNextMainReply = false;
-    this.suppressInterruptedMainCompletion = false;
+    this.interruptedMainTurnSuppressions = 0;
+    this.interruptedMainBufferedDraft = "";
     if (this.pendingPickleCompletions.length > 0) logAgentd("Picky pending Pickle completions cleared", { count: this.pendingPickleCompletions.length });
     this.pendingPickleCompletions = [];
   }
@@ -925,10 +932,11 @@ export class SessionSupervisor extends EventEmitter {
   private async deliverMainPrompt(handle: RuntimeSessionHandle, prompt: ReturnType<typeof buildMainAgentPrompt>): Promise<void> {
     if (this.mainIsProcessing && handle.interrupt) {
       logAgentd("main interrupt", { contextId: this.mainReplyContextId });
-      this.suppressInterruptedMainCompletion = true;
+      this.interruptedMainTurnSuppressions += 1;
+      this.interruptedMainBufferedDraft = "";
+      this.mainTerminalProcessed = false;
       this.mainDraft = "";
       await handle.interrupt(prompt);
-      this.suppressInterruptedMainCompletion = false;
       this.mainIsProcessing = true;
       return;
     }
@@ -1121,6 +1129,11 @@ export class SessionSupervisor extends EventEmitter {
       return;
     }
     if (event.type === "assistant_delta") {
+      if (this.interruptedMainTurnSuppressions > 0) {
+        this.interruptedMainBufferedDraft += event.delta;
+        logAgentd("main interrupted delta buffered", { contextId: this.mainReplyContextId, deltaChars: event.delta.length, pending: this.interruptedMainTurnSuppressions });
+        return;
+      }
       // A new delta means a new turn has started. Re-arm the terminal guard even
       // if the runtime did not emit an explicit `status:"running"` between turns
       // (Pi normally does, but follow-up flows that immediately stream content can
@@ -1139,6 +1152,20 @@ export class SessionSupervisor extends EventEmitter {
         await this.patchMainState({ contextUsage: undefined });
       }
       if (["completed", "failed", "cancelled"].includes(event.status)) {
+        if (this.interruptedMainTurnSuppressions > 0 && event.status === "cancelled") {
+          this.interruptedMainTurnSuppressions -= 1;
+          this.interruptedMainBufferedDraft = "";
+          this.mainDraft = "";
+          this.mainTerminalProcessed = false;
+          this.mainIsProcessing = true;
+          logAgentd("main interrupted terminal suppressed", { status: event.status, contextId: this.mainReplyContextId, pending: this.interruptedMainTurnSuppressions });
+          return;
+        }
+        if (this.interruptedMainTurnSuppressions > 0) {
+          this.mainDraft += this.interruptedMainBufferedDraft;
+          this.interruptedMainBufferedDraft = "";
+          this.interruptedMainTurnSuppressions = 0;
+        }
         this.mainIsProcessing = false;
         // Guard A: drop any subsequent terminal events for the same turn (e.g. the
         // `agent_end` that follows `turn_end`). The first one wins.
@@ -1150,11 +1177,6 @@ export class SessionSupervisor extends EventEmitter {
         // still-populated draft and double-emit the reply.
         const draftSnapshot = this.mainDraft;
         this.mainDraft = "";
-        if (this.suppressInterruptedMainCompletion) {
-          this.suppressInterruptedMainCompletion = false;
-          this.schedulePickleCompletionDrain();
-          return;
-        }
         logAgentd("main status", { status: event.status, contextId: this.mainReplyContextId, draftChars: draftSnapshot.length });
         const rawReply = cleanFinalAnswer(draftSnapshot) ?? (event.status === "failed" ? event.summary : undefined);
         if (this.suppressNextMainReply) {

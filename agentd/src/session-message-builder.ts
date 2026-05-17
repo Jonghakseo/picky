@@ -158,7 +158,13 @@ export class SessionMessageBuilder {
   async recordTerminalSessionMessages(sessionId: string, messages: readonly PickySessionMessage[]): Promise<void> {
     await this.flushAssistantText(sessionId);
     await this.flushThinking(sessionId);
-    for (const message of messages) await this.appendInternal(sessionId, message);
+    // Pi terminal imports carry their own timestamps from the Pi JSONL transcript. Routing them
+    // through monotonicCreatedAt would clamp every back-dated entry to the current journal max,
+    // collapsing whole back-filled turns onto a single instant. That breaks per-turn slices
+    // (PickyTurnSummary.elapsed, agentActivityScope) because priorUserText.createdAt and
+    // activity.createdAt become identical, leaving a zero-width range with zero matching tools.
+    // Preserve the Pi-supplied timestamps so the in-batch chronology survives.
+    for (const message of messages) await this.appendInternal(sessionId, message, { preserveTimestamp: true });
   }
 
   async recordActivitySnapshot(sessionId: string, activitySnapshot: PickyActivitySummary): Promise<void> {
@@ -270,10 +276,15 @@ export class SessionMessageBuilder {
     if (this.operationChains.get(sessionId) === tracked) this.operationChains.delete(sessionId);
   }
 
-  private async appendInternal(sessionId: string, message: PickySessionMessage): Promise<void> {
+  private async appendInternal(
+    sessionId: string,
+    message: PickySessionMessage,
+    options: { preserveTimestamp?: boolean } = {},
+  ): Promise<void> {
     const state = this.stateFor(sessionId);
     if (state.journal.some((entry) => entry.message.id === message.id) || state.removedIds.has(message.id)) return;
-    const normalizedMessage = { ...message, createdAt: this.monotonicCreatedAt(state, message.createdAt) };
+    const createdAt = options.preserveTimestamp ? message.createdAt : this.monotonicCreatedAt(state, message.createdAt);
+    const normalizedMessage = { ...message, createdAt };
     const index = state.journal.push({ seq: 0, message: normalizedMessage }) - 1;
     await this.sync(sessionId, state);
     const seq = this.deps.nextSeq(sessionId);

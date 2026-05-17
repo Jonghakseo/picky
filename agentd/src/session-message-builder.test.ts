@@ -117,6 +117,33 @@ describe("SessionMessageBuilder", () => {
     ]);
   });
 
+  it("preserves Pi-supplied timestamps when importing terminal session messages", async () => {
+    // Regression: a Pi terminal sync that back-fills older turns would previously be clamped to
+    // the existing journal max by monotonicCreatedAt, collapsing every imported user_text and
+    // agent_activity onto a single instant. That left agentActivityScope with a zero-width range
+    // and emptied the per-turn Tool History view even though session.tools was populated.
+    const { builder, messages, setNow } = makeBuilder();
+
+    setNow("2026-05-10T10:00:00.000Z");
+    await builder.recordUserText("session-1", "existing hud message", "user");
+
+    const imported: PickySessionMessage[] = [
+      { id: "msg-pi-user-a", kind: "user_text", createdAt: "2026-05-08T12:00:00.000Z", originatedBy: "pi_extension", text: "pi turn 1 user" },
+      { id: "msg-pi-activity-a", kind: "agent_activity", createdAt: "2026-05-08T12:01:30.000Z", activitySnapshot: { read: 1, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 } },
+      { id: "msg-pi-user-b", kind: "user_text", createdAt: "2026-05-09T09:00:00.000Z", originatedBy: "pi_extension", text: "pi turn 2 user" },
+      { id: "msg-pi-activity-b", kind: "agent_activity", createdAt: "2026-05-09T09:02:15.000Z", activitySnapshot: { read: 0, bash: 3, edit: 0, write: 0, thinking: 0, other: 0 } },
+    ];
+    await builder.recordTerminalSessionMessages("session-1", imported);
+
+    expect(messages.map((message) => ({ id: message.id, createdAt: message.createdAt }))).toEqual([
+      { id: messages[0].id, createdAt: "2026-05-10T10:00:00.000Z" },
+      { id: "msg-pi-user-a", createdAt: "2026-05-08T12:00:00.000Z" },
+      { id: "msg-pi-activity-a", createdAt: "2026-05-08T12:01:30.000Z" },
+      { id: "msg-pi-user-b", createdAt: "2026-05-09T09:00:00.000Z" },
+      { id: "msg-pi-activity-b", createdAt: "2026-05-09T09:02:15.000Z" },
+    ]);
+  });
+
   it("records questions, cancellations, errors, system messages, and final reports", async () => {
     const { builder, events, messages } = makeBuilder();
 

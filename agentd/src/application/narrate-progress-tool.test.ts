@@ -44,6 +44,7 @@ describe("createPickyNarrateProgressTool", () => {
     const guidelines = definition.promptGuidelines?.join("\n") ?? "";
     expect(guidelines).toContain("disabled");
     expect(guidelines).toContain("do not retry");
+    expect(guidelines).toContain("before waiting");
     expect(guidelines).toContain("One narration per long step");
   });
 });

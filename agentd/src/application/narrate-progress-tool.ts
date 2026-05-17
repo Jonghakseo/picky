@@ -14,10 +14,11 @@ export function createPickyNarrateProgressTool(
   return defineTool({
     name: PICKY_NARRATE_PROGRESS_TOOL_NAME,
     label: "Picky narrate progress",
-    description: "Speak a brief filler line via Picky's companion voice while a long step runs.",
-    promptSnippet: `${PICKY_NARRATE_PROGRESS_TOOL_NAME}: speak a brief filler line while a long step is in flight.`,
+    description: "Speak a brief filler line via Picky's companion voice before a long step runs; prefer calling it before starting other long-running tool calls.",
+    promptSnippet: `${PICKY_NARRATE_PROGRESS_TOOL_NAME}: speak a brief filler line before a long step is in flight, ideally before other tool calls for that step.`,
     promptGuidelines: [
       "Use only for steps likely to take more than a few seconds.",
+      "When a long step will call other tools, call this first whenever practical so the user hears progress before waiting.",
       "One short present-continuous sentence in the user's language (e.g. \"Now checking the logs\"); aim for ~40 chars.",
       "Describe the activity only; never include final answers, code, paths, or sensitive identifiers.",
       "One narration per long step.",

@@ -217,6 +217,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case setSessionArchived
     case notifyMainOfPickleCompletion
     case setDisabledBuiltinTools
+    case setMainAgentNarrationEnabled
 
 }
 

@@ -364,6 +364,7 @@ final class CompanionManager: ObservableObject {
     private var deferredFinishAwaitingAgentResponseTask: Task<Void, Never>?
     /// Caps how long the recognized-transcript bubble lingers after STT.
     private var voicePromptBubbleAutoHideTask: Task<Void, Never>?
+    private var voiceInteractionState = PickyVoiceInteractionState()
     private var activeSpeechID: UUID?
     /// Set whenever an in-flight system speech represents a narration (today
     /// only `picky_tell_plan`'s spoken plan). Kept separate from
@@ -901,6 +902,20 @@ final class CompanionManager: ObservableObject {
             } catch {
                 print("⚠️ Failed to apply disabled built-in tools: \(error.localizedDescription)")
             }
+            do {
+                // Sync the narration toggle to agentd so the seeded
+                // picky_tell_plan extension can hide its tool via
+                // pi.setActiveTools and skip the enforcement gate when the
+                // user opts out. Picky still gates TTS playback on the same
+                // value locally; the daemon path only controls tool exposure.
+                try await agentClient.send(PickyCommandEnvelope(
+                    type: .setMainAgentNarrationEnabled,
+                    enabled: settings.narrationEnabled
+                ))
+                print("🔊 Picky narration enabled applied — \(settings.narrationEnabled)")
+            } catch {
+                print("⚠️ Failed to apply Picky narration enabled: \(error.localizedDescription)")
+            }
             if AppBundleConfiguration.realtimeOptIn, settings.mainAgentRuntimeMode == .openAIRealtime {
                 await configureRealtimeMainAgent(settings: settings)
             }
@@ -979,18 +994,24 @@ final class CompanionManager: ObservableObject {
         let isPreparing = isPreparing ?? buddyDictationManager.isPreparingToRecord
         let isVoiceInputActive = isPushToTalkShortcutHeld || isKeyboardRecording || isMicrophoneRecording || isFinalizing || isPreparing
         updateVoiceInputAudioSuppression(isVoiceInputActive: isVoiceInputActive)
-        let presentation = CompanionVoicePresentationReducer.reduce(
-            currentVoiceState: voiceState,
-            isKeyboardRecording: isKeyboardRecording,
-            isMicrophoneRecording: isMicrophoneRecording,
-            isFinalizingTranscript: isFinalizing,
-            isPreparingToRecord: isPreparing,
-            isShortcutHeld: isPushToTalkShortcutHeld,
-            isAwaitingAgentResponse: pendingAgentResponseStartedAt != nil,
-            recognizedPrompt: currentVoicePromptPreview
-        )
-        voiceState = presentation.voiceState
-        voicePromptBubbleState = presentation.promptBubbleState
+        if voiceInteractionState.phase == .speaking {
+            applyVoiceInteractionProjection(voiceInteractionState.projection)
+        } else if isPushToTalkShortcutHeld || isKeyboardRecording || isMicrophoneRecording {
+            if voiceInteractionState.phase != .pttInput, let interactionVoiceInputID {
+                reduceVoiceInteraction(.pttPressed(inputID: interactionVoiceInputID, targetSessionID: voiceFollowUpSessionIDForCurrentUtterance, mode: currentVoiceInteractionMode()))
+            } else {
+                applyVoiceInteractionProjection(CompanionVoicePresentationState(voiceState: .listening, promptBubbleState: voiceInteractionState.projection.promptBubbleState))
+            }
+        } else if isFinalizing || isPreparing || pendingAgentResponseStartedAt != nil {
+            if voiceInteractionState.phase == .idle {
+                reduceVoiceInteraction(.loadingStarted(inputID: interactionVoiceInputID, transcript: currentVoicePromptPreview, targetSessionID: voiceFollowUpSessionIDForCurrentUtterance, mode: currentVoiceInteractionMode(), now: Date()))
+            } else {
+                applyVoiceInteractionProjection(voiceInteractionState.projection)
+            }
+        } else {
+            reduceVoiceInteraction(.reset)
+        }
+        let presentation = voiceInteractionState.projection
 
         // If the user pressed and released the hotkey without saying anything,
         // no response task runs — schedule the transient hide here so the overlay
@@ -1008,6 +1029,27 @@ final class CompanionManager: ObservableObject {
             // test `idleVoicePresentationDoesNotClearPressedHoverIDBeforeSubmit`.
             scheduleTransientHideIfNeeded()
         }
+    }
+
+    @discardableResult
+    private func reduceVoiceInteraction(_ event: PickyVoiceInteractionEvent) -> PickyVoiceInteractionTransition {
+        let transition = PickyVoiceInteractionMachine.reduce(state: voiceInteractionState, event: event)
+        voiceInteractionState = transition.state
+        applyVoiceInteractionProjection(transition.state.projection)
+        if let responseText = transition.state.context.responseBubbleText,
+           !responseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            latestAgentSessionSummary = responseText
+        }
+        return transition
+    }
+
+    private func applyVoiceInteractionProjection(_ projection: CompanionVoicePresentationState) {
+        voiceState = projection.voiceState
+        voicePromptBubbleState = projection.promptBubbleState
+    }
+
+    private func currentVoiceInteractionMode() -> PickyVoiceInteractionMode {
+        realtimeVoiceInputID != nil || PickySettingsStore().load().mainAgentRuntimeMode == .openAIRealtime ? .realtime : .standard
     }
 
     private func bindShortcutTransitions() {

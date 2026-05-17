@@ -512,7 +512,7 @@ final class CompanionManager: ObservableObject {
         speechPlaybackProvider.stopSpeaking()
         pendingAgentResponseStartedAt = nil
         currentVoicePromptPreview = nil
-        voicePromptBubbleState = .hidden
+        reduceVoiceInteraction(.reset)
         agentEventTask?.cancel()
         agentEventTask = nil
         // Only tear down the agentClient if Companion owns it. When the
@@ -1188,6 +1188,8 @@ final class CompanionManager: ObservableObject {
                 screenContextVoiceTargetByInputID[inputID] = screenContextTargetSessionID
             }
             interactionVoiceInputID = inputID
+            let voiceMode: PickyVoiceInteractionMode = shouldUseRealtimeMainVoiceTurn(targetSessionID: targetSessionID) ? .realtime : .standard
+            reduceVoiceInteraction(.pttPressed(inputID: inputID, targetSessionID: targetSessionID, mode: voiceMode))
             beginInkCapture(source: .voice)
             print("🎙️ Picky voice route — PTT pressed; screenContext=\(selectionStore.screenContextTargetSessionID ?? "<nil>") storeHover=\(selectionStore.hoveredVoiceFollowUpSessionID ?? "<nil>") prevTask=\(currentResponseTask != nil)")
             setVoiceFollowUpSessionIDForCurrentUtterance(targetSessionID, caller: "PTT-pressed")
@@ -1254,6 +1256,9 @@ final class CompanionManager: ObservableObject {
                 )
             } else {
                 finishInkCapture(inputID: nil)
+            }
+            if let releasedInputID = interactionVoiceInputID {
+                reduceVoiceInteraction(.pttReleased(inputID: releasedInputID))
             }
             if realtimeVoiceInputID == interactionVoiceInputID {
                 commitRealtimeMainVoiceTurn(inputID: interactionVoiceInputID)
@@ -2017,7 +2022,7 @@ final class CompanionManager: ObservableObject {
         stopCurrentSpeech()
         activeSpeechID = speechID
         interactionSpeechID = speechID
-        voiceState = .responding
+        reduceVoiceInteraction(.agentReply(text: text, shouldSpeak: true, speechID: speechID, timerID: speechID, inputID: interactionVoiceInputID, now: Date()))
 
         logSpeech("interaction start speechID=\(speechID) provider=\(speechPlaybackProvider.displayName) chars=\(text.count) context=\(contextID ?? "none")")
         guard speechPlaybackProvider.speak(text, onFinish: { [weak self] didFinish in
@@ -2090,6 +2095,7 @@ final class CompanionManager: ObservableObject {
             return
         }
         logSpeech("interaction finish accepted speechID=\(speechID) didFinish=\(didFinish) context=\(contextID ?? "none") providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
+        reduceVoiceInteraction(didFinish ? .speechFinished(speechID: speechID, now: Date()) : .speechFailed(speechID: speechID, now: Date()))
         activeSpeechID = nil
         responseStateTask?.cancel()
         responseStateTask = nil
@@ -2223,15 +2229,16 @@ final class CompanionManager: ObservableObject {
             guard realtimeVoiceInputID == inputId else { break }
             let updated = (currentVoicePromptPreview ?? "") + delta
             currentVoicePromptPreview = updated
-            voicePromptBubbleState = .recognized(updated)
+            reduceVoiceInteraction(.sttPartial(inputID: inputId, text: updated))
         case .mainRealtimeInputTranscriptCompleted(let inputId, let transcript):
             guard realtimeVoiceInputID == inputId else { break }
             lastTranscript = transcript
             currentVoicePromptPreview = transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : transcript
-            voicePromptBubbleState = transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .hidden : .recognized(transcript)
+            reduceVoiceInteraction(.sttFinal(inputID: inputId, text: transcript, now: Date()))
         case .mainRealtimeOutputAudioDelta(_, let audioBase64):
             stopCurrentSpeech()
             hideVoicePromptBubbleForRealtimeResponse()
+            reduceVoiceInteraction(.realtimeAudioStarted)
             guard ttsPlaybackEnabled else {
                 realtimeAudioPlaybackEngine.stop()
                 clearPendingAgentResponseTiming()
@@ -2239,7 +2246,7 @@ final class CompanionManager: ObservableObject {
             }
             realtimeAudioPlaybackEngine.enqueuePCM16Base64(audioBase64)
             clearPendingAgentResponseTiming()
-            voiceState = .responding
+            reduceVoiceInteraction(.realtimeAudioStarted)
         case .mainRealtimeOutputAudioDone:
             break
         case .mainRealtimeOutputTranscriptDelta(let inputId, let delta):
@@ -2268,7 +2275,7 @@ final class CompanionManager: ObservableObject {
                 latestAgentSessionSummary = final
             }
             if !realtimeAudioPlaybackEngine.isPlaying {
-                voiceState = .idle
+                reduceVoiceInteraction(.realtimeTurnDone)
                 scheduleTransientHideIfNeeded()
             }
         case .pointerOverlayRequested(let request):
@@ -2286,39 +2293,35 @@ final class CompanionManager: ObservableObject {
 
     private func hideVoicePromptBubbleForRealtimeResponse() {
         currentVoicePromptPreview = nil
-        voicePromptBubbleState = .hidden
+        reduceVoiceInteraction(.promptBubbleAutoHide)
     }
 
     private func handleRealtimePlaybackDrained() {
         guard realtimeVoiceInputID == nil else { return }
         guard voiceState == .responding else { return }
-        voiceState = .idle
+        reduceVoiceInteraction(.realtimeTurnDone)
         scheduleTransientHideIfNeeded()
     }
 
     private func applyMainRealtimeState(_ event: PickyMainRealtimeStateEvent) {
+        reduceVoiceInteraction(.realtimeStateChanged(event.state))
         switch event.state {
         case .connecting:
             latestAgentSessionSummary = "Realtime 연결 중…"
-            voiceState = .processing
         case .ready:
             if realtimeVoiceInputID == nil && !realtimeAudioPlaybackEngine.isPlaying {
                 clearPendingAgentResponseTiming()
-                voiceState = .idle
                 scheduleTransientHideIfNeeded()
             }
         case .listening:
-            voiceState = .listening
+            break
         case .thinking:
             latestAgentSessionSummary = L10n.t("agent.summary.preparingResponse")
-            voiceState = .processing
         case .speaking:
             clearPendingAgentResponseTiming()
-            voiceState = .responding
         case .failed:
             clearPendingAgentResponseTiming()
             latestAgentSessionSummary = event.message ?? "Realtime Picky failed"
-            voiceState = .idle
             realtimeVoiceInputID = nil
             realtimeCanSendAudio = false
             realtimeBufferedAudioChunks.removeAll()
@@ -2414,8 +2417,9 @@ final class CompanionManager: ObservableObject {
     }
 
     func interruptSpokenResponseForVoiceInput() {
-        updateVoiceInputAudioSuppression(isVoiceInputActive: true)
         abortMainAgentForVoiceInput()
+        updateVoiceInputAudioSuppression(isVoiceInputActive: true)
+        reduceVoiceInteraction(.abort)
         // Clear the pending timing marker AFTER `abortMainAgentForVoiceInput`
         // has read it to decide whether to also dispatch a session-scoped
         // abort for the in-flight Pickle. Without this, the post-narration
@@ -2465,10 +2469,16 @@ final class CompanionManager: ObservableObject {
         stopCurrentSpeech()
         let trimmedTranscript = recognizedTranscript?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         currentVoicePromptPreview = trimmedTranscript.isEmpty ? nil : trimmedTranscript
-        voicePromptBubbleState = trimmedTranscript.isEmpty ? .hidden : .recognized(trimmedTranscript)
-        pendingAgentResponseStartedAt = Date()
+        let startedAt = Date()
+        pendingAgentResponseStartedAt = startedAt
         latestAgentSessionSummary = L10n.t("agent.summary.preparingResponse")
-        voiceState = .processing
+        reduceVoiceInteraction(.loadingStarted(
+            inputID: interactionVoiceInputID,
+            transcript: trimmedTranscript,
+            targetSessionID: voiceFollowUpSessionIDForCurrentUtterance,
+            mode: currentVoiceInteractionMode(),
+            now: startedAt
+        ))
         scheduleRecognizedTranscriptAutoHide(trimmedTranscript: trimmedTranscript)
     }
 
@@ -2488,7 +2498,7 @@ final class CompanionManager: ObservableObject {
                 // new utterance replaced it, the didSet on voicePromptBubbleState
                 // already cancelled this task — but guard defensively anyway.
                 guard case .recognized = self.voicePromptBubbleState else { return }
-                self.voicePromptBubbleState = .hidden
+                self.reduceVoiceInteraction(.promptBubbleAutoHide)
                 self.currentVoicePromptPreview = nil
             }
         }
@@ -2521,17 +2531,17 @@ final class CompanionManager: ObservableObject {
         pendingAgentResponseStartedAt = nil
         latestAgentSessionSummary = visibleText
         currentVoicePromptPreview = nil
-        voicePromptBubbleState = .hidden
         let textToSpeak = spokenText?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let textToSpeak, !textToSpeak.isEmpty else {
+            reduceVoiceInteraction(.textReply(text: visibleText))
             if !shouldSuppressSpokenAudioForVoiceInput {
-                voiceState = .idle
                 scheduleTransientHideIfNeeded()
             }
             return
         }
         guard !shouldSuppressSpokenAudioForVoiceInput else {
             stopCurrentSpeech()
+            reduceVoiceInteraction(.textReply(text: visibleText))
             return
         }
         speakSystemMessage(textToSpeak)
@@ -2576,7 +2586,7 @@ final class CompanionManager: ObservableObject {
             activeNarrationSpeechID = speechID
         }
 
-        voiceState = .responding
+        reduceVoiceInteraction(.agentReply(text: utterance, shouldSpeak: true, speechID: speechID, timerID: speechID, inputID: interactionVoiceInputID, now: Date()))
 
         logSpeech("system start speechID=\(speechID) provider=\(speechPlaybackProvider.displayName) chars=\(utterance.count) isNarration=\(isNarration)")
         guard speechPlaybackProvider.speak(utterance, onFinish: { [weak self] didFinish in
@@ -2641,6 +2651,7 @@ final class CompanionManager: ObservableObject {
 
     fileprivate func stopCurrentSpeech() {
         logSpeech("stop current speech active=\(activeSpeechID?.uuidString ?? "none") interaction=\(interactionSpeechID?.uuidString ?? "none") narration=\(activeNarrationSpeechID?.uuidString ?? "none") providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
+        reduceVoiceInteraction(.reset)
         activeSpeechID = nil
         activeNarrationSpeechID = nil
         deferredInteractionSpeechTask?.cancel()
@@ -2694,13 +2705,14 @@ final class CompanionManager: ObservableObject {
         let hasQueuedInteractionSpeech = deferredInteractionSpeechTask != nil
         let keepProcessing = wasNarration && (agentStillResponding || hasQueuedInteractionSpeech)
         logSpeech("system finish accepted speechID=\(speechID) didFinish=\(didFinish) providerSpeaking=\(speechPlaybackProvider.isSpeaking) wasNarration=\(wasNarration) agentStillResponding=\(agentStillResponding) hasQueuedInteractionSpeech=\(hasQueuedInteractionSpeech) keepProcessing=\(keepProcessing)")
+        let machineCompletionTime = Date().addingTimeInterval(PickyVoiceInteractionMachine.minimumDisplayDuration + 0.01)
+        reduceVoiceInteraction(didFinish ? .speechFinished(speechID: speechID, now: machineCompletionTime) : .speechFailed(speechID: speechID, now: machineCompletionTime))
         activeSpeechID = nil
         responseStateTask?.cancel()
         responseStateTask = nil
-        if voiceState == .responding {
-            voiceState = keepProcessing ? .processing : .idle
-        }
-        if !keepProcessing {
+        if keepProcessing {
+            reduceVoiceInteraction(.loadingStarted(inputID: interactionVoiceInputID, transcript: currentVoicePromptPreview, targetSessionID: voiceFollowUpSessionIDForCurrentUtterance, mode: currentVoiceInteractionMode(), now: Date()))
+        } else {
             scheduleTransientHideIfNeeded()
         }
     }

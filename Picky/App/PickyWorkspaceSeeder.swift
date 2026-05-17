@@ -178,14 +178,16 @@ enum PickyWorkspaceSeeder {
 
     ## Narration before tool calls
 
-    - Every main-agent response that issues tool calls must invoke
-      `picky_narrate_progress` at least once before the first tool call of
-      that response. Treat this as mandatory, not best-effort.
+    - Per user prompt the first non-narrate tool call is free. From the
+      second non-narrate tool call onwards in the same agent run,
+      `picky_narrate_progress` must have been called at least once
+      earlier. Treat this as mandatory, not best-effort.
+    - One narration covers the entire multi-turn agent run for that
+      prompt; do not narrate again after the first narration.
     - The narration must be a short present-continuous sentence in the
-      user's language (~40 chars, max 80), describing the activity only —
+      user's language (~20 chars, max 40), describing the activity only —
       never include final answers, code, paths, or sensitive identifiers.
-    - Keep to one narration per long step; do not re-narrate the same
-      step. If narration is disabled the tool returns silently — do not
+    - If narration is disabled the tool returns silently — do not
       retry.
 
     ## Self-update
@@ -221,10 +223,12 @@ enum PickyWorkspaceSeeder {
     /// extension is the canonical home for the `picky_narrate_progress` tool
     /// (the agentd main runtime no longer registers it) so the tool is only
     /// visible to the main agent running in this workspace cwd. It also
-    /// enforces a hard rule via `tool_call` blocking: each user prompt must
-    /// call `picky_narrate_progress` once before any other tool. The flag
-    /// resets on `agent_start`, so a single narration covers the entire
-    /// multi-turn agent run for that prompt.
+    /// enforces a hard rule via `tool_call` blocking: the first non-narrate
+    /// tool call in an agent run is allowed for free; from the second
+    /// non-narrate tool call onwards `picky_narrate_progress` must have been
+    /// called at least once. Counters reset on `agent_start`, so the
+    /// grace + narration cover the entire multi-turn agent run for that
+    /// prompt.
     ///
     /// Picky's TTS is reached through `globalThis.__pickyAgentd.narrate(text)`,
     /// installed by agentd at startup. See `PickyAgentdBridge` in
@@ -251,13 +255,16 @@ enum PickyWorkspaceSeeder {
     }
 
     export default function (pi: ExtensionAPI) {
-      // Per-agent-run flag. Reset at agent_start so each user prompt must
-      // narrate once before any other tool call; subsequent turns within the
-      // same agent run inherit the satisfied flag.
+      // Per-agent-run state. Reset at agent_start. The first non-narrate tool
+      // call passes for free (cheap one-shot tasks don't need narration); from
+      // the second non-narrate tool call onwards picky_narrate_progress must
+      // have been called at least once in this agent run.
       let narrationDone = false;
+      let freeToolUsed = false;
 
       pi.on("agent_start", async () => {
         narrationDone = false;
+        freeToolUsed = false;
       });
 
       pi.on("tool_call", async (event) => {
@@ -267,23 +274,27 @@ enum PickyWorkspaceSeeder {
           narrationDone = true;
           return;
         }
-        if (!narrationDone) {
-          return {
-            block: true,
-            reason: `Call ${TOOL_NAME} once before any other tool for this user prompt, with a short present-continuous filler line in the user's language (~20 chars, max ${MAX_CHARS}).`,
-          };
+        if (narrationDone) return;
+        if (!freeToolUsed) {
+          // One-tool grace per agent run consumed.
+          freeToolUsed = true;
+          return;
         }
+        return {
+          block: true,
+          reason: `Call ${TOOL_NAME} before the next tool call. The one-tool grace per user prompt is already used; from the second tool call onwards a short present-continuous filler line in the user's language (~20 chars, max ${MAX_CHARS}) is required.`,
+        };
       });
 
       pi.registerTool({
         name: TOOL_NAME,
         label: "Picky narrate progress",
         description:
-          "Speak a brief filler line via Picky's companion voice; must be called once for the user prompt before any other tool call.",
-        promptSnippet: `${TOOL_NAME}: speak one short filler line at the start of handling a user prompt, before the first other tool call. One narration covers the whole multi-turn agent run.`,
+          "Speak a brief filler line via Picky's companion voice. The first non-narrate tool call per user prompt is free; from the second non-narrate tool call onwards this tool must have been called at least once.",
+        promptSnippet: `${TOOL_NAME}: from the second tool call of a user prompt onwards, speak one short filler line. The first tool call per prompt is free; one narration covers the rest of the agent run.`,
         promptGuidelines: [
-          `For each user prompt that requires tool calls, call ${TOOL_NAME} once before the first other tool call. Treat this as mandatory, not best-effort.`,
-          `Do not call ${TOOL_NAME} again in later turns of the same agent run — one narration per user prompt.`,
+          `Per user prompt the first non-narrate tool call is allowed without narration. From the second non-narrate tool call onwards, ${TOOL_NAME} must have been called at least once earlier in the same agent run.`,
+          `Do not call ${TOOL_NAME} again after the first narration in the same agent run — one narration is enough for the whole prompt.`,
           `Use one short present-continuous sentence in the user's language (~20 characters, max ${MAX_CHARS}); describe only the activity.`,
           `Never include final answers, code, paths, or sensitive identifiers in the narration line.`,
           `If narration is disabled the tool returns silently — do not retry.`,

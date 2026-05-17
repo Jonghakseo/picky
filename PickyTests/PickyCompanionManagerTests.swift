@@ -65,6 +65,7 @@ private final class FakeSpeechPlaybackProvider: PickySpeechPlaybackProvider {
     private var onFinish: ((Bool) -> Void)?
     var shouldStartSpeaking = true
     var isSpeaking = false
+    private(set) var stopCount = 0
 
     @discardableResult
     func speak(_ utterance: String, onFinish: @escaping (Bool) -> Void) -> Bool {
@@ -76,6 +77,7 @@ private final class FakeSpeechPlaybackProvider: PickySpeechPlaybackProvider {
     }
 
     func stopSpeaking() {
+        stopCount += 1
         isSpeaking = false
         onFinish = nil
     }
@@ -329,6 +331,34 @@ struct PickyCompanionManagerTests {
         #expect(manager.latestAgentSessionSummary == "로그를 확인하고 있어요.")
         #expect(manager.voiceState == .responding)
         #expect(speechProvider.spokenUtterances == ["로그를 확인하고 있어요."])
+    }
+
+    @Test func repeatedNarrateProgressCutInsKeepLatestSpeechLifecycleSafe() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+
+        manager.applyAgentEvent(.narrateProgressRequested(PickyNarrateProgressRequest(
+            text: "첫 작업을 준비하고 있어요.",
+            sessionId: nil
+        )))
+        manager.applyAgentEvent(.narrateProgressRequested(PickyNarrateProgressRequest(
+            text: "다음 작업을 준비하고 있어요.",
+            sessionId: nil
+        )))
+
+        #expect(manager.latestAgentSessionSummary == "다음 작업을 준비하고 있어요.")
+        #expect(manager.voiceState == .responding)
+        #expect(speechProvider.spokenUtterances == ["첫 작업을 준비하고 있어요.", "다음 작업을 준비하고 있어요."])
+        #expect(speechProvider.stopCount == 2)
+        #expect(speechProvider.isSpeaking)
+
+        speechProvider.finishSpeaking()
+        try await waitUntil { manager.voiceState == .idle }
+        #expect(!speechProvider.isSpeaking)
     }
 
     @Test @MainActor func realtimePlaybackStopBeforeFirstAudioIsSafe() {

@@ -3205,13 +3205,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Let the agent speak a short filler line during long steps. Independent from the voice narration toggle (Voice tab) which controls audio playback."
+            "value": "Let the agent speak a short filler line before long steps. Independent from the voice narration toggle (Voice tab) which controls audio playback."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "긴 작업 중에 에이전트가 짧은 멘트를 음성으로 알려주도록 해요. 음성 탭의 narration 토글(재생 여부)과 독립적으로 작동해요."
+            "value": "긴 작업 전에 에이전트가 짧은 멘트를 음성으로 알려주도록 해요. 음성 탭의 narration 토글(재생 여부)과 독립적으로 작동해요."
           }
         }
       }

@@ -113,7 +113,7 @@ export function buildMainAgentBootstrapPair(compactSummary?: string): MainAgentB
     "",
     `- Available delegation tools: \`${PICKLE_TOOL_NAMES.start}\`, \`${PICKLE_TOOL_NAMES.sessions}\`, \`${PICKLE_TOOL_NAMES.steer}\`, \`${PICKLE_TOOL_NAMES.abort}\`. Only the picky_* tools surface Pickles in the Picky dock; never simulate them with bash or by editing session files.`,
     `- \`${PICKLE_TOOL_NAMES.abort}\` only runs when the user explicitly asks to stop, cancel, or kill a Pickle; resolve the target with \`${PICKLE_TOOL_NAMES.sessions}\` first.`,
-    `- \`${PICKY_NARRATE_PROGRESS_TOOL_NAME}\` speaks a brief filler line in the user's language through the companion voice while a long step is running. Use it sparingly (one short line per long step) and never to deliver the final answer. Respects the user's narration setting silently.`,
+    `- \`${PICKY_NARRATE_PROGRESS_TOOL_NAME}\` speaks a brief filler line in the user's language through the companion voice before a long step runs, ideally before other tool calls for that step. Use it sparingly (one short line per long step) and never to deliver the final answer. Respects the user's narration setting silently.`,
     `- Pickle hover follow-ups bypass you and go directly to a Pickle. If the user references a specific running Pickle, prefer \`${PICKLE_TOOL_NAMES.steer}\` after \`${PICKLE_TOOL_NAMES.sessions}\`.`,
     "- If the captured context Source is `text`, treat the request text as deliberate typed input, not speech recognition output.",
     "- Do not expose internal tool logs verbatim and do not hard-code workflows from URLs or app names.",

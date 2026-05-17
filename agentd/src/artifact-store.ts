@@ -32,11 +32,10 @@ interface ExtractedSessionLink {
 }
 
 export function extractSessionLinks(text: string): ExtractedSessionLink[] {
-  const regex = /https:\/\/[^\s<>"'`{}|\\^()[\]]+/g;
   const links: ExtractedSessionLink[] = [];
   const seen = new Set<string>();
-  for (const match of text.matchAll(regex)) {
-    const url = normalizeLinkUrl(match[0]);
+  for (const rawUrl of extractRawLinkCandidates(text)) {
+    const url = normalizeLinkUrl(rawUrl);
     if (!url || seen.has(url)) continue;
     const kind = sessionLinkKind(url);
     if (!kind) continue;
@@ -44,6 +43,32 @@ export function extractSessionLinks(text: string): ExtractedSessionLink[] {
     links.push({ kind, title: sessionLinkTitle(kind, url), url });
   }
   return links;
+}
+
+function extractRawLinkCandidates(text: string): string[] {
+  const candidates: string[] = [];
+  const regex = /https:(?:\/\/|\\\/\\\/)/g;
+  for (const match of text.matchAll(regex)) {
+    let rawUrl = "";
+    for (let index = match.index; index < text.length; index += 1) {
+      const char = text[index]!;
+      const next = text[index + 1];
+      if (char === "\\" && next === "/") {
+        rawUrl += "/";
+        index += 1;
+        continue;
+      }
+      if (char === "\\" && next === "n") break;
+      if (isLinkDelimiter(char)) break;
+      rawUrl += char;
+    }
+    candidates.push(rawUrl);
+  }
+  return candidates;
+}
+
+function isLinkDelimiter(char: string): boolean {
+  return /[\s<>"{}|\\^[\]]/.test(char);
 }
 
 export function extractSessionLinkArtifacts(text: string, updatedAt = new Date().toISOString()): PickyArtifact[] {
@@ -103,7 +128,7 @@ function linearIssueKey(url: string): string | undefined {
 }
 
 function normalizeLinkUrl(rawUrl: string): string | undefined {
-  const trimmed = rawUrl.replace(/[.,;:!?]+$/g, "");
+  const trimmed = rawUrl.replace(/(?:&quot;|&#34;|&apos;|&#39;)+$/g, "").replace(/[.,;:!?]+$/g, "");
   const parsed = safeUrl(trimmed);
   if (!parsed) return undefined;
   parsed.search = "";

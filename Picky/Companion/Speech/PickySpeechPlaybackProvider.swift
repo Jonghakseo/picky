@@ -7,7 +7,7 @@
 //  in later without changing CompanionManager's voice-state orchestration.
 //
 
-import AppKit
+import AVFoundation
 import Foundation
 
 @MainActor
@@ -316,16 +316,25 @@ final class PickyFallbackSpeechPlaybackProvider: PickySpeechPlaybackProvider {
     }
 }
 
-private final class PickySpeechSynthesizerDelegate: NSObject, NSSpeechSynthesizerDelegate {
-    private let onFinish: (Bool) -> Void
+private final class PickyAVSpeechSynthesizerDelegate: NSObject, AVSpeechSynthesizerDelegate {
+    private let onFinish: @MainActor (Bool) -> Void
 
-    init(onFinish: @escaping (Bool) -> Void) {
+    init(onFinish: @escaping @MainActor (Bool) -> Void) {
         self.onFinish = onFinish
     }
 
-    func speechSynthesizer(_ sender: NSSpeechSynthesizer, didFinishSpeaking finishedSpeaking: Bool) {
-        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider delegate didFinish finished=\(finishedSpeaking) synthesizerSpeaking=\(sender.isSpeaking)")
-        onFinish(finishedSpeaking)
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider delegate didFinish synthesizerSpeaking=\(synthesizer.isSpeaking)")
+        Task { @MainActor [onFinish] in
+            onFinish(true)
+        }
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider delegate didCancel synthesizerSpeaking=\(synthesizer.isSpeaking)")
+        Task { @MainActor [onFinish] in
+            onFinish(false)
+        }
     }
 }
 
@@ -344,56 +353,41 @@ enum PickySpeechPlaybackPreparation {
 final class PickySystemSpeechPlaybackProvider: PickySpeechPlaybackProvider {
     let displayName = "macOS Speech"
 
-    var isSpeaking: Bool {
-        speechSynthesizer?.isSpeaking ?? false
-    }
+    private(set) var isSpeaking = false
 
-    private var speechSynthesizer: NSSpeechSynthesizer?
-    private var speechSynthesizerDelegate: PickySpeechSynthesizerDelegate?
+    private let speechSynthesizer = AVSpeechSynthesizer()
+    private var speechSynthesizerDelegate: PickyAVSpeechSynthesizerDelegate?
 
     @discardableResult
     func speak(_ utterance: String, onFinish: @escaping (Bool) -> Void) -> Bool {
-        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider speak requested chars=\(utterance.count) existingSpeaking=\(speechSynthesizer?.isSpeaking ?? false)")
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider speak requested chars=\(utterance.count) existingSpeaking=\(isSpeaking) engineSpeaking=\(speechSynthesizer.isSpeaking)")
         stopSpeaking()
 
-        let delegate = PickySpeechSynthesizerDelegate { [weak self] didFinish in
-            PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider finish closure didFinish=\(didFinish) currentSpeaking=\(self?.speechSynthesizer?.isSpeaking ?? false)")
-            self?.speechSynthesizer?.delegate = nil
+        let delegate = PickyAVSpeechSynthesizerDelegate { [weak self] didFinish in
+            PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider finish closure didFinish=\(didFinish) currentSpeaking=\(self?.isSpeaking ?? false) engineSpeaking=\(self?.speechSynthesizer.isSpeaking ?? false)")
+            self?.isSpeaking = false
+            self?.speechSynthesizer.delegate = nil
             self?.speechSynthesizerDelegate = nil
             onFinish(didFinish)
         }
-
-        let synthesizer = reusableSpeechSynthesizer()
-        synthesizer.delegate = delegate
+        speechSynthesizer.delegate = delegate
         speechSynthesizerDelegate = delegate
 
-        let preparedUtterance = PickySpeechPlaybackPreparation.prepareForPlayback(utterance)
-        let started = synthesizer.startSpeaking(preparedUtterance)
-        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider start result=\(started) chars=\(utterance.count) preparedChars=\(preparedUtterance.count) speakingAfterStart=\(synthesizer.isSpeaking)")
-        guard started else {
-            synthesizer.delegate = nil
-            speechSynthesizerDelegate = nil
-            return false
-        }
+        let spokenUtterance = AVSpeechUtterance(string: utterance)
+        spokenUtterance.preUtteranceDelay = Double(PickySpeechPlaybackPreparation.prerollSilenceMilliseconds) / 1000.0
+        isSpeaking = true
+        speechSynthesizer.speak(spokenUtterance)
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider start requested chars=\(utterance.count) preDelayMs=\(PickySpeechPlaybackPreparation.prerollSilenceMilliseconds) speakingAfterStart=\(isSpeaking) engineSpeakingAfterStart=\(speechSynthesizer.isSpeaking)")
 
         return true
     }
 
     func stopSpeaking() {
-        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider stop requested speakingBefore=\(speechSynthesizer?.isSpeaking ?? false) hasDelegate=\(speechSynthesizerDelegate != nil)")
-        speechSynthesizer?.delegate = nil
-        speechSynthesizer?.stopSpeaking()
-        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider stop completed speakingAfter=\(speechSynthesizer?.isSpeaking ?? false)")
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider stop requested speakingBefore=\(isSpeaking) engineSpeakingBefore=\(speechSynthesizer.isSpeaking) hasDelegate=\(speechSynthesizerDelegate != nil)")
+        speechSynthesizer.delegate = nil
+        isSpeaking = false
+        let stopped = speechSynthesizer.stopSpeaking(at: .immediate)
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider stop completed stopped=\(stopped) speakingAfter=\(isSpeaking) engineSpeakingAfter=\(speechSynthesizer.isSpeaking)")
         speechSynthesizerDelegate = nil
-    }
-
-    private func reusableSpeechSynthesizer() -> NSSpeechSynthesizer {
-        if let speechSynthesizer {
-            return speechSynthesizer
-        }
-
-        let synthesizer = NSSpeechSynthesizer()
-        speechSynthesizer = synthesizer
-        return synthesizer
     }
 }

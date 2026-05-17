@@ -1292,12 +1292,10 @@ struct CompanionPanelSettingsView: View {
     }
 
     /// Opens the Spoken Content pane in System Settings so users can pick the
-    /// system voice that `NSSpeechSynthesizer` (the local TTS provider) reads with.
+    /// macOS system voice used by the local TTS provider.
     private var openMacOSSpeechSettingsButton: some View {
         Button(action: {
-            // Sonoma+ Settings URL for Accessibility > Spoken Content. The voice
-            // selected there is what `NSSpeechSynthesizer()` (no explicit voice)
-            // uses, which is what PickySystemSpeechPlaybackProvider does today.
+            // Sonoma+ Settings URL for Accessibility > Spoken Content.
             guard let url = URL(string: "x-apple.systempreferences:com.apple.Accessibility-Settings.extension?Speech") else { return }
             NSWorkspace.shared.open(url)
         }) {

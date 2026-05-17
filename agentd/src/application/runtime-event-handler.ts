@@ -107,6 +107,7 @@ export class RuntimeEventHandler {
     if (event.type === "session_info") return this.applySessionInfoEvent(sessionId, event.name);
     if (event.type === "context_usage") return this.applyContextUsageEvent(sessionId, event.usage);
     if (event.type === "session_replaced") return;
+    if (event.type === "turn_text_complete") return;
     if (isMainRealtimeRuntimeEvent(event)) return;
     return this.applyToolEvent(sessionId, event);
   }

@@ -45,4 +45,16 @@ describe("session link extraction", () => {
       { kind: "github", title: "#2777", url: "https://github.com/acme/repo/issues/2777/" },
     ]);
   });
+
+  it("stops links before JSON delimiters and escaped newlines", () => {
+    expect(extractSessionLinks([
+      '{"url":"https://www.notion.so/example/355d62c6956180cf8695dcdf5c4ff226","kind":"notion"}',
+      'Transcript https://www.notion.so/example/451d62c6956180498d13e3494b488193\\nnext line',
+      '{"url":"https://app.notion.com/p/351d62c6956180498d13e3494b488192"}',
+    ].join("\n"))).toEqual([
+      { kind: "notion", title: "Notion", url: "https://www.notion.so/example/355d62c6956180cf8695dcdf5c4ff226" },
+      { kind: "notion", title: "Notion", url: "https://www.notion.so/example/451d62c6956180498d13e3494b488193" },
+      { kind: "notion", title: "Notion", url: "https://app.notion.com/p/351d62c6956180498d13e3494b488192" },
+    ]);
+  });
 });

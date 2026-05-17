@@ -32,7 +32,7 @@ interface ExtractedSessionLink {
 }
 
 export function extractSessionLinks(text: string): ExtractedSessionLink[] {
-  const regex = /https:\/\/[^\s<>)\]]+/g;
+  const regex = /https:\/\/[^\s<>"'`{}|\\^()[\]]+/g;
   const links: ExtractedSessionLink[] = [];
   const seen = new Set<string>();
   for (const match of text.matchAll(regex)) {

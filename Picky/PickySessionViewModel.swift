@@ -1635,14 +1635,36 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     private func invalidateSlashCommandCache(sessionID: String, refreshIfPreviouslyRequested: Bool = false) {
-        let shouldRefresh = refreshIfPreviouslyRequested
-            && (slashCommandsBySessionID[sessionID] != nil || slashCommandRequestedSessionIDs.contains(sessionID))
+        // If there is an in-flight request, its response is about to be discarded by the epoch
+        // bump below. Without a re-fire the composer would stay stuck on "Loading commands…"
+        // until the next onAppear (i.e. until the HUD is closed and reopened). Always refresh in
+        // that case so the UI converges as soon as the daemon answers the new request.
+        let hadInFlightRequest = slashCommandRequestedSessionIDs.contains(sessionID)
+        let shouldRefresh = hadInFlightRequest
+            || (refreshIfPreviouslyRequested && slashCommandsBySessionID[sessionID] != nil)
         slashCommandsEpochBySessionID[sessionID] = (slashCommandsEpochBySessionID[sessionID] ?? 0) &+ 1
         slashCommandsBySessionID[sessionID] = nil
         slashCommandRequestedSessionIDs.remove(sessionID)
         if shouldRefresh {
             ensureSlashCommandsLoaded(sessionID: sessionID)
         }
+    }
+
+    /// Safety-net retry for the composer's "Loading commands…" state. If a previous request was
+    /// dropped silently (e.g. its snapshot arrived after the cache epoch advanced from a
+    /// concurrent cwd/piSessionFile/runtime-reattach update, or the websocket lost a frame),
+    /// the in-flight tracking is cleared and a fresh request is sent so the autocomplete unsticks
+    /// without forcing the user to close and reopen the HUD. No-op if commands are already loaded.
+    func refreshSlashCommandsIfStillLoading(sessionID: String) {
+        guard slashCommandsBySessionID[sessionID] == nil else { return }
+        let staleRequestIDs = slashCommandRequestSessionByID.filter { $0.value == sessionID }.map(\.key)
+        for requestID in staleRequestIDs {
+            slashCommandRequestSessionByID.removeValue(forKey: requestID)
+            slashCommandRequestEpochByID.removeValue(forKey: requestID)
+        }
+        slashCommandsEpochBySessionID[sessionID] = (slashCommandsEpochBySessionID[sessionID] ?? 0) &+ 1
+        slashCommandRequestedSessionIDs.remove(sessionID)
+        ensureSlashCommandsLoaded(sessionID: sessionID)
     }
 
     private func pruneSlashCommandCache(knownSessionIDs: Set<String>) {

@@ -5,6 +5,7 @@
 //  Lightweight local-only note panel attached to a Pickle HUD card.
 //
 
+import AppKit
 import SwiftUI
 
 struct PickySessionNoteAddonView: View {
@@ -26,16 +27,20 @@ struct PickySessionNoteAddonView: View {
                         .allowsHitTesting(false)
                 }
 
-                TextEditor(text: $note)
-                    .font(PickyHUDTypography.bodyCompact)
-                    .foregroundColor(DS.Colors.textPrimary)
-                    .scrollContentBackground(.hidden)
-                    .background(Color.clear)
-                    .focused($isFocused)
-                    .padding(5)
-                    .onChange(of: note) { _, newValue in
-                        viewModel.updateSessionNote(newValue, sessionID: sessionID)
-                    }
+                PickyIMETextView(
+                    text: $note,
+                    isFocused: Binding(
+                        get: { isFocused },
+                        set: { isFocused = $0 }
+                    ),
+                    font: NSFont.systemFont(ofSize: PickyHUDTypography.Size.bodyCompact, weight: .regular),
+                    textColor: NSColor(DS.Colors.textPrimary),
+                    textContainerInsetHeight: 3
+                )
+                .padding(5)
+                .onChange(of: note) { _, newValue in
+                    viewModel.updateSessionNote(newValue, sessionID: sessionID)
+                }
             }
             .frame(height: PickyHUDDockLayout.noteAddonEditorHeight)
             .background(editorBackground)

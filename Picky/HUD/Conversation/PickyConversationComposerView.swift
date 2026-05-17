@@ -119,6 +119,36 @@ struct PickyConversationComposerView: View {
         .onChange(of: attachments) { _, _ in
             persistAttachments()
         }
+        // Safety-net polling: when the autocomplete is open and commands have not loaded yet,
+        // periodically re-request so we recover even if the first response was dropped (epoch
+        // mismatch after a concurrent invalidation, transport loss, etc.). The .task body exits
+        // immediately once commands are loaded or the autocomplete is dismissed, and re-spawns
+        // when those conditions change because they are part of the task id.
+        .task(id: SlashCommandPollingKey(
+            sessionID: session.id,
+            isVisible: slashCommandAutocompleteIsVisible,
+            isLoaded: viewModel.hasLoadedSlashCommands(sessionID: session.id)
+        )) {
+            guard slashCommandAutocompleteIsVisible,
+                  !viewModel.hasLoadedSlashCommands(sessionID: session.id) else { return }
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: Self.slashCommandLoadingRetryIntervalNanoseconds)
+                } catch {
+                    return
+                }
+                if Task.isCancelled { return }
+                if viewModel.hasLoadedSlashCommands(sessionID: session.id) { return }
+                if !slashCommandAutocompleteIsVisible { return }
+                viewModel.refreshSlashCommandsIfStillLoading(sessionID: session.id)
+            }
+        }
+    }
+
+    private struct SlashCommandPollingKey: Equatable {
+        let sessionID: String
+        let isVisible: Bool
+        let isLoaded: Bool
     }
 
     private var composerRow: some View {
@@ -283,7 +313,7 @@ struct PickyConversationComposerView: View {
                     .padding(.top, Self.editorTextInsetHeight)
                     .allowsHitTesting(false)
             }
-            PickyComposerTextView(
+            PickyIMETextView(
                 text: $draft,
                 isFocused: $isFocused,
                 isEditable: !isComposerInputDisabled,
@@ -1145,266 +1175,12 @@ struct PickyConversationComposerView: View {
     private static let tabKeyCode: UInt16 = 48
     private static let pKeyCode: UInt16 = 35
     private static let maxVisibleAutocompleteSuggestions = 4
+    private static let slashCommandLoadingRetryIntervalNanoseconds: UInt64 = 1_000_000_000
 
     private func stopIfPossible() {
         guard [.running, .queued, .waiting_for_input].contains(session.status) else { return }
         Task { try? await viewModel.abort(sessionID: session.id) }
     }
-}
-
-private struct PickyComposerTextView: NSViewRepresentable {
-    @Binding var text: String
-    @Binding var isFocused: Bool
-    let isEditable: Bool
-    let font: NSFont
-    let textColor: NSColor
-    let textContainerInsetHeight: CGFloat
-    let onMeasuredContentHeight: (CGFloat) -> Void
-    let onReturn: (NSEvent.ModifierFlags) -> Bool
-    let onUpArrow: (NSEvent.ModifierFlags) -> Bool
-    let onDownArrow: () -> Bool
-    let onTab: (NSEvent.ModifierFlags) -> Bool
-    let onEscape: () -> Bool
-    let onControlP: (_ shiftPressed: Bool) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, isFocused: $isFocused, onMeasuredContentHeight: onMeasuredContentHeight)
-    }
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
-        scrollView.drawsBackground = false
-        scrollView.borderType = .noBorder
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.scrollerStyle = .overlay
-        scrollView.automaticallyAdjustsContentInsets = false
-        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
-
-        let textView = PickyComposerNSTextView()
-        textView.delegate = context.coordinator
-        textView.string = text
-        textView.drawsBackground = false
-        textView.isRichText = false
-        textView.importsGraphics = false
-        textView.allowsUndo = true
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.minSize = NSSize(width: 0, height: 0)
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.heightTracksTextView = false
-        textView.textContainer?.lineFragmentPadding = 0
-        textView.textContainerInset = NSSize(width: 0, height: textContainerInsetHeight)
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.isAutomaticDashSubstitutionEnabled = false
-        textView.isAutomaticTextReplacementEnabled = false
-        textView.isAutomaticSpellingCorrectionEnabled = false
-        textView.onFocusChange = { focused in
-            context.coordinator.setFocused(focused)
-        }
-        textView.onLayout = { textView in
-            context.coordinator.measure(textView: textView)
-        }
-        textView.onReturn = onReturn
-        textView.onUpArrow = onUpArrow
-        textView.onDownArrow = onDownArrow
-        textView.onTab = onTab
-        textView.onEscape = onEscape
-        textView.onControlP = onControlP
-
-        scrollView.documentView = textView
-        applyConfiguration(to: textView, context: context)
-        context.coordinator.measure(textView: textView)
-        return scrollView
-    }
-
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? PickyComposerNSTextView else { return }
-        context.coordinator.text = $text
-        context.coordinator.isFocused = $isFocused
-        context.coordinator.onMeasuredContentHeight = onMeasuredContentHeight
-
-        // Do not overwrite AppKit's marked text while an IME composition is in
-        // progress. The first Korean syllable can start composing before the
-        // async focus-state update comes back through SwiftUI; resetting
-        // `string` here would discard that marked text.
-        if !textView.hasMarkedText(), textView.string != text {
-            textView.string = text
-        }
-        textView.onLayout = { textView in
-            context.coordinator.measure(textView: textView)
-        }
-        textView.onReturn = onReturn
-        textView.onUpArrow = onUpArrow
-        textView.onDownArrow = onDownArrow
-        textView.onTab = onTab
-        textView.onEscape = onEscape
-        textView.onControlP = onControlP
-        applyConfiguration(to: textView, context: context)
-
-        if isFocused, textView.window?.firstResponder !== textView {
-            textView.window?.makeFirstResponder(textView)
-        } else if !isFocused, textView.window?.firstResponder === textView {
-            textView.window?.makeFirstResponder(nil)
-        }
-        context.coordinator.measure(textView: textView)
-    }
-
-    private func applyConfiguration(to textView: PickyComposerNSTextView, context: Context) {
-        textView.font = font
-        textView.textColor = textColor
-        textView.insertionPointColor = textColor
-        textView.isEditable = isEditable
-        textView.isSelectable = true
-        textView.textContainerInset = NSSize(width: 0, height: textContainerInsetHeight)
-    }
-
-    final class Coordinator: NSObject, NSTextViewDelegate {
-        var text: Binding<String>
-        var isFocused: Binding<Bool>
-        var onMeasuredContentHeight: (CGFloat) -> Void
-        private var lastReportedContentHeight: CGFloat = 0
-
-        init(text: Binding<String>, isFocused: Binding<Bool>, onMeasuredContentHeight: @escaping (CGFloat) -> Void) {
-            self.text = text
-            self.isFocused = isFocused
-            self.onMeasuredContentHeight = onMeasuredContentHeight
-        }
-
-        func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
-            text.wrappedValue = textView.string
-            measure(textView: textView)
-        }
-
-        func textDidBeginEditing(_ notification: Notification) {
-            setFocused(true)
-        }
-
-        func textDidEndEditing(_ notification: Notification) {
-            setFocused(false)
-        }
-
-        func setFocused(_ focused: Bool) {
-            guard isFocused.wrappedValue != focused else { return }
-            DispatchQueue.main.async { [isFocused] in
-                isFocused.wrappedValue = focused
-            }
-        }
-
-        func measure(textView: NSTextView) {
-            guard let layoutManager = textView.layoutManager, let textContainer = textView.textContainer else { return }
-            layoutManager.ensureLayout(for: textContainer)
-            let usedHeight = layoutManager.usedRect(for: textContainer).height
-            let contentHeight = usedHeight + textView.textContainerInset.height * 2
-            guard abs(contentHeight - lastReportedContentHeight) > 0.5 else { return }
-            lastReportedContentHeight = contentHeight
-            DispatchQueue.main.async { [onMeasuredContentHeight] in
-                onMeasuredContentHeight(contentHeight)
-            }
-        }
-    }
-}
-
-private final class PickyComposerNSTextView: NSTextView {
-    var onFocusChange: ((Bool) -> Void)?
-    var onLayout: ((PickyComposerNSTextView) -> Void)?
-    var onReturn: ((NSEvent.ModifierFlags) -> Bool)?
-    var onUpArrow: ((NSEvent.ModifierFlags) -> Bool)?
-    var onDownArrow: (() -> Bool)?
-    var onTab: ((NSEvent.ModifierFlags) -> Bool)?
-    var onEscape: (() -> Bool)?
-    var onControlP: ((_ shiftPressed: Bool) -> Void)?
-
-    private var isCommittingMarkedTextWithReturn = false
-
-    override func becomeFirstResponder() -> Bool {
-        let result = super.becomeFirstResponder()
-        if result { onFocusChange?(true) }
-        return result
-    }
-
-    override func resignFirstResponder() -> Bool {
-        let result = super.resignFirstResponder()
-        if result { onFocusChange?(false) }
-        return result
-    }
-
-    override func layout() {
-        super.layout()
-        onLayout?(self)
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        onLayout?(self)
-    }
-
-    override func keyDown(with event: NSEvent) {
-        // Let the active input method own command-like keys while composing
-        // marked text. Otherwise Return/Escape/arrow handling can submit or
-        // dismiss UI instead of committing/cancelling the first Korean syllable.
-        if hasMarkedText() {
-            // Korean IME on macOS commits the in-flight syllable on Return AND
-            // forwards the keypress to the text view, which then inserts a
-            // newline. That's almost never what the user wants — they expect
-            // the first Return to commit the composition only, and a second
-            // Return (no marked text) to submit. Route Return through the
-            // input context only so the IME gets its commit and the text view
-            // never sees the keypress as an insertNewline command.
-            //
-            // Some IMEs additionally call `doCommandBySelector(insertNewline:)`
-            // on the text input client right after committing the marked text,
-            // so short-circuiting `keyDown` alone is not enough. Guard
-            // `insertNewline(_:)` for the duration of this commit so the
-            // injected newline is dropped too.
-            let isReturn = event.keyCode == Self.returnKeyCode || event.keyCode == Self.keypadReturnKeyCode
-            if isReturn {
-                isCommittingMarkedTextWithReturn = true
-                defer { isCommittingMarkedTextWithReturn = false }
-                _ = inputContext?.handleEvent(event)
-                return
-            }
-            super.keyDown(with: event)
-            return
-        }
-
-        if event.keyCode == Self.pKeyCode, event.modifierFlags.contains(.control) {
-            onControlP?(event.modifierFlags.contains(.shift))
-            return
-        }
-
-        switch event.keyCode {
-        case Self.returnKeyCode, Self.keypadReturnKeyCode:
-            if onReturn?(event.modifierFlags) == true { return }
-        case Self.upArrowKeyCode:
-            if onUpArrow?(event.modifierFlags) == true { return }
-        case Self.downArrowKeyCode:
-            if onDownArrow?() == true { return }
-        case Self.tabKeyCode:
-            if onTab?(event.modifierFlags) == true { return }
-        case Self.escapeKeyCode:
-            if onEscape?() == true { return }
-        default:
-            break
-        }
-        super.keyDown(with: event)
-    }
-
-    override func insertNewline(_ sender: Any?) {
-        if isCommittingMarkedTextWithReturn { return }
-        super.insertNewline(sender)
-    }
-
-    private static let returnKeyCode: UInt16 = 36
-    private static let keypadReturnKeyCode: UInt16 = 76
-    private static let tabKeyCode: UInt16 = 48
-    private static let escapeKeyCode: UInt16 = 53
-    private static let upArrowKeyCode: UInt16 = 126
-    private static let downArrowKeyCode: UInt16 = 125
-    private static let pKeyCode: UInt16 = 35
 }
 
 /// Composer-only attachment representation. The path is still appended to the

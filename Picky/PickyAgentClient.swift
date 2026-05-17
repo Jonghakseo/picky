@@ -380,6 +380,8 @@ private extension PickyEventEnvelope {
             return "type=sessionSnapshot id=\(id) sessions=\(sessions.count)"
         case .sessionUpdated(let session):
             return "type=sessionUpdated id=\(id) session=\(session.id) status=\(session.status.rawValue)"
+        case .sessionResourcesReloaded(let sessionId):
+            return "type=sessionResourcesReloaded id=\(id) session=\(sessionId)"
         case .sessionLogAppended(let sessionId, let line):
             return "type=sessionLogAppended id=\(id) session=\(sessionId) lineChars=\(line.count)"
         case .toolActivityUpdated(let sessionId, let tool):
@@ -398,8 +400,8 @@ private extension PickyEventEnvelope {
             return "type=pickleBridgeRequested id=\(id) request=\(request.requestId) operation=\(request.operation.rawValue) session=\(request.sessionId ?? "none")"
         case .externalEntryRequested(let request):
             return "type=externalEntryRequested id=\(id) request=\(request.requestId) kind=\(request.kind.rawValue) cwd=\(request.cwd ?? "none")"
-        case .slashCommandsSnapshot(let sessionId, let commands):
-            return "type=slashCommandsSnapshot id=\(id) session=\(sessionId) commands=\(commands.count)"
+        case .slashCommandsSnapshot(let sessionId, let requestId, let commands):
+            return "type=slashCommandsSnapshot id=\(id) session=\(sessionId) request=\(requestId ?? "none") commands=\(commands.count)"
         case .sessionMessageAppended(let sessionId, _, let seq):
             return "type=sessionMessageAppended id=\(id) session=\(sessionId) seq=\(seq)"
         case .sessionMessageReplaced(let sessionId, let messageId, _, let seq):

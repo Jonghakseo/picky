@@ -1211,6 +1211,8 @@ describe("SessionSupervisor", () => {
         handle.emit({ type: "status", status: "completed", summary: "Pi resources reloaded", noTurnRan: true });
       }
     };
+    const resourcesReloaded: string[] = [];
+    supervisor.on("resourcesReloaded", (sessionId) => resourcesReloaded.push(sessionId));
 
     await supervisor.followUp(pickle.id, "/reload");
     await settle();
@@ -1218,6 +1220,7 @@ describe("SessionSupervisor", () => {
     const updated = supervisor.get(pickle.id)!;
     expect(updated.status).toBe("completed");
     expect(updated.lastSummary).toBe("Pi resources reloaded");
+    expect(resourcesReloaded).toEqual([pickle.id]);
     expect(userTexts(updated)).not.toContain("/reload");
   });
 

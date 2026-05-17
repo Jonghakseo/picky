@@ -90,6 +90,7 @@ export class AgentdServer {
     });
 
     this.options.supervisor.on("session", (session) => this.broadcast({ type: "sessionUpdated", session: protocolSession(session) }));
+    this.options.supervisor.on("resourcesReloaded", (sessionId) => this.broadcast({ type: "sessionResourcesReloaded", sessionId }));
     this.options.supervisor.on("log", (sessionId, line) => this.broadcast({ type: "sessionLogAppended", sessionId, line }));
     this.options.supervisor.on("extensionUiRequest", (request) => this.broadcast({ type: "extensionUiRequest", request }));
     this.options.supervisor.on("queueUpdated", (sessionId, steering, followUp, steeringMode, followUpMode, seq) => this.broadcast({ type: "sessionQueueUpdated", sessionId, steering, followUp, steeringMode, followUpMode, seq }));
@@ -245,7 +246,7 @@ export class AgentdServer {
       setMainAgentThinkingLevel: (cmd) => this.options.supervisor.setMainAgentThinkingLevel(cmd.mainAgentThinkingLevel),
       listSlashCommands: async (cmd) => {
         const commands = await this.options.supervisor.listSlashCommands(cmd.sessionId);
-        this.send(ws, { type: "slashCommandsSnapshot", sessionId: cmd.sessionId, commands });
+        this.send(ws, { type: "slashCommandsSnapshot", sessionId: cmd.sessionId, requestId: cmd.id, commands });
       },
       getSession: (cmd) => {
         const session = this.options.supervisor.get(cmd.sessionId);
@@ -648,6 +649,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessions: event.sessions.length };
     case "sessionUpdated":
       return { eventId: event.id, type: event.type, sessionId: event.session.id, status: event.session.status };
+    case "sessionResourcesReloaded":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId };
     case "sessionLogAppended":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, lineChars: event.line.length };
     case "toolActivityUpdated":
@@ -669,7 +672,7 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
     case "externalEntryAck":
       return { eventId: event.id, type: event.type, commandId: event.commandId, kind: event.kind, sessionId: event.sessionId, contextId: event.contextId, errorChars: event.errorMessage?.length };
     case "slashCommandsSnapshot":
-      return { eventId: event.id, type: event.type, sessionId: event.sessionId, commands: event.commands.length };
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, commands: event.commands.length };
     case "sessionMessageAppended":
     case "sessionMessageReplaced":
     case "sessionMessageRemoved":

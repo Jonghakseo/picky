@@ -132,6 +132,7 @@ export class SessionSupervisor extends EventEmitter {
   private readonly messageBuilder: SessionMessageBuilder;
   private readonly sessionIdFactory: () => string;
   private noTurnRanSessionStateRestores = new Map<string, Partial<PickyAgentSession>>();
+  private pendingResourceReloadSessionIDs = new Set<string>();
   private lastEmittedSteeringMode = new Map<string, PickyQueueMode>();
   private lastEmittedFollowUpMode = new Map<string, PickyQueueMode>();
   // Track follow-up/steer prompts that Pi has queued but not yet started processing. We defer the
@@ -1572,6 +1573,7 @@ export class SessionSupervisor extends EventEmitter {
     await this.cancelPendingExtensionUiForUserInput(sessionId, handle);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     if (isNoTurnStateRestoringSlashCommand(text)) this.rememberNoTurnRanSessionState(sessionId);
+    if (isReloadSlashCommand(text)) this.pendingResourceReloadSessionIDs.add(sessionId);
     const prompt: BuiltPrompt = buildFollowUpPrompt(text, context);
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length });
     await this.appendLog(sessionId, `${FOLLOWUP_PREFIX}${text}`);
@@ -2180,6 +2182,12 @@ export class SessionSupervisor extends EventEmitter {
         return;
       }
       await this.runtimeEventHandler.handle(sessionId, event);
+      if (event.type === "status" && event.noTurnRan && ["completed", "failed", "cancelled"].includes(event.status)) {
+        const wasPendingReload = this.pendingResourceReloadSessionIDs.delete(sessionId);
+        if (wasPendingReload && event.status === "completed" && !event.preserveSessionState) {
+          this.emit("resourcesReloaded", sessionId);
+        }
+      }
     });
     const tracked = next.catch(() => undefined);
     this.runtimeEventChains.set(sessionId, tracked);
@@ -2202,6 +2210,7 @@ export class SessionSupervisor extends EventEmitter {
     this.queueUpdateChains.delete(sessionId);
     this.turnActivity.delete(sessionId);
     this.noTurnRanSessionStateRestores.delete(sessionId);
+    this.pendingResourceReloadSessionIDs.delete(sessionId);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     this.messageBuilder.onSessionRemoved(sessionId);
     if (this.isPickleSession(sessionId)) this.clearPickleCompletionTracking(sessionId);

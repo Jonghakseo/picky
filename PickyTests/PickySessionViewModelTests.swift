@@ -3090,7 +3090,7 @@ struct PickySessionViewModelTests {
         slashRequests = client.sentCommands.filter { $0.type == .listSlashCommands }
         #expect(slashRequests.count == 1)
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot())))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: slashRequests[0].id))))
         try await wait { viewModel.hasLoadedSlashCommands(sessionID: "session-commands") }
 
         #expect(viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
@@ -3110,7 +3110,8 @@ struct PickySessionViewModelTests {
             piSessionFilePath: "/tmp/old-pi.jsonl"
         ))))
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot())))
+        try await wait { !client.sentCommands.filter { $0.type == .listSlashCommands }.isEmpty }
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: client.sentCommands.filter { $0.type == .listSlashCommands }.last?.id))))
         try await wait { viewModel.hasLoadedSlashCommands(sessionID: "session-commands") }
         #expect(viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
 
@@ -3126,7 +3127,7 @@ struct PickySessionViewModelTests {
         try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 2 }
         #expect(client.sentCommands.filter { $0.type == .listSlashCommands }.count == 2)
 
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot())))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: client.sentCommands.filter { $0.type == .listSlashCommands }.last?.id))))
         try await settle()
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
             id: "session-commands",
@@ -3146,8 +3147,10 @@ struct PickySessionViewModelTests {
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
         client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands"))))
+        try await settle()
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
-        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot())))
+        try await wait { !client.sentCommands.filter { $0.type == .listSlashCommands }.isEmpty }
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: client.sentCommands.filter { $0.type == .listSlashCommands }.last?.id))))
         try await wait { viewModel.hasLoadedSlashCommands(sessionID: "session-commands") }
         #expect(viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
 
@@ -3163,6 +3166,71 @@ struct PickySessionViewModelTests {
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
         try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 2 }
         #expect(client.sentCommands.filter { $0.type == .listSlashCommands }.count == 2)
+    }
+
+    @Test func slashCommandSnapshotDiscardsStaleResponseWhenNewerSnapshotArrivesFirst() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands", cwd: "/tmp/old"))))
+        try await settle()
+
+        viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
+        try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 1 }
+        let oldRequestId = client.sentCommands.filter { $0.type == .listSlashCommands }.last!.id
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands", cwd: "/tmp/next"))))
+        try await settle()
+        viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
+        try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 2 }
+        let newRequestId = client.sentCommands.filter { $0.type == .listSlashCommands }.last!.id
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: newRequestId, commandNames: ["new-command"]))))
+        try await wait { viewModel.slashCommandsBySessionID["session-commands"]?.map(\.name) == ["new-command"] }
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: oldRequestId, commandNames: ["old-command"]))))
+        try await settle()
+
+        #expect(viewModel.slashCommandsBySessionID["session-commands"]?.map(\.name) == ["new-command"])
+    }
+
+    @Test func slashCommandResourcesReloadedBumpsEpochAndReRequestsOnlyPreviouslyRequestedSession() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-unrequested"))))
+        try await settle()
+
+        viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
+        try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 1 }
+        let staleRequestId = client.sentCommands.filter { $0.type == .listSlashCommands }.last!.id
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionResourcesReloaded(sessionId: "session-commands"))))
+        try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 2 }
+        let refreshedRequestId = client.sentCommands.filter { $0.type == .listSlashCommands }.last!.id
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionResourcesReloaded(sessionId: "session-unrequested"))))
+        try await settle()
+
+        #expect(client.sentCommands.filter { $0.type == .listSlashCommands && $0.sessionId == "session-commands" }.count == 2)
+        #expect(client.sentCommands.filter { $0.type == .listSlashCommands && $0.sessionId == "session-unrequested" }.isEmpty)
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: staleRequestId, commandNames: ["old-command"]))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: refreshedRequestId, commandNames: ["new-command"]))))
+        try await wait { viewModel.slashCommandsBySessionID["session-commands"]?.map(\.name) == ["new-command"] }
+    }
+
+    @Test func slashCommandCwdChangeDiscardsInFlightSnapshotFromPreviousEpoch() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands", cwd: "/tmp/old"))))
+        try await settle()
+
+        viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
+        try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 1 }
+        let staleRequestId = client.sentCommands.filter { $0.type == .listSlashCommands }.last!.id
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands", updatedAt: "2026-05-01T00:00:05.000Z", cwd: "/tmp/new"))))
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: staleRequestId, commandNames: ["old-command"]))))
+        try await settle()
+
+        #expect(!viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
     }
 
     @Test func slashCommandAutocompleteSelectionWrapsWithArrowNavigation() {
@@ -3723,9 +3791,31 @@ private enum EventJSON {
         """
     }
 
-    static func slashCommandsSnapshot() -> String {
+    static func slashCommandsSnapshot(
+        sessionId: String = "session-commands",
+        requestId: String?,
+        commandNames: [String] = ["deploy", "fix-tests", "skill:context7-cli"]
+    ) -> String {
+        let encodedSessionId = String(decoding: try! JSONEncoder().encode(sessionId), as: UTF8.self)
+        let encodedRequestId = requestId.map { ",\"requestId\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))" } ?? ""
+        let commands = commandNames.enumerated().map { index, name in
+            let source: String
+            switch index {
+            case 1: source = "prompt"
+            case 2: source = "skill"
+            default: source = "extension"
+            }
+            let encodedName = String(decoding: try! JSONEncoder().encode(name), as: UTF8.self)
+            return "{\"name\":\(encodedName),\"description\":\(encodedName),\"source\":\"\(source)\"}"
+        }.joined(separator: ",")
+        return """
+        {"id":"event-slash-commands","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:00.000Z","type":"slashCommandsSnapshot","sessionId":\(encodedSessionId)\(encodedRequestId),"commands":[\(commands)]}
         """
-        {"id":"event-slash-commands","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:00.000Z","type":"slashCommandsSnapshot","sessionId":"session-commands","commands":[{"name":"deploy","description":"Deploy an environment","source":"extension"},{"name":"fix-tests","description":"Fix failing tests","source":"prompt"},{"name":"skill:context7-cli","description":"Look up library docs","source":"skill"}]}
+    }
+
+    static func sessionResourcesReloaded(sessionId: String = "session-commands") -> String {
+        """
+        {"id":"event-resources-reloaded","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:01.000Z","type":"sessionResourcesReloaded","sessionId":"\(sessionId)"}
         """
     }
 

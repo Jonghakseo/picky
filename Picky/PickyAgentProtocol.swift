@@ -265,6 +265,7 @@ enum PickyEvent: Equatable {
     case mainRealtimeTurnDone(PickyMainRealtimeTurnDoneEvent)
     case sessionSnapshot([PickyAgentSession])
     case sessionUpdated(PickyAgentSession)
+    case sessionResourcesReloaded(sessionId: String)
     case sessionLogAppended(sessionId: String, line: String)
     case toolActivityUpdated(sessionId: String, tool: PickyToolActivity)
     case extensionUiRequest(PickyExtensionUiRequest)
@@ -274,7 +275,7 @@ enum PickyEvent: Equatable {
     case narrateProgressRequested(PickyNarrateProgressRequest)
     case pickleBridgeRequested(PickyPickleBridgeRequest)
     case externalEntryRequested(PickyExternalEntryRequest)
-    case slashCommandsSnapshot(sessionId: String, commands: [PickySlashCommand])
+    case slashCommandsSnapshot(sessionId: String, requestId: String?, commands: [PickySlashCommand])
     case sessionMessageAppended(sessionId: String, message: PickySessionMessage, seq: Int)
     case sessionMessageReplaced(sessionId: String, messageId: String, message: PickySessionMessage, seq: Int)
     case sessionMessageRemoved(sessionId: String, messageId: String, seq: Int)
@@ -330,6 +331,9 @@ enum PickyEvent: Equatable {
         case "sessionUpdated":
             let payload = try PickySessionUpdatedPayload(from: decoder)
             self = .sessionUpdated(payload.session)
+        case "sessionResourcesReloaded":
+            let payload = try PickySessionResourcesReloadedPayload(from: decoder)
+            self = .sessionResourcesReloaded(sessionId: payload.sessionId)
         case "sessionLogAppended":
             let payload = try PickySessionLogAppendedPayload(from: decoder)
             self = .sessionLogAppended(sessionId: payload.sessionId, line: payload.line)
@@ -355,7 +359,7 @@ enum PickyEvent: Equatable {
             self = .externalEntryRequested(try PickyExternalEntryRequest(from: decoder))
         case "slashCommandsSnapshot":
             let payload = try PickySlashCommandsSnapshotPayload(from: decoder)
-            self = .slashCommandsSnapshot(sessionId: payload.sessionId, commands: payload.commands)
+            self = .slashCommandsSnapshot(sessionId: payload.sessionId, requestId: payload.requestId, commands: payload.commands)
         case "sessionMessageAppended":
             let payload = try PickySessionMessageAppendedPayload(from: decoder)
             self = .sessionMessageAppended(sessionId: payload.sessionId, message: payload.message, seq: payload.seq)
@@ -398,12 +402,13 @@ private struct PickyMainRealtimeOutputTranscriptDeltaPayload: Decodable { let in
 private struct PickyMainRealtimeOutputTranscriptCompletedPayload: Decodable { let inputId: UUID?; let transcript: String }
 private struct PickySessionSnapshotPayload: Decodable { let sessions: [PickyAgentSession] }
 private struct PickySessionUpdatedPayload: Decodable { let session: PickyAgentSession }
+private struct PickySessionResourcesReloadedPayload: Decodable { let sessionId: String }
 private struct PickySessionLogAppendedPayload: Decodable { let sessionId: String; let line: String }
 private struct PickyToolActivityUpdatedPayload: Decodable { let sessionId: String; let tool: PickyToolActivity }
 private struct PickyExtensionUiRequestPayload: Decodable { let request: PickyExtensionUiRequest }
 private struct PickyArtifactUpdatedPayload: Decodable { let sessionId: String; let artifact: PickyArtifact }
 private struct PickyPointerOverlayRequestedPayload: Decodable { let request: PickyPointerOverlayRequest }
-private struct PickySlashCommandsSnapshotPayload: Decodable { let sessionId: String; let commands: [PickySlashCommand] }
+private struct PickySlashCommandsSnapshotPayload: Decodable { let sessionId: String; let requestId: String?; let commands: [PickySlashCommand] }
 private struct PickySessionMessageAppendedPayload: Decodable { let sessionId: String; let message: PickySessionMessage; let seq: Int }
 private struct PickySessionMessageReplacedPayload: Decodable { let sessionId: String; let messageId: String; let message: PickySessionMessage; let seq: Int }
 private struct PickySessionMessageRemovedPayload: Decodable { let sessionId: String; let messageId: String; let seq: Int }

@@ -374,13 +374,22 @@ enum PickyWorkspaceSeeder {
         async execute(_toolCallId, params) {
           const raw = typeof params.text === "string" ? params.text.trim() : "";
           if (!raw) throw new Error("text must not be empty");
+          if (assistantProducedText) {
+            narrationDone = true;
+            return {
+              content: [
+                { type: "text", text: "Plan narration skipped because assistant text was already produced in this agent run." },
+              ],
+              details: { text: raw, delivered: false, skipped: true, skipReason: "assistantTextAlreadyProduced" },
+            };
+          }
           const api = bridge();
           if (!api?.narrate) {
             return {
               content: [
                 { type: "text", text: "Narration bridge unavailable; continue without retrying." },
               ],
-              details: { text: raw, delivered: false },
+              details: { text: raw, delivered: false, skipped: false, skipReason: "bridgeUnavailable" },
             };
           }
           api.narrate(raw);
@@ -391,7 +400,7 @@ enum PickyWorkspaceSeeder {
                 text: `Plan dispatched (${raw.length} chars). Continue the work; do not narrate again in this agent run.`,
               },
             ],
-            details: { text: raw, delivered: true },
+            details: { text: raw, delivered: true, skipped: false, skipReason: "" },
           };
         },
       });

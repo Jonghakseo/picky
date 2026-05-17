@@ -54,6 +54,8 @@ const SEEDED_EXTENSIONS: readonly SeededExtension[] = [
       `onNarrationEnabledChange`,
       `previousNonPlanToolCall`,
       `assistantProducedText`,
+      `skipReason: "assistantTextAlreadyProduced"`,
+      `Plan narration skipped because assistant text was already produced in this agent run.`,
       `"picky_tell_plan"`,
     ],
   },

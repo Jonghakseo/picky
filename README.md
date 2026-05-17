@@ -92,3 +92,6 @@ Picky does not continuously capture your screen. Context is gathered only for th
 ## License
 
 See [LICENSE](LICENSE) for licensing details.
+
+- Inspired by [Clicky](https://github.com/farzaa/clicky).
+- Inspired by [Pi](https://github.com/earendil-works/pi).

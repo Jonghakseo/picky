@@ -178,9 +178,10 @@ enum PickyWorkspaceSeeder {
 
     ## Announce the plan before tool calls
 
-    - Before any other tool call in an agent run, call `picky_tell_plan`
-      once to announce the work plan for the user prompt. Mandatory, not
-      best-effort. One plan covers the whole agent run.
+    - Before the first tool call in an agent run, call `picky_tell_plan`
+      once to announce the work plan for the user prompt, unless you have
+      already produced user-visible assistant text in this run. Mandatory
+      for tool-first runs; one plan covers the whole agent run.
     - Speak the plan, not progress: intended approach and rough order of
       steps. Do not narrate what just happened.
     - One or two short sentences in the user's language (target ~40 chars,
@@ -221,11 +222,12 @@ enum PickyWorkspaceSeeder {
     /// extension is the canonical home for the `picky_tell_plan` tool (the
     /// agentd main runtime never registers it) so the tool is only visible
     /// to the main agent running in this workspace cwd. The tool announces
-    /// a short work plan (not progress chatter): before any tool call in an
-    /// agent run, the agent must call `picky_tell_plan` once and describe
-    /// what it intends to do, roughly in what order. The `narrationDone`
-    /// flag resets on `agent_start`, so one plan announcement covers the
-    /// entire multi-turn agent run for that user prompt. The character cap
+    /// a short work plan (not progress chatter): before a tool-first agent
+    /// run executes its first tool, the agent must call `picky_tell_plan`
+    /// once and describe what it intends to do, roughly in what order. Runs
+    /// that already produced assistant text may continue without a plan call.
+    /// The per-run flags reset on `agent_start`, so one plan announcement
+    /// covers the entire multi-turn agent run for that user prompt. The character cap
     /// inside the extension is guidance only — the tool does not truncate or
     /// reject input by length.
     ///
@@ -234,8 +236,8 @@ enum PickyWorkspaceSeeder {
     /// `agentd/src/bootstrap.ts` for the interface contract.
     static let defaultTellPlanExtensionSource: String = #"""
     // Auto-seeded by Picky. Registers `picky_tell_plan` for the main agent
-    // running in this workspace cwd and enforces that it is called once
-    // before any other tool call in the same agent run.
+    // running in this workspace cwd and enforces that tool-first runs call it
+    // before the first non-plan tool in the same agent run.
     //
     // Delete this file and relaunch Picky to reseed the default.
 
@@ -264,11 +266,23 @@ enum PickyWorkspaceSeeder {
     }
 
     export default function (pi: ExtensionAPI) {
-      // Per-agent-run flag. Reset at agent_start. The agent must call
-      // picky_tell_plan once before any other tool call in this run to
-      // announce its plan for the user prompt.
+      // Per-agent-run flags. Reset at agent_start. Tool-first runs must call
+      // picky_tell_plan before the first non-plan tool. If the assistant has
+      // already produced user-visible text, the plan has effectively been
+      // spoken inline and the first tool can proceed without narration.
       let narrationDone = false;
+      let previousNonPlanToolCall = false;
+      let assistantProducedText = false;
       let unsubscribe: (() => void) | undefined;
+
+      function assistantMessageHasText(message: { role?: string; content?: unknown }): boolean {
+        if (message.role !== "assistant" || !Array.isArray(message.content)) return false;
+        return message.content.some((part) => {
+          if (!part || typeof part !== "object") return false;
+          const candidate = part as { type?: unknown; text?: unknown };
+          return candidate.type === "text" && typeof candidate.text === "string" && candidate.text.trim().length > 0;
+        });
+      }
 
       function syncActiveTools(enabled: boolean): void {
         const active = pi.getActiveTools();
@@ -295,6 +309,29 @@ enum PickyWorkspaceSeeder {
 
       pi.on("agent_start", async () => {
         narrationDone = false;
+        previousNonPlanToolCall = false;
+        assistantProducedText = false;
+      });
+
+      pi.on("message_update", async (event) => {
+        const streamEvent = event.assistantMessageEvent;
+        if (streamEvent.type === "text_delta" && streamEvent.delta.trim().length > 0) {
+          assistantProducedText = true;
+          return;
+        }
+        if (streamEvent.type === "text_end" && streamEvent.content.trim().length > 0) {
+          assistantProducedText = true;
+          return;
+        }
+        if (assistantMessageHasText(event.message)) {
+          assistantProducedText = true;
+        }
+      });
+
+      pi.on("message_end", async (event) => {
+        if (assistantMessageHasText(event.message)) {
+          assistantProducedText = true;
+        }
       });
 
       pi.on("tool_call", async (event) => {
@@ -307,22 +344,23 @@ enum PickyWorkspaceSeeder {
           narrationDone = true;
           return;
         }
-        if (!narrationDone) {
+        if (!narrationDone && !previousNonPlanToolCall && !assistantProducedText) {
           return {
             block: true,
-            reason: `Call ${TOOL_NAME} first to announce the plan for this user prompt (~${TARGET_CHARS} chars, max ${MAX_CHARS}). One plan covers the whole agent run.`,
+            reason: `Call ${TOOL_NAME} first to announce the plan for this tool-first user prompt (~${TARGET_CHARS} chars, max ${MAX_CHARS}), or answer with text before using tools. One plan covers the whole agent run.`,
           };
         }
+        previousNonPlanToolCall = true;
       });
 
       pi.registerTool({
         name: TOOL_NAME,
         label: "Picky tell plan",
         description:
-          "Announce the work plan via Picky's companion voice once before any other tool call in an agent run.",
-        promptSnippet: `${TOOL_NAME}: speak the plan (intended approach + rough order) once before any other tool runs in this agent run.`,
+          "Announce the work plan via Picky's companion voice before a tool-first agent run uses tools.",
+        promptSnippet: `${TOOL_NAME}: speak the plan (intended approach + rough order) before the first tool in a tool-first agent run.`,
         promptGuidelines: [
-          `Mandatory: call ${TOOL_NAME} once before any other tool in every agent run; one plan covers the whole prompt.`,
+          `Mandatory for tool-first runs: call ${TOOL_NAME} once before the first non-plan tool if you have not already produced user-visible assistant text in this agent run; one plan covers the whole prompt.`,
           `Speak the plan, not progress: intended approach and rough order of steps (e.g. "Read the failing test, trace the recent diff, propose a fix."). Do not narrate what just happened.`,
           `One or two short sentences in the user's language, target ~${TARGET_CHARS} chars, max ${MAX_CHARS} (guidance only). Never include final answers, code, paths, or sensitive identifiers.`,
           `If narration is disabled the tool returns silently — do not retry.`,

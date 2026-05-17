@@ -50,12 +50,25 @@ describe("normalizePiEvent", () => {
       message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "" }] },
       toolResults: [],
     })).toEqual({ kind: "none" });
+  });
+
+  // When a turn mixes assistant text + tool calls, the text block is the LLM's
+  // intro for that step ("잠시 도구 호출하고 이어서 말씀드릴게요."). Picky must speak
+  // it through TTS as soon as the turn ends, separately from the next turn's text,
+  // so a dedicated `turnTextComplete` kind is emitted rather than dropping the
+  // text on the floor as `none`.
+  it("emits turnTextComplete for an intermediate turn that mixed text and tool calls", () => {
+    expect(normalizePiEvent({
+      type: "turn_end",
+      message: { role: "assistant", stopReason: "end_turn", model: "openai-codex/gpt-5.5", content: [{ type: "text", text: "검토 중" }, { type: "toolCall", name: "bash" }] },
+      toolResults: [],
+    }, { currentThinkingLevel: "high" })).toMatchObject({ kind: "turnTextComplete", text: "검토 중", assistantRun: { model: "openai-codex/gpt-5.5", thinkingLevel: "high" } });
 
     expect(normalizePiEvent({
       type: "turn_end",
-      message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "검토 중" }, { type: "toolCall", name: "bash" }] },
-      toolResults: [],
-    })).toEqual({ kind: "none" });
+      message: { role: "assistant", stopReason: "tool_use", content: [{ type: "text", text: "확인해볼게요." }, { type: "toolCall", name: "read" }] },
+      toolResults: [{ role: "toolResult", content: [] }],
+    })).toMatchObject({ kind: "turnTextComplete", text: "확인해볼게요." });
   });
 
   it("maps turn stop reasons to cancellation but waits for agent_end before final failure", () => {

@@ -1195,6 +1195,37 @@ export class SessionSupervisor extends EventEmitter {
       this.mainDraft += event.delta;
       return;
     }
+    if (event.type === "turn_text_complete") {
+      // A turn ended with both assistant text and tool calls. Flush the text-so-far
+      // as its own quickReply so TTS speaks it before the tool runs, then clear the
+      // draft so the next turn's deltas accumulate cleanly. We deliberately do NOT
+      // flip `mainIsProcessing` / `mainTerminalProcessed` here — the agent run is
+      // not yet done, and the eventual agent_end terminal status still has to flow
+      // through the regular terminal handler below.
+      if (event.inputId && this.interruptedMainInputIds.has(event.inputId)) {
+        logAgentd("main interrupted turn text suppressed", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, inputId: event.inputId, pending: this.interruptedMainInputIds.size });
+        return;
+      }
+      const draftSnapshot = this.mainDraft;
+      this.mainDraft = "";
+      const reply = cleanFinalAnswer(draftSnapshot);
+      if (!reply) {
+        logAgentd("main turn text complete with empty draft", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, eventTextChars: event.text.length });
+        return;
+      }
+      logAgentd("main turn text flush", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, textChars: reply.length });
+      await this.appendMainMessage("assistant", reply);
+      const replyContextId = this.mainReplyContextId;
+      if (replyContextId) {
+        const isPickleReply = this.pickleSessionIds.has(replyContextId) || this.externalPickleReplyContexts.has(replyContextId);
+        this.emitQuickReply(replyContextId, reply, {
+          originSource: replyContextId === this.mainContext?.id ? quickReplyOriginFromContextSource(this.mainContext.source) : "system",
+          replyKind: isPickleReply ? "pickleCompletion" : "main",
+          sessionId: isPickleReply ? replyContextId : undefined,
+        });
+      }
+      return;
+    }
     if (event.type === "status") {
       if (event.status === "running") {
         if (event.inputId && this.interruptedMainInputIds.has(event.inputId)) {

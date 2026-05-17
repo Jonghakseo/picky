@@ -40,6 +40,13 @@ export type RuntimeEvent =
   | { type: "input_message"; role: "user" | "custom"; text: string; originatedBy: "user" | "main_agent" | "pi_extension" | "internal"; display?: boolean; customType?: string }
   | { type: "session_replaced"; reason: "new"; cwd?: string; sessionFilePath?: string }
   | { type: "status"; status: RuntimeSessionStatus; inputId?: string; summary?: string; finalAnswer?: string; noTurnRan?: boolean; preserveSessionState?: boolean; assistantRun?: RuntimeAssistantRunMetadata; compactionStarted?: boolean; compactionCompleted?: boolean; compactionFailed?: boolean; compactionReason?: string }
+  /**
+   * Per-turn assistant text flush. Emitted when a turn ends with both assistant
+   * text and tool calls so the supervisor can speak the text-so-far through TTS
+   * before the tool runs, instead of waiting until agent_end and concatenating
+   * every text block of the agent run into one playback.
+   */
+  | { type: "turn_text_complete"; text: string; inputId?: string; assistantRun?: RuntimeAssistantRunMetadata }
   | { type: "tool"; toolCallId: string; name: string; status: "running" | "succeeded" | "failed"; preview?: string; argsPreview?: string; resultPreview?: string }
   | { type: "extension_ui"; request: Record<string, unknown>; waitsForInput: boolean }
   | { type: "session_info"; name: string }

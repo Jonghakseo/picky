@@ -18,6 +18,7 @@ type NormalizedPiEvent =
   | { kind: "tool"; tool: PickyToolActivity }
   | { kind: "extensionUi"; request: Record<string, unknown>; waitsForInput: boolean }
   | { kind: "sessionInfo"; name: string }
+  | { kind: "turnTextComplete"; text: string; assistantRun?: RuntimeAssistantRunMetadata }
   | { kind: "none" };
 
 export function normalizePiEvent(event: unknown, context: PiEventNormalizationContext = {}): NormalizedPiEvent {
@@ -102,7 +103,18 @@ export function normalizePiEvent(event: unknown, context: PiEventNormalizationCo
     if (stopReason === "error") return { kind: "none" };
     const stopReasonStatus = terminalStatusFromStopReason(stopReason);
     if (stopReasonStatus) return withFinalAnswer(stopReasonStatus, assistantTextFromMessage(message), assistantRun);
-    if (!hasAssistantText(message) || hasAssistantToolCalls(message) || hasToolResults(piEvent.toolResults)) return { kind: "none" };
+    if (!hasAssistantText(message)) return { kind: "none" };
+    // Intermediate turn: the LLM emitted both an inline text block and tool calls
+    // (or the turn produced text alongside tool results). Surface the text via
+    // `turnTextComplete` so the supervisor can flush it as its own quickReply
+    // before the tool runs, instead of accumulating it into the next turn's
+    // assistant draft and reading both blocks back-to-back through TTS.
+    if (hasAssistantToolCalls(message) || hasToolResults(piEvent.toolResults)) {
+      const text = assistantTextFromMessage(message);
+      if (!text) return { kind: "none" };
+      const event: NormalizedPiEvent = { kind: "turnTextComplete", text };
+      return assistantRun && hasAssistantRunMetadata(assistantRun) ? { ...event, assistantRun } : event;
+    }
     return withFinalAnswer(completionStatusFromContext(context), assistantTextFromMessage(message), assistantRun);
   }
 
@@ -139,6 +151,13 @@ export function runtimeEventFromPiEvent(event: unknown, context?: PiEventNormali
   if (normalized.kind === "tool") return { type: "tool", toolCallId: normalized.tool.toolCallId, name: normalized.tool.name, status: normalized.tool.status, preview: normalized.tool.preview, argsPreview: normalized.tool.argsPreview, resultPreview: normalized.tool.resultPreview };
   if (normalized.kind === "extensionUi") return { type: "extension_ui", request: normalized.request, waitsForInput: normalized.waitsForInput };
   if (normalized.kind === "sessionInfo") return { type: "session_info", name: normalized.name };
+  if (normalized.kind === "turnTextComplete") {
+    return {
+      type: "turn_text_complete",
+      text: normalized.text,
+      ...(normalized.assistantRun ? { assistantRun: normalized.assistantRun } : {}),
+    };
+  }
   return undefined;
 }
 

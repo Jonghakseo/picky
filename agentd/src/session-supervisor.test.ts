@@ -2826,6 +2826,75 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
+  // Per-turn TTS flush. When the main agent answers with [text -> tool -> text],
+  // the user expects each text block to be a separate TTS playback rather than the
+  // concatenated 'text1 text2' the supervisor used to emit at agent_end. The runtime
+  // surfaces an explicit `turn_text_complete` event for the intermediate-turn case
+  // (carrying the text the LLM streamed in that turn), and the supervisor flushes
+  // mainDraft right then so the next turn's deltas accumulate cleanly.
+  it("flushes per-turn assistant text as separate quickReplies when a turn ends with text followed by tool calls", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
+    const replies: Array<{ contextId: string; text: string }> = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+
+    await supervisor.route(context("현재 시각 알려줘"));
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
+    // Turn 1: LLM streamed an intro before calling a tool. The intro deltas land
+    // in mainDraft just like a normal reply.
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "잠시만요, 도구 호출하고 이어서 말씀드릴게요." });
+    // Pi's turn_end for a turn that mixed text + tool calls now surfaces as an
+    // explicit per-turn flush. The supervisor must emit a quickReply with the
+    // accumulated text and clear its draft so turn 2's deltas do not stack on
+    // top of turn 1's text.
+    mainRuntime.handle?.emit({ type: "turn_text_complete", text: "잠시만요, 도구 호출하고 이어서 말씀드릴게요." });
+    await settle();
+
+    expect(replies).toEqual([
+      { contextId: "context-현재 시각 알려줘", text: "잠시만요, 도구 호출하고 이어서 말씀드릴게요." },
+    ]);
+
+    // Turn 2: tool result came back, LLM streams the actual answer and the agent
+    // run terminates. The terminal status must produce a fresh quickReply containing
+    // ONLY turn 2's text, never the concatenation of turn 1 + turn 2.
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "지금 시각은 소 9시 47분입니다." });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(replies).toEqual([
+      { contextId: "context-현재 시각 알려줘", text: "잠시만요, 도구 호출하고 이어서 말씀드릴게요." },
+      { contextId: "context-현재 시각 알려줘", text: "지금 시각은 소 9시 47분입니다." },
+    ]);
+    // The persisted main-message transcript also keeps the two assistant lines
+    // separate, matching what the user sees in the menu-bar Messages tab.
+    expect(supervisor.listMainMessages().map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: "user", text: "현재 시각 알려줘" },
+      { role: "assistant", text: "잠시만요, 도구 호출하고 이어서 말씀드릴게요." },
+      { role: "assistant", text: "지금 시각은 소 9시 47분입니다." },
+    ]);
+  });
+
+  // A turn_text_complete without any buffered text (e.g. a noisy normalizer fallback
+  // or a runtime that emits it on a tool-only turn) must be a no-op rather than emit
+  // a blank quickReply that would silence Picky's TTS layer or surface an empty bubble.
+  it("ignores turn_text_complete with no buffered draft text", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
+    const replies: Array<{ contextId: string; text: string }> = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+
+    await supervisor.route(context("도구만"));
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
+    mainRuntime.handle?.emit({ type: "turn_text_complete", text: "" });
+    await settle();
+
+    expect(replies).toEqual([]);
+  });
+
   // Defense-in-depth for the user-reported full-text-twice TTS bug. The persisted Pi session
   // JSONL recorded exactly one assistant message (stopReason:"stop") yet TTS played the full
   // reply twice, proving the duplication happens at `applyMainRuntimeEvent` emit time on a

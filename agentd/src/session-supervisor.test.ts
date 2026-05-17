@@ -2895,6 +2895,33 @@ describe("SessionSupervisor", () => {
     expect(replies).toEqual([]);
   });
 
+  // Non-streaming main runtimes (or any future adapter that emits an entire
+  // assistant message in one shot rather than via `assistant_delta`) deliver
+  // their turn text only through `turn_text_complete.text`. mainDraft is empty
+  // in that path, so the supervisor must fall back to the event payload when
+  // flushing, otherwise the per-turn TTS announcement is silently dropped.
+  it("falls back to turn_text_complete.text when mainDraft is empty", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
+    const replies: Array<{ contextId: string; text: string }> = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+
+    await supervisor.route(context("시각 알려줘"));
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
+    mainRuntime.handle?.emit({ type: "turn_text_complete", text: "파일 확인해볼게요." });
+    await settle();
+
+    expect(replies).toEqual([
+      { contextId: "context-시각 알려줘", text: "파일 확인해볼게요." },
+    ]);
+    expect(supervisor.listMainMessages().map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: "user", text: "시각 알려줘" },
+      { role: "assistant", text: "파일 확인해볼게요." },
+    ]);
+  });
+
   // Picky's narrationEnabled setting (Voice tab) propagates to agentd so the seeded
   // picky_tell_plan extension can hide its tool from the main agent when the user
   // turns it off. The supervisor stores the current value (defaults to true), fires

@@ -773,9 +773,11 @@ struct PickySettings: Codable, Equatable {
     var ttsProvider: PickyVoiceProviderSelection
     /// When false, Picky still shows text replies but skips spoken TTS playback.
     var ttsEnabled: Bool
-    /// When false, the `picky_narrate_progress` tool returns silently and no
-    /// filler-line speech is played. Independent from `ttsEnabled` so users
-    /// can keep companion replies spoken while muting agent narration.
+    /// When false, agentd hides the seeded `picky_tell_plan` extension's tool
+    /// from the main agent via `pi.setActiveTools`, and Picky silently drops
+    /// any narration request that still arrives. Independent from `ttsEnabled`
+    /// so users can keep companion replies spoken while opting out of the
+    /// spoken work plan.
     var narrationEnabled: Bool
     /// Names of Picky built-in tools the user has explicitly disabled. Empty by
     /// default; the daemon filters these out of the main agent runtime on next

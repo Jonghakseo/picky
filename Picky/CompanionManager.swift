@@ -1976,6 +1976,13 @@ final class CompanionManager: ObservableObject {
             let elapsed = Date().timeIntervalSince(requestedAt)
             guard elapsed < Self.deferredSpeechMaximumWaitForNarration else {
                 logSpeech("interaction start failed deferred narration timeout speechID=\(speechID) elapsedMs=\(Int(elapsed * 1000)) context=\(contextID ?? "none") narration=\(narrationSpeechID)")
+                // Clear the deferred task handle on the timeout path. The
+                // polling Task body completes after this return, but the
+                // property still held a non-nil reference, which made
+                // `handleSpeechFinished` treat the (already-failed) queued
+                // speech as still pending and kept voiceState stuck in
+                // `.processing` while no follow-up TTS would ever land.
+                deferredInteractionSpeechTask = nil
                 interactionCoordinator.effectCompleted(
                     .speechFailed(speechID: speechID),
                     correlation: PickyInteractionCorrelation(contextID: contextID, speechID: speechID, source: .system)

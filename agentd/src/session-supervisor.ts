@@ -1254,7 +1254,12 @@ export class SessionSupervisor extends EventEmitter {
       }
       const draftSnapshot = this.mainDraft;
       this.mainDraft = "";
-      const reply = cleanFinalAnswer(draftSnapshot);
+      // Prefer the streamed draft so any deltas that the normalizer trimmed
+      // out of the final assistant message are preserved, but fall back to
+      // the event's text payload so runtimes that deliver a whole turn in
+      // one shot (no prior `assistant_delta`) still flush the spoken turn
+      // through TTS instead of silently dropping it.
+      const reply = cleanFinalAnswer(draftSnapshot) ?? cleanFinalAnswer(event.text);
       if (!reply) {
         logAgentd("main turn text complete with empty draft", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, eventTextChars: event.text.length });
         return;

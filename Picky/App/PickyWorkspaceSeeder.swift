@@ -79,8 +79,8 @@ enum PickyWorkspaceSeeder {
     }
 
     /// Creates `.pi/extensions/` under the workspace and drops bundled Picky
-    /// extensions (currently only `picky-narrate-progress.ts`) when missing.
-    /// User edits are preserved — existing files are never overwritten.
+    /// extensions (currently only `picky-tell-plan.ts`) when missing. User
+    /// edits are preserved — existing files are never overwritten.
     private static func seedExtensions(
         workspaceURL: URL,
         fileManager: FileManager,

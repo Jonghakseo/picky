@@ -15,11 +15,11 @@ Picky is a local-first macOS command center for Pi sessions. It captures neutral
 
 ## Pickle response protocol
 
-- Per user prompt the first non-narrate tool call is free. From the second non-narrate tool call onwards, `picky_narrate_progress` must have been invoked at least once earlier in the same agent run. Treat this as mandatory, not best-effort.
-- One narration covers the entire multi-turn agent run for that prompt; do not narrate again after the first narration.
-- The narration line must be a short present-continuous sentence in the user's language (~20 chars, max 40), describing the activity only — never include final answers, code, paths, or sensitive identifiers.
+- Before any other tool call in an agent run, `picky_tell_plan` must be invoked once to announce the work plan for the user prompt. Mandatory, not best-effort. One plan covers the whole agent run.
+- Speak the plan, not progress: intended approach and rough order of steps. Do not narrate what just happened.
+- One or two short sentences in the user's language (target ~40 chars, max ~100, guidance only — not enforced). Never include final answers, code, paths, or sensitive identifiers.
 - If narration is disabled the tool returns silently — do not retry.
-- Tool source: seeded Pi extension at `<workspace>/.pi/extensions/picky-narrate-progress.ts` (default content in `Picky/App/PickyWorkspaceSeeder.swift`). agentd exposes the TTS bridge as `globalThis.__pickyAgentd.narrate(text)` (`PickyAgentdBridge` in `agentd/src/bootstrap.ts`).
+- Tool source: seeded Pi extension at `<workspace>/.pi/extensions/picky-tell-plan.ts` (default content in `Picky/App/PickyWorkspaceSeeder.swift`). agentd exposes the TTS bridge as `globalThis.__pickyAgentd.narrate(text)` (`PickyAgentdBridge` in `agentd/src/bootstrap.ts`).
 
 ## Current architecture
 

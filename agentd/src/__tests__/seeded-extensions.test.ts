@@ -37,8 +37,8 @@ interface SeededExtension {
 
 const SEEDED_EXTENSIONS: readonly SeededExtension[] = [
   {
-    filename: "picky-narrate-progress.ts",
-    swiftConstant: "defaultNarrateExtensionSource",
+    filename: "picky-tell-plan.ts",
+    swiftConstant: "defaultTellPlanExtensionSource",
     mustContain: [
       `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";`,
       `import { Type } from "typebox";`,
@@ -46,6 +46,7 @@ const SEEDED_EXTENSIONS: readonly SeededExtension[] = [
       `__pickyAgentd`,
       `block: true`,
       `pi.on("agent_start"`,
+      `"picky_tell_plan"`,
     ],
   },
 ];

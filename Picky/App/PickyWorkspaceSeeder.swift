@@ -23,10 +23,10 @@ enum PickyWorkspaceSeeder {
     /// when running in this cwd. See `docs/extensions.md` in the Pi package.
     static let extensionsDirectoryRelativePath = ".pi/extensions"
 
-    /// Filename of the seeded narration extension that scopes
-    /// `picky_narrate_progress` to this workspace's cwd and enforces the
-    /// "narrate before any other tool" policy via `tool_call` blocking.
-    static let narrateExtensionFilename = "picky-narrate-progress.ts"
+    /// Filename of the seeded plan-announcement extension that scopes
+    /// `picky_tell_plan` to this workspace's cwd and enforces the "announce
+    /// the plan before any other tool" policy via `tool_call` blocking.
+    static let tellPlanExtensionFilename = "picky-tell-plan.ts"
 
     /// Path of the default workspace. Does not check whether the directory or
     /// the seeded `AGENTS.md` actually exist; use `seedDefaultWorkspace` to
@@ -93,13 +93,13 @@ enum PickyWorkspaceSeeder {
             log("⚠️ Picky: Failed to create extensions dir at \(extensionsURL.path): \(error.localizedDescription)")
             return
         }
-        let narrateURL = extensionsURL.appendingPathComponent(narrateExtensionFilename, isDirectory: false)
-        guard !fileManager.fileExists(atPath: narrateURL.path) else { return }
+        let tellPlanURL = extensionsURL.appendingPathComponent(tellPlanExtensionFilename, isDirectory: false)
+        guard !fileManager.fileExists(atPath: tellPlanURL.path) else { return }
         do {
-            try defaultNarrateExtensionSource.write(to: narrateURL, atomically: true, encoding: .utf8)
-            log("🧩 Picky: Seeded \(narrateExtensionFilename) at \(narrateURL.path)")
+            try defaultTellPlanExtensionSource.write(to: tellPlanURL, atomically: true, encoding: .utf8)
+            log("🧩 Picky: Seeded \(tellPlanExtensionFilename) at \(tellPlanURL.path)")
         } catch {
-            log("⚠️ Picky: Failed to seed \(narrateURL.path): \(error.localizedDescription)")
+            log("⚠️ Picky: Failed to seed \(tellPlanURL.path): \(error.localizedDescription)")
         }
     }
 
@@ -176,19 +176,17 @@ enum PickyWorkspaceSeeder {
     - Do not expose internal tool logs. Do not hard-code workflows from
       URLs or app names; use the user's intent and context.
 
-    ## Narration before tool calls
+    ## Announce the plan before tool calls
 
-    - Per user prompt the first non-narrate tool call is free. From the
-      second non-narrate tool call onwards in the same agent run,
-      `picky_narrate_progress` must have been called at least once
-      earlier. Treat this as mandatory, not best-effort.
-    - One narration covers the entire multi-turn agent run for that
-      prompt; do not narrate again after the first narration.
-    - The narration must be a short present-continuous sentence in the
-      user's language (~20 chars, max 40), describing the activity only —
-      never include final answers, code, paths, or sensitive identifiers.
-    - If narration is disabled the tool returns silently — do not
-      retry.
+    - Before any other tool call in an agent run, call `picky_tell_plan`
+      once to announce the work plan for the user prompt. Mandatory, not
+      best-effort. One plan covers the whole agent run.
+    - Speak the plan, not progress: intended approach and rough order of
+      steps. Do not narrate what just happened.
+    - One or two short sentences in the user's language (target ~40 chars,
+      max ~100, guidance only). Never include final answers, code, paths,
+      or sensitive identifiers.
+    - If narration is disabled the tool returns silently — do not retry.
 
     ## Self-update
 
@@ -219,32 +217,35 @@ enum PickyWorkspaceSeeder {
       Keep `AGENTS.md` itself focused on persistent persona/rules/policy.
     """
 
-    /// Default content for `.pi/extensions/picky-narrate-progress.ts`. The
-    /// extension is the canonical home for the `picky_narrate_progress` tool
-    /// (the agentd main runtime no longer registers it) so the tool is only
-    /// visible to the main agent running in this workspace cwd. It also
-    /// enforces a hard rule via `tool_call` blocking: the first non-narrate
-    /// tool call in an agent run is allowed for free; from the second
-    /// non-narrate tool call onwards `picky_narrate_progress` must have been
-    /// called at least once. Counters reset on `agent_start`, so the
-    /// grace + narration cover the entire multi-turn agent run for that
-    /// prompt.
+    /// Default content for `.pi/extensions/picky-tell-plan.ts`. The
+    /// extension is the canonical home for the `picky_tell_plan` tool (the
+    /// agentd main runtime never registers it) so the tool is only visible
+    /// to the main agent running in this workspace cwd. The tool announces
+    /// a short work plan (not progress chatter): before any tool call in an
+    /// agent run, the agent must call `picky_tell_plan` once and describe
+    /// what it intends to do, roughly in what order. The `narrationDone`
+    /// flag resets on `agent_start`, so one plan announcement covers the
+    /// entire multi-turn agent run for that user prompt. The character cap
+    /// inside the extension is guidance only — the tool does not truncate or
+    /// reject input by length.
     ///
     /// Picky's TTS is reached through `globalThis.__pickyAgentd.narrate(text)`,
     /// installed by agentd at startup. See `PickyAgentdBridge` in
     /// `agentd/src/bootstrap.ts` for the interface contract.
-    static let defaultNarrateExtensionSource: String = #"""
-    // Auto-seeded by Picky. Registers `picky_narrate_progress` for the main
-    // agent running in this workspace cwd and enforces that it is called once
-    // before any other tool call in the same assistant response.
+    static let defaultTellPlanExtensionSource: String = #"""
+    // Auto-seeded by Picky. Registers `picky_tell_plan` for the main agent
+    // running in this workspace cwd and enforces that it is called once
+    // before any other tool call in the same agent run.
     //
     // Delete this file and relaunch Picky to reseed the default.
 
     import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
     import { Type } from "typebox";
 
-    const TOOL_NAME = "picky_narrate_progress";
-    const MAX_CHARS = 40;
+    const TOOL_NAME = "picky_tell_plan";
+    // Soft target only; no programmatic truncation. Used in guidance text.
+    const TARGET_CHARS = 40;
+    const MAX_CHARS = 100;
 
     interface PickyAgentdBridge {
       narrate?: (text: string) => void;
@@ -255,16 +256,13 @@ enum PickyWorkspaceSeeder {
     }
 
     export default function (pi: ExtensionAPI) {
-      // Per-agent-run state. Reset at agent_start. The first non-narrate tool
-      // call passes for free (cheap one-shot tasks don't need narration); from
-      // the second non-narrate tool call onwards picky_narrate_progress must
-      // have been called at least once in this agent run.
+      // Per-agent-run flag. Reset at agent_start. The agent must call
+      // picky_narrate_progress once before any other tool call in this run
+      // to announce its plan for the user prompt.
       let narrationDone = false;
-      let freeToolUsed = false;
 
       pi.on("agent_start", async () => {
         narrationDone = false;
-        freeToolUsed = false;
       });
 
       pi.on("tool_call", async (event) => {
@@ -274,35 +272,30 @@ enum PickyWorkspaceSeeder {
           narrationDone = true;
           return;
         }
-        if (narrationDone) return;
-        if (!freeToolUsed) {
-          // One-tool grace per agent run consumed.
-          freeToolUsed = true;
-          return;
+        if (!narrationDone) {
+          return {
+            block: true,
+            reason: `Call ${TOOL_NAME} first to announce the plan for this user prompt (~${TARGET_CHARS} chars, max ${MAX_CHARS}). One plan covers the whole agent run.`,
+          };
         }
-        return {
-          block: true,
-          reason: `Call ${TOOL_NAME} before the next tool call. The one-tool grace per user prompt is already used; from the second tool call onwards a short present-continuous filler line in the user's language (~20 chars, max ${MAX_CHARS}) is required.`,
-        };
       });
 
       pi.registerTool({
         name: TOOL_NAME,
-        label: "Picky narrate progress",
+        label: "Picky tell plan",
         description:
-          "Speak a brief filler line via Picky's companion voice. The first non-narrate tool call per user prompt is free; from the second non-narrate tool call onwards this tool must have been called at least once.",
-        promptSnippet: `${TOOL_NAME}: from the second tool call of a user prompt onwards, speak one short filler line. The first tool call per prompt is free; one narration covers the rest of the agent run.`,
+          "Announce the work plan via Picky's companion voice once before any other tool call in an agent run.",
+        promptSnippet: `${TOOL_NAME}: speak the plan (intended approach + rough order) once before any other tool runs in this agent run.`,
         promptGuidelines: [
-          `Per user prompt the first non-narrate tool call is allowed without narration. From the second non-narrate tool call onwards, ${TOOL_NAME} must have been called at least once earlier in the same agent run.`,
-          `Do not call ${TOOL_NAME} again after the first narration in the same agent run — one narration is enough for the whole prompt.`,
-          `Use one short present-continuous sentence in the user's language (~20 characters, max ${MAX_CHARS}); describe only the activity.`,
-          `Never include final answers, code, paths, or sensitive identifiers in the narration line.`,
+          `Mandatory: call ${TOOL_NAME} once before any other tool in every agent run; one plan covers the whole prompt.`,
+          `Speak the plan, not progress: intended approach and rough order of steps (e.g. "Read the failing test, trace the recent diff, propose a fix."). Do not narrate what just happened.`,
+          `One or two short sentences in the user's language, target ~${TARGET_CHARS} chars, max ${MAX_CHARS} (guidance only). Never include final answers, code, paths, or sensitive identifiers.`,
           `If narration is disabled the tool returns silently — do not retry.`,
         ],
         parameters: Type.Object({
           text: Type.String({
             description:
-              "Short present-continuous filler line in the user's language. Ideally ~20 characters, max 40.",
+              "Short work-plan announcement in the user's language: intended approach + rough order. Target ~40 chars, max ~100 (guidance only, not enforced).",
           }),
         }),
         async execute(_toolCallId, params) {
@@ -322,7 +315,7 @@ enum PickyWorkspaceSeeder {
             content: [
               {
                 type: "text",
-                text: `Narration dispatched (${raw.length} chars). Continue the underlying work; do not narrate the same step again.`,
+                text: `Plan dispatched (${raw.length} chars). Continue the work; do not narrate again in this agent run.`,
               },
             ],
             details: { text: raw, delivered: true },

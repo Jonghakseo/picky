@@ -146,6 +146,8 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   private activeInputId?: string;
   private activeResponseId?: string;
   private activeAssistantAudioItem?: ActiveAssistantAudioItem;
+  private responseInputIds = new Map<string, string | undefined>();
+  private cancelledResponseIds = new Set<string>();
   private outputTranscriptByInputId = new Map<string, string>();
   private inputTranscriptByInputId = new Map<string, string>();
   private functionCalls = new Map<string, PendingFunctionCall>();
@@ -285,6 +287,8 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     } catch (error) {
       logAgentd("main realtime cancel failed", { error: error instanceof Error ? error.message : String(error) });
     } finally {
+      if (this.activeResponseId) this.cancelledResponseIds.add(this.activeResponseId);
+      if (currentInputId) this.outputTranscriptByInputId.delete(currentInputId);
       this.activeInputId = undefined;
       this.activeResponseId = undefined;
       this.activeAssistantAudioItem = undefined;
@@ -432,34 +436,41 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   private handleServerEvent(event: Record<string, unknown>): void {
     const type = String(event.type ?? "");
     switch (type) {
-      case "response.created":
+      case "response.created": {
         this.activeResponseId = stringField(event, "response.id") ?? stringField(event, "response_id") ?? this.activeResponseId;
+        if (this.activeResponseId) this.responseInputIds.set(this.activeResponseId, this.activeInputId);
         break;
+      }
       case "response.output_audio.delta":
       case "response.audio.delta": {
         const delta = stringField(event, "delta");
         if (!delta) return;
+        if (this.isCancelledResponseEvent(event)) return;
+        const inputId = this.inputIdForResponseEvent(event);
         this.activeResponseId = stringField(event, "response_id") ?? this.activeResponseId;
         this.emit({ type: "main_realtime_state", state: "speaking" });
-        this.emit({ type: "main_realtime_output_audio_delta", inputId: this.activeInputId, audioBase64: delta });
+        this.emit({ type: "main_realtime_output_audio_delta", inputId, audioBase64: delta });
         break;
       }
       case "response.output_audio.done":
       case "response.audio.done":
-        this.emit({ type: "main_realtime_output_audio_done", inputId: this.activeInputId });
+        if (this.isCancelledResponseEvent(event)) return;
+        this.emit({ type: "main_realtime_output_audio_done", inputId: this.inputIdForResponseEvent(event) });
         break;
       case "response.output_audio_transcript.delta":
       case "response.audio_transcript.delta": {
         const delta = stringField(event, "delta");
         if (!delta) return;
-        const inputId = this.activeInputId;
+        if (this.isCancelledResponseEvent(event)) return;
+        const inputId = this.inputIdForResponseEvent(event);
         if (inputId) this.outputTranscriptByInputId.set(inputId, (this.outputTranscriptByInputId.get(inputId) ?? "") + delta);
         this.emit({ type: "main_realtime_output_transcript_delta", inputId, delta });
         break;
       }
       case "response.output_audio_transcript.done":
       case "response.audio_transcript.done": {
-        const inputId = this.activeInputId;
+        if (this.isCancelledResponseEvent(event)) return;
+        const inputId = this.inputIdForResponseEvent(event);
         const transcript = stringField(event, "transcript") ?? (inputId ? this.outputTranscriptByInputId.get(inputId) : undefined) ?? "";
         this.emit({ type: "main_realtime_output_transcript_completed", inputId, transcript });
         break;
@@ -498,12 +509,18 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
         void this.handleFunctionArgumentsDone(event).catch((error) => this.handleToolError(error));
         break;
       case "response.done": {
+        if (this.isCancelledResponseEvent(event)) return;
+        const responseId = this.responseIdForEvent(event);
         const status = normalizeResponseStatus(stringField(event, "response.status"));
         if (status === "failed") this.emit({ type: "main_realtime_state", state: "failed", message: stringField(event, "response.status_details.error.message") });
-        const inputId = this.activeInputId;
+        const inputId = this.inputIdForResponseEvent(event);
+        const isActiveResponse = !responseId || responseId === this.activeResponseId;
         const finalTranscript = inputId ? this.outputTranscriptByInputId.get(inputId) : undefined;
-        this.activeResponseId = undefined;
-        this.activeAssistantAudioItem = undefined;
+        if (isActiveResponse) {
+          this.activeResponseId = undefined;
+          this.activeAssistantAudioItem = undefined;
+        }
+        if (responseId) this.responseInputIds.delete(responseId);
         if (responseIncludesFunctionCall(event)) {
           if (inputId) this.outputTranscriptByInputId.delete(inputId);
           this.emit({ type: "main_realtime_state", state: "thinking" });
@@ -515,7 +532,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
           this.outputTranscriptByInputId.delete(inputId);
           this.inputTranscriptByInputId.delete(inputId);
         }
-        this.activeInputId = undefined;
+        if (!inputId || inputId === this.activeInputId) this.activeInputId = undefined;
         break;
       }
       case "error":
@@ -526,7 +543,26 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     }
   }
 
+  private responseIdForEvent(event: Record<string, unknown>): string | undefined {
+    return stringField(event, "response_id") ?? stringField(event, "response.id");
+  }
+
+  private inputIdForResponseEvent(event: Record<string, unknown>): string | undefined {
+    const responseId = this.responseIdForEvent(event);
+    return responseId && this.responseInputIds.has(responseId) ? this.responseInputIds.get(responseId) : this.activeInputId;
+  }
+
+  private isCancelledResponseEvent(event: Record<string, unknown>): boolean {
+    const responseId = this.responseIdForEvent(event);
+    if (!responseId) return false;
+    if (!this.cancelledResponseIds.has(responseId)) return false;
+    this.responseInputIds.delete(responseId);
+    if (this.cancelledResponseIds.size > 200) this.cancelledResponseIds.clear();
+    return true;
+  }
+
   private async handleOutputItemDone(event: Record<string, unknown>): Promise<void> {
+    if (this.isCancelledResponseEvent(event)) return;
     const item = objectField(event, "item");
     if (!item || item.type !== "function_call") return;
     const callId = String(item.call_id ?? item.callId ?? "").trim();

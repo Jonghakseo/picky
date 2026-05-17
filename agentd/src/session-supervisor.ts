@@ -102,13 +102,14 @@ export class SessionSupervisor extends EventEmitter {
   private lastMainQuickReplyContextId?: string;
   private lastMainQuickReplyAt?: number;
   private suppressNextMainReply = false;
-  // When a newer Picky input interrupts an active main-agent turn, Pi can still flush
-  // assistant deltas and the aborted terminal event from the previous turn after
-  // `mainReplyContextId` has already been switched to the newer input. Buffer deltas until the
-  // terminal boundary tells us whether they belonged to the cancelled previous turn (discard) or
-  // to the replacement turn (replay into `mainDraft`).
-  private interruptedMainTurnSuppressions = 0;
+  // Monotonic supervisor-side generation for main-agent turns. Runtime events do not always carry
+  // a Pi turn id, so this separates the current replacement turn from terminal events that may still
+  // arrive after an interrupt of the previous turn.
+  private mainTurnId = 0;
+  private pendingInterruptedMainTurns = 0;
   private interruptedMainBufferedDraft = "";
+  private interruptedReplacementTurnStarted = false;
+  private activeMainRealtimeInputId?: string;
   private pickleSessionIds = new Set<string>();
   // Session ids that this supervisor does NOT host locally but that should still be tagged as
   // Pickle-completion contexts when the main agent's reply turn ends. Populated by
@@ -490,11 +491,10 @@ export class SessionSupervisor extends EventEmitter {
   async beginMainRealtimeVoiceTurn(inputId: string, context: PickyContextPacket): Promise<void> {
     const runtime = this.requireMainRealtimeRuntime();
     await this.ensurePrewarmedMainHandle(context.cwd ?? process.cwd());
+    this.beginMainTurn(context.id);
     this.mainContext = context;
-    this.mainReplyContextId = context.id;
-    this.mainDraft = "";
+    this.activeMainRealtimeInputId = inputId;
     this.mainIsProcessing = true;
-    this.mainTerminalProcessed = false;
     await runtime.beginMainRealtimeVoiceTurn({ inputId, context });
   }
 
@@ -507,8 +507,9 @@ export class SessionSupervisor extends EventEmitter {
     const runtime = this.requireMainRealtimeRuntime();
     if (context) {
       await this.ensurePrewarmedMainHandle(context.cwd ?? process.cwd());
+      this.beginMainTurn(context.id);
       this.mainContext = context;
-      this.mainReplyContextId = context.id;
+      this.activeMainRealtimeInputId = inputId;
     }
     await runtime.commitMainRealtimeVoiceTurn(inputId, context);
   }
@@ -536,8 +537,11 @@ export class SessionSupervisor extends EventEmitter {
     this.mainIsProcessing = false;
     this.mainTerminalProcessed = false;
     this.suppressNextMainReply = false;
-    this.interruptedMainTurnSuppressions = 0;
+    this.mainTurnId += 1;
+    this.pendingInterruptedMainTurns = 0;
     this.interruptedMainBufferedDraft = "";
+    this.interruptedReplacementTurnStarted = false;
+    this.activeMainRealtimeInputId = undefined;
     if (this.pendingPickleCompletions.length > 0) logAgentd("Picky pending Pickle completions cleared", { count: this.pendingPickleCompletions.length });
     this.pendingPickleCompletions = [];
   }
@@ -836,9 +840,8 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("main route requested", { contextId: context.id, source: context.source, transcriptChars: context.transcript?.length });
     await this.maybeRolloverMainAgent(context);
     const generation = this.mainHandleGeneration;
+    this.beginMainTurn(context.id);
     this.mainContext = context;
-    this.mainReplyContextId = context.id;
-    this.mainDraft = "";
     if (context.transcript?.trim()) await this.appendMainMessage("user", context.transcript.trim());
     const prompt = buildMainAgentPrompt(context);
     if (this.mainHandlePromise && !this.mainHandle) {
@@ -937,8 +940,8 @@ export class SessionSupervisor extends EventEmitter {
 
   private async deliverMainPrompt(handle: RuntimeSessionHandle, prompt: ReturnType<typeof buildMainAgentPrompt>): Promise<void> {
     if (this.mainIsProcessing && handle.interrupt) {
-      logAgentd("main interrupt", { contextId: this.mainReplyContextId });
-      this.interruptedMainTurnSuppressions += 1;
+      logAgentd("main interrupt", { contextId: this.mainReplyContextId, turnId: this.mainTurnId });
+      this.pendingInterruptedMainTurns += 1;
       this.interruptedMainBufferedDraft = "";
       this.mainTerminalProcessed = false;
       this.mainDraft = "";
@@ -947,8 +950,17 @@ export class SessionSupervisor extends EventEmitter {
       return;
     }
     this.mainIsProcessing = true;
-    logAgentd("main prompt delivered", { contextId: this.mainReplyContextId });
+    logAgentd("main prompt delivered", { contextId: this.mainReplyContextId, turnId: this.mainTurnId });
     await handle.followUp(prompt);
+  }
+
+  private beginMainTurn(contextId: string): void {
+    this.mainTurnId += 1;
+    this.mainReplyContextId = contextId;
+    this.mainDraft = "";
+    this.interruptedMainBufferedDraft = "";
+    this.interruptedReplacementTurnStarted = false;
+    this.mainTerminalProcessed = false;
   }
 
   private async ensurePrewarmedMainHandle(cwd: string): Promise<RuntimeSessionHandle> {
@@ -1107,17 +1119,30 @@ export class SessionSupervisor extends EventEmitter {
       return;
     }
     if (event.type === "main_realtime_output_transcript_delta") {
+      if (event.inputId !== this.activeMainRealtimeInputId) {
+        logAgentd("main realtime stale transcript delta ignored", { inputId: event.inputId, activeInputId: this.activeMainRealtimeInputId, deltaChars: event.delta.length });
+        return;
+      }
       this.mainDraft += event.delta;
       this.emit("mainRealtimeOutputTranscriptDelta", event.inputId, event.delta);
       return;
     }
     if (event.type === "main_realtime_output_transcript_completed") {
+      if (event.inputId !== this.activeMainRealtimeInputId) {
+        logAgentd("main realtime stale transcript completion ignored", { inputId: event.inputId, activeInputId: this.activeMainRealtimeInputId, transcriptChars: event.transcript.length });
+        return;
+      }
       this.mainDraft = event.transcript;
       this.emit("mainRealtimeOutputTranscriptCompleted", event.inputId, event.transcript);
       return;
     }
     if (event.type === "main_realtime_turn_done") {
+      if (event.inputId !== this.activeMainRealtimeInputId) {
+        logAgentd("main realtime stale turn done ignored", { inputId: event.inputId, activeInputId: this.activeMainRealtimeInputId, status: event.status });
+        return;
+      }
       this.mainIsProcessing = false;
+      this.activeMainRealtimeInputId = undefined;
       const finalTranscript = event.finalTranscript ?? this.mainDraft;
       this.mainDraft = "";
       if (finalTranscript?.trim()) await this.appendMainMessage("assistant", finalTranscript);
@@ -1135,9 +1160,9 @@ export class SessionSupervisor extends EventEmitter {
       return;
     }
     if (event.type === "assistant_delta") {
-      if (this.interruptedMainTurnSuppressions > 0) {
+      if (this.pendingInterruptedMainTurns > 0 && !this.interruptedReplacementTurnStarted) {
         this.interruptedMainBufferedDraft += event.delta;
-        logAgentd("main interrupted delta buffered", { contextId: this.mainReplyContextId, deltaChars: event.delta.length, pending: this.interruptedMainTurnSuppressions });
+        logAgentd("main interrupted delta buffered", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, deltaChars: event.delta.length, pending: this.pendingInterruptedMainTurns });
         return;
       }
       // A new delta means a new turn has started. Re-arm the terminal guard even
@@ -1153,24 +1178,32 @@ export class SessionSupervisor extends EventEmitter {
       if (event.status === "running") {
         this.mainIsProcessing = true;
         this.mainTerminalProcessed = false;
+        if (this.pendingInterruptedMainTurns > 0) {
+          this.interruptedReplacementTurnStarted = true;
+          this.interruptedMainBufferedDraft = "";
+          this.mainDraft = "";
+          logAgentd("main replacement turn started", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, pending: this.pendingInterruptedMainTurns });
+        }
       }
       if (event.compactionCompleted) {
         await this.patchMainState({ contextUsage: undefined });
       }
       if (["completed", "failed", "cancelled"].includes(event.status)) {
-        if (this.interruptedMainTurnSuppressions > 0 && event.status === "cancelled") {
-          this.interruptedMainTurnSuppressions -= 1;
+        if (this.pendingInterruptedMainTurns > 0 && event.status === "cancelled") {
+          this.pendingInterruptedMainTurns -= 1;
           this.interruptedMainBufferedDraft = "";
-          this.mainDraft = "";
+          if (!this.interruptedReplacementTurnStarted) this.mainDraft = "";
           this.mainTerminalProcessed = false;
           this.mainIsProcessing = true;
-          logAgentd("main interrupted terminal suppressed", { status: event.status, contextId: this.mainReplyContextId, pending: this.interruptedMainTurnSuppressions });
+          if (this.pendingInterruptedMainTurns === 0) this.interruptedReplacementTurnStarted = false;
+          logAgentd("main interrupted terminal suppressed", { status: event.status, contextId: this.mainReplyContextId, turnId: this.mainTurnId, pending: this.pendingInterruptedMainTurns });
           return;
         }
-        if (this.interruptedMainTurnSuppressions > 0) {
-          this.mainDraft += this.interruptedMainBufferedDraft;
+        if (this.pendingInterruptedMainTurns > 0) {
+          if (!this.interruptedReplacementTurnStarted) this.mainDraft += this.interruptedMainBufferedDraft;
           this.interruptedMainBufferedDraft = "";
-          this.interruptedMainTurnSuppressions = 0;
+          this.pendingInterruptedMainTurns = 0;
+          this.interruptedReplacementTurnStarted = false;
         }
         this.mainIsProcessing = false;
         // Guard A: drop any subsequent terminal events for the same turn (e.g. the

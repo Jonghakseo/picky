@@ -2992,6 +2992,61 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
+  it("lets replacement main deltas flow when the new running event beats the old cancelled status", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-interrupt-running-before-cancel-"));
+    const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    const replies: Array<{ contextId: string; text: string }> = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+
+    await supervisor.prewarmMainAgent("/tmp/project");
+    await supervisor.route(context("이전 입력"));
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Started" });
+    await supervisor.route(context("새 입력"));
+
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Replacement started" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "새 입력에 대한 답변" });
+    mainRuntime.handle?.emit({ type: "status", status: "cancelled", summary: "Old turn aborted" });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(replies).toEqual([{ contextId: "context-새 입력", text: "새 입력에 대한 답변" }]);
+    expect(supervisor.listMainMessages().map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: "user", text: "이전 입력" },
+      { role: "user", text: "새 입력" },
+      { role: "assistant", text: "새 입력에 대한 답변" },
+    ]);
+  });
+
+  it("keeps only the final main reply across consecutive A-B-C interrupts", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-interrupt-abc-"));
+    const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+    const replies: Array<{ contextId: string; text: string }> = [];
+    supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+
+    await supervisor.prewarmMainAgent("/tmp/project");
+    await supervisor.route(context("A"));
+    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "A started" });
+    await supervisor.route(context("B"));
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "A stale" });
+    await supervisor.route(context("C"));
+    mainRuntime.handle?.emit({ type: "status", status: "cancelled", summary: "A cancelled" });
+    mainRuntime.handle?.emit({ type: "status", status: "cancelled", summary: "B cancelled" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "C final" });
+    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    expect(mainRuntime.handle?.interrupts).toHaveLength(2);
+    expect(replies).toEqual([{ contextId: "context-C", text: "C final" }]);
+    expect(supervisor.listMainMessages().map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: "user", text: "A" },
+      { role: "user", text: "B" },
+      { role: "user", text: "C" },
+      { role: "assistant", text: "C final" },
+    ]);
+  });
+
   it("prewarms Picky without creating a visible session", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });

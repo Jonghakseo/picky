@@ -399,6 +399,38 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(doneEvents[0]).toMatchObject({ inputId: "input-1", finalTranscript: "완료" });
   });
 
+  it("ignores cancelled response transcript fragments after a newer realtime turn starts", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+    const handle = await runtime.prewarm({ sessionId: "picky" });
+    const events: Array<any> = [];
+    handle.subscribe((event) => events.push(event));
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    socket.serverEvent({ type: "response.created", response: { id: "response-1" } });
+    await runtime.cancelMainRealtimeVoiceTurn("input-1");
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-2", context: context({ id: "context-2" }) });
+    socket.serverEvent({ type: "response.created", response: { id: "response-2" } });
+    socket.serverEvent({ type: "response.output_audio_transcript.delta", response_id: "response-1", delta: "stale" });
+    socket.serverEvent({ type: "response.output_audio_transcript.delta", response_id: "response-2", delta: "fresh" });
+    socket.serverEvent({ type: "response.done", response: { id: "response-2", status: "completed", output: [{ type: "message" }] } });
+    await settle();
+
+    expect(events.filter((event) => event.type === "main_realtime_output_transcript_delta")).toEqual([
+      { type: "main_realtime_output_transcript_delta", inputId: "input-2", delta: "fresh" },
+    ]);
+    expect(events.filter((event) => event.type === "main_realtime_turn_done").at(-1)).toMatchObject({ inputId: "input-2", finalTranscript: "fresh" });
+  });
+
   it("sends final ink-marked context images before committing realtime audio", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-realtime-image-"));
     const imagePath = join(dir, "annotated.jpg");

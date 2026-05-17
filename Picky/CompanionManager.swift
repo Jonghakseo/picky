@@ -1624,8 +1624,8 @@ final class CompanionManager: ObservableObject {
         // duration limiter. Keep it deliberately generous so slow voices,
         // remote TTS latency, or long Korean replies are not cut off.
         let characterCount = max(1, utterance.trimmingCharacters(in: .whitespacesAndNewlines).count)
-        let estimatedDuration = Double(characterCount) / 4.0 + 30.0
-        return min(max(estimatedDuration, 45.0), 300.0)
+        let estimatedDuration = Double(characterCount) / 4.0 + 10.0
+        return min(estimatedDuration, 300.0)
     }
 
     private func isInteractionTextReply(_ output: PickyOutputPhase) -> Bool {

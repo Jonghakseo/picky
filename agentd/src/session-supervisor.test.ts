@@ -640,6 +640,29 @@ describe("SessionSupervisor", () => {
     expect(runtime.handle?.steers).toEqual(["첫 작업 시작해줘"]);
   });
 
+  it("accepts the first empty Pickle instruction while prewarm is still pending", async () => {
+    const runtime = new DeferredPrewarmRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-empty-pickle-early-input-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), { sessionIdFactory: () => "empty-pickle-early-input" });
+    await supervisor.load();
+
+    const creating = supervisor.createEmptyPickleSession({ ...context("manual"), source: "system", transcript: undefined });
+    await waitUntil(() => supervisor.get("empty-pickle-early-input")?.status === "waiting_for_input");
+
+    const steering = supervisor.steerPickleSession("empty-pickle-early-input", "첫 작업 시작해줘");
+    await settle();
+    expect(runtime.handle?.steers).toEqual([]);
+
+    runtime.resolvePendingPrewarm();
+    const [created, steered] = await Promise.all([creating, steering]);
+    await settle();
+
+    expect(created.id).toBe("empty-pickle-early-input");
+    expect(steered.status).toBe("running");
+    expect(runtime.handle?.steers).toEqual(["첫 작업 시작해줘"]);
+    expect(supervisor.get("empty-pickle-early-input")?.logs.some((line) => line === "steer: 첫 작업 시작해줘")).toBe(true);
+  });
+
   it("queues active Pickle-session steering without interrupting current work", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pickle-steer-queue-"));

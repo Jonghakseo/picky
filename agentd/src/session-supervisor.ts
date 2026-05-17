@@ -322,6 +322,12 @@ export class SessionSupervisor extends EventEmitter {
     }
   }
 
+  private async runtimeHandleForUserInput(session: PickyAgentSession, action: string): Promise<RuntimeSessionHandle | undefined> {
+    return this.runtimeHandles.get(session.id)
+      ?? await this.pendingRuntimeHandle(session.id, action)
+      ?? await this.tryResumeRuntimeHandle(session);
+  }
+
   private async slashCommandFallbackHandle(session: PickyAgentSession): Promise<RuntimeSessionHandle | undefined> {
     if (!this.options.mainRuntime) return undefined;
     try {
@@ -1513,7 +1519,7 @@ export class SessionSupervisor extends EventEmitter {
     const userBash = parseUserBashInput(text);
     if (userBash) return this.executeUserBash(sessionId, userBash, context);
     await this.preparePickleSessionForUserInput(sessionId);
-    const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
+    const handle = await this.runtimeHandleForUserInput(session, "follow-up");
     const currentAfterReattach = this.mustGet(sessionId);
     if (["failed", "cancelled"].includes(currentAfterReattach.status)) return currentAfterReattach;
     if (!handle) {
@@ -1587,7 +1593,7 @@ export class SessionSupervisor extends EventEmitter {
   private async executeUserBash(sessionId: string, input: UserBashInput, context?: PickyContextPacket): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
     await this.preparePickleSessionForUserInput(sessionId);
-    const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
+    const handle = await this.runtimeHandleForUserInput(session, "user bash");
     if (!handle?.executeUserBash) {
       const reason = handle ? "Runtime does not support direct bash execution" : "Runtime session is not attached";
       await this.appendLog(sessionId, `bash rejected: ${reason}`);
@@ -2018,7 +2024,7 @@ export class SessionSupervisor extends EventEmitter {
 
     const session = this.mustGet(sessionId);
     await this.preparePickleSessionForUserInput(sessionId);
-    const handle = this.runtimeHandles.get(sessionId) ?? await this.tryResumeRuntimeHandle(session);
+    const handle = await this.runtimeHandleForUserInput(session, "steer");
     if (!handle) {
       const reason = "Runtime session is not attached";
       await this.appendLog(sessionId, `steer rejected: ${reason}`);

@@ -926,7 +926,7 @@ final class CompanionManager: ObservableObject {
             }
         } else if isFinalizing || isPreparing || pendingAgentResponseStartedAt != nil {
             if voiceInteractionState.phase == .idle {
-                reduceVoiceInteraction(.loadingStarted(inputID: interactionVoiceInputID, transcript: currentVoicePromptPreview, targetSessionID: voiceFollowUpSessionIDForCurrentUtterance, now: Date()))
+                reduceVoiceInteraction(.loadingStarted(inputID: interactionVoiceInputID, transcript: currentVoicePromptPreview, targetSessionID: voiceFollowUpSessionIDForCurrentUtterance, now: Date(), promptBubbleVisibility: .visible))
             } else {
                 applyVoiceInteractionProjection(voiceInteractionState.projection)
             }
@@ -2147,7 +2147,8 @@ final class CompanionManager: ObservableObject {
             inputID: interactionVoiceInputID,
             transcript: trimmedTranscript,
             targetSessionID: voiceFollowUpSessionIDForCurrentUtterance,
-            now: startedAt
+            now: startedAt,
+            promptBubbleVisibility: .visible
         ))
         scheduleRecognizedTranscriptAutoHide(trimmedTranscript: trimmedTranscript)
     }
@@ -2381,7 +2382,9 @@ final class CompanionManager: ObservableObject {
         responseStateTask?.cancel()
         responseStateTask = nil
         if keepProcessing {
-            reduceVoiceInteraction(.loadingStarted(inputID: interactionVoiceInputID, transcript: currentVoicePromptPreview, targetSessionID: voiceFollowUpSessionIDForCurrentUtterance, now: Date()))
+            // After plan narration, stay in loading but let the voice state
+            // machine hide the already-shown STT prompt bubble.
+            reduceVoiceInteraction(.loadingStarted(inputID: interactionVoiceInputID, transcript: currentVoicePromptPreview, targetSessionID: voiceFollowUpSessionIDForCurrentUtterance, now: Date(), promptBubbleVisibility: .hidden))
         } else {
             scheduleTransientHideIfNeeded()
         }

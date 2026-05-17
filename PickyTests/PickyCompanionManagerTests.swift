@@ -311,6 +311,31 @@ struct PickyCompanionManagerTests {
         #expect(!speechProvider.isSpeaking)
     }
 
+    @Test func finishingPlanNarrationKeepsLoadingWithoutRepeatingRecognizedPrompt() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "내 음성 인식 내역")
+        manager.applyAgentEvent(.narrateProgressRequested(PickyNarrateProgressRequest(
+            text: "작업 계획을 말할게요.",
+            sessionId: nil
+        )))
+
+        #expect(manager.voiceState == .responding)
+        #expect(manager.voicePromptBubbleState == .hidden)
+        #expect(speechProvider.spokenUtterances == ["작업 계획을 말할게요."])
+
+        speechProvider.finishSpeaking()
+
+        try await waitUntil { manager.voiceState == .processing }
+        #expect(manager.currentVoicePromptPreview == "내 음성 인식 내역")
+        #expect(manager.voicePromptBubbleState == .hidden)
+    }
+
     @Test func injectedSpeechProviderControlsResponseLifecycle() async throws {
         let speechProvider = FakeSpeechPlaybackProvider()
         let manager = CompanionManager(

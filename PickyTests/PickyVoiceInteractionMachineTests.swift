@@ -84,11 +84,31 @@ struct PickyVoiceInteractionMachineTests {
 
     @Test func abortFromStandardLoadingCancelsMainAndTargetPickleThenReturnsIdle() {
         var state = PickyVoiceInteractionState()
-        state = reduce(state, .loadingStarted(inputID: inputB, transcript: "질문", targetSessionID: "pickle-1", now: now))
+        state = reduce(state, .loadingStarted(inputID: inputB, transcript: "질문", targetSessionID: "pickle-1", now: now, promptBubbleVisibility: .visible))
         state = reduce(state, .abort)
         #expect(state.phase == .idle)
         #expect(state.effectsToRun.contains(.abortMainAgent))
         #expect(state.effectsToRun.contains(.abortPickle(sessionID: "pickle-1")))
+    }
+
+    @Test func loadingStartedCanKeepTranscriptWhileHidingPromptBubble() {
+        let state = reduce(
+            PickyVoiceInteractionState(),
+            .loadingStarted(
+                inputID: inputA,
+                transcript: "  다시 보여주지 않을 STT  ",
+                targetSessionID: nil,
+                now: now,
+                promptBubbleVisibility: .hidden
+            )
+        )
+
+        #expect(state.phase == .loading)
+        #expect(state.context.transcript == "다시 보여주지 않을 STT")
+        #expect(state.context.promptBubbleText == nil)
+        #expect(state.projection.voiceState == .processing)
+        #expect(state.projection.promptBubbleState == .hidden)
+        #expect(!state.effectsToRun.contains(.schedulePromptBubbleAutoHide))
     }
 
     private func reduce(_ state: PickyVoiceInteractionState, _ event: PickyVoiceInteractionEvent) -> PickyVoiceInteractionState {

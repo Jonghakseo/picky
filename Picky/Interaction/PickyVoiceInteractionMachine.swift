@@ -80,13 +80,18 @@ struct PickyVoiceInteractionState: Equatable {
     }
 }
 
+enum PickyVoicePromptBubbleVisibility: Equatable {
+    case visible
+    case hidden
+}
+
 enum PickyVoiceInteractionEvent: Equatable {
     case pttPressed(inputID: UUID, targetSessionID: String?)
     case pttReleased(inputID: UUID)
     case sttPartial(inputID: UUID, text: String)
     case sttFinal(inputID: UUID, text: String, now: Date)
     case sttFailed(inputID: UUID, message: String)
-    case loadingStarted(inputID: UUID?, transcript: String?, targetSessionID: String?, now: Date)
+    case loadingStarted(inputID: UUID?, transcript: String?, targetSessionID: String?, now: Date, promptBubbleVisibility: PickyVoicePromptBubbleVisibility)
     case agentReply(text: String, shouldSpeak: Bool, speechID: UUID, timerID: UUID, inputID: UUID?, now: Date)
     case textReply(text: String)
     case speechFinished(speechID: UUID, now: Date)
@@ -223,12 +228,13 @@ enum PickyVoiceInteractionMachine {
             guard state.context.inputID == inputID else { break }
             clearToIdle(scheduleHide: true)
 
-        case .loadingStarted(let inputID, let transcript, let targetSessionID, let now):
+        case .loadingStarted(let inputID, let transcript, let targetSessionID, let now, let promptBubbleVisibility):
+            let normalizedTranscript = normalized(transcript)
             state.phase = .loading
             state.context.inputID = inputID
             state.context.targetSessionID = targetSessionID
-            state.context.transcript = normalized(transcript)
-            state.context.promptBubbleText = normalized(transcript)
+            state.context.transcript = normalizedTranscript
+            state.context.promptBubbleText = promptBubbleVisibility == .visible ? normalizedTranscript : nil
             state.context.pendingSince = now
             state.context.responseBubbleText = nil
             state.context.activeSpeechID = nil
@@ -236,7 +242,7 @@ enum PickyVoiceInteractionMachine {
             state.context.minimumDisplayUntil = nil
             state.context.isSpeechFinishPending = false
             state.context.speechQueue.removeAll()
-            if normalized(transcript) != nil {
+            if promptBubbleVisibility == .visible, normalizedTranscript != nil {
                 effects.append(.schedulePromptBubbleAutoHide)
             }
 

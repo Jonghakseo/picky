@@ -988,6 +988,24 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDDockLayout.heldSessionAfterCloseTimeout(current: .open("opened"), isHUDHovered: false) == .open("opened"))
     }
 
+    @Test func feedbackMessageTextSynchronizationPreservesIMEMarkedText() throws {
+        #expect(PickyFeedbackMessageTextSynchronization.shouldOverwriteNativeText(
+            nativeText: "ㅎ",
+            bindingText: "",
+            hasMarkedText: true
+        ) == false)
+        #expect(PickyFeedbackMessageTextSynchronization.shouldOverwriteNativeText(
+            nativeText: "한글",
+            bindingText: "한글",
+            hasMarkedText: false
+        ) == false)
+        #expect(PickyFeedbackMessageTextSynchronization.shouldOverwriteNativeText(
+            nativeText: "old",
+            bindingText: "new",
+            hasMarkedText: false
+        ) == true)
+    }
+
     @Test func hudDockKeepsGitSectionExpansionBySessionAcrossHoverClose() throws {
         var storedValues: [String: Bool] = [:]
         #expect(PickyHUDDockLayout.gitSectionExpansion(sessionID: "agent-a", storedValues: storedValues))

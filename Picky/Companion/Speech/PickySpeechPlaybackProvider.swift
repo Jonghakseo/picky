@@ -324,6 +324,7 @@ private final class PickySpeechSynthesizerDelegate: NSObject, NSSpeechSynthesize
     }
 
     func speechSynthesizer(_ sender: NSSpeechSynthesizer, didFinishSpeaking finishedSpeaking: Bool) {
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider delegate didFinish finished=\(finishedSpeaking) synthesizerSpeaking=\(sender.isSpeaking)")
         onFinish(finishedSpeaking)
     }
 }
@@ -352,9 +353,11 @@ final class PickySystemSpeechPlaybackProvider: PickySpeechPlaybackProvider {
 
     @discardableResult
     func speak(_ utterance: String, onFinish: @escaping (Bool) -> Void) -> Bool {
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider speak requested chars=\(utterance.count) existingSpeaking=\(speechSynthesizer?.isSpeaking ?? false)")
         stopSpeaking()
 
         let delegate = PickySpeechSynthesizerDelegate { [weak self] didFinish in
+            PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider finish closure didFinish=\(didFinish) currentSpeaking=\(self?.speechSynthesizer?.isSpeaking ?? false)")
             self?.speechSynthesizer?.delegate = nil
             self?.speechSynthesizerDelegate = nil
             onFinish(didFinish)
@@ -365,7 +368,9 @@ final class PickySystemSpeechPlaybackProvider: PickySpeechPlaybackProvider {
         speechSynthesizerDelegate = delegate
 
         let preparedUtterance = PickySpeechPlaybackPreparation.prepareForPlayback(utterance)
-        guard synthesizer.startSpeaking(preparedUtterance) else {
+        let started = synthesizer.startSpeaking(preparedUtterance)
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider start result=\(started) chars=\(utterance.count) preparedChars=\(preparedUtterance.count) speakingAfterStart=\(synthesizer.isSpeaking)")
+        guard started else {
             synthesizer.delegate = nil
             speechSynthesizerDelegate = nil
             return false
@@ -375,8 +380,10 @@ final class PickySystemSpeechPlaybackProvider: PickySpeechPlaybackProvider {
     }
 
     func stopSpeaking() {
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider stop requested speakingBefore=\(speechSynthesizer?.isSpeaking ?? false) hasDelegate=\(speechSynthesizerDelegate != nil)")
         speechSynthesizer?.delegate = nil
         speechSynthesizer?.stopSpeaking()
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider stop completed speakingAfter=\(speechSynthesizer?.isSpeaking ?? false)")
         speechSynthesizerDelegate = nil
     }
 

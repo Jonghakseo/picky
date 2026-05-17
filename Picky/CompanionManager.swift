@@ -69,7 +69,6 @@ struct CompanionVoicePresentationState: Equatable {
 private enum PickySpeechPollResult {
     case speaking
     case finished
-    case timedOut
     case inactive
 }
 
@@ -267,7 +266,6 @@ final class CompanionManager: ObservableObject {
     private var speechPlaybackProvider: any PickySpeechPlaybackProvider
     private var ttsPlaybackEnabled: Bool
     private var narrationEnabled: Bool
-    private let speechWatchdogTimeoutOverride: TimeInterval?
     private let voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator
     private let realtimeVoiceInputManager = OpenAIRealtimeVoiceInputManager()
     private let realtimeAudioPlaybackEngine: any PickyRealtimeAudioPlaybacking
@@ -281,8 +279,7 @@ final class CompanionManager: ObservableObject {
         voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator? = nil,
         realtimeAudioPlaybackEngine: (any PickyRealtimeAudioPlaybacking)? = nil,
         inkCaptureCoordinator: any PickyInkCaptureCoordinating = PickyInkCaptureCenter.shared,
-        appearanceStore: PickyAppearanceStore? = nil,
-        speechWatchdogTimeout: TimeInterval? = nil
+        appearanceStore: PickyAppearanceStore? = nil
     ) {
         let initialSettings = PickySettingsStore().load()
         self.agentClient = agentClient
@@ -292,7 +289,6 @@ final class CompanionManager: ObservableObject {
         self.speechPlaybackProvider = speechPlaybackProvider ?? PickySpeechPlaybackProviderFactory.makeDefaultProvider(settings: initialSettings)
         self.ttsPlaybackEnabled = speechPlaybackProvider == nil ? initialSettings.ttsEnabled : true
         self.narrationEnabled = initialSettings.narrationEnabled
-        self.speechWatchdogTimeoutOverride = speechWatchdogTimeout
         self.voiceContextCaptureCoordinator = voiceContextCaptureCoordinator ?? PickyVoiceContextCaptureCoordinator()
         self.realtimeAudioPlaybackEngine = realtimeAudioPlaybackEngine ?? OpenAIRealtimeAudioPlaybackEngine()
         self.inkCaptureCoordinator = inkCaptureCoordinator
@@ -1615,17 +1611,8 @@ final class CompanionManager: ObservableObject {
         pendingAgentResponseStartedAt = nil
     }
 
-    private func speechWatchdogTimeout(for utterance: String) -> TimeInterval {
-        if let speechWatchdogTimeoutOverride {
-            return max(0.05, speechWatchdogTimeoutOverride)
-        }
-
-        // This is a last-resort stuck-state recovery guard, not a normal TTS
-        // duration limiter. Keep it deliberately generous so slow voices,
-        // remote TTS latency, or long Korean replies are not cut off.
-        let characterCount = max(1, utterance.trimmingCharacters(in: .whitespacesAndNewlines).count)
-        let estimatedDuration = Double(characterCount) / 4.0 + 10.0
-        return min(estimatedDuration, 300.0)
+    private func logSpeech(_ message: String) {
+        PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: message)
     }
 
     private func isInteractionTextReply(_ output: PickyOutputPhase) -> Bool {
@@ -1895,10 +1882,14 @@ final class CompanionManager: ObservableObject {
     }
 
     private func startOrDeferInteractionSpeech(speechID: UUID, text: String, contextID: String?, requestedAt: Date) {
-        guard isCurrentInteractionSpeechOutput(speechID) else { return }
+        guard isCurrentInteractionSpeechOutput(speechID) else {
+            logSpeech("interaction start skipped stale projection speechID=\(speechID) context=\(contextID ?? "none")")
+            return
+        }
         guard !shouldSuppressSpokenAudioForVoiceInput else {
             let elapsed = Date().timeIntervalSince(requestedAt)
             guard elapsed < Self.deferredSpeechMaximumWait else {
+                logSpeech("interaction start failed deferred audio suppression timeout speechID=\(speechID) elapsedMs=\(Int(elapsed * 1000)) context=\(contextID ?? "none")")
                 interactionCoordinator.effectCompleted(
                     .speechFailed(speechID: speechID),
                     correlation: PickyInteractionCorrelation(contextID: contextID, speechID: speechID, source: .system)
@@ -1906,6 +1897,7 @@ final class CompanionManager: ObservableObject {
                 return
             }
 
+            logSpeech("interaction start deferred by active voice input speechID=\(speechID) elapsedMs=\(Int(elapsed * 1000)) context=\(contextID ?? "none")")
             deferredInteractionSpeechTask?.cancel()
             deferredInteractionSpeechTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(Self.deferredSpeechRetryInterval * 1_000_000_000))
@@ -1924,44 +1916,46 @@ final class CompanionManager: ObservableObject {
         interactionSpeechID = speechID
         voiceState = .responding
 
-        #if DEBUG
-        print("🔊 Picky TTS start — id: \(speechID), provider: \(speechPlaybackProvider.displayName), chars: \(text.count)")
-        #endif
+        logSpeech("interaction start speechID=\(speechID) provider=\(speechPlaybackProvider.displayName) chars=\(text.count) context=\(contextID ?? "none")")
         guard speechPlaybackProvider.speak(text, onFinish: { [weak self] didFinish in
             Task { @MainActor [weak self] in
+                self?.logSpeech("interaction provider callback speechID=\(speechID) didFinish=\(didFinish) context=\(contextID ?? "none")")
                 self?.handleInteractionSpeechFinished(speechID: speechID, didFinish: didFinish, contextID: contextID)
             }
         }) else {
+            logSpeech("interaction provider refused start speechID=\(speechID) context=\(contextID ?? "none")")
             handleInteractionSpeechFinished(speechID: speechID, didFinish: false, contextID: contextID)
             return
         }
 
-        let watchdogDeadline = Date().addingTimeInterval(speechWatchdogTimeout(for: text))
+        let startedAt = Date()
         responseStateTask = Task { [weak self] in
+            var lastLoggedSecond = -1
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 250_000_000)
                 guard !Task.isCancelled else { return }
                 let pollResult = await MainActor.run { [weak self] in
                     guard let self, self.activeSpeechID == speechID else { return PickySpeechPollResult.inactive }
-                    if !self.speechPlaybackProvider.isSpeaking { return .finished }
-                    if Date() >= watchdogDeadline { return .timedOut }
-                    return .speaking
+                    let isSpeaking = self.speechPlaybackProvider.isSpeaking
+                    let elapsedSecond = Int(Date().timeIntervalSince(startedAt))
+                    if elapsedSecond != lastLoggedSecond {
+                        lastLoggedSecond = elapsedSecond
+                        self.logSpeech("interaction poll speechID=\(speechID) elapsedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000)) providerSpeaking=\(isSpeaking) voiceState=\(self.voiceState) context=\(contextID ?? "none")")
+                    }
+                    return isSpeaking ? .speaking : .finished
                 }
                 switch pollResult {
                 case .speaking:
                     continue
                 case .inactive:
+                    await MainActor.run { [weak self] in
+                        self?.logSpeech("interaction poll inactive speechID=\(speechID) elapsedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000))")
+                    }
                     return
                 case .finished:
                     await MainActor.run { [weak self] in
+                        self?.logSpeech("interaction poll detected provider finished speechID=\(speechID) elapsedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000))")
                         self?.handleInteractionSpeechFinished(speechID: speechID, didFinish: true, contextID: contextID)
-                    }
-                    return
-                case .timedOut:
-                    await MainActor.run { [weak self] in
-                        guard let self, self.activeSpeechID == speechID else { return }
-                        self.speechPlaybackProvider.stopSpeaking()
-                        self.handleInteractionSpeechFinished(speechID: speechID, didFinish: false, contextID: contextID)
                     }
                     return
                 }
@@ -1977,13 +1971,14 @@ final class CompanionManager: ObservableObject {
     }
 
     private func handleInteractionSpeechFinished(speechID: UUID, didFinish: Bool, contextID: String?) {
-        guard activeSpeechID == speechID else { return }
+        guard activeSpeechID == speechID else {
+            logSpeech("interaction finish ignored stale speechID=\(speechID) active=\(activeSpeechID?.uuidString ?? "none") didFinish=\(didFinish) context=\(contextID ?? "none") providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
+            return
+        }
+        logSpeech("interaction finish accepted speechID=\(speechID) didFinish=\(didFinish) context=\(contextID ?? "none") providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
         activeSpeechID = nil
         responseStateTask?.cancel()
         responseStateTask = nil
-        #if DEBUG
-        print("🔊 Picky TTS finish — id: \(speechID)")
-        #endif
         interactionCoordinator.effectCompleted(
             didFinish ? .speechFinished(speechID: speechID) : .speechFailed(speechID: speechID),
             correlation: PickyInteractionCorrelation(contextID: contextID, speechID: speechID, source: .system)
@@ -2446,20 +2441,21 @@ final class CompanionManager: ObservableObject {
 
         voiceState = .responding
 
-        #if DEBUG
-        print("🔊 Picky TTS start — id: \(speechID), provider: \(speechPlaybackProvider.displayName), chars: \(utterance.count)")
-        #endif
+        logSpeech("system start speechID=\(speechID) provider=\(speechPlaybackProvider.displayName) chars=\(utterance.count)")
         guard speechPlaybackProvider.speak(utterance, onFinish: { [weak self] didFinish in
             Task { @MainActor [weak self] in
+                self?.logSpeech("system provider callback speechID=\(speechID) didFinish=\(didFinish)")
                 self?.handleSpeechFinished(speechID: speechID, didFinish: didFinish)
             }
         }) else {
+            logSpeech("system provider refused start speechID=\(speechID)")
             handleSpeechFinished(speechID: speechID, didFinish: false)
             return
         }
 
-        let watchdogDeadline = Date().addingTimeInterval(speechWatchdogTimeout(for: utterance))
+        let startedAt = Date()
         responseStateTask = Task { [weak self] in
+            var lastLoggedSecond = -1
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 250_000_000)
                 guard !Task.isCancelled else { return }
@@ -2468,25 +2464,26 @@ final class CompanionManager: ObservableObject {
                           self.activeSpeechID == speechID else {
                         return PickySpeechPollResult.inactive
                     }
-                    if !self.speechPlaybackProvider.isSpeaking { return .finished }
-                    if Date() >= watchdogDeadline { return .timedOut }
-                    return .speaking
+                    let isSpeaking = self.speechPlaybackProvider.isSpeaking
+                    let elapsedSecond = Int(Date().timeIntervalSince(startedAt))
+                    if elapsedSecond != lastLoggedSecond {
+                        lastLoggedSecond = elapsedSecond
+                        self.logSpeech("system poll speechID=\(speechID) elapsedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000)) providerSpeaking=\(isSpeaking) voiceState=\(self.voiceState)")
+                    }
+                    return isSpeaking ? .speaking : .finished
                 }
                 switch pollResult {
                 case .speaking:
                     continue
                 case .inactive:
+                    await MainActor.run { [weak self] in
+                        self?.logSpeech("system poll inactive speechID=\(speechID) elapsedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000))")
+                    }
                     return
                 case .finished:
                     await MainActor.run { [weak self] in
+                        self?.logSpeech("system poll detected provider finished speechID=\(speechID) elapsedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000))")
                         self?.handleSpeechFinished(speechID: speechID, didFinish: true)
-                    }
-                    return
-                case .timedOut:
-                    await MainActor.run { [weak self] in
-                        guard let self, self.activeSpeechID == speechID else { return }
-                        self.speechPlaybackProvider.stopSpeaking()
-                        self.handleSpeechFinished(speechID: speechID, didFinish: false)
                     }
                     return
                 }
@@ -2495,6 +2492,7 @@ final class CompanionManager: ObservableObject {
     }
 
     fileprivate func stopCurrentSpeech() {
+        logSpeech("stop current speech active=\(activeSpeechID?.uuidString ?? "none") interaction=\(interactionSpeechID?.uuidString ?? "none") providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
         activeSpeechID = nil
         deferredInteractionSpeechTask?.cancel()
         deferredInteractionSpeechTask = nil
@@ -2509,6 +2507,7 @@ final class CompanionManager: ObservableObject {
         // didn't know which utterance was active (e.g., voicePressed when no
         // interaction speech was running, just a system status message).
         let speechID = requestedSpeechID ?? interactionSpeechID ?? activeSpeechID
+        logSpeech("stop current interaction speech requested=\(requestedSpeechID?.uuidString ?? "none") resolved=\(speechID?.uuidString ?? "none")")
         stopCurrentSpeech()
         guard let speechID else { return }
         interactionCoordinator.effectCompleted(
@@ -2517,14 +2516,15 @@ final class CompanionManager: ObservableObject {
         )
     }
 
-    private func handleSpeechFinished(speechID: UUID, didFinish _: Bool) {
-        guard activeSpeechID == speechID else { return }
+    private func handleSpeechFinished(speechID: UUID, didFinish: Bool) {
+        guard activeSpeechID == speechID else {
+            logSpeech("system finish ignored stale speechID=\(speechID) active=\(activeSpeechID?.uuidString ?? "none") didFinish=\(didFinish) providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
+            return
+        }
+        logSpeech("system finish accepted speechID=\(speechID) didFinish=\(didFinish) providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
         activeSpeechID = nil
         responseStateTask?.cancel()
         responseStateTask = nil
-        #if DEBUG
-        print("🔊 Picky TTS finish — id: \(speechID)")
-        #endif
         if voiceState == .responding {
             voiceState = .idle
         }

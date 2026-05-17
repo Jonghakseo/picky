@@ -131,8 +131,7 @@ struct PickyTTSSettingsTests {
         let manager = CompanionManager(
             agentClient: TTSTestVoiceClient(),
             selectionStore: TTSTestVoiceSelectionStore(),
-            speechPlaybackProvider: speechProvider,
-            speechWatchdogTimeout: 60
+            speechPlaybackProvider: speechProvider
         )
 
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(

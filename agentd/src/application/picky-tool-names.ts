@@ -4,5 +4,3 @@ export const PICKLE_TOOL_NAMES = {
   steer: "picky_steer_pickle",
   abort: "picky_abort_pickle",
 } as const;
-
-export const PICKY_NARRATE_PROGRESS_TOOL_NAME = "picky_narrate_progress";

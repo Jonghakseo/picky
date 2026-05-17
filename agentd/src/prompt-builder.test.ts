@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { PICKLE_TOOL_NAMES, PICKY_NARRATE_PROGRESS_TOOL_NAME } from "./application/picky-tool-names.js";
+import { PICKLE_TOOL_NAMES } from "./application/picky-tool-names.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPickleCompletionPrompt, buildMainAgentPrompt, buildPicklePrompt } from "./prompt-builder.js";
 import { PickyContextPacketSchema } from "./protocol.js";
 
@@ -41,9 +41,11 @@ describe("neutral prompt builder", () => {
     for (const toolName of Object.values(PICKLE_TOOL_NAMES)) {
       expect(pair.user).toContain(toolName);
     }
-    expect(pair.user).toContain(PICKY_NARRATE_PROGRESS_TOOL_NAME);
-    expect(pair.user).toContain("before a long step runs");
-    expect(pair.user).not.toContain("while a long step is running");
+    // `picky_narrate_progress` is now provided by a seeded Pi extension in the
+    // workspace `.pi/extensions/`, so its tool snippet/guidelines come from the
+    // extension itself and should not be hard-coded into the bootstrap pair.
+    expect(pair.user).not.toContain("picky_narrate_progress");
+    expect(pair.user).not.toContain("before a long step runs");
     // Persona + routing thresholds belong in the user-editable AGENTS.md, not
     // hard-coded prompt text.
     expect(pair.user).toContain("AGENTS.md");

@@ -34,6 +34,38 @@ struct PickyWorkspaceSeederTests {
         #expect(body.contains("picky_start_pickle"))
     }
 
+    @Test func seedCreatesPickyNarrateProgressExtension() throws {
+        let root = scratchRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let workspacePath = PickyWorkspaceSeeder.seedDefaultWorkspace(appSupportRoot: root, log: { _ in })
+        let extensionURL = URL(fileURLWithPath: workspacePath, isDirectory: true)
+            .appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath, isDirectory: true)
+            .appendingPathComponent(PickyWorkspaceSeeder.narrateExtensionFilename, isDirectory: false)
+
+        let body = try String(contentsOf: extensionURL, encoding: .utf8)
+        #expect(body.contains("picky_narrate_progress"))
+        #expect(body.contains("__pickyAgentd"))
+        #expect(body.contains("export default function"))
+        #expect(body.contains("block: true"))
+    }
+
+    @Test func seedNeverOverwritesExistingNarrateExtension() throws {
+        let root = scratchRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let workspaceURL = URL(fileURLWithPath: PickyWorkspaceSeeder.defaultWorkspacePath(appSupportRoot: root), isDirectory: true)
+        let extensionsURL = workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath, isDirectory: true)
+        try FileManager.default.createDirectory(at: extensionsURL, withIntermediateDirectories: true)
+        let extensionURL = extensionsURL.appendingPathComponent(PickyWorkspaceSeeder.narrateExtensionFilename)
+        try Data("// user customized extension\n".utf8).write(to: extensionURL)
+
+        _ = PickyWorkspaceSeeder.seedDefaultWorkspace(appSupportRoot: root, log: { _ in })
+
+        let body = try String(contentsOf: extensionURL, encoding: .utf8)
+        #expect(body == "// user customized extension\n")
+    }
+
     @Test func seedNeverOverwritesExistingAgentsMarkdown() throws {
         let root = scratchRoot()
         defer { try? FileManager.default.removeItem(at: root) }

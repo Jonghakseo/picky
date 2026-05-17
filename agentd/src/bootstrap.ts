@@ -8,7 +8,6 @@ import { OpenAIRealtimeMainRuntime } from "./runtime/openai-realtime-main-runtim
 import { SelectableMainRuntime } from "./runtime/selectable-main-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyAbortPickleTool, createPickyPickleSessionsTool, createPickyStartPickleTool, createPickySteerPickleTool, type PickyHandoffRequest, type PickyPickleAbortRequest, type PickyPickleSteerRequest } from "./application/handoff-tool.js";
-import { createPickyNarrateProgressTool, type PickyNarrateProgressRequest } from "./application/narrate-progress-tool.js";
 import { createPickyAskUserQuestionTool } from "./application/ask-user-question-tool.js";
 import { createReadPickyUserGuideTool, readPickyUserGuide } from "./application/user-guide-tool.js";
 import { PickySkillCatalog } from "./application/skill-catalog.js";
@@ -198,6 +197,13 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
   });
   supervisorRef.current = supervisor;
 
+  // Picky agentd extension bridge. Pi extensions loaded from the workspace's
+  // `.pi/extensions/` (notably `picky-narrate-progress`) run in this Node
+  // process and reach Picky's companion voice through this stable globalThis
+  // interface. Keep the shape narrow and additive so seeded extensions can
+  // depend on it.
+  installPickyAgentdBridge(supervisor);
+
   const server = new AgentdServer({
     port: config.port,
     token: config.token,
@@ -301,24 +307,20 @@ function buildPrimaryMainRuntime(
     return result.session;
   };
 
-  const narrateProgress = async (request: PickyNarrateProgressRequest) => {
-    const supervisor = requireSupervisor();
-    logAgentd("narrate progress requested", { textChars: request.text.length });
-    supervisor.requestNarrateProgress(request);
-  };
-
   // Picky built-in tools registered to the main agent. ask_user_question is
   // intentionally excluded — disableBlockingDialogs prevents it from working
   // on the main runtime and it is registered separately on Pickle child
-  // runtimes. The user can disable individual entries from the settings UI;
-  // `toolsBuilder` returns the subset that should be active given the current
-  // disabled set.
+  // runtimes. Narration (`picky_narrate_progress`) used to live here, but is
+  // now provided by a Pi extension seeded into the workspace's
+  // `.pi/extensions/picky-narrate-progress.ts`, so it is scoped to the main
+  // agent's cwd and can enforce its own "narrate before any other tool" rule.
+  // The user can disable individual entries from the settings UI; `toolsBuilder`
+  // returns the subset that should be active given the current disabled set.
   const allBuiltinTools: import("@mariozechner/pi-coding-agent").ToolDefinition[] = [
     createPickyStartPickleTool(startPickleFromMainContext),
     createPickyPickleSessionsTool(listPickleSessions),
     createPickySteerPickleTool(steerPickleSession),
     createPickyAbortPickleTool(abortPickleSession),
-    createPickyNarrateProgressTool(narrateProgress),
     createReadPickyUserGuideTool(readPickyUserGuide),
   ];
   const toolsBuilder = (disabled: ReadonlySet<string>) => allBuiltinTools.filter((tool) => !disabled.has(tool.name));
@@ -351,4 +353,27 @@ function buildPrimaryMainRuntime(
     realtimeRuntime: realtimeMainRuntime,
   });
   return { runtime, toolsBuilder };
+}
+
+/**
+ * Stable in-process bridge that Pi extensions seeded into the workspace can
+ * call to reach Picky's companion voice. Exposed on `globalThis.__pickyAgentd`
+ * so the seeded `picky-narrate-progress` extension (and any future extensions)
+ * can depend on a narrow, documented surface without importing agentd internals.
+ */
+export interface PickyAgentdBridge {
+  /** Speak a short filler line via Picky's companion voice. No-op if blank. */
+  narrate(text: string): void;
+}
+
+function installPickyAgentdBridge(supervisor: SessionSupervisor): void {
+  const bridge: PickyAgentdBridge = {
+    narrate(text: string): void {
+      const trimmed = (text ?? "").trim();
+      if (!trimmed) return;
+      logAgentd("narrate progress requested", { textChars: trimmed.length, via: "extension-bridge" });
+      supervisor.requestNarrateProgress({ text: trimmed });
+    },
+  };
+  (globalThis as unknown as { __pickyAgentd?: PickyAgentdBridge }).__pickyAgentd = bridge;
 }

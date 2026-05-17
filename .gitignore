@@ -61,3 +61,12 @@ sessions/
 # Misc
 *.orig
 .gw/
+
+# Transient scratch dirs created by agentd seeded-extensions.test.ts (cleaned up
+# after each run, ignored here so a crashed test never pollutes git status).
+agentd/tmp-seed-check-*/
+
+# Dev-only mirror of the Picky workspace seed (used when running the main
+# agent with this repo as cwd). The Swift seeder in
+# `Picky/App/PickyWorkspaceSeeder.swift` remains the source of truth.
+/.pi/

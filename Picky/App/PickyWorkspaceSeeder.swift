@@ -19,6 +19,15 @@ enum PickyWorkspaceSeeder {
     /// Filename Pi reads for context, per the Pi README's Context Files section.
     static let agentsMarkdownFilename = "AGENTS.md"
 
+    /// Project-local Pi extensions directory auto-discovered by pi-coding-agent
+    /// when running in this cwd. See `docs/extensions.md` in the Pi package.
+    static let extensionsDirectoryRelativePath = ".pi/extensions"
+
+    /// Filename of the seeded narration extension that scopes
+    /// `picky_narrate_progress` to this workspace's cwd and enforces the
+    /// "narrate before any other tool" policy via `tool_call` blocking.
+    static let narrateExtensionFilename = "picky-narrate-progress.ts"
+
     /// Path of the default workspace. Does not check whether the directory or
     /// the seeded `AGENTS.md` actually exist; use `seedDefaultWorkspace` to
     /// create both before pointing Pi at the path.
@@ -58,12 +67,39 @@ enum PickyWorkspaceSeeder {
             return
         }
         let agentsURL = workspaceURL.appendingPathComponent(agentsMarkdownFilename, isDirectory: false)
-        guard !fileManager.fileExists(atPath: agentsURL.path) else { return }
+        if !fileManager.fileExists(atPath: agentsURL.path) {
+            do {
+                try defaultAgentsMarkdown.write(to: agentsURL, atomically: true, encoding: .utf8)
+                log("🧩 Picky: Seeded default \(agentsMarkdownFilename) at \(agentsURL.path)")
+            } catch {
+                log("⚠️ Picky: Failed to seed \(agentsURL.path): \(error.localizedDescription)")
+            }
+        }
+        seedExtensions(workspaceURL: workspaceURL, fileManager: fileManager, log: log)
+    }
+
+    /// Creates `.pi/extensions/` under the workspace and drops bundled Picky
+    /// extensions (currently only `picky-narrate-progress.ts`) when missing.
+    /// User edits are preserved — existing files are never overwritten.
+    private static func seedExtensions(
+        workspaceURL: URL,
+        fileManager: FileManager,
+        log: (String) -> Void
+    ) {
+        let extensionsURL = workspaceURL.appendingPathComponent(extensionsDirectoryRelativePath, isDirectory: true)
         do {
-            try defaultAgentsMarkdown.write(to: agentsURL, atomically: true, encoding: .utf8)
-            log("🧩 Picky: Seeded default \(agentsMarkdownFilename) at \(agentsURL.path)")
+            try fileManager.createDirectory(at: extensionsURL, withIntermediateDirectories: true)
         } catch {
-            log("⚠️ Picky: Failed to seed \(agentsURL.path): \(error.localizedDescription)")
+            log("⚠️ Picky: Failed to create extensions dir at \(extensionsURL.path): \(error.localizedDescription)")
+            return
+        }
+        let narrateURL = extensionsURL.appendingPathComponent(narrateExtensionFilename, isDirectory: false)
+        guard !fileManager.fileExists(atPath: narrateURL.path) else { return }
+        do {
+            try defaultNarrateExtensionSource.write(to: narrateURL, atomically: true, encoding: .utf8)
+            log("🧩 Picky: Seeded \(narrateExtensionFilename) at \(narrateURL.path)")
+        } catch {
+            log("⚠️ Picky: Failed to seed \(narrateURL.path): \(error.localizedDescription)")
         }
     }
 
@@ -140,6 +176,18 @@ enum PickyWorkspaceSeeder {
     - Do not expose internal tool logs. Do not hard-code workflows from
       URLs or app names; use the user's intent and context.
 
+    ## Narration before tool calls
+
+    - Every main-agent response that issues tool calls must invoke
+      `picky_narrate_progress` at least once before the first tool call of
+      that response. Treat this as mandatory, not best-effort.
+    - The narration must be a short present-continuous sentence in the
+      user's language (~40 chars, max 80), describing the activity only —
+      never include final answers, code, paths, or sensitive identifiers.
+    - Keep to one narration per long step; do not re-narrate the same
+      step. If narration is disabled the tool returns silently — do not
+      retry.
+
     ## Self-update
 
     - When the user gives a persistent rule, preference, or workflow change
@@ -168,4 +216,108 @@ enum PickyWorkspaceSeeder {
       here pointing to that file's path so future sessions can find it.
       Keep `AGENTS.md` itself focused on persistent persona/rules/policy.
     """
+
+    /// Default content for `.pi/extensions/picky-narrate-progress.ts`. The
+    /// extension is the canonical home for the `picky_narrate_progress` tool
+    /// (the agentd main runtime no longer registers it) so the tool is only
+    /// visible to the main agent running in this workspace cwd. It also
+    /// enforces a hard rule via `tool_call` blocking: each user prompt must
+    /// call `picky_narrate_progress` once before any other tool. The flag
+    /// resets on `agent_start`, so a single narration covers the entire
+    /// multi-turn agent run for that prompt.
+    ///
+    /// Picky's TTS is reached through `globalThis.__pickyAgentd.narrate(text)`,
+    /// installed by agentd at startup. See `PickyAgentdBridge` in
+    /// `agentd/src/bootstrap.ts` for the interface contract.
+    static let defaultNarrateExtensionSource: String = #"""
+    // Auto-seeded by Picky. Registers `picky_narrate_progress` for the main
+    // agent running in this workspace cwd and enforces that it is called once
+    // before any other tool call in the same assistant response.
+    //
+    // Delete this file and relaunch Picky to reseed the default.
+
+    import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+    import { Type } from "typebox";
+
+    const TOOL_NAME = "picky_narrate_progress";
+    const MAX_CHARS = 40;
+
+    interface PickyAgentdBridge {
+      narrate?: (text: string) => void;
+    }
+
+    function bridge(): PickyAgentdBridge | undefined {
+      return (globalThis as unknown as { __pickyAgentd?: PickyAgentdBridge }).__pickyAgentd;
+    }
+
+    export default function (pi: ExtensionAPI) {
+      // Per-agent-run flag. Reset at agent_start so each user prompt must
+      // narrate once before any other tool call; subsequent turns within the
+      // same agent run inherit the satisfied flag.
+      let narrationDone = false;
+
+      pi.on("agent_start", async () => {
+        narrationDone = false;
+      });
+
+      pi.on("tool_call", async (event) => {
+        if (event.toolName === TOOL_NAME) {
+          // Mark immediately so sibling tool_call events in the same parallel
+          // batch see the flag and are not blocked.
+          narrationDone = true;
+          return;
+        }
+        if (!narrationDone) {
+          return {
+            block: true,
+            reason: `Call ${TOOL_NAME} once before any other tool for this user prompt, with a short present-continuous filler line in the user's language (~20 chars, max ${MAX_CHARS}).`,
+          };
+        }
+      });
+
+      pi.registerTool({
+        name: TOOL_NAME,
+        label: "Picky narrate progress",
+        description:
+          "Speak a brief filler line via Picky's companion voice; must be called once for the user prompt before any other tool call.",
+        promptSnippet: `${TOOL_NAME}: speak one short filler line at the start of handling a user prompt, before the first other tool call. One narration covers the whole multi-turn agent run.`,
+        promptGuidelines: [
+          `For each user prompt that requires tool calls, call ${TOOL_NAME} once before the first other tool call. Treat this as mandatory, not best-effort.`,
+          `Do not call ${TOOL_NAME} again in later turns of the same agent run — one narration per user prompt.`,
+          `Use one short present-continuous sentence in the user's language (~20 characters, max ${MAX_CHARS}); describe only the activity.`,
+          `Never include final answers, code, paths, or sensitive identifiers in the narration line.`,
+          `If narration is disabled the tool returns silently — do not retry.`,
+        ],
+        parameters: Type.Object({
+          text: Type.String({
+            description:
+              "Short present-continuous filler line in the user's language. Ideally ~20 characters, max 40.",
+          }),
+        }),
+        async execute(_toolCallId, params) {
+          const raw = typeof params.text === "string" ? params.text.trim() : "";
+          if (!raw) throw new Error("text must not be empty");
+          const api = bridge();
+          if (!api?.narrate) {
+            return {
+              content: [
+                { type: "text", text: "Narration bridge unavailable; continue without retrying." },
+              ],
+              details: { text: raw, delivered: false },
+            };
+          }
+          api.narrate(raw);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Narration dispatched (${raw.length} chars). Continue the underlying work; do not narrate the same step again.`,
+              },
+            ],
+            details: { text: raw, delivered: true },
+          };
+        },
+      });
+    }
+    """#
 }

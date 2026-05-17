@@ -249,23 +249,58 @@ enum PickyWorkspaceSeeder {
 
     interface PickyAgentdBridge {
       narrate?: (text: string) => void;
+      getNarrationEnabled?: () => boolean;
+      onNarrationEnabledChange?: (listener: (enabled: boolean) => void) => () => void;
     }
 
     function bridge(): PickyAgentdBridge | undefined {
       return (globalThis as unknown as { __pickyAgentd?: PickyAgentdBridge }).__pickyAgentd;
     }
 
+    function isNarrationEnabled(): boolean {
+      // Default true so a missing or pre-rename bridge does not silently
+      // hide the tool from the LLM.
+      return bridge()?.getNarrationEnabled?.() ?? true;
+    }
+
     export default function (pi: ExtensionAPI) {
       // Per-agent-run flag. Reset at agent_start. The agent must call
-      // picky_narrate_progress once before any other tool call in this run
-      // to announce its plan for the user prompt.
+      // picky_tell_plan once before any other tool call in this run to
+      // announce its plan for the user prompt.
       let narrationDone = false;
+      let unsubscribe: (() => void) | undefined;
+
+      function syncActiveTools(enabled: boolean): void {
+        const active = pi.getActiveTools();
+        const has = active.includes(TOOL_NAME);
+        if (enabled && !has) {
+          pi.setActiveTools([...active, TOOL_NAME]);
+        } else if (!enabled && has) {
+          pi.setActiveTools(active.filter((name) => name !== TOOL_NAME));
+        }
+      }
+
+      pi.on("session_start", async () => {
+        syncActiveTools(isNarrationEnabled());
+        unsubscribe?.();
+        unsubscribe = bridge()?.onNarrationEnabledChange?.((enabled) => {
+          syncActiveTools(enabled);
+        });
+      });
+
+      pi.on("session_shutdown", async () => {
+        unsubscribe?.();
+        unsubscribe = undefined;
+      });
 
       pi.on("agent_start", async () => {
         narrationDone = false;
       });
 
       pi.on("tool_call", async (event) => {
+        // When the user has narration off, the tool is not in the active set
+        // and the LLM cannot see it, so the gate must not block other tools.
+        if (!isNarrationEnabled()) return;
         if (event.toolName === TOOL_NAME) {
           // Mark immediately so sibling tool_call events in the same parallel
           // batch see the flag and are not blocked.

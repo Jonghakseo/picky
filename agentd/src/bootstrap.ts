@@ -358,12 +358,25 @@ function buildPrimaryMainRuntime(
 /**
  * Stable in-process bridge that Pi extensions seeded into the workspace can
  * call to reach Picky's companion voice. Exposed on `globalThis.__pickyAgentd`
- * so the seeded `picky-narrate-progress` extension (and any future extensions)
- * can depend on a narrow, documented surface without importing agentd internals.
+ * so the seeded `picky-tell-plan` extension (and any future extensions) can
+ * depend on a narrow, documented surface without importing agentd internals.
  */
 export interface PickyAgentdBridge {
   /** Speak a short filler line via Picky's companion voice. No-op if blank. */
   narrate(text: string): void;
+  /**
+   * Current value of the Picky narrationEnabled toggle. The extension reads
+   * this at `session_start` to decide whether to register `picky_tell_plan`
+   * via `pi.setActiveTools` and whether to enforce the "announce the plan
+   * before any other tool" gate.
+   */
+  getNarrationEnabled(): boolean;
+  /**
+   * Subscribe to narration-toggle transitions. Returns an unsubscribe
+   * function the extension calls on `session_shutdown`. Listeners only fire
+   * on real value changes — idempotent settings rebroadcasts do not retrigger.
+   */
+  onNarrationEnabledChange(listener: (enabled: boolean) => void): () => void;
 }
 
 function installPickyAgentdBridge(supervisor: SessionSupervisor): void {
@@ -373,6 +386,12 @@ function installPickyAgentdBridge(supervisor: SessionSupervisor): void {
       if (!trimmed) return;
       logAgentd("narrate progress requested", { textChars: trimmed.length, via: "extension-bridge" });
       supervisor.requestNarrateProgress({ text: trimmed });
+    },
+    getNarrationEnabled(): boolean {
+      return supervisor.getNarrationEnabled();
+    },
+    onNarrationEnabledChange(listener: (enabled: boolean) => void): () => void {
+      return supervisor.onNarrationEnabledChange(listener);
     },
   };
   (globalThis as unknown as { __pickyAgentd?: PickyAgentdBridge }).__pickyAgentd = bridge;

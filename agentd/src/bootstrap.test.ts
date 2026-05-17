@@ -219,6 +219,41 @@ describe("composeAgentdServices", () => {
     await expect(second.supervisor.create(context)).rejects.toThrow(/already issued/);
   });
 
+  // The bootstrap installs `globalThis.__pickyAgentd` as the in-process bridge
+  // the seeded picky_tell_plan extension uses to reach Picky. Beyond the
+  // existing narrate(text) entry, the extension also needs to read the
+  // current Picky narrationEnabled toggle and react to changes (so it can
+  // hide the tool via pi.setActiveTools when the user turns the toggle off).
+  // This test pins the contract: the bridge exposes a synchronous getter and
+  // a subscribe-style listener that fires on every real transition only.
+  it("installPickyAgentdBridge exposes narrationEnabled getter and change subscription", () => {
+    const appSupportDir = tmpAppSupportDir();
+    const result = composeAgentdServices(
+      baseConfig({ appSupportDir, useMockRuntime: true }),
+      { runtimeFactory: () => new MockRuntime() },
+    );
+    const bridge = (globalThis as unknown as { __pickyAgentd?: { narrate(text: string): void; getNarrationEnabled(): boolean; onNarrationEnabledChange(listener: (enabled: boolean) => void): () => void } }).__pickyAgentd;
+    expect(bridge).toBeDefined();
+    expect(typeof bridge?.narrate).toBe("function");
+    expect(typeof bridge?.getNarrationEnabled).toBe("function");
+    expect(typeof bridge?.onNarrationEnabledChange).toBe("function");
+
+    expect(bridge!.getNarrationEnabled()).toBe(true);
+
+    const seen: boolean[] = [];
+    const unsubscribe = bridge!.onNarrationEnabledChange((enabled) => seen.push(enabled));
+    result.supervisor.setNarrationEnabled(false);
+    expect(bridge!.getNarrationEnabled()).toBe(false);
+    result.supervisor.setNarrationEnabled(true);
+    expect(seen).toEqual([false, true]);
+
+    // After unsubscribe further transitions must not reach the listener so the
+    // extension can detach cleanly on session_shutdown without leaking.
+    unsubscribe();
+    result.supervisor.setNarrationEnabled(false);
+    expect(seen).toEqual([false, true]);
+  });
+
   it("in child mode the supervisor uses PICKY_AGENTD_SESSION_ID for the first session", async () => {
     const appSupportDir = tmpAppSupportDir();
     const result = composeAgentdServices(

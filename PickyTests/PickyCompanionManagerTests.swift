@@ -3,6 +3,7 @@
 //  PickyTests
 //
 
+import AppKit
 import AVFoundation
 import Foundation
 import Testing
@@ -88,23 +89,24 @@ private final class FakeSpeechPlaybackProvider: PickySpeechPlaybackProvider {
 }
 
 @MainActor
-private final class FakeAVSpeechSynthesizer: PickyAVSpeechSynthesizing {
-    var delegate: AVSpeechSynthesizerDelegate?
+private final class FakeNSSpeechSynthesizer: PickyNSSpeechSynthesizing {
+    var delegate: NSSpeechSynthesizerDelegate?
     var isSpeaking = false
-    var verifiesStartSynchronously = true
-    var isSpeakingAfterSpeak = true
-    private(set) var spokenUtterances: [AVSpeechUtterance] = []
+    var startSpeakingResult = true
+    private(set) var spokenStrings: [String] = []
     private(set) var stopCount = 0
 
-    func speak(_ utterance: AVSpeechUtterance) {
-        spokenUtterances.append(utterance)
-        isSpeaking = isSpeakingAfterSpeak
+    func startSpeaking(_ string: String) -> Bool {
+        spokenStrings.append(string)
+        if startSpeakingResult {
+            isSpeaking = true
+        }
+        return startSpeakingResult
     }
 
-    func stopSpeaking(at boundary: AVSpeechBoundary) -> Bool {
+    func stopSpeaking() {
         stopCount += 1
         isSpeaking = false
-        return true
     }
 }
 
@@ -952,7 +954,7 @@ struct PickyCompanionManagerTests {
     }
 
     @Test func systemSpeechProviderRefusesBlankTextWithoutStickingSpeakingState() async throws {
-        let synthesizer = FakeAVSpeechSynthesizer()
+        let synthesizer = FakeNSSpeechSynthesizer()
         let provider = PickySystemSpeechPlaybackProvider(speechSynthesizer: synthesizer)
         var finishCalls = 0
 
@@ -960,41 +962,35 @@ struct PickyCompanionManagerTests {
 
         #expect(!started)
         #expect(!provider.isSpeaking)
-        #expect(synthesizer.spokenUtterances.isEmpty)
+        #expect(synthesizer.spokenStrings.isEmpty)
         #expect(finishCalls == 0)
     }
 
-    @Test func systemSpeechProviderReturnsFalseWhenAVSpeechDoesNotStart() async throws {
-        let synthesizer = FakeAVSpeechSynthesizer()
-        synthesizer.isSpeakingAfterSpeak = false
+    @Test func systemSpeechProviderReturnsFalseWhenStartSpeakingFails() async throws {
+        let synthesizer = FakeNSSpeechSynthesizer()
+        synthesizer.startSpeakingResult = false
         let provider = PickySystemSpeechPlaybackProvider(speechSynthesizer: synthesizer)
         var finishCalls = 0
 
-        let started = provider.speak("시작 콜백이 오지 않고 엔진도 말하지 않는 상황") { _ in finishCalls += 1 }
+        let started = provider.speak("엔진이 시작을 거부한 상황") { _ in finishCalls += 1 }
 
         #expect(!started)
         #expect(!provider.isSpeaking)
-        #expect(synthesizer.spokenUtterances.count == 1)
+        #expect(synthesizer.spokenStrings.count == 1)
         #expect(finishCalls == 0)
     }
 
-    @Test func systemSpeechProviderIgnoresStaleDelegateCallbacksForPreviousUtterance() async throws {
-        let synthesizer = FakeAVSpeechSynthesizer()
+    @Test func systemSpeechProviderIgnoresStaleDelegateCallbacksAfterStop() async throws {
+        let synthesizer = FakeNSSpeechSynthesizer()
         let provider = PickySystemSpeechPlaybackProvider(speechSynthesizer: synthesizer)
         var finishes: [Bool] = []
 
         #expect(provider.speak("첫 번째 발화") { finishes.append($0) })
-        let staleUtterance = try #require(synthesizer.spokenUtterances.first)
-        #expect(provider.speak("두 번째 발화") { finishes.append($0) })
-        let currentUtterance = try #require(synthesizer.spokenUtterances.last)
+        provider.stopSpeaking()
 
-        provider.handleSynthesizerDelegateEvent(.didFinish, utterance: staleUtterance)
-        #expect(provider.isSpeaking)
-        #expect(finishes.isEmpty)
-
-        provider.handleSynthesizerDelegateEvent(.didFinish, utterance: currentUtterance)
+        provider.handleDelegateFinish(speechID: UUID(), didFinish: true)
         #expect(!provider.isSpeaking)
-        #expect(finishes == [true])
+        #expect(finishes.isEmpty)
     }
 
     @Test func systemSpeechPathIsNotClippedBySafetyNetWhenInteractionSpeechIDIsNil() async throws {

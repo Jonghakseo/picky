@@ -41,6 +41,8 @@ class FakeSession extends EventEmitter {
   extensionCommands: Array<{ invocationName: string; description?: string; sourceInfo?: { baseDir?: string; path?: string; source?: string; scope?: string; origin?: string } }> = [];
   promptTemplates: Array<{ name: string; description: string }> = [];
   skills: Array<{ name: string; description: string }> = [];
+  activeToolNames = ["read", "bash", "edit", "write"];
+  setActiveToolsByNameCalls: string[][] = [];
   bashExecutions: Array<{ command: string; excludeFromContext?: boolean }> = [];
   recordedBashResults: Array<{ command: string; result: unknown; excludeFromContext?: boolean }> = [];
   userBashEvents: Array<{ type?: "user_bash"; command: string; excludeFromContext: boolean; cwd: string }> = [];
@@ -97,6 +99,15 @@ class FakeSession extends EventEmitter {
 
   recordBashResult(command: string, result: unknown, options?: { excludeFromContext?: boolean }): void {
     this.recordedBashResults.push({ command, result, excludeFromContext: options?.excludeFromContext });
+  }
+
+  getActiveToolNames(): string[] {
+    return [...this.activeToolNames];
+  }
+
+  setActiveToolsByName(toolNames: string[]): void {
+    this.setActiveToolsByNameCalls.push([...toolNames]);
+    this.activeToolNames = [...toolNames];
   }
 
   setThinkingLevel(level: string): void {
@@ -645,6 +656,7 @@ describe("PiSdkRuntime", () => {
     expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Compacting after context overflow…", compactionStarted: true, compactionReason: "overflow" });
     expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, compactionReason: "overflow" });
     expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Completed", finalAnswer: "컴팩션 후 완료", assistantRun: { model: "claude-fake" } });
+    expect(fakeSession.setActiveToolsByNameCalls).toEqual([["read", "bash", "edit", "write"]]);
   });
 
   it("emits completion for non-retry automatic threshold compaction", async () => {
@@ -659,6 +671,7 @@ describe("PiSdkRuntime", () => {
 
     expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "threshold" });
     expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "threshold" });
+    expect(fakeSession.setActiveToolsByNameCalls).toEqual([["read", "bash", "edit", "write"]]);
   });
 
   it("reports final failure when an agent_end error has no retry or compaction recovery", async () => {
@@ -1023,6 +1036,7 @@ describe("PiSdkRuntime", () => {
     await handle.followUp({ text: "/compact focus on bug area", imagePaths: [] });
 
     expect(compactCalls).toEqual(["focus on bug area"]);
+    expect(fakeSession.setActiveToolsByNameCalls).toEqual([["read", "bash", "edit", "write"]]);
     expect(fakeSession.prompts).toEqual([]);
     const statuses = events.filter((event) => event.type === "status").map((event) => event.status);
     expect(statuses).toContain("running");

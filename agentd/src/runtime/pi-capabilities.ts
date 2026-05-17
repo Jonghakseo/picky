@@ -152,6 +152,21 @@ export async function tryReload(session: AgentSession, sessionId: string): Promi
   return { supported: true };
 }
 
+export function tryRefreshSystemPromptFromActiveTools(session: AgentSession, sessionId: string): boolean {
+  const candidate = session as unknown as {
+    getActiveToolNames?: () => string[];
+    setActiveToolsByName?: (toolNames: string[]) => void;
+  };
+  if (typeof candidate.getActiveToolNames !== "function" || typeof candidate.setActiveToolsByName !== "function") {
+    warnOnceForAbsence(sessionId, "getActiveToolNames/setActiveToolsByName");
+    return false;
+  }
+  recordPresence(sessionId, "getActiveToolNames");
+  recordPresence(sessionId, "setActiveToolsByName");
+  candidate.setActiveToolsByName.call(session, candidate.getActiveToolNames.call(session));
+  return true;
+}
+
 export function isCompacting(session: AgentSession): boolean {
   return (session as unknown as { isCompacting?: boolean }).isCompacting === true;
 }

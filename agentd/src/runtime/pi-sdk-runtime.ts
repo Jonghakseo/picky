@@ -29,6 +29,7 @@ import {
   tryCycleThinkingLevel as piTryCycleThinkingLevel,
   tryGetBashSurface as piTryGetBashSurface,
   tryGetContextUsage as piTryGetContextUsage,
+  tryRefreshSystemPromptFromActiveTools as piTryRefreshSystemPromptFromActiveTools,
   tryReload as piTryReload,
   trySetThinkingLevel as piTrySetThinkingLevel,
   type PiUserBashEvent,
@@ -811,6 +812,9 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     if (event.type === "compaction_end") {
       const reason = stringValue(event.reason);
       const errorMessage = stringValue(event.errorMessage);
+      if (!errorMessage && event.aborted !== true) {
+        piTryRefreshSystemPromptFromActiveTools(this.runtime.session, this.id);
+      }
       if (event.willRetry === true) {
         this.cancelDeferredTerminalError();
         return { type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, ...(reason ? { compactionReason: reason } : {}) };
@@ -914,6 +918,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
           return true;
         }
         this.emitContextUsageSnapshot({ resetAfterCompaction: true });
+        piTryRefreshSystemPromptFromActiveTools(this.runtime.session, this.id);
         this.emit({ type: "log", line: instructions ? `compact completed with instructions: ${instructions}` : "compact completed" });
         this.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true });
       } catch (error) {

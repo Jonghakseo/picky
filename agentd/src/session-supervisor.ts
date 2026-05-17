@@ -102,13 +102,12 @@ export class SessionSupervisor extends EventEmitter {
   private lastMainQuickReplyContextId?: string;
   private lastMainQuickReplyAt?: number;
   private suppressNextMainReply = false;
-  // Monotonic supervisor-side generation for main-agent turns. Runtime events do not always carry
-  // a Pi turn id, so this separates the current replacement turn from terminal events that may still
-  // arrive after an interrupt of the previous turn.
+  // Monotonic supervisor-side generation for main-agent turns. When a runtime can tag streamed
+  // events with this id, interrupted-turn terminal events can be dropped by exact id instead of by
+  // broad counters that may also match the replacement turn.
   private mainTurnId = 0;
-  private pendingInterruptedMainTurns = 0;
-  private interruptedMainBufferedDraft = "";
-  private interruptedReplacementTurnStarted = false;
+  private activeMainRuntimeInputId?: string;
+  private interruptedMainInputIds = new Set<string>();
   private activeMainRealtimeInputId?: string;
   private pickleSessionIds = new Set<string>();
   // Session ids that this supervisor does NOT host locally but that should still be tagged as
@@ -552,9 +551,8 @@ export class SessionSupervisor extends EventEmitter {
     this.mainTerminalProcessed = false;
     this.suppressNextMainReply = false;
     this.mainTurnId += 1;
-    this.pendingInterruptedMainTurns = 0;
-    this.interruptedMainBufferedDraft = "";
-    this.interruptedReplacementTurnStarted = false;
+    this.activeMainRuntimeInputId = undefined;
+    this.interruptedMainInputIds.clear();
     this.activeMainRealtimeInputId = undefined;
     if (this.pendingPickleCompletions.length > 0) logAgentd("Picky pending Pickle completions cleared", { count: this.pendingPickleCompletions.length });
     this.pendingPickleCompletions = [];
@@ -966,9 +964,8 @@ export class SessionSupervisor extends EventEmitter {
 
   private async deliverMainPrompt(handle: RuntimeSessionHandle, prompt: ReturnType<typeof buildMainAgentPrompt>): Promise<void> {
     if (this.mainIsProcessing && handle.interrupt) {
-      logAgentd("main interrupt", { contextId: this.mainReplyContextId, turnId: this.mainTurnId });
-      this.pendingInterruptedMainTurns += 1;
-      this.interruptedMainBufferedDraft = "";
+      logAgentd("main interrupt", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, inputId: this.activeMainRuntimeInputId });
+      if (this.activeMainRuntimeInputId) this.interruptedMainInputIds.add(this.activeMainRuntimeInputId);
       this.mainTerminalProcessed = false;
       this.mainDraft = "";
       await handle.interrupt(prompt);
@@ -983,9 +980,8 @@ export class SessionSupervisor extends EventEmitter {
   private beginMainTurn(contextId: string): void {
     this.mainTurnId += 1;
     this.mainReplyContextId = contextId;
+    this.activeMainRuntimeInputId = `main-turn-${this.mainTurnId}`;
     this.mainDraft = "";
-    this.interruptedMainBufferedDraft = "";
-    this.interruptedReplacementTurnStarted = false;
     this.mainTerminalProcessed = false;
   }
 
@@ -1186,9 +1182,8 @@ export class SessionSupervisor extends EventEmitter {
       return;
     }
     if (event.type === "assistant_delta") {
-      if (this.pendingInterruptedMainTurns > 0 && !this.interruptedReplacementTurnStarted) {
-        this.interruptedMainBufferedDraft += event.delta;
-        logAgentd("main interrupted delta buffered", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, deltaChars: event.delta.length, pending: this.pendingInterruptedMainTurns });
+      if (event.inputId && this.interruptedMainInputIds.has(event.inputId)) {
+        logAgentd("main interrupted delta suppressed", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, inputId: event.inputId, deltaChars: event.delta.length, pending: this.interruptedMainInputIds.size });
         return;
       }
       // A new delta means a new turn has started. Re-arm the terminal guard even
@@ -1202,34 +1197,22 @@ export class SessionSupervisor extends EventEmitter {
     }
     if (event.type === "status") {
       if (event.status === "running") {
+        if (event.inputId && this.interruptedMainInputIds.has(event.inputId)) {
+          logAgentd("main interrupted running suppressed", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, inputId: event.inputId, pending: this.interruptedMainInputIds.size });
+          return;
+        }
         this.mainIsProcessing = true;
         this.mainTerminalProcessed = false;
-        if (this.pendingInterruptedMainTurns > 0) {
-          this.interruptedReplacementTurnStarted = true;
-          this.interruptedMainBufferedDraft = "";
-          this.mainDraft = "";
-          logAgentd("main replacement turn started", { contextId: this.mainReplyContextId, turnId: this.mainTurnId, pending: this.pendingInterruptedMainTurns });
-        }
       }
       if (event.compactionCompleted) {
         await this.patchMainState({ contextUsage: undefined });
       }
       if (["completed", "failed", "cancelled"].includes(event.status)) {
-        if (this.pendingInterruptedMainTurns > 0 && (event.status === "cancelled" || this.interruptedReplacementTurnStarted)) {
-          this.pendingInterruptedMainTurns -= 1;
-          this.interruptedMainBufferedDraft = "";
-          if (!this.interruptedReplacementTurnStarted) this.mainDraft = "";
+        if (event.inputId && this.interruptedMainInputIds.delete(event.inputId)) {
           this.mainTerminalProcessed = false;
           this.mainIsProcessing = true;
-          if (this.pendingInterruptedMainTurns === 0) this.interruptedReplacementTurnStarted = false;
-          logAgentd("main interrupted terminal suppressed", { status: event.status, contextId: this.mainReplyContextId, turnId: this.mainTurnId, pending: this.pendingInterruptedMainTurns });
+          logAgentd("main interrupted terminal suppressed", { status: event.status, contextId: this.mainReplyContextId, turnId: this.mainTurnId, inputId: event.inputId, pending: this.interruptedMainInputIds.size });
           return;
-        }
-        if (this.pendingInterruptedMainTurns > 0) {
-          if (!this.interruptedReplacementTurnStarted) this.mainDraft += this.interruptedMainBufferedDraft;
-          this.interruptedMainBufferedDraft = "";
-          this.pendingInterruptedMainTurns = 0;
-          this.interruptedReplacementTurnStarted = false;
         }
         this.mainIsProcessing = false;
         // Guard A: drop any subsequent terminal events for the same turn (e.g. the

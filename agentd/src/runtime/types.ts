@@ -34,12 +34,12 @@ export type MainRealtimeState = "connecting" | "ready" | "listening" | "thinking
 
 export type RuntimeEvent =
   | { type: "log"; line: string }
-  | { type: "assistant_delta"; delta: string }
+  | { type: "assistant_delta"; delta: string; inputId?: string }
   | { type: "thinking_delta"; delta: string }
   | { type: "queue_update"; steering: readonly string[]; followUp: readonly string[] }
   | { type: "input_message"; role: "user" | "custom"; text: string; originatedBy: "user" | "main_agent" | "pi_extension" | "internal"; display?: boolean; customType?: string }
   | { type: "session_replaced"; reason: "new"; cwd?: string; sessionFilePath?: string }
-  | { type: "status"; status: RuntimeSessionStatus; summary?: string; finalAnswer?: string; noTurnRan?: boolean; preserveSessionState?: boolean; assistantRun?: RuntimeAssistantRunMetadata; compactionStarted?: boolean; compactionCompleted?: boolean; compactionFailed?: boolean; compactionReason?: string }
+  | { type: "status"; status: RuntimeSessionStatus; inputId?: string; summary?: string; finalAnswer?: string; noTurnRan?: boolean; preserveSessionState?: boolean; assistantRun?: RuntimeAssistantRunMetadata; compactionStarted?: boolean; compactionCompleted?: boolean; compactionFailed?: boolean; compactionReason?: string }
   | { type: "tool"; toolCallId: string; name: string; status: "running" | "succeeded" | "failed"; preview?: string; argsPreview?: string; resultPreview?: string }
   | { type: "extension_ui"; request: Record<string, unknown>; waitsForInput: boolean }
   | { type: "session_info"; name: string }

@@ -3287,6 +3287,28 @@ struct PickySessionViewModelTests {
         try await wait { viewModel.slashCommandsBySessionID["session-commands"]?.map(\.name) == ["legacy-command"] }
     }
 
+    @Test func slashCommandSnapshotWithoutRequestIdAfterInvalidationDropsStaleEpochBeforeAcceptingCurrentEpoch() async throws {
+        let client = FakePickyAgentClient()
+        let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands", cwd: "/tmp/old"))))
+        try await settle()
+
+        viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
+        try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 1 }
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands", updatedAt: "2026-05-01T00:00:05.000Z", cwd: "/tmp/new"))))
+        viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
+        try await wait { client.sentCommands.filter { $0.type == .listSlashCommands }.count == 2 }
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: nil, commandNames: ["stale-legacy-command"]))))
+        try await settle()
+        #expect(!viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
+
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.slashCommandsSnapshot(requestId: nil, commandNames: ["fresh-legacy-command"]))))
+        try await wait { viewModel.slashCommandsBySessionID["session-commands"]?.map(\.name) == ["fresh-legacy-command"] }
+    }
+
     @Test func refreshSlashCommandsIfStillLoadingIsNoOpWhenCommandsAlreadyLoaded() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())

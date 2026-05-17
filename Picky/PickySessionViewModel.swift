@@ -1541,6 +1541,19 @@ final class PickySessionListViewModel: ObservableObject {
                 }
                 requestEpoch = matchedRequestEpoch
             } else {
+                let staleRequestIDs = slashCommandRequestSessionByID
+                    .filter { entry in
+                        entry.value == sessionId && slashCommandRequestEpochByID[entry.key] != currentEpoch
+                    }
+                    .map(\.key)
+                if !staleRequestIDs.isEmpty {
+                    for staleRequestID in staleRequestIDs {
+                        slashCommandRequestSessionByID.removeValue(forKey: staleRequestID)
+                        slashCommandRequestEpochByID.removeValue(forKey: staleRequestID)
+                    }
+                    pickySessionLog("slash commands snapshot discarded session=\(sessionId) reason=no-request-id-after-epoch-invalidation staleRequests=\(staleRequestIDs.count) commands=\(commands.count)")
+                    break
+                }
                 let matchingRequestIDs = slashCommandRequestSessionByID
                     .filter { entry in
                         entry.value == sessionId && slashCommandRequestEpochByID[entry.key] == currentEpoch

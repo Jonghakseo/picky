@@ -3119,10 +3119,10 @@ describe("SessionSupervisor", () => {
     // Pi may flush partial assistant text from the aborted previous turn before its
     // cancelled terminal event arrives. That stale text must not become the answer to
     // `새 입력` just because the supervisor already switched `mainReplyContextId`.
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "이전 입력에 대한 늦은 답변" });
-    mainRuntime.handle?.emit({ type: "status", status: "cancelled", summary: "Interrupted turn aborted" });
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "새 입력에 대한 답변" });
-    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", inputId: "main-turn-2", delta: "이전 입력에 대한 늦은 답변" });
+    mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-2", status: "cancelled", summary: "Interrupted turn aborted" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", inputId: "main-turn-3", delta: "새 입력에 대한 답변" });
+    mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-3", status: "completed", summary: "Completed" });
     await settle();
 
     expect(mainRuntime.handle?.interrupts).toHaveLength(1);
@@ -3146,10 +3146,10 @@ describe("SessionSupervisor", () => {
     mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Started" });
     await supervisor.route(context("새 입력"));
 
-    mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Replacement started" });
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "새 입력에 대한 답변" });
-    mainRuntime.handle?.emit({ type: "status", status: "cancelled", summary: "Old turn aborted" });
-    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-3", status: "running", summary: "Replacement started" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", inputId: "main-turn-3", delta: "새 입력에 대한 답변" });
+    mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-2", status: "cancelled", summary: "Old turn aborted" });
+    mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-3", status: "completed", summary: "Completed" });
     await settle();
 
     expect(replies).toEqual([{ contextId: "context-새 입력", text: "새 입력에 대한 답변" }]);
@@ -3159,6 +3159,34 @@ describe("SessionSupervisor", () => {
       { role: "assistant", text: "새 입력에 대한 답변" },
     ]);
   });
+
+  for (const replacementTerminalStatus of ["completed", "failed"] as const) {
+    it(`finalizes a fast ${replacementTerminalStatus} replacement turn before suppressing the old cancelled turn`, async () => {
+      const dir = await mkdtemp(join(tmpdir(), `picky-agentd-main-interrupt-fast-${replacementTerminalStatus}-before-cancel-`));
+      const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
+      const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+      const replies: Array<{ contextId: string; text: string }> = [];
+      supervisor.on("quickReply", (contextId, text) => replies.push({ contextId, text }));
+
+      await supervisor.prewarmMainAgent("/tmp/project");
+      await supervisor.route(context("이전 입력"));
+      mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-2", status: "running", summary: "Started" });
+      await supervisor.route(context("새 입력"));
+
+      mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-3", status: "running", summary: "Replacement started" });
+      mainRuntime.handle?.emit({ type: "assistant_delta", inputId: "main-turn-3", delta: "빠른 대체 응답" });
+      mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-3", status: replacementTerminalStatus, summary: "Replacement ended" });
+      mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-2", status: "cancelled", summary: "Old turn aborted late" });
+      await settle();
+
+      expect(replies).toEqual([{ contextId: "context-새 입력", text: "빠른 대체 응답" }]);
+      expect(supervisor.listMainMessages().map((message) => ({ role: message.role, text: message.text }))).toEqual([
+        { role: "user", text: "이전 입력" },
+        { role: "user", text: "새 입력" },
+        { role: "assistant", text: "빠른 대체 응답" },
+      ]);
+    });
+  }
 
   for (const oldTerminalStatus of ["completed", "failed"] as const) {
     it(`lets replacement main deltas flow when the new running event beats the old ${oldTerminalStatus} status`, async () => {
@@ -3173,10 +3201,10 @@ describe("SessionSupervisor", () => {
       mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Started" });
       await supervisor.route(context("새 입력"));
 
-      mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Replacement started" });
-      mainRuntime.handle?.emit({ type: "assistant_delta", delta: "새 입력에 대한 답변" });
-      mainRuntime.handle?.emit({ type: "status", status: oldTerminalStatus, summary: "Old turn ended late" });
-      mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+      mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-3", status: "running", summary: "Replacement started" });
+      mainRuntime.handle?.emit({ type: "assistant_delta", inputId: "main-turn-3", delta: "새 입력에 대한 답변" });
+      mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-2", status: oldTerminalStatus, summary: "Old turn ended late" });
+      mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-3", status: "completed", summary: "Completed" });
       await settle();
 
       expect(replies).toEqual([{ contextId: "context-새 입력", text: "새 입력에 대한 답변" }]);
@@ -3199,12 +3227,12 @@ describe("SessionSupervisor", () => {
     await supervisor.route(context("A"));
     mainRuntime.handle?.emit({ type: "status", status: "running", summary: "A started" });
     await supervisor.route(context("B"));
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "A stale" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", inputId: "main-turn-2", delta: "A stale" });
     await supervisor.route(context("C"));
-    mainRuntime.handle?.emit({ type: "status", status: "cancelled", summary: "A cancelled" });
-    mainRuntime.handle?.emit({ type: "status", status: "cancelled", summary: "B cancelled" });
-    mainRuntime.handle?.emit({ type: "assistant_delta", delta: "C final" });
-    mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-2", status: "cancelled", summary: "A cancelled" });
+    mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-3", status: "cancelled", summary: "B cancelled" });
+    mainRuntime.handle?.emit({ type: "assistant_delta", inputId: "main-turn-4", delta: "C final" });
+    mainRuntime.handle?.emit({ type: "status", inputId: "main-turn-4", status: "completed", summary: "Completed" });
     await settle();
 
     expect(mainRuntime.handle?.interrupts).toHaveLength(2);

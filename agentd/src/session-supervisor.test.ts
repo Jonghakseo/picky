@@ -663,6 +663,144 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get("empty-pickle-early-input")?.logs.some((line) => line === "steer: 첫 작업 시작해줘")).toBe(true);
   });
 
+  it("ignores pending steer when abort happens before prewarm resolves", async () => {
+    const runtime = new DeferredPrewarmRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-empty-pickle-pending-steer-abort-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), { sessionIdFactory: () => "pending-steer-abort" });
+    await supervisor.load();
+
+    const creating = supervisor.createEmptyPickleSession({ ...context("manual"), source: "system", transcript: undefined });
+    await waitUntil(() => supervisor.get("pending-steer-abort")?.status === "waiting_for_input");
+
+    const steering = supervisor.steerPickleSession("pending-steer-abort", "do not run");
+    await settle();
+    await supervisor.abort("pending-steer-abort");
+
+    const steered = await steering;
+    runtime.resolvePendingPrewarm();
+    const created = await creating;
+    await settle();
+
+    expect(steered.status).toBe("cancelled");
+    expect(created.status).toBe("cancelled");
+    expect(supervisor.get("pending-steer-abort")?.status).toBe("cancelled");
+    expect(runtime.handle?.steers).toEqual([]);
+    expect(runtime.handle?.aborts).toBe(1);
+  });
+
+  it("ignores pending follow-up when abort happens before prewarm resolves", async () => {
+    const runtime = new DeferredPrewarmRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-empty-pickle-pending-followup-abort-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), { sessionIdFactory: () => "pending-followup-abort" });
+    await supervisor.load();
+
+    const creating = supervisor.createEmptyPickleSession({ ...context("manual"), source: "system", transcript: undefined });
+    await waitUntil(() => supervisor.get("pending-followup-abort")?.status === "waiting_for_input");
+
+    const following = supervisor.followUp("pending-followup-abort", "do not follow");
+    await settle();
+    await supervisor.abort("pending-followup-abort");
+
+    const followed = await following;
+    runtime.resolvePendingPrewarm();
+    await creating;
+    await settle();
+
+    expect(followed.status).toBe("cancelled");
+    expect(supervisor.get("pending-followup-abort")?.status).toBe("cancelled");
+    expect(runtime.handle?.followUps).toEqual([]);
+  });
+
+  it("ignores pending user bash when abort happens before prewarm resolves", async () => {
+    const runtime = new DeferredPrewarmRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-empty-pickle-pending-bash-abort-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), { sessionIdFactory: () => "pending-bash-abort" });
+    await supervisor.load();
+
+    const creating = supervisor.createEmptyPickleSession({ ...context("manual"), source: "system", transcript: undefined });
+    await waitUntil(() => supervisor.get("pending-bash-abort")?.status === "waiting_for_input");
+
+    const bash = supervisor.followUp("pending-bash-abort", "!pwd");
+    await settle();
+    await supervisor.abort("pending-bash-abort");
+
+    const result = await bash;
+    runtime.resolvePendingPrewarm();
+    await creating;
+    await settle();
+
+    expect(result.status).toBe("cancelled");
+    expect(supervisor.get("pending-bash-abort")?.status).toBe("cancelled");
+    expect(runtime.handle?.userBashExecutions).toEqual([]);
+  });
+
+  it("settles pending input with failed state when prewarm rejects", async () => {
+    const runtime = new DeferredPrewarmRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-empty-pickle-pending-prewarm-reject-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), { sessionIdFactory: () => "pending-prewarm-reject" });
+    await supervisor.load();
+
+    const creating = supervisor.createEmptyPickleSession({ ...context("manual"), source: "system", transcript: undefined });
+    await waitUntil(() => supervisor.get("pending-prewarm-reject")?.status === "waiting_for_input");
+    const steering = supervisor.steerPickleSession("pending-prewarm-reject", "will fail");
+    await settle();
+
+    runtime.rejectPendingPrewarm(new Error("prewarm exploded"));
+
+    await expect(creating).rejects.toThrow(/prewarm exploded/);
+    const steered = await steering;
+    expect(steered.status).toBe("failed");
+    expect(steered.lastSummary).toBe("Failed to start runtime: prewarm exploded");
+    expect(supervisor.get("pending-prewarm-reject")?.logs).toContain("Failed to start runtime: prewarm exploded");
+  });
+
+  it("applies pending create completion patch before pending steering patch", async () => {
+    const runtime = new DeferredCreateRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pending-create-steer-order-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), { sessionIdFactory: () => "pending-create-steer-order" });
+    await supervisor.load();
+    const summaries: string[] = [];
+    supervisor.on("session", (session: PickyAgentSession) => {
+      if (session.id === "pending-create-steer-order" && session.lastSummary) summaries.push(session.lastSummary);
+    });
+
+    const creating = supervisor.create(context("slow create for steer"));
+    await waitUntil(() => supervisor.get("pending-create-steer-order")?.status === "queued");
+    const steering = supervisor.steer("pending-create-steer-order", "adjust while starting");
+    await settle();
+    expect(runtime.handles[0]?.steers).toEqual([]);
+
+    runtime.resolveAll();
+    await Promise.all([creating, steering]);
+    await settle();
+
+    expect(runtime.handles[0]?.steers).toEqual(["adjust while starting"]);
+    expect(summaries.indexOf("Started")).toBeGreaterThanOrEqual(0);
+    expect(summaries.indexOf("Steering message sent")).toBeGreaterThan(summaries.indexOf("Started"));
+    expect(supervisor.get("pending-create-steer-order")?.lastSummary).toBe("Steering message sent");
+  });
+
+  it("preserves consecutive pending inputs after prewarm resolves", async () => {
+    const runtime = new DeferredPrewarmRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-empty-pickle-pending-consecutive-inputs-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir), { sessionIdFactory: () => "pending-consecutive-inputs" });
+    await supervisor.load();
+
+    const creating = supervisor.createEmptyPickleSession({ ...context("manual"), source: "system", transcript: undefined });
+    await waitUntil(() => supervisor.get("pending-consecutive-inputs")?.status === "waiting_for_input");
+
+    const first = supervisor.steerPickleSession("pending-consecutive-inputs", "first");
+    const second = supervisor.followUp("pending-consecutive-inputs", "second");
+    await settle();
+    runtime.resolvePendingPrewarm();
+    await Promise.all([creating, first, second]);
+    await settle();
+
+    expect(runtime.handle?.steers).toEqual(["first"]);
+    expect(runtime.handle?.followUps.map((prompt) => prompt.text)).toEqual(["second"]);
+    expect(userTexts(supervisor.get("pending-consecutive-inputs"))).toEqual(["first", "second"]);
+  });
+
   it("queues active Pickle-session steering without interrupting current work", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pickle-steer-queue-"));
@@ -1088,7 +1226,8 @@ describe("SessionSupervisor", () => {
     runtime.handle?.emit({ type: "assistant_delta", delta: "기존 답변" });
     runtime.handle?.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running", preview: "old tool" });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
+    await waitUntil(() => (supervisor.get(pickle.id)?.messages?.length ?? 0) > 0);
+    await waitUntil(() => (supervisor.get(pickle.id)?.tools.length ?? 0) > 0);
     expect(supervisor.get(pickle.id)?.messages?.length).toBeGreaterThan(0);
     expect(supervisor.get(pickle.id)?.tools.length).toBeGreaterThan(0);
 
@@ -3790,7 +3929,7 @@ describe("SessionSupervisor", () => {
 
     // Pi dequeues "queued two" → second user_text recorded.
     runtime.handle?.emit({ type: "queue_update", steering: [], followUp: [] });
-    await settle();
+    await waitUntil(() => userTexts(supervisor.get(session.id)).length === 2);
     expect(userTexts(supervisor.get(session.id))).toEqual(["queued one", "queued two"]);
     expect(supervisor.get(session.id)?.queuedFollowUps).toEqual([]);
   });
@@ -4838,19 +4977,28 @@ class DeferredPrewarmRuntime implements AgentRuntime {
   createCalls = 0;
   prewarmCalls = 0;
   private resolvePrewarm?: () => void;
+  private rejectPrewarm?: (error: unknown) => void;
 
   prewarm = async (options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> => {
     this.prewarmCalls += 1;
     const handle = new ManualHandle(options.sessionId ?? "manual");
     this.handle = handle;
-    return new Promise<RuntimeSessionHandle>((resolve) => {
+    return new Promise<RuntimeSessionHandle>((resolve, reject) => {
       this.resolvePrewarm = () => resolve(handle);
+      this.rejectPrewarm = reject;
     });
   };
 
   resolvePendingPrewarm(): void {
     this.resolvePrewarm?.();
     this.resolvePrewarm = undefined;
+    this.rejectPrewarm = undefined;
+  }
+
+  rejectPendingPrewarm(error: unknown): void {
+    this.rejectPrewarm?.(error);
+    this.resolvePrewarm = undefined;
+    this.rejectPrewarm = undefined;
   }
 
   async create(_prompt: BuiltPrompt, options: { sessionId?: string }): Promise<RuntimeSessionHandle> {

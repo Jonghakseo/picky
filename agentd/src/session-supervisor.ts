@@ -123,6 +123,7 @@ export class SessionSupervisor extends EventEmitter {
   private pendingPickleCompletions: string[] = [];
   private sessionContexts = new Map<string, PickyContextPacket>();
   private pendingRuntimeHandles = new Map<string, Promise<RuntimeSessionHandle>>();
+  private pendingRuntimeAbortControllers = new Map<string, AbortController>();
   private sessionSeq = new Map<string, number>();
   private queueUpdateChains = new Map<string, Promise<void>>();
   private activityUpdateChains = new Map<string, Promise<void>>();
@@ -316,8 +317,9 @@ export class SessionSupervisor extends EventEmitter {
   private async pendingRuntimeHandle(sessionId: string, action = "pending runtime"): Promise<RuntimeSessionHandle | undefined> {
     const pending = this.pendingRuntimeHandles.get(sessionId);
     if (!pending) return undefined;
+    const signal = this.pendingRuntimeAbortControllers.get(sessionId)?.signal;
     try {
-      return await pending;
+      return await awaitPendingRuntimeHandle(pending, signal);
     } catch (error) {
       logAgentd(`${action} pending runtime failed`, { sessionId, error: error instanceof Error ? error.message : String(error) });
       return undefined;
@@ -325,9 +327,20 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async runtimeHandleForUserInput(session: PickyAgentSession, action: string): Promise<RuntimeSessionHandle | undefined> {
-    return this.runtimeHandles.get(session.id)
-      ?? await this.pendingRuntimeHandle(session.id, action)
-      ?? await this.tryResumeRuntimeHandle(session);
+    const attached = this.runtimeHandles.get(session.id);
+    if (attached) return attached;
+    const hadPending = this.pendingRuntimeHandles.has(session.id);
+    const pending = await this.pendingRuntimeHandle(session.id, action);
+    if (pending) return pending;
+    if (hadPending && ["cancelled", "failed"].includes(this.mustGet(session.id).status)) return undefined;
+    return await this.tryResumeRuntimeHandle(session);
+  }
+
+  private async assertNotTerminalForUserInput(sessionId: string, action: string): Promise<PickyAgentSession | undefined> {
+    const current = this.mustGet(sessionId);
+    if (!["cancelled", "failed"].includes(current.status)) return undefined;
+    await this.appendLog(sessionId, `${action} ignored: session is ${current.status}`);
+    return current;
   }
 
   private async slashCommandFallbackHandle(session: PickyAgentSession): Promise<RuntimeSessionHandle | undefined> {
@@ -624,11 +637,11 @@ export class SessionSupervisor extends EventEmitter {
     this.sessionContexts.set(id, pickleContext);
     const pendingHandle = createPendingRuntimeHandle();
     this.pendingRuntimeHandles.set(id, pendingHandle.promise);
+    this.pendingRuntimeAbortControllers.set(id, new AbortController());
     try {
       await this.upsert(session);
       logAgentd("empty pickle session queued", { sessionId: id, cwd: pickleContext.cwd, contextId: context.id });
       const handle = await this.runtime.prewarm({ cwd: pickleContext.cwd, sessionId: id });
-      pendingHandle.resolve(handle);
       if (this.mustGet(id).status === "cancelled") {
         await handle.abort();
         logAgentd("empty pickle prewarm resolved after session was cancelled", { sessionId: id });
@@ -637,20 +650,25 @@ export class SessionSupervisor extends EventEmitter {
       await this.attachRuntimeHandle(id, handle);
       await this.appendLog(id, "manual pickle: waiting for first instruction");
       if (pickleContext.cwd) await this.appendLog(id, `manual pickle cwd: ${pickleContext.cwd}`);
+      pendingHandle.resolve(handle);
       return this.mustGet(id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logAgentd("empty pickle session prewarm failed", { sessionId: id, error: message });
-      pendingHandle.reject(error);
-      if (this.mustGet(id).status === "cancelled") return this.mustGet(id);
+      if (this.mustGet(id).status === "cancelled") {
+        pendingHandle.reject(error);
+        return this.mustGet(id);
+      }
       await this.patch(id, {
         status: "failed",
         lastSummary: `Failed to start runtime: ${message}`,
         logs: [...this.mustGet(id).logs, `Failed to start runtime: ${message}`],
       });
+      pendingHandle.reject(error);
       throw error;
     } finally {
       if (this.pendingRuntimeHandles.get(id) === pendingHandle.promise) this.pendingRuntimeHandles.delete(id);
+      this.pendingRuntimeAbortControllers.delete(id);
     }
   }
 
@@ -703,6 +721,7 @@ export class SessionSupervisor extends EventEmitter {
     this.pickleSessionIds.add(id);
     const pendingHandle = createPendingRuntimeHandle();
     this.pendingRuntimeHandles.set(id, pendingHandle.promise);
+    this.pendingRuntimeAbortControllers.set(id, new AbortController());
     try {
       await this.upsert(session);
       // hydrate AFTER upsert so the in-memory journal exists before the resumed runtime emits
@@ -718,8 +737,8 @@ export class SessionSupervisor extends EventEmitter {
         cwd,
       });
       const handle = await this.runtime.resume(newFilePath, { cwd, sessionId: id });
-      pendingHandle.resolve(handle);
       await this.attachRuntimeHandle(id, handle);
+      pendingHandle.resolve(handle);
       logAgentd("pickle session duplicate ready", { sourceSessionId, newSessionId: id });
       // Pull the freshly-resumed Pi session_info name (when present) so the (copy) prefix is
       // applied on top of Pi's own name rather than a stale Picky default.
@@ -737,6 +756,7 @@ export class SessionSupervisor extends EventEmitter {
       throw error;
     } finally {
       if (this.pendingRuntimeHandles.get(id) === pendingHandle.promise) this.pendingRuntimeHandles.delete(id);
+      this.pendingRuntimeAbortControllers.delete(id);
     }
   }
 
@@ -806,12 +826,12 @@ export class SessionSupervisor extends EventEmitter {
     this.sessionContexts.set(id, context);
     const pendingHandle = createPendingRuntimeHandle();
     this.pendingRuntimeHandles.set(id, pendingHandle.promise);
+    this.pendingRuntimeAbortControllers.set(id, new AbortController());
     try {
       await this.upsert(session);
       logAgentd("session queued", { sessionId: id, titleChars: title.length, cwd: context.cwd });
       this.runtimeEventHandler.resetAssistantDraft(id);
       const handle = await this.runtime.create(prompt, { cwd: context.cwd, sessionId: id });
-      pendingHandle.resolve(handle);
       if (this.mustGet(id).status === "cancelled") {
         await handle.abort();
         logAgentd("runtime create resolved after session was cancelled", { sessionId: id });
@@ -820,20 +840,25 @@ export class SessionSupervisor extends EventEmitter {
       await this.attachRuntimeHandle(id, handle);
       logAgentd("runtime attached", { sessionId: id });
       await this.patch(id, { status: "running", lastSummary: "Started", thinkingPreview: undefined });
+      pendingHandle.resolve(handle);
       return this.mustGet(id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logAgentd("runtime start failed", { sessionId: id, error: message });
-      pendingHandle.reject(error);
-      if (this.mustGet(id).status === "cancelled") return this.mustGet(id);
+      if (this.mustGet(id).status === "cancelled") {
+        pendingHandle.reject(error);
+        return this.mustGet(id);
+      }
       await this.patch(id, {
         status: "failed",
         lastSummary: `Failed to start runtime: ${message}`,
         logs: [...this.mustGet(id).logs, `Failed to start runtime: ${message}`],
       });
+      pendingHandle.reject(error);
       throw error;
     } finally {
       if (this.pendingRuntimeHandles.get(id) === pendingHandle.promise) this.pendingRuntimeHandles.delete(id);
+      this.pendingRuntimeAbortControllers.delete(id);
     }
   }
 
@@ -1553,9 +1578,12 @@ export class SessionSupervisor extends EventEmitter {
     const userBash = parseUserBashInput(text);
     if (userBash) return this.executeUserBash(sessionId, userBash, context);
     await this.preparePickleSessionForUserInput(sessionId);
+    const awaitedPendingHandle = this.pendingRuntimeHandles.has(sessionId);
     const handle = await this.runtimeHandleForUserInput(session, "follow-up");
-    const currentAfterReattach = this.mustGet(sessionId);
-    if (["failed", "cancelled"].includes(currentAfterReattach.status)) return currentAfterReattach;
+    const terminalAfterHandle = awaitedPendingHandle ? await this.assertNotTerminalForUserInput(sessionId, "follow-up") : undefined;
+    if (terminalAfterHandle) return terminalAfterHandle;
+    const terminalAfterMissingHandle = !handle ? await this.assertNotTerminalForUserInput(sessionId, "follow-up") : undefined;
+    if (terminalAfterMissingHandle) return terminalAfterMissingHandle;
     if (!handle) {
       const hasPiSessionFile = Boolean(piSessionFilePathForSession(session));
       const reason = this.runtime.resume
@@ -1628,7 +1656,12 @@ export class SessionSupervisor extends EventEmitter {
   private async executeUserBash(sessionId: string, input: UserBashInput, context?: PickyContextPacket): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
     await this.preparePickleSessionForUserInput(sessionId);
+    const awaitedPendingHandle = this.pendingRuntimeHandles.has(sessionId);
     const handle = await this.runtimeHandleForUserInput(session, "user bash");
+    const terminalAfterHandle = awaitedPendingHandle ? await this.assertNotTerminalForUserInput(sessionId, "bash") : undefined;
+    if (terminalAfterHandle) return terminalAfterHandle;
+    const terminalAfterMissingHandle = !handle ? await this.assertNotTerminalForUserInput(sessionId, "bash") : undefined;
+    if (terminalAfterMissingHandle) return terminalAfterMissingHandle;
     if (!handle?.executeUserBash) {
       const reason = handle ? "Runtime does not support direct bash execution" : "Runtime session is not attached";
       await this.appendLog(sessionId, `bash rejected: ${reason}`);
@@ -2059,7 +2092,12 @@ export class SessionSupervisor extends EventEmitter {
 
     const session = this.mustGet(sessionId);
     await this.preparePickleSessionForUserInput(sessionId);
+    const awaitedPendingHandle = this.pendingRuntimeHandles.has(sessionId);
     const handle = await this.runtimeHandleForUserInput(session, "steer");
+    const terminalAfterHandle = awaitedPendingHandle ? await this.assertNotTerminalForUserInput(sessionId, "steer") : undefined;
+    if (terminalAfterHandle) return terminalAfterHandle;
+    const terminalAfterMissingHandle = !handle ? await this.assertNotTerminalForUserInput(sessionId, "steer") : undefined;
+    if (terminalAfterMissingHandle) return terminalAfterMissingHandle;
     if (!handle) {
       const reason = "Runtime session is not attached";
       await this.appendLog(sessionId, `steer rejected: ${reason}`);
@@ -2139,6 +2177,7 @@ export class SessionSupervisor extends EventEmitter {
     const current = this.mustGet(sessionId);
     if (current.pendingExtensionUiRequest) await this.messageBuilder.cancelExtensionQuestion(sessionId, current.pendingExtensionUiRequest.id);
     await this.patch(sessionId, { status: "cancelled", lastSummary: "Cancelled", tools: settleActiveTools(current.tools, "Tool stopped because the session was cancelled."), pendingExtensionUiRequest: undefined, thinkingPreview: undefined });
+    this.pendingRuntimeAbortControllers.get(sessionId)?.abort(new Error("Session cancelled while runtime was starting"));
     await this.materializeTerminalArtifacts(sessionId);
     return this.mustGet(sessionId);
   }
@@ -2605,6 +2644,20 @@ function zeroActivitySummary(): PickyActivitySummary {
 
 function activityTotal(summary: PickyActivitySummary): number {
   return summary.read + summary.bash + summary.edit + summary.write + summary.thinking + summary.other;
+}
+
+function awaitPendingRuntimeHandle(pending: Promise<RuntimeSessionHandle>, signal?: AbortSignal): Promise<RuntimeSessionHandle> {
+  if (!signal) return pending;
+  if (signal.aborted) return Promise.reject(abortSignalReason(signal));
+  return new Promise<RuntimeSessionHandle>((resolve, reject) => {
+    const onAbort = () => reject(abortSignalReason(signal));
+    signal.addEventListener("abort", onAbort, { once: true });
+    pending.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
+function abortSignalReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new Error("Pending runtime handle wait aborted");
 }
 
 function createPendingRuntimeHandle(): { promise: Promise<RuntimeSessionHandle>; resolve: (handle: RuntimeSessionHandle) => void; reject: (error: unknown) => void } {

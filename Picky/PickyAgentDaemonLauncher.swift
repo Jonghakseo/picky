@@ -466,11 +466,11 @@ extension PickyProcessRunning {
 
 protocol PickyExecutableChecking {
     func executableExists(named name: String, environment: [String: String]) -> Bool
-    func executableVersion(named name: String, environment: [String: String]) -> String?
+    func executableVersion(named name: String, environment: [String: String], workingDirectory: URL) -> String?
 }
 
 extension PickyExecutableChecking {
-    func executableVersion(named name: String, environment: [String: String]) -> String? { nil }
+    func executableVersion(named name: String, environment: [String: String], workingDirectory: URL) -> String? { nil }
 }
 
 struct PATHPickyExecutableChecker: PickyExecutableChecking {
@@ -486,11 +486,12 @@ struct PATHPickyExecutableChecker: PickyExecutableChecking {
         }
     }
 
-    func executableVersion(named name: String, environment: [String: String]) -> String? {
+    func executableVersion(named name: String, environment: [String: String], workingDirectory: URL) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = [name, "--version"]
         process.environment = environment
+        process.currentDirectoryURL = workingDirectory
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -679,7 +680,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         guard executableChecker.executableExists(named: "node", environment: configuration.environment) else {
             throw PickyDaemonLaunchPreflightError.missingRequiredExecutable("node")
         }
-        guard let installed = executableChecker.executableVersion(named: "node", environment: configuration.environment),
+        guard let installed = executableChecker.executableVersion(named: "node", environment: configuration.environment, workingDirectory: configuration.workingDirectory),
               !installed.isEmpty else {
             throw PickyDaemonLaunchPreflightError.unsupportedNodeVersion(
                 installed: "unknown",

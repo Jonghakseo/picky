@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { SessionStore } from "./session-store.js";
+import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, SessionStore } from "./session-store.js";
 import type { PickyAgentSession } from "./protocol.js";
 
 function tmpRoot(): string {
@@ -95,14 +95,20 @@ describe("SessionStore (legacy / primary layout)", () => {
     expect(all.map((session) => session.id)).toEqual(["pickle-completed"]);
   });
 
-  it("does not load non-terminal sessions from scoped child directories", async () => {
+  it("loads non-archived non-terminal sessions from scoped child directories as blocked recovery candidates", async () => {
     const root = tmpRoot();
     const scoped = new SessionStore(root, { scopeSessionId: "pickle-running" });
-    await scoped.save(makeSession({ id: "pickle-running", status: "running" }));
+    await scoped.save(makeSession({ id: "pickle-running", status: "running", logs: ["pi session: /tmp/pi-session.jsonl"] }));
 
     const all = await new SessionStore(root).loadAll();
 
-    expect(all).toEqual([]);
+    expect(all).toHaveLength(1);
+    expect(all[0]).toMatchObject({
+      id: "pickle-running",
+      status: "blocked",
+      lastSummary: ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY,
+      logs: ["pi session: /tmp/pi-session.jsonl", ORPHANED_CHILD_SESSION_RECOVERY_LOG],
+    });
   });
 
   it("deduplicates flat and scoped child sessions by updatedAt", async () => {

@@ -2510,6 +2510,51 @@ describe("SessionSupervisor", () => {
     expect(restored?.logs.some((line) => line.includes("Runtime not attached after daemon restart"))).toBe(false);
   });
 
+  it("recovers orphaned scoped child non-terminal sessions as blocked without startup resume", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const scopedStore = new SessionStore(dir, { scopeSessionId: "orphan-child" });
+    await scopedStore.save({
+      id: "orphan-child",
+      title: "Orphan Child Pickle",
+      status: "running",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "Still working in child before restart",
+      logs: ["Picky handoff: investigate", "pi session: /tmp/orphan-child.jsonl"],
+      tools: [{ toolCallId: "tool-1", name: "bash", status: "running", startedAt: "2026-05-01T00:00:05.000Z" }],
+      artifacts: [],
+      changedFiles: [],
+      queuedSteers: [{ text: "stale steer", enqueuedAt: "2026-05-01T00:00:06.000Z" }],
+      queuedFollowUps: [{ text: "stale follow-up", enqueuedAt: "2026-05-01T00:00:07.000Z" }],
+      activitySummary: { read: 0, bash: 1, edit: 0, write: 0, thinking: 1, other: 0 },
+      thinkingPreview: "checking setup progress",
+    });
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+
+    await supervisor.load();
+
+    const restored = supervisor.get("orphan-child");
+    expect(runtime.resumeCalls).toEqual([]);
+    expect(restored?.status).toBe("blocked");
+    expect(restored?.lastSummary).toBe("Child Pickle daemon is not attached after Picky restart; send a follow-up or steer message to continue.");
+    expect(restored?.thinkingPreview).toBeUndefined();
+    expect(restored?.tools[0]).toMatchObject({ status: "failed", preview: "Tool was interrupted by a Picky daemon restart." });
+    expect(restored?.queuedSteers).toEqual([]);
+    expect(restored?.queuedFollowUps).toEqual([]);
+    expect(restored?.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 });
+
+    const flat = JSON.parse(await readFile(join(dir, "sessions", "orphan-child.json"), "utf8"));
+    expect(flat.status).toBe("blocked");
+
+    const followedUp = await supervisor.followUp("orphan-child", "continue after recovery");
+
+    expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/orphan-child.jsonl", cwd: "/tmp/project", sessionId: "orphan-child" }]);
+    expect(runtime.handle?.followUps[0].text).toContain("continue after recovery");
+    expect(followedUp.status).toBe("running");
+  });
+
   it("reattaches blocked sessions from Pi session files during startup", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const store = new SessionStore(dir);

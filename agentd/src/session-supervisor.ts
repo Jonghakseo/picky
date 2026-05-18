@@ -11,7 +11,7 @@ import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPai
 import type { EventEnvelope, ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
-import { SessionStore } from "./session-store.js";
+import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
 import type { AgentRuntime, RuntimeBashExecutionResult, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
@@ -200,6 +200,21 @@ export class SessionSupervisor extends EventEmitter {
       this.messageBuilder.hydrateSession(session.id, session.messages);
       if (session.piSessionFilePath !== persistedSession.piSessionFilePath || session.notifyMainOnCompletion !== persistedSession.notifyMainOnCompletion) await this.store.save(session);
       if (this.pickleSessionIds.has(session.id)) void this.refreshPickleSessionTitleFromPi(session.id);
+
+      if (isOrphanedChildSessionRecovery(session)) {
+        const interrupted = await this.interruptedRuntimeLiveStatePatch(session.id);
+        const current = this.mustGet(session.id);
+        const restored = {
+          ...current,
+          ...interrupted.patch,
+          status: "blocked" as const,
+          lastSummary: ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY,
+          updatedAt: new Date().toISOString(),
+        };
+        this.sessions.set(restored.id, restored);
+        await this.store.save(restored);
+        continue;
+      }
 
       if (!isTerminalStatus(session.status)) {
         if (session.archived === true) {
@@ -2691,7 +2706,11 @@ function piSessionFilePathForSession(session: PickyAgentSession): string | undef
 }
 
 function shouldReattachBlockedSessionOnStartup(session: PickyAgentSession): boolean {
-  return session.status === "blocked" && session.archived !== true && Boolean(piSessionFilePathForSession(session));
+  return session.status === "blocked" && session.archived !== true && !isOrphanedChildSessionRecovery(session) && Boolean(piSessionFilePathForSession(session));
+}
+
+function isOrphanedChildSessionRecovery(session: PickyAgentSession): boolean {
+  return session.logs.includes(ORPHANED_CHILD_SESSION_RECOVERY_LOG);
 }
 
 function withPiSessionFileFromLogs(session: PickyAgentSession): PickyAgentSession {

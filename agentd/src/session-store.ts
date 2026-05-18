@@ -5,6 +5,9 @@ import { join } from "node:path";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { PickyAgentSessionSchema, PickyMainAgentStateSchema, type PickyAgentSession, type PickyMainAgentState } from "./protocol.js";
 
+export const ORPHANED_CHILD_SESSION_RECOVERY_LOG = "orphaned child Pickle session recovered from scoped metadata";
+export const ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY = "Child Pickle daemon is not attached after Picky restart; send a follow-up or steer message to continue.";
+
 interface SessionStoreOptions {
   // When set, the store reads/writes session JSON under `sessions/<scopeSessionId>/` instead
   // of the shared `sessions/` directory. Phase 1 of the per-Pickle agentd plan uses this to
@@ -95,14 +98,14 @@ export class SessionStore {
         .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
         .map(async (entry) => this.loadOne(join(this.sessionsDir, entry.name))),
     );
-    const nestedTerminalSessions = this.scopeSessionId
+    const nestedSessions = this.scopeSessionId
       ? []
       : await Promise.all(
           entries
             .filter((entry) => entry.isDirectory())
-            .map(async (entry) => this.loadNestedTerminalSession(entry.name)),
+            .map(async (entry) => this.loadNestedSession(entry.name)),
         );
-    return dedupeLatestSessions([...flatSessions, ...nestedTerminalSessions])
+    return dedupeLatestSessions([...flatSessions, ...nestedSessions])
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
@@ -120,13 +123,18 @@ export class SessionStore {
     }
   }
 
-  private async loadNestedTerminalSession(directoryName: string): Promise<PickyAgentSession | undefined> {
+  private async loadNestedSession(directoryName: string): Promise<PickyAgentSession | undefined> {
     const filePath = join(this.sessionsDir, directoryName, `${directoryName}.json`);
     const session = await this.loadOne(filePath, { persistMigration: false });
     if (!session) return undefined;
     if (safeName(session.id) !== directoryName) return undefined;
-    if (!isTerminalStatus(session.status)) return undefined;
-    return session;
+    if (isTerminalStatus(session.status) || session.archived === true) return session;
+    return {
+      ...session,
+      status: "blocked",
+      lastSummary: ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY,
+      logs: appendUniqueLog(session.logs, ORPHANED_CHILD_SESSION_RECOVERY_LOG),
+    };
   }
 }
 
@@ -138,6 +146,10 @@ function dedupeLatestSessions(sessions: Array<PickyAgentSession | undefined>): P
     if (!previous || session.updatedAt.localeCompare(previous.updatedAt) > 0) byId.set(session.id, session);
   }
   return [...byId.values()];
+}
+
+function appendUniqueLog(logs: string[], line: string): string[] {
+  return logs.includes(line) ? logs : [...logs, line];
 }
 
 function migrateLegacySession(value: unknown): { value: unknown; changed: boolean } {

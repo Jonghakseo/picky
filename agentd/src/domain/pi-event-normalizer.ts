@@ -6,6 +6,18 @@ interface PiEventNormalizationContext {
   hasQueuedSteering?: boolean;
   hasQueuedFollowUp?: boolean;
   hasPendingExtensionUiRequest?: boolean;
+  // Host's (supervisor's) view of whether a pending extension UI request is
+  // currently surfaced to the user. When the runtime adapter's internal
+  // `pendingExtensionUiRequestIds` is non-empty but the host has nothing
+  // pending (e.g. Pi resume after daemon restart silently revives an
+  // unanswered request through `session.bindExtensions`, but the matching
+  // `extension_ui` emit happened before the supervisor subscribed), the turn
+  // should complete normally instead of parking on a "ghost" waiting_for_input
+  // status with no question bubble for the user to answer.
+  //
+  // Leave undefined when the caller has no host view (tests, mock runtime) to
+  // preserve the prior runtime-only behaviour.
+  hostHasPendingExtensionUiRequest?: boolean;
   currentModel?: string;
   currentThinkingLevel?: ThinkingLevel;
 }
@@ -162,7 +174,11 @@ export function runtimeEventFromPiEvent(event: unknown, context?: PiEventNormali
 }
 
 function completionStatusFromContext(context: PiEventNormalizationContext): NormalizedPiEvent {
-  if (context.hasPendingExtensionUiRequest) return { kind: "status", status: "waiting_for_input", summary: "Waiting for input" };
+  // Require both signals to agree: a runtime-side pending request without a
+  // matching host-side pending request is a ghost (see field docs above) and
+  // must not flip the turn into waiting_for_input.
+  const hasPending = Boolean(context.hasPendingExtensionUiRequest) && context.hostHasPendingExtensionUiRequest !== false;
+  if (hasPending) return { kind: "status", status: "waiting_for_input", summary: "Waiting for input" };
   if (context.hasQueuedSteering || context.hasQueuedFollowUp) return { kind: "status", status: "running", summary: "Queued input pending" };
   return { kind: "status", status: "completed", summary: "Completed" };
 }

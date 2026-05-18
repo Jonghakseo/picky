@@ -2161,6 +2161,13 @@ export class SessionSupervisor extends EventEmitter {
   private async attachRuntimeHandle(sessionId: string, handle: RuntimeSessionHandle): Promise<void> {
     this.runtimeHandles.set(sessionId, handle);
     handle.subscribe((event) => void this.applyRuntimeEvent(sessionId, event));
+    // Teach the runtime adapter what the host currently surfaces, so it can
+    // skip a runtime-only "pending extension UI" signal that the supervisor
+    // never accepted (e.g. Pi resume revived a stale request before the
+    // supervisor subscribed). Without this, an unanswered askUserQuestion that
+    // survives an agentd restart parks the next turn on waiting_for_input with
+    // no question bubble for the user to answer.
+    handle.setHostPendingExtensionUiPresent?.(() => Boolean(this.sessions.get(sessionId)?.pendingExtensionUiRequest));
     const currentAssistantRun = handle.getAssistantRunMetadata?.();
     if (currentAssistantRun) await this.patch(sessionId, { currentAssistantRun });
     await this.applyQueueUpdate(sessionId, handle.getSteeringMessages(), handle.getFollowUpMessages());

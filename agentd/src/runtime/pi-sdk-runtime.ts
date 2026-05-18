@@ -180,6 +180,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private queuedSteeringCount = 0;
   private queuedFollowUpCount = 0;
   private pendingExtensionUiRequestIds = new Set<string>();
+  private hostPendingExtensionUiPresent?: () => boolean;
   private pendingTerminalError?: Extract<RuntimeEvent, { type: "status" }>;
   private pendingTerminalErrorTimer?: ReturnType<typeof setTimeout>;
   private initialPromptTimer?: ReturnType<typeof setTimeout>;
@@ -344,6 +345,10 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
     this.configuredThinkingLevel = level;
     logAgentd("pi thinking level set", { sessionId: this.id, level });
+  }
+
+  setHostPendingExtensionUiPresent(present: () => boolean): void {
+    this.hostPendingExtensionUiPresent = present;
   }
 
   getAssistantRunMetadata(): RuntimeAssistantRunMetadata | undefined {
@@ -705,6 +710,11 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       hasQueuedSteering: this.queuedSteeringCount > 0,
       hasQueuedFollowUp: this.queuedFollowUpCount > 0,
       hasPendingExtensionUiRequest: this.pendingExtensionUiRequestIds.size > 0,
+      // Let the supervisor veto a runtime-only "pending" signal so an
+      // unanswered request that Pi revives during resume (before the host had
+      // a chance to subscribe to extension_ui events) does not park the
+      // session on a ghost waiting_for_input with no question bubble.
+      hostHasPendingExtensionUiRequest: this.hostPendingExtensionUiPresent?.() ?? true,
       currentModel: currentModelId(this.runtime.session),
       currentThinkingLevel: currentThinkingLevel(this.runtime.session) ?? this.configuredThinkingLevel,
     });

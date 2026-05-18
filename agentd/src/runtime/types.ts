@@ -93,6 +93,16 @@ export interface RuntimeSessionHandle {
   cycleThinkingLevel?(): RuntimeAssistantRunMetadata | undefined;
   cycleModel?(direction: ModelCycleDirection): Promise<RuntimeAssistantRunMetadata | undefined>;
   listSlashCommands?(): RuntimeSlashCommand[] | Promise<RuntimeSlashCommand[]>;
+  /**
+   * Lets the host (supervisor) tell the runtime whether it currently surfaces
+   * a pending extension UI request to the user. The runtime uses the callback
+   * at end-of-turn normalization to disambiguate a legitimate waiting_for_input
+   * (runtime tracks a pending request AND host has the matching question
+   * bubble) from a ghost waiting_for_input (runtime resurrected a stale
+   * pending request via Pi resume but the host has no question to answer).
+   * No-op runtimes (mock, tests without supervisor) may leave this unset.
+   */
+  setHostPendingExtensionUiPresent?(present: () => boolean): void;
   clearQueue(): { steering: string[]; followUp: string[] };
   getSteeringMessages(): readonly string[];
   getFollowUpMessages(): readonly string[];

@@ -36,6 +36,22 @@ describe("normalizePiEvent", () => {
       message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "입력 필요" }] },
       toolResults: [],
     }, { hasPendingExtensionUiRequest: true })).toMatchObject({ kind: "status", status: "waiting_for_input" });
+
+    // Regression for ghost waiting_for_input: when the runtime adapter still
+    // tracks an extension UI request the host never accepted (e.g. Pi resume
+    // revived it before the supervisor subscribed), the host signal must
+    // override and the turn should complete normally.
+    expect(normalizePiEvent({
+      type: "turn_end",
+      message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "완료" }] },
+      toolResults: [],
+    }, { hasPendingExtensionUiRequest: true, hostHasPendingExtensionUiRequest: false })).toMatchObject({ kind: "status", status: "completed" });
+
+    expect(normalizePiEvent({
+      type: "turn_end",
+      message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "입력 필요" }] },
+      toolResults: [],
+    }, { hasPendingExtensionUiRequest: true, hostHasPendingExtensionUiRequest: true })).toMatchObject({ kind: "status", status: "waiting_for_input" });
   });
 
   it("does not mark intermediate tool turns as completed", () => {

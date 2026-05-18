@@ -54,9 +54,11 @@ struct PickySettingsPolishTests {
         #expect(PickySettings.defaultUpdateChannel(forReleaseChannel: "") == .stable)
     }
 
-    @Test func sparkleAllowedChannelsFollowUpdatePreference() {
-        #expect(PickyUpdaterController.allowedChannels(forPreference: .stable).isEmpty)
-        #expect(PickyUpdaterController.allowedChannels(forPreference: .beta) == ["beta"])
+    @Test func sparkleAllowedChannelsFollowBuildReleaseChannel() {
+        #expect(PickyUpdaterController.allowedChannels(forReleaseChannel: "stable") == ["stable"])
+        #expect(PickyUpdaterController.allowedChannels(forReleaseChannel: " Stable ") == ["stable"])
+        #expect(PickyUpdaterController.allowedChannels(forReleaseChannel: "beta") == ["beta"])
+        #expect(PickyUpdaterController.allowedChannels(forReleaseChannel: "alpha").isEmpty)
     }
 
     @Test func settingsNoLongerPersistPerPickleRuntimeAndIgnoreLegacyField() throws {

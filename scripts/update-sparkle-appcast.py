@@ -78,8 +78,7 @@ def build_item(
     channel = normalized_channel(release_channel)
     item = ET.Element("item")
     ET.SubElement(item, "title").text = f"Picky {marketing_version}"
-    if channel == "beta":
-        ET.SubElement(item, f"{SPARKLE}channel").text = "beta"
+    ET.SubElement(item, f"{SPARKLE}channel").text = channel
     ET.SubElement(item, "pubDate").text = pub_date
     ET.SubElement(item, f"{SPARKLE}version").text = build_number
     ET.SubElement(item, f"{SPARKLE}shortVersionString").text = marketing_version
@@ -97,7 +96,18 @@ def build_item(
     return item
 
 
+def ensure_explicit_stable_channels(tree: ET.ElementTree) -> None:
+    for item in appcast_channel(tree).findall("item"):
+        if item.find(f"{SPARKLE}channel") is not None:
+            continue
+        channel = ET.Element(f"{SPARKLE}channel")
+        channel.text = "stable"
+        title_index = next((index for index, child in enumerate(list(item)) if child.tag == "title"), -1)
+        item.insert(title_index + 1 if title_index >= 0 else 0, channel)
+
+
 def prepend_replacing_duplicate(tree: ET.ElementTree, new_item: ET.Element) -> None:
+    ensure_explicit_stable_channels(tree)
     channel = appcast_channel(tree)
     new_version = item_version(new_item)
     new_channel = item_channel(new_item)

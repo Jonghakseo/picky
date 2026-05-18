@@ -207,13 +207,14 @@ private struct CompanionPanelUpdateSection: View {
             }
 
             if updaterController.isAvailable {
-                Picker("status.updates.channelLabel", selection: channelBinding) {
-                    ForEach(PickyUpdateChannel.allCases) { channel in
-                        Text(channel.displayName).tag(channel)
-                    }
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(L10n.t("status.updates.channelLabel"))
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundColor(DS.Colors.textTertiary)
+                    Text(updaterController.updateChannelDisplayName)
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundColor(DS.Colors.textSecondary)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
 
                 Toggle("status.updates.autoCheck", isOn: automaticChecksBinding)
                     .toggleStyle(.switch)
@@ -241,16 +242,6 @@ private struct CompanionPanelUpdateSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-    }
-
-    private var channelBinding: Binding<PickyUpdateChannel> {
-        Binding(
-            get: { settingsViewModel.settings.updateChannel },
-            set: { newValue in
-                settingsViewModel.settings.updateChannel = newValue
-                _ = settingsViewModel.save()
-            }
-        )
     }
 
     private var automaticChecksBinding: Binding<Bool> {

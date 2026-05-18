@@ -53,7 +53,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         let settings = settingsStore.load()
         let controller = PickyUpdaterController(
             releaseChannel: AppBundleConfiguration.releaseChannel,
-            initialPreference: settings.updateChannel,
             automaticChecksEnabled: settings.updatesAutomaticChecksEnabled
         )
         controller.willRelaunchApplication = { [weak self] in
@@ -153,7 +152,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             guard let self else { return }
             let updated = self.settingsStore.load()
-            self.updaterController.updateChannelPreference(updated.updateChannel)
             self.updaterController.updateAutomaticChecksPreference(updated.updatesAutomaticChecksEnabled)
             // Re-applying the same choice is cheap and idempotent; this
             // keeps the language in sync when the settings JSON is edited

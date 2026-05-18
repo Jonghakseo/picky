@@ -116,9 +116,9 @@ enum PickyPickleAgentThinkingLevel: String, Codable, CaseIterable, Identifiable 
     }
 }
 
-/// Sparkle update channel preference. `stable` only sees default-channel
-/// (no-channel) appcast items; `beta` additionally allows items tagged
-/// `<sparkle:channel>beta</sparkle:channel>`. See docs/auto-update.md.
+/// Legacy Sparkle update channel value kept for settings-file compatibility.
+/// Runtime update eligibility is now fixed by the app bundle's release channel;
+/// see docs/auto-update.md.
 enum PickyUpdateChannel: String, Codable, CaseIterable, Identifiable {
     case stable
     case beta
@@ -586,8 +586,8 @@ struct PickySettings: Codable, Equatable {
     /// Per-display user-resized conversation card dimensions. Missing display entries
     /// use the built-in automatic card size.
     var hudCardSizes: [String: PickyHUDCardSize]
-    /// Sparkle channel the user opts in to. `stable` is the safe default; `beta`
-    /// also receives builds tagged `<sparkle:channel>beta</sparkle:channel>`.
+    /// Legacy Sparkle channel preference kept for settings-file compatibility.
+    /// Current builds derive update eligibility from `PickyBuildInfo.releaseChannel`.
     var updateChannel: PickyUpdateChannel
     /// When false, Sparkle only checks for updates when the user picks
     /// "Check for Updates…" from the menu or the Status panel.

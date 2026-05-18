@@ -28,6 +28,14 @@ final class PickyUpdaterController: NSObject, ObservableObject {
 
     private let releaseChannel: String
     private(set) var standardController: SPUStandardUpdaterController?
+
+    var updateChannelDisplayName: String {
+        switch releaseChannel {
+        case "stable": return PickyUpdateChannel.stable.displayName
+        case "beta": return PickyUpdateChannel.beta.displayName
+        default: return Self.channelLabel(forReleaseChannel: releaseChannel)
+        }
+    }
     /// Picky bundles `picky-agentd` under `Contents/Resources/agentd`. Sparkle
     /// replaces the entire .app on relaunch, which would crash the running Node
     /// child with `ENOENT: uv_cwd`. Hosts hook this closure to stop the daemon
@@ -36,11 +44,11 @@ final class PickyUpdaterController: NSObject, ObservableObject {
 
     private var cancellables: Set<AnyCancellable> = []
 
-    init(releaseChannel: String, initialPreference: PickyUpdateChannel, automaticChecksEnabled: Bool) {
-        self.releaseChannel = releaseChannel.lowercased()
+    init(releaseChannel: String, automaticChecksEnabled: Bool) {
+        self.releaseChannel = Self.normalizedReleaseChannel(releaseChannel)
         super.init()
 
-        applyChannelPreference(initialPreference)
+        applyReleaseChannel()
 
         // Alpha builds are sideloaded testers — they update by reinstalling
         // the DMG, so we never start the Sparkle updater for them.
@@ -76,26 +84,33 @@ final class PickyUpdaterController: NSObject, ObservableObject {
         controller.checkForUpdates(nil)
     }
 
-    func updateChannelPreference(_ channel: PickyUpdateChannel) {
-        applyChannelPreference(channel)
-    }
-
     func updateAutomaticChecksPreference(_ enabled: Bool) {
         standardController?.updater.automaticallyChecksForUpdates = enabled
     }
 
-    nonisolated static func allowedChannels(forPreference channel: PickyUpdateChannel) -> Set<String> {
-        switch channel {
-        case .stable: return []
-        case .beta: return ["beta"]
+    nonisolated static func allowedChannels(forReleaseChannel releaseChannel: String) -> Set<String> {
+        switch normalizedReleaseChannel(releaseChannel) {
+        case "stable": return ["stable"]
+        case "beta": return ["beta"]
+        default: return []
         }
     }
 
-    private func applyChannelPreference(_ channel: PickyUpdateChannel) {
-        let resolved = Self.allowedChannels(forPreference: channel)
+    private func applyReleaseChannel() {
+        let resolved = Self.allowedChannels(forReleaseChannel: releaseChannel)
         channelLock.lock()
         lockedAllowedChannels = resolved
         channelLock.unlock()
+    }
+
+    private nonisolated static func normalizedReleaseChannel(_ releaseChannel: String) -> String {
+        releaseChannel.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private static func channelLabel(forReleaseChannel releaseChannel: String) -> String {
+        let raw = normalizedReleaseChannel(releaseChannel)
+        guard !raw.isEmpty else { return "Unknown" }
+        return raw.prefix(1).uppercased() + raw.dropFirst()
     }
 }
 

@@ -33,7 +33,7 @@ class UpdateSparkleAppcastTests(unittest.TestCase):
     def items(self, path: Path):
         return ET.parse(path).getroot().findall("./channel/item")
 
-    def test_creates_stable_appcast_without_channel_tag(self):
+    def test_creates_stable_appcast_with_explicit_stable_channel_tag(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "appcast.xml"
 
@@ -43,7 +43,7 @@ class UpdateSparkleAppcastTests(unittest.TestCase):
             self.assertEqual(len(items), 1)
             self.assertEqual(items[0].findtext("title"), "Picky 0.7.1")
             self.assertEqual(items[0].findtext(f"{SPARKLE}version"), "992")
-            self.assertIsNone(items[0].find(f"{SPARKLE}channel"))
+            self.assertEqual(items[0].findtext(f"{SPARKLE}channel"), "stable")
             self.assertEqual(items[0].find("enclosure").attrib["url"], "https://github.com/Jonghakseo/picky/releases/download/0.7.1/Picky.zip")
 
     def test_beta_appcast_item_includes_beta_channel(self):
@@ -76,10 +76,35 @@ class UpdateSparkleAppcastTests(unittest.TestCase):
 
             items = self.items(path)
             self.assertEqual(len(items), 2)
-            channels = [item.findtext(f"{SPARKLE}channel") or "stable" for item in items]
+            channels = [item.findtext(f"{SPARKLE}channel") for item in items]
             urls = [item.find("enclosure").attrib["url"] for item in items]
             self.assertEqual(channels, ["beta", "stable"])
             self.assertEqual(urls, ["https://example.com/beta.zip", "https://example.com/stable.zip"])
+
+    def test_existing_default_channel_items_are_migrated_to_explicit_stable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "appcast.xml"
+            path.write_text(
+                f"""<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle=\"{SPARKLE_NS}\" version=\"2.0\">
+  <channel>
+    <title>Picky</title>
+    <item>
+      <title>Picky 0.7.0</title>
+      <sparkle:version>991</sparkle:version>
+    </item>
+  </channel>
+</rss>
+""",
+                encoding="utf-8",
+            )
+
+            self.update(path, release_channel="beta", build_number="992")
+
+            items = self.items(path)
+            channels = {item.findtext(f"{SPARKLE}version"): item.findtext(f"{SPARKLE}channel") for item in items}
+            self.assertEqual(channels["991"], "stable")
+            self.assertEqual(channels["992"], "beta")
 
 
 if __name__ == "__main__":

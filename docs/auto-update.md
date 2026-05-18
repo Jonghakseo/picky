@@ -12,13 +12,13 @@ single appcast that splits stable and beta into channels.
 | Signature         | EdDSA (`SUPublicEDKey` in `Info.plist`, private key in GitHub Secrets)             |
 | Update payload    | Notarized `.zip` (separate from the user-facing `.dmg`)                            |
 | Appcast hosting   | `appcast.xml` uploaded as a GitHub Release asset on a fixed tag (`auto-update`)    |
-| Channels          | Single `appcast.xml` with `<sparkle:channel>beta</sparkle:channel>` on beta items  |
-| stable on appcast | Items without `<sparkle:channel>` (default channel)                                |
+| Channels          | Single `appcast.xml` with explicit `<sparkle:channel>` tags on every item          |
+| stable on appcast | Items with `<sparkle:channel>stable</sparkle:channel>` only                        |
 | beta on appcast   | Items with `<sparkle:channel>beta</sparkle:channel>` only                          |
 | Auto check        | ON, every 4 hours (`SUEnableAutomaticChecks`, `SUScheduledCheckInterval=14400`)    |
 | UX                | Sparkle's standard user driver (prompt on update available)                        |
 | alpha builds      | `SPUUpdater` is **not** started — sideloaded testers update manually via DMG       |
-| Settings entry    | `CompanionPanelStatusView` adds an **Updates** section                             |
+| Settings entry    | `CompanionPanelStatusView` adds an **Updates** section with a read-only channel    |
 | Menu entry        | `Check for Updates…` in the app menu commands                                      |
 
 References:
@@ -29,19 +29,20 @@ References:
 
 ## How channel selection works
 
-`PickyUpdaterController` reads the user's channel preference from
-`PickySettingsStore` and reports it to Sparkle through
+`PickyUpdaterController` uses the app bundle's own `releaseChannel` from
+`PickyBuildInfo.json` and reports that fixed build channel to Sparkle through
 `SPUUpdaterDelegate.allowedChannelsForUpdater:`:
 
-| User preference | `allowedChannels`     | Items the updater considers                          |
-| --------------- | --------------------- | ---------------------------------------------------- |
-| `stable`        | `[]` (empty)          | Only items without `<sparkle:channel>`               |
-| `beta`          | `["beta"]`            | Default items + items with `<sparkle:channel>beta>`  |
+| App build channel | `allowedChannels` | Items the updater considers                                     |
+| ----------------- | ----------------- | --------------------------------------------------------------- |
+| `stable`          | `["stable"]`     | Items tagged `<sparkle:channel>stable</sparkle:channel>` only   |
+| `beta`            | `["beta"]`       | Items tagged `<sparkle:channel>beta</sparkle:channel>` only     |
 
-Sparkle always considers the default (no-channel) items, so a beta tester
-automatically falls back to a stable release when no newer beta is published.
-This matches the upstream design intent in
-[PR #1879](https://github.com/sparkle-project/Sparkle/pull/1879).
+Sparkle always considers default (no-channel) items in addition to explicitly
+allowed channels, so Picky's appcast generator writes an explicit `stable` or
+`beta` channel tag on every item and migrates older no-channel items to
+`stable` the next time it updates `appcast.xml`. This keeps stable apps on
+stable updates and beta apps on beta updates.
 
 `alpha` is **not** a Sparkle channel. Builds with `releaseChannel == "alpha"`
 in `PickyBuildInfo.json` skip starting the updater entirely.
@@ -141,10 +142,8 @@ https://github.com/Jonghakseo/picky/releases/download/auto-update/appcast.xml
    - Sends a Slack notification to the release channel with direct links to the
      GitHub Release page, DMG asset, and GitHub Actions run.
 3. When users running stable launch the app, Sparkle fetches `appcast.xml`
-   every 4 hours, finds the newest item without a channel restriction, and
-   prompts the user.
-4. Beta users do the same and get the newest item from the default or `beta`
-   channel.
+   every 4 hours, finds the newest item tagged `stable`, and prompts the user.
+4. Beta users do the same and get the newest item tagged `beta`.
 
 ## Why a separate zip enclosure (and not the DMG)?
 

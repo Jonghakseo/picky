@@ -131,6 +131,9 @@ final class RouterPoolStubRunner: PickyProcessRunning {
 
 private struct RouterAlwaysExists: PickyExecutableChecking {
     func executableExists(named name: String, environment: [String: String]) -> Bool { true }
+    func executableVersion(named name: String, environment: [String: String], workingDirectory: URL) -> String? {
+        name == "node" ? "v22.19.0" : nil
+    }
 }
 
 private func makeStubAgentdPackage(at url: URL) throws {

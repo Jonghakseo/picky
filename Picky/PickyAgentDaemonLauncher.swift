@@ -434,8 +434,6 @@ enum PickyDaemonLaunchPreflightError: LocalizedError, Equatable {
     case missingAgentdPackage(String)
     case missingAgentdEntryPoint(String)
     case missingRequiredExecutable(String)
-    case nodeVersionProbeFailed(reason: String, required: String)
-    case unsupportedNodeVersion(installed: String, required: String)
 
     var errorDescription: String? {
         switch self {
@@ -443,10 +441,6 @@ enum PickyDaemonLaunchPreflightError: LocalizedError, Equatable {
             message
         case .missingRequiredExecutable(let name):
             "\(name) not found in PATH. Install \(name) or launch Picky with a PATH that includes it."
-        case .nodeVersionProbeFailed(let reason, let required):
-            "Node.js \(required) or newer is required by Pi, but Picky could not verify the current node version (\(reason)). Update Node or launch Picky with a PATH that points to a working Node executable."
-        case .unsupportedNodeVersion(let installed, let required):
-            "Node.js \(required) or newer is required by Pi. Current node version is \(installed). Update Node or launch Picky with a PATH that points to a newer node."
         }
     }
 }
@@ -777,43 +771,16 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     private func preflightNodeVersion() throws {
         let env = configuration.environment
         let nodePath = executableChecker.executablePath(named: "node", environment: env)
-        guard executableChecker.executableExists(named: "node", environment: env) else {
+        guard nodePath != nil || executableChecker.executableExists(named: "node", environment: env) else {
             writeNodePreflightSnapshot(path: nodePath, result: .launchFailed("node not found in PATH"))
             throw PickyDaemonLaunchPreflightError.missingRequiredExecutable("node")
         }
-        let result = executableChecker.executableVersionProbe(named: "node", environment: env, workingDirectory: configuration.workingDirectory)
-        writeNodePreflightSnapshot(path: nodePath, result: result)
-        guard let installed = result.versionString else {
-            throw PickyDaemonLaunchPreflightError.nodeVersionProbeFailed(
-                reason: result.failureReason ?? "unknown probe failure",
-                required: Self.minimumSupportedNodeVersion
-            )
-        }
-        guard Self.isVersion(installed, atLeast: Self.minimumSupportedNodeVersion) else {
-            throw PickyDaemonLaunchPreflightError.unsupportedNodeVersion(
-                installed: installed,
-                required: Self.minimumSupportedNodeVersion
-            )
-        }
-    }
-
-    private static func isVersion(_ candidate: String, atLeast required: String) -> Bool {
-        let candidateParts = semanticVersionParts(candidate)
-        let requiredParts = semanticVersionParts(required)
-        for index in 0..<max(candidateParts.count, requiredParts.count) {
-            let lhs = index < candidateParts.count ? candidateParts[index] : 0
-            let rhs = index < requiredParts.count ? requiredParts[index] : 0
-            if lhs != rhs { return lhs > rhs }
-        }
-        return true
-    }
-
-    private static func semanticVersionParts(_ version: String) -> [Int] {
-        let trimmed = version.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
-        return trimmed.split(separator: ".").map { part in
-            let digits = part.prefix { $0.isNumber }
-            return Int(digits) ?? 0
-        }
+        // Do not run a separate `node --version` helper here. On macOS 26 some sandboxed
+        // UIElement app contexts can launch short-lived helper processes but fail to observe
+        // their exit before the timeout, blocking Pickle child daemon startup. The daemon now
+        // validates `process.versions.node` as its first entrypoint step, which is both cheaper
+        // and exactly matches the runtime that will execute Pi.
+        writeNodePreflightDeferredSnapshot(path: nodePath)
     }
 
     private func processTerminated(exitCode: Int32) {
@@ -954,6 +921,26 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             }(),
             outputPreview: result.outputPreview
         )
+        writeNodePreflightSnapshot(snapshot)
+    }
+
+    private func writeNodePreflightDeferredSnapshot(path: String?) {
+        let snapshot = PickyNodePreflightSnapshot(
+            checkedAt: Self.iso8601Formatter.string(from: Date()),
+            command: configuration.arguments,
+            requiredNodeVersion: Self.minimumSupportedNodeVersion,
+            nodePath: path,
+            status: "deferredToAgentd",
+            version: nil,
+            failureReason: "Node version is validated by agentd at startup via process.versions.node.",
+            exitCode: nil,
+            timeoutSeconds: nil,
+            outputPreview: nil
+        )
+        writeNodePreflightSnapshot(snapshot)
+    }
+
+    private func writeNodePreflightSnapshot(_ snapshot: PickyNodePreflightSnapshot) {
         let url = logDirectory.appendingPathComponent(Self.nodePreflightSnapshotFileName)
         do {
             try fileManager.createDirectory(at: logDirectory, withIntermediateDirectories: true)

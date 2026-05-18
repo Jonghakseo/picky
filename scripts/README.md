@@ -105,7 +105,7 @@ At app launch Picky resolves the daemon in this order:
 2. Bundled `Picky.app/Contents/Resources/agentd/dist/index.js`, run via `node`.
 3. Friendly startup failure. There is no implicit source-tree fallback.
 
-Picky preflights the discovered `node --version` and fails fast with a friendly error when it is older than Node.js 22.19.0, the minimum required by Pi 0.75+.
+Picky preflights that `node` exists, then the bundled agentd validates `process.versions.node` at startup and exits with a clear unsupported-runtime token when it is older than Node.js 22.19.0, the minimum required by Pi 0.75+.
 
 ### Runtime smoke
 

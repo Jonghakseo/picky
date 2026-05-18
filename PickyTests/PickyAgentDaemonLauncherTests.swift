@@ -495,7 +495,7 @@ struct PickyAgentDaemonLauncherTests {
         #expect(runner.launchedConfiguration == nil)
     }
 
-    @Test func oldNodeVersionFailsFriendlyWithoutRestartLoop() throws {
+    @Test func nodeVersionValidationIsDeferredToAgentdStartup() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
         try makeAgentdPackage(at: temp)
         let runner = FakeProcessRunner()
@@ -519,13 +519,11 @@ struct PickyAgentDaemonLauncherTests {
 
         launcher.start()
 
-        if case .failedToStart(let message) = launcher.state {
-            #expect(message.contains("Node.js 22.19.0 or newer is required"))
-            #expect(message.contains("v22.11.0"))
-        } else {
-            Issue.record("Expected friendly failedToStart state")
-        }
-        #expect(runner.launchedConfiguration == nil)
+        #expect(launcher.state == .running)
+        #expect(runner.launchedConfiguration != nil)
+        let snapshot = try String(contentsOf: temp.appendingPathComponent("Logs/agentd.node-preflight.json"))
+        #expect(snapshot.contains(#""status" : "deferredToAgentd""#))
+        #expect(snapshot.contains("process.versions.node"))
     }
 
     @Test func supportedNodeVersionPassesPreflight() throws {
@@ -556,7 +554,7 @@ struct PickyAgentDaemonLauncherTests {
         #expect(runner.launchedConfiguration != nil)
     }
 
-    @Test func nodeVersionProbeUsesDaemonWorkingDirectory() throws {
+    @Test func nodeVersionHelperProbeIsNotRequiredForDaemonWorkingDirectory() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
         let agentd = temp.appendingPathComponent("agentd", isDirectory: true)
         try makeAgentdPackage(at: agentd, compiled: true)
@@ -577,7 +575,7 @@ struct PickyAgentDaemonLauncherTests {
             configuration: configuration,
             runner: runner,
             logDirectory: temp.appendingPathComponent("Logs"),
-            executableChecker: FakeExecutableChecker(exists: true, version: "v22.19.0", requiredVersionWorkingDirectory: agentd)
+            executableChecker: FakeExecutableChecker(exists: true, probeResult: .timedOut(seconds: 5), requiredVersionWorkingDirectory: agentd)
         )
 
         launcher.start()
@@ -586,7 +584,7 @@ struct PickyAgentDaemonLauncherTests {
         #expect(runner.launchedConfiguration != nil)
     }
 
-    @Test func unknownNodeVersionFailsFriendlyWithoutLaunching() throws {
+    @Test func unknownNodeVersionDoesNotBlockLauncherPreflight() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
         try makeAgentdPackage(at: temp)
         let runner = FakeProcessRunner()
@@ -610,16 +608,11 @@ struct PickyAgentDaemonLauncherTests {
 
         launcher.start()
 
-        if case .failedToStart(let message) = launcher.state {
-            #expect(message.contains("Node.js 22.19.0 or newer is required"))
-            #expect(message.contains("node --version produced no output"))
-        } else {
-            Issue.record("Expected friendly failedToStart state")
-        }
-        #expect(runner.launchedConfiguration == nil)
+        #expect(launcher.state == .running)
+        #expect(runner.launchedConfiguration != nil)
     }
 
-    @Test func timedOutNodeVersionProbeFailsWithSpecificMessageAndSnapshot() throws {
+    @Test func timedOutNodeVersionHelperDoesNotBlockLauncherPreflight() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
         try makeAgentdPackage(at: temp)
         let runner = FakeProcessRunner()
@@ -643,19 +636,14 @@ struct PickyAgentDaemonLauncherTests {
 
         launcher.start()
 
-        if case .failedToStart(let message) = launcher.state {
-            #expect(message.contains("could not verify the current node version"))
-            #expect(message.contains("timed out after 5s"))
-        } else {
-            Issue.record("Expected friendly failedToStart state")
-        }
+        #expect(launcher.state == .running)
         let snapshot = try String(contentsOf: temp.appendingPathComponent("Logs/agentd.node-preflight.json"))
-        #expect(snapshot.contains(#""status" : "timedOut""#))
+        #expect(snapshot.contains(#""status" : "deferredToAgentd""#))
         #expect(snapshot.contains(#""nodePath" : "\/fake\/bin\/node""#))
-        #expect(runner.launchedConfiguration == nil)
+        #expect(runner.launchedConfiguration != nil)
     }
 
-    @Test func failedNodeVersionProbeIncludesExitCodeInMessageAndSnapshot() throws {
+    @Test func failedNodeVersionHelperDoesNotBlockLauncherPreflight() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
         try makeAgentdPackage(at: temp)
         let runner = FakeProcessRunner()
@@ -679,19 +667,14 @@ struct PickyAgentDaemonLauncherTests {
 
         launcher.start()
 
-        if case .failedToStart(let message) = launcher.state {
-            #expect(message.contains("node --version exited with code 42"))
-        } else {
-            Issue.record("Expected friendly failedToStart state")
-        }
+        #expect(launcher.state == .running)
         let snapshot = try String(contentsOf: temp.appendingPathComponent("Logs/agentd.node-preflight.json"))
-        #expect(snapshot.contains(#""status" : "failed""#))
-        #expect(snapshot.contains(#""exitCode" : 42"#))
-        #expect(snapshot.contains("shim failed"))
-        #expect(runner.launchedConfiguration == nil)
+        #expect(snapshot.contains(#""status" : "deferredToAgentd""#))
+        #expect(!snapshot.contains("shim failed"))
+        #expect(runner.launchedConfiguration != nil)
     }
 
-    @Test func sourceModeStillRequiresNodePreflight() throws {
+    @Test func sourceModeStillRequiresNodeExecutable() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
         let agentd = temp.appendingPathComponent("agentd", isDirectory: true)
         try makeAgentdPackage(at: agentd, source: true)

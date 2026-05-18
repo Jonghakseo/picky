@@ -6,20 +6,13 @@ Picky is a local-first macOS command center for Pi sessions. It captures neutral
 
 ## Non-negotiable architecture rules
 
-- Do not add deterministic workflow routing in Picky. No `if Sentry URL then Sentry flow`, `if Slack URL then Slack flow`, etc.
-- Do not duplicate Pi skills, MCP bridge, or task intelligence in Picky.
 - Keep local-first behavior. No SaaS backend, auth, billing, remote analytics, or remote STT/TTS requirement for v1.
+
 - Preserve long-running Pickle UX: multiple sessions, states, tool activity, logs, follow-up, abort, completion notification, artifacts, persistence/reconnect.
+
 - Do not restart the running Picky app unless the user explicitly asks.
+
 - Do not change Xcode defaults to always sign. Use `./scripts/package-signed-app.sh` only when a signed app bundle is needed.
-
-## Pickle response protocol
-
-- Before any other tool call in an agent run, `picky_tell_plan` must be invoked once to announce the work plan for the user prompt. Mandatory, not best-effort. One plan covers the whole agent run.
-- Speak the plan, not progress: intended approach and rough order of steps. Do not narrate what just happened.
-- One or two short sentences in the user's language (target ~40 chars, max ~100, guidance only — not enforced). Never include final answers, code, paths, or sensitive identifiers.
-- If narration is disabled the tool returns silently — do not retry.
-- Tool source: seeded Pi extension at `<workspace>/.pi/extensions/picky-tell-plan.ts` (default content in `Picky/App/PickyWorkspaceSeeder.swift`). agentd exposes the TTS bridge as `globalThis.__pickyAgentd.narrate(text)` (`PickyAgentdBridge` in `agentd/src/bootstrap.ts`).
 
 ## Current architecture
 

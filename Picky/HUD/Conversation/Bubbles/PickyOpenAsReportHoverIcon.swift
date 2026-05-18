@@ -54,6 +54,13 @@ extension View {
     }
 }
 
+private extension HoverPhase {
+    var isActive: Bool {
+        if case .active = self { return true }
+        return false
+    }
+}
+
 private struct PickyOpenAsReportHoverIconModifier: ViewModifier {
     let onOpen: (() -> Void)?
     let alignment: Alignment
@@ -72,7 +79,9 @@ private struct PickyOpenAsReportHoverIconModifier: ViewModifier {
             .overlay(alignment: alignment) {
                 if let onOpen, shouldShowIcon {
                     PickyOpenAsReportHoverIcon(action: onOpen)
-                        .onHover { hovering in isIconHovered = hovering }
+                        .onContinuousHover { phase in
+                            isIconHovered = phase.isActive
+                        }
                         .offset(iconOffset)
                         .transition(.opacity)
                 }
@@ -80,15 +89,24 @@ private struct PickyOpenAsReportHoverIconModifier: ViewModifier {
             // Bubble background is drawn via `.background(...)` which doesn't
             // contribute to SwiftUI hit-testing on its own. Without an explicit
             // contentShape the bubble's empty padding/whitespace falls into a
-            // hit-test gap, so `.onHover` only fires while the cursor is over
-            // the inline Text glyphs. That intermittently hides the
-            // open-as-report affordance on short replies (large empty area on
-            // the trailing side). Filling the modified frame with a Rectangle
-            // contentShape keeps the entire bubble hover-detectable while
-            // child views still win their own hits first (text selection,
-            // contextMenu).
+            // hit-test gap, so hover only fires while the cursor is over
+            // the inline Text glyphs. Filling the modified frame with a
+            // Rectangle contentShape keeps the entire bubble hover-detectable
+            // while child views still win their own hits first (text
+            // selection, contextMenu).
             .contentShape(Rectangle())
-            .onHover { hovering in isBubbleHovered = hovering }
+            // `onContinuousHover` instead of `onHover`: the bubble body uses
+            // `.textSelection(.enabled)` which backs the Text views with an
+            // NSTextView whose own NSTrackingArea swallows the parent's
+            // enter/exit events. `onHover` therefore only fires when the
+            // cursor lands on the small padding margin around the text, which
+            // users almost never hit. `onContinuousHover` polls the pointer
+            // position continuously and reports `.active` even while the
+            // cursor sits over selectable glyphs, so the affordance shows up
+            // as soon as the bubble is hovered.
+            .onContinuousHover { phase in
+                isBubbleHovered = phase.isActive
+            }
             .animation(.easeOut(duration: 0.12), value: shouldShowIcon)
     }
 

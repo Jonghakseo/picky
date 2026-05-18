@@ -2358,24 +2358,33 @@ final class CompanionManager: ObservableObject {
         // keeps showing until the actual final reply lands, instead of
         // flipping to `.idle` and pretending the response is complete.
         //
-        // Two signals say "agent is still going to speak":
-        //  1. `pendingAgentResponseStartedAt` — we are still awaiting the
+        // Three signals say "agent is still going to speak":
+        //  1. `pendingAgentResponseStartedAt` — voice input is still awaiting the
         //     agent's reply event (no quickReply has arrived yet).
         //  2. `deferredInteractionSpeechTask` — a quickReply has already
         //     arrived and is queued behind this narration (the interaction
         //     coordinator's `.speaking` projection clears `pending` on
         //     projection entry, even when the actual speech is deferred).
-        // Either signal means we should hold `.processing` so the yellow
-        // loading does not flicker off in the brief gap before the queued
-        // interaction speech promotes to `.responding`.
+        //  3. `interactionCoordinator.projection.isWaitingForCursorResponse` —
+        //     quick input / CLI submissions do not use `pendingAgentResponseStartedAt`,
+        //     but their canonical interaction output is still `.waitingForAgent`.
+        // Any signal means we should hold `.processing` so the yellow loading
+        // does not flicker off in the brief gap before the queued interaction
+        // speech promotes to `.responding`.
         let wasNarration = activeNarrationSpeechID == speechID
         if wasNarration {
             activeNarrationSpeechID = nil
         }
         let agentStillResponding = pendingAgentResponseStartedAt != nil
         let hasQueuedInteractionSpeech = deferredInteractionSpeechTask != nil
-        let keepProcessing = wasNarration && (agentStillResponding || hasQueuedInteractionSpeech)
-        logSpeech("system finish accepted speechID=\(speechID) didFinish=\(didFinish) providerSpeaking=\(speechPlaybackProvider.isSpeaking) wasNarration=\(wasNarration) agentStillResponding=\(agentStillResponding) hasQueuedInteractionSpeech=\(hasQueuedInteractionSpeech) keepProcessing=\(keepProcessing)")
+        let interactionStillWaitingForCursorResponse: Bool
+        if case .waitingForAgent = interactionCoordinator.projection.state.output {
+            interactionStillWaitingForCursorResponse = interactionCoordinator.projection.isWaitingForCursorResponse
+        } else {
+            interactionStillWaitingForCursorResponse = false
+        }
+        let keepProcessing = wasNarration && (agentStillResponding || hasQueuedInteractionSpeech || interactionStillWaitingForCursorResponse)
+        logSpeech("system finish accepted speechID=\(speechID) didFinish=\(didFinish) providerSpeaking=\(speechPlaybackProvider.isSpeaking) wasNarration=\(wasNarration) agentStillResponding=\(agentStillResponding) hasQueuedInteractionSpeech=\(hasQueuedInteractionSpeech) interactionStillWaitingForCursorResponse=\(interactionStillWaitingForCursorResponse) keepProcessing=\(keepProcessing)")
         let machineCompletionTime = Date().addingTimeInterval(PickyVoiceInteractionMachine.minimumDisplayDuration + 0.01)
         reduceVoiceInteraction(didFinish ? .speechFinished(speechID: speechID, now: machineCompletionTime) : .speechFailed(speechID: speechID, now: machineCompletionTime))
         activeSpeechID = nil

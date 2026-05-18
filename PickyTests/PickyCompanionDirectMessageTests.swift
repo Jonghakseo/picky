@@ -36,15 +36,28 @@ private final class FakeDirectMessageClient: PickyAgentClient {
 private final class FakeDirectMessageSpeechPlaybackProvider: PickySpeechPlaybackProvider {
     let displayName = "Fake Speech"
     private(set) var spokenUtterances: [String] = []
+    private var onFinish: ((Bool) -> Void)?
     var isSpeaking = false
 
     @discardableResult
     func speak(_ utterance: String, onFinish: @escaping (Bool) -> Void) -> Bool {
         spokenUtterances.append(utterance)
+        self.onFinish = onFinish
+        isSpeaking = true
         return true
     }
 
-    func stopSpeaking() {}
+    func stopSpeaking() {
+        onFinish = nil
+        isSpeaking = false
+    }
+
+    func finishSpeaking(didFinish: Bool = true) {
+        guard let onFinish else { return }
+        self.onFinish = nil
+        isSpeaking = false
+        onFinish(didFinish)
+    }
 }
 
 @MainActor
@@ -110,6 +123,40 @@ struct PickyCompanionDirectMessageTests {
 
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(contextId: "typed-context", text: "cursor reply")))
         try await waitUntil { speechProvider.spokenUtterances == ["cursor reply"] }
+
+        #expect(manager.latestAgentSessionSummary == "cursor reply")
+        #expect(manager.voiceState == .responding)
+    }
+
+    @Test func quickInputPlanNarrationReturnsToLoadingUntilFinalReply() async throws {
+        let client = FakeDirectMessageClient()
+        let speechProvider = FakeDirectMessageSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: client,
+            speechPlaybackProvider: speechProvider,
+            voiceContextCaptureCoordinator: fakeDirectMessageContextCaptureCoordinator()
+        )
+
+        let didSend = await manager.sendDirectMessage("  hello from cursor  ", source: .quickInput)
+
+        #expect(didSend)
+        #expect(manager.voiceState == .processing)
+
+        manager.applyAgentEvent(.narrateProgressRequested(PickyNarrateProgressRequest(
+            text: "작업 계획을 말할게요.",
+            sessionId: nil
+        )))
+
+        #expect(manager.voiceState == .responding)
+        #expect(speechProvider.spokenUtterances == ["작업 계획을 말할게요."])
+
+        speechProvider.finishSpeaking()
+
+        try await waitUntil { manager.voiceState == .processing }
+        #expect(manager.overlayVisibilityReasons.contains(.waitingForVoiceResponse))
+
+        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(contextId: "typed-context", text: "cursor reply")))
+        try await waitUntil { speechProvider.spokenUtterances == ["작업 계획을 말할게요.", "cursor reply"] }
 
         #expect(manager.latestAgentSessionSummary == "cursor reply")
         #expect(manager.voiceState == .responding)

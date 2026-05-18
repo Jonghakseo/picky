@@ -1000,7 +1000,7 @@ describe("SessionSupervisor", () => {
     await waitUntil(() => supervisor.get(session.id)?.pendingExtensionUiRequest?.id === "ui-terminal" && supervisor.get(session.id)?.messages?.some((message) => message.id === "ui-terminal") === true);
 
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed", finalAnswer: "done" });
-    await settle();
+    await waitUntil(() => supervisor.get(session.id)?.status === "completed" && supervisor.get(session.id)?.pendingExtensionUiRequest === undefined);
 
     const updated = supervisor.get(session.id)!;
     expect(updated.status).toBe("completed");

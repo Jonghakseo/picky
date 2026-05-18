@@ -31,8 +31,12 @@ private final class FakeProcessRunner: PickyProcessRunning {
 
 private struct FakeExecutableChecker: PickyExecutableChecking {
     var exists: Bool
+    var version: String? = nil
 
     func executableExists(named name: String, environment: [String: String]) -> Bool { exists }
+    func executableVersion(named name: String, environment: [String: String]) -> String? {
+        name == "node" ? version : nil
+    }
 }
 
 private final class FakeDaemonClipboardWriter: PickyClipboardWriting {
@@ -469,6 +473,67 @@ struct PickyAgentDaemonLauncherTests {
             Issue.record("Expected friendly failedToStart state")
         }
         #expect(runner.launchedConfiguration == nil)
+    }
+
+    @Test func oldNodeVersionFailsFriendlyWithoutRestartLoop() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        try makeAgentdPackage(at: temp)
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19018,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: temp,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["node", "dist/index.js"],
+            requiredExecutableName: "node"
+        )
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs"),
+            executableChecker: FakeExecutableChecker(exists: true, version: "v22.11.0")
+        )
+
+        launcher.start()
+
+        if case .failedToStart(let message) = launcher.state {
+            #expect(message.contains("Node.js 22.19.0 or newer is required"))
+            #expect(message.contains("v22.11.0"))
+        } else {
+            Issue.record("Expected friendly failedToStart state")
+        }
+        #expect(runner.launchedConfiguration == nil)
+    }
+
+    @Test func supportedNodeVersionPassesPreflight() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        try makeAgentdPackage(at: temp)
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19019,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: temp,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["node", "dist/index.js"],
+            requiredExecutableName: "node"
+        )
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs"),
+            executableChecker: FakeExecutableChecker(exists: true, version: "v22.19.0")
+        )
+
+        launcher.start()
+
+        #expect(launcher.state == .running)
+        #expect(runner.launchedConfiguration != nil)
     }
 
     @Test func stdoutLineObserverDeliversReadyLineEvenWhenChunkSplitsMidCodepoint() throws {

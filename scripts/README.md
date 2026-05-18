@@ -35,7 +35,7 @@ Builds `agentd` into a production runtime directory suitable for copying into `P
 ./scripts/package-agentd-runtime.sh
 ```
 
-The runtime launches with `node dist/index.js`. It includes production `node_modules`, but excludes the launch-time need for `pnpm`, `tsx`, TypeScript, or the `agentd/src` tree. `node` itself is intentionally **not** bundled; beta users are expected to have Node via Pi.
+The runtime launches with `node dist/index.js`. It includes production `node_modules`, but excludes the launch-time need for `pnpm`, `tsx`, TypeScript, or the `agentd/src` tree. `node` itself is intentionally **not** bundled; beta users are expected to have Node via Pi. Pi 0.75+ requires Node.js 22.19.0 or newer.
 
 Default output:
 
@@ -104,6 +104,8 @@ At app launch Picky resolves the daemon in this order:
 1. `PICKY_AGENTD_ROOT` if set. Source overrides with `src/index.ts` run via `pnpm exec tsx`; compiled overrides with `dist/index.js` run via `node`.
 2. Bundled `Picky.app/Contents/Resources/agentd/dist/index.js`, run via `node`.
 3. Friendly startup failure. There is no implicit source-tree fallback.
+
+Picky preflights the discovered `node --version` and fails fast with a friendly error when it is older than Node.js 22.19.0, the minimum required by Pi 0.75+.
 
 ### Runtime smoke
 

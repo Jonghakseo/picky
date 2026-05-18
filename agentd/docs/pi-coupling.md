@@ -140,6 +140,18 @@ When bumping pi (`agentd/package.json` `@earendil-works/pi-coding-agent`):
    for `pi capability absent` entries — each one is a soft regression
    surface to triage before merging.
 
+## Bump notes
+
+### 0.74.0 -> 0.75.1
+
+- Pi 0.75.0 raises the minimum Node.js runtime to 22.19.0. Picky's packaged
+  daemon does not bundle `node`, so the launcher must preflight the host
+  `node --version` and the release workflow must build with Node 22.19.0+.
+- No CHANGELOG entry in this range calls out a breaking `AgentSession`,
+  `ExtensionUIContext`, tool schema, or extension registration API change. Keep
+  the normal contract test + full agentd suite as the upgrade gate because
+  Picky still depends on T3/T4 internal session/event shapes.
+
 ## Backward-compatibility policy
 
 - **Capability sniffs (T2) MUST stay non-fatal.** A pi version that drops

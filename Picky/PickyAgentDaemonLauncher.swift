@@ -434,6 +434,7 @@ enum PickyDaemonLaunchPreflightError: LocalizedError, Equatable {
     case missingAgentdPackage(String)
     case missingAgentdEntryPoint(String)
     case missingRequiredExecutable(String)
+    case unsupportedNodeVersion(installed: String, required: String)
 
     var errorDescription: String? {
         switch self {
@@ -441,6 +442,8 @@ enum PickyDaemonLaunchPreflightError: LocalizedError, Equatable {
             message
         case .missingRequiredExecutable(let name):
             "\(name) not found in PATH. Install \(name) or launch Picky with a PATH that includes it."
+        case .unsupportedNodeVersion(let installed, let required):
+            "Node.js \(required) or newer is required by Pi. Current node version is \(installed). Update Node or launch Picky with a PATH that points to a newer node."
         }
     }
 }
@@ -463,6 +466,11 @@ extension PickyProcessRunning {
 
 protocol PickyExecutableChecking {
     func executableExists(named name: String, environment: [String: String]) -> Bool
+    func executableVersion(named name: String, environment: [String: String]) -> String?
+}
+
+extension PickyExecutableChecking {
+    func executableVersion(named name: String, environment: [String: String]) -> String? { nil }
 }
 
 struct PATHPickyExecutableChecker: PickyExecutableChecking {
@@ -473,6 +481,25 @@ struct PATHPickyExecutableChecker: PickyExecutableChecking {
         let path = environment["PATH"] ?? "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         return path.split(separator: ":").contains { directory in
             FileManager.default.isExecutableFile(atPath: URL(fileURLWithPath: String(directory)).appendingPathComponent(name).path)
+        }
+    }
+
+    func executableVersion(named name: String, environment: [String: String]) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [name, "--version"]
+        process.environment = environment
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        do {
+            try process.run()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            return nil
         }
     }
 }
@@ -544,6 +571,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     /// bundle. Lives alongside `agentd.stderr.log` / `agentd.stdout.log` so
     /// users do not have to opt into anything extra to surface it.
     private static let statusSnapshotFileName = "agentd.status.json"
+    private static let minimumSupportedNodeVersion = "22.19.0"
 
     init(
         configuration: PickyAgentDaemonConfiguration,
@@ -633,6 +661,37 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         if let requiredExecutableName = configuration.requiredExecutableName,
            !executableChecker.executableExists(named: requiredExecutableName, environment: configuration.environment) {
             throw PickyDaemonLaunchPreflightError.missingRequiredExecutable(requiredExecutableName)
+        }
+        try preflightNodeVersion()
+    }
+
+    private func preflightNodeVersion() throws {
+        guard let installed = executableChecker.executableVersion(named: "node", environment: configuration.environment),
+              !installed.isEmpty else { return }
+        guard Self.isVersion(installed, atLeast: Self.minimumSupportedNodeVersion) else {
+            throw PickyDaemonLaunchPreflightError.unsupportedNodeVersion(
+                installed: installed,
+                required: Self.minimumSupportedNodeVersion
+            )
+        }
+    }
+
+    private static func isVersion(_ candidate: String, atLeast required: String) -> Bool {
+        let candidateParts = semanticVersionParts(candidate)
+        let requiredParts = semanticVersionParts(required)
+        for index in 0..<max(candidateParts.count, requiredParts.count) {
+            let lhs = index < candidateParts.count ? candidateParts[index] : 0
+            let rhs = index < requiredParts.count ? requiredParts[index] : 0
+            if lhs != rhs { return lhs > rhs }
+        }
+        return true
+    }
+
+    private static func semanticVersionParts(_ version: String) -> [Int] {
+        let trimmed = version.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+        return trimmed.split(separator: ".").map { part in
+            let digits = part.prefix { $0.isNumber }
+            return Int(digits) ?? 0
         }
     }
 

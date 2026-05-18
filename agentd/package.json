@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.15.1",
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "scripts": {
     "dev": "tsx src/index.ts",
     "dev:cli": "tsx src/cli.ts",
@@ -13,8 +16,8 @@
     "test:contracts": "vitest run src/protocol.test.ts src/prompt-builder.test.ts src/pi-event-normalizer.test.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.74.0",
-    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@^0.74.0",
+    "@earendil-works/pi-coding-agent": "0.75.1",
+    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.75.1",
     "commander": "^14.0.3",
     "typebox": "^1.1.37",
     "ws": "^8.18.0",

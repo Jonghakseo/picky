@@ -1635,6 +1635,19 @@ struct PickySessionViewModelTests {
         #expect(!secondEndWasDragging)
     }
 
+    @Test func hudAppKitRepresentableTeardownSuppressesCallbacksThatMutateSwiftUIState() throws {
+        let source = try String(contentsOfFile: "\(testProjectCwd)/Picky/HUD/PickyHUDView.swift")
+
+        #expect(source.components(separatedBy: "static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator)").count - 1 == 3)
+        #expect(!source.contains("static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {\n        (nsView as?"))
+        #expect(source.contains("view.cancelTransientInteraction(notifyingCallbacks: false)"))
+        #expect(source.components(separatedBy: "view.cancelInteraction(notifyingCallbacks: false)").count - 1 >= 2)
+        #expect(source.contains("deinit {\n        cancelTransientInteraction(notifyingCallbacks: false)\n    }"))
+        #expect(source.components(separatedBy: "deinit {\n        cancelInteraction(notifyingCallbacks: false)\n    }").count - 1 >= 2)
+        #expect(source.contains("if window == nil {\n            cancelTransientInteraction(notifyingCallbacks: false)\n        }"))
+        #expect(source.components(separatedBy: "if window == nil {\n            cancelInteraction(notifyingCallbacks: false)\n        }").count - 1 >= 2)
+    }
+
     @Test func hudCardResizeStartsFromMeasuredCardSizeWithoutDefaultHeightFallback() throws {
         let measured = CGSize(width: 446, height: 344)
 

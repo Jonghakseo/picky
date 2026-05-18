@@ -1630,6 +1630,13 @@ private struct PickyHUDDockRailView: View {
                 .animation(.easeOut(duration: 0.14), value: isHandleDragging)
                 .allowsHitTesting(false)
         }
+        .onDisappear {
+            isHandleHovered = false
+            if isHandleDragging {
+                isHandleDragging = false
+                onDockHandleDragEnded()
+            }
+        }
         .accessibilityLabel("HUD dock handle")
         .accessibilityHint("Drag to move the Pickle dock. Crossing the middle of the screen switches the dock edge. Double-click to toggle between vertical and horizontal layouts.")
     }
@@ -1873,8 +1880,11 @@ private struct PickyHUDDockIconView: View {
         .onDisappear {
             completionFlashTask?.cancel()
             completionFlashTask = nil
-            archiveFeedbackStartTask?.cancel()
-            archiveFeedbackStartTask = nil
+            cancelArchiveHoldFeedback()
+            didCompleteArchiveHold = false
+            if isDragging {
+                onReorderCanceled()
+            }
         }
         .animation(.spring(response: 0.2, dampingFraction: 0.78), value: isArchivePressing)
         .accessibilityLabel("Preview \(session.title)")
@@ -2330,6 +2340,20 @@ private struct PickyHUDDockIconClickHost: NSViewRepresentable {
         var onReorderEnded: ((CGSize) -> Void)?
         var onReorderCanceled: (() -> Void)?
 
+        func clearCallbacks() {
+            onHover = nil
+            onOpen = nil
+            onToggleScreenContextTarget = nil
+            onCompact = nil
+            onArchivePressing = nil
+            onArchive = nil
+            onStop = nil
+            onReorderBegin = nil
+            onReorderChanged = nil
+            onReorderEnded = nil
+            onReorderCanceled = nil
+        }
+
         @objc func toggleScreenContextTarget(_ sender: NSMenuItem) {
             onToggleScreenContextTarget?()
         }
@@ -2378,6 +2402,14 @@ private struct PickyHUDDockIconClickHost: NSViewRepresentable {
         coordinator.onReorderEnded = onReorderEnded
         coordinator.onReorderCanceled = onReorderCanceled
     }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        if let view = nsView as? PickyHUDDockIconClickNSView {
+            view.cancelTransientInteraction(notifyingCallbacks: false)
+            view.coordinator = nil
+        }
+        coordinator.clearCallbacks()
+    }
 }
 
 private final class PickyHUDDockIconClickNSView: NSView {
@@ -2394,6 +2426,10 @@ private final class PickyHUDDockIconClickNSView: NSView {
     private var isReordering = false
 
     override var isFlipped: Bool { false }
+
+    deinit {
+        cancelTransientInteraction(notifyingCallbacks: false)
+    }
 
     override func resetCursorRects() {
         super.resetCursorRects()
@@ -2538,13 +2574,27 @@ private final class PickyHUDDockIconClickNSView: NSView {
         coordinator?.onArchivePressing?(false)
     }
 
+    func cancelTransientInteraction(notifyingCallbacks shouldNotify: Bool = true) {
+        let wasReordering = isReordering
+        archiveWorkItem?.cancel()
+        archiveWorkItem = nil
+        mouseDownScreenPoint = nil
+        didCompleteArchiveHold = false
+        isReordering = false
+        guard shouldNotify else { return }
+        coordinator?.onArchivePressing?(false)
+        if wasReordering {
+            coordinator?.onReorderCanceled?()
+        }
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        // If the icon goes off-screen mid-drag (e.g. session list refresh),
-        // make sure SwiftUI clears any "this icon is being dragged" state.
-        if window == nil, isReordering {
-            isReordering = false
-            coordinator?.onReorderCanceled?()
+        // If SwiftUI removes the icon while a gesture is active, clear only the
+        // AppKit-side state here. The SwiftUI state is reset by the icon's
+        // onDisappear path, avoiding synchronous @State writes from teardown.
+        if window == nil {
+            cancelTransientInteraction(notifyingCallbacks: false)
         }
     }
 
@@ -2588,6 +2638,17 @@ private struct PickyHUDDockAnchorHandleHost: NSViewRepresentable {
         context.coordinator.onDragChanged = onDragChanged
         context.coordinator.onDragEnded = onDragEnded
         context.coordinator.onDoubleClick = onDoubleClick
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        if let view = nsView as? PickyHUDDockAnchorHandleNSView {
+            view.cancelInteraction(notifyingCallbacks: false)
+            view.coordinator = nil
+        }
+        coordinator.onHoverChanged = nil
+        coordinator.onDragChanged = nil
+        coordinator.onDragEnded = nil
+        coordinator.onDoubleClick = nil
     }
 }
 
@@ -2781,6 +2842,17 @@ private final class PickyHUDDockAnchorHandleNSView: NSView {
 
     override var isFlipped: Bool { false }
 
+    deinit {
+        cancelInteraction(notifyingCallbacks: false)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            cancelInteraction(notifyingCallbacks: false)
+        }
+    }
+
     override func resetCursorRects() {
         super.resetCursorRects()
         addCursorRect(bounds, cursor: .openHand)
@@ -2844,6 +2916,20 @@ private final class PickyHUDDockAnchorHandleNSView: NSView {
             hasClosedHandPushed = false
         }
         dragStartScreenPoint = nil
+        if wasDragging {
+            coordinator?.onDragEnded?()
+        }
+    }
+
+    func cancelInteraction(notifyingCallbacks shouldNotify: Bool = true) {
+        let wasDragging = dragStartScreenPoint != nil
+        if hasClosedHandPushed {
+            NSCursor.pop()
+            hasClosedHandPushed = false
+        }
+        dragStartScreenPoint = nil
+        guard shouldNotify else { return }
+        coordinator?.onHoverChanged?(false)
         if wasDragging {
             coordinator?.onDragEnded?()
         }

@@ -474,6 +474,8 @@ extension PickyExecutableChecking {
 }
 
 struct PATHPickyExecutableChecker: PickyExecutableChecking {
+    private static let versionProbeTimeout: TimeInterval = 1.0
+
     func executableExists(named name: String, environment: [String: String]) -> Bool {
         if name.contains("/") {
             return FileManager.default.isExecutableFile(atPath: NSString(string: name).expandingTildeInPath)
@@ -494,7 +496,15 @@ struct PATHPickyExecutableChecker: PickyExecutableChecking {
         process.standardError = pipe
         do {
             try process.run()
-            process.waitUntilExit()
+            let finished = DispatchSemaphore(value: 0)
+            DispatchQueue.global(qos: .utility).async {
+                process.waitUntilExit()
+                finished.signal()
+            }
+            if finished.wait(timeout: .now() + Self.versionProbeTimeout) == .timedOut {
+                process.terminate()
+                return nil
+            }
             guard process.terminationStatus == 0 else { return nil }
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -666,8 +676,16 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     }
 
     private func preflightNodeVersion() throws {
+        guard executableChecker.executableExists(named: "node", environment: configuration.environment) else {
+            throw PickyDaemonLaunchPreflightError.missingRequiredExecutable("node")
+        }
         guard let installed = executableChecker.executableVersion(named: "node", environment: configuration.environment),
-              !installed.isEmpty else { return }
+              !installed.isEmpty else {
+            throw PickyDaemonLaunchPreflightError.unsupportedNodeVersion(
+                installed: "unknown",
+                required: Self.minimumSupportedNodeVersion
+            )
+        }
         guard Self.isVersion(installed, atLeast: Self.minimumSupportedNodeVersion) else {
             throw PickyDaemonLaunchPreflightError.unsupportedNodeVersion(
                 installed: installed,

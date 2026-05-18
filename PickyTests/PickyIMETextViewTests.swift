@@ -55,6 +55,24 @@ struct PickyIMETextViewTests {
         #expect(textView.string == "first\n")
     }
 
+    @Test func mouseDownFocusHelperMakesTextViewFirstResponderInNonactivatingHUDPanel() throws {
+        let panel = PickyHUDPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 240, height: 120),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        let textView = PickyIMENSTextView(frame: NSRect(x: 0, y: 0, width: 240, height: 120))
+        panel.contentView = textView
+        defer { panel.close() }
+
+        #expect(panel.firstResponder !== textView)
+
+        #expect(textView.focusForMouseDown())
+
+        #expect(panel.firstResponder === textView)
+    }
+
     private static func returnKeyEvent(modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
         NSEvent.keyEvent(
             with: .keyDown,

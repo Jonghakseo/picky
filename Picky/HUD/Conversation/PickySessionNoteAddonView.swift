@@ -12,7 +12,7 @@ struct PickySessionNoteAddonView: View {
     let sessionID: String
     @ObservedObject var viewModel: PickySessionListViewModel
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
-    @FocusState private var isFocused: Bool
+    @State private var isFocused: Bool = false
     @State private var note: String = ""
 
     var body: some View {
@@ -54,12 +54,19 @@ struct PickySessionNoteAddonView: View {
         .background(addonBackground)
         .onAppear {
             note = viewModel.persistedSessionNote(for: sessionID)
+            requestEditorFocus()
         }
         .onDisappear {
             viewModel.updateSessionNote(note, sessionID: sessionID)
         }
         .onChange(of: sessionID) { _, newSessionID in
             note = viewModel.persistedSessionNote(for: newSessionID)
+        }
+    }
+
+    private func requestEditorFocus() {
+        DispatchQueue.main.async {
+            isFocused = true
         }
     }
 

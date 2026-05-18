@@ -193,6 +193,18 @@ final class PickyIMENSTextView: NSTextView {
         return result
     }
 
+    @discardableResult
+    func focusForMouseDown() -> Bool {
+        window?.makeKey()
+        guard window?.firstResponder !== self else { return true }
+        return window?.makeFirstResponder(self) == true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        focusForMouseDown()
+        super.mouseDown(with: event)
+    }
+
     override func layout() {
         super.layout()
         onLayout?(self)

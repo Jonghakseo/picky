@@ -434,6 +434,7 @@ enum PickyDaemonLaunchPreflightError: LocalizedError, Equatable {
     case missingAgentdPackage(String)
     case missingAgentdEntryPoint(String)
     case missingRequiredExecutable(String)
+    case nodeVersionProbeFailed(reason: String, required: String)
     case unsupportedNodeVersion(installed: String, required: String)
 
     var errorDescription: String? {
@@ -442,10 +443,79 @@ enum PickyDaemonLaunchPreflightError: LocalizedError, Equatable {
             message
         case .missingRequiredExecutable(let name):
             "\(name) not found in PATH. Install \(name) or launch Picky with a PATH that includes it."
+        case .nodeVersionProbeFailed(let reason, let required):
+            "Node.js \(required) or newer is required by Pi, but Picky could not verify the current node version (\(reason)). Update Node or launch Picky with a PATH that points to a working Node executable."
         case .unsupportedNodeVersion(let installed, let required):
             "Node.js \(required) or newer is required by Pi. Current node version is \(installed). Update Node or launch Picky with a PATH that points to a newer node."
         }
     }
+}
+
+enum PickyExecutableVersionProbeResult: Equatable {
+    case version(String)
+    case timedOut(seconds: TimeInterval)
+    case failed(exitCode: Int32, output: String)
+    case emptyOutput
+    case launchFailed(String)
+
+    var versionString: String? {
+        if case let .version(version) = self { return version }
+        return nil
+    }
+
+    var diagnosticsStatus: String {
+        switch self {
+        case .version: return "version"
+        case .timedOut: return "timedOut"
+        case .failed: return "failed"
+        case .emptyOutput: return "emptyOutput"
+        case .launchFailed: return "launchFailed"
+        }
+    }
+
+    var failureReason: String? {
+        switch self {
+        case .version:
+            return nil
+        case let .timedOut(seconds):
+            return "node --version timed out after \(Self.formatSeconds(seconds))s"
+        case let .failed(exitCode, _):
+            return "node --version exited with code \(exitCode)"
+        case .emptyOutput:
+            return "node --version produced no output"
+        case let .launchFailed(message):
+            return "node --version could not be launched: \(message)"
+        }
+    }
+
+    var outputPreview: String? {
+        switch self {
+        case let .failed(_, output):
+            let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            return String(trimmed.prefix(500))
+        default:
+            return nil
+        }
+    }
+
+    private static func formatSeconds(_ seconds: TimeInterval) -> String {
+        if seconds.rounded() == seconds { return String(Int(seconds)) }
+        return String(format: "%.1f", seconds)
+    }
+}
+
+struct PickyNodePreflightSnapshot: Codable, Equatable {
+    var checkedAt: String
+    var command: [String]
+    var requiredNodeVersion: String
+    var nodePath: String?
+    var status: String
+    var version: String?
+    var failureReason: String?
+    var exitCode: Int32?
+    var timeoutSeconds: TimeInterval?
+    var outputPreview: String?
 }
 
 protocol PickyProcessRunning: AnyObject {
@@ -466,27 +536,47 @@ extension PickyProcessRunning {
 
 protocol PickyExecutableChecking {
     func executableExists(named name: String, environment: [String: String]) -> Bool
+    func executablePath(named name: String, environment: [String: String]) -> String?
     func executableVersion(named name: String, environment: [String: String], workingDirectory: URL) -> String?
+    func executableVersionProbe(named name: String, environment: [String: String], workingDirectory: URL) -> PickyExecutableVersionProbeResult
 }
 
 extension PickyExecutableChecking {
+    func executablePath(named name: String, environment: [String: String]) -> String? { nil }
     func executableVersion(named name: String, environment: [String: String], workingDirectory: URL) -> String? { nil }
+
+    func executableVersionProbe(named name: String, environment: [String: String], workingDirectory: URL) -> PickyExecutableVersionProbeResult {
+        guard let version = executableVersion(named: name, environment: environment, workingDirectory: workingDirectory),
+              !version.isEmpty else { return .emptyOutput }
+        return .version(version)
+    }
 }
 
 struct PATHPickyExecutableChecker: PickyExecutableChecking {
-    private static let versionProbeTimeout: TimeInterval = 1.0
+    private static let versionProbeTimeout: TimeInterval = 5.0
 
     func executableExists(named name: String, environment: [String: String]) -> Bool {
+        executablePath(named: name, environment: environment) != nil
+    }
+
+    func executablePath(named name: String, environment: [String: String]) -> String? {
         if name.contains("/") {
-            return FileManager.default.isExecutableFile(atPath: NSString(string: name).expandingTildeInPath)
+            let expanded = NSString(string: name).expandingTildeInPath
+            return FileManager.default.isExecutableFile(atPath: expanded) ? expanded : nil
         }
         let path = environment["PATH"] ?? "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-        return path.split(separator: ":").contains { directory in
-            FileManager.default.isExecutableFile(atPath: URL(fileURLWithPath: String(directory)).appendingPathComponent(name).path)
+        for directory in path.split(separator: ":") {
+            let candidate = URL(fileURLWithPath: String(directory)).appendingPathComponent(name).path
+            if FileManager.default.isExecutableFile(atPath: candidate) { return candidate }
         }
+        return nil
     }
 
     func executableVersion(named name: String, environment: [String: String], workingDirectory: URL) -> String? {
+        executableVersionProbe(named: name, environment: environment, workingDirectory: workingDirectory).versionString
+    }
+
+    func executableVersionProbe(named name: String, environment: [String: String], workingDirectory: URL) -> PickyExecutableVersionProbeResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = [name, "--version"]
@@ -504,13 +594,19 @@ struct PATHPickyExecutableChecker: PickyExecutableChecking {
             }
             if finished.wait(timeout: .now() + Self.versionProbeTimeout) == .timedOut {
                 process.terminate()
-                return nil
+                process.waitUntilExit()
+                return .timedOut(seconds: Self.versionProbeTimeout)
             }
-            guard process.terminationStatus == 0 else { return nil }
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let output = String(data: data, encoding: .utf8) ?? ""
+            guard process.terminationStatus == 0 else {
+                return .failed(exitCode: process.terminationStatus, output: output)
+            }
+            let version = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !version.isEmpty else { return .emptyOutput }
+            return .version(version)
         } catch {
-            return nil
+            return .launchFailed(error.localizedDescription)
         }
     }
 }
@@ -581,7 +677,8 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     /// On-disk path of the status snapshot JSON used by the diagnostics
     /// bundle. Lives alongside `agentd.stderr.log` / `agentd.stdout.log` so
     /// users do not have to opt into anything extra to surface it.
-    private static let statusSnapshotFileName = "agentd.status.json"
+    private static let legacyStatusSnapshotFileName = "agentd.status.json"
+    private static let nodePreflightSnapshotFileName = "agentd.node-preflight.json"
     private static let minimumSupportedNodeVersion = "22.19.0"
 
     init(
@@ -625,8 +722,8 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         pickyDaemonLog("launching executable=\(configuration.executableURL.path) args=\(configuration.arguments.joined(separator: " "))")
         updateState(.starting)
         do {
-            try preflightConfiguration()
             try fileManager.createDirectory(at: logDirectory, withIntermediateDirectories: true)
+            try preflightConfiguration()
             try runner.launch(
                 configuration: configuration,
                 stdout: { [weak self] data in self?.appendStdout(data) },
@@ -670,6 +767,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             }
         }
         if let requiredExecutableName = configuration.requiredExecutableName,
+           requiredExecutableName != "node",
            !executableChecker.executableExists(named: requiredExecutableName, environment: configuration.environment) {
             throw PickyDaemonLaunchPreflightError.missingRequiredExecutable(requiredExecutableName)
         }
@@ -677,13 +775,17 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     }
 
     private func preflightNodeVersion() throws {
-        guard executableChecker.executableExists(named: "node", environment: configuration.environment) else {
+        let env = configuration.environment
+        let nodePath = executableChecker.executablePath(named: "node", environment: env)
+        guard executableChecker.executableExists(named: "node", environment: env) else {
+            writeNodePreflightSnapshot(path: nodePath, result: .launchFailed("node not found in PATH"))
             throw PickyDaemonLaunchPreflightError.missingRequiredExecutable("node")
         }
-        guard let installed = executableChecker.executableVersion(named: "node", environment: configuration.environment, workingDirectory: configuration.workingDirectory),
-              !installed.isEmpty else {
-            throw PickyDaemonLaunchPreflightError.unsupportedNodeVersion(
-                installed: "unknown",
+        let result = executableChecker.executableVersionProbe(named: "node", environment: env, workingDirectory: configuration.workingDirectory)
+        writeNodePreflightSnapshot(path: nodePath, result: result)
+        guard let installed = result.versionString else {
+            throw PickyDaemonLaunchPreflightError.nodeVersionProbeFailed(
+                reason: result.failureReason ?? "unknown probe failure",
                 required: Self.minimumSupportedNodeVersion
             )
         }
@@ -798,7 +900,61 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             lastUpdatedAt: Self.iso8601Formatter.string(from: Date()),
             lastRunningAt: lastRunningAt.map(Self.iso8601Formatter.string(from:))
         )
-        let url = logDirectory.appendingPathComponent(Self.statusSnapshotFileName)
+        let urls = statusSnapshotFileNames().map { logDirectory.appendingPathComponent($0) }
+        do {
+            try fileManager.createDirectory(at: logDirectory, withIntermediateDirectories: true)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(snapshot)
+            for url in urls {
+                try data.write(to: url, options: .atomic)
+            }
+        } catch {
+            // Status snapshot is best-effort diagnostics — never fail launch
+            // because of it. Log the reason instead so the missing snapshot
+            // is itself a breadcrumb.
+            pickyDaemonLog("failed to write status snapshot error=\(error.localizedDescription)")
+        }
+    }
+
+    private func statusSnapshotFileNames() -> [String] {
+        [Self.legacyStatusSnapshotFileName, roleSpecificStatusSnapshotFileName()]
+    }
+
+    private func roleSpecificStatusSnapshotFileName() -> String {
+        switch configuration.role {
+        case .primary:
+            return "agentd.status.primary.json"
+        case let .child(sessionId, _, _):
+            let safeId = sessionId
+                .map { character in
+                    character.isLetter || character.isNumber || character == "-" || character == "_" ? character : "-"
+                }
+            let prefix = String(String(safeId).prefix(24))
+            return "agentd.status.child-\(prefix).json"
+        }
+    }
+
+    private func writeNodePreflightSnapshot(path: String?, result: PickyExecutableVersionProbeResult) {
+        let snapshot = PickyNodePreflightSnapshot(
+            checkedAt: Self.iso8601Formatter.string(from: Date()),
+            command: ["node", "--version"],
+            requiredNodeVersion: Self.minimumSupportedNodeVersion,
+            nodePath: path,
+            status: result.diagnosticsStatus,
+            version: result.versionString,
+            failureReason: result.failureReason,
+            exitCode: {
+                if case let .failed(exitCode, _) = result { return exitCode }
+                return nil
+            }(),
+            timeoutSeconds: {
+                if case let .timedOut(seconds) = result { return seconds }
+                return nil
+            }(),
+            outputPreview: result.outputPreview
+        )
+        let url = logDirectory.appendingPathComponent(Self.nodePreflightSnapshotFileName)
         do {
             try fileManager.createDirectory(at: logDirectory, withIntermediateDirectories: true)
             let encoder = JSONEncoder()
@@ -806,10 +962,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             let data = try encoder.encode(snapshot)
             try data.write(to: url, options: .atomic)
         } catch {
-            // Status snapshot is best-effort diagnostics — never fail launch
-            // because of it. Log the reason instead so the missing snapshot
-            // is itself a breadcrumb.
-            pickyDaemonLog("failed to write status snapshot error=\(error.localizedDescription)")
+            pickyDaemonLog("failed to write node preflight snapshot error=\(error.localizedDescription)")
         }
     }
 

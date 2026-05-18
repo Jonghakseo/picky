@@ -32,6 +32,7 @@ private final class FakeProcessRunner: PickyProcessRunning {
 private struct FakeExecutableChecker: PickyExecutableChecking {
     var exists: Bool
     var version: String? = nil
+    var probeResult: PickyExecutableVersionProbeResult? = nil
     var missingExecutables: Set<String> = []
     var requiredVersionWorkingDirectory: URL? = nil
 
@@ -39,10 +40,22 @@ private struct FakeExecutableChecker: PickyExecutableChecking {
         exists && !missingExecutables.contains(name)
     }
 
+    func executablePath(named name: String, environment: [String: String]) -> String? {
+        executableExists(named: name, environment: environment) ? "/fake/bin/\(name)" : nil
+    }
+
     func executableVersion(named name: String, environment: [String: String], workingDirectory: URL) -> String? {
         guard name == "node" else { return nil }
         if let requiredVersionWorkingDirectory, workingDirectory != requiredVersionWorkingDirectory { return nil }
         return version
+    }
+
+    func executableVersionProbe(named name: String, environment: [String: String], workingDirectory: URL) -> PickyExecutableVersionProbeResult {
+        guard name == "node" else { return .emptyOutput }
+        if let probeResult { return probeResult }
+        if let requiredVersionWorkingDirectory, workingDirectory != requiredVersionWorkingDirectory { return .emptyOutput }
+        guard let version, !version.isEmpty else { return .emptyOutput }
+        return .version(version)
     }
 }
 
@@ -599,10 +612,82 @@ struct PickyAgentDaemonLauncherTests {
 
         if case .failedToStart(let message) = launcher.state {
             #expect(message.contains("Node.js 22.19.0 or newer is required"))
-            #expect(message.contains("unknown"))
+            #expect(message.contains("node --version produced no output"))
         } else {
             Issue.record("Expected friendly failedToStart state")
         }
+        #expect(runner.launchedConfiguration == nil)
+    }
+
+    @Test func timedOutNodeVersionProbeFailsWithSpecificMessageAndSnapshot() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        try makeAgentdPackage(at: temp)
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19023,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: temp,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["node", "dist/index.js"],
+            requiredExecutableName: "node"
+        )
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs"),
+            executableChecker: FakeExecutableChecker(exists: true, probeResult: .timedOut(seconds: 5))
+        )
+
+        launcher.start()
+
+        if case .failedToStart(let message) = launcher.state {
+            #expect(message.contains("could not verify the current node version"))
+            #expect(message.contains("timed out after 5s"))
+        } else {
+            Issue.record("Expected friendly failedToStart state")
+        }
+        let snapshot = try String(contentsOf: temp.appendingPathComponent("Logs/agentd.node-preflight.json"))
+        #expect(snapshot.contains(#""status" : "timedOut""#))
+        #expect(snapshot.contains(#""nodePath" : "\/fake\/bin\/node""#))
+        #expect(runner.launchedConfiguration == nil)
+    }
+
+    @Test func failedNodeVersionProbeIncludesExitCodeInMessageAndSnapshot() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        try makeAgentdPackage(at: temp)
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19024,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: temp,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["node", "dist/index.js"],
+            requiredExecutableName: "node"
+        )
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs"),
+            executableChecker: FakeExecutableChecker(exists: true, probeResult: .failed(exitCode: 42, output: "shim failed"))
+        )
+
+        launcher.start()
+
+        if case .failedToStart(let message) = launcher.state {
+            #expect(message.contains("node --version exited with code 42"))
+        } else {
+            Issue.record("Expected friendly failedToStart state")
+        }
+        let snapshot = try String(contentsOf: temp.appendingPathComponent("Logs/agentd.node-preflight.json"))
+        #expect(snapshot.contains(#""status" : "failed""#))
+        #expect(snapshot.contains(#""exitCode" : 42"#))
+        #expect(snapshot.contains("shim failed"))
         #expect(runner.launchedConfiguration == nil)
     }
 
@@ -717,13 +802,17 @@ struct PickyAgentDaemonLauncherTests {
             logDirectory: logsDir
         )
         let statusURL = logsDir.appendingPathComponent("agentd.status.json")
+        let primaryStatusURL = logsDir.appendingPathComponent("agentd.status.primary.json")
 
         launcher.start()
+        #expect(FileManager.default.fileExists(atPath: primaryStatusURL.path))
         let runningSnapshot = try decodeStatus(at: statusURL)
         #expect(runningSnapshot.state == "running")
         #expect(runningSnapshot.role == "primary")
         #expect(runningSnapshot.port == 19200)
         #expect(runningSnapshot.lastRunningAt != nil)
+        let roleSpecificRunningSnapshot = try decodeStatus(at: primaryStatusURL)
+        #expect(roleSpecificRunningSnapshot == runningSnapshot)
 
         runner.crash(code: 137)
         // The launcher's termination handler hops to the MainActor via

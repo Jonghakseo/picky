@@ -55,6 +55,7 @@ struct PickyDiagnosticsBundleTests {
 
         let names = try inspectZipEntryNames(at: bundle.zipURL)
         #expect(names.contains("agentd.stderr.tail.log"))
+        #expect(names.contains("agentd.port-occupants.txt"))
         #expect(names.contains("agentd.tool-events.txt"))
         #expect(!names.contains("agentd.stdout.tail.log"))
         #expect(!names.contains("agentd.stdout.log"))
@@ -244,6 +245,82 @@ struct PickyDiagnosticsBundleTests {
         #expect(names.contains("agentd.status.json"))
         let staged = try extractZipEntryText(named: "agentd.status.json", from: bundle.zipURL)
         #expect(staged.contains("absent"))
+    }
+
+    @Test func roleSpecificDaemonStatusSnapshotsAreBundled() throws {
+        let fixture = try makeFixture(scope: .logsOnly)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        let logsDir = fixture.appendingPathComponent("Logs", isDirectory: true)
+        try #"{"state":"running","role":"primary","port":17631,"attempts":0,"lastUpdatedAt":"2026-05-13T19:44:49Z"}"#.write(
+            to: logsDir.appendingPathComponent("agentd.status.primary.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try #"{"state":"failedToStart","role":"child(session…)","port":0,"attempts":0,"lastUpdatedAt":"2026-05-13T19:45:49Z"}"#.write(
+            to: logsDir.appendingPathComponent("agentd.status.child-session-123.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let bundle = try PickyDiagnosticsBundleBuilder.build(
+            scope: .logsOnly,
+            metadata: makeMetadata(),
+            appSupportRoot: fixture,
+            oslogProvider: { "" }
+        )
+        defer { try? FileManager.default.removeItem(at: bundle.zipURL.deletingLastPathComponent()) }
+
+        let names = try inspectZipEntryNames(at: bundle.zipURL)
+        #expect(names.contains("agentd.status.primary.json"))
+        #expect(names.contains("agentd.status.child-session-123.json"))
+        #expect(names.contains("agentd.status.json"))
+    }
+
+    @Test func nodePreflightSnapshotIsBundledWhenPresent() throws {
+        let fixture = try makeFixture(scope: .logsOnly)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        let logsDir = fixture.appendingPathComponent("Logs", isDirectory: true)
+        try #"{"status":"timedOut","nodePath":"/Users/jane/.local/bin/node","requiredNodeVersion":"22.19.0"}"#.write(
+            to: logsDir.appendingPathComponent("agentd.node-preflight.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let bundle = try PickyDiagnosticsBundleBuilder.build(
+            scope: .logsOnly,
+            metadata: makeMetadata(),
+            appSupportRoot: fixture,
+            oslogProvider: { "" }
+        )
+        defer { try? FileManager.default.removeItem(at: bundle.zipURL.deletingLastPathComponent()) }
+
+        let staged = try extractZipEntryText(named: "agentd.node-preflight.json", from: bundle.zipURL)
+        #expect(staged.contains("timedOut"))
+        #expect(staged.contains("/Users/<redacted-user>/.local/bin/node"))
+    }
+
+    @Test func portOccupancyDiagnosticsProbePortsFromEADDRINUSEStderr() throws {
+        let fixture = try makeFixture(scope: .logsOnly)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        let logsDir = fixture.appendingPathComponent("Logs", isDirectory: true)
+        try "Error: listen EADDRINUSE: address already in use 127.0.0.1:17631\n  port: 17631".write(
+            to: logsDir.appendingPathComponent("agentd.stderr.log"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let bundle = try PickyDiagnosticsBundleBuilder.build(
+            scope: .logsOnly,
+            metadata: makeMetadata(),
+            appSupportRoot: fixture,
+            oslogProvider: { "" },
+            portOccupancyProvider: { ports in "ports=\(ports.map(String.init).joined(separator: ","))\nnode 123 jane" }
+        )
+        defer { try? FileManager.default.removeItem(at: bundle.zipURL.deletingLastPathComponent()) }
+
+        let portDiagnostics = try extractZipEntryText(named: "agentd.port-occupants.txt", from: bundle.zipURL)
+        #expect(portDiagnostics.contains("ports=17631"))
+        #expect(portDiagnostics.contains("node 123 jane"))
     }
 
     @Test func metadataIncludesScopeAndTailLimit() throws {

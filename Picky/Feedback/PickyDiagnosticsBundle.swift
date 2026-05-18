@@ -61,6 +61,57 @@ enum PickyDiagnosticsBundleError: Error, Equatable {
     case zipFailed(String)
 }
 
+enum PickyPortOccupancyCollector {
+    private static let probeTimeout: TimeInterval = 1.0
+
+    static func collect(ports: [Int]) -> String {
+        let uniquePorts = Array(Set(ports)).sorted()
+        guard !uniquePorts.isEmpty else {
+            return "No EADDRINUSE listen ports detected in the included stderr tail."
+        }
+
+        var sections: [String] = [
+            "Detected EADDRINUSE listen ports in agentd stderr: \(uniquePorts.map(String.init).joined(separator: ", "))",
+            "Port occupants were probed at diagnostics build time with lsof; an empty result means the conflicting process exited before feedback was sent."
+        ]
+        for port in uniquePorts {
+            sections.append("\n# TCP listen port \(port)\n\(lsofOutput(for: port))")
+        }
+        return sections.joined(separator: "\n")
+    }
+
+    private static func lsofOutput(for port: Int) -> String {
+        let executable = FileManager.default.isExecutableFile(atPath: "/usr/sbin/lsof") ? "/usr/sbin/lsof" : "/usr/bin/lsof"
+        guard FileManager.default.isExecutableFile(atPath: executable) else {
+            return "lsof not found on this system."
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = ["-nP", "-iTCP:\(port)", "-sTCP:LISTEN"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        do {
+            try process.run()
+            let finished = DispatchSemaphore(value: 0)
+            DispatchQueue.global(qos: .utility).async {
+                process.waitUntilExit()
+                finished.signal()
+            }
+            if finished.wait(timeout: .now() + probeTimeout) == .timedOut {
+                process.terminate()
+                process.waitUntilExit()
+                return "lsof timed out after \(Int(probeTimeout))s."
+            }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return output.isEmpty ? "No listener found for port \(port)." : output
+        } catch {
+            return "lsof failed: \(error.localizedDescription)"
+        }
+    }
+}
+
 enum PickyDiagnosticsBundleBuilder {
     /// Keep diagnostics uploads small enough for Slack and quick enough for
     /// testers. The agentd stdout log is never attached because it can contain
@@ -76,7 +127,8 @@ enum PickyDiagnosticsBundleBuilder {
         appSupportRoot: URL = PickyAppSupport.defaultRoot(),
         fileManager: FileManager = .default,
         maxLogBytes: Int = defaultMaxLogBytes,
-        oslogProvider: () -> String = { PickyOSLogCollector.collectCurrentProcess() }
+        oslogProvider: () -> String = { PickyOSLogCollector.collectCurrentProcess() },
+        portOccupancyProvider: ([Int]) -> String = { PickyPortOccupancyCollector.collect(ports: $0) }
     ) throws -> PickyDiagnosticsBundle {
         let timestamp = filenameTimestamp(from: metadata.generatedAt)
         let bundleName = "picky-diagnostics-\(scope.fileSlug)-\(timestamp)"
@@ -97,7 +149,8 @@ enum PickyDiagnosticsBundleBuilder {
             appSupportRoot: appSupportRoot,
             fileManager: fileManager,
             maxLogBytes: maxLogBytes,
-            oslogProvider: oslogProvider
+            oslogProvider: oslogProvider,
+            portOccupancyProvider: portOccupancyProvider
         )
 
         if scope == .full {
@@ -122,27 +175,40 @@ enum PickyDiagnosticsBundleBuilder {
         appSupportRoot: URL,
         fileManager: FileManager,
         maxLogBytes: Int,
-        oslogProvider: () -> String
+        oslogProvider: () -> String,
+        portOccupancyProvider: ([Int]) -> String
     ) throws {
         let logsDir = appSupportRoot.appendingPathComponent("Logs", isDirectory: true)
         // Always stage the agentd stderr tail — even if the source file is
         // missing or empty, write an explicit placeholder so the bundle
         // discloses *why* the file is absent (daemon never launched, never
         // wrote to stderr, etc.) instead of silently dropping the entry.
+        let stderrLogURL = logsDir.appendingPathComponent("agentd.stderr.log")
         copyTailOrPlaceholder(
-            from: logsDir.appendingPathComponent("agentd.stderr.log"),
+            from: stderrLogURL,
             to: stagingRoot.appendingPathComponent("agentd.stderr.tail.log"),
             maxBytes: maxLogBytes,
             fileManager: fileManager
         )
-        // Stage the daemon's last-known status snapshot. This is the only
-        // file in the bundle that survives Picky crashes, so it is critical
-        // for answering "was the daemon even alive when the user reported
-        // this?". Falls back to a placeholder when the launcher never had a
-        // chance to write one.
+        stagePortOccupancyDiagnostics(
+            from: stderrLogURL,
+            to: stagingRoot.appendingPathComponent("agentd.port-occupants.txt"),
+            maxBytes: maxLogBytes,
+            fileManager: fileManager,
+            portOccupancyProvider: portOccupancyProvider
+        )
+        // Stage the daemon's last-known status snapshots. The legacy
+        // `agentd.status.json` remains for compatibility, while role-specific
+        // snapshots preserve primary and per-Pickle child state separately so
+        // a child failure cannot overwrite the primary daemon's last state.
+        stageStatusSnapshots(
+            from: logsDir,
+            to: stagingRoot,
+            fileManager: fileManager
+        )
         copyOrPlaceholder(
-            from: logsDir.appendingPathComponent("agentd.status.json"),
-            to: stagingRoot.appendingPathComponent("agentd.status.json"),
+            from: logsDir.appendingPathComponent("agentd.node-preflight.json"),
+            to: stagingRoot.appendingPathComponent("agentd.node-preflight.json"),
             fileManager: fileManager
         )
         let toolEventsPath = stagingRoot.appendingPathComponent("agentd.tool-events.txt")
@@ -191,6 +257,99 @@ enum PickyDiagnosticsBundleBuilder {
             try? "(failed to sanitize settings: \(error.localizedDescription))".write(
                 to: destinationURL, atomically: true, encoding: .utf8
             )
+        }
+    }
+
+    private static func stageStatusSnapshots(
+        from logsDir: URL,
+        to stagingRoot: URL,
+        fileManager: FileManager
+    ) {
+        let legacyName = "agentd.status.json"
+        var statusURLs: [URL] = []
+        if let children = try? fileManager.contentsOfDirectory(at: logsDir, includingPropertiesForKeys: nil) {
+            statusURLs = children
+                .filter { url in
+                    let name = url.lastPathComponent
+                    return name.hasPrefix("agentd.status") && name.hasSuffix(".json")
+                }
+                .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        }
+
+        if !statusURLs.contains(where: { $0.lastPathComponent == legacyName }) {
+            copyOrPlaceholder(
+                from: logsDir.appendingPathComponent(legacyName),
+                to: stagingRoot.appendingPathComponent(legacyName),
+                fileManager: fileManager
+            )
+        }
+        for sourceURL in statusURLs {
+            copyOrPlaceholder(
+                from: sourceURL,
+                to: stagingRoot.appendingPathComponent(sourceURL.lastPathComponent),
+                fileManager: fileManager
+            )
+        }
+    }
+
+    private static func stagePortOccupancyDiagnostics(
+        from stderrLogURL: URL,
+        to destinationURL: URL,
+        maxBytes: Int,
+        fileManager: FileManager,
+        portOccupancyProvider: ([Int]) -> String
+    ) {
+        let stderrTail = tailTextIfExists(from: stderrLogURL, maxBytes: maxBytes, fileManager: fileManager) ?? ""
+        let ports = parseEADDRINUSEPorts(from: stderrTail)
+        let text: String
+        if ports.isEmpty {
+            text = "No EADDRINUSE listen ports detected in the included stderr tail."
+        } else {
+            text = portOccupancyProvider(ports)
+        }
+        let redacted = PickyDiagnosticTextRedactor.redact(text)
+        try? redacted.write(to: destinationURL, atomically: true, encoding: .utf8)
+    }
+
+    static func parseEADDRINUSEPorts(from text: String) -> [Int] {
+        let patterns = [
+            #"address already in use\s+127\.0\.0\.1:(\d+)"#,
+            #"port:\s*(\d+)"#
+        ]
+        var ports: [Int] = []
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
+            let range = NSRange(text.startIndex..<text.endIndex, in: text)
+            for match in regex.matches(in: text, range: range) where match.numberOfRanges > 1 {
+                guard let portRange = Range(match.range(at: 1), in: text),
+                      let port = Int(text[portRange]),
+                      !ports.contains(port) else { continue }
+                ports.append(port)
+            }
+        }
+        return ports
+    }
+
+    private static func tailTextIfExists(
+        from sourceURL: URL,
+        maxBytes: Int,
+        fileManager: FileManager
+    ) -> String? {
+        guard fileManager.fileExists(atPath: sourceURL.path) else { return nil }
+        do {
+            let attributes = try fileManager.attributesOfItem(atPath: sourceURL.path)
+            let fileSize = attributes[.size] as? UInt64 ?? 0
+            guard fileSize > 0 else { return "" }
+            let bytesToRead = min(fileSize, UInt64(max(1, maxBytes)))
+            let handle = try FileHandle(forReadingFrom: sourceURL)
+            defer { try? handle.close() }
+            if fileSize > bytesToRead {
+                try handle.seek(toOffset: fileSize - bytesToRead)
+            }
+            let data = try handle.readToEnd() ?? Data()
+            return String(data: data, encoding: .utf8)
+        } catch {
+            return nil
         }
     }
 

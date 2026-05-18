@@ -237,11 +237,13 @@ struct PickyMarkdownReportView: View {
                 .fontWeight(level == 1 ? .semibold : .medium)
                 .foregroundStyle(DS.Colors.textPrimary)
                 .padding(.top, level == 1 ? 2 : 8)
+                .fixedSize(horizontal: false, vertical: true)
         case .paragraph(let text):
             Text(renderer.inlineAttributedString(for: text))
                 .font(.system(size: scaled(Self.bodyBaseSize), weight: .regular, design: .default))
                 .foregroundStyle(DS.Colors.textPrimary.opacity(0.92))
                 .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
         case .bullet(let text):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("•")
@@ -251,6 +253,7 @@ struct PickyMarkdownReportView: View {
                     .font(.system(size: scaled(Self.bodyBaseSize), weight: .regular, design: .default))
                     .foregroundStyle(DS.Colors.textPrimary.opacity(0.92))
                     .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         case .table(let headers, let rows):
             tableView(headers: headers, rows: rows)
@@ -295,6 +298,7 @@ struct PickyMarkdownReportView: View {
                     .font(.system(size: scaled(Self.bodyBaseSize - 1), weight: isHeader ? .semibold : .regular, design: .default))
                     .foregroundStyle(isHeader ? DS.Colors.textPrimary : DS.Colors.textPrimary.opacity(0.92))
                     .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
                     .frame(width: widths[index], alignment: .topLeading)

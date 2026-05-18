@@ -2654,7 +2654,19 @@ private struct PickyHUDCardResizeHandleHost: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-        (nsView as? PickyHUDCardResizeHandleNSView)?.cancelInteraction()
+        // SwiftUI may dismantle the representable while it is already reading the
+        // body that owns these closures. Calling back into `@State` from this
+        // teardown path can trip Swift's exclusivity checker, so only clear the
+        // AppKit-side interaction state here. The SwiftUI state is reset by the
+        // card's `onDisappear` handler.
+        if let view = nsView as? PickyHUDCardResizeHandleNSView {
+            view.cancelInteraction(notifyingCallbacks: false)
+            view.coordinator = nil
+        }
+        coordinator.onHoverChanged = nil
+        coordinator.onDragChanged = nil
+        coordinator.onDragEnded = nil
+        coordinator.onDoubleClick = nil
     }
 }
 
@@ -2666,13 +2678,13 @@ private final class PickyHUDCardResizeHandleNSView: NSView {
     override var isFlipped: Bool { false }
 
     deinit {
-        cancelInteraction()
+        cancelInteraction(notifyingCallbacks: false)
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window == nil {
-            cancelInteraction()
+            cancelInteraction(notifyingCallbacks: false)
         } else {
             reconcileHoverState()
         }
@@ -2699,9 +2711,10 @@ private final class PickyHUDCardResizeHandleNSView: NSView {
         reconcileHoverState()
     }
 
-    func cancelInteraction() {
+    func cancelInteraction(notifyingCallbacks shouldNotify: Bool = true) {
         let wasDragging = dragStartScreenPoint != nil
         dragStartScreenPoint = nil
+        guard shouldNotify else { return }
         coordinator?.onHoverChanged?(false)
         if wasDragging {
             coordinator?.onDragEnded?()

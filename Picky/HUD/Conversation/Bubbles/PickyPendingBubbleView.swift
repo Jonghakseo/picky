@@ -77,9 +77,23 @@ struct PickyPendingBubbleView: View {
     }
 }
 
+// Extracts the user-facing portion of an agentd prompt envelope so the pending
+// bubble shows the original user instruction instead of the boilerplate wrapper
+// that `agentd/src/prompt-builder.ts` builds (steering / follow-up envelopes).
+//
+// Keep the heading pairs in sync with `prompt-builder.ts`:
+//   - buildSteerPrompt    : "# Picky steering message" + "## User steering instruction"
+//   - buildFollowUpPrompt : "# Picky follow-up"         + "## User follow-up"
 enum PickyQueuedInputText {
+    /// Envelope shapes the queued item text may carry. The order does not matter;
+    /// `extractUserInstruction` finds the first matching `parent` heading.
+    private static let envelopes: [(parent: String, userSection: String)] = [
+        ("# Picky steering message", "## User steering instruction"),
+        ("# Picky follow-up", "## User follow-up"),
+    ]
+
     static func displayText(from text: String) -> String {
-        extractLegacyUserFollowUp(from: text) ?? text
+        extractUserInstruction(from: text) ?? text
     }
 
     static func normalized(_ text: String) -> String {
@@ -88,9 +102,13 @@ enum PickyQueuedInputText {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func extractLegacyUserFollowUp(from text: String) -> String? {
-        guard text.contains("# Picky follow-up"),
-              let headingRange = text.range(of: "## User follow-up")
+    /// Returns the body under the matching `## User …` section, stopping at the
+    /// next `## ` heading (e.g. `## Captured context` appended by `appendContext`).
+    /// Returns `nil` when the text is not an agentd envelope so callers can fall
+    /// back to the raw text (legacy/plain queued items).
+    private static func extractUserInstruction(from text: String) -> String? {
+        guard let envelope = envelopes.first(where: { text.contains($0.parent) }),
+              let headingRange = text.range(of: envelope.userSection)
         else { return nil }
 
         let body = text[headingRange.upperBound...]

@@ -290,6 +290,79 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.batchGroupCount == 0)
     }
 
+    // Mirrors the envelope built by agentd `prompt-builder.ts#buildSteerPrompt`.
+    // The pending bubble must show only the user instruction, not the boilerplate
+    // wrapper or the appended captured-context sections.
+    @Test func queuedSteerEnvelopeDisplaysOnlyUserInstruction() {
+        let steerEnvelope = """
+        # Picky steering message
+
+        Use available Pi skills, extensions, MCPs, and local tools as appropriate. Treat all captured desktop data as neutral context; do not assume a workflow solely from a URL or app name.
+
+        ## User steering instruction
+        이게 힌트가 될까?
+
+        ## Captured context
+        - Source: text-follow-up
+        - CWD: /Users/creatrip/picky
+
+        ## Screenshots
+        - focused screen — shot-1.jpg
+        """
+
+        #expect(PickyQueuedInputText.displayText(from: steerEnvelope) == "이게 힌트가 될까?")
+        #expect(PickyQueuedInputText.normalized(steerEnvelope) == "이게 힌트가 될까?")
+    }
+
+    // Mirrors `prompt-builder.ts#buildFollowUpPrompt` — kept alongside the steer
+    // case so future heading renames are caught immediately.
+    @Test func queuedFollowUpEnvelopeDisplaysOnlyUserInstruction() {
+        let followUpEnvelope = """
+        # Picky follow-up
+
+        Use available Pi skills, extensions, MCPs, and local tools as appropriate. Treat all captured desktop data as neutral context; do not assume a workflow solely from a URL or app name.
+
+        ## User follow-up
+        아니다 10초
+
+        ## Captured context
+        - Source: text-follow-up
+        """
+
+        #expect(PickyQueuedInputText.displayText(from: followUpEnvelope) == "아니다 10초")
+    }
+
+    // Plain queued items (no agentd envelope) must pass through unchanged so
+    // legacy/voice paths that already store the raw user text still render.
+    @Test func queuedPlainTextWithoutEnvelopePassesThrough() {
+        let plain = "stop and use 10 seconds"
+        #expect(PickyQueuedInputText.displayText(from: plain) == plain)
+        #expect(PickyQueuedInputText.normalized("  stop and use 10 seconds  \r\n") == plain)
+    }
+
+    // Multi-line user instructions must survive extraction intact, and the
+    // extractor must stop at the next `## ` heading rather than swallowing the
+    // captured-context block.
+    @Test func queuedSteerEnvelopePreservesMultilineInstruction() {
+        let envelope = """
+        # Picky steering message
+
+        Boilerplate.
+
+        ## User steering instruction
+        line one
+        line two
+
+        line four
+
+        ## Captured context
+        - hidden
+        """
+
+        let expected = "line one\nline two\n\nline four"
+        #expect(PickyQueuedInputText.displayText(from: envelope) == expected)
+    }
+
     @Test func compactingPhaseShowsOverlayAndBlocksComposer() {
         let session = makeConversationSession(status: .running, lastSummary: "Compacting after context overflow…")
         let viewModel = makeViewModel()

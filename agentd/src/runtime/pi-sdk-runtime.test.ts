@@ -917,19 +917,66 @@ describe("PiSdkRuntime", () => {
     ]);
   });
 
-  it("only suppresses one aborted drain per abort call", async () => {
-    // Safety net: if the user aborts a second time (e.g. cancels again after steering), the
-    // suppression for the first abort has already been consumed, so the second drain must
-    // still flow through.
+  it("absorbs both turn_end and agent_end aborted drains for a single abort", async () => {
+    // Pi can emit both `turn_end` and `agent_end` with stopReason="aborted" while draining a
+    // single abort. The synthetic `cancelled` from handle.abort() already surfaced the
+    // cancellation, so neither natural drain should re-emit `cancelled` and risk stamping a
+    // duplicate "Cancelled by user" bubble on top of a steer/follow-up the user sent in between.
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);
-    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "abort-late-twice" });
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "abort-double-drain" });
     const events: unknown[] = [];
     handle.subscribe((event) => events.push(event));
 
     await handle.abort();
     fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "aborted", content: [] }, toolResults: [] });
+    fakeSession.emit("event", { type: "agent_end", messages: [{ role: "assistant", stopReason: "aborted", content: [] }] });
+
+    const cancelledStatuses = statusEvents(events).filter((event) => event.status === "cancelled");
+    expect(cancelledStatuses).toEqual([
+      { type: "status", status: "cancelled", summary: "Cancelled" },
+    ]);
+  });
+
+  it("absorbs aborted drains across two back-to-back abort cycles", async () => {
+    // Two abort cycles without an interleaved agent_start: each abort() bumps the counter, so
+    // every aborted drain that arrives before Pi opens a new cycle must stay suppressed. The
+    // user-visible cancellations are the two synthetic events emitted by the abort() calls.
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "abort-double-cycle" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    await handle.abort();
     fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "aborted", content: [] }, toolResults: [] });
+    await handle.abort();
+    fakeSession.emit("event", { type: "agent_end", messages: [{ role: "assistant", stopReason: "aborted", content: [] }] });
+
+    const cancelledStatuses = statusEvents(events).filter((event) => event.status === "cancelled");
+    expect(cancelledStatuses).toHaveLength(2);
+    expect(cancelledStatuses[0]).toMatchObject({ type: "status", status: "cancelled", summary: "Cancelled" });
+    expect(cancelledStatuses[1]).toMatchObject({ type: "status", status: "cancelled", summary: "Cancelled" });
+  });
+
+  it("resumes surfacing aborted terminals after Pi opens a new agent_start cycle", async () => {
+    // Once Pi starts a new agent cycle (the steer/follow-up the user sent after abort began
+    // running), suppression must end so a genuine cancellation of that new turn still becomes a
+    // `cancelled` status event.
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "abort-then-new-cycle" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    await handle.abort();
+    // Late drain from the aborted cycle is absorbed.
+    fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "aborted", content: [] }, toolResults: [] });
+    // Pi opens a fresh agent cycle for the user's steer/follow-up.
+    fakeSession.emit("event", { type: "agent_start" });
+    // The new turn is then cancelled (e.g. user aborts again or Pi aborts mid-flight). This
+    // aborted terminal belongs to the new cycle and must surface.
+    fakeSession.emit("event", { type: "agent_end", messages: [{ role: "assistant", stopReason: "aborted", content: [] }] });
 
     const cancelledStatuses = statusEvents(events).filter((event) => event.status === "cancelled");
     expect(cancelledStatuses).toHaveLength(2);

@@ -196,12 +196,14 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private pendingSlashSubmissions: Array<{ raw: string; beforeQueue?: ReadonlyMap<string, number> }> = [];
   // After an explicit abort() we synthesize a `status: cancelled` event right away. Pi will
   // still drain the aborted turn and eventually emit its own turn_end/agent_end with
-  // stopReason="aborted" (normalized to another `status: cancelled`). That duplicate arrives
-  // asynchronously, so if the user has already steered the cancelled session into a new turn,
-  // the late event overwrites the freshly-running state and stamps a second "Cancelled by user"
-  // bubble on top of the steer. Mark that we are expecting one such drain after each abort and
-  // suppress the matching event in runtimeEventFromPiEvent.
-  private pendingAbortAcknowledgement = false;
+  // stopReason="aborted" (each normalized to another `status: cancelled`). Pi can emit BOTH
+  // a `turn_end` and an `agent_end` for a single abort, so a once-only boolean flag let the
+  // second event leak through and stamp a duplicate "Cancelled by user" bubble on top of any
+  // steer/follow-up the user sent in between. Track the number of in-flight abort cycles
+  // instead, suppress every aborted terminal event while the counter is non-zero, and only
+  // clear the counter when Pi opens a fresh agent cycle (agent_start) so a real cancellation
+  // of the new turn still surfaces.
+  private pendingAbortAcknowledgements = 0;
 
   constructor(readonly id: string, private readonly runtime: AgentSessionRuntime, private configuredThinkingLevel?: ThinkingLevel, private readonly bridgeOptions: { disableBlockingDialogs?: boolean } = {}) {
     this.uiBridge = this.createBridge();
@@ -274,7 +276,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       this.initialPromptTimer = undefined;
     }
     // Set before awaiting Pi so a late turn_end/agent_end that races us still sees the flag.
-    this.pendingAbortAcknowledgement = true;
+    this.pendingAbortAcknowledgements += 1;
     await this.runtime.session.abort();
     this.emit({ type: "status", status: "cancelled", summary: "Cancelled" });
   }
@@ -683,6 +685,9 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
   private runtimeEventFromPiEvent(event: unknown): RuntimeEvent | undefined {
     const record = asRecord(event);
+    // A new agent cycle starts: stop absorbing aborted drains from prior abort cycles so a
+    // real cancellation of the freshly-started turn still surfaces as `cancelled`.
+    if (record.type === "agent_start") this.pendingAbortAcknowledgements = 0;
     if (record.type === "queue_update") {
       const rawSteering = Array.isArray(record.steering) ? (record.steering as readonly string[]) : [];
       const rawFollowUp = Array.isArray(record.followUp) ? (record.followUp as readonly string[]) : [];
@@ -725,11 +730,12 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     }
 
     if (runtimeEvent?.type === "status") {
-      // The aborted turn's natural terminal event from Pi is redundant with the synthetic
-      // cancelled we already emitted from abort(); drop it so it cannot land after a follow-up
-      // steer has revived the session and stamp a second "Cancelled by user" bubble.
-      if (runtimeEvent.status === "cancelled" && this.pendingAbortAcknowledgement && isAbortedTerminalPiEvent(record)) {
-        this.pendingAbortAcknowledgement = false;
+      // The aborted turn's natural terminal events from Pi are redundant with the synthetic
+      // cancelled we already emitted from abort(); drop every aborted terminal that arrives
+      // before the next agent_start so they cannot land after a follow-up/steer revived the
+      // session and stamp a second "Cancelled by user" bubble. Pi can emit both turn_end and
+      // agent_end for a single abort, hence the counter rather than a once-only flag.
+      if (runtimeEvent.status === "cancelled" && this.pendingAbortAcknowledgements > 0 && isAbortedTerminalPiEvent(record)) {
         return undefined;
       }
       if (runtimeEvent.status === "failed" && record.type === "agent_end" && lastAssistantStopReason(record.messages) === "error") {

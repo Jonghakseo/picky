@@ -544,9 +544,16 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
         if (!inputId || inputId === this.activeInputId) this.activeInputId = undefined;
         break;
       }
-      case "error":
-        this.emit({ type: "main_realtime_state", state: "failed", message: stringField(event, "error.message") ?? "Realtime API error" });
+      case "error": {
+        const message = stringField(event, "error.message") ?? "Realtime API error";
+        const code = stringField(event, "error.code");
+        const type = stringField(event, "error.type");
+        const param = stringField(event, "error.param");
+        const eventId = stringField(event, "error.event_id");
+        logAgentd("main realtime server error", { type, code, param, eventId, message });
+        this.emit({ type: "main_realtime_state", state: "failed", message });
         break;
+      }
       default:
         break;
     }
@@ -664,6 +671,15 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
 
   private sendClientEvent(event: Record<string, unknown>): void {
     if (this.ws?.readyState !== OPENAI_WS_READY_STATE_OPEN) throw new Error("Realtime WebSocket is not connected");
+    if (event.type === "conversation.item.create") {
+      const item = (event as { item?: Record<string, unknown> }).item ?? {};
+      const content = (item.content as Array<Record<string, unknown>> | undefined) ?? [];
+      logAgentd("main realtime client item create", {
+        role: item.role as string | undefined,
+        contentTypes: content.map((c) => c.type as string | undefined).join(","),
+        textChars: content.reduce((sum, c) => sum + (typeof c.text === "string" ? c.text.length : 0), 0),
+      });
+    }
     this.ws.send(JSON.stringify({ event_id: `event-${randomUUID()}`, ...event }));
   }
 

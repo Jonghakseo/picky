@@ -38,6 +38,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				Watchdog/PickyWatchdogAlertHelper/main.swift,
 			);
 			target = 28F22CBE2F56440300A0FC59 /* Picky */;
 		};

@@ -604,6 +604,10 @@ struct PickySettings: Codable, Equatable {
     /// not silently re-add the command after they removed it. The Settings
     /// Install button flips this back to `false` so they can opt back in.
     var shellCommandAutoInstallOptedOut: Bool
+    /// When true (default) the main-thread watchdog runs and offers a
+    /// recovery dialog when the UI becomes unresponsive. Off-switch is
+    /// exposed for developers/QA who deliberately freeze the UI to debug.
+    var mainThreadWatchdogEnabled: Bool
     /// User-facing chrome language. `.system` follows whatever language macOS
     /// surfaces via `Locale.preferredLanguages`; the explicit cases pin the
     /// app even when the OS is set to something else. Adding a language is
@@ -677,6 +681,7 @@ struct PickySettings: Codable, Equatable {
         updatesAutomaticChecksEnabled: Bool = true,
         onboardingCompletedVersion: Int = 0,
         shellCommandAutoInstallOptedOut: Bool = false,
+        mainThreadWatchdogEnabled: Bool = true,
         appLanguage: PickyLanguage = .system,
         detachedPanelFrames: [String: PickyDetachedPanelFrame] = [:]
     ) {
@@ -730,6 +735,7 @@ struct PickySettings: Codable, Equatable {
         self.updatesAutomaticChecksEnabled = updatesAutomaticChecksEnabled
         self.onboardingCompletedVersion = onboardingCompletedVersion
         self.shellCommandAutoInstallOptedOut = shellCommandAutoInstallOptedOut
+        self.mainThreadWatchdogEnabled = mainThreadWatchdogEnabled
         self.appLanguage = appLanguage
         self.detachedPanelFrames = detachedPanelFrames
     }
@@ -797,6 +803,7 @@ struct PickySettings: Codable, Equatable {
             updatesAutomaticChecksEnabled: true,
             onboardingCompletedVersion: 0,
             shellCommandAutoInstallOptedOut: false,
+            mainThreadWatchdogEnabled: true,
             appLanguage: .system,
             detachedPanelFrames: [:]
         )
@@ -883,6 +890,7 @@ struct PickySettings: Codable, Equatable {
         case updatesAutomaticChecksEnabled
         case onboardingCompletedVersion
         case shellCommandAutoInstallOptedOut
+        case mainThreadWatchdogEnabled
         case appLanguage
         case detachedPanelFrames
     }
@@ -949,6 +957,7 @@ struct PickySettings: Codable, Equatable {
         // command. Anyone who hates the auto-install can Uninstall once from
         // Settings to flip this to true.
         shellCommandAutoInstallOptedOut = try container.decodeIfPresent(Bool.self, forKey: .shellCommandAutoInstallOptedOut) ?? defaults.shellCommandAutoInstallOptedOut
+        mainThreadWatchdogEnabled = try container.decodeIfPresent(Bool.self, forKey: .mainThreadWatchdogEnabled) ?? defaults.mainThreadWatchdogEnabled
         // Existing installs that predate localization decode as `.system` —
         // they'll follow whatever language they were already comfortable with
         // (the OS preference) without any visible change.

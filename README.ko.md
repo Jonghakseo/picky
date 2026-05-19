@@ -2,6 +2,12 @@
   <img src="./assets/picky-header-logo.svg" alt="Picky" width="240" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/Jonghakseo/picky/releases/latest">
+    <img src="https://img.shields.io/badge/Download-macOS-000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS용 다운로드" />
+  </a>
+</p>
+
 # Picky
 
 <p align="center">

@@ -505,6 +505,33 @@ struct PickyCompanionManagerTests {
         #expect(manager.voiceState == .idle)
     }
 
+    @Test func realtimeReadyAfterTurnDoneDoesNotCloseBubbleWhilePlaying() async throws {
+        // Regression: agentd emits `state: ready` immediately after response.done,
+        // but the local AVAudio queue is still draining the PCM chunks for several
+        // more seconds. The voice machine's `.ready` branch unconditionally calls
+        // clearToIdle whenever `activeSpeechID` is nil — and realtime never sets
+        // activeSpeechID — so forwarding `.ready` mid-playback would close the
+        // assistant bubble while the user is still hearing the answer. The ready
+        // transition must be held until the playback engine drains.
+        let playback = FakeRealtimeAudioPlaybackEngine()
+        let inputID = UUID()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            realtimeAudioPlaybackEngine: playback
+        )
+
+        manager.applyAgentEvent(.mainRealtimeOutputAudioDelta(inputId: inputID, audioBase64: "AAAA"))
+        manager.applyAgentEvent(.mainRealtimeTurnDone(PickyMainRealtimeTurnDoneEvent(inputId: inputID, status: .completed, finalTranscript: "완료")))
+        manager.applyAgentEvent(.mainRealtimeStateChanged(PickyMainRealtimeStateEvent(state: .ready, message: nil)))
+
+        #expect(manager.voiceState == .responding)
+
+        playback.finishPlayback()
+
+        #expect(manager.voiceState == .idle)
+    }
+
     @Test func realtimeTranscriptEventsDoNotTriggerExistingSpeechProvider() async throws {
         let speechProvider = FakeSpeechPlaybackProvider()
         let manager = CompanionManager(

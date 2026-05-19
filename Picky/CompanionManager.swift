@@ -2339,6 +2339,17 @@ final class CompanionManager: ObservableObject {
     }
 
     private func applyMainRealtimeState(_ event: PickyMainRealtimeStateEvent) {
+        // OpenAI Realtime emits `state: ready` immediately after response.done,
+        // but the local AVAudio queue still has several seconds of PCM buffered
+        // for playback. PickyVoiceInteractionMachine's `.ready` branch calls
+        // clearToIdle whenever `activeSpeechID` is nil — and realtime never
+        // sets activeSpeechID — so forwarding `.ready` now would close the
+        // assistant bubble mid-speech. Hold the transition until the playback
+        // engine drains; `handleRealtimePlaybackDrained` dispatches
+        // `realtimeTurnDone`, which clears the machine to idle at that point.
+        if event.state == .ready, realtimeAudioPlaybackEngine.isPlaying {
+            return
+        }
         reduceVoiceInteraction(.realtimeStateChanged(event.state))
         switch event.state {
         case .connecting:

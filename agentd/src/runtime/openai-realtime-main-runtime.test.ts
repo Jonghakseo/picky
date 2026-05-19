@@ -739,6 +739,36 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(secondCreate?.response).toEqual({ output_modalities: ["text"] });
   });
 
+  it("omits the TTS parenthesis hint from session.update instructions and the bootstrap user item", async () => {
+    // Regression: the Pi pipeline strips `( ... )` before TTS playback, but
+    // Realtime synthesises audio directly so any leftover hint makes the
+    // model start reading URLs and paths aloud.
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+
+    const sent = socket.sent.map((raw) => JSON.parse(raw) as Record<string, any>);
+    const sessionUpdate = sent.find((event) => event.type === "session.update")!;
+    expect(sessionUpdate.session.instructions).not.toContain("`( ... )`");
+    expect(sessionUpdate.session.instructions).not.toContain("automatically skips parenthesised content");
+
+    const bootstrapUser = sent.find((event) =>
+      event.type === "conversation.item.create" && event.item?.role === "user"
+    )!;
+    const bootstrapText: string = bootstrapUser.item.content[0].text;
+    expect(bootstrapText).not.toContain("`( ... )`");
+    expect(bootstrapText).not.toContain("automatically skips parenthesised content");
+  });
+
   it("routes text followUp prompts through conversation.item.create + response.create", async () => {
     const socket = new FakeRealtimeSocket();
     const runtime = new OpenAIRealtimeMainRuntime({

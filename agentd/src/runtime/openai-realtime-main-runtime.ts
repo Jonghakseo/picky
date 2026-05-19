@@ -436,7 +436,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     this.lastTurnUsage = { ...ZERO_USAGE };
     this.sessionUsage = { ...ZERO_USAGE };
     this.sendSessionUpdate();
-    const bootstrap = buildMainAgentBootstrapPair();
+    const bootstrap = buildMainAgentBootstrapPair({ omitTtsParenthesisHint: true });
     await this.injectInitialBootstrap(bootstrap);
     await this.replayHistory();
     this.emit({ type: "main_realtime_state", state: "ready" });
@@ -1059,7 +1059,7 @@ function mapReasoningEffort(level: ThinkingLevel, fallback: OpenAIRealtimeAuthCo
 
 function buildRealtimeInstructions(): string {
   return [
-    buildMainAgentBootstrapPair().user,
+    buildMainAgentBootstrapPair({ omitTtsParenthesisHint: true }).user,
     "",
     "## Realtime voice mode overrides",
     "- You are speaking directly to the user. Keep spoken replies concise, natural, and in the user's language.",

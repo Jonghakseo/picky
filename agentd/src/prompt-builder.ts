@@ -92,16 +92,52 @@ interface MainAgentBootstrapPair {
   assistant: string;
 }
 
+export interface MainAgentBootstrapOptions {
+  compactSummary?: string;
+  /**
+   * The Pi-driven Picky pipeline post-processes synthesized speech and strips
+   * any text wrapped in `( ... )` before TTS playback. The OpenAI Realtime API
+   * has no such hook — the model voices everything it emits — so the
+   * parenthesis hint must be removed when bootstrapping a Realtime session,
+   * otherwise the assistant will start reading URLs and paths aloud.
+   */
+  omitTtsParenthesisHint?: boolean;
+}
+
 /**
  * Returns the synthetic first turn injected into a fresh Picky transcript.
  * The user message instructs the agent how Picky reads its replies aloud; the
  * assistant message is a short acknowledgement so the LLM never sees two
  * consecutive user turns. Picky's TTS layer strips parenthesised content from
  * spoken playback, so detail like URLs or paths can be safely placed inside
- * `(...)` for the visible transcript without being read aloud.
+ * `(...)` for the visible transcript without being read aloud. The Realtime
+ * runtime turns this hint off via `omitTtsParenthesisHint` because OpenAI's
+ * model voices parenthesised text verbatim.
  */
-export function buildMainAgentBootstrapPair(compactSummary?: string): MainAgentBootstrapPair {
-  const trimmedSummary = compactSummary?.trim();
+export function buildMainAgentBootstrapPair(
+  optionsOrSummary?: string | MainAgentBootstrapOptions,
+): MainAgentBootstrapPair {
+  const options: MainAgentBootstrapOptions = typeof optionsOrSummary === "string"
+    ? { compactSummary: optionsOrSummary }
+    : optionsOrSummary ?? {};
+  const trimmedSummary = options.compactSummary?.trim();
+  const replyStyleSection: string[] = options.omitTtsParenthesisHint
+    ? [
+        "## Direct reply style for Picky TTS",
+        "",
+        "1. Write replies as natural sentences in the user's language only, with no markdown, code blocks, bullet points, or tables, because Picky reads the text aloud as-is.",
+        "2. Awkward-to-hear details like URLs, file paths, session IDs, or code identifiers are read aloud verbatim in this mode — paraphrase them (e.g. \"see the Pickle card for the link\") or omit them from the spoken portion entirely; never wrap them in parentheses expecting them to be skipped.",
+        "3. Reply concisely in 1-3 short sentences at a time, and do not stretch into longer explanations unless the user asks for more.",
+        "4. When delegating to a Pickle or calling a tool, follow the tool-use rules above as-is; apply this reply style only to the text answer that goes directly to the user.",
+      ]
+    : [
+        "## Direct reply style for Picky TTS",
+        "",
+        "1. Write replies as natural sentences in the user's language only, with no markdown, code blocks, bullet points, or tables, because Picky reads the text aloud as-is.",
+        "2. If awkward-to-hear details like URLs, file paths, session IDs, or code identifiers are necessary, place them inside parentheses `( ... )` at the end of the sentence. Picky's TTS layer automatically skips parenthesised content during playback while still showing it on screen.",
+        "3. Reply concisely in 1-3 short sentences at a time, and do not stretch into longer explanations unless the user asks for more.",
+        "4. When delegating to a Pickle or calling a tool, follow the tool-use rules above as-is; apply this reply style only to the text answer that goes directly to the user.",
+      ];
   const user = [
     "This message was not sent by the user. It is a one-time bootstrap notice injected by Picky agentd when a Picky session starts.",
     "Subsequent `# Picky turn` messages will only carry each turn's user request and captured context. Keep the standing instructions below in effect for the entire session.",
@@ -118,12 +154,7 @@ export function buildMainAgentBootstrapPair(compactSummary?: string): MainAgentB
     "- If the captured context Source is `text`, treat the request text as deliberate typed input, not speech recognition output.",
     "- Do not expose internal tool logs verbatim and do not hard-code workflows from URLs or app names.",
     "",
-    "## Direct reply style for Picky TTS",
-    "",
-    "1. Write replies as natural sentences in the user's language only, with no markdown, code blocks, bullet points, or tables, because Picky reads the text aloud as-is.",
-    "2. If awkward-to-hear details like URLs, file paths, session IDs, or code identifiers are necessary, place them inside parentheses `( ... )` at the end of the sentence. Picky's TTS layer automatically skips parenthesised content during playback while still showing it on screen.",
-    "3. Reply concisely in 1-3 short sentences at a time, and do not stretch into longer explanations unless the user asks for more.",
-    "4. When delegating to a Pickle or calling a tool, follow the tool-use rules above as-is; apply this reply style only to the text answer that goes directly to the user.",
+    ...replyStyleSection,
     "",
     ...(trimmedSummary
       ? [

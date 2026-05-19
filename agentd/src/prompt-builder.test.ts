@@ -197,6 +197,26 @@ describe("neutral prompt builder", () => {
     expect(pair.assistant).toBe("OK");
   });
 
+  it("omits the TTS parenthesis hint for Realtime runtimes that lack the post-processing hook", () => {
+    // OpenAI Realtime synthesises audio directly from the model output — there
+    // is no Picky-side TTS layer to strip `( ... )` before playback — so the
+    // hint must not reach the model or it will start reading URLs aloud.
+    const pair = buildMainAgentBootstrapPair({ omitTtsParenthesisHint: true });
+    expect(pair.user).not.toContain("`( ... )`");
+    expect(pair.user).not.toContain("automatically skips parenthesised content");
+    // The TTS-friendly framing (no markdown, concise) still applies.
+    expect(pair.user).toContain("natural sentences in the user's language");
+    expect(pair.user).toContain("no markdown, code blocks, bullet points, or tables");
+    expect(pair.user).toContain("read aloud verbatim in this mode");
+  });
+
+  it("still threads through the previous-epoch summary when the TTS hint is omitted", () => {
+    const pair = buildMainAgentBootstrapPair({ compactSummary: "earlier summary", omitTtsParenthesisHint: true });
+    expect(pair.user).toContain("## Previous Picky epoch summary");
+    expect(pair.user).toContain("earlier summary");
+    expect(pair.user).not.toContain("`( ... )`");
+  });
+
   it("builds language-neutral Pickle completion instructions", () => {
     const prompt = buildMainAgentPickleCompletionPrompt({ id: "p1", title: "Pickle work", status: "completed", finalAnswer: "Done" });
     expect(prompt.text).toContain("Tell the user in the user's language");

@@ -583,7 +583,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "setMainAgentNarrationEnabled":
       return { commandId: command.id, type: command.type, enabled: command.enabled ? 1 : 0 };
     case "configureMainRealtimeAuth":
-      return { commandId: command.id, type: command.type, provider: command.provider, modelOrDeployment: command.modelOrDeployment, voice: command.voice, keyPresent: command.apiKey ? 1 : 0, endpointHost: endpointHostForLog(command.azure?.resourceEndpoint) };
+      return { commandId: command.id, type: command.type, provider: command.provider, authMode: command.authMode ?? "apiKey", modelOrDeployment: command.modelOrDeployment, voice: command.voice, keyPresent: command.apiKey ? 1 : 0, endpointHost: endpointHostForLog(command.azure?.resourceEndpoint) };
     case "beginMainRealtimeVoiceTurn":
       return { commandId: command.id, type: command.type, inputId: command.inputId, contextId: command.context.id, source: command.context.source, screenshots: command.context.screenshots.length };
     case "appendMainRealtimeInputAudio":

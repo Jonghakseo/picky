@@ -1297,7 +1297,11 @@ final class CompanionManager: ObservableObject {
     private func beginRealtimeMainVoiceTurn(inputID: UUID) {
         let settings = PickySettingsStore().load()
         let realtime = settings.openAIRealtime.normalized()
-        guard !realtime.apiKey.isEmpty else {
+        // Codex OAuth resolves the bearer inside agentd at connect time, so an
+        // empty Platform API key is fine when authMode is codexOAuth. Azure
+        // always needs the api-key field regardless of authMode.
+        let requiresApiKey = realtime.authMode == .apiKey || realtime.provider == .azureOpenAI
+        if requiresApiKey, realtime.apiKey.isEmpty {
             interactionCoordinator.accept(
                 .voiceStartFailed(message: "OpenAI Realtime API key is required.", inputID: inputID),
                 correlation: PickyInteractionCorrelation(inputID: inputID, source: .voice)

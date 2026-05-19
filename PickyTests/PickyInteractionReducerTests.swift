@@ -409,6 +409,130 @@ struct PickyInteractionReducerTests {
         #expect(voiceBusyTransition.state.queuedSpeechReplies.count == 1, "voice-priority path must preserve queued voice replies")
     }
 
+    // MARK: - sessionTerminated (HUD abort / agentd-side terminal status without quickReply)
+
+    @Test func sessionTerminatedDropsWaitingForAgentForCliSubmission() {
+        // CLI submission flips into .waitingForAgent via externalContextCaptured. When the
+        // backing Pickle is aborted from HUD (or fails on agentd), no quickReply ever lands,
+        // so the reducer must accept a synthetic .sessionTerminated event to drop the cursor
+        // loading state. Otherwise the cursor stays yellow forever.
+        let packet = context(id: "context-cli-aborted", source: "cli", transcript: "hello")
+        var state = reduce(PickyInteractionState(), .externalContextCaptured(inputID: inputA, text: "hello", context: packet), id: timerA).state
+        state = reduce(state, .agentSubmissionAccepted(contextID: "context-cli-aborted", sessionID: "pickle-X", inputID: inputA), id: timerB).state
+        #expect(state.output == .waitingForAgent(inputID: inputA, contextID: "context-cli-aborted", promptPreview: "hello"))
+
+        let terminated = reduce(state, .sessionTerminated(sessionID: "pickle-X"), id: UUID())
+
+        #expect(terminated.state.output == .idle, "cli waitingForAgent must transition to idle on terminal status")
+        if case .visible(let reasons) = terminated.state.overlay {
+            #expect(!reasons.contains(.waitingForVoiceResponse), "the waitingForVoiceResponse overlay reason must be released")
+        }
+    }
+
+    @Test func sessionTerminatedDropsWaitingForAgentForQuickInputSubmission() {
+        // quickInput-source text submission also drives .waitingForAgent + cursor presentation.
+        var state = PickyInteractionState()
+        state = reduce(state, .textSubmitted(text: "hi", inputID: inputA), id: timerA, correlation: .init(inputID: inputA, source: .quickInput)).state
+        state = reduce(state, .textContextCaptured(inputID: inputA, context: context(id: "ctx-qi", source: "quickInput", transcript: "hi")), id: timerB).state
+        state = reduce(state, .agentSubmissionAccepted(contextID: "ctx-qi", sessionID: "pickle-Q", inputID: inputA), id: UUID()).state
+        #expect(state.output == .waitingForAgent(inputID: inputA, contextID: "ctx-qi", promptPreview: "hi"))
+
+        let terminated = reduce(state, .sessionTerminated(sessionID: "pickle-Q"), id: UUID())
+
+        #expect(terminated.state.output == .idle)
+    }
+
+    @Test func sessionTerminatedIgnoresUnknownSession() {
+        // A terminal status for a session the reducer never saw (e.g. another tab's session)
+        // must be a no-op. The cursor must not be released for an unrelated session.
+        let packet = context(id: "context-cli-other", source: "cli", transcript: "hello")
+        var state = reduce(PickyInteractionState(), .externalContextCaptured(inputID: inputA, text: "hello", context: packet), id: timerA).state
+        state = reduce(state, .agentSubmissionAccepted(contextID: "context-cli-other", sessionID: "pickle-A", inputID: inputA), id: timerB).state
+        let before = state
+
+        let terminated = reduce(state, .sessionTerminated(sessionID: "some-other-session"), id: UUID())
+
+        #expect(terminated.state.output == before.output)
+        #expect(terminated.state.contextOwnership == before.contextOwnership)
+        #expect(terminated.journalRecords.last?.kind == .staleEvent)
+    }
+
+    @Test func sessionTerminatedIsIdempotent() {
+        // After quickReply already cleared .waitingForAgent, or after a previous
+        // sessionTerminated already ran, another .sessionTerminated for the same
+        // session must be a safe no-op (PTT interrupt + agentd-side cancel can both fire).
+        let packet = context(id: "context-cli-idem", source: "cli", transcript: "hello")
+        var state = reduce(PickyInteractionState(), .externalContextCaptured(inputID: inputA, text: "hello", context: packet), id: timerA).state
+        state = reduce(state, .agentSubmissionAccepted(contextID: "context-cli-idem", sessionID: "pickle-I", inputID: inputA), id: timerB).state
+
+        state = reduce(state, .sessionTerminated(sessionID: "pickle-I"), id: UUID()).state
+        #expect(state.output == .idle)
+
+        let second = reduce(state, .sessionTerminated(sessionID: "pickle-I"), id: UUID())
+        #expect(second.state.output == .idle)
+        #expect(second.journalRecords.last?.kind == .staleEvent)
+    }
+
+    @Test func sessionTerminatedAfterQuickReplyDoesNotRevertReply() {
+        // Race: quickReply arrives, then later sessionUpdated reports a terminal status.
+        // The quickReply already moved output to .showingTextReply/.speaking; the late
+        // .sessionTerminated must not yank that visible reply.
+        let packet = context(id: "context-cli-race", source: "cli", transcript: "hello")
+        var state = reduce(PickyInteractionState(), .externalContextCaptured(inputID: inputA, text: "hello", context: packet), id: timerA).state
+        state = reduce(state, .agentSubmissionAccepted(contextID: "context-cli-race", sessionID: "pickle-R", inputID: inputA), id: timerB).state
+        state = reduce(state, .quickReply(contextID: "context-cli-race", text: "answer", originSource: .cli, replyKind: .main, sessionID: "pickle-R", inputID: inputA), id: UUID()).state
+        let outputBefore = state.output
+
+        let terminated = reduce(state, .sessionTerminated(sessionID: "pickle-R"), id: UUID())
+
+        #expect(terminated.state.output == outputBefore, "a late terminal status must not clobber an already-displayed reply")
+    }
+
+    @Test func sessionTerminatedOnlyClearsWaitingForMatchingSession() {
+        // Two CLI submissions, both still pending. The reducer overwrites the previous
+        // .waitingForAgent so the visible cursor belongs to submission B. A late terminal
+        // for session A must not touch B's cursor — the session-id mapping is what
+        // distinguishes the two.
+        let packetA = context(id: "ctx-A", source: "cli", transcript: "A")
+        var state = reduce(PickyInteractionState(), .externalContextCaptured(inputID: inputA, text: "A", context: packetA), id: timerA).state
+        state = reduce(state, .agentSubmissionAccepted(contextID: "ctx-A", sessionID: "pickle-A", inputID: inputA), id: timerB).state
+
+        let packetB = context(id: "ctx-B", source: "cli", transcript: "B")
+        state = reduce(state, .externalContextCaptured(inputID: inputB, text: "B", context: packetB), id: UUID()).state
+        state = reduce(state, .agentSubmissionAccepted(contextID: "ctx-B", sessionID: "pickle-B", inputID: inputB), id: UUID()).state
+        #expect(state.output == .waitingForAgent(inputID: inputB, contextID: "ctx-B", promptPreview: "B"))
+
+        // Late terminal for A must not touch B's cursor (different inputID + contextID).
+        let terminated = reduce(state, .sessionTerminated(sessionID: "pickle-A"), id: UUID())
+        #expect(terminated.state.output == .waitingForAgent(inputID: inputB, contextID: "ctx-B", promptPreview: "B"))
+        // Cleanup still happened for A's mapping entry.
+        #expect(terminated.state.pendingAgentRequestsBySession["pickle-A"] == nil)
+        #expect(terminated.state.pendingAgentRequestsBySession["pickle-B"] != nil, "B's mapping must survive A's termination")
+    }
+
+    @Test func sessionTerminatedClearsPendingInputStateForAbortedSession() {
+        // After abort the pending input slot for that turn must also be released so the
+        // input phase returns to idle. Otherwise the next user input would race with stale
+        // pendingTextInputs/pendingVoiceInputs entries.
+        let packet = context(id: "ctx-cleanup", source: "cli", transcript: "hi")
+        var state = reduce(PickyInteractionState(), .externalContextCaptured(inputID: inputA, text: "hi", context: packet), id: timerA).state
+        state = reduce(state, .agentSubmissionAccepted(contextID: "ctx-cleanup", sessionID: "pickle-C", inputID: inputA), id: timerB).state
+
+        let terminated = reduce(state, .sessionTerminated(sessionID: "pickle-C"), id: UUID())
+
+        #expect(terminated.state.pendingTextInputs[inputA] == nil)
+        #expect(terminated.state.pendingVoiceInputs[inputA] == nil)
+    }
+
+    @Test func sessionTerminatedJSONRoundTripsViaProtocol() throws {
+        // The event is part of the codable interaction protocol so journal persistence
+        // and (potential future) cross-boundary replay must survive a roundtrip.
+        let event = PickyInteractionEvent.sessionTerminated(sessionID: "pickle-J")
+        let data = try JSONEncoder().encode(event)
+        let decoded = try JSONDecoder().decode(PickyInteractionEvent.self, from: data)
+        #expect(decoded == event)
+    }
+
     @Test func cliOwnershipIsPreservedAcrossVoiceTurnSoLaterQuickReplyStillRoutesAsCli() {
         // Even when the user's voice turn lands its own quickReply first, the CLI
         // ownership entry must survive so the eventual CLI quickReply maps to the

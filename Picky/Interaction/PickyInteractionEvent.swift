@@ -173,6 +173,12 @@ enum PickyInteractionEvent: Equatable, Codable {
     case quickReply(contextID: String, text: String, originSource: PickyQuickReplyOriginSource?, replyKind: PickyQuickReplyKind?, sessionID: String?, inputID: UUID?)
     case passiveAgentSummary(sessionID: String, text: String)
     case pickleCompleted(sessionID: String, summary: String?)
+    /// Synthetic terminal signal dispatched by `CompanionManager` when an agentd session
+    /// transitions to a terminal status (`cancelled`/`failed`) without emitting its own
+    /// `quickReply` — typically a HUD abort or a runtime crash. The reducer uses this to
+    /// release the cursor's `.waitingForAgent` output that would otherwise stay yellow
+    /// forever. Idempotent: replaying for an unknown session is a no-op (`staleEvent`).
+    case sessionTerminated(sessionID: String)
 
     case pointerRequested(PickyPointerTarget)
     case pointerCancelled(pointerID: String, reason: PickyPointerCancelReason)
@@ -191,7 +197,7 @@ enum PickyInteractionEvent: Equatable, Codable {
         case appStarted, permissionsChanged, cursorPreferenceChanged
         case voicePressed, voiceStartFailed, voiceReleased, transcriptFinal, transcriptFailed
         case textSubmitted, textContextCaptured, textSubmissionAccepted, textSubmissionFailed
-        case voiceContextCaptured, externalContextCaptured, agentSubmissionAccepted, quickReply, passiveAgentSummary, pickleCompleted
+        case voiceContextCaptured, externalContextCaptured, agentSubmissionAccepted, quickReply, passiveAgentSummary, pickleCompleted, sessionTerminated
         case pointerRequested, pointerCancelled, pointerAnimationFinished
         case speechStarted, speechFinished, speechFailed, minimumDisplayTimerFired
         case overlayShown, overlayHidden, transientHideTimerFired
@@ -284,6 +290,9 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .pickleCompleted:
             let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
             self = .pickleCompleted(sessionID: try payload.decodeFlexibleString(primary: .sessionID, fallback: .sessionId), summary: try payload.decodeIfPresent(String.self, forKey: .summary))
+        case .sessionTerminated:
+            let payload = try container.nestedContainer(keyedBy: FieldKey.self, forKey: key)
+            self = .sessionTerminated(sessionID: try payload.decodeFlexibleString(primary: .sessionID, fallback: .sessionId))
         case .pointerRequested:
             self = .pointerRequested(try container.decode(PickyPointerTarget.self, forKey: key))
         case .pointerCancelled:
@@ -375,6 +384,9 @@ enum PickyInteractionEvent: Equatable, Codable {
         case .pickleCompleted(let sessionID, let summary):
             var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .pickleCompleted)
             try payload.encode(sessionID, forKey: .sessionID); try payload.encodeIfPresent(summary, forKey: .summary)
+        case .sessionTerminated(let sessionID):
+            var payload = container.nestedContainer(keyedBy: FieldKey.self, forKey: .sessionTerminated)
+            try payload.encode(sessionID, forKey: .sessionID)
         case .pointerRequested(let target):
             try container.encode(target, forKey: .pointerRequested)
         case .pointerCancelled(let pointerID, let reason):

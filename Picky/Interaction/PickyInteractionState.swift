@@ -11,6 +11,12 @@ struct PickyInteractionState: Equatable, Codable {
     var contextOwnership: [String: PickyContextOwner]
     var queuedSpeechReplies: [PickyQueuedSpeechReply]
     var lastDisplayMessage: PickyDisplayMessage?
+    /// sessionID -> (inputID, contextID) captured at `agentSubmissionAccepted` so a later
+    /// `.sessionTerminated` can release the matching `.waitingForAgent` output even when
+    /// no `quickReply` ever arrives (HUD abort / runtime cancel). Cleared on `quickReply`
+    /// for the same sessionID and on `.sessionTerminated`. Codable with a default so older
+    /// on-disk journals stay loadable.
+    var pendingAgentRequestsBySession: [String: PickyPendingAgentRequest]
 
     init(
         input: PickyInputPhase = .idle,
@@ -21,7 +27,8 @@ struct PickyInteractionState: Equatable, Codable {
         pendingVoiceInputs: [UUID: PickyVoiceInputState] = [:],
         contextOwnership: [String: PickyContextOwner] = [:],
         queuedSpeechReplies: [PickyQueuedSpeechReply] = [],
-        lastDisplayMessage: PickyDisplayMessage? = nil
+        lastDisplayMessage: PickyDisplayMessage? = nil,
+        pendingAgentRequestsBySession: [String: PickyPendingAgentRequest] = [:]
     ) {
         self.input = input
         self.output = output
@@ -32,7 +39,28 @@ struct PickyInteractionState: Equatable, Codable {
         self.contextOwnership = contextOwnership
         self.queuedSpeechReplies = queuedSpeechReplies
         self.lastDisplayMessage = lastDisplayMessage
+        self.pendingAgentRequestsBySession = pendingAgentRequestsBySession
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.input = try container.decode(PickyInputPhase.self, forKey: .input)
+        self.output = try container.decode(PickyOutputPhase.self, forKey: .output)
+        self.pointer = try container.decode(PickyPointerPhase.self, forKey: .pointer)
+        self.overlay = try container.decode(PickyOverlayPhase.self, forKey: .overlay)
+        self.pendingTextInputs = try container.decode([UUID: PickyTextInputState].self, forKey: .pendingTextInputs)
+        self.pendingVoiceInputs = try container.decode([UUID: PickyVoiceInputState].self, forKey: .pendingVoiceInputs)
+        self.contextOwnership = try container.decode([String: PickyContextOwner].self, forKey: .contextOwnership)
+        self.queuedSpeechReplies = try container.decode([PickyQueuedSpeechReply].self, forKey: .queuedSpeechReplies)
+        self.lastDisplayMessage = try container.decodeIfPresent(PickyDisplayMessage.self, forKey: .lastDisplayMessage)
+        // Older journals do not encode this field; treat absence as an empty map.
+        self.pendingAgentRequestsBySession = try container.decodeIfPresent([String: PickyPendingAgentRequest].self, forKey: .pendingAgentRequestsBySession) ?? [:]
+    }
+}
+
+struct PickyPendingAgentRequest: Equatable, Codable {
+    let inputID: UUID?
+    let contextID: String?
 }
 
 enum PickyInputPhase: Equatable, Codable {

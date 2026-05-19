@@ -368,6 +368,14 @@ final class CompanionManager: ObservableObject {
     /// so fast agent replies are not dropped by the tail of the same utterance.
     private var isVoiceInputAudioSuppressionActive = false
     private var pendingAgentResponseStartedAt: Date?
+    /// Tracks the last status we saw per session so `applyAgentEvent(.sessionUpdated)`
+    /// can detect the *transition* into a terminal status (cancelled/failed/completed)
+    /// rather than reacting on every snapshot. Used by the HUD-abort cursor-cleanup path:
+    /// when a session the cursor is waiting on becomes terminal without a `quickReply`,
+    /// CompanionManager releases the cursor processing state. Idempotent against
+    /// duplicate terminal updates (the second one observes status == prior == terminal
+    /// and short-circuits).
+    private var lastObservedSessionStatuses: [String: PickySessionStatus] = [:]
     /// Voice follow-up target captured at PTT press time and used by the response
     /// task to route the utterance. Exposed read-only at module scope so tests can
     /// guard the race-condition fix in `updateVoicePresentation` (see also the
@@ -1947,6 +1955,7 @@ final class CompanionManager: ObservableObject {
     func applyAgentEvent(_ event: PickyEvent) {
         switch event {
         case .sessionUpdated(let session):
+            handleSessionStatusTransition(session: session)
             updatePassiveAgentSummary(session.lastSummary ?? "\(session.title) · \(session.status.rawValue)")
         case .sessionResourcesReloaded, .sessionLogAppended, .toolActivityUpdated:
             // Progress events are already represented in the HUD. They should not
@@ -2173,6 +2182,60 @@ final class CompanionManager: ObservableObject {
                 self.currentVoicePromptPreview = nil
             }
         }
+    }
+
+    /// Releases cursor state tied to a session that just transitioned to a terminal
+    /// status. The normal completion path runs through `quickReply` -> `finishAwaitingAgentResponse`,
+    /// but HUD aborts (and runtime cancel/fail) reach the client only as a `sessionUpdated`
+    /// with `.cancelled` / `.failed` — no `quickReply` ever lands. Without this hook the
+    /// cursor stays at `.processing` (yellow) forever because both channels that drive it
+    /// (`pendingAgentResponseStartedAt` + interaction state `.waitingForAgent`) never clear.
+    ///
+    /// Idempotent and side-effect-light when nothing matches:
+    ///   - only the *transition* into a terminal status triggers cleanup (duplicate
+    ///     `sessionUpdated` snapshots for the same terminal status are no-ops);
+    ///   - voice-follow-up tracking is only released when the terminated session is the
+    ///     one the cursor is actively waiting on;
+    ///   - the interaction-coordinator dispatch is harmless when the reducer never
+    ///     observed an `agentSubmissionAccepted` for this sessionID.
+    private func handleSessionStatusTransition(session: PickyAgentSession) {
+        let previous = lastObservedSessionStatuses[session.id]
+        lastObservedSessionStatuses[session.id] = session.status
+        guard session.status.isTerminal else { return }
+        if let previous, previous.isTerminal { return }
+        releaseCursorForTerminatedSession(sessionID: session.id, status: session.status)
+    }
+
+    private func releaseCursorForTerminatedSession(sessionID: String, status: PickySessionStatus) {
+        // Only release the voice-input "awaiting agent" timing when the cursor is
+        // actually waiting on THIS session. Otherwise we'd race-clear a fresh voice
+        // turn that started against a different (still-running) Pickle, or an in-flight
+        // spoken reply for an unrelated completed session.
+        if voiceFollowUpSessionIDForCurrentUtterance == sessionID {
+            deferredFinishAwaitingAgentResponseTask?.cancel()
+            deferredFinishAwaitingAgentResponseTask = nil
+            responseStateTask?.cancel()
+            responseStateTask = nil
+            pendingAgentResponseStartedAt = nil
+            currentVoicePromptPreview = nil
+            voicePromptBubbleState = .hidden
+            setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "session-terminated-\(status.rawValue)")
+            // Re-run the voice presentation pipeline. With pendingAgentResponseStartedAt
+            // cleared and no dictation in progress, this falls through to the
+            // `reduceVoiceInteraction(.reset)` branch which moves voiceState out of
+            // `.processing` (the yellow cursor) back to `.idle`. Without this nudge the
+            // PickyVoiceInteractionMachine stays parked in `.loading` and voiceState
+            // never updates because nothing else drives a projection refresh.
+            updateVoicePresentation()
+        }
+        // Dispatch the synthetic terminal event into the interaction reducer so any
+        // `.waitingForAgent` output that the reducer recorded against this session
+        // (CLI / quickInput / voice with cursor presentation) flips back to `.idle`.
+        // The reducer is idempotent: unknown sessionIDs become `.staleEvent` records.
+        interactionCoordinator.accept(
+            .sessionTerminated(sessionID: sessionID),
+            correlation: PickyInteractionCorrelation(sessionID: sessionID, source: .agent)
+        )
     }
 
     private func finishAwaitingAgentResponse(

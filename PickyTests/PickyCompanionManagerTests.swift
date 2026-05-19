@@ -998,6 +998,133 @@ struct PickyCompanionManagerTests {
         try await waitUntil { manager.voiceState == .idle }
     }
 
+    // MARK: - sessionUpdated terminal status -> cursor cleanup (HUD abort regression)
+
+    @Test func sessionUpdatedToCancelledReleasesCursorProcessingForAwaitedSession() async throws {
+        // Repro for the HUD-abort bug: user hits abort on a Pickle that the cursor is
+        // waiting on. agentd patches the session to .cancelled and emits sessionUpdated
+        // (no quickReply ever lands). CompanionManager must detect the terminal transition
+        // and release the cursor; otherwise voiceState stays at .processing (yellow).
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-aborted")
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "hello")
+        #expect(manager.voiceState == .processing)
+
+        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-aborted", status: .cancelled)))
+
+        #expect(manager.voiceState == .idle)
+        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == nil)
+        manager.stop()
+    }
+
+    @Test func sessionUpdatedToFailedReleasesCursorProcessingForAwaitedSession() async throws {
+        // Same flow as cancelled, but exercises the .failed terminal status that
+        // arrives when a runtime crash / unrecoverable error ends the session without
+        // a quickReply.
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-failed")
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "hi")
+        #expect(manager.voiceState == .processing)
+
+        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-failed", status: .failed)))
+
+        #expect(manager.voiceState == .idle)
+        manager.stop()
+    }
+
+    @Test func sessionUpdatedToCancelledForUnrelatedSessionDoesNotReleaseCursor() async throws {
+        // The cursor is waiting on pickle-A; an unrelated pickle-B getting cancelled
+        // must not yank the cursor out of .processing. Without sessionID matching this
+        // would otherwise produce spurious clears whenever ANY background session
+        // terminates.
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-A")
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "hi")
+        #expect(manager.voiceState == .processing)
+
+        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-B", status: .cancelled)))
+
+        #expect(manager.voiceState == .processing, "the cursor was waiting on pickle-A; pickle-B's terminal status must not touch it")
+        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == "pickle-A")
+        manager.stop()
+    }
+
+    @Test func sessionUpdatedToRunningDoesNotReleaseCursor() async throws {
+        // Defensive regression: non-terminal status transitions must keep the cursor's
+        // .processing state intact.
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-running")
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "hi")
+        #expect(manager.voiceState == .processing)
+
+        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-running", status: .running)))
+        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-running", status: .waiting_for_input)))
+        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-running", status: .blocked)))
+
+        #expect(manager.voiceState == .processing)
+        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == "pickle-running")
+        manager.stop()
+    }
+
+    @Test func sessionUpdatedToCancelledAfterPTTInterruptIsIdempotent() async throws {
+        // PTT interrupt already cleared the cursor + voiceFollowUp before the
+        // session-level abort reached agentd and bounced back as sessionUpdated.
+        // The terminal transition must be a safe no-op (no exceptions, no second
+        // mutation of voiceState that would clobber a fresh user input in progress).
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-race")
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "hi")
+        manager.interruptSpokenResponseForVoiceInput()
+        try await waitUntil { manager.voiceState == .idle }
+
+        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-race", status: .cancelled)))
+
+        #expect(manager.voiceState == .idle)
+        manager.stop()
+    }
+
+    @Test func sessionUpdatedToCompletedDoesNotInterruptOngoingSpokenResponse() async throws {
+        // Normal completion delivers a quickReply that already moves voiceState into
+        // .responding (and clears the pending timing). A subsequent sessionUpdated
+        // with .completed must NOT collapse that response back to .idle — the spoken
+        // reply is mid-playback.
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        manager.handleAgentSubmissionAccepted(
+            receipt: PickyAgentSubmissionReceipt(sessionID: "pickle-1", message: "응답이 온 세션"),
+            source: "voice"
+        )
+        #expect(manager.voiceState == .responding)
+
+        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-1", status: .completed)))
+
+        #expect(manager.voiceState == .responding, "a late .completed sessionUpdated must not abort the in-flight spoken reply")
+        manager.stop()
+    }
+
+    @Test func repeatedTerminalSessionUpdatedOnlyTriggersCleanupOnce() async throws {
+        // agentd can re-emit sessionUpdated for the same session multiple times
+        // (e.g. reconnect snapshot + live update). The cleanup must only happen on
+        // the first transition into a terminal status; subsequent terminal updates
+        // for the same session must be silent.
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-replay")
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "hi")
+
+        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-replay", status: .cancelled)))
+        try await waitUntil { manager.voiceState == .idle }
+
+        // Start a NEW awaited turn on a different session; the duplicate terminal
+        // sessionUpdated for the OLD session must not collapse the new cursor state.
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-new")
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "hi again")
+        #expect(manager.voiceState == .processing)
+        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-replay", status: .cancelled)))
+
+        #expect(manager.voiceState == .processing, "duplicate terminal sessionUpdated for the old session must be a no-op")
+        #expect(manager.voiceFollowUpSessionIDForCurrentUtterance == "pickle-new")
+        manager.stop()
+    }
+
     @Test func stripParentheticalsRemovesAsciiAndFullWidthBracketsForSpeech() async throws {
         let asciiInput = "배포는 완료됐어요 (https://example.com/run/123)."
         #expect(stripParentheticalsForSpeech(asciiInput) == "배포는 완료됐어요.")
@@ -1076,6 +1203,22 @@ struct PickyCompanionManagerTests {
 
     private func settle() async throws {
         try await Task.sleep(nanoseconds: 50_000_000)
+    }
+
+    private func session(id: String, status: PickySessionStatus) -> PickyAgentSession {
+        PickyAgentSession(
+            id: id,
+            title: "Pickle",
+            status: status,
+            cwd: nil,
+            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_001),
+            lastSummary: nil,
+            logs: [],
+            tools: [],
+            artifacts: [],
+            changedFiles: []
+        )
     }
 
     /// Polls `predicate` up to one second so timing-sensitive expectations stay

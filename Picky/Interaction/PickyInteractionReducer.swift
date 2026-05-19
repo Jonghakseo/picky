@@ -252,9 +252,15 @@ enum PickyInteractionReducer {
                     state = state.removingOverlayReason(.waitingForVoiceResponse)
                 }
             }
+            // Remember the sessionID -> (inputID, contextID) link so a later
+            // `.sessionTerminated` for the same session can release the cursor's
+            // `.waitingForAgent` output without waiting for a `quickReply` that
+            // will never arrive (HUD abort / runtime cancel).
+            state.pendingAgentRequestsBySession[sessionID] = PickyPendingAgentRequest(inputID: inputID, contextID: contextID)
             record(.accepted, "Agent submission accepted for \(sessionID)")
 
         case .quickReply(let contextID, let text, let originSource, let replyKind, let sessionID, let inputID):
+            if let sessionID { state.pendingAgentRequestsBySession[sessionID] = nil }
             let timerID = envelope.id
             let deadline = envelope.occurredAt.addingTimeInterval(minimumDisplayDuration)
             let owner = state.contextOwnership[contextID] ?? ownerFromMetadata(originSource)
@@ -322,6 +328,37 @@ enum PickyInteractionReducer {
                 state.lastDisplayMessage = PickyDisplayMessage(id: sessionID, contextID: nil, text: summary, source: .pickleCompletion, updatedAt: envelope.occurredAt)
             }
             record(.accepted, "Pickle completed")
+
+        case .sessionTerminated(let sessionID):
+            // Synthetic signal from CompanionManager when an agentd session reaches a
+            // terminal status (cancelled/failed) without emitting `quickReply` — the
+            // canonical case is a HUD abort. We must release any matching cursor
+            // `.waitingForAgent` output here; otherwise the projection keeps reporting
+            // `isWaitingForCursorResponse = true` and the cursor stays yellow forever.
+            guard let pending = state.pendingAgentRequestsBySession.removeValue(forKey: sessionID) else {
+                record(.staleEvent, "Ignored sessionTerminated for unknown session \(sessionID)")
+                break
+            }
+            // Drop pending input slots tied to this aborted submission so a subsequent
+            // user input does not race against stale entries. Safe when the keys are
+            // already gone (e.g. `agentSubmissionAccepted` removed the voice input).
+            if let inputID = pending.inputID {
+                state.pendingTextInputs[inputID] = nil
+                state.pendingVoiceInputs[inputID] = nil
+            }
+            // Only collapse output if it is the .waitingForAgent for THIS request. A
+            // quickReply that already moved output to .showingTextReply/.speaking, or a
+            // newer submission's .waitingForAgent for a different inputID/contextID,
+            // must not be clobbered by a late terminal signal.
+            if case .waitingForAgent(let waitingInputID, let waitingContextID, _) = state.output,
+               waitingInputID == pending.inputID,
+               waitingContextID == pending.contextID {
+                state.output = .idle
+                state = state.removingOverlayReason(.waitingForVoiceResponse)
+                record(.stateChanged, "Session terminated; released cursor waitingForAgent for \(sessionID)")
+            } else {
+                record(.accepted, "Session terminated; cursor output already moved on for \(sessionID)")
+            }
 
         case .pointerRequested(let target):
             if let previous = state.pointer.target?.id, previous != target.id {

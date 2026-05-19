@@ -11,6 +11,7 @@ import Foundation
 enum PickyVoiceProviderSelection: String, Codable, CaseIterable, Identifiable {
     case local
     case openai
+    case openaiRealtime
     case azure
     case elevenLabs
 
@@ -20,6 +21,7 @@ enum PickyVoiceProviderSelection: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .local: "Local"
         case .openai: "OpenAI"
+        case .openaiRealtime: "OpenAI Realtime"
         case .azure: "Azure OpenAI"
         case .elevenLabs: "ElevenLabs"
         }
@@ -34,6 +36,8 @@ enum PickyVoiceProviderSelection: String, Codable, CaseIterable, Identifiable {
             }
         case .openai:
             return "OpenAI"
+        case .openaiRealtime:
+            return "OpenAI Realtime"
         case .azure:
             return "Azure OpenAI"
         case .elevenLabs:
@@ -42,7 +46,15 @@ enum PickyVoiceProviderSelection: String, Codable, CaseIterable, Identifiable {
     }
 
     static func cases(for capability: PickyVoiceProviderCapability) -> [PickyVoiceProviderSelection] {
-        [.local, .openai, .azure, .elevenLabs]
+        switch capability {
+        case .transcription:
+            // openaiRealtime piggybacks on the Codex OAuth bearer agentd already
+            // owns, so it only makes sense for STT; the speech playback picker
+            // never offers it.
+            return [.local, .openai, .openaiRealtime, .azure, .elevenLabs]
+        case .speechPlayback:
+            return [.local, .openai, .azure, .elevenLabs]
+        }
     }
 
     /// Legacy migration: existing settings.json files may contain an `"automatic"`
@@ -1065,7 +1077,13 @@ struct PickySettings: Codable, Equatable {
             readOnlyInvestigationPreference: true,
             daemonPath: "bundled picky-agentd or local development agentd",
             logPath: appSupportRoot.appendingPathComponent("Logs", isDirectory: true).path,
-            sttProvider: .local,
+            // Fresh installs default to OpenAI Realtime STT: agentd holds the
+            // Codex/ChatGPT OAuth bearer and the Realtime transcription session
+            // gives streaming partial transcripts without a separate API key.
+            // Existing users keep whatever they previously chose because
+            // settings.json is restored from disk and only overrides explicit
+            // keys, not these defaults.
+            sttProvider: .openaiRealtime,
             ttsProvider: .local,
             ttsEnabled: true,
             narrationEnabled: true,

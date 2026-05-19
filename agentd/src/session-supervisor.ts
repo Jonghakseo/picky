@@ -14,6 +14,7 @@ import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./applicat
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
 import { isMainRealtimeRuntime, type AgentRuntime, type RuntimeBashExecutionResult, type RuntimeEvent, type RuntimeSessionHandle, type RuntimeSlashCommand, type RuntimeSteerResult, type ThinkingLevel } from "./runtime/types.js";
+import { OpenAIRealtimeTranscriptionSession } from "./runtime/openai-realtime-transcription.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
 import { isTerminalStatus } from "./domain/session-status.js";
@@ -87,6 +88,7 @@ export class SessionSupervisor extends EventEmitter {
   private mainState: PickyMainAgentState = { messages: [] };
   private mainReplyContextId = "main";
   private mainIsProcessing = false;
+  private readonly transcriptionStreams = new Map<string, OpenAIRealtimeTranscriptionSession>();
   // Pi emits both `turn_end` and `agent_end` for a single agent run, both of which
   // normalize to `status:"completed"` (see pi-event-normalizer.ts). They arrive
   // back-to-back through the same fire-and-forget subscriber, and the first call's
@@ -610,6 +612,63 @@ export class SessionSupervisor extends EventEmitter {
     if (!isMainRealtimeRuntime(this.options.mainRuntime)) return;
     await this.options.mainRuntime.cancelMainRealtimeVoiceTurn(inputId, playedAudioMs);
     this.mainIsProcessing = false;
+  }
+
+  async beginTranscriptionStream(request: { streamId: string; language?: string; model?: string; keyterms?: string[] }): Promise<void> {
+    if (this.transcriptionStreams.has(request.streamId)) {
+      throw new Error(`Transcription stream already active: ${request.streamId}`);
+    }
+    const session = new OpenAIRealtimeTranscriptionSession({
+      streamId: request.streamId,
+      language: request.language,
+      model: request.model,
+    });
+    this.transcriptionStreams.set(request.streamId, session);
+    session.on("event", (event) => {
+      switch (event.type) {
+        case "started":
+          this.emit("transcriptionStreamStarted", request.streamId);
+          return;
+        case "delta":
+          this.emit("transcriptionDelta", request.streamId, event.delta);
+          return;
+        case "completed":
+          this.emit("transcriptionCompleted", request.streamId, event.transcript);
+          return;
+        case "failed":
+          this.emit("transcriptionStreamFailed", request.streamId, event.message);
+          return;
+        case "closed":
+          this.transcriptionStreams.delete(request.streamId);
+          this.emit("transcriptionStreamClosed", request.streamId);
+          return;
+      }
+    });
+    try {
+      await session.start();
+    } catch (error) {
+      // start() already emitted failed+closed before throwing.
+      this.transcriptionStreams.delete(request.streamId);
+      throw error;
+    }
+  }
+
+  async appendTranscriptionAudio(streamId: string, audioBase64: string): Promise<void> {
+    const session = this.transcriptionStreams.get(streamId);
+    if (!session) return;
+    session.appendAudio(audioBase64);
+  }
+
+  async endTranscriptionStream(streamId: string): Promise<void> {
+    const session = this.transcriptionStreams.get(streamId);
+    if (!session) return;
+    session.commit();
+  }
+
+  async cancelTranscriptionStream(streamId: string): Promise<void> {
+    const session = this.transcriptionStreams.get(streamId);
+    if (!session) return;
+    session.cancel();
   }
 
   private requireMainRealtimeRuntime() {

@@ -1628,6 +1628,8 @@ final class PickySessionListViewModel: ObservableObject {
              .mainRealtimeStateChanged, .mainRealtimeInputTranscriptDelta, .mainRealtimeInputTranscriptCompleted,
              .mainRealtimeOutputAudioDelta, .mainRealtimeOutputAudioDone,
              .mainRealtimeOutputTranscriptDelta, .mainRealtimeOutputTranscriptCompleted, .mainRealtimeTurnDone,
+             .transcriptionStreamStarted, .transcriptionDelta, .transcriptionCompleted,
+             .transcriptionStreamFailed, .transcriptionStreamClosed,
              .pointerOverlayRequested, .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested,
              .narrateProgressRequested, .hello, .unknown:
             break

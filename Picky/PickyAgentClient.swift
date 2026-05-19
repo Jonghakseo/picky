@@ -376,6 +376,16 @@ private extension PickyEventEnvelope {
             return "type=mainRealtimeOutputTranscriptCompleted id=\(id) input=\(inputId?.uuidString ?? "none") transcriptChars=\(transcript.count)"
         case .mainRealtimeTurnDone(let done):
             return "type=mainRealtimeTurnDone id=\(id) input=\(done.inputId?.uuidString ?? "none") status=\(done.status.rawValue) transcriptChars=\(done.finalTranscript?.count ?? 0)"
+        case .transcriptionStreamStarted(let streamId):
+            return "type=transcriptionStreamStarted id=\(id) stream=\(streamId)"
+        case .transcriptionDelta(let streamId, let delta):
+            return "type=transcriptionDelta id=\(id) stream=\(streamId) deltaChars=\(delta.count)"
+        case .transcriptionCompleted(let streamId, let transcript):
+            return "type=transcriptionCompleted id=\(id) stream=\(streamId) transcriptChars=\(transcript.count)"
+        case .transcriptionStreamFailed(let streamId, let message):
+            return "type=transcriptionStreamFailed id=\(id) stream=\(streamId) messageChars=\(message.count)"
+        case .transcriptionStreamClosed(let streamId):
+            return "type=transcriptionStreamClosed id=\(id) stream=\(streamId)"
         case .sessionSnapshot(let sessions):
             return "type=sessionSnapshot id=\(id) sessions=\(sessions.count)"
         case .sessionUpdated(let session):

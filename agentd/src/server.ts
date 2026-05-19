@@ -123,6 +123,11 @@ export class AgentdServer {
       type: "mainRealtimeQuota",
       ...(quota ? { quota } : {}),
     }));
+    this.options.supervisor.on("transcriptionStreamStarted", (streamId: string) => this.broadcast({ type: "transcriptionStreamStarted", streamId }));
+    this.options.supervisor.on("transcriptionDelta", (streamId: string, delta: string) => this.broadcast({ type: "transcriptionDelta", streamId, delta }));
+    this.options.supervisor.on("transcriptionCompleted", (streamId: string, transcript: string) => this.broadcast({ type: "transcriptionCompleted", streamId, transcript }));
+    this.options.supervisor.on("transcriptionStreamFailed", (streamId: string, message: string) => this.broadcast({ type: "transcriptionStreamFailed", streamId, message }));
+    this.options.supervisor.on("transcriptionStreamClosed", (streamId: string) => this.broadcast({ type: "transcriptionStreamClosed", streamId }));
     this.options.supervisor.on("pointerOverlayRequested", (request) => this.broadcast({ type: "pointerOverlayRequested", request }));
     this.options.supervisor.on("narrateProgressRequested", (payload: { text: string }) => this.broadcast({ type: "narrateProgressRequested", text: payload.text }));
     this.options.supervisor.on("artifact", (sessionId, artifact) => this.broadcast({ type: "artifactUpdated", sessionId, artifact }));
@@ -249,6 +254,15 @@ export class AgentdServer {
       appendMainRealtimeInputAudio: (cmd) => this.options.supervisor.appendMainRealtimeInputAudio(cmd.inputId, cmd.audioBase64),
       commitMainRealtimeVoiceTurn: (cmd) => this.options.supervisor.commitMainRealtimeVoiceTurn(cmd.inputId, cmd.context),
       cancelMainRealtimeVoiceTurn: (cmd) => this.options.supervisor.cancelMainRealtimeVoiceTurn(cmd.inputId, cmd.playedAudioMs),
+      beginTranscriptionStream: (cmd) => this.options.supervisor.beginTranscriptionStream({
+        streamId: cmd.streamId,
+        language: cmd.language,
+        model: cmd.model,
+        keyterms: cmd.keyterms,
+      }),
+      appendTranscriptionAudio: (cmd) => this.options.supervisor.appendTranscriptionAudio(cmd.streamId, cmd.audioBase64),
+      endTranscriptionStream: (cmd) => this.options.supervisor.endTranscriptionStream(cmd.streamId),
+      cancelTranscriptionStream: (cmd) => this.options.supervisor.cancelTranscriptionStream(cmd.streamId),
       resetMainAgent: async (cmd) => {
         await this.options.supervisor.resetMainAgent();
         this.broadcast({ type: "mainMessagesSnapshot", messages: this.options.supervisor.listMainMessages() });
@@ -602,6 +616,14 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, inputId: command.inputId, contextId: command.context?.id, screenshots: command.context?.screenshots.length, inkMarks: command.context?.inkMarks.length };
     case "cancelMainRealtimeVoiceTurn":
       return { commandId: command.id, type: command.type, inputId: command.inputId, playedAudioMs: command.playedAudioMs };
+    case "beginTranscriptionStream":
+      return { commandId: command.id, type: command.type, streamId: command.streamId, model: command.model, language: command.language, keyterms: command.keyterms?.length };
+    case "appendTranscriptionAudio":
+      return { commandId: command.id, type: command.type, streamId: command.streamId, audioBytesBase64Chars: command.audioBase64.length };
+    case "endTranscriptionStream":
+      return { commandId: command.id, type: command.type, streamId: command.streamId };
+    case "cancelTranscriptionStream":
+      return { commandId: command.id, type: command.type, streamId: command.streamId };
     case "listSessions":
     case "listMainMessages":
     case "listMainAgentModels":
@@ -662,6 +684,15 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, inputId: event.inputId, sessionTotalTokens: event.session.totalTokens, turnTotalTokens: event.lastTurn.totalTokens };
     case "mainRealtimeQuota":
       return { eventId: event.id, type: event.type, planType: event.quota?.planType, primaryRemaining: event.quota?.primary?.remaining, primaryLimit: event.quota?.primary?.limit };
+    case "transcriptionStreamStarted":
+    case "transcriptionStreamClosed":
+      return { eventId: event.id, type: event.type, streamId: event.streamId };
+    case "transcriptionDelta":
+      return { eventId: event.id, type: event.type, streamId: event.streamId, deltaChars: event.delta.length };
+    case "transcriptionCompleted":
+      return { eventId: event.id, type: event.type, streamId: event.streamId, transcriptChars: event.transcript.length };
+    case "transcriptionStreamFailed":
+      return { eventId: event.id, type: event.type, streamId: event.streamId, messageChars: event.message.length };
     case "sessionSnapshot":
       return { eventId: event.id, type: event.type, sessions: event.sessions.length };
     case "sessionUpdated":

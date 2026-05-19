@@ -88,6 +88,13 @@ struct PickyCommandEnvelope: Codable, Equatable {
     /// active Pi transcript messages after this id when syncing the terminal session back.
     var baselinePiMessageId: String?
     var disabledBuiltinTools: [String]?
+    /// Identifies a single Realtime transcription stream (PTT cycle). Set on
+    /// every `beginTranscriptionStream` / `appendTranscriptionAudio` /
+    /// `endTranscriptionStream` / `cancelTranscriptionStream` envelope.
+    var streamId: String?
+    var language: String?
+    var model: String?
+    var keyterms: [String]?
 
     init(
         id: String = "cmd-\(UUID().uuidString)",
@@ -127,7 +134,11 @@ struct PickyCommandEnvelope: Codable, Equatable {
         playedAudioMs: Double? = nil,
         kind: PickyQueueClearKind? = nil,
         baselinePiMessageId: String? = nil,
-        disabledBuiltinTools: [String]? = nil
+        disabledBuiltinTools: [String]? = nil,
+        streamId: String? = nil,
+        language: String? = nil,
+        model: String? = nil,
+        keyterms: [String]? = nil
     ) {
         self.id = id
         self.protocolVersion = pickyAgentProtocolVersion
@@ -167,6 +178,10 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.playedAudioMs = playedAudioMs
         self.kind = kind
         self.baselinePiMessageId = baselinePiMessageId
+        self.streamId = streamId
+        self.language = language
+        self.model = model
+        self.keyterms = keyterms
         self.disabledBuiltinTools = disabledBuiltinTools
     }
 }
@@ -212,6 +227,10 @@ enum PickyCommandType: String, Codable, Equatable {
     case appendMainRealtimeInputAudio
     case commitMainRealtimeVoiceTurn
     case cancelMainRealtimeVoiceTurn
+    case beginTranscriptionStream
+    case appendTranscriptionAudio
+    case endTranscriptionStream
+    case cancelTranscriptionStream
     case resetMainAgent
     case abortMainAgent
     case setMainAgentThinkingLevel
@@ -268,6 +287,11 @@ enum PickyEvent: Equatable {
     case mainRealtimeOutputTranscriptDelta(inputId: UUID?, delta: String)
     case mainRealtimeOutputTranscriptCompleted(inputId: UUID?, transcript: String)
     case mainRealtimeTurnDone(PickyMainRealtimeTurnDoneEvent)
+    case transcriptionStreamStarted(streamId: String)
+    case transcriptionDelta(streamId: String, delta: String)
+    case transcriptionCompleted(streamId: String, transcript: String)
+    case transcriptionStreamFailed(streamId: String, message: String)
+    case transcriptionStreamClosed(streamId: String)
     case sessionSnapshot([PickyAgentSession])
     case sessionUpdated(PickyAgentSession)
     case sessionResourcesReloaded(sessionId: String)
@@ -330,6 +354,21 @@ enum PickyEvent: Equatable {
             self = .mainRealtimeOutputTranscriptCompleted(inputId: payload.inputId, transcript: payload.transcript)
         case "mainRealtimeTurnDone":
             self = .mainRealtimeTurnDone(try PickyMainRealtimeTurnDoneEvent(from: decoder))
+        case "transcriptionStreamStarted":
+            let payload = try PickyTranscriptionStreamIdPayload(from: decoder)
+            self = .transcriptionStreamStarted(streamId: payload.streamId)
+        case "transcriptionDelta":
+            let payload = try PickyTranscriptionDeltaPayload(from: decoder)
+            self = .transcriptionDelta(streamId: payload.streamId, delta: payload.delta)
+        case "transcriptionCompleted":
+            let payload = try PickyTranscriptionCompletedPayload(from: decoder)
+            self = .transcriptionCompleted(streamId: payload.streamId, transcript: payload.transcript)
+        case "transcriptionStreamFailed":
+            let payload = try PickyTranscriptionFailedPayload(from: decoder)
+            self = .transcriptionStreamFailed(streamId: payload.streamId, message: payload.message)
+        case "transcriptionStreamClosed":
+            let payload = try PickyTranscriptionStreamIdPayload(from: decoder)
+            self = .transcriptionStreamClosed(streamId: payload.streamId)
         case "sessionSnapshot":
             let payload = try PickySessionSnapshotPayload(from: decoder)
             self = .sessionSnapshot(payload.sessions)
@@ -405,6 +444,10 @@ private struct PickyMainRealtimeOutputAudioDeltaPayload: Decodable { let inputId
 private struct PickyMainRealtimeOutputAudioDonePayload: Decodable { let inputId: UUID? }
 private struct PickyMainRealtimeOutputTranscriptDeltaPayload: Decodable { let inputId: UUID?; let delta: String }
 private struct PickyMainRealtimeOutputTranscriptCompletedPayload: Decodable { let inputId: UUID?; let transcript: String }
+private struct PickyTranscriptionStreamIdPayload: Decodable { let streamId: String }
+private struct PickyTranscriptionDeltaPayload: Decodable { let streamId: String; let delta: String }
+private struct PickyTranscriptionCompletedPayload: Decodable { let streamId: String; let transcript: String }
+private struct PickyTranscriptionFailedPayload: Decodable { let streamId: String; let message: String }
 private struct PickySessionSnapshotPayload: Decodable { let sessions: [PickyAgentSession] }
 private struct PickySessionUpdatedPayload: Decodable { let session: PickyAgentSession }
 private struct PickySessionResourcesReloadedPayload: Decodable { let sessionId: String }

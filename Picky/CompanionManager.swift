@@ -846,6 +846,10 @@ final class CompanionManager: ObservableObject {
     }
 
     private func reloadVoiceProvidersFromSettings(_ settings: PickySettings = PickySettingsStore().load()) {
+        // Realtime STT proxies its WebSocket through agentd, so the factory needs
+        // a back-reference to the agent client. The factory stores it weakly to
+        // avoid extending the client's lifetime.
+        BuddyTranscriptionProviderFactory.sharedAgentClient = agentClient
         buddyDictationManager.updateTranscriptionProvider(
             BuddyTranscriptionProviderFactory.makeDefaultProvider(settings: settings)
         )
@@ -891,7 +895,7 @@ final class CompanionManager: ObservableObject {
                 print("⚠️ Failed to apply Picky model: \(error.localizedDescription)")
             }
             do {
-                let effectiveRuntimeMode = AppBundleConfiguration.realtimeOptIn ? settings.mainAgentRuntimeMode : .pi
+                let effectiveRuntimeMode = AppBundleConfiguration.effectiveRuntimeMode
                 try await agentClient.send(PickyCommandEnvelope(
                     type: .setMainAgentRuntimeMode,
                     mode: effectiveRuntimeMode.agentdEnvironmentValue
@@ -924,7 +928,7 @@ final class CompanionManager: ObservableObject {
             } catch {
                 print("⚠️ Failed to apply Picky narration enabled: \(error.localizedDescription)")
             }
-            if AppBundleConfiguration.realtimeOptIn, settings.mainAgentRuntimeMode == .openAIRealtime {
+            if AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime {
                 await configureRealtimeMainAgent(settings: settings)
             }
         }
@@ -1064,7 +1068,7 @@ final class CompanionManager: ObservableObject {
     }
 
     private func currentVoiceInteractionMode() -> PickyVoiceInteractionMode {
-        realtimeVoiceInputID != nil || PickySettingsStore().load().mainAgentRuntimeMode == .openAIRealtime ? .realtime : .standard
+        realtimeVoiceInputID != nil || AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime ? .realtime : .standard
     }
 
     private func bindShortcutTransitions() {
@@ -1291,22 +1295,23 @@ final class CompanionManager: ObservableObject {
 
     private func shouldUseRealtimeMainVoiceTurn(targetSessionID: String?) -> Bool {
         guard normalizedVoiceFollowUpSessionID(targetSessionID) == nil else { return false }
-        return PickySettingsStore().load().mainAgentRuntimeMode == .openAIRealtime
+        return AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime
     }
 
     private func beginRealtimeMainVoiceTurn(inputID: UUID) {
         let settings = PickySettingsStore().load()
-        let realtime = settings.openAIRealtime.normalized()
-        // Codex OAuth resolves the bearer inside agentd at connect time, so an
-        // empty Platform API key is fine when authMode is codexOAuth. Azure
-        // always needs the api-key field regardless of authMode.
-        let requiresApiKey = realtime.authMode == .apiKey || realtime.provider == .azureOpenAI
-        if requiresApiKey, realtime.apiKey.isEmpty {
+        // Single source of truth for "can Realtime connect right now?". Covers
+        // the Platform API key path AND the Codex OAuth path — the latter
+        // requires `~/.codex/auth.json` to exist with an access token, since
+        // agentd's connect fails otherwise and leaves the user with an empty
+        // assistant bubble.
+        let authStatus = PickyRealtimeAuthStatusInspector.currentStatus(settings: settings)
+        if let blockReason = authStatus.blockReason {
             interactionCoordinator.accept(
-                .voiceStartFailed(message: "OpenAI Realtime API key is required.", inputID: inputID),
+                .voiceStartFailed(message: "OpenAI Realtime auth required: \(blockReason.rawValue)", inputID: inputID),
                 correlation: PickyInteractionCorrelation(inputID: inputID, source: .voice)
             )
-            finishAwaitingAgentResponse(visibleText: "OpenAI Realtime API key가 필요합니다. Settings에서 입력해 주세요.", spokenText: nil)
+            finishAwaitingAgentResponse(visibleText: blockReason.localizedActionMessage, spokenText: nil)
             completeVoiceInteractionIfCurrent(inputID: inputID)
             return
         }
@@ -1618,6 +1623,28 @@ final class CompanionManager: ObservableObject {
         guard !trimmedText.isEmpty else { return false }
 
         directMessageError = nil
+
+        // PICKY_REALTIME_OPT_IN=1 routes every main turn through the Realtime
+        // websocket. If the user has not finished Codex/ChatGPT OAuth and has
+        // not pasted a Platform/Azure API key, agentd's connect will fail
+        // before this text submission can land. Reject up front with the same
+        // wording the PTT path uses so Quick Input and CLI surface a single,
+        // actionable error instead of a silent timeout.
+        if AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime {
+            let pickleFollowUpTargetID = source == .quickInput
+                ? normalizedVoiceFollowUpSessionID(selectionStore.screenContextTargetSessionID)
+                : nil
+            // A Pickle steer goes to the running Pi pickle, not main — do not
+            // block that path on Realtime auth.
+            if pickleFollowUpTargetID == nil {
+                let authStatus = PickyRealtimeAuthStatusInspector.currentStatus()
+                if let blockReason = authStatus.blockReason {
+                    directMessageError = blockReason.localizedActionMessage
+                    return false
+                }
+            }
+        }
+
         if source == .quickInput, let targetSessionID = normalizedVoiceFollowUpSessionID(selectionStore.screenContextTargetSessionID) {
             return await sendPickleSteerFromInput(
                 targetSessionID: targetSessionID,
@@ -2313,6 +2340,16 @@ final class CompanionManager: ObservableObject {
                 reduceVoiceInteraction(.realtimeTurnDone)
                 scheduleTransientHideIfNeeded()
             }
+        case .transcriptionStreamStarted(let streamId):
+            NotificationCenter.default.post(name: .pickyTranscriptionStreamStarted, object: nil, userInfo: ["streamId": streamId])
+        case .transcriptionDelta(let streamId, let delta):
+            NotificationCenter.default.post(name: .pickyTranscriptionDelta, object: nil, userInfo: ["streamId": streamId, "delta": delta])
+        case .transcriptionCompleted(let streamId, let transcript):
+            NotificationCenter.default.post(name: .pickyTranscriptionCompleted, object: nil, userInfo: ["streamId": streamId, "transcript": transcript])
+        case .transcriptionStreamFailed(let streamId, let message):
+            NotificationCenter.default.post(name: .pickyTranscriptionStreamFailed, object: nil, userInfo: ["streamId": streamId, "message": message])
+        case .transcriptionStreamClosed(let streamId):
+            NotificationCenter.default.post(name: .pickyTranscriptionStreamClosed, object: nil, userInfo: ["streamId": streamId])
         case .pointerOverlayRequested(let request):
             applyPointerOverlayRequest(request)
         case .narrateProgressRequested(let request):
@@ -2484,7 +2521,7 @@ final class CompanionManager: ObservableObject {
         // overwrite a `done` Pickle's status back to `cancelled` on agentd.
         let isAgentResponseInFlight = pendingAgentResponseStartedAt != nil || voiceState == .responding
         let previousPickleSessionID = isAgentResponseInFlight ? voiceFollowUpSessionIDForCurrentUtterance : nil
-        if PickySettingsStore().load().mainAgentRuntimeMode == .openAIRealtime {
+        if AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime {
             cancelRealtimeMainVoiceTurn(inputID: realtimeVoiceInputID)
         } else {
             Task { [agentClient] in

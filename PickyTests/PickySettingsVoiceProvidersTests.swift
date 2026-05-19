@@ -10,12 +10,16 @@ import Testing
 @Suite("PickySettings voice provider extensions")
 struct PickySettingsVoiceProvidersTests {
     @Test func voiceProviderEnumIncludesAllSelectableCases() {
-        #expect(PickyVoiceProviderSelection.allCases == [.local, .openai, .azure, .elevenLabs])
+        #expect(PickyVoiceProviderSelection.allCases == [.local, .openai, .openaiRealtime, .azure, .elevenLabs])
     }
 
     @Test func transcriptionCapabilityListsAllProviders() {
+        // openaiRealtime is STT-only: it streams through agentd's Codex OAuth
+        // bearer to the Realtime transcription session. The speech-playback
+        // picker intentionally does NOT include it because the same OAuth
+        // does not yet have a tested TTS path.
         let cases = PickyVoiceProviderSelection.cases(for: .transcription)
-        #expect(cases == [.local, .openai, .azure, .elevenLabs])
+        #expect(cases == [.local, .openai, .openaiRealtime, .azure, .elevenLabs])
     }
 
     @Test func speechPlaybackCapabilityListsAllProviders() {

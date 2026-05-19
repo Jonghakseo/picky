@@ -2,7 +2,8 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildRealtimeConnection, normalizeAzureRealtimeHost, OpenAIRealtimeMainRuntime, parseAzureRealtimeEndpointUrl, type RealtimeWebSocketLike } from "./openai-realtime-main-runtime.js";
+import { addUsage, buildRealtimeConnection, extractUsageSnapshot, normalizeAzureRealtimeHost, OpenAIRealtimeMainRuntime, parseAzureRealtimeEndpointUrl, toQuotaSnapshot, type RealtimeWebSocketLike } from "./openai-realtime-main-runtime.js";
+import type { CodexQuotaSnapshot } from "./codex-oauth.js";
 import { SelectableMainRuntime } from "./selectable-main-runtime.js";
 import type { AgentRuntime, MainRealtimeRuntime, RuntimeSessionHandle, ThinkingLevel } from "./types.js";
 import type { BuiltPrompt } from "../prompt-builder.js";
@@ -534,6 +535,212 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     )!;
 
     expect(assistantBootstrap.item.content[0].type).toBe("output_text");
+  });
+
+  it("accumulates usage from response.done and emits session totals", async () => {
+    const socket = new FakeRealtimeSocket();
+    const events: any[] = [];
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+    const handle = await runtime.create({ text: "hi", imagePaths: [] }, { sessionId: "picky" });
+    handle.subscribe((event) => events.push(event));
+
+    socket.serverEvent({
+      type: "response.done",
+      response: {
+        id: "resp-1",
+        status: "completed",
+        usage: {
+          total_tokens: 120,
+          input_tokens: 80,
+          output_tokens: 40,
+          input_token_details: { cached_tokens: 12, text_tokens: 30, audio_tokens: 50 },
+          output_token_details: { text_tokens: 10, audio_tokens: 30 },
+        },
+      },
+    });
+    socket.serverEvent({
+      type: "response.done",
+      response: {
+        id: "resp-2",
+        status: "completed",
+        usage: { total_tokens: 30, input_tokens: 20, output_tokens: 10 },
+      },
+    });
+
+    const usageEvents = events.filter((e) => e.type === "main_realtime_usage");
+    expect(usageEvents).toHaveLength(2);
+    expect(usageEvents[0].lastTurn.totalTokens).toBe(120);
+    expect(usageEvents[0].lastTurn.cachedInputTokens).toBe(12);
+    expect(usageEvents[0].lastTurn.inputAudioTokens).toBe(50);
+    expect(usageEvents[0].session.totalTokens).toBe(120);
+    expect(usageEvents[1].session.totalTokens).toBe(150);
+    expect(usageEvents[1].session.inputTokens).toBe(100);
+    expect(usageEvents[1].session.outputTokens).toBe(50);
+  });
+
+  it("replays text-only history into a fresh WS session", async () => {
+    const sockets: FakeRealtimeSocket[] = [];
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => {
+        const socket = new FakeRealtimeSocket();
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    runtime.setMainRealtimeHistoryProvider(() => [
+      { role: "user", text: "first question" },
+      { role: "assistant", text: "first answer" },
+      { role: "user", text: "second question" },
+    ]);
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    await settle();
+
+    expect(sockets).toHaveLength(1);
+    const items = sockets[0]!.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .filter((event) => event.type === "conversation.item.create")
+      .map((event) => event.item);
+    // After the bootstrap pair (2 items), the next three should be the replay.
+    const replay = items.slice(2, 5);
+    expect(replay.map((i: any) => i.role)).toEqual(["user", "assistant", "user"]);
+    expect(replay[0].content[0].text).toBe("first question");
+    expect(replay[1].content[0].text).toBe("first answer");
+    expect(replay[2].content[0].text).toBe("second question");
+  });
+
+  it("reconnects and replays history after the websocket closes", async () => {
+    const sockets: FakeRealtimeSocket[] = [];
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => {
+        const socket = new FakeRealtimeSocket();
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    const history: { role: "user" | "assistant"; text: string }[] = [];
+    runtime.setMainRealtimeHistoryProvider(() => history);
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    history.push({ role: "user", text: "prior user turn" });
+    history.push({ role: "assistant", text: "prior assistant turn" });
+
+    // Simulate the WS server closing the connection (e.g., 60-minute cap).
+    sockets[0]!.close();
+    await settle();
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-2", context: context() });
+    await settle();
+
+    expect(sockets).toHaveLength(2);
+    const replayedRoles = sockets[1]!.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .filter((event) => event.type === "conversation.item.create")
+      .map((event) => event.item.role);
+    // bootstrap pair (user, assistant) + history (user, assistant)
+    expect(replayedRoles.slice(0, 4)).toEqual(["user", "assistant", "user", "assistant"]);
+  });
+
+  it("emits a quota event from a stubbed Codex fetcher when using codexOAuth", async () => {
+    const socket = new FakeRealtimeSocket();
+    const events: any[] = [];
+    const snapshot: CodexQuotaSnapshot = {
+      planType: "plus",
+      primary: { used: 100, limit: 1000, remaining: 900, windowLabel: "5_hours" },
+      secondary: { used: 5, limit: 50, remaining: 45, windowLabel: "weekly" },
+      raw: {},
+      fetchedAt: "2026-05-09T00:00:00.000Z",
+    };
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        authMode: "codexOAuth",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+      codexOAuthLoader: async () => ({ accessToken: "token", accountId: "acct", isFedramp: false, source: "pi" }),
+      codexQuotaFetcher: async () => snapshot,
+    });
+    const handle = await runtime.create({ text: "hi", imagePaths: [] }, { sessionId: "picky" });
+    handle.subscribe((event) => events.push(event));
+    await settle();
+    await runtime.refreshCodexQuota();
+
+    const quotaEvents = events.filter((e) => e.type === "main_realtime_quota");
+    expect(quotaEvents.length).toBeGreaterThanOrEqual(1);
+    const last = quotaEvents[quotaEvents.length - 1];
+    expect(last.quota?.planType).toBe("plus");
+    expect(last.quota?.primary?.remaining).toBe(900);
+    expect(last.quota?.secondary?.windowLabel).toBe("weekly");
+  });
+});
+
+describe("OpenAI Realtime usage helpers", () => {
+  it("extracts a normalized snapshot from response.usage", () => {
+    const snapshot = extractUsageSnapshot({
+      total_tokens: 50,
+      input_tokens: 30,
+      output_tokens: 20,
+      input_token_details: { cached_tokens: 5, audio_tokens: 15, text_tokens: 10 },
+      output_token_details: { audio_tokens: 18, text_tokens: 2 },
+    });
+    expect(snapshot).toEqual({
+      totalTokens: 50,
+      inputTokens: 30,
+      outputTokens: 20,
+      cachedInputTokens: 5,
+      inputTextTokens: 10,
+      inputAudioTokens: 15,
+      outputTextTokens: 2,
+      outputAudioTokens: 18,
+    });
+    expect(extractUsageSnapshot(undefined)).toBeUndefined();
+    expect(extractUsageSnapshot({ total_tokens: 0, input_tokens: 0, output_tokens: 0 })).toBeUndefined();
+  });
+
+  it("adds two snapshots field-wise", () => {
+    const a = extractUsageSnapshot({ total_tokens: 10, input_tokens: 6, output_tokens: 4 })!;
+    const b = extractUsageSnapshot({ total_tokens: 7, input_tokens: 3, output_tokens: 4 })!;
+    const sum = addUsage(a, b);
+    expect(sum.totalTokens).toBe(17);
+    expect(sum.inputTokens).toBe(9);
+    expect(sum.outputTokens).toBe(8);
+  });
+
+  it("converts CodexQuotaSnapshot to MainRealtimeQuotaSnapshot shape", () => {
+    const snapshot = toQuotaSnapshot({
+      planType: "pro",
+      primary: { used: 1, limit: 2, remaining: 1, windowLabel: "hourly" },
+      raw: {},
+      fetchedAt: "2026-05-09T00:00:00.000Z",
+    });
+    expect(snapshot?.planType).toBe("pro");
+    expect(snapshot?.primary?.windowLabel).toBe("hourly");
+    expect(snapshot?.secondary).toBeUndefined();
   });
 });
 

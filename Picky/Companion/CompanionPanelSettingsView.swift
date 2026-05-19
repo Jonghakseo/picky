@@ -430,32 +430,13 @@ struct CompanionPanelSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if AppBundleConfiguration.realtimeOptIn {
-                    VStack(alignment: .leading, spacing: 5) {
-                        fieldLabel("settings.field.runtime")
-                        Picker("settings.field.runtime", selection: $viewModel.settings.mainAgentRuntimeMode) {
-                            ForEach(PickyMainAgentRuntimeMode.allCases) { mode in
-                                Text(mode.displayName).tag(mode)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .onChange(of: viewModel.settings.mainAgentRuntimeMode) { _, _ in saveImmediately(for: .mainAgent) }
-
-                        Text(viewModel.settings.mainAgentRuntimeMode == .openAIRealtime
-                             ? L10n.t("settings.field.runtime.realtimeNote")
-                             : L10n.t("settings.field.runtime.localNote"))
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundColor(DS.Colors.textTertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    if viewModel.settings.mainAgentRuntimeMode == .openAIRealtime {
-                        realtimeSettingsFields
-                    } else {
-                        piMainAgentModelPicker
-                    }
+                // PICKY_REALTIME_OPT_IN=1 builds run as a Realtime-only
+                // product (see AppBundleConfiguration.effectiveRuntimeMode).
+                // The runtime picker is omitted because there is no second
+                // mode to choose, and the realtime fields are always shown.
+                // Legacy opt-in=0 builds keep the Pi model picker.
+                if AppBundleConfiguration.isRealtimeOnlyBuild {
+                    realtimeSettingsFields
                 } else {
                     piMainAgentModelPicker
                 }
@@ -891,6 +872,11 @@ struct CompanionPanelSettingsView: View {
             subtitle: L10n.t("settings.section.voice.subtitle")
         ) {
             VStack(alignment: .leading, spacing: 14) {
+                // PICKY_REALTIME_OPT_IN=1 builds let OpenAI Realtime
+                // handle transcription internally, so the dedicated STT
+                // provider section is suppressed entirely. Opt-in=0 builds
+                // keep the full STT picker + per-provider key inputs.
+                if !AppBundleConfiguration.isRealtimeOnlyBuild {
                 // ─── STT group ───
                 VStack(alignment: .leading, spacing: 10) {
                     voiceSubgroupHeader("settings.voice.subgroup.stt")
@@ -963,6 +949,7 @@ struct CompanionPanelSettingsView: View {
                 }
 
                 voiceGroupDivider()
+                }
 
                 // ─── TTS group ───
                 VStack(alignment: .leading, spacing: 10) {
@@ -970,6 +957,10 @@ struct CompanionPanelSettingsView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         toggleRow("settings.voice.toggle.ttsEnabled", isOn: $viewModel.settings.ttsEnabled, divider: false)
+                        // On opt-in=1 the Realtime model voices every
+                        // assistant turn; `ttsEnabled` only gates onboarding
+                        // narration there. The localized copy already
+                        // describes the toggle generically.
                         Text("settings.tts.disabledNote")
                             .font(.system(size: 10.5, weight: .medium))
                             .foregroundColor(DS.Colors.textTertiary)
@@ -984,6 +975,16 @@ struct CompanionPanelSettingsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
+                    // PICKY_REALTIME_OPT_IN=1: only the bundled system TTS
+                    // (Apple speech synthesizer) is available, and it is
+                    // used solely for onboarding narration. Hide the
+                    // provider picker and every external-API config block
+                    // because Realtime owns assistant audio playback.
+                    if AppBundleConfiguration.isRealtimeOnlyBuild {
+                        if viewModel.settings.ttsEnabled {
+                            openMacOSSpeechSettingsButton
+                        }
+                    } else {
                     providerPicker(title: "settings.voice.provider.tts", capability: .speechPlayback, selection: $viewModel.settings.ttsProvider, isEnabled: viewModel.settings.ttsEnabled)
 
                     if viewModel.settings.ttsEnabled,
@@ -1035,6 +1036,7 @@ struct CompanionPanelSettingsView: View {
                             placeholder: L10n.t("settings.voice.openai.tts.baseUrl.placeholder"),
                             text: $openAITTSBaseURLDraft
                         )
+                    }
                     }
                 }
             }

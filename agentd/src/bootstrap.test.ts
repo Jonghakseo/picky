@@ -67,6 +67,31 @@ describe("parseAgentdConfig", () => {
     expect(() => parseAgentdConfig(envFor({ PICKY_AGENTD_MODE: "Child" }))).toThrow(/Unknown PICKY_AGENTD_MODE/);
   });
 
+  // PICKY_REALTIME_OPT_IN=1 E2E: the Swift app's daemon launcher writes
+  // `PICKY_MAIN_AGENT_RUNTIME=openai-realtime` into the child process env.
+  // bootstrap.ts must translate that into `mainAgentRuntimeMode:
+  // "openai-realtime"` so SelectableMainRuntime starts in the Realtime branch
+  // without an extra `setMainAgentRuntimeMode` command from the client.
+  it("parses PICKY_MAIN_AGENT_RUNTIME=openai-realtime into mainAgentRuntimeMode 'openai-realtime'", () => {
+    const config = parseAgentdConfig(envFor({ PICKY_MAIN_AGENT_RUNTIME: "openai-realtime" }));
+    expect(config.mainAgentRuntimeMode).toBe("openai-realtime");
+  });
+
+  it("defaults mainAgentRuntimeMode to 'pi' when PICKY_MAIN_AGENT_RUNTIME is absent", () => {
+    // Regression for the PICKY_REALTIME_OPT_IN=0 path — the legacy default
+    // must not flip to realtime just because the new code paths exist.
+    const config = parseAgentdConfig(envFor());
+    expect(config.mainAgentRuntimeMode).toBe("pi");
+  });
+
+  it("defaults mainAgentRuntimeMode to 'pi' when PICKY_MAIN_AGENT_RUNTIME holds an unrecognised value", () => {
+    // Future-proofing: an unknown value must not crash the daemon or silently
+    // promote a legacy install into realtime. Anything other than the exact
+    // string "openai-realtime" stays Pi.
+    const config = parseAgentdConfig(envFor({ PICKY_MAIN_AGENT_RUNTIME: "chatgpt" }));
+    expect(config.mainAgentRuntimeMode).toBe("pi");
+  });
+
   it("rejects malformed PICKY_AGENTD_PORT in primary mode", () => {
     expect(() => parseAgentdConfig(envFor({ PICKY_AGENTD_PORT: "abc" }))).toThrow(/Invalid PICKY_AGENTD_PORT/);
     expect(() => parseAgentdConfig(envFor({ PICKY_AGENTD_PORT: "999999" }))).toThrow(/Invalid PICKY_AGENTD_PORT/);

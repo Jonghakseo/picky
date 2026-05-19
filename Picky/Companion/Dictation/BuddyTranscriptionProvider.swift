@@ -44,13 +44,8 @@ enum BuddyTranscriptionProviderFactory {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         isRealtimeOnlyBuild: Bool? = nil
     ) -> any BuddyTranscriptionProvider {
-        // Resolve the build flag through MainActor.assumeIsolated when the
-        // caller did not pass one in explicitly. Production call sites are
-        // already MainActor-isolated (CompanionManager, BuddyDictationManager)
-        // so the assumption holds; tests pass the value explicitly to avoid
-        // tripping the assumption from a nonisolated `@Test` context.
         let isRealtimeOnlyBuild = isRealtimeOnlyBuild
-            ?? MainActor.assumeIsolated { AppBundleConfiguration.isRealtimeOnlyBuild }
+            ?? AppBundleConfiguration.isRealtimeOnlyBuild
         // PICKY_REALTIME_OPT_IN=1 builds force the Realtime transcription
         // provider regardless of what is currently saved in settings.sttProvider.
         // The Settings UI on this build no longer exposes an STT picker, but

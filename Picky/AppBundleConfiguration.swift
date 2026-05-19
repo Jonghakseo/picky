@@ -36,6 +36,47 @@ enum AppBundleConfiguration {
         return raw == "1" || raw.lowercased() == "true"
     }
 
+    /// Tests inject a runtime mode here so the opt-in=1 guards inside
+    /// CompanionManager / PickyApp can be exercised without rebuilding
+    /// `PickyBuildInfo.json`. Production code never sets this; the runtime
+    /// flow falls back to the bundled build constant when this is `nil`.
+    ///
+    /// Declared as `@TaskLocal` rather than a plain `static var` so parallel
+    /// swift-testing suites can't smash each other's overrides. Each test
+    /// reads/writes through `withValue`, which scopes the override to the
+    /// current task tree without affecting siblings.
+    @TaskLocal
+    static var testRuntimeModeOverride: PickyMainAgentRuntimeMode?
+
+    /// The runtime mode the daemon should always be driven to in this build.
+    ///
+    /// `PICKY_REALTIME_OPT_IN=1` flips Picky into a Realtime-only product:
+    /// the user can no longer pick the Pi runtime from Settings, and every
+    /// daemon command, voice turn, and assistant reply is expected to go
+    /// through OpenAI Realtime. The legacy `PICKY_REALTIME_OPT_IN=0` builds
+    /// keep their existing behaviour and always resolve to `.pi`. Using a
+    /// single helper here means we never need to keep five call sites in
+    /// sync with the `realtimeOptIn` build flag.
+    ///
+    /// Note: `PickySettings.mainAgentRuntimeMode` is intentionally still
+    /// honoured on opt-in=0 (it's hard-pinned to `.pi` there) and ignored
+    /// on opt-in=1 (forced to `.openAIRealtime`). The stored field stays in
+    /// the JSON for forward/backward compatibility across the two build
+    /// flavours.
+    static var effectiveRuntimeMode: PickyMainAgentRuntimeMode {
+        if let override = testRuntimeModeOverride { return override }
+        return realtimeOptIn ? .openAIRealtime : .pi
+    }
+
+    /// Convenience: `true` when this build wires Picky exclusively through
+    /// OpenAI Realtime. Use this to gate Settings UI, provider factories,
+    /// onboarding gates, and tests that should only run on the realtime
+    /// build flavour.
+    static var isRealtimeOnlyBuild: Bool {
+        if let override = testRuntimeModeOverride { return override == .openAIRealtime }
+        return realtimeOptIn
+    }
+
     /// Release channel from `PickyBuildInfo.json` (`stable` / `beta` / `alpha`).
     /// Local dev builds without the bundled JSON file fall back to `alpha`,
     /// which intentionally disables Sparkle updates so unsigned local runs do

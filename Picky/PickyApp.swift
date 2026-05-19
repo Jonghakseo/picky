@@ -47,7 +47,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     let appearanceStore: PickyAppearanceStore
     private lazy var daemonConfiguration: PickyAgentDaemonConfiguration = {
         let settings = settingsStore.load().normalizedPaths()
-        let effectiveRuntimeMode = AppBundleConfiguration.realtimeOptIn ? settings.mainAgentRuntimeMode : .pi
+        let effectiveRuntimeMode = AppBundleConfiguration.effectiveRuntimeMode
         return PickyAgentDaemonConfiguration.development(
             defaultCwd: settings.defaultCwd,
             mainAgentCwd: settings.mainAgentCwd,
@@ -128,6 +128,19 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     /// the same instance.
     private let onboardingActivator: PickyOnboardingActivator
     private var onboardingFlowController: OnboardingFlowController?
+    /// PICKY_REALTIME_OPT_IN=1 builds need Realtime auth to do anything
+    /// useful. The gate surfaces a single boot-time / post-onboarding alert
+    /// when the user has not signed in yet. Opt-in=0 builds construct it too,
+    /// but `evaluate()` short-circuits on `.pi` runtime so the alert never
+    /// fires there. Created lazily so the closure that opens Settings can
+    /// capture `self.menuBarPanelManager` after it is wired up.
+    private lazy var realtimeAuthGate: PickyRealtimeAuthGate = PickyRealtimeAuthGate(
+        openSettings: { [weak self] in
+            self?.menuBarPanelManager?.present(
+                deepLink: PickyDeepLink(tab: .settings, settingsRoute: .mainAgent)
+            )
+        }
+    )
     /// Owned at the app delegate so its state survives panel teardown.
     /// `MenuBarPanelManager` reads/writes it, and `PickyDeepLinkDispatcher`
     /// routes `picky://` clicks through `present(deepLink:)`.
@@ -167,6 +180,14 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             // keeps the language in sync when the settings JSON is edited
             // externally (tests, debug tooling).
             LocaleManager.shared.apply(updated.appLanguage)
+            // PICKY_REALTIME_OPT_IN=1: settings save fires whenever
+            // onboarding marks completion or the user toggles auth fields.
+            // Re-evaluating the gate here means the same alert presenter
+            // handles "onboarding just finished, user still hasn't signed
+            // in" without needing a dedicated onboarding completion hook.
+            // No-op on opt-in=0 builds and de-duped per session inside the
+            // gate.
+            self.realtimeAuthGate.evaluate()
         }
 
         PickyAnalytics.configure()
@@ -239,6 +260,19 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             controller.start()
         }
         registerAsLoginItemIfNeeded()
+
+        // PICKY_REALTIME_OPT_IN=1 builds: if the user has not signed in to
+        // Codex/ChatGPT or pasted a Platform/Azure API key, agentd's connect
+        // will fail before any PTT or text turn can succeed. Surface a
+        // boot-time alert that opens Settings on click; the PTT and text
+        // entry guards inside CompanionManager still fail closed if the user
+        // dismisses this and tries to talk anyway, so the alert is purely an
+        // anti-confusion measure. Skip during onboarding because the demo
+        // never reaches the daemon; PickyRealtimeAuthGate runs again as soon
+        // as the onboarding controller marks completion.
+        if onboardingFlowController == nil && !Self.isRunningUnitTests {
+            realtimeAuthGate.evaluate()
+        }
     }
 
     /// Try to drop the `/usr/local/bin/picky` wrapper into place silently. We

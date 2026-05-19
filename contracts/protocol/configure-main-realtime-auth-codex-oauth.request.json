@@ -1,0 +1,10 @@
+{
+  "id": "cmd-realtime-auth-oauth",
+  "protocolVersion": "2026-05-09",
+  "type": "configureMainRealtimeAuth",
+  "provider": "openai",
+  "authMode": "codexOAuth",
+  "modelOrDeployment": "gpt-realtime-2",
+  "voice": "marin",
+  "reasoningEffort": "low"
+}

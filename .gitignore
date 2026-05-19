@@ -57,6 +57,9 @@ coverage/
 # Local Pi session artifacts / runtime state (if stored in repo path)
 runtime/
 sessions/
+# agentd source code lives under agentd/src/runtime/, do not let the
+# broad `runtime/` rule above mask new TypeScript modules added there.
+!agentd/src/runtime/
 
 # Misc
 *.orig
@@ -65,6 +68,11 @@ sessions/
 # Transient scratch dirs created by agentd seeded-extensions.test.ts (cleaned up
 # after each run, ignored here so a crashed test never pollutes git status).
 agentd/tmp-seed-check-*/
+
+# Local scratch / PoC scripts that should not be committed. Useful for
+# probes that touch live auth (e.g. realtime-oauth-probe.ts) which we want
+# available on every dev machine but not in shared history.
+agentd/scratch/
 
 # Defensive ignore for a `.pi/` dropped at the repo root by accident. The
 # Picky workspace lives outside the repo; `Picky/App/PickyWorkspaceSeeder.swift`

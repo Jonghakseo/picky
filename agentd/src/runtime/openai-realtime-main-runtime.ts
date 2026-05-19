@@ -247,7 +247,11 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
 
   async followUp(prompt: BuiltPrompt): Promise<void> {
     await this.ensureConnected();
-    this.activeInputId = this.activeInputId ?? `text-${randomUUID()}`;
+    // Use a bare UUID (no `text-` prefix) so Picky's Swift event decoder,
+    // which types inputId as UUID?, can parse outbound transcript / audio
+    // / turn-done events. A prefixed string makes the entire envelope fail
+    // to decode and Swift then surfaces a generic "올바른 포멃이 아니다" error.
+    this.activeInputId = this.activeInputId ?? randomUUID();
     await this.sendPromptAsConversationItem(prompt);
     this.emit({ type: "main_realtime_state", state: "thinking" });
     this.sendResponseCreate();

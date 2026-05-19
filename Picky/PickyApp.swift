@@ -33,6 +33,14 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarPanelManager: MenuBarPanelManager?
     private let settingsStore = PickySettingsStore()
     private var settingsSaveObserver: NSObjectProtocol?
+    /// Watches the main thread for spin (TextKit race, runaway SwiftUI body
+    /// updates, etc.). When the UI stops responding for several seconds, the
+    /// watchdog captures a `sample` snapshot and spawns the alert helper so
+    /// the user can recover without force-quitting. Owned here so the
+    /// observer + helper lifecycle matches the app's.
+    private var mainThreadWatchdog: PickyMainThreadWatchdog?
+    private var mainThreadWatchdogResponder: PickyWatchdogResponder?
+    private var mainThreadWatchdogWakeObserver: NSObjectProtocol?
     /// Single source of truth for the user-selected light/dark mode. Both the menu bar
     /// companion panel and the HUD overlay observe this object so flipping the toggle
     /// in the companion footer flips the entire UI surface.
@@ -163,6 +171,10 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         PickyAnalytics.trackAppOpened()
 
         if !Self.isRunningUnitTests {
+            // Start the main-thread watchdog as early as possible so any
+            // launch-time spin (long SwiftUI initial render, blocked daemon
+            // wait, etc.) is also covered.
+            startMainThreadWatchdog()
             // Make sure the default Picky workspace exists before the daemon
             // starts so the always-on Picky main agent always has a valid cwd
             // (with our seed AGENTS.md) to load. Idempotent — never overwrites
@@ -279,10 +291,50 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.removeObserver(observer)
             settingsSaveObserver = nil
         }
+        stopMainThreadWatchdog()
         companionManager.stop()
         hudOverlayManager.stop()
         agentDaemonPool.terminateAllChildren()
         daemonLauncher.stop()
+    }
+
+    private func startMainThreadWatchdog() {
+        let settings = settingsStore.load()
+        guard settings.mainThreadWatchdogEnabled else {
+            print("🎯 Picky: main-thread watchdog disabled by setting")
+            return
+        }
+        let logsDir = PickyAppSupport.defaultRoot().appendingPathComponent("Logs", isDirectory: true)
+        let store = PickyWatchdogSampleStore(directory: logsDir)
+        let responder = PickyWatchdogResponder(
+            pid: ProcessInfo.processInfo.processIdentifier,
+            capturer: store,
+            launcher: PickyWatchdogHelperLauncher()
+        )
+        let watchdog = PickyMainThreadWatchdog { [weak responder] in
+            responder?.handleSpinDetected()
+        }
+        watchdog.start()
+        mainThreadWatchdog = watchdog
+        mainThreadWatchdogResponder = responder
+
+        mainThreadWatchdogWakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak watchdog] _ in
+            watchdog?.noteWoke(at: Date())
+        }
+    }
+
+    private func stopMainThreadWatchdog() {
+        if let observer = mainThreadWatchdogWakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            mainThreadWatchdogWakeObserver = nil
+        }
+        mainThreadWatchdog?.stop()
+        mainThreadWatchdog = nil
+        mainThreadWatchdogResponder = nil
     }
 
     /// Registers the app as a login item so it launches automatically on

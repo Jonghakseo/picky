@@ -104,11 +104,25 @@ final class PickyWatchdogSampleStore {
         }
     }
 
+    /// Convenience used by `PickyWatchdogResponder`: capture a 10-second
+    /// snapshot and prune older files so the log directory stays bounded.
+    func captureSpinSampleAndPurge(pid: Int32, retain: Int = 10) throws -> URL {
+        let url = try capture(pid: pid, duration: 10)
+        try purgeExcess(keeping: retain)
+        return url
+    }
+
     private func filenameTimestamp() -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withFullDate, .withTime, .withDashSeparatorInDate, .withColonSeparatorInTime]
         let raw = formatter.string(from: clock())
         // Replace colons so the filename is safe on case-insensitive filesystems.
         return raw.replacingOccurrences(of: ":", with: "-")
+    }
+}
+
+extension PickyWatchdogSampleStore: PickyWatchdogResponder.SampleCapturing {
+    func captureSpinSample(pid: Int32) throws -> URL {
+        return try captureSpinSampleAndPurge(pid: pid)
     }
 }

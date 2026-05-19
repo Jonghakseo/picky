@@ -403,6 +403,50 @@ struct PickySettingsPolishTests {
         #expect(store.load().onboardingCompletedVersion == 0)
     }
 
+    @Test func settingsRoundTripPreservesShellCommandAutoInstallOptOut() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.defaultCwd = project.path
+        settings.worktreeParent = project.path
+        // Fresh installs start opted-in so the launch-time auto-installer gets
+        // one chance to drop the wrapper.
+        #expect(settings.shellCommandAutoInstallOptedOut == false)
+        settings.shellCommandAutoInstallOptedOut = true
+        try store.save(settings)
+        #expect(store.load().shellCommandAutoInstallOptedOut == true)
+
+        settings.shellCommandAutoInstallOptedOut = false
+        try store.save(settings)
+        #expect(store.load().shellCommandAutoInstallOptedOut == false)
+    }
+
+    @Test func settingsDecodeTreatsLegacyFileAsAutoInstallOptedIn() throws {
+        // Settings files written before the auto-installer existed have no
+        // `shellCommandAutoInstallOptedOut` key. They should decode as
+        // opted-in (false) so existing users get the same silent install
+        // behavior as fresh installs.
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Settings", isDirectory: true), withIntermediateDirectories: true)
+        let url = root.appendingPathComponent("Settings", isDirectory: true).appendingPathComponent("settings.json")
+        let legacyJSON = """
+        {
+          "defaultCwd": "/tmp",
+          "worktreeParent": "",
+          "preferredToolVisibility": "visible in context only",
+          "readOnlyInvestigationPreference": true,
+          "daemonPath": "/tmp/agentd",
+          "logPath": "/tmp/logs"
+        }
+        """
+        try legacyJSON.data(using: .utf8)!.write(to: url)
+        let store = PickySettingsStore(url: url)
+
+        #expect(store.load().shellCommandAutoInstallOptedOut == false)
+    }
+
     @Test func settingsDecodeTreatsLegacyFileAsOnboardingAlreadyCompleted() throws {
         // Pre-onboarding settings files have no `onboardingCompletedVersion` key. Updating
         // users should not get ambushed by the takeover demo, so the decoder treats the

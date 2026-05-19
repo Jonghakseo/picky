@@ -599,6 +599,11 @@ struct PickySettings: Codable, Equatable {
     /// place don't get a surprise demo — fresh installs decode the field via
     /// `defaults()` (value 0) and qualify naturally.
     var onboardingCompletedVersion: Int
+    /// `true` once the user explicitly **uninstalled** the `/usr/local/bin/picky`
+    /// shell wrapper from Settings. Set so the app-launch auto-installer does
+    /// not silently re-add the command after they removed it. The Settings
+    /// Install button flips this back to `false` so they can opt back in.
+    var shellCommandAutoInstallOptedOut: Bool
     /// User-facing chrome language. `.system` follows whatever language macOS
     /// surfaces via `Locale.preferredLanguages`; the explicit cases pin the
     /// app even when the OS is set to something else. Adding a language is
@@ -671,6 +676,7 @@ struct PickySettings: Codable, Equatable {
         updateChannel: PickyUpdateChannel = .stable,
         updatesAutomaticChecksEnabled: Bool = true,
         onboardingCompletedVersion: Int = 0,
+        shellCommandAutoInstallOptedOut: Bool = false,
         appLanguage: PickyLanguage = .system,
         detachedPanelFrames: [String: PickyDetachedPanelFrame] = [:]
     ) {
@@ -723,6 +729,7 @@ struct PickySettings: Codable, Equatable {
         self.updateChannel = updateChannel
         self.updatesAutomaticChecksEnabled = updatesAutomaticChecksEnabled
         self.onboardingCompletedVersion = onboardingCompletedVersion
+        self.shellCommandAutoInstallOptedOut = shellCommandAutoInstallOptedOut
         self.appLanguage = appLanguage
         self.detachedPanelFrames = detachedPanelFrames
     }
@@ -789,6 +796,7 @@ struct PickySettings: Codable, Equatable {
             updateChannel: defaultUpdateChannel(forReleaseChannel: AppBundleConfiguration.releaseChannel),
             updatesAutomaticChecksEnabled: true,
             onboardingCompletedVersion: 0,
+            shellCommandAutoInstallOptedOut: false,
             appLanguage: .system,
             detachedPanelFrames: [:]
         )
@@ -874,6 +882,7 @@ struct PickySettings: Codable, Equatable {
         case updateChannel
         case updatesAutomaticChecksEnabled
         case onboardingCompletedVersion
+        case shellCommandAutoInstallOptedOut
         case appLanguage
         case detachedPanelFrames
     }
@@ -934,6 +943,12 @@ struct PickySettings: Codable, Equatable {
         // page still exposes "Replay onboarding" for anyone who wants it.
         onboardingCompletedVersion = try container.decodeIfPresent(Int.self, forKey: .onboardingCompletedVersion)
             ?? PickyOnboardingVersion.current
+        // Missing field on existing settings files (including users who
+        // updated in place from a build before auto-install existed) decodes
+        // to `false` so the launch trigger gets one chance to silently add the
+        // command. Anyone who hates the auto-install can Uninstall once from
+        // Settings to flip this to true.
+        shellCommandAutoInstallOptedOut = try container.decodeIfPresent(Bool.self, forKey: .shellCommandAutoInstallOptedOut) ?? defaults.shellCommandAutoInstallOptedOut
         // Existing installs that predate localization decode as `.system` —
         // they'll follow whatever language they were already comfortable with
         // (the OS preference) without any visible change.

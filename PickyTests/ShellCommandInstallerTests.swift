@@ -102,6 +102,93 @@ struct ShellCommandInstallerTests {
         #expect(status == .installedCurrent(installPath: env.installPath))
     }
 
+    // MARK: - installSilentlyIfPossible
+
+    @Test func silentInstallWritesWrapperWhenSlotIsCleanAndWritable() throws {
+        let env = try TempEnvironment()
+        defer { env.cleanup() }
+        let outcome = ShellCommandInstaller.installSilentlyIfPossible(bundleURL: env.bundleURL, installPath: env.installPath)
+        #expect(outcome == .installed(installPath: env.installPath))
+        #expect(FileManager.default.fileExists(atPath: env.installPath.path))
+        let body = try String(contentsOf: env.installPath, encoding: .utf8)
+        #expect(body.contains("PICKY_APP_PATH='\(env.bundleURL.path)'"))
+    }
+
+    @Test func silentInstallSkipsWhenCliMissingFromBundle() throws {
+        let env = try TempEnvironment(includeCli: false)
+        defer { env.cleanup() }
+        let outcome = ShellCommandInstaller.installSilentlyIfPossible(bundleURL: env.bundleURL, installPath: env.installPath)
+        #expect(outcome == .skippedMissingCli)
+        #expect(!FileManager.default.fileExists(atPath: env.installPath.path))
+    }
+
+    @Test func silentInstallSkipsWhenAlreadyInstalled() throws {
+        let env = try TempEnvironment()
+        defer { env.cleanup() }
+        try ShellCommandInstaller.install(bundleURL: env.bundleURL, installPath: env.installPath, privilegedCommandRunner: RecordingRunner())
+        let outcome = ShellCommandInstaller.installSilentlyIfPossible(bundleURL: env.bundleURL, installPath: env.installPath)
+        guard case .skippedAlreadyPresent(let status) = outcome else {
+            Issue.record("expected skippedAlreadyPresent, got \(outcome)")
+            return
+        }
+        #expect(status == .installedCurrent(installPath: env.installPath))
+    }
+
+    @Test func silentInstallLeavesStaleWrapperAlone() throws {
+        // Stale wrappers (after Sparkle moves the bundle) are handled by the
+        // panel banner, not silently overwritten on launch — we don't want to
+        // resurrect a wrapper the user may have intentionally pointed at the
+        // old build.
+        let env = try TempEnvironment()
+        defer { env.cleanup() }
+        try ShellCommandInstaller.install(bundleURL: env.bundleURL, installPath: env.installPath, privilegedCommandRunner: RecordingRunner())
+        let alternate = env.makeAlternateBundle()
+        let outcome = ShellCommandInstaller.installSilentlyIfPossible(bundleURL: alternate, installPath: env.installPath)
+        guard case .skippedAlreadyPresent(let status) = outcome else {
+            Issue.record("expected skippedAlreadyPresent, got \(outcome)")
+            return
+        }
+        if case .installedStale = status {
+            // ok
+        } else {
+            Issue.record("expected installedStale inside skippedAlreadyPresent, got \(status)")
+        }
+        // Pinned path still references the original bundle.
+        let body = try String(contentsOf: env.installPath, encoding: .utf8)
+        #expect(body.contains("PICKY_APP_PATH='\(env.bundleURL.path)'"))
+    }
+
+    @Test func silentInstallLeavesForeignFileAlone() throws {
+        let env = try TempEnvironment()
+        defer { env.cleanup() }
+        let foreignBody = "#!/bin/sh\necho not-picky\n"
+        try foreignBody.write(to: env.installPath, atomically: true, encoding: .utf8)
+        let outcome = ShellCommandInstaller.installSilentlyIfPossible(bundleURL: env.bundleURL, installPath: env.installPath)
+        guard case .skippedAlreadyPresent(let status) = outcome else {
+            Issue.record("expected skippedAlreadyPresent, got \(outcome)")
+            return
+        }
+        #expect(status == .foreign(installPath: env.installPath))
+        // Confirm we did not overwrite the unrelated file.
+        let body = try String(contentsOf: env.installPath, encoding: .utf8)
+        #expect(body == foreignBody)
+    }
+
+    @Test func silentInstallSkipsWhenParentDirectoryIsNotWritable() throws {
+        let env = try TempEnvironment()
+        defer {
+            // Restore writable perms before cleanup so the temp directory can
+            // be removed without escalation.
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: env.installPath.deletingLastPathComponent().path)
+            env.cleanup()
+        }
+        let binDir = env.installPath.deletingLastPathComponent()
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: binDir.path)
+        let outcome = ShellCommandInstaller.installSilentlyIfPossible(bundleURL: env.bundleURL, installPath: env.installPath)
+        #expect(outcome == .skippedNeedsAdmin)
+        #expect(!FileManager.default.fileExists(atPath: env.installPath.path))
+    }
+
     @Test func wrapperResolvesCliPathWithoutEmbeddedQuotes() throws {
         // Regression: the previous template inlined the single-quoted Picky.app path
         // inside `${PICKY_AGENTD_ROOT_OVERRIDE:-'...'/Contents/...}`, but POSIX sh treats

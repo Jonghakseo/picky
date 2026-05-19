@@ -35,6 +35,24 @@ enum ShellCommandInstaller {
         case foreign(installPath: URL)
     }
 
+    /// Outcome of a non-prompting auto-install attempt. Used by the app-launch
+    /// trigger so it can log/no-op without ever surfacing an osascript auth
+    /// prompt to the user (the explicit Settings button still does).
+    enum SilentInstallOutcome: Equatable {
+        /// Wrapper was written at `installPath` with no auth prompt required.
+        case installed(installPath: URL)
+        /// Skipped because the wrapper is already present (current or stale) or
+        /// the path is occupied by a non-Picky file we will not touch.
+        case skippedAlreadyPresent(InstallStatus)
+        /// Skipped because writing to `installPath` would have required
+        /// administrator privileges. The user can still install via Settings.
+        case skippedNeedsAdmin
+        /// Skipped because the running app bundle is missing `dist/cli.js`
+        /// (typical in `xcodebuild` dev runs before the agentd resources are
+        /// staged). Safe to ignore — Settings install will surface the error.
+        case skippedMissingCli
+    }
+
     enum InstallError: LocalizedError, Equatable {
         case missingCliEntry(URL)
         case writeFailed(String)
@@ -139,6 +157,46 @@ enum ShellCommandInstaller {
         defer { try? fileManager.removeItem(at: tempScriptURL) }
         try privilegedCommandRunner.run(privilegedInstallCommand(scriptURL: tempScriptURL, installPath: installPath))
         return installPath
+    }
+
+    /// Best-effort install that **never prompts for credentials**. Returns one
+    /// of `SilentInstallOutcome` so the caller can log without throwing on the
+    /// common "can't write to /usr/local/bin" path. Intended for the app-launch
+    /// auto-installer; the Settings button still goes through `install(...)`.
+    static func installSilentlyIfPossible(
+        bundleURL: URL = Bundle.main.bundleURL,
+        installPath: URL = defaultInstallPath,
+        fileManager: FileManager = .default
+    ) -> SilentInstallOutcome {
+        let status = currentStatus(installPath: installPath, bundleURL: bundleURL)
+        switch status {
+        case .installedCurrent, .installedStale, .foreign:
+            // We only auto-install onto a clean slot. Stale wrappers are left
+            // alone here so the user can decide via the panel banner whether
+            // to re-point them at the new bundle.
+            return .skippedAlreadyPresent(status)
+        case .notInstalled:
+            break
+        }
+        // Refuse to write a wrapper that points at a bundle without dist/cli.js
+        // — the script would just fail at exec time. Dev/xcodebuild runs that
+        // skip the agentd packaging step fall in here.
+        let cliURL = bundleURL.appendingPathComponent(cliRelativePath)
+        guard fileManager.fileExists(atPath: cliURL.path) else { return .skippedMissingCli }
+        let parent = installPath.deletingLastPathComponent()
+        let parentExists = fileManager.fileExists(atPath: parent.path)
+        let parentWritable = parentExists && fileManager.isWritableFile(atPath: parent.path)
+        guard parentExists, parentWritable else { return .skippedNeedsAdmin }
+        let script = wrapperScript(forAppAt: bundleURL)
+        do {
+            try writeScript(script, to: installPath, fileManager: fileManager)
+            try setExecutable(at: installPath)
+            return .installed(installPath: installPath)
+        } catch {
+            // Treat any unexpected write failure as "needs admin" so the caller
+            // surfaces the Settings flow instead of crashing on launch.
+            return .skippedNeedsAdmin
+        }
     }
 
     /// Remove the wrapper. Idempotent — succeeds when nothing is there.

@@ -1883,6 +1883,54 @@
         }
       }
     },
+    "status.shellCommand.stale.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`picky` points at a different Picky.app"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`picky` 명령이 다른 Picky.app 을 가리키고 있어요"
+          }
+        }
+      }
+    },
+    "status.shellCommand.stale.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reinstall to point the command at this Picky.app."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 Picky.app 을 가리키도록 재설치하세요."
+          }
+        }
+      }
+    },
+    "status.shellCommand.stale.reinstall": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reinstall"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "재설치"
+          }
+        }
+      }
+    },
     "settings.general.subtitle.index": {
       "localizations": {
         "en": {

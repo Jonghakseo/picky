@@ -13,11 +13,35 @@
 import AppKit
 import Foundation
 
+extension Notification.Name {
+    /// Broadcast after the user installs or uninstalls the `/usr/local/bin/picky`
+    /// wrapper through Settings, so live views (e.g. the stale wrapper banner
+    /// in the companion status tab) can refresh `ShellCommandInstaller.currentStatus`
+    /// without restarting the panel.
+    static let pickyShellCommandStatusDidChange = Notification.Name("pickyShellCommandStatusDidChange")
+}
+
 @MainActor
 final class ShellCommandMenuController: NSObject {
     static let shared = ShellCommandMenuController()
 
-    private override init() { super.init() }
+    /// Same on-disk settings file the rest of the app uses, so flipping the
+    /// auto-install opt-out flag from here is picked up by
+    /// `autoInstallShellCommandIfPermitted()` on the next launch.
+    private let settingsStore: PickySettingsStore
+
+    private override init() {
+        self.settingsStore = PickySettingsStore()
+        super.init()
+    }
+
+    /// Test-only initializer so we can verify the install/uninstall flow
+    /// updates the persisted opt-out flag without touching the user's real
+    /// settings file.
+    init(settingsStore: PickySettingsStore) {
+        self.settingsStore = settingsStore
+        super.init()
+    }
 
     func showInstallerAlert(
         bundleURL: URL = Bundle.main.bundleURL,
@@ -71,6 +95,11 @@ final class ShellCommandMenuController: NSObject {
     private func runInstall(bundleURL: URL, installPath: URL) {
         do {
             let installed = try ShellCommandInstaller.install(bundleURL: bundleURL, installPath: installPath)
+            // The user has explicitly asked for the command back — clear the
+            // opt-out so a future move/reinstall of Picky.app can also be
+            // handled silently on launch.
+            setAutoInstallOptedOut(false)
+            NotificationCenter.default.post(name: .pickyShellCommandStatusDidChange, object: nil)
             showInfo("Installed `\(installPath.lastPathComponent)` at \(installed.path).\n\nIf this is the first install, restart your terminal so the new command is on PATH.")
         } catch {
             showError("Install failed", error: error)
@@ -80,9 +109,28 @@ final class ShellCommandMenuController: NSObject {
     private func runUninstall(installPath: URL) {
         do {
             try ShellCommandInstaller.uninstall(installPath: installPath)
+            // Remember the user removed the command on purpose so the
+            // launch-time auto-installer does not silently re-add it.
+            setAutoInstallOptedOut(true)
+            NotificationCenter.default.post(name: .pickyShellCommandStatusDidChange, object: nil)
             showInfo("Removed `\(installPath.lastPathComponent)` from \(installPath.path).")
         } catch {
             showError("Uninstall failed", error: error)
+        }
+    }
+
+    private func setAutoInstallOptedOut(_ value: Bool) {
+        var settings = settingsStore.load()
+        guard settings.shellCommandAutoInstallOptedOut != value else { return }
+        settings.shellCommandAutoInstallOptedOut = value
+        do {
+            try settingsStore.save(settings)
+            NotificationCenter.default.post(name: .pickySettingsDidSave, object: nil)
+        } catch {
+            // Opt-out state is non-critical — the user can always re-flip it
+            // from Settings. Don't surface a transient disk failure as an
+            // alert; just log it so debug builds can spot a regression.
+            print("⚠️ Picky: failed to persist shell command opt-out flag: \(error)")
         }
     }
 

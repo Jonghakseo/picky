@@ -13,8 +13,15 @@ struct CompanionPanelStatusView: View {
     @EnvironmentObject private var updaterController: PickyUpdaterController
     var onShowFeedback: () -> Void = {}
 
+    /// Cached `ShellCommandInstaller.currentStatus()` so the stale banner can
+    /// render without recomputing on every body call. Refreshed on appear and
+    /// whenever Settings posts `.pickyShellCommandStatusDidChange` after the
+    /// user finishes (un)installing the wrapper.
+    @State private var shellCommandStatus: ShellCommandInstaller.InstallStatus = .notInstalled
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            staleShellCommandBanner
             if companionManager.allPrerequisitesMet {
                 readyRow
                 Divider()
@@ -51,6 +58,57 @@ struct CompanionPanelStatusView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { refreshShellCommandStatus() }
+        .onReceive(NotificationCenter.default.publisher(for: .pickyShellCommandStatusDidChange)) { _ in
+            refreshShellCommandStatus()
+        }
+    }
+
+    /// Non-blocking inline notice that appears only when the installed picky
+    /// wrapper points at a different Picky.app than the one currently running.
+    /// The user can ignore it; tapping "Reinstall" opens the same NSAlert as
+    /// the Settings button so they can re-point or remove the wrapper.
+    @ViewBuilder
+    private var staleShellCommandBanner: some View {
+        if case .installedStale = shellCommandStatus {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(DS.Colors.warning)
+                    .frame(width: 14, alignment: .center)
+                    .padding(.top, 1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("status.shellCommand.stale.title")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(DS.Colors.textPrimary)
+                    Text("status.shellCommand.stale.subtitle")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Button("status.shellCommand.stale.reinstall") {
+                    ShellCommandMenuController.shared.showInstallerAlert()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(DS.Colors.warning.opacity(0.10))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(DS.Colors.warning.opacity(0.45), lineWidth: 0.6)
+                    )
+            )
+            .padding(.bottom, 14)
+        }
+    }
+
+    private func refreshShellCommandStatus() {
+        shellCommandStatus = ShellCommandInstaller.currentStatus()
     }
 
     /// Chevron entry that deep-links into the Settings tab's feedback page.

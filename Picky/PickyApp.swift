@@ -172,6 +172,11 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             // Picky never modifies `~/.pi/agent` on launch without consent.
             daemonLauncher.start()
             hudOverlayManager.start()
+            // Best-effort install of /usr/local/bin/picky when we can do it
+            // without prompting for credentials. Anything that would require
+            // admin auth (typical fresh /usr/local/bin) is left for the user
+            // to confirm explicitly via Settings → Install Shell Command.
+            autoInstallShellCommandIfPermitted()
         }
         wireExternalEntryProvider(on: hudAgentClientRouter)
         // Wire the appearance store and shared settings store into singletons that live
@@ -220,6 +225,27 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             controller.start()
         }
         registerAsLoginItemIfNeeded()
+    }
+
+    /// Try to drop the `/usr/local/bin/picky` wrapper into place silently. We
+    /// only act on a clean slot in a user-writable parent directory; stale or
+    /// foreign wrappers are left for the panel banner / Settings flow so the
+    /// user can confirm the change. Anyone who explicitly uninstalled the
+    /// command from Settings has `shellCommandAutoInstallOptedOut == true`
+    /// and will be skipped here.
+    private func autoInstallShellCommandIfPermitted() {
+        let settings = settingsStore.load()
+        guard !settings.shellCommandAutoInstallOptedOut else { return }
+        switch ShellCommandInstaller.installSilentlyIfPossible() {
+        case .installed(let path):
+            print("🎯 Picky: auto-installed picky CLI at \(path.path)")
+        case .skippedAlreadyPresent:
+            break
+        case .skippedNeedsAdmin:
+            print("🎯 Picky: picky CLI auto-install skipped (requires admin). Use Settings → Install Shell Command.")
+        case .skippedMissingCli:
+            print("🎯 Picky: picky CLI auto-install skipped (dist/cli.js missing in bundle)")
+        }
     }
 
     /// Wires the router's `externalEntryContextProvider` so CLI submissions can

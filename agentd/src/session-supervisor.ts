@@ -520,6 +520,10 @@ export class SessionSupervisor extends EventEmitter {
     if (this.narrationEnabled === enabled) return;
     this.narrationEnabled = enabled;
     logAgentd("narration enabled changed", { enabled });
+    // Realtime translates the host narration toggle into modality: when
+    // narration is off, response.create emits text-only and the WS does not
+    // stream TTS audio at all. Idempotent on Pi-mode runtimes.
+    this.options.mainRuntime?.setMainAgentNarrationEnabled?.(enabled);
     for (const listener of this.narrationEnabledListeners) {
       try {
         listener(enabled);

@@ -99,6 +99,10 @@ export class SelectableMainRuntime implements MainRealtimeRuntime {
     return this.options.realtimeRuntime.refreshCodexQuota?.() ?? Promise.resolve();
   }
 
+  setMainAgentNarrationEnabled(enabled: boolean): void {
+    this.options.realtimeRuntime.setMainAgentNarrationEnabled?.(enabled);
+  }
+
   private currentRuntime(): AgentRuntime {
     return this.mode === "openai-realtime" ? this.options.realtimeRuntime : this.options.piRuntime;
   }

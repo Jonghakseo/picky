@@ -663,6 +663,63 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(replayedRoles.slice(0, 4)).toEqual(["user", "assistant", "user", "assistant"]);
   });
 
+  it("sends audio modality by default and switches to text when narration is disabled", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+    const handle = await runtime.create({ text: "hi", imagePaths: [] }, { sessionId: "picky" });
+    await settle();
+
+    const firstCreate = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .find((event) => event.type === "response.create");
+    expect(firstCreate?.response).toEqual({ output_modalities: ["audio"] });
+
+    runtime.setMainAgentNarrationEnabled(false);
+    socket.sent.length = 0;
+    await handle.followUp({ text: "text-only please", imagePaths: [] });
+
+    const secondCreate = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .find((event) => event.type === "response.create");
+    expect(secondCreate?.response).toEqual({ output_modalities: ["text"] });
+  });
+
+  it("routes text followUp prompts through conversation.item.create + response.create", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+    const handle = await runtime.create({ text: "original", imagePaths: [] }, { sessionId: "picky" });
+    await settle();
+    socket.sent.length = 0;
+
+    // Simulate a text-routed turn (quick input / CLI / Pickle completion all
+    // funnel through `handle.followUp` after the initial create).
+    await handle.followUp({ text: "pickle finished", imagePaths: [] });
+
+    const events = socket.sent.map((raw) => JSON.parse(raw) as Record<string, any>);
+    const item = events.find((e) => e.type === "conversation.item.create");
+    expect(item?.item.role).toBe("user");
+    expect(item?.item.content[0]).toEqual({ type: "input_text", text: "pickle finished" });
+    expect(events.find((e) => e.type === "response.create")).toBeDefined();
+  });
+
   it("emits a quota event from a stubbed Codex fetcher when using codexOAuth", async () => {
     const socket = new FakeRealtimeSocket();
     const events: any[] = [];

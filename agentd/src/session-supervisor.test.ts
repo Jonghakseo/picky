@@ -2754,6 +2754,20 @@ describe("SessionSupervisor", () => {
     expect(replies).toEqual([{ contextId: "context-마이크 테스트", text: "바로 답변" }]);
   });
 
+  it("forwards narration toggle changes to the main runtime so Realtime can switch response modality", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-narration-"));
+    const sideRuntime = new ManualRuntime();
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
+    await supervisor.load();
+
+    supervisor.setNarrationEnabled(false);
+    supervisor.setNarrationEnabled(false); // idempotent: should not re-forward
+    supervisor.setNarrationEnabled(true);
+
+    expect(mainRuntime.narrationEnabledCalls).toEqual([false, true]);
+  });
+
   it("routes voice requests through Picky when configured", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const sideRuntime = new ManualRuntime();
@@ -5256,6 +5270,7 @@ class ManualRuntime implements AgentRuntime {
    * first message the runtime received before any follow-up calls. */
   createPrompts: BuiltPrompt[] = [];
   thinkingLevels: string[] = [];
+  narrationEnabledCalls: boolean[] = [];
   prewarmCalls = 0;
   prewarmOptions: Array<{ cwd?: string; sessionId?: string }> = [];
   prewarm?: (options: { cwd?: string; sessionId?: string }) => Promise<RuntimeSessionHandle>;
@@ -5284,6 +5299,10 @@ class ManualRuntime implements AgentRuntime {
 
   setThinkingLevel(level: ThinkingLevel): void {
     this.thinkingLevels.push(level);
+  }
+
+  setMainAgentNarrationEnabled(enabled: boolean): void {
+    this.narrationEnabledCalls.push(enabled);
   }
 }
 

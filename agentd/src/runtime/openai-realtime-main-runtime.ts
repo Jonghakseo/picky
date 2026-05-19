@@ -50,7 +50,7 @@ interface OpenAIRealtimeMainRuntimeOptions {
 
 interface OpenAIRealtimeToolHandlers {
   handoff(request: { title: string; instructions: string; userMessage?: string; cwd?: string }): Promise<{ sessionId: string; title: string; cwd?: string }>;
-  listPickleSessions(request: { includeTerminal?: boolean; page?: number; limit?: number }): PickyAgentSession[] | Promise<PickyAgentSession[]>;
+  listPickleSessions(request: { includeArchive?: boolean; page?: number; limit?: number }): PickyAgentSession[] | Promise<PickyAgentSession[]>;
   steerPickleSession(request: { sessionId: string; message: string }): Promise<PickyAgentSession>;
   searchSkills(request: { query?: string; limit?: number; cwd?: string }): Promise<{ query: string; root: string; roots?: string[]; total: number; skills: PickySkillSummary[] }>;
   getSkillDetails(request: { name: string; cwd?: string }): Promise<PickySkillDetails>;
@@ -99,6 +99,7 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
   private handle?: OpenAIRealtimeSessionHandle;
   private thinkingLevel: ThinkingLevel = "medium";
   private historyProvider?: MainRealtimeHistoryProvider;
+  private narrationEnabled = true;
 
   constructor(private readonly options: OpenAIRealtimeMainRuntimeOptions) {
     this.config = options.defaultConfig;
@@ -117,6 +118,11 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
   setMainRealtimeHistoryProvider(provider: MainRealtimeHistoryProvider | undefined): void {
     this.historyProvider = provider;
     this.handle?.setHistoryProvider(provider);
+  }
+
+  setMainAgentNarrationEnabled(enabled: boolean): void {
+    this.narrationEnabled = enabled;
+    this.handle?.setNarrationEnabled(enabled);
   }
 
   async refreshCodexQuota(): Promise<void> {
@@ -161,10 +167,12 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
         codexOAuthLoader: this.options.codexOAuthLoader,
         codexQuotaFetcher: this.options.codexQuotaFetcher,
         historyProvider: this.historyProvider,
+        narrationEnabled: this.narrationEnabled,
         now: this.options.now,
       });
     } else {
       this.handle.setCwd(options.cwd);
+      this.handle.setNarrationEnabled(this.narrationEnabled);
     }
     if (this.config) this.handle.configure(this.config);
     return this.handle;
@@ -195,6 +203,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   private thinkingLevel: ThinkingLevel;
   private cwd?: string;
   private historyProvider?: MainRealtimeHistoryProvider;
+  private narrationEnabled: boolean;
   private codexAuth?: ResolvedCodexOAuth;
   private sessionStartedAt = 0;
   private sessionMaxTimer?: ReturnType<typeof setTimeout>;
@@ -212,6 +221,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     codexOAuthLoader?: CodexOAuthLoader;
     codexQuotaFetcher?: CodexQuotaFetcher;
     historyProvider?: MainRealtimeHistoryProvider;
+    narrationEnabled?: boolean;
     now?: () => number;
   }) {
     this.id = options.id;
@@ -219,11 +229,16 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     this.thinkingLevel = options.thinkingLevel;
     this.cwd = options.cwd;
     this.historyProvider = options.historyProvider;
+    this.narrationEnabled = options.narrationEnabled ?? true;
     this.now = options.now ?? (() => Date.now());
   }
 
   setHistoryProvider(provider: MainRealtimeHistoryProvider | undefined): void {
     this.historyProvider = provider;
+  }
+
+  setNarrationEnabled(enabled: boolean): void {
+    this.narrationEnabled = enabled;
   }
 
   setCwd(cwd: string | undefined): void {
@@ -575,11 +590,12 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   }
 
   private sendResponseCreate(): void {
+    const audio = this.narrationEnabled;
     this.sendClientEvent({
       type: "response.create",
       response: this.usesAzurePreviewProtocol()
-        ? { modalities: ["text", "audio"] }
-        : { output_modalities: ["audio"] },
+        ? { modalities: audio ? ["text", "audio"] : ["text"] }
+        : { output_modalities: audio ? ["audio"] : ["text"] },
     });
   }
 
@@ -803,7 +819,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
         });
       case "picky_pickle_sessions": {
         const request = {
-          includeTerminal: typeof args.includeTerminal === "boolean" ? args.includeTerminal : undefined,
+          includeArchive: typeof args.includeArchive === "boolean" ? args.includeArchive : undefined,
           page: numberArg(args, "page"),
           limit: numberArg(args, "limit"),
         };
@@ -1113,12 +1129,12 @@ function realtimeTools(): Array<Record<string, unknown>> {
     {
       type: "function",
       name: "picky_pickle_sessions",
-      description: "List current and recent Pickles delegated from Picky.",
+      description: "List current and recent Pickles delegated from Picky. Archived Pickles are hidden unless includeArchive is true.",
       parameters: {
         type: "object",
         additionalProperties: false,
         properties: {
-          includeTerminal: { type: "boolean" },
+          includeArchive: { type: "boolean", description: "Include Pickles the user has archived. Defaults to false." },
           page: { type: "number" },
           limit: { type: "number" },
         },
@@ -1186,7 +1202,7 @@ function realtimeTools(): Array<Record<string, unknown>> {
 const REALTIME_PICKLE_SESSIONS_DEFAULT_LIMIT = 10;
 const REALTIME_PICKLE_SESSIONS_MAX_LIMIT = 10;
 
-type RealtimePickleSessionsRequest = { includeTerminal?: boolean; page?: number; limit?: number };
+type RealtimePickleSessionsRequest = { includeArchive?: boolean; page?: number; limit?: number };
 
 type RealtimePickleSessionSummary = {
   id: string;
@@ -1228,10 +1244,10 @@ function summarizeRealtimePickleSessions(sessions: PickyAgentSession[], request:
   hasMore: boolean;
   nextPage?: number;
 } {
-  const includeTerminal = request.includeTerminal !== false;
+  const includeArchive = request.includeArchive === true;
   const page = normalizePage(request.page);
   const pageSize = clampRealtimePickleSessionLimit(request.limit);
-  const filtered = sessions.filter((session) => includeTerminal || !["completed", "failed", "cancelled"].includes(session.status));
+  const filtered = sessions.filter((session) => includeArchive || session.archived !== true);
   const start = (page - 1) * pageSize;
   const selected = filtered.slice(start, start + pageSize).map(summarizeRealtimePickleSession);
   const hasMore = filtered.length > start + pageSize;

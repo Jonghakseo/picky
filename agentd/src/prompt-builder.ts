@@ -71,7 +71,8 @@ export function buildMainAgentPickleCompletionPrompt(session: { id: string; titl
     text: [
       "# Pickle completion",
       "",
-      "A Pickle you delegated to has finished. Tell the user in the user's language that the Pickle work is complete, include a short useful summary, and tell them to open the Pickle card for full details. Keep it concise.",
+      "A Pickle you delegated to has finished. Tell the user in the user's language that the Pickle work is complete, include a short useful summary, and tell them to open the Pickle card for full details.",
+      "Picky may read this reply aloud, so keep the spoken portion to 1-2 short sentences (status + one-line takeaway). Refer the user to the Pickle card for any longer detail rather than reciting it verbatim.",
       "",
       `Title: ${session.title}`,
       `Status: ${session.status}`,

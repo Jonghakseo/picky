@@ -63,6 +63,7 @@ When the user asks about a feature, start here before broad searching:
 - Global shortcut semantics/settings: `Picky/Shortcuts/`, `Picky/Companion/Dictation/GlobalPushToTalkShortcutMonitor.swift`, `Picky/Companion/Dictation/BuddyPushToTalkShortcut.swift`, `Picky/QuickInput/QuickInputDoubleTapDetector.swift`
 - Quick text input: `Picky/QuickInput/`
 - Speech transcription/playback providers: `Picky/Companion/Dictation/AppleSpeechTranscriptionProvider.swift`, `Picky/Companion/Dictation/BuddyTranscriptionProvider.swift`, `Picky/Companion/AzureOpenAI/`, `Picky/Companion/ElevenLabs/`, `Picky/Companion/Speech/`
+- OpenAI Realtime voice mode (opt-in): `Picky/Companion/Realtime/`, `agentd/src/runtime/openai-realtime-main-runtime.ts`, `agentd/src/runtime/selectable-main-runtime.ts`, runtime selection in `agentd/src/bootstrap.ts`
 - Screen/context capture: `Picky/Context/`, `Picky/PickyAdvancedContext.swift`, `Picky/Context/PickyContextPacketAssembler.swift`
 - HUD shell / dock / Pickle container: `Picky/HUD/`, `Picky/HUD/PickyHUDView.swift`, `Picky/PickySessionViewModel.swift`
 - Conversation card UI: `Picky/HUD/Conversation/`, particularly `PickyConversationCardView`, `PickyConversationListView`, `PickyConversationComposerView`, `PickyConversationMenu`
@@ -78,7 +79,7 @@ When the user asks about a feature, start here before broad searching:
 - Backend message journal / source mapping: `agentd/src/session-message-builder.ts`, `agentd/src/domain/log-prefixes.ts`
 - Tool categorizer/activity counts: `agentd/src/domain/tool-categorizer.ts`, `agentd/src/domain/tool-activity.ts`
 - agentd prompt/context construction: `agentd/src/prompt-builder.ts`, `contracts/prompts/`, `contracts/context/`
-- Pi SDK runtime adapter: `agentd/src/runtime/pi-sdk-runtime.ts`, `agentd/src/runtime/types.ts`, `agentd/src/runtime/mock-runtime.ts`
+- Pi SDK runtime adapter: `agentd/src/runtime/pi-sdk-runtime.ts`, `agentd/src/runtime/types.ts`, `agentd/src/runtime/mock-runtime.ts`, `agentd/src/runtime/selectable-main-runtime.ts`
 - Picky/Pickle session tools: `agentd/src/application/handoff-tool.ts`
 - Pickle interactive input bridge: `agentd/src/application/ask-user-question-tool.ts`, `agentd/src/application/extension-ui-bridge.ts`
 - Pi session sync: `agentd/src/application/pi-session-syncer.ts`
@@ -92,7 +93,7 @@ When the user asks about a feature, start here before broad searching:
 1. Use the code navigation index above to pick likely files.
 2. Run `rg -n "exact term|symbol|UI label" <likely paths>` before opening large files.
 3. For Swift UI behavior, check both the View and `PickySessionViewModel`/store that backs it.
-4. For voice behavior, check the hotkey snapshot moment in `CompanionManager` and the routing method that sends `followUp` vs `submit`.
+4. For voice behavior, check the hotkey snapshot moment in `CompanionManager` and the routing method that sends `followUp` vs `submit`. For Realtime mode, also check `Picky/Companion/Realtime/` and the runtime selection in `agentd/src/bootstrap.ts` / `agentd/src/runtime/selectable-main-runtime.ts`.
 5. For daemon behavior, trace `server.ts -> session-supervisor.ts -> runtime/* -> prompt-builder.ts`.
 6. Before editing, run `git status --short` and protect unrelated user changes.
 7. For daemon debugging, check `~/Library/Application Support/Picky/Logs/agentd.stdout.log` and `agentd.stderr.log`; launcher lifecycle messages are printed to the app console with `Picky agentd launcher`.

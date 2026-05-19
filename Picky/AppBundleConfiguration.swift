@@ -26,6 +26,15 @@ enum AppBundleConfiguration {
         return trimmedValue.isEmpty ? nil : trimmedValue
     }
 
+    static var realtimeOptIn: Bool {
+        guard let buildInfoPath = Bundle.main.path(forResource: "PickyBuildInfo", ofType: "json"),
+              let data = try? Data(contentsOf: URL(fileURLWithPath: buildInfoPath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return false
+        }
+        let raw = json["realtimeOptIn"] as? String ?? ""
+        return raw == "1" || raw.lowercased() == "true"
+    }
 
     /// Release channel from `PickyBuildInfo.json` (`stable` / `beta` / `alpha`).
     /// Local dev builds without the bundled JSON file fall back to `alpha`,

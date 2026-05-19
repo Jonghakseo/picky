@@ -26,6 +26,7 @@ Artifact/report post-processing is intentionally out of scope.
 - No SaaS plugin registry.
 - No remote code loading.
 - No sandbox guarantee in v1. The module is local trusted code and should be labelled as such in Settings.
+- No realtime end-to-end voice override in v1. The module targets the existing Pi STT/TTS path first.
 - No custom artifact/report post-processor in this phase.
 
 ## Proposed user experience
@@ -465,6 +466,8 @@ Add a `CustomModuleService.applyContextHooks(packet)` before building prompts fo
 - main agent prompt
 - steer/follow-up context where available
 
+Realtime main runtime is explicitly out of scope for v1 custom hooks. Do not wire context/prompt hooks into the Realtime path in this phase.
+
 Rules:
 
 - Hook may return a modified packet.
@@ -778,6 +781,7 @@ Decisions:
 1. Speech transform hooks run when `customSpeechTransformsEnabled` is true, even if STT/TTS providers are not custom.
 2. Use one shared module path for all hooks in v1.
 3. Context hooks are disabled by default and require `customContextHooksEnabled`; default failure policy is `safeFallback`.
+4. Custom hooks do not run for OpenAI Realtime main runtime in v1.
 5. Prompt hooks support full prompt editing in v1. Users who only want append-only behavior receive the existing prompt and can append to it in their hook.
 6. The user template uses a local `custom-module.d.ts` with a relative `./custom-module` import, not a `picky-agentd/custom-module` package export.
 

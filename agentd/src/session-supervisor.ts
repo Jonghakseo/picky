@@ -8,12 +8,12 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
-import type { EventEnvelope, ModelCycleDirection, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
+import type { EventEnvelope, MainAgentRuntimeMode, ModelCycleDirection, OpenAIRealtimeAuthConfig, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
-import type { AgentRuntime, RuntimeBashExecutionResult, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./runtime/types.js";
+import { isMainRealtimeRuntime, type AgentRuntime, type RuntimeBashExecutionResult, type RuntimeEvent, type RuntimeSessionHandle, type RuntimeSlashCommand, type RuntimeSteerResult, type ThinkingLevel } from "./runtime/types.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
 import { isTerminalStatus } from "./domain/session-status.js";
@@ -117,6 +117,7 @@ export class SessionSupervisor extends EventEmitter {
   private mainTurnId = 0;
   private activeMainRuntimeInputId?: string;
   private interruptedMainInputIds = new Set<string>();
+  private activeMainRealtimeInputId?: string;
   private pickleSessionIds = new Set<string>();
   // Session ids that this supervisor does NOT host locally but that should still be tagged as
   // Pickle-completion contexts when the main agent's reply turn ends. Populated by
@@ -537,6 +538,67 @@ export class SessionSupervisor extends EventEmitter {
     return () => this.narrationEnabledListeners.delete(listener);
   }
 
+  async setMainAgentRuntimeMode(mode: MainAgentRuntimeMode): Promise<void> {
+    const runtime = this.options.mainRuntime;
+    if (!runtime?.setMainAgentRuntimeMode) {
+      logAgentd("main runtime mode ignored", { mode, reason: "runtime does not support selection" });
+      return;
+    }
+    const changed = runtime.setMainAgentRuntimeMode(mode);
+    logAgentd("main runtime mode configured", { mode, changed: changed ? 1 : 0 });
+    if (!changed) return;
+    const currentHandle = this.mainHandle;
+    this.detachMainHandleForInterruption();
+    if (currentHandle) await this.abortResetMainHandle(currentHandle, "runtime-mode-switch");
+    await this.patchMainState({ sessionFilePath: undefined });
+  }
+
+  async configureMainRealtimeAuth(config: OpenAIRealtimeAuthConfig): Promise<void> {
+    if (!isMainRealtimeRuntime(this.options.mainRuntime)) {
+      logAgentd("main realtime config ignored", { reason: "main runtime is not realtime", provider: config.provider, modelOrDeployment: config.modelOrDeployment });
+      return;
+    }
+    await this.options.mainRuntime.configureMainRealtimeAuth(config);
+    logAgentd("main realtime config applied", { provider: config.provider, modelOrDeployment: config.modelOrDeployment, voice: config.voice, keyPresent: config.apiKey ? 1 : 0 });
+  }
+
+  async beginMainRealtimeVoiceTurn(inputId: string, context: PickyContextPacket): Promise<void> {
+    const runtime = this.requireMainRealtimeRuntime();
+    await this.ensurePrewarmedMainHandle(context.cwd ?? process.cwd());
+    this.beginMainTurn(context.id);
+    this.mainContext = context;
+    this.activeMainRealtimeInputId = inputId;
+    this.mainIsProcessing = true;
+    await runtime.beginMainRealtimeVoiceTurn({ inputId, context });
+  }
+
+  async appendMainRealtimeInputAudio(inputId: string, audioBase64: string): Promise<void> {
+    const runtime = this.requireMainRealtimeRuntime();
+    await runtime.appendMainRealtimeInputAudio(inputId, audioBase64);
+  }
+
+  async commitMainRealtimeVoiceTurn(inputId: string, context?: PickyContextPacket): Promise<void> {
+    const runtime = this.requireMainRealtimeRuntime();
+    if (context) {
+      await this.ensurePrewarmedMainHandle(context.cwd ?? process.cwd());
+      this.beginMainTurn(context.id);
+      this.mainContext = context;
+      this.activeMainRealtimeInputId = inputId;
+    }
+    await runtime.commitMainRealtimeVoiceTurn(inputId, context);
+  }
+
+  async cancelMainRealtimeVoiceTurn(inputId?: string, playedAudioMs?: number): Promise<void> {
+    if (!isMainRealtimeRuntime(this.options.mainRuntime)) return;
+    await this.options.mainRuntime.cancelMainRealtimeVoiceTurn(inputId, playedAudioMs);
+    this.mainIsProcessing = false;
+  }
+
+  private requireMainRealtimeRuntime() {
+    if (!isMainRealtimeRuntime(this.options.mainRuntime)) throw new Error("Main runtime is not configured for OpenAI Realtime");
+    return this.options.mainRuntime;
+  }
+
   private detachMainHandleForInterruption(): void {
     this.mainHandleGeneration += 1;
     this.mainHandleUnsubscribe?.();
@@ -552,6 +614,7 @@ export class SessionSupervisor extends EventEmitter {
     this.mainTurnId += 1;
     this.activeMainRuntimeInputId = undefined;
     this.interruptedMainInputIds.clear();
+    this.activeMainRealtimeInputId = undefined;
     if (this.pendingPickleCompletions.length > 0) logAgentd("Picky pending Pickle completions cleared", { count: this.pendingPickleCompletions.length });
     this.pendingPickleCompletions = [];
   }
@@ -888,6 +951,7 @@ export class SessionSupervisor extends EventEmitter {
 
   private async maybeRolloverMainAgent(context: PickyContextPacket): Promise<void> {
     if (!this.options.mainRuntime || this.mainIsProcessing) return;
+    if (this.options.mainRuntime.getMainAgentRuntimeMode?.() === "openai-realtime") return;
     const reason = await this.mainRolloverReason();
     if (!reason) return;
 
@@ -1114,6 +1178,61 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async applyMainRuntimeEvent(event: RuntimeEvent): Promise<void> {
+    if (event.type === "main_realtime_state") {
+      if (["ready", "failed"].includes(event.state)) this.mainIsProcessing = false;
+      if (["listening", "thinking", "speaking"].includes(event.state)) this.mainIsProcessing = true;
+      this.emit("mainRealtimeStateChanged", event.state, event.message);
+      return;
+    }
+    if (event.type === "main_realtime_input_transcript_delta") {
+      this.emit("mainRealtimeInputTranscriptDelta", event.inputId, event.delta);
+      return;
+    }
+    if (event.type === "main_realtime_input_transcript_completed") {
+      this.emit("mainRealtimeInputTranscriptCompleted", event.inputId, event.transcript);
+      await this.appendMainMessage("user", event.transcript);
+      return;
+    }
+    if (event.type === "main_realtime_output_audio_delta") {
+      this.emit("mainRealtimeOutputAudioDelta", event.inputId, event.audioBase64);
+      return;
+    }
+    if (event.type === "main_realtime_output_audio_done") {
+      this.emit("mainRealtimeOutputAudioDone", event.inputId);
+      return;
+    }
+    if (event.type === "main_realtime_output_transcript_delta") {
+      if (event.inputId !== this.activeMainRealtimeInputId) {
+        logAgentd("main realtime stale transcript delta ignored", { inputId: event.inputId, activeInputId: this.activeMainRealtimeInputId, deltaChars: event.delta.length });
+        return;
+      }
+      this.mainDraft += event.delta;
+      this.emit("mainRealtimeOutputTranscriptDelta", event.inputId, event.delta);
+      return;
+    }
+    if (event.type === "main_realtime_output_transcript_completed") {
+      if (event.inputId !== this.activeMainRealtimeInputId) {
+        logAgentd("main realtime stale transcript completion ignored", { inputId: event.inputId, activeInputId: this.activeMainRealtimeInputId, transcriptChars: event.transcript.length });
+        return;
+      }
+      this.mainDraft = event.transcript;
+      this.emit("mainRealtimeOutputTranscriptCompleted", event.inputId, event.transcript);
+      return;
+    }
+    if (event.type === "main_realtime_turn_done") {
+      if (event.inputId !== this.activeMainRealtimeInputId) {
+        logAgentd("main realtime stale turn done ignored", { inputId: event.inputId, activeInputId: this.activeMainRealtimeInputId, status: event.status });
+        return;
+      }
+      this.mainIsProcessing = false;
+      this.activeMainRealtimeInputId = undefined;
+      const finalTranscript = event.finalTranscript ?? this.mainDraft;
+      this.mainDraft = "";
+      if (finalTranscript?.trim()) await this.appendMainMessage("assistant", finalTranscript);
+      this.emit("mainRealtimeTurnDone", event.inputId, event.status, finalTranscript);
+      this.schedulePickleCompletionDrain();
+      return;
+    }
     if (event.type === "log") {
       const sessionFilePath = piSessionFilePathFromLogLine(event.line);
       if (sessionFilePath) await this.patchMainState({ sessionFilePath });

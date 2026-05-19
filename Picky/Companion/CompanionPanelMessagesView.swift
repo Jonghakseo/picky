@@ -127,7 +127,7 @@ struct CompanionPanelMessagesView: View {
     /// Picky main agent's Pi session into the in-app terminal overlay or copy
     /// the equivalent `pi --session ...` resume command. Hidden when the
     /// daemon hasn't reported a session file yet (e.g. before the first turn,
-    /// after a `/new`, or while a model/session reset is in flight).
+    /// after a `/new`, or while a model/runtime switch is in flight).
     private var mainAgentEscapeRow: some View {
         HStack(spacing: 12) {
             Button(action: openMainAgentInPi) {

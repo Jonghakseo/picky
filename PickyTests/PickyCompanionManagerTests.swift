@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import AVFoundation
 import Foundation
 import Testing
 @testable import Picky
@@ -112,6 +113,35 @@ private final class FakeNSSpeechSynthesizer: PickyNSSpeechSynthesizing {
 }
 
 @MainActor
+private final class FakeRealtimeAudioPlaybackEngine: PickyRealtimeAudioPlaybacking {
+    var isPlaying = false
+    var playedAudioMs: Double = 0
+    var onPlaybackDrained: (() -> Void)?
+    private(set) var enqueuedAudio: [String] = []
+    private(set) var stopCount = 0
+
+    func enqueuePCM16Base64(_ audioBase64: String) {
+        enqueuedAudio.append(audioBase64)
+        isPlaying = true
+    }
+
+    func stopAndReturnPlayedAudioMs() -> Double {
+        stop()
+        return playedAudioMs
+    }
+
+    func stop() {
+        stopCount += 1
+        isPlaying = false
+    }
+
+    func finishPlayback() {
+        isPlaying = false
+        onPlaybackDrained?()
+    }
+}
+
+@MainActor
 struct PickyCompanionManagerTests {
     @Test func voiceTranscriptCreatesTaskWhenNoSessionIsSelected() async throws {
         let client = FakeVoiceClient()
@@ -160,6 +190,26 @@ struct PickyCompanionManagerTests {
         #expect(client.commands.first?.context?.id == "context-voice")
         #expect(client.submissions.isEmpty)
         #expect(selection.screenContextTargetSessionID == nil)
+    }
+
+    @Test func pickleHoverVoiceFollowUpNeverUsesRealtimeCommands() async throws {
+        let client = FakeVoiceClient()
+        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+        let context = context(source: "voice-follow-up")
+
+        _ = try await manager.routeVoiceTranscript(transcript: "pickle delta", contextPacket: context, voiceFollowUpSessionID: "pickle-session")
+
+        #expect(client.commands.map(\.type) == [.followUp])
+        let sentRealtimeCommand = client.commands.contains { command in
+            switch command.type {
+            case .beginMainRealtimeVoiceTurn, .appendMainRealtimeInputAudio, .commitMainRealtimeVoiceTurn, .cancelMainRealtimeVoiceTurn:
+                return true
+            default:
+                return false
+            }
+        }
+        #expect(sentRealtimeCommand == false)
+        #expect(client.submissions.isEmpty)
     }
 
     // Regression: between `stopPushToTalkFromKeyboardShortcut` and the eventual
@@ -373,6 +423,101 @@ struct PickyCompanionManagerTests {
         try await waitUntil { speechProvider.spokenUtterances == ["작업 계획을 말할게요.", "최종 답변이에요."] }
         #expect(manager.voiceState == .responding)
         #expect(manager.voicePromptBubbleState == .hidden)
+    }
+
+    @Test @MainActor func realtimePlaybackStopBeforeFirstAudioIsSafe() {
+        let engine = OpenAIRealtimeAudioPlaybackEngine()
+
+        #expect(engine.stopAndReturnPlayedAudioMs() == 0)
+        #expect(engine.playedAudioMs == 0)
+    }
+
+    @Test @MainActor func realtimePlaybackEnqueuePCM16DataIsSafe() {
+        let engine = OpenAIRealtimeAudioPlaybackEngine()
+
+        engine.enqueuePCM16Data(Data(repeating: 0, count: PickyRealtimePCM16Audio.bytesPerSample * 24))
+        engine.stop()
+    }
+
+    @Test func realtimePCM16AudioUsesFloatPlaybackBufferForAVAudioEngineCompatibility() {
+        let samples: [Int16] = [-32768, 0, 32767]
+        let data = Data(samples.flatMap { sample -> [UInt8] in
+            let value = UInt16(bitPattern: sample).littleEndian
+            return [UInt8(value & 0x00ff), UInt8((value & 0xff00) >> 8)]
+        })
+
+        let buffer = PickyRealtimePCM16Audio.makePlaybackBuffer(from: data)
+
+        #expect(buffer?.format.commonFormat == .pcmFormatFloat32)
+        #expect(buffer?.format.sampleRate == 24_000)
+        #expect(buffer?.format.channelCount == 1)
+        #expect(buffer?.frameLength == 3)
+        #expect(buffer?.floatChannelData?[0][0] == -1)
+        #expect(buffer?.floatChannelData?[0][1] == 0)
+        #expect(abs((buffer?.floatChannelData?[0][2] ?? 0) - 0.9999695) < 0.00001)
+    }
+
+    @Test func realtimeResponseStartHidesRecognizedPromptBeforeShowingReply() async throws {
+        let playback = FakeRealtimeAudioPlaybackEngine()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            realtimeAudioPlaybackEngine: playback
+        )
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "마이크 테스트")
+
+        manager.applyAgentEvent(.mainRealtimeOutputAudioDelta(inputId: nil, audioBase64: "AAAA"))
+
+        #expect(manager.currentVoicePromptPreview == nil)
+        #expect(manager.voicePromptBubbleState == .hidden)
+        #expect(manager.voiceState == .responding)
+        #expect(playback.enqueuedAudio == ["AAAA"])
+    }
+
+    @Test func realtimeTranscriptCompletionResetsAccumulatorForFollowUpResponses() async throws {
+        let inputID = UUID()
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+
+        manager.applyAgentEvent(.mainRealtimeOutputTranscriptDelta(inputId: inputID, delta: "조회 중"))
+        manager.applyAgentEvent(.mainRealtimeOutputTranscriptCompleted(inputId: inputID, transcript: "조회 중"))
+        manager.applyAgentEvent(.mainRealtimeOutputTranscriptDelta(inputId: inputID, delta: "완료"))
+
+        #expect(manager.latestAgentSessionSummary == "완료")
+    }
+
+    @Test func realtimePlaybackDrainClearsRespondingAfterTurnDone() async throws {
+        let playback = FakeRealtimeAudioPlaybackEngine()
+        let inputID = UUID()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            realtimeAudioPlaybackEngine: playback
+        )
+
+        manager.applyAgentEvent(.mainRealtimeOutputAudioDelta(inputId: inputID, audioBase64: "AAAA"))
+        #expect(manager.voiceState == .responding)
+
+        manager.applyAgentEvent(.mainRealtimeTurnDone(PickyMainRealtimeTurnDoneEvent(inputId: inputID, status: .completed, finalTranscript: "완료")))
+        #expect(manager.voiceState == .responding)
+
+        playback.finishPlayback()
+
+        #expect(manager.voiceState == .idle)
+    }
+
+    @Test func realtimeTranscriptEventsDoNotTriggerExistingSpeechProvider() async throws {
+        let speechProvider = FakeSpeechPlaybackProvider()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            speechPlaybackProvider: speechProvider
+        )
+
+        manager.applyAgentEvent(.mainRealtimeOutputTranscriptCompleted(inputId: nil, transcript: "Realtime 응답"))
+        manager.applyAgentEvent(.mainRealtimeTurnDone(PickyMainRealtimeTurnDoneEvent(inputId: nil, status: .completed, finalTranscript: "Realtime 응답")))
+
+        #expect(manager.latestAgentSessionSummary == "Realtime 응답")
+        #expect(speechProvider.spokenUtterances.isEmpty)
     }
 
     @Test func injectedSpeechProviderControlsResponseLifecycle() async throws {

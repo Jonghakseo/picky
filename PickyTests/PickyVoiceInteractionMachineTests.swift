@@ -19,7 +19,7 @@ struct PickyVoiceInteractionMachineTests {
     @Test func pttReleaseAndFinalTranscriptMovesThroughLoadingWithPromptBubble() {
         var state = PickyVoiceInteractionState()
 
-        state = reduce(state, .pttPressed(inputID: inputA, targetSessionID: nil))
+        state = reduce(state, .pttPressed(inputID: inputA, targetSessionID: nil, mode: .standard))
         #expect(state.phase == .pttInput)
         #expect(state.projection.voiceState == .listening)
 
@@ -74,7 +74,7 @@ struct PickyVoiceInteractionMachineTests {
         state = reduce(state, .agentReply(text: "first", shouldSpeak: true, speechID: speechA, timerID: timerA, inputID: inputA, now: now))
         state = reduce(state, .agentReply(text: "second", shouldSpeak: true, speechID: speechB, timerID: timerB, inputID: inputB, now: now))
 
-        state = reduce(state, .pttPressed(inputID: inputB, targetSessionID: "pickle-1"))
+        state = reduce(state, .pttPressed(inputID: inputB, targetSessionID: "pickle-1", mode: .standard))
         #expect(state.phase == .pttInput)
         #expect(state.context.speechQueue.isEmpty)
         #expect(state.context.responseBubbleText == nil)
@@ -84,7 +84,7 @@ struct PickyVoiceInteractionMachineTests {
 
     @Test func abortFromStandardLoadingCancelsMainAndTargetPickleThenReturnsIdle() {
         var state = PickyVoiceInteractionState()
-        state = reduce(state, .loadingStarted(inputID: inputB, transcript: "질문", targetSessionID: "pickle-1", now: now, promptBubbleVisibility: .visible))
+        state = reduce(state, .loadingStarted(inputID: inputB, transcript: "질문", targetSessionID: "pickle-1", mode: .standard, now: now, promptBubbleVisibility: .visible))
         state = reduce(state, .abort)
         #expect(state.phase == .idle)
         #expect(state.effectsToRun.contains(.abortMainAgent))
@@ -98,6 +98,7 @@ struct PickyVoiceInteractionMachineTests {
                 inputID: inputA,
                 transcript: "  다시 보여주지 않을 STT  ",
                 targetSessionID: nil,
+                mode: .standard,
                 now: now,
                 promptBubbleVisibility: .hidden
             )
@@ -119,6 +120,7 @@ struct PickyVoiceInteractionMachineTests {
                 inputID: inputA,
                 transcript: "처음 보였던 STT",
                 targetSessionID: nil,
+                mode: .standard,
                 now: now,
                 promptBubbleVisibility: .hidden
             )

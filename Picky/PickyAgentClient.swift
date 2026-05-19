@@ -333,7 +333,13 @@ private extension PickyCommandEnvelope {
         if let cwd { parts.append("cwd=\(cwd)") }
         if let errorMessage { parts.append("errorChars=\(errorMessage.count)") }
         if let enabled { parts.append("enabled=\(enabled)") }
+        if let mode { parts.append("mode=\(mode)") }
         if let mainAgentModelPattern { parts.append("mainAgentModel=\(mainAgentModelPattern.isEmpty ? "<auto>" : mainAgentModelPattern)") }
+        if let provider { parts.append("provider=\(provider)") }
+        if let modelOrDeployment { parts.append("modelOrDeployment=\(modelOrDeployment)") }
+        if apiKey != nil { parts.append("apiKey=<redacted>") }
+        if let inputId { parts.append("input=\(inputId.uuidString)") }
+        if let audioBase64 { parts.append("audioBase64Chars=\(audioBase64.count)") }
         if let baselinePiMessageId { parts.append("baselinePiMessage=\(baselinePiMessageId)") }
         return parts.joined(separator: " ")
     }
@@ -354,6 +360,22 @@ private extension PickyEventEnvelope {
             return "type=mainAgentModelsSnapshot id=\(id) models=\(models.count)"
         case .mainAgentSessionInfoUpdated(let sessionFilePath, let cwd):
             return "type=mainAgentSessionInfoUpdated id=\(id) hasSessionFile=\(sessionFilePath != nil ? 1 : 0) hasCwd=\(cwd != nil ? 1 : 0)"
+        case .mainRealtimeStateChanged(let state):
+            return "type=mainRealtimeStateChanged id=\(id) state=\(state.state.rawValue) messageChars=\(state.message?.count ?? 0)"
+        case .mainRealtimeInputTranscriptDelta(let inputId, let delta):
+            return "type=mainRealtimeInputTranscriptDelta id=\(id) input=\(inputId.uuidString) deltaChars=\(delta.count)"
+        case .mainRealtimeInputTranscriptCompleted(let inputId, let transcript):
+            return "type=mainRealtimeInputTranscriptCompleted id=\(id) input=\(inputId.uuidString) transcriptChars=\(transcript.count)"
+        case .mainRealtimeOutputAudioDelta(let inputId, let audioBase64):
+            return "type=mainRealtimeOutputAudioDelta id=\(id) input=\(inputId?.uuidString ?? "none") audioBase64Chars=\(audioBase64.count)"
+        case .mainRealtimeOutputAudioDone(let inputId):
+            return "type=mainRealtimeOutputAudioDone id=\(id) input=\(inputId?.uuidString ?? "none")"
+        case .mainRealtimeOutputTranscriptDelta(let inputId, let delta):
+            return "type=mainRealtimeOutputTranscriptDelta id=\(id) input=\(inputId?.uuidString ?? "none") deltaChars=\(delta.count)"
+        case .mainRealtimeOutputTranscriptCompleted(let inputId, let transcript):
+            return "type=mainRealtimeOutputTranscriptCompleted id=\(id) input=\(inputId?.uuidString ?? "none") transcriptChars=\(transcript.count)"
+        case .mainRealtimeTurnDone(let done):
+            return "type=mainRealtimeTurnDone id=\(id) input=\(done.inputId?.uuidString ?? "none") status=\(done.status.rawValue) transcriptChars=\(done.finalTranscript?.count ?? 0)"
         case .sessionSnapshot(let sessions):
             return "type=sessionSnapshot id=\(id) sessions=\(sessions.count)"
         case .sessionUpdated(let session):

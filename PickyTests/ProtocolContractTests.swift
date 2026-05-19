@@ -140,6 +140,54 @@ struct ProtocolContractTests {
         )))
     }
 
+    @Test func decodesRealtimeProtocolEvents() throws {
+        let audioJSON = """
+        {
+          "id":"event-realtime-audio",
+          "protocolVersion":"2026-05-09",
+          "timestamp":"2026-05-09T00:00:00.000Z",
+          "type":"mainRealtimeOutputAudioDelta",
+          "inputId":"00000000-0000-0000-0000-000000000001",
+          "audioBase64":"AAAA"
+        }
+        """.data(using: .utf8)!
+        let doneJSON = """
+        {
+          "id":"event-realtime-done",
+          "protocolVersion":"2026-05-09",
+          "timestamp":"2026-05-09T00:00:01.000Z",
+          "type":"mainRealtimeTurnDone",
+          "inputId":"00000000-0000-0000-0000-000000000001",
+          "status":"completed",
+          "finalTranscript":"완료했어요"
+        }
+        """.data(using: .utf8)!
+
+        let audio = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: audioJSON)
+        let done = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: doneJSON)
+
+        #expect(audio.event == .mainRealtimeOutputAudioDelta(inputId: UUID(uuidString: "00000000-0000-0000-0000-000000000001"), audioBase64: "AAAA"))
+        #expect(done.event == .mainRealtimeTurnDone(PickyMainRealtimeTurnDoneEvent(inputId: UUID(uuidString: "00000000-0000-0000-0000-000000000001"), status: .completed, finalTranscript: "완료했어요")))
+    }
+
+    @Test func encodesRealtimeProtocolCommandsWithoutDroppingSecretFields() throws {
+        let command = PickyCommandEnvelope(
+            id: "cmd-realtime-auth",
+            type: .configureMainRealtimeAuth,
+            provider: "openai",
+            apiKey: "sk-test",
+            modelOrDeployment: "gpt-realtime-1.5",
+            voice: "marin",
+            reasoningEffort: "medium"
+        )
+        let data = try JSONEncoder.pickyAgentProtocolEncoder().encode(command)
+        let decoded = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyCommandEnvelope.self, from: data)
+
+        #expect(decoded.type == .configureMainRealtimeAuth)
+        #expect(decoded.apiKey == "sk-test")
+        #expect(decoded.modelOrDeployment == "gpt-realtime-1.5")
+    }
+
     @Test func decodesQuickReplyEvent() throws {
         let json = """
         {

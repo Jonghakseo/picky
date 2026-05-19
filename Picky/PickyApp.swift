@@ -47,13 +47,15 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     let appearanceStore: PickyAppearanceStore
     private lazy var daemonConfiguration: PickyAgentDaemonConfiguration = {
         let settings = settingsStore.load().normalizedPaths()
+        let effectiveRuntimeMode = AppBundleConfiguration.realtimeOptIn ? settings.mainAgentRuntimeMode : .pi
         return PickyAgentDaemonConfiguration.development(
             defaultCwd: settings.defaultCwd,
             mainAgentCwd: settings.mainAgentCwd,
             mainAgentThinkingLevel: settings.mainAgentThinkingLevel,
             mainAgentModelPattern: settings.mainAgentModelPattern,
             pickleAgentThinkingLevel: settings.pickleAgentThinkingLevel,
-            pickleAgentModelPattern: settings.pickleAgentModelPattern
+            pickleAgentModelPattern: settings.pickleAgentModelPattern,
+            mainAgentRuntimeMode: effectiveRuntimeMode
         )
     }()
     private lazy var daemonLauncher = PickyAgentDaemonLauncher(configuration: daemonConfiguration)

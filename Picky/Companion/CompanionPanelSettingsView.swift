@@ -430,7 +430,35 @@ struct CompanionPanelSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                piMainAgentModelPicker
+                if AppBundleConfiguration.realtimeOptIn {
+                    VStack(alignment: .leading, spacing: 5) {
+                        fieldLabel("settings.field.runtime")
+                        Picker("settings.field.runtime", selection: $viewModel.settings.mainAgentRuntimeMode) {
+                            ForEach(PickyMainAgentRuntimeMode.allCases) { mode in
+                                Text(mode.displayName).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .onChange(of: viewModel.settings.mainAgentRuntimeMode) { _, _ in saveImmediately(for: .mainAgent) }
+
+                        Text(viewModel.settings.mainAgentRuntimeMode == .openAIRealtime
+                             ? L10n.t("settings.field.runtime.realtimeNote")
+                             : L10n.t("settings.field.runtime.localNote"))
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(DS.Colors.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if viewModel.settings.mainAgentRuntimeMode == .openAIRealtime {
+                        realtimeSettingsFields
+                    } else {
+                        piMainAgentModelPicker
+                    }
+                } else {
+                    piMainAgentModelPicker
+                }
 
                 VStack(alignment: .leading, spacing: 5) {
                     fieldLabel("settings.field.reasoningLevel")
@@ -558,6 +586,82 @@ struct CompanionPanelSettingsView: View {
         let saved = viewModel.settings.pickleAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !saved.isEmpty else { return false }
         return !companionManager.mainAgentModelOptions.contains { $0.pattern == saved }
+    }
+
+    private var realtimeSettingsFields: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 5) {
+                fieldLabel("settings.field.realtimeProvider")
+                Picker("settings.field.realtimeProvider", selection: $viewModel.settings.openAIRealtime.provider) {
+                    ForEach(PickyOpenAIRealtimeProvider.allCases) { provider in
+                        Text(provider.displayName).tag(provider)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .onChange(of: viewModel.settings.openAIRealtime.provider) { _, _ in saveImmediately(for: .mainAgent) }
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                fieldLabel("settings.field.apiKey")
+                SecureField(viewModel.settings.openAIRealtime.provider == .azureOpenAI ? L10n.t("settings.realtime.apiKey.placeholder.azure") : "sk-…", text: $viewModel.settings.openAIRealtime.apiKey)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .onSubmit { saveImmediately(for: .mainAgent) }
+                    .onChange(of: viewModel.settings.openAIRealtime.apiKey) { _, _ in saveImmediately(for: .mainAgent) }
+            }
+
+            if viewModel.settings.openAIRealtime.provider == .azureOpenAI {
+                VStack(alignment: .leading, spacing: 5) {
+                    fieldLabel("settings.field.azureRealtimeUrl")
+                    TextField("https://resource.openai.azure.com/openai/realtime?api-version=...&deployment=...", text: $viewModel.settings.openAIRealtime.azureRealtimeURL)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .onSubmit { saveImmediately(for: .mainAgent) }
+                        .onChange(of: viewModel.settings.openAIRealtime.azureRealtimeURL) { _, _ in saveImmediately(for: .mainAgent) }
+                    Text("settings.azure.realtimeUrlNote")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 5) {
+                    fieldLabel("settings.field.model")
+                    TextField("gpt-realtime-2", text: $viewModel.settings.openAIRealtime.modelOrDeployment)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .onSubmit { saveImmediately(for: .mainAgent) }
+                        .onChange(of: viewModel.settings.openAIRealtime.modelOrDeployment) { _, _ in saveImmediately(for: .mainAgent) }
+                }
+
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        fieldLabel("settings.field.voice")
+                        TextField("marin", text: $viewModel.settings.openAIRealtime.voice)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .onSubmit { saveImmediately(for: .mainAgent) }
+                            .onChange(of: viewModel.settings.openAIRealtime.voice) { _, _ in saveImmediately(for: .mainAgent) }
+                    }
+                    VStack(alignment: .leading, spacing: 5) {
+                        fieldLabel("settings.field.realtimeEffort")
+                        Picker("settings.field.realtimeEffort", selection: $viewModel.settings.openAIRealtime.reasoningEffort) {
+                            ForEach(PickyOpenAIRealtimeReasoningEffort.allCases) { effort in
+                                Text(effort.displayName).tag(effort)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .onChange(of: viewModel.settings.openAIRealtime.reasoningEffort) { _, _ in saveImmediately(for: .mainAgent) }
+                    }
+                }
+            }
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(DS.Colors.surface2.opacity(0.35))
+        )
     }
 
     private var shortcutsSection: some View {

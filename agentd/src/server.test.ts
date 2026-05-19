@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import WebSocket from "ws";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PROTOCOL_VERSION, type EventEnvelope, type PickyAgentSession, type PickyContextPacket } from "./protocol.js";
+import { PROTOCOL_VERSION, parseCommand, type EventEnvelope, type PickyAgentSession, type PickyContextPacket } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
-import { AgentdServer, compactSessionsForSnapshot, sanitizeForJson } from "./server.js";
+import { AgentdServer, commandLogFields, compactSessionsForSnapshot, sanitizeForJson } from "./server.js";
 import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 
@@ -172,6 +172,48 @@ describe("AgentdServer", () => {
     expect(sanitized.nested[0].preview).toBe("bash: �");
     expect(JSON.stringify(sanitized)).not.toContain("\\ud83c");
     expect(JSON.stringify(sanitized)).not.toContain("\\udf3a");
+  });
+
+  it("redacts realtime secrets and audio payloads from command logs", () => {
+    const auth = parseCommand({
+      id: "cmd-auth",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "configureMainRealtimeAuth",
+      provider: "openai",
+      apiKey: "sk-secret-should-not-log",
+      modelOrDeployment: "gpt-realtime-2",
+      voice: "marin",
+    });
+    const audio = parseCommand({
+      id: "cmd-audio",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "appendMainRealtimeInputAudio",
+      inputId: "input-1",
+      audioBase64: "SECRET_AUDIO_BASE64",
+    });
+
+    const azureAuth = parseCommand({
+      id: "cmd-azure-auth",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "configureMainRealtimeAuth",
+      provider: "azure_openai",
+      apiKey: "azure-secret-should-not-log",
+      modelOrDeployment: "gpt-realtime-1.5",
+      voice: "marin",
+      azure: {
+        resourceEndpoint: "https://x.openai.azure.com/openai/realtime?api-version=2024-10-01-preview&deployment=gpt-realtime-1.5",
+        apiShape: "preview",
+        apiVersion: "2024-10-01-preview",
+      },
+    });
+
+    expect(JSON.stringify(commandLogFields(auth))).not.toContain("sk-secret-should-not-log");
+    expect(commandLogFields(auth)).toMatchObject({ keyPresent: 1 });
+    expect(JSON.stringify(commandLogFields(azureAuth))).not.toContain("azure-secret-should-not-log");
+    expect(JSON.stringify(commandLogFields(azureAuth))).not.toContain("api-version");
+    expect(commandLogFields(azureAuth)).toMatchObject({ keyPresent: 1, endpointHost: "x.openai.azure.com" });
+    expect(JSON.stringify(commandLogFields(audio))).not.toContain("SECRET_AUDIO_BASE64");
+    expect(commandLogFields(audio)).toMatchObject({ audioBytesBase64Chars: "SECRET_AUDIO_BASE64".length });
   });
 
   it("submitMainFromExternal with captureContext=false routes via supervisor without involving the app", async () => {

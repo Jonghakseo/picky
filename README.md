@@ -16,6 +16,10 @@ For quick things — translation, small questions, tiny fixes — Picky can answ
 
 Picky stays intentionally lightweight. It follows your cursor, gathers context only for the request you start, and keeps the work local. You can think of Picky as the main agent and Pickles as sub-agents, but the important part is simple: **they are all Pi sessions.**
 
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/d3078269-e14a-4f82-89d7-4aac2fb3323a" controls muted playsinline width="720"></video>
+</p>
+
 ## Why Picky?
 
 Working with an agent often starts with a chore: copy the URL, paste the Slack thread, export the Notion page, take a screenshot, explain where to look, then finally ask the question.

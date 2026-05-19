@@ -16,6 +16,10 @@ Picky는 지금 하고 있는 일의 흐름을 끊지 않고 Pi를 불러올 수
 
 Picky는 일부러 가볍게 만들었습니다. 커서를 따라다니고, 사용자가 시작한 요청에 대해서만 컨텍스트를 수집하며, 작업은 로컬에 유지합니다. Picky를 메인 에이전트, Pickle을 서브 에이전트처럼 이해해도 좋습니다. 핵심은 간단합니다. **둘 다 결국 Pi 세션**입니다.
 
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/d3078269-e14a-4f82-89d7-4aac2fb3323a" controls muted playsinline width="720"></video>
+</p>
+
 ## 왜 Picky인가요?
 
 에이전트에게 일을 맡기려면 종종 준비 과정이 필요합니다. URL을 복사하고, Slack 스레드를 붙여넣고, Notion 문서를 export하고, 스크린샷을 찍고, 어디를 봐야 하는지 설명한 뒤에야 겨우 질문을 시작하곤 하죠.

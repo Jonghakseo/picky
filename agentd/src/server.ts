@@ -4,7 +4,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { isAuthorized } from "./auth.js";
 import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-prefixes.js";
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
-import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type EventEnvelope, type PickyAgentSession, type PickyAgentSessionParsed, type PickyContextPacket } from "./protocol.js";
+import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type EventEnvelope, type MainRealtimeQuotaSnapshot, type MainRealtimeUsageSnapshot, type PickyAgentSession, type PickyAgentSessionParsed, type PickyContextPacket } from "./protocol.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
 
@@ -113,6 +113,16 @@ export class AgentdServer {
     this.options.supervisor.on("mainRealtimeOutputTranscriptDelta", (inputId, delta) => this.broadcast({ type: "mainRealtimeOutputTranscriptDelta", ...(inputId ? { inputId } : {}), delta }));
     this.options.supervisor.on("mainRealtimeOutputTranscriptCompleted", (inputId, transcript) => this.broadcast({ type: "mainRealtimeOutputTranscriptCompleted", ...(inputId ? { inputId } : {}), transcript }));
     this.options.supervisor.on("mainRealtimeTurnDone", (inputId, status, finalTranscript) => this.broadcast({ type: "mainRealtimeTurnDone", ...(inputId ? { inputId } : {}), status, ...(finalTranscript ? { finalTranscript } : {}) }));
+    this.options.supervisor.on("mainRealtimeUsage", (payload: { inputId?: string; lastTurn: MainRealtimeUsageSnapshot; session: MainRealtimeUsageSnapshot }) => this.broadcast({
+      type: "mainRealtimeUsage",
+      ...(payload.inputId ? { inputId: payload.inputId } : {}),
+      lastTurn: payload.lastTurn,
+      session: payload.session,
+    }));
+    this.options.supervisor.on("mainRealtimeQuota", (quota: MainRealtimeQuotaSnapshot | undefined) => this.broadcast({
+      type: "mainRealtimeQuota",
+      ...(quota ? { quota } : {}),
+    }));
     this.options.supervisor.on("pointerOverlayRequested", (request) => this.broadcast({ type: "pointerOverlayRequested", request }));
     this.options.supervisor.on("narrateProgressRequested", (payload: { text: string }) => this.broadcast({ type: "narrateProgressRequested", text: payload.text }));
     this.options.supervisor.on("artifact", (sessionId, artifact) => this.broadcast({ type: "artifactUpdated", sessionId, artifact }));
@@ -648,6 +658,10 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, inputId: event.inputId };
     case "mainRealtimeTurnDone":
       return { eventId: event.id, type: event.type, inputId: event.inputId, status: event.status, finalTranscriptChars: event.finalTranscript?.length };
+    case "mainRealtimeUsage":
+      return { eventId: event.id, type: event.type, inputId: event.inputId, sessionTotalTokens: event.session.totalTokens, turnTotalTokens: event.lastTurn.totalTokens };
+    case "mainRealtimeQuota":
+      return { eventId: event.id, type: event.type, planType: event.quota?.planType, primaryRemaining: event.quota?.primary?.remaining, primaryLimit: event.quota?.primary?.limit };
     case "sessionSnapshot":
       return { eventId: event.id, type: event.type, sessions: event.sessions.length };
     case "sessionUpdated":

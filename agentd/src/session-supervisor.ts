@@ -558,8 +558,22 @@ export class SessionSupervisor extends EventEmitter {
       logAgentd("main realtime config ignored", { reason: "main runtime is not realtime", provider: config.provider, modelOrDeployment: config.modelOrDeployment });
       return;
     }
+    // Re-arm the history provider every time auth is (re)configured so the
+    // runtime can replay text-only transcript when it opens a fresh WS (initial
+    // connect, 60-min rollover, transient drop). The provider closes over
+    // mainState.messages which is the in-memory source of truth on agentd.
+    this.options.mainRuntime.setMainRealtimeHistoryProvider?.(() => this.snapshotMainHistoryForRealtime());
     await this.options.mainRuntime.configureMainRealtimeAuth(config);
     logAgentd("main realtime config applied", { provider: config.provider, modelOrDeployment: config.modelOrDeployment, voice: config.voice, keyPresent: config.apiKey ? 1 : 0 });
+    // Best-effort quota refresh immediately after auth changes so the HUD has
+    // a fresh snapshot before the first turn (no-op for apiKey provider).
+    void this.options.mainRuntime.refreshCodexQuota?.();
+  }
+
+  private snapshotMainHistoryForRealtime(): { role: "user" | "assistant"; text: string }[] {
+    return this.mainState.messages
+      .filter((m): m is typeof m & { role: "user" | "assistant" } => m.role === "user" || m.role === "assistant")
+      .map((m) => ({ role: m.role, text: m.text }));
   }
 
   async beginMainRealtimeVoiceTurn(inputId: string, context: PickyContextPacket): Promise<void> {
@@ -1201,8 +1215,14 @@ export class SessionSupervisor extends EventEmitter {
       this.emit("mainRealtimeOutputAudioDone", event.inputId);
       return;
     }
+    // Stale filter only applies when the supervisor knows the active voice
+    // turn id (set by beginMainRealtimeVoiceTurn). Text-driven routeTask turns
+    // do not register an activeMainRealtimeInputId because the realtime
+    // runtime generates its own `text-<uuid>` id internally; without this
+    // bypass the assistant reply would be dropped (audio bypasses the gate,
+    // which is why the user heard speech but the typed reply errored out).
     if (event.type === "main_realtime_output_transcript_delta") {
-      if (event.inputId !== this.activeMainRealtimeInputId) {
+      if (this.activeMainRealtimeInputId !== undefined && event.inputId !== this.activeMainRealtimeInputId) {
         logAgentd("main realtime stale transcript delta ignored", { inputId: event.inputId, activeInputId: this.activeMainRealtimeInputId, deltaChars: event.delta.length });
         return;
       }
@@ -1211,7 +1231,7 @@ export class SessionSupervisor extends EventEmitter {
       return;
     }
     if (event.type === "main_realtime_output_transcript_completed") {
-      if (event.inputId !== this.activeMainRealtimeInputId) {
+      if (this.activeMainRealtimeInputId !== undefined && event.inputId !== this.activeMainRealtimeInputId) {
         logAgentd("main realtime stale transcript completion ignored", { inputId: event.inputId, activeInputId: this.activeMainRealtimeInputId, transcriptChars: event.transcript.length });
         return;
       }
@@ -1219,8 +1239,16 @@ export class SessionSupervisor extends EventEmitter {
       this.emit("mainRealtimeOutputTranscriptCompleted", event.inputId, event.transcript);
       return;
     }
+    if (event.type === "main_realtime_usage") {
+      this.emit("mainRealtimeUsage", { inputId: event.inputId, lastTurn: event.lastTurn, session: event.session });
+      return;
+    }
+    if (event.type === "main_realtime_quota") {
+      this.emit("mainRealtimeQuota", event.quota);
+      return;
+    }
     if (event.type === "main_realtime_turn_done") {
-      if (event.inputId !== this.activeMainRealtimeInputId) {
+      if (this.activeMainRealtimeInputId !== undefined && event.inputId !== this.activeMainRealtimeInputId) {
         logAgentd("main realtime stale turn done ignored", { inputId: event.inputId, activeInputId: this.activeMainRealtimeInputId, status: event.status });
         return;
       }

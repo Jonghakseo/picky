@@ -58,7 +58,35 @@ export type RuntimeEvent =
   | { type: "main_realtime_output_audio_done"; inputId?: string }
   | { type: "main_realtime_output_transcript_delta"; inputId?: string; delta: string }
   | { type: "main_realtime_output_transcript_completed"; inputId?: string; transcript: string }
-  | { type: "main_realtime_turn_done"; inputId?: string; status: "completed" | "cancelled" | "failed" | "incomplete"; finalTranscript?: string };
+  | { type: "main_realtime_turn_done"; inputId?: string; status: "completed" | "cancelled" | "failed" | "incomplete"; finalTranscript?: string }
+  | { type: "main_realtime_usage"; inputId?: string; lastTurn: MainRealtimeUsageSnapshot; session: MainRealtimeUsageSnapshot }
+  | { type: "main_realtime_quota"; quota: MainRealtimeQuotaSnapshot | undefined };
+
+export interface MainRealtimeUsageSnapshot {
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  inputTextTokens: number;
+  inputAudioTokens: number;
+  outputTextTokens: number;
+  outputAudioTokens: number;
+}
+
+export interface MainRealtimeQuotaSnapshot {
+  planType?: string;
+  primary?: MainRealtimeQuotaWindow;
+  secondary?: MainRealtimeQuotaWindow;
+  fetchedAt: string;
+}
+
+export interface MainRealtimeQuotaWindow {
+  used: number;
+  limit: number;
+  remaining: number;
+  windowLabel?: string;
+  resetAt?: string;
+}
 
 export interface RuntimeSteerResult {
   /**
@@ -144,12 +172,32 @@ export interface AgentRuntime {
   getMainAgentRuntimeMode?(): MainAgentRuntimeMode;
 }
 
+export interface MainRealtimeHistoryMessage {
+  role: "user" | "assistant";
+  text: string;
+}
+
+export type MainRealtimeHistoryProvider = () => MainRealtimeHistoryMessage[];
+
 export interface MainRealtimeRuntime extends AgentRuntime {
   configureMainRealtimeAuth(config: OpenAIRealtimeAuthConfig): Promise<void> | void;
   beginMainRealtimeVoiceTurn(turn: { inputId: string; context: PickyContextPacket }): Promise<void>;
   appendMainRealtimeInputAudio(inputId: string, audioBase64: string): Promise<void>;
   commitMainRealtimeVoiceTurn(inputId: string, context?: PickyContextPacket): Promise<void>;
   cancelMainRealtimeVoiceTurn(inputId?: string, playedAudioMs?: number): Promise<void>;
+  /**
+   * Source of truth for transcript history that should be re-injected when a
+   * new realtime WebSocket session is created (reconnect, 60-minute rollover,
+   * voice turn after a long idle). Realtime can only restore text turns, so
+   * the provider must already filter/cap whatever the supervisor wants to send.
+   */
+  setMainRealtimeHistoryProvider?(provider: MainRealtimeHistoryProvider | undefined): void;
+  /**
+   * Trigger a best-effort Codex quota refresh. Errors are swallowed; the
+   * runtime emits a `main_realtime_quota` event on success or a quota=undefined
+   * event on failure.
+   */
+  refreshCodexQuota?(): Promise<void>;
 }
 
 export function isMainRealtimeRuntime(runtime: AgentRuntime | undefined): runtime is MainRealtimeRuntime {

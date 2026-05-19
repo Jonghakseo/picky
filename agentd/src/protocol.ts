@@ -344,6 +344,31 @@ type CommandEnvelope = z.infer<typeof CommandEnvelopeSchema>;
 const EventBaseSchema = z.object({ id: z.string(), protocolVersion: z.literal(PROTOCOL_VERSION), timestamp: isoTimestamp });
 const MainRealtimeStateSchema = z.enum(["connecting", "ready", "listening", "thinking", "speaking", "failed"]);
 const MainRealtimeTurnStatusSchema = z.enum(["completed", "cancelled", "failed", "incomplete"]);
+const MainRealtimeUsageSnapshotSchema = z.object({
+  totalTokens: z.number().nonnegative(),
+  inputTokens: z.number().nonnegative(),
+  outputTokens: z.number().nonnegative(),
+  cachedInputTokens: z.number().nonnegative(),
+  inputTextTokens: z.number().nonnegative(),
+  inputAudioTokens: z.number().nonnegative(),
+  outputTextTokens: z.number().nonnegative(),
+  outputAudioTokens: z.number().nonnegative(),
+});
+export type MainRealtimeUsageSnapshot = z.infer<typeof MainRealtimeUsageSnapshotSchema>;
+const MainRealtimeQuotaWindowSchema = z.object({
+  used: z.number().nonnegative(),
+  limit: z.number().nonnegative(),
+  remaining: z.number().nonnegative(),
+  windowLabel: z.string().optional(),
+  resetAt: z.string().optional(),
+});
+const MainRealtimeQuotaSnapshotSchema = z.object({
+  planType: z.string().optional(),
+  primary: MainRealtimeQuotaWindowSchema.optional(),
+  secondary: MainRealtimeQuotaWindowSchema.optional(),
+  fetchedAt: isoTimestamp,
+});
+export type MainRealtimeQuotaSnapshot = z.infer<typeof MainRealtimeQuotaSnapshotSchema>;
 const QuickReplyOriginSourceSchema = z.enum(["voice", "text", "voiceFollowUp", "textFollowUp", "system", "cli", "unknown"]);
 const QuickReplyKindSchema = z.preprocess((value) => {
   if (typeof value !== "string") return value;
@@ -379,6 +404,16 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("mainRealtimeOutputTranscriptDelta"), inputId: z.string().optional(), delta: z.string() }),
   EventBaseSchema.extend({ type: z.literal("mainRealtimeOutputTranscriptCompleted"), inputId: z.string().optional(), transcript: z.string() }),
   EventBaseSchema.extend({ type: z.literal("mainRealtimeTurnDone"), inputId: z.string().optional(), status: MainRealtimeTurnStatusSchema, finalTranscript: z.string().optional() }),
+  EventBaseSchema.extend({
+    type: z.literal("mainRealtimeUsage"),
+    inputId: z.string().optional(),
+    lastTurn: MainRealtimeUsageSnapshotSchema,
+    session: MainRealtimeUsageSnapshotSchema,
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("mainRealtimeQuota"),
+    quota: MainRealtimeQuotaSnapshotSchema.optional(),
+  }),
   EventBaseSchema.extend({ type: z.literal("sessionSnapshot"), sessions: z.array(PickyAgentSessionSchema) }),
   EventBaseSchema.extend({ type: z.literal("sessionUpdated"), session: PickyAgentSessionSchema }),
   EventBaseSchema.extend({ type: z.literal("sessionResourcesReloaded"), sessionId: z.string() }),

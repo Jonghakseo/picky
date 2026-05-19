@@ -16,7 +16,26 @@ import type {
 import { logAgentd } from "../local-log.js";
 import type { PickySkillDetails, PickySkillSummary } from "../application/skill-catalog.js";
 import { PICKY_USER_GUIDE_SECTIONS, type PickyUserGuideResult } from "../application/user-guide-tool.js";
-import { buildCodexClientHeaders, loadCodexOAuth, type CodexOAuthLoader, type ResolvedCodexOAuth } from "./codex-oauth.js";
+import { buildCodexClientHeaders, fetchCodexQuota, loadCodexOAuth, type CodexOAuthLoader, type CodexQuotaFetcher, type CodexQuotaSnapshot, type ResolvedCodexOAuth } from "./codex-oauth.js";
+import type { MainRealtimeHistoryMessage, MainRealtimeHistoryProvider, MainRealtimeQuotaSnapshot, MainRealtimeUsageSnapshot } from "./types.js";
+
+// Realtime sessions are capped server-side at 60 minutes. We rotate slightly
+// earlier so an in-flight rollover never collides with the hard kill.
+const MAIN_REALTIME_SESSION_MAX_MS = 50 * 60 * 1000;
+// Cap how many historical messages we replay into a fresh WS session. Realtime
+// can only restore text turns, and very long replays balloon the bootstrap
+// latency. The supervisor is expected to provide newest-last ordered messages.
+const MAIN_REALTIME_HISTORY_REPLAY_LIMIT = 60;
+const ZERO_USAGE: MainRealtimeUsageSnapshot = {
+  totalTokens: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  cachedInputTokens: 0,
+  inputTextTokens: 0,
+  inputAudioTokens: 0,
+  outputTextTokens: 0,
+  outputAudioTokens: 0,
+};
 
 interface OpenAIRealtimeMainRuntimeOptions {
   toolHandlers: OpenAIRealtimeToolHandlers;
@@ -25,6 +44,8 @@ interface OpenAIRealtimeMainRuntimeOptions {
   // Injected so tests can stub Codex OAuth resolution without touching the
   // filesystem-backed pi AuthStorage or ~/.codex/auth.json.
   codexOAuthLoader?: CodexOAuthLoader;
+  codexQuotaFetcher?: CodexQuotaFetcher;
+  now?: () => number;
 }
 
 interface OpenAIRealtimeToolHandlers {
@@ -77,6 +98,7 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
   private config?: OpenAIRealtimeAuthConfig;
   private handle?: OpenAIRealtimeSessionHandle;
   private thinkingLevel: ThinkingLevel = "medium";
+  private historyProvider?: MainRealtimeHistoryProvider;
 
   constructor(private readonly options: OpenAIRealtimeMainRuntimeOptions) {
     this.config = options.defaultConfig;
@@ -90,6 +112,15 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
   setThinkingLevel(level: ThinkingLevel): void {
     this.thinkingLevel = level;
     this.handle?.setThinkingLevel(level);
+  }
+
+  setMainRealtimeHistoryProvider(provider: MainRealtimeHistoryProvider | undefined): void {
+    this.historyProvider = provider;
+    this.handle?.setHistoryProvider(provider);
+  }
+
+  async refreshCodexQuota(): Promise<void> {
+    await this.handle?.refreshCodexQuota();
   }
 
   async prewarm(options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
@@ -128,6 +159,9 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
         toolHandlers: this.options.toolHandlers,
         webSocketFactory: this.options.webSocketFactory,
         codexOAuthLoader: this.options.codexOAuthLoader,
+        codexQuotaFetcher: this.options.codexQuotaFetcher,
+        historyProvider: this.historyProvider,
+        now: this.options.now,
       });
     } else {
       this.handle.setCwd(options.cwd);
@@ -160,6 +194,13 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   private generation = 0;
   private thinkingLevel: ThinkingLevel;
   private cwd?: string;
+  private historyProvider?: MainRealtimeHistoryProvider;
+  private codexAuth?: ResolvedCodexOAuth;
+  private sessionStartedAt = 0;
+  private sessionMaxTimer?: ReturnType<typeof setTimeout>;
+  private sessionUsage: MainRealtimeUsageSnapshot = { ...ZERO_USAGE };
+  private lastTurnUsage: MainRealtimeUsageSnapshot = { ...ZERO_USAGE };
+  private readonly now: () => number;
 
   constructor(private readonly options: {
     id: string;
@@ -169,11 +210,20 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     toolHandlers: OpenAIRealtimeToolHandlers;
     webSocketFactory?: RealtimeWebSocketFactory;
     codexOAuthLoader?: CodexOAuthLoader;
+    codexQuotaFetcher?: CodexQuotaFetcher;
+    historyProvider?: MainRealtimeHistoryProvider;
+    now?: () => number;
   }) {
     this.id = options.id;
     this.config = options.config;
     this.thinkingLevel = options.thinkingLevel;
     this.cwd = options.cwd;
+    this.historyProvider = options.historyProvider;
+    this.now = options.now ?? (() => Date.now());
+  }
+
+  setHistoryProvider(provider: MainRealtimeHistoryProvider | undefined): void {
+    this.historyProvider = provider;
   }
 
   setCwd(cwd: string | undefined): void {
@@ -319,6 +369,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     const resolvedAuth = (config.authMode ?? "apiKey") === "codexOAuth"
       ? await (this.options.codexOAuthLoader ?? loadCodexOAuth)()
       : undefined;
+    this.codexAuth = resolvedAuth;
     const connection = buildRealtimeConnection(config, resolvedAuth);
     this.emit({ type: "main_realtime_state", state: "connecting" });
     const factory = this.options.webSocketFactory ?? ((url, headers) => new WebSocket(url, { headers }) as RealtimeWebSocketLike);
@@ -345,18 +396,116 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     }
     ws.on("message", (data) => this.handleRawServerEvent(data));
     ws.on("close", (_code, reason) => {
-      if (this.ws === ws) this.ws = undefined;
+      if (this.ws !== ws) return;
+      this.ws = undefined;
+      this.bootstrapped = false;
+      this.clearSessionMaxTimer();
       const message = reason.toString("utf8").trim();
-      this.emit({ type: "main_realtime_state", state: "failed", message: message || "Realtime WebSocket closed" });
+      // Do NOT emit `failed` here. A close that we triggered (rollover, manual
+      // dispose) or that the server sent for the 60-minute cap is an expected
+      // lifecycle event; the next `ensureConnected()` call will reconnect and
+      // replay history. Surface a transient `connecting` so the HUD can show a
+      // spinner instead of a permanent failure badge.
+      logAgentd("main realtime disconnected", { message: message || "closed" });
+      this.emit({ type: "main_realtime_state", state: "connecting", message: message || undefined });
     });
     ws.on("error", (error) => {
       this.emit({ type: "main_realtime_state", state: "failed", message: error.message });
     });
+    this.sessionStartedAt = this.now();
+    this.scheduleSessionMaxTimer();
+    this.lastTurnUsage = { ...ZERO_USAGE };
+    this.sessionUsage = { ...ZERO_USAGE };
     this.sendSessionUpdate();
     const bootstrap = buildMainAgentBootstrapPair();
     await this.injectInitialBootstrap(bootstrap);
+    await this.replayHistory();
     this.emit({ type: "main_realtime_state", state: "ready" });
     logAgentd("main realtime connected", { provider: config.provider, modelOrDeployment: config.modelOrDeployment, endpointHost: connection.host });
+    void this.refreshCodexQuota();
+  }
+
+  private clearSessionMaxTimer(): void {
+    if (!this.sessionMaxTimer) return;
+    clearTimeout(this.sessionMaxTimer);
+    this.sessionMaxTimer = undefined;
+  }
+
+  private scheduleSessionMaxTimer(): void {
+    this.clearSessionMaxTimer();
+    this.sessionMaxTimer = setTimeout(() => {
+      this.sessionMaxTimer = undefined;
+      this.rolloverDueToSessionAge();
+    }, MAIN_REALTIME_SESSION_MAX_MS);
+    // Don't keep the Node event loop alive purely for this timer.
+    if (typeof (this.sessionMaxTimer as { unref?: () => void }).unref === "function") {
+      (this.sessionMaxTimer as { unref: () => void }).unref();
+    }
+  }
+
+  private rolloverDueToSessionAge(): void {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== OPENAI_WS_READY_STATE_OPEN) return;
+    const ageMs = this.now() - this.sessionStartedAt;
+    logAgentd("main realtime session rollover", { reason: "session-max-age", ageMs });
+    try {
+      ws.close(1000, "picky-rollover");
+    } catch (error) {
+      logAgentd("main realtime rollover close failed", { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  private async replayHistory(): Promise<void> {
+    const provider = this.historyProvider;
+    if (!provider) return;
+    let messages: MainRealtimeHistoryMessage[] = [];
+    try {
+      messages = provider().filter((m) => m.text && m.text.trim());
+    } catch (error) {
+      logAgentd("main realtime history provider failed", { error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+    if (messages.length === 0) return;
+    const trimmed = messages.length > MAIN_REALTIME_HISTORY_REPLAY_LIMIT
+      ? messages.slice(messages.length - MAIN_REALTIME_HISTORY_REPLAY_LIMIT)
+      : messages;
+    if (trimmed.length < messages.length) {
+      this.sendClientEvent({
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          content: [{
+            type: "input_text",
+            text: `[Picky note] The earlier ${messages.length - trimmed.length} turn(s) of this conversation are omitted from this realtime session due to capacity limits. Treat the messages below as the most recent context.`,
+          }],
+        },
+      });
+    }
+    const assistantText = this.assistantTextContentType();
+    for (const message of trimmed) {
+      const content = message.role === "assistant"
+        ? [{ type: assistantText, text: message.text }]
+        : [{ type: "input_text", text: message.text }];
+      this.sendClientEvent({
+        type: "conversation.item.create",
+        item: { type: "message", role: message.role, content },
+      });
+    }
+    logAgentd("main realtime history replayed", { messages: trimmed.length, omitted: messages.length - trimmed.length });
+  }
+
+  async refreshCodexQuota(): Promise<void> {
+    const auth = this.codexAuth;
+    if (!auth) return;
+    const fetcher = this.options.codexQuotaFetcher ?? fetchCodexQuota;
+    try {
+      const snapshot = await fetcher(auth);
+      this.emit({ type: "main_realtime_quota", quota: toQuotaSnapshot(snapshot) });
+    } catch (error) {
+      logAgentd("main realtime quota fetch failed", { error: error instanceof Error ? error.message : String(error) });
+      this.emit({ type: "main_realtime_quota", quota: undefined });
+    }
   }
 
   private sendSessionUpdate(): void {
@@ -525,6 +674,12 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
         const inputId = this.inputIdForResponseEvent(event);
         const isActiveResponse = !responseId || responseId === this.activeResponseId;
         const finalTranscript = inputId ? this.outputTranscriptByInputId.get(inputId) : undefined;
+        const turnUsage = extractUsageSnapshot(objectField(event, "response.usage"));
+        if (turnUsage) {
+          this.lastTurnUsage = turnUsage;
+          this.sessionUsage = addUsage(this.sessionUsage, turnUsage);
+          this.emit({ type: "main_realtime_usage", inputId, lastTurn: turnUsage, session: { ...this.sessionUsage } });
+        }
         if (isActiveResponse) {
           this.activeResponseId = undefined;
           this.activeAssistantAudioItem = undefined;
@@ -542,6 +697,8 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
           this.inputTranscriptByInputId.delete(inputId);
         }
         if (!inputId || inputId === this.activeInputId) this.activeInputId = undefined;
+        // Trigger a quota refresh on a completed turn (best-effort, fire-and-forget).
+        if (status === "completed" && this.codexAuth) void this.refreshCodexQuota();
         break;
       }
       case "error": {
@@ -1210,6 +1367,62 @@ function responseIncludesFunctionCall(event: Record<string, unknown>): boolean {
   const response = objectField(event, "response");
   const output = response?.output;
   return Array.isArray(output) && output.some((item) => Boolean(item) && typeof item === "object" && (item as Record<string, unknown>).type === "function_call");
+}
+
+function pickNumber(source: Record<string, unknown> | undefined, ...keys: string[]): number {
+  if (!source) return 0;
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return 0;
+}
+
+export function extractUsageSnapshot(usage: Record<string, unknown> | undefined): MainRealtimeUsageSnapshot | undefined {
+  if (!usage) return undefined;
+  const totalTokens = pickNumber(usage, "total_tokens", "totalTokens");
+  const inputTokens = pickNumber(usage, "input_tokens", "inputTokens");
+  const outputTokens = pickNumber(usage, "output_tokens", "outputTokens");
+  if (totalTokens === 0 && inputTokens === 0 && outputTokens === 0) return undefined;
+  const inputDetails = usage.input_token_details && typeof usage.input_token_details === "object"
+    ? usage.input_token_details as Record<string, unknown>
+    : (usage.inputTokenDetails && typeof usage.inputTokenDetails === "object" ? usage.inputTokenDetails as Record<string, unknown> : undefined);
+  const outputDetails = usage.output_token_details && typeof usage.output_token_details === "object"
+    ? usage.output_token_details as Record<string, unknown>
+    : (usage.outputTokenDetails && typeof usage.outputTokenDetails === "object" ? usage.outputTokenDetails as Record<string, unknown> : undefined);
+  return {
+    totalTokens,
+    inputTokens,
+    outputTokens,
+    cachedInputTokens: pickNumber(inputDetails, "cached_tokens", "cachedTokens"),
+    inputTextTokens: pickNumber(inputDetails, "text_tokens", "textTokens"),
+    inputAudioTokens: pickNumber(inputDetails, "audio_tokens", "audioTokens"),
+    outputTextTokens: pickNumber(outputDetails, "text_tokens", "textTokens"),
+    outputAudioTokens: pickNumber(outputDetails, "audio_tokens", "audioTokens"),
+  };
+}
+
+export function addUsage(a: MainRealtimeUsageSnapshot, b: MainRealtimeUsageSnapshot): MainRealtimeUsageSnapshot {
+  return {
+    totalTokens: a.totalTokens + b.totalTokens,
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cachedInputTokens: a.cachedInputTokens + b.cachedInputTokens,
+    inputTextTokens: a.inputTextTokens + b.inputTextTokens,
+    inputAudioTokens: a.inputAudioTokens + b.inputAudioTokens,
+    outputTextTokens: a.outputTextTokens + b.outputTextTokens,
+    outputAudioTokens: a.outputAudioTokens + b.outputAudioTokens,
+  };
+}
+
+export function toQuotaSnapshot(snapshot: CodexQuotaSnapshot | undefined): MainRealtimeQuotaSnapshot | undefined {
+  if (!snapshot) return undefined;
+  return {
+    planType: snapshot.planType,
+    primary: snapshot.primary,
+    secondary: snapshot.secondary,
+    fetchedAt: snapshot.fetchedAt,
+  };
 }
 
 function normalizeResponseStatus(status: string | undefined): "completed" | "cancelled" | "failed" | "incomplete" {

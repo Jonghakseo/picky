@@ -108,3 +108,93 @@ export function buildCodexClientHeaders(auth: ResolvedCodexOAuth, codexVersion =
     ...(auth.isFedramp ? { "X-OpenAI-Fedramp": "true" } : {}),
   };
 }
+
+export interface CodexQuotaWindow {
+  used: number;
+  limit: number;
+  remaining: number;
+  windowLabel?: string;
+  resetAt?: string;
+}
+
+export interface CodexQuotaSnapshot {
+  planType?: string;
+  primary?: CodexQuotaWindow;
+  secondary?: CodexQuotaWindow;
+  raw: Record<string, unknown>;
+  fetchedAt: string;
+}
+
+export type CodexQuotaFetcher = (auth: ResolvedCodexOAuth, options?: { signal?: AbortSignal }) => Promise<CodexQuotaSnapshot>;
+
+const CODEX_QUOTA_URL = process.env.CODEX_QUOTA_URL || "https://chatgpt.com/backend-api/wham/usage";
+
+/**
+ * Best-effort fetch of the ChatGPT/Codex subscription quota from the
+ * undocumented `wham/usage` endpoint. This is the same endpoint the Codex
+ * CLI and several OSS clients (opencode, codex-lb) call. It is NOT documented
+ * by OpenAI and may break without notice; callers should treat any failure
+ * here as "quota unknown" and continue silently.
+ */
+export const fetchCodexQuota: CodexQuotaFetcher = async (auth, options) => {
+  const headers = buildCodexClientHeaders(auth);
+  headers.Accept = "application/json";
+  const response = await fetch(CODEX_QUOTA_URL, { method: "GET", headers, signal: options?.signal });
+  if (!response.ok) {
+    throw new Error(`Codex quota fetch failed: HTTP ${response.status}`);
+  }
+  const raw = await response.json() as Record<string, unknown>;
+  return normalizeCodexQuota(raw);
+};
+
+export function normalizeCodexQuota(raw: Record<string, unknown>): CodexQuotaSnapshot {
+  const planType = typeof raw.plan_type === "string" ? raw.plan_type : undefined;
+  const rateLimit = (raw.rate_limit ?? raw.rate_limits ?? {}) as Record<string, unknown>;
+  const primary = readQuotaWindow(rateLimit, ["primary", "five_hour", "5_hour", "5_hours", "hourly"]) ?? readQuotaWindow(raw, ["primary"]);
+  const secondary = readQuotaWindow(rateLimit, ["secondary", "weekly", "week"]) ?? readQuotaWindow(raw, ["secondary"]);
+  const flatPrimary = primary ?? readFlatQuotaWindow(rateLimit);
+  return {
+    planType,
+    primary: flatPrimary,
+    secondary,
+    raw,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+function readQuotaWindow(source: Record<string, unknown>, keys: string[]): CodexQuotaWindow | undefined {
+  for (const key of keys) {
+    const value = source[key];
+    if (value && typeof value === "object") {
+      const window = readFlatQuotaWindow(value as Record<string, unknown>, key);
+      if (window) return window;
+    }
+  }
+  return undefined;
+}
+
+function readFlatQuotaWindow(source: Record<string, unknown>, fallbackLabel?: string): CodexQuotaWindow | undefined {
+  const used = numberField(source, ["used", "used_units", "current"]);
+  const limit = numberField(source, ["limit", "allowed", "total"]);
+  if (typeof used !== "number" || typeof limit !== "number" || limit <= 0) return undefined;
+  const remaining = numberField(source, ["remaining", "remaining_units"]) ?? Math.max(0, limit - used);
+  const windowLabel = stringField(source, ["window", "name", "label"]) ?? fallbackLabel;
+  const resetAt = stringField(source, ["reset_at", "resets_at", "reset"]);
+  return { used, limit, remaining, windowLabel, resetAt };
+}
+
+function numberField(source: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return undefined;
+}
+
+function stringField(source: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return undefined;
+}

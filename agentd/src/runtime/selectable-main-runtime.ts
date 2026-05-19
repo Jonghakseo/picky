@@ -1,7 +1,7 @@
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { BuiltPrompt } from "../prompt-builder.js";
 import type { MainAgentRuntimeMode, PickyContextPacket } from "../protocol.js";
-import type { AgentRuntime, MainRealtimeRuntime, RuntimeModelOption, RuntimeSessionHandle, ThinkingLevel } from "./types.js";
+import type { AgentRuntime, MainRealtimeHistoryProvider, MainRealtimeRuntime, RuntimeModelOption, RuntimeSessionHandle, ThinkingLevel } from "./types.js";
 
 interface SelectableMainRuntimeOptions {
   initialMode: MainAgentRuntimeMode;
@@ -89,6 +89,14 @@ export class SelectableMainRuntime implements MainRealtimeRuntime {
   cancelMainRealtimeVoiceTurn(inputId?: string, playedAudioMs?: number): Promise<void> {
     if (this.mode !== "openai-realtime") return Promise.resolve();
     return this.options.realtimeRuntime.cancelMainRealtimeVoiceTurn(inputId, playedAudioMs);
+  }
+
+  setMainRealtimeHistoryProvider(provider: MainRealtimeHistoryProvider | undefined): void {
+    this.options.realtimeRuntime.setMainRealtimeHistoryProvider?.(provider);
+  }
+
+  refreshCodexQuota(): Promise<void> {
+    return this.options.realtimeRuntime.refreshCodexQuota?.() ?? Promise.resolve();
   }
 
   private currentRuntime(): AgentRuntime {

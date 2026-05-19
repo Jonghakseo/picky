@@ -641,7 +641,6 @@ const SNAPSHOT_THINKING_PREVIEW_CHAR_LIMIT = 240;
 const SNAPSHOT_CHANGED_FILE_LIMIT = 20;
 const SNAPSHOT_CHANGED_FILE_SUMMARY_CHAR_LIMIT = 240;
 const SNAPSHOT_MESSAGE_LIMIT = 12;
-const SNAPSHOT_MESSAGE_TEXT_CHAR_LIMIT = 700;
 const SNAPSHOT_FINAL_ANSWER_CHAR_LIMIT = 1_500;
 const SNAPSHOT_LAST_SUMMARY_CHAR_LIMIT = 700;
 
@@ -658,20 +657,12 @@ export function compactSessionsForSnapshot(sessions: PickyAgentSession[]): Picky
   }));
 }
 
+// Snapshot only caps the message count, not the body of any individual message.
+// User-visible fields (text/errorContext/errorMessage/question.prompt/question.description)
+// must be sent in full so the report viewer doesn't render a truncated copy that lingers
+// between the initial sessionSnapshot and the next sessionUpdated/messageReplaced event.
 function compactSnapshotMessages(messages: PickyAgentSession["messages"]): PickyAgentSession["messages"] {
-  return messages?.slice(-SNAPSHOT_MESSAGE_LIMIT).map((message) => ({
-    ...message,
-    text: message.text ? truncateText(message.text, SNAPSHOT_MESSAGE_TEXT_CHAR_LIMIT) : message.text,
-    errorContext: message.errorContext ? truncateText(message.errorContext, SNAPSHOT_MESSAGE_TEXT_CHAR_LIMIT) : message.errorContext,
-    errorMessage: message.errorMessage ? truncateText(message.errorMessage, SNAPSHOT_MESSAGE_TEXT_CHAR_LIMIT) : message.errorMessage,
-    question: message.question
-      ? {
-          ...message.question,
-          prompt: message.question.prompt ? truncateText(message.question.prompt, SNAPSHOT_MESSAGE_TEXT_CHAR_LIMIT) : message.question.prompt,
-          description: message.question.description ? truncateText(message.question.description, SNAPSHOT_MESSAGE_TEXT_CHAR_LIMIT) : message.question.description,
-        }
-      : message.question,
-  }));
+  return messages?.slice(-SNAPSHOT_MESSAGE_LIMIT);
 }
 
 function compactSnapshotLogs(logs: string[]): string[] {

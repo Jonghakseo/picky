@@ -465,8 +465,12 @@ describe("AgentdServer", () => {
     expect(compact.finalAnswer?.length).toBeLessThanOrEqual(1_501);
     expect(compact.messages?.length).toBeLessThanOrEqual(12);
     expect(compact.messages?.[0]?.id).toBe("msg-68");
-    expect(compact.messages?.at(-1)?.text?.length).toBeLessThanOrEqual(701);
-    expect(JSON.stringify(compact).length).toBeLessThan(120_000);
+    // User-visible message text is sent in full — the snapshot caps the message count, not
+    // each message's body, so the report viewer cannot show a truncated copy that lingers
+    // between the initial sessionSnapshot and the next sessionUpdated event.
+    const lastMessageText = compact.messages?.at(-1)?.text ?? "";
+    expect(lastMessageText.endsWith("…")).toBe(false);
+    expect(lastMessageText.length).toBeGreaterThan(10_000);
   });
 });
 

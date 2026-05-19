@@ -362,6 +362,17 @@ if [[ -d "${ROOT_DIR}/pi-extensions" ]]; then
   mkdir -p "${PACKAGED_APP}/Contents/Resources"
   /bin/cp -Rc "${ROOT_DIR}/pi-extensions" "${PACKAGED_APP}/Contents/Resources/pi-extensions"
 fi
+
+# Bundle the watchdog alert helper. Kept as a tiny standalone executable so
+# the watchdog can spawn a recovery dialog without depending on the main
+# process (which is unresponsive by definition when the watchdog fires).
+WATCHDOG_HELPER_SRC="${ROOT_DIR}/Picky/Watchdog/PickyWatchdogAlertHelper/main.swift"
+if [[ -f "${WATCHDOG_HELPER_SRC}" ]]; then
+  WATCHDOG_HELPER_DIR="${PACKAGED_APP}/Contents/Helpers"
+  mkdir -p "${WATCHDOG_HELPER_DIR}"
+  /usr/bin/xcrun swiftc -O "${WATCHDOG_HELPER_SRC}" \
+    -o "${WATCHDOG_HELPER_DIR}/picky-watchdog-alert"
+fi
 step_end
 
 step_start "codesign"

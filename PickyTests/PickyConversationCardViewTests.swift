@@ -764,8 +764,10 @@ struct PickyConversationCardViewTests {
 
         try await viewModel.steer(text: "test", sessionID: "x")
 
-        let command = try #require(client.sentCommands.last)
-        #expect(command.type == .steer)
+        // `apply(.connected)` async-sends `.listSessions`; that Task can race with
+        // this test's `.steer` send and slot in after it, so filter by intent
+        // instead of trusting `.last`.
+        let command = try #require(client.sentCommands.last { $0.type == .steer })
         #expect(command.text == "test")
         #expect(command.sessionId == "x")
     }
@@ -779,8 +781,10 @@ struct PickyConversationCardViewTests {
 
         try await viewModel.followUp(text: "test", sessionID: "x")
 
-        let command = try #require(client.sentCommands.last)
-        #expect(command.type == .followUp)
+        // `apply(.connected)` async-sends `.listSessions`; that Task can race with
+        // this test's `.followUp` send and slot in after it, so filter by intent
+        // instead of trusting `.last`.
+        let command = try #require(client.sentCommands.last { $0.type == .followUp })
         #expect(command.text == "test")
         #expect(command.sessionId == "x")
     }

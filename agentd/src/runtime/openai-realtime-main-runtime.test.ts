@@ -281,7 +281,7 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(outputs["call-guide"]).toEqual({ section: "3. Global shortcuts", query: "shortcuts", content: "## 3. Global shortcuts\n\nShortcut details.", excerpted: true });
   });
 
-  it("returns a minimal Pickle session list with only id, title, cwd, and last message", async () => {
+  it("hides archived Pickles by default and returns a minimal session list with only id, title, cwd, and last message", async () => {
     const socket = new FakeRealtimeSocket();
     let listCalls = 0;
     const runtime = new OpenAIRealtimeMainRuntime({
@@ -293,6 +293,8 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
             id: `pickle-${index + 1}`,
             title: `Pickle ${index + 1}`,
             status: index % 2 === 0 ? "running" : "completed",
+            // Mark every other Pickle archived so the default filter has work to do.
+            archived: index % 2 === 1,
             cwd: "/tmp/project",
             createdAt: "2026-05-09T00:00:00.000Z",
             updatedAt: `2026-05-09T00:00:0${index}.000Z`,
@@ -324,7 +326,7 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
         type: "function_call",
         name: "picky_pickle_sessions",
         call_id: "call-pickle-sessions",
-        arguments: JSON.stringify({ includeTerminal: false, page: 1, limit: 2 }),
+        arguments: JSON.stringify({ page: 1, limit: 2 }),
       },
     });
     await settle();
@@ -334,6 +336,9 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     const payload = JSON.parse(output.item.output);
 
     expect(listCalls).toBe(1);
+    // Only odd-indexed Pickles are archived (pickle-2, pickle-4, pickle-6); the
+    // remaining three (pickle-1, pickle-3, pickle-5) survive, page 1 limit 2
+    // returns the first two.
     expect(payload.sessions).toEqual([
       { id: "pickle-1", title: "Pickle 1", cwd: "/tmp/project", lastMessage: "Last message 1" },
       { id: "pickle-3", title: "Pickle 3", cwd: "/tmp/project", lastMessage: "Last message 3" },
@@ -346,6 +351,47 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(output.item.output).not.toContain("artifact should not be returned");
     expect(output.item.output).not.toContain("changed file should not be returned");
     expect(output.item.output).not.toContain("older message should not be returned");
+  });
+
+  it("returns archived Pickles when includeArchive is explicitly true", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        ...fakeToolHandlers(),
+        listPickleSessions() {
+          return [
+            { id: "p-live", title: "Live", status: "running", cwd: "/x", createdAt: "2026-05-09T00:00:00.000Z", updatedAt: "2026-05-09T00:00:02.000Z", lastSummary: "", logs: [], tools: [], artifacts: [], changedFiles: [] } satisfies PickyAgentSession,
+            { id: "p-archived", title: "Archived", status: "completed", archived: true, cwd: "/x", createdAt: "2026-05-09T00:00:00.000Z", updatedAt: "2026-05-09T00:00:01.000Z", lastSummary: "", logs: [], tools: [], artifacts: [], changedFiles: [] } satisfies PickyAgentSession,
+          ];
+        },
+      },
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    socket.serverEvent({
+      type: "response.output_item.done",
+      item: {
+        type: "function_call",
+        name: "picky_pickle_sessions",
+        call_id: "call-with-archive",
+        arguments: JSON.stringify({ includeArchive: true }),
+      },
+    });
+    await settle();
+
+    const sent = socket.sent.map((raw) => JSON.parse(raw) as Record<string, any>);
+    const output = sent.find((event) => event.type === "conversation.item.create" && event.item?.type === "function_call_output")!;
+    const payload = JSON.parse(output.item.output);
+
+    expect(payload.sessions.map((s: { id: string }) => s.id)).toEqual(["p-live", "p-archived"]);
+    expect(payload.total).toBe(2);
   });
 
   it("accepts legacy realtime Pickle tool names from existing transcripts", async () => {

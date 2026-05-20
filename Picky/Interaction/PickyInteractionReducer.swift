@@ -269,12 +269,19 @@ enum PickyInteractionReducer {
             // matching inputID/contextID. Skip the rest of the .quickReply
             // body (which would startSpeakingReply or set .showingTextReply).
             if replyKind == .realtimeAck {
-                if let inputID { state.pendingTextInputs[inputID] = nil }
+                // Match by contextID only. The `inputID` in the quickReply is
+                // agentd's realtime turn ID (assigned to response.create),
+                // distinct from the client-side input UUID stored on
+                // `.waitingForAgent` when .textSubmitted was reduced. Both
+                // point to the same conversation turn via contextID, which is
+                // the stable cross-process identifier. Drop pendingTextInputs
+                // by waitingInputID (the real client input) so a follow-up
+                // submission does not race against a stale slot.
                 state.queuedSpeechReplies.removeAll()
                 state = state.removingOverlayReason(.waitingForVoiceResponse)
                 if case .waitingForAgent(let waitingInputID, let waitingContextID, _) = state.output,
-                   waitingInputID == inputID,
                    waitingContextID == contextID {
+                    if let waitingInputID { state.pendingTextInputs[waitingInputID] = nil }
                     state.output = .idle
                     record(.stateChanged, "Realtime ack received; cursor cleared")
                 } else {

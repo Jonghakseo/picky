@@ -74,25 +74,23 @@ describe("PickySkillStore", () => {
     expect(await store.list()).toEqual([]);
   });
 
-  it("copies seed templates on first run and writes a .seeded marker", async () => {
+  it("copies every seed template on first run and writes the manifest", async () => {
     const root = await mkdtemp(join(tmpdir(), "picky-skill-store-seed-"));
     const seedDir = join(root, "seeds");
     const targetDir = join(root, "skills");
     await mkdir(seedDir, { recursive: true });
-    await writeFile(
-      join(seedDir, "create-picky-skill.md"),
-      `---\nname: create-picky-skill\ndescription: Seed skill\n---\n\nBody.\n`,
-      "utf8",
-    );
+    await writeFile(join(seedDir, "create-picky-skill.md"), "create body\n", "utf8");
+    await writeFile(join(seedDir, "manage-pickles.md"), "manage body\n", "utf8");
     const store = new PickySkillStore({ skillsDir: targetDir, seedSourceDir: seedDir });
     await store.ensureSeeded();
-    const seeded = await readFile(join(targetDir, "create-picky-skill.md"), "utf8");
-    expect(seeded).toContain("Seed skill");
-    const marker = await stat(join(targetDir, ".seeded"));
-    expect(marker.isFile()).toBe(true);
+    expect(await readFile(join(targetDir, "create-picky-skill.md"), "utf8")).toBe("create body\n");
+    expect(await readFile(join(targetDir, "manage-pickles.md"), "utf8")).toBe("manage body\n");
+    const manifest = await readFile(join(targetDir, ".seeded"), "utf8");
+    expect(manifest).toContain("create-picky-skill.md");
+    expect(manifest).toContain("manage-pickles.md");
   });
 
-  it("does not overwrite existing user files on subsequent boots", async () => {
+  it("does not overwrite existing user files, records them in the manifest instead", async () => {
     const root = await mkdtemp(join(tmpdir(), "picky-skill-store-noseedreplace-"));
     const seedDir = join(root, "seeds");
     const targetDir = join(root, "skills");
@@ -103,18 +101,58 @@ describe("PickySkillStore", () => {
     const store = new PickySkillStore({ skillsDir: targetDir, seedSourceDir: seedDir });
     await store.ensureSeeded();
     expect(await readFile(join(targetDir, "create-picky-skill.md"), "utf8")).toBe("user body\n");
+    expect(await readFile(join(targetDir, ".seeded"), "utf8")).toContain("create-picky-skill.md");
   });
 
-  it("does not re-seed once the .seeded marker is present", async () => {
-    const root = await mkdtemp(join(tmpdir(), "picky-skill-store-marker-"));
+  it("does not re-create seeds the user has intentionally deleted", async () => {
+    const root = await mkdtemp(join(tmpdir(), "picky-skill-store-deleted-"));
     const seedDir = join(root, "seeds");
     const targetDir = join(root, "skills");
     await mkdir(seedDir, { recursive: true });
     await mkdir(targetDir, { recursive: true });
-    await writeFile(join(targetDir, ".seeded"), "", "utf8");
+    await writeFile(
+      join(targetDir, ".seeded"),
+      "# header\ncreate-picky-skill.md\n",
+      "utf8",
+    );
     await writeFile(join(seedDir, "create-picky-skill.md"), "seed body\n", "utf8");
     const store = new PickySkillStore({ skillsDir: targetDir, seedSourceDir: seedDir });
     await store.ensureSeeded();
     await expect(stat(join(targetDir, "create-picky-skill.md"))).rejects.toThrow();
+  });
+
+  it("delivers newly added seeds on subsequent boots", async () => {
+    const root = await mkdtemp(join(tmpdir(), "picky-skill-store-add-"));
+    const seedDir = join(root, "seeds");
+    const targetDir = join(root, "skills");
+    await mkdir(seedDir, { recursive: true });
+    await writeFile(join(seedDir, "create-picky-skill.md"), "create body\n", "utf8");
+    const store = new PickySkillStore({ skillsDir: targetDir, seedSourceDir: seedDir });
+    await store.ensureSeeded();
+    await writeFile(join(seedDir, "manage-pickles.md"), "manage body\n", "utf8");
+    await store.ensureSeeded();
+    expect(await readFile(join(targetDir, "manage-pickles.md"), "utf8")).toBe("manage body\n");
+    expect(await readFile(join(targetDir, ".seeded"), "utf8")).toContain("manage-pickles.md");
+  });
+
+  it("migrates the legacy opaque marker by treating create-picky-skill as already delivered", async () => {
+    const root = await mkdtemp(join(tmpdir(), "picky-skill-store-legacy-"));
+    const seedDir = join(root, "seeds");
+    const targetDir = join(root, "skills");
+    await mkdir(seedDir, { recursive: true });
+    await mkdir(targetDir, { recursive: true });
+    await writeFile(join(targetDir, ".seeded"), "seeded at 2026-05-19T00:00:00.000Z\n", "utf8");
+    await writeFile(join(seedDir, "create-picky-skill.md"), "create body\n", "utf8");
+    await writeFile(join(seedDir, "manage-pickles.md"), "manage body\n", "utf8");
+    const store = new PickySkillStore({ skillsDir: targetDir, seedSourceDir: seedDir });
+    await store.ensureSeeded();
+    // The legacy marker means the user already received create-picky-skill.
+    // It should NOT be re-created even if missing on disk.
+    await expect(stat(join(targetDir, "create-picky-skill.md"))).rejects.toThrow();
+    // New seeds added after the legacy release must still flow.
+    expect(await readFile(join(targetDir, "manage-pickles.md"), "utf8")).toBe("manage body\n");
+    const manifest = await readFile(join(targetDir, ".seeded"), "utf8");
+    expect(manifest).toContain("create-picky-skill.md");
+    expect(manifest).toContain("manage-pickles.md");
   });
 });

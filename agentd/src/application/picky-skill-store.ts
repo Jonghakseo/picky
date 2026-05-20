@@ -8,11 +8,16 @@
 // One file per skill. Frontmatter `name` is the canonical id; when missing,
 // the filename (without .md) is used. Filenames should be kebab-case.
 //
-// Seeding: the first time the directory does not exist (or a `.seeded`
-// marker is absent), built-in templates from `seedSourceDir` are copied in
-// once. Existing files are never overwritten, and the marker is written even
-// when the source dir is empty so we do not re-seed after the user wipes
-// the folder.
+// Seeding: built-in templates ship in `seedSourceDir`. The store tracks which
+// seeds it has already delivered via a `.seeded` manifest — one filename per
+// line. A seed file is copied only when it is NOT in the manifest, so files
+// the user has intentionally deleted are not silently re-created and new
+// seeds added in later releases are picked up automatically.
+//
+// Hosts that shipped with the pre-manifest marker (an opaque "seeded at ..."
+// string) are migrated by assuming the user has already received the very
+// first seed (`create-picky-skill.md`) and nothing else — every later seed
+// is then delivered as if it were new.
 
 import { copyFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -49,6 +54,12 @@ export interface PickySkillStoreOptions {
 }
 
 const SEEDED_MARKER = ".seeded";
+const SEEDED_HEADER = "# Picky skill seeds already delivered. Each line is a filename in the seeds source dir. Do not edit unless you know what you are doing.\n";
+// Seeds that existed when the manifest format was first introduced. Used to
+// migrate hosts whose `.seeded` file still holds the opaque first-release
+// marker. Keep this list in sync only when adding NEW seeds — never remove
+// entries; doing so would re-deliver the seed to existing users.
+const LEGACY_SEEDED_FILES = ["create-picky-skill.md"];
 
 export class PickySkillStore {
   private cache = new Map<string, SkillDoc>();
@@ -76,42 +87,87 @@ export class PickySkillStore {
     } catch {
       return;
     }
-    const marker = join(this.skillsDir, SEEDED_MARKER);
-    try {
-      await stat(marker);
-      return;
-    } catch {
-      // not yet seeded
-    }
     const sourceDir = this.seedSourceDir;
-    if (sourceDir) {
-      let entries: string[] = [];
-      try {
-        entries = await readdir(sourceDir);
-      } catch {
-        entries = [];
-      }
-      for (const entry of entries) {
-        if (!entry.endsWith(".md")) continue;
-        const dst = join(this.skillsDir, entry);
-        try {
-          await stat(dst);
-          continue;
-        } catch {
-          // missing — copy in
-        }
-        try {
-          await copyFile(join(sourceDir, entry), dst);
-        } catch {
-          // ignore individual file failures
-        }
-      }
-    }
+    if (!sourceDir) return;
+
+    const manifestPath = join(this.skillsDir, SEEDED_MARKER);
+    const delivered = await this.readSeededManifest(manifestPath);
+
+    let entries: string[];
     try {
-      await writeFile(marker, `seeded at ${new Date().toISOString()}\n`, "utf8");
+      entries = await readdir(sourceDir);
     } catch {
-      // marker write failure is non-fatal; worst case we try to seed again next boot.
+      entries = [];
     }
+    let manifestChanged = false;
+    for (const entry of entries.sort()) {
+      if (!entry.endsWith(".md")) continue;
+      if (delivered.has(entry)) continue;
+      const dst = join(this.skillsDir, entry);
+      try {
+        await stat(dst);
+        // The user already has a file under that name (perhaps hand-authored).
+        // Record it as delivered so we never overwrite it, but do not copy.
+        delivered.add(entry);
+        manifestChanged = true;
+        continue;
+      } catch {
+        // missing — copy in
+      }
+      try {
+        await copyFile(join(sourceDir, entry), dst);
+        delivered.add(entry);
+        manifestChanged = true;
+      } catch {
+        // ignore individual file failures; we will retry on next boot.
+      }
+    }
+    if (!manifestChanged && delivered.size > 0) {
+      // Even with no new copies, persist a manifest if we migrated from the
+      // legacy opaque marker so the next boot is a fast no-op.
+      try {
+        await stat(manifestPath);
+      } catch {
+        manifestChanged = true;
+      }
+    }
+    if (manifestChanged) {
+      try {
+        await writeFile(manifestPath, SEEDED_HEADER + Array.from(delivered).sort().join("\n") + "\n", "utf8");
+      } catch {
+        // marker write failure is non-fatal; worst case we attempt to re-seed next boot.
+      }
+    }
+  }
+
+  /** Read the per-skill manifest written by previous `ensureSeeded` runs.
+   *  Returns a set of filenames (e.g. "manage-pickles.md") that the store
+   *  has already delivered to the user's skills directory. Pre-manifest hosts
+   *  carried an opaque "seeded at <timestamp>" string — those are migrated
+   *  to the set of first-release seeds so later additions can still flow. */
+  private async readSeededManifest(path: string): Promise<Set<string>> {
+    const delivered = new Set<string>();
+    let raw: string;
+    try {
+      raw = await readFile(path, "utf8");
+    } catch {
+      return delivered;
+    }
+    let recognized = false;
+    for (const line of raw.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      if (!trimmed.endsWith(".md")) continue;
+      delivered.add(trimmed);
+      recognized = true;
+    }
+    if (!recognized) {
+      // Legacy opaque marker ("seeded at <iso>"). Assume the user already
+      // received the first-release seeds and nothing else; later additions
+      // will be delivered as fresh entries.
+      for (const legacy of LEGACY_SEEDED_FILES) delivered.add(legacy);
+    }
+    return delivered;
   }
 
   /** Cheap session-start snapshot: { name, description } for every skill in

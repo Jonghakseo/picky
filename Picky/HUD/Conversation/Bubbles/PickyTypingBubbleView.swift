@@ -11,7 +11,6 @@ struct PickyTypingBubbleView: View {
     let message: PickySessionMessage
     let externallyCollapsed: Bool
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
-    @State private var isAnimating = false
     @State private var isCollapsed: Bool
 
     init(message: PickySessionMessage, initiallyCollapsed: Bool = false) {
@@ -31,20 +30,6 @@ struct PickyTypingBubbleView: View {
                             .font(.system(size: 8.5, weight: .bold))
                         Text("⌁ thinking")
                             .font(PickyHUDTypography.metaSemibold)
-                        HStack(spacing: 3) {
-                            ForEach(0..<3, id: \.self) { index in
-                                Circle()
-                                    .fill(DS.Colors.info)
-                                    .frame(width: 3.5, height: 3.5)
-                                    .opacity(isAnimating ? 1.0 : 0.25)
-                                    .animation(
-                                        .easeInOut(duration: 0.6)
-                                            .repeatForever(autoreverses: true)
-                                            .delay(Double(index) * 0.18),
-                                        value: isAnimating
-                                    )
-                            }
-                        }
                     }
                     .foregroundColor(DS.Colors.info)
                     if !isCollapsed, let text = message.text, !text.isEmpty {
@@ -84,7 +69,6 @@ struct PickyTypingBubbleView: View {
             Spacer(minLength: 48)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onAppear { isAnimating = true }
         .onChange(of: externallyCollapsed) { _, newValue in
             isCollapsed = newValue
         }

@@ -58,7 +58,7 @@ description: <one sentence; when to invoke and what to do — shown in the sessi
 
 ## What NOT to do
 
-- Picky skills are independent from Pickle and Pi skills. They only affect the realtime main (voice) agent and never run inside a Pickle. Do not reference Pi paths such as `~/.pi/agent/skills/`.
+- Picky skills only affect the realtime main (voice) agent. They never run inside a Pickle, and they are unrelated to any other agent's skill system.
 - Do not put long step-by-step workflows in the body. If the recipe needs file edits, multi-step research, or more than ~3 tool calls, write a skill that delegates to a Pickle and put the actual procedure inside `picky_start_pickle.instructions`.
 - Do not overwrite an existing skill file without the user's explicit confirmation.
 - Do not put credentials, API keys, or personal data in a skill (it is stored as plaintext on disk).

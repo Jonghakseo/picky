@@ -367,6 +367,10 @@ function buildPrimaryMainRuntime(
       recallRecentMainContext: ({ limit }) => requireSupervisor().recallRecentMainContext(limit),
       inspectPickleSession: ({ sessionId }) => requireSupervisor().inspectPickleSession(sessionId),
       abortPickleSession: ({ sessionId }) => abortPickleSession({ sessionId }),
+      // Unarchive flips the supervisor's `archived` flag back to false so the
+      // dock card returns. We do NOT route through the app bridge here — the
+      // child daemon (if any) is left alone, only the metadata changes.
+      unarchivePickleSession: ({ sessionId }) => requireSupervisor().setSessionArchived(sessionId, false),
     },
   });
 

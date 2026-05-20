@@ -86,6 +86,15 @@ interface OpenAIRealtimeToolHandlers {
   /** Best-effort abort of a running Pickle for `picky_abort_pickle`. Returns the
    *  updated session so the model can confirm the new status to the user. */
   abortPickleSession(request: { sessionId: string }): Promise<PickyAgentSession>;
+  /** Unarchive a Pickle so its dock card returns. Used by
+   *  `picky_unarchive_pickle` after the model looks up an archived session
+   *  with `picky_pickle_sessions({ includeArchive: true })`. Only flips the
+   *  archived flag; the session's status (completed / cancelled / running)
+   *  is preserved. Returns the updated session so the tool can echo the
+   *  current status — the model uses that to decide whether to nudge the
+   *  user toward `picky_steer_pickle` (still running) or
+   *  `picky_start_pickle` (terminal). */
+  unarchivePickleSession(request: { sessionId: string }): Promise<PickyAgentSession>;
 }
 
 export interface RealtimeWebSocketLike {
@@ -113,7 +122,8 @@ type RealtimeToolName =
   | "picky_forget"
   | "picky_recall_recent_context"
   | "picky_inspect_active_pickle"
-  | "picky_abort_pickle";
+  | "picky_abort_pickle"
+  | "picky_unarchive_pickle";
 
 type PendingFunctionCall = {
   callId: string;
@@ -984,6 +994,8 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
       }
       case "picky_abort_pickle":
         return summarizeRealtimePickleAbort(await this.options.toolHandlers.abortPickleSession({ sessionId: stringArg(args, "sessionId") }));
+      case "picky_unarchive_pickle":
+        return summarizeRealtimePickleUnarchive(await this.options.toolHandlers.unarchivePickleSession({ sessionId: stringArg(args, "sessionId") }));
     }
   }
 
@@ -1215,6 +1227,7 @@ function buildRealtimeInstructions(userMemories: MainRealtimeUserMemoryItem[] = 
     `- Use \`read_picky_user_guide\` before answering questions about how to use Picky. Prefer its \`section\` parameter when the question maps to one of these manual sections: ${PICKY_USER_GUIDE_SECTIONS.join("; ")}.`,
     "- You cannot execute Pi skills directly. If a skill is relevant, include the skill name and the essential details in `picky_start_pickle.instructions` or `picky_steer_pickle.message` for the Pickle.",
     "- Pickle hover follow-ups bypass you and go directly to the Pickle. If the user refers to delegated work during a Picky turn, call `picky_pickle_sessions` before deciding whether to use `picky_steer_pickle`. To check progress on one specific Pickle without spawning another, call `picky_inspect_active_pickle`. To stop a Pickle when the user explicitly asks (\"멈춰\", \"cancel that\"), call `picky_abort_pickle`.",
+    "- To find an archived Pickle the user wants to revisit (\"그거 다시 살려\", \"the one I archived\"), call `picky_pickle_sessions({ includeArchive: true })` first to locate it, then `picky_unarchive_pickle` to restore its dock card. The archived flag is the only thing flipped — once it's back on the dock, use `picky_steer_pickle` to continue (if status is still running) or `picky_start_pickle` to spawn a fresh Pickle when the previous one was completed/cancelled.",
     "- When the user references an earlier turn's page, screen, selection, or file (\"방금 그 페이지\", \"5분 전\", \"the PR you saw\"), or when a stored memory rule depends on the current browser/cwd, call `picky_recall_recent_context` first. The single \"captured context\" you saw at the start of THIS turn is gone by the next one; that tool is how you look further back.",
     "",
     "## Long-term user memory",
@@ -1464,6 +1477,19 @@ function realtimeTools(): Array<Record<string, unknown>> {
         required: ["sessionId"],
       },
     },
+    {
+      type: "function",
+      name: "picky_unarchive_pickle",
+      description: "Restore an archived Pickle so its card reappears in Picky's dock. Use when the user asks to \"bring back\", \"다시 살려\", \"되살려\", or \"복원\" a Pickle they had previously archived. To find archived candidates, first call picky_pickle_sessions with includeArchive=true. The Pickle's status (completed / cancelled / running) is preserved; only the archived flag is flipped. After unarchiving, if the user wants to continue work on it, call picky_steer_pickle (when still running) or picky_start_pickle (when the status is terminal).",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          sessionId: { type: "string", description: "Pickle session id from picky_pickle_sessions (with includeArchive=true if it has been archived)." },
+        },
+        required: ["sessionId"],
+      },
+    },
   ];
 }
 
@@ -1661,6 +1687,17 @@ function summarizeRealtimePickleAbort(session: PickyAgentSession): Record<string
   return summary;
 }
 
+function summarizeRealtimePickleUnarchive(session: PickyAgentSession): Record<string, unknown> {
+  const summary: Record<string, unknown> = {
+    id: session.id,
+    title: session.title,
+    status: session.status,
+    archived: session.archived === true,
+  };
+  if (session.cwd) summary.cwd = session.cwd;
+  return summary;
+}
+
 function summarizeRealtimeSkillSearch(result: { total: number; skills: PickySkillSummary[] }): RealtimeSkillSearchSummary {
   return {
     total: result.total,
@@ -1833,6 +1870,7 @@ function normalizeToolName(name: string): RealtimeToolName | undefined {
     case "picky_recall_recent_context":
     case "picky_inspect_active_pickle":
     case "picky_abort_pickle":
+    case "picky_unarchive_pickle":
       return name;
     default:
       return undefined;

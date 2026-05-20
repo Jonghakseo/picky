@@ -1155,6 +1155,85 @@ describe("OpenAIRealtimeMainRuntime user memory tools", () => {
     expect(sessionUpdatesAfter.length).toBe(sessionUpdatesBefore.length + 1);
     expect(sessionUpdatesAfter.at(-1)!.session.instructions).toContain("(id=mem-1) Always answer in Korean");
   });
+
+  it("packs the most recent N history turns into session.update.instructions as the model's own memory", async () => {
+    const socket = new FakeRealtimeSocket();
+    const history: { role: "user" | "assistant"; text: string }[] = [];
+    // Build a transcript longer than the instructions cap so we exercise the trim.
+    for (let i = 0; i < 30; i += 1) {
+      history.push({ role: i % 2 === 0 ? "user" : "assistant", text: `turn-${i}` });
+    }
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+    runtime.setMainRealtimeHistoryProvider(() => history);
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    await settle();
+
+    const sessionUpdate = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .filter((event) => event.type === "session.update")
+      .at(-1)!;
+    const instructions: string = sessionUpdate.session.instructions;
+    expect(instructions).toContain("## Recent conversation (your own memory)");
+    // Oldest 10 entries should be omitted (cap = 20). Newest 20 stay.
+    expect(instructions).not.toContain("turn-0\n");
+    expect(instructions).not.toContain("turn-9 ");
+    expect(instructions).toContain("turn-10");
+    expect(instructions).toContain("turn-29");
+    // Role labels must let the model identify its own past replies.
+    expect(instructions).toContain("User: turn-10");
+    expect(instructions).toContain("Picky (you): turn-11");
+  });
+
+  it("refreshConversationInstructions resends session.update with the latest recent history snapshot", async () => {
+    const socket = new FakeRealtimeSocket();
+    let history: { role: "user" | "assistant"; text: string }[] = [];
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+    runtime.setMainRealtimeHistoryProvider(() => history);
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    await settle();
+
+    const updatesBefore = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .filter((event) => event.type === "session.update");
+    expect(updatesBefore.at(-1)!.session.instructions).not.toContain("## Recent conversation");
+
+    // Supervisor would call this right after appending the assistant message of
+    // the freshly-completed realtime turn.
+    history = [
+      { role: "user", text: "내 이름은 서종학이야" },
+      { role: "assistant", text: "알겠어. 종학아 안녕." },
+    ];
+    runtime.refreshConversationInstructions();
+    await settle();
+
+    const updatesAfter = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .filter((event) => event.type === "session.update");
+    expect(updatesAfter.length).toBe(updatesBefore.length + 1);
+    const refreshed: string = updatesAfter.at(-1)!.session.instructions;
+    expect(refreshed).toContain("## Recent conversation (your own memory)");
+    expect(refreshed).toContain("User: 내 이름은 서종학이야");
+    expect(refreshed).toContain("Picky (you): 알겠어. 종학아 안녕.");
+  });
 });
 
 describe("OpenAIRealtimeMainRuntime context recall + pickle tools", () => {
@@ -1313,6 +1392,67 @@ describe("OpenAIRealtimeMainRuntime context recall + pickle tools", () => {
     expect(output.error).toMatch(/picky_pickle_sessions/);
   });
 
+  it("declares picky_unarchive_pickle on session.update.tools", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: { provider: "openai", apiKey: "sk-test", modelOrDeployment: "gpt-realtime-2", voice: "marin" },
+      webSocketFactory: () => socket,
+    });
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    const sessionUpdate = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .find((event) => event.type === "session.update")!;
+    const toolNames = sessionUpdate.session.tools.map((t: any) => t.name);
+    expect(toolNames).toContain("picky_unarchive_pickle");
+  });
+
+  it("routes picky_unarchive_pickle through unarchivePickleSession and echoes the post-unarchive status", async () => {
+    const socket = new FakeRealtimeSocket();
+    let unarchivedId: string | undefined;
+    const restored: PickyAgentSession = {
+      id: "pickle-archived",
+      title: "Last week's refactor",
+      // Session was completed before being archived; unarchive does NOT
+      // flip status back to running. The tool result keeps `completed` so
+      // the model can nudge the user toward picky_start_pickle if they want
+      // to continue rather than picky_steer_pickle (which would fail on a
+      // terminal session).
+      status: "completed",
+      cwd: "/tmp/picky",
+      createdAt: "2026-05-12T09:00:00.000Z",
+      updatedAt: "2026-05-12T10:00:00.000Z",
+      archived: false,
+      logs: [],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    };
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        ...fakeToolHandlers(),
+        async unarchivePickleSession({ sessionId }: { sessionId: string }) { unarchivedId = sessionId; return restored; },
+      },
+      defaultConfig: { provider: "openai", apiKey: "sk-test", modelOrDeployment: "gpt-realtime-2", voice: "marin" },
+      webSocketFactory: () => socket,
+    });
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    socket.serverEvent({
+      type: "response.output_item.done",
+      item: { type: "function_call", name: "picky_unarchive_pickle", call_id: "call-unarc", arguments: JSON.stringify({ sessionId: "pickle-archived" }) },
+    });
+    await settle();
+
+    expect(unarchivedId).toBe("pickle-archived");
+    const fnOutput = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .find((event) => event.type === "conversation.item.create" && event.item?.type === "function_call_output");
+    const output = JSON.parse(fnOutput!.item.output);
+    expect(output.id).toBe("pickle-archived");
+    expect(output.status).toBe("completed");
+    expect(output.archived).toBe(false);
+  });
+
   it("routes picky_abort_pickle through abortPickleSession and echoes the new status", async () => {
     const socket = new FakeRealtimeSocket();
     let abortedId: string | undefined;
@@ -1454,6 +1594,7 @@ function fakeToolHandlers() {
     recallRecentMainContext() { return [] as PickyContextPacket[]; },
     inspectPickleSession() { return session; },
     async abortPickleSession() { return { ...session, status: "cancelled" as const }; },
+    async unarchivePickleSession() { return { ...session, archived: false }; },
   };
 }
 

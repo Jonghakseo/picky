@@ -5152,6 +5152,33 @@ describe("SessionSupervisor", () => {
 
     expect(supervisor.inspectPickleSession("not-a-real-id")).toBeUndefined();
   });
+
+  // ----- Unarchive -----
+
+  it("setSessionArchived(false) flips archived back to false and clears archivedAt without touching status", async () => {
+    const supervisor = await makeSupervisor();
+    const created = await supervisor.create(context("task to archive"));
+    const originalStatus = created.status;
+
+    const archived = await supervisor.setSessionArchived(created.id, true);
+    expect(archived.archived).toBe(true);
+    expect(typeof archived.archivedAt).toBe("string");
+
+    const restored = await supervisor.setSessionArchived(created.id, false);
+    expect(restored.archived).toBe(false);
+    expect(restored.archivedAt).toBeUndefined();
+    // Status is preserved — unarchive only flips the dock visibility flag.
+    expect(restored.status).toBe(originalStatus);
+  });
+
+  it("setSessionArchived is idempotent when called twice with the same flag", async () => {
+    const supervisor = await makeSupervisor();
+    const created = await supervisor.create(context("idempotent test"));
+    const a = await supervisor.setSessionArchived(created.id, false);
+    const b = await supervisor.setSessionArchived(created.id, false);
+    expect(a.archived).toBe(false);
+    expect(b.archived).toBe(false);
+  });
 });
 
 describe("SessionSupervisor archived session purge", () => {

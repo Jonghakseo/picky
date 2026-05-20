@@ -1470,7 +1470,8 @@ export class SessionSupervisor extends EventEmitter {
       // instead of relying on the bulk conversation-item replay that the model
       // treats as background context. This is what keeps short-term recall
       // ("내 이름", "이전 턴에 뭐", "우리 대화") working across turns.
-      this.options.mainRuntime?.refreshConversationInstructions?.();
+      const realtimeRuntime = this.options.mainRuntime;
+      if (isMainRealtimeRuntime(realtimeRuntime)) realtimeRuntime.refreshConversationInstructions?.();
       this.emit("mainRealtimeTurnDone", event.inputId, event.status, finalTranscript);
       this.schedulePickleCompletionDrain();
       return;

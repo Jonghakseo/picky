@@ -31,7 +31,7 @@ export const PICKY_TRANSCRIPTION_PROMPT = [
   "Preserve product names and developer terms exactly in Latin characters when the context fits.",
   "Picky is the app name and may be pronounced in many ways, including Picky, Picky-ya, 피키, or ピッキー. If it sounds like Bicky, Vicky, Mickey, 비키, or 미키, transcribe it as Picky when the context fits.",
   "Pickle is the name for a task session inside Picky and may be pronounced like 피클 or ピックル. Pi is the local coding agent name and may sound like pie, 파이, or パイ.",
-  "Key terms: Picky, Pickle, Pi, HUD, dock, agentd, repo, branch, cwd, Codex, SwiftUI, Xcode, Vercel, Next.js, localhost.",
+  "Key terms: Picky, Pickle, Pi, HUD, dock, repo, branch.",
 ].join("\n");
 
 // ---------------------------------------------------------------------------
@@ -45,23 +45,13 @@ export function buildRealtimeInstructions(
     buildMainAgentBootstrapPair({ omitTtsParenthesisHint: true }).user,
     "",
     "## Realtime voice mode overrides",
-    "- You are speaking directly to the user. Keep spoken replies concise, natural, and in the user's language.",
-    "- Never speak or emit [POINT:...] tags. Realtime main has no pointing tool; describe UI locations verbally when needed.",
     `- Use \`read_picky_user_guide\` before answering questions about how to use Picky. Prefer its \`section\` parameter when the question maps to one of these manual sections: ${PICKY_USER_GUIDE_SECTIONS.join("; ")}.`,
     "- You cannot execute Pi skills directly. If the user names a Pi skill that is relevant, include the skill name and the essential details in `picky_start_pickle.instructions` or `picky_steer_pickle.message` for the Pickle to follow.",
-    "- Pickle hover follow-ups bypass you and go directly to the Pickle. If the user refers to delegated work during a Picky turn, call `picky_pickle_sessions` before deciding whether to use `picky_steer_pickle`. To check progress on one specific Pickle without spawning another, call `picky_inspect_active_pickle`. To stop a Pickle when the user explicitly asks (\"멈춰\", \"cancel that\"), call `picky_abort_pickle`.",
-    "- To find an archived Pickle the user wants to revisit (\"그거 다시 살려\", \"the one I archived\"), call `picky_pickle_sessions({ includeArchive: true })` first to locate it, then `picky_unarchive_pickle` to restore its dock card. The archived flag is the only thing flipped — once it's back on the dock, use `picky_steer_pickle` to continue (if status is still running) or `picky_start_pickle` to spawn a fresh Pickle when the previous one was completed/cancelled.",
-    "- When the user references an earlier turn's page, screen, selection, or file (\"방금 그 페이지\", \"5분 전\", \"the PR you saw\"), or when a stored memory rule depends on the current browser/cwd, call `picky_recall_recent_context` first. The single \"captured context\" you saw at the start of THIS turn is gone by the next one; that tool is how you look further back.",
-    "",
-    "## Filesystem / shell tools (one-shot only)",
-    "- `picky_read_file` / `picky_run_bash` / `picky_write_file` are for SHORT, low-latency 1-shot ops (e.g. `git status`, peek at one config line, write a one-line patch). Outputs are hard-capped at ~2 KB; the rest is auto-summarized by a small model — useful, but lossy.",
-    "- DO NOT loop these tools. If answering would need 3+ calls (recursive grep, multi-file inspection, repeated reads, long builds), call `picky_start_pickle` and let a Pickle do the multi-step work with full context.",
-    "- `picky_run_bash` is unsandboxed and runs as the user. Refuse destructive commands (`rm -rf`, `git push -f`, `git reset --hard`, overwriting redirects) unless the user explicitly asked for that exact action in this turn.",
-    "- `picky_write_file` overwrites by default (mode=\"append\" to append). The body is NOT echoed back — you cannot verify by reading the same file immediately after. Assume success unless `ok` is false.",
+    "- To check the progress of one specific delegated Pickle, call `picky_inspect_active_pickle` (does not spawn a new Pickle). Call `picky_abort_pickle` only when the user explicitly asks to stop one.",
+    "- The captured context you see at the start of THIS turn is gone by the next turn. Call `picky_recall_recent_context` when the user references an earlier turn or a stored memory rule depends on the prior browser/cwd.",
+    "- The one-shot file/shell tools (`picky_read_file`, `picky_run_bash`, `picky_write_file`) follow the per-call rules in each tool's description. If answering would need 3+ calls or a long-running command, delegate to `picky_start_pickle` instead of looping.",
     "",
     "## Long-term user memory",
-    "- When the user asks you to remember a fact, rule, or preference (e.g. \"remember that X\", \"기억해놓아\", \"from now on, when I do X, do Y\"), call `picky_remember` with a short content describing exactly what to remember. Store at most one idea per item.",
-    "- When the user wants to revise or drop a previously stored memory, look it up with `picky_list_memories` first to obtain the id, then call `picky_update_memory` or `picky_forget`.",
     "- Memories below are always in scope; apply the relevant ones to your reply without being asked. Do not recite them back unless the user explicitly asks what you remember.",
   ];
   if (userMemories.length === 0) {

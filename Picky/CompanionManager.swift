@@ -1454,6 +1454,19 @@ final class CompanionManager: ObservableObject {
         }
     }
 
+    /// Cuts off any ongoing OpenAI Realtime main-agent audio (in-flight
+    /// response on the server AND locally-buffered PCM still draining
+    /// through the playback engine) so a fresh non-voice submission does not
+    /// get queued behind a stale spoken reply. Mirrors the PTT-press path
+    /// that already calls `cancelRealtimeMainVoiceTurn` via
+    /// `interruptSpokenResponseForVoiceInput`. Safe to call when nothing is
+    /// active — both guards fast-path to no-op.
+    private func cancelRealtimeMainAudioForNewInputIfActive() {
+        guard AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime else { return }
+        guard realtimeVoiceInputID != nil || realtimeAudioPlaybackEngine.isPlaying else { return }
+        cancelRealtimeMainVoiceTurn(inputID: realtimeVoiceInputID)
+    }
+
     private func cancelRealtimeMainVoiceTurn(inputID: UUID? = nil) {
         let playedAudioMs = realtimeAudioPlaybackEngine.stopAndReturnPlayedAudioMs()
         realtimeVoiceInputManager.stop()
@@ -1651,6 +1664,15 @@ final class CompanionManager: ObservableObject {
     func sendDirectMessage(_ text: String, source: PickyInteractionSource = .text, inkCapture: PickyInkCapture? = nil) async -> Bool {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return false }
+
+        // Quick Input / panel composer / any non-voice text entry must stop
+        // the in-flight Realtime audio before submitting, otherwise the
+        // user's new request gets queued behind a stale spoken reply (locally
+        // buffered PCM keeps draining) and the OpenAI conversation history
+        // continues to list the full prior answer as if it had been spoken.
+        // The PTT path already does this via interruptSpokenResponseForVoiceInput;
+        // this is the matching cut-off for text-driven submissions.
+        cancelRealtimeMainAudioForNewInputIfActive()
 
         directMessageError = nil
 

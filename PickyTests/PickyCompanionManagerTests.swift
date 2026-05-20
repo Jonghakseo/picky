@@ -532,6 +532,61 @@ struct PickyCompanionManagerTests {
         #expect(manager.voiceState == .idle)
     }
 
+    @Test @MainActor func quickInputSubmissionCancelsOngoingRealtimeAudioBeforeAuthCheck() async throws {
+        // Regression: while the Realtime audio is still draining locally,
+        // typing a fresh Quick Input request used to queue the new response
+        // behind the stale spoken reply (and never told agentd to truncate the
+        // already-emitted assistant audio item). PTT release already calls
+        // cancelRealtimeMainVoiceTurn via interruptSpokenResponseForVoiceInput;
+        // sendDirectMessage now mirrors that cut-off before anything else so
+        // the local playback engine stops and agentd receives the cancel with
+        // the correct playedAudioMs - regardless of whether the new submission
+        // is later rejected by the realtime auth gate.
+        try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.openAIRealtime) {
+            let playback = FakeRealtimeAudioPlaybackEngine()
+            playback.isPlaying = true
+            playback.playedAudioMs = 2_500
+            let client = FakeVoiceClient()
+            let manager = CompanionManager(
+                agentClient: client,
+                selectionStore: FakeVoiceSelectionStore(),
+                realtimeAudioPlaybackEngine: playback
+            )
+
+            _ = await manager.sendDirectMessage("새 입력", source: .quickInput)
+
+            #expect(playback.stopCount > 0)
+            try await waitUntil { client.commands.contains { $0.type == .cancelMainRealtimeVoiceTurn } }
+            let cancelCommand = client.commands.first { $0.type == .cancelMainRealtimeVoiceTurn }
+            #expect(cancelCommand?.playedAudioMs == 2_500)
+        }
+    }
+
+    @Test @MainActor func sendDirectMessageDoesNotCancelPlaybackOutsideRealtimeMode() async throws {
+        // The Pi build (default) does not own a Realtime audio queue. Even if
+        // a fake playback engine reports isPlaying=true, sendDirectMessage
+        // must not synthesize a cancel command on that path; doing so would
+        // emit a no-op cancelMainRealtimeVoiceTurn on a daemon whose main
+        // runtime is not realtime.
+        try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.pi) {
+            let playback = FakeRealtimeAudioPlaybackEngine()
+            playback.isPlaying = true
+            let client = FakeVoiceClient()
+            let manager = CompanionManager(
+                agentClient: client,
+                selectionStore: FakeVoiceSelectionStore(),
+                voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(),
+                realtimeAudioPlaybackEngine: playback
+            )
+
+            _ = await manager.sendDirectMessage("새 입력", source: .quickInput)
+            try await settle()
+
+            #expect(playback.stopCount == 0)
+            #expect(client.commands.contains { $0.type == .cancelMainRealtimeVoiceTurn } == false)
+        }
+    }
+
     @Test func realtimeTranscriptEventsDoNotTriggerExistingSpeechProvider() async throws {
         let speechProvider = FakeSpeechPlaybackProvider()
         let manager = CompanionManager(

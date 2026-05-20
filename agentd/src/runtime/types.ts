@@ -185,6 +185,20 @@ export interface MainRealtimeHistoryMessage {
 
 export type MainRealtimeHistoryProvider = () => MainRealtimeHistoryMessage[];
 
+/**
+ * Long-term user memory snapshot the runtime can embed in every Realtime
+ * session.update.instructions. The provider returns the *current* memory
+ * set each time the runtime needs to rebuild instructions — not a one-shot
+ * snapshot — so a `picky_remember` tool call mid-session flushes immediately
+ * when the runtime resends the session payload.
+ */
+export interface MainRealtimeUserMemoryItem {
+  id: string;
+  content: string;
+}
+
+export type MainRealtimeUserMemoryProvider = () => MainRealtimeUserMemoryItem[];
+
 export interface MainRealtimeRuntime extends AgentRuntime {
   configureMainRealtimeAuth(config: OpenAIRealtimeAuthConfig): Promise<void> | void;
   beginMainRealtimeVoiceTurn(turn: { inputId: string; context: PickyContextPacket }): Promise<void>;
@@ -198,6 +212,22 @@ export interface MainRealtimeRuntime extends AgentRuntime {
    * the provider must already filter/cap whatever the supervisor wants to send.
    */
   setMainRealtimeHistoryProvider?(provider: MainRealtimeHistoryProvider | undefined): void;
+  /**
+   * Source of truth for long-term user memories the runtime should embed in
+   * every `session.update.instructions`. The supervisor swaps the provider in
+   * during `configureMainRealtimeAuth`; the runtime re-queries it on every
+   * connect, every session refresh, and immediately after a memory CRUD tool
+   * call so the model sees the latest set without waiting for a reconnect.
+   */
+  setMainRealtimeUserMemoryProvider?(provider: MainRealtimeUserMemoryProvider | undefined): void;
+  /**
+   * Ask the runtime to push a refreshed `session.update` so the latest user
+   * memory snapshot lands in the model's instructions before the next turn.
+   * Called by the supervisor after every memory CRUD tool call. Fast-path
+   * no-ops when the runtime has no live socket; the regular connect path
+   * will pick up the new set on its next session.update anyway.
+   */
+  refreshUserMemoryInstructions?(): void;
   /**
    * Trigger a best-effort Codex quota refresh. Errors are swallowed; the
    * runtime emits a `main_realtime_quota` event on success or a quota=undefined

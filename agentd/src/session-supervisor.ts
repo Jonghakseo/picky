@@ -8,7 +8,7 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
-import type { EventEnvelope, MainAgentRuntimeMode, ModelCycleDirection, OpenAIRealtimeAuthConfig, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage } from "./protocol.js";
+import type { EventEnvelope, MainAgentRuntimeMode, ModelCycleDirection, OpenAIRealtimeAuthConfig, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage, PickyUserMemory } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, SessionStore } from "./session-store.js";
@@ -569,6 +569,7 @@ export class SessionSupervisor extends EventEmitter {
     // connect, 60-min rollover, transient drop). The provider closes over
     // mainState.messages which is the in-memory source of truth on agentd.
     this.options.mainRuntime.setMainRealtimeHistoryProvider?.(() => this.snapshotMainHistoryForRealtime());
+    this.options.mainRuntime.setMainRealtimeUserMemoryProvider?.(() => this.snapshotUserMemoriesForRealtime());
     await this.options.mainRuntime.configureMainRealtimeAuth(config);
     logAgentd("main realtime config applied", { provider: config.provider, modelOrDeployment: config.modelOrDeployment, voice: config.voice, keyPresent: config.apiKey ? 1 : 0 });
     // Best-effort quota refresh immediately after auth changes so the HUD has
@@ -580,6 +581,95 @@ export class SessionSupervisor extends EventEmitter {
     return this.mainState.messages
       .filter((m): m is typeof m & { role: "user" | "assistant" } => m.role === "user" || m.role === "assistant")
       .map((m) => ({ role: m.role, text: m.text }));
+  }
+
+  private snapshotUserMemoriesForRealtime(): { id: string; content: string }[] {
+    return (this.mainState.userMemories ?? []).map((m) => ({ id: m.id, content: m.content }));
+  }
+
+  // ----- User memory CRUD -----
+  //
+  // Surfaced to the Realtime model through four tools (picky_remember,
+  // picky_list_memories, picky_update_memory, picky_forget) declared in
+  // openai-realtime-main-runtime.ts. The supervisor owns the storage layer
+  // because picky.json is already its responsibility (atomic writes,
+  // mainStateWriteChain serialisation). All four methods return the resulting
+  // memory list so the tool layer can echo it back to the model without an
+  // extra round-trip.
+
+  listUserMemories(): PickyUserMemory[] {
+    return [...(this.mainState.userMemories ?? [])];
+  }
+
+  async addUserMemory(rawContent: string): Promise<{ ok: true; memory: PickyUserMemory } | { ok: false; error: string }> {
+    const content = rawContent.trim();
+    if (!content) return { ok: false, error: "memory content cannot be empty" };
+    if (content.length > PICKY_USER_MEMORY_ITEM_CHAR_LIMIT) {
+      return { ok: false, error: `memory item too long (${content.length} chars, max ${PICKY_USER_MEMORY_ITEM_CHAR_LIMIT})` };
+    }
+    const existing = this.mainState.userMemories ?? [];
+    if (existing.length >= PICKY_USER_MEMORY_ITEM_LIMIT) {
+      return { ok: false, error: `already at memory item limit (${PICKY_USER_MEMORY_ITEM_LIMIT}); call picky_forget on an obsolete item first` };
+    }
+    const totalChars = existing.reduce((sum, m) => sum + m.content.length, 0) + content.length;
+    if (totalChars > PICKY_USER_MEMORY_TOTAL_CHAR_LIMIT) {
+      return { ok: false, error: `total memory budget exceeded (${totalChars}/${PICKY_USER_MEMORY_TOTAL_CHAR_LIMIT} chars); shorten or forget an existing item first` };
+    }
+    const now = new Date().toISOString();
+    const memory: PickyUserMemory = { id: this.generateUserMemoryId(), content, createdAt: now, updatedAt: now };
+    await this.patchMainState({ userMemories: [...existing, memory] });
+    this.notifyUserMemoryChanged("add", memory.id);
+    return { ok: true, memory };
+  }
+
+  async updateUserMemory(id: string, rawContent: string): Promise<{ ok: true; memory: PickyUserMemory } | { ok: false; error: string }> {
+    const content = rawContent.trim();
+    if (!content) return { ok: false, error: "memory content cannot be empty" };
+    if (content.length > PICKY_USER_MEMORY_ITEM_CHAR_LIMIT) {
+      return { ok: false, error: `memory item too long (${content.length} chars, max ${PICKY_USER_MEMORY_ITEM_CHAR_LIMIT})` };
+    }
+    const existing = this.mainState.userMemories ?? [];
+    const index = existing.findIndex((m) => m.id === id);
+    if (index === -1) return { ok: false, error: `no memory with id ${JSON.stringify(id)} (use picky_list_memories to look up valid ids)` };
+    const others = existing.filter((_, i) => i !== index).reduce((sum, m) => sum + m.content.length, 0);
+    if (others + content.length > PICKY_USER_MEMORY_TOTAL_CHAR_LIMIT) {
+      return { ok: false, error: `total memory budget would exceed limit (${others + content.length}/${PICKY_USER_MEMORY_TOTAL_CHAR_LIMIT} chars)` };
+    }
+    const now = new Date().toISOString();
+    const next: PickyUserMemory = { ...existing[index]!, content, updatedAt: now };
+    const updated = [...existing];
+    updated[index] = next;
+    await this.patchMainState({ userMemories: updated });
+    this.notifyUserMemoryChanged("update", id);
+    return { ok: true, memory: next };
+  }
+
+  async removeUserMemory(id: string): Promise<{ ok: true; removed: PickyUserMemory } | { ok: false; error: string }> {
+    const existing = this.mainState.userMemories ?? [];
+    const index = existing.findIndex((m) => m.id === id);
+    if (index === -1) return { ok: false, error: `no memory with id ${JSON.stringify(id)}` };
+    const removed = existing[index]!;
+    const updated = existing.filter((_, i) => i !== index);
+    await this.patchMainState({ userMemories: updated });
+    this.notifyUserMemoryChanged("remove", id);
+    return { ok: true, removed };
+  }
+
+  /** Ask the Realtime runtime to push a refreshed session.update so the new
+   * memory set lands in the model's instructions before the next turn. Safe
+   * to call when no runtime is realtime or when the runtime has no live
+   * socket; both fast-path to no-op. */
+  private notifyUserMemoryChanged(action: "add" | "update" | "remove", id: string): void {
+    logAgentd("main realtime user memory changed", { action, id, total: this.mainState.userMemories?.length ?? 0 });
+    const runtime = this.options.mainRuntime;
+    if (isMainRealtimeRuntime(runtime)) runtime.refreshUserMemoryInstructions?.();
+  }
+
+  /** 12-char base36 id from `crypto.randomUUID()`; short enough that the
+   * model can copy/paste it inside a follow-up tool call without burning
+   * tokens, unique enough to avoid collisions in the 50-item cap. */
+  private generateUserMemoryId(): string {
+    return randomUUID().replace(/-/g, "").slice(0, 12);
   }
 
   async beginMainRealtimeVoiceTurn(inputId: string, context: PickyContextPacket): Promise<void> {
@@ -2996,6 +3086,13 @@ function normalizeSlashCommands(commands: RuntimeSlashCommand[]): RuntimeSlashCo
 }
 
 const MAIN_AGENT_MESSAGE_LIMIT = 100;
+// User-memory caps. Items are inlined into every Realtime session.update so
+// the instruction budget needs to stay bounded. 50 items × 500 chars = 25k
+// chars worst-case, but the total cap of 4k chars is the actual gate: once
+// that's hit the model is told to forget something before adding more.
+const PICKY_USER_MEMORY_ITEM_LIMIT = 50;
+const PICKY_USER_MEMORY_ITEM_CHAR_LIMIT = 500;
+const PICKY_USER_MEMORY_TOTAL_CHAR_LIMIT = 4_000;
 const MAIN_AGENT_ROLLOVER_TURN_LIMIT = 40;
 const MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT = 70;
 const MAIN_AGENT_COMPACT_SUMMARY_LIMIT = 4_000;

@@ -997,6 +997,166 @@ describe("OpenAIRealtimeMainRuntime Azure preview protocol", () => {
   });
 });
 
+describe("OpenAIRealtimeMainRuntime user memory tools", () => {
+  // The memory tools are the only piece of long-term state the Realtime model
+  // can manipulate on its own behalf. These tests pin three contracts:
+  //   (1) the user memory snapshot ends up inside session.update.instructions
+  //       under a stable header so the model can rely on it being visible,
+  //   (2) a picky_remember tool call relays its content to the supervisor and
+  //       echoes back the assigned id, and
+  //   (3) memory mutations push a fresh session.update so the new set lands
+  //       in the model's context for the very next turn (no reconnect wait).
+
+  it("embeds the user memory snapshot inside session.update.instructions", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+    runtime.setMainRealtimeUserMemoryProvider(() => [
+      { id: "mem-a", content: "User goes by 'Jong'" },
+      { id: "mem-b", content: "Treat \"이 페이지\" as the OpenAI Realtime docs" },
+    ]);
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+
+    const sessionUpdate = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .find((event) => event.type === "session.update")!;
+    const instructions: string = sessionUpdate.session.instructions;
+    expect(instructions).toContain("## Long-term user memory");
+    expect(instructions).toContain("(id=mem-a) User goes by 'Jong'");
+    expect(instructions).toContain("(id=mem-b) Treat \"이 페이지\"");
+  });
+
+  it("renders a placeholder line when no memories are stored", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+    runtime.setMainRealtimeUserMemoryProvider(() => []);
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+
+    const sessionUpdate = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .find((event) => event.type === "session.update")!;
+    expect(sessionUpdate.session.instructions).toContain("(No long-term memories stored yet.)");
+  });
+
+  it("declares picky_remember / list / update / forget tools in the session.update tools array", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    const sessionUpdate = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .find((event) => event.type === "session.update")!;
+    const toolNames = sessionUpdate.session.tools.map((t: any) => t.name);
+    expect(toolNames).toContain("picky_remember");
+    expect(toolNames).toContain("picky_list_memories");
+    expect(toolNames).toContain("picky_update_memory");
+    expect(toolNames).toContain("picky_forget");
+  });
+
+  it("routes a picky_remember tool call through rememberUserFact and emits a function_call_output with the assigned id", async () => {
+    const socket = new FakeRealtimeSocket();
+    const remembered: Array<{ content: string }> = [];
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        ...fakeToolHandlers(),
+        async rememberUserFact({ content }) {
+          remembered.push({ content });
+          return { ok: true as const, memory: { id: "mem-xyz", content } };
+        },
+      },
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    // Simulate the model finishing a picky_remember function call. The runtime
+    // dispatches `runFunctionCall` from `response.output_item.done` when the
+    // server delivers the completed function_call item in one shot.
+    socket.serverEvent({
+      type: "response.output_item.done",
+      item: {
+        type: "function_call",
+        name: "picky_remember",
+        call_id: "call-1",
+        arguments: JSON.stringify({ content: "User prefers concise replies" }),
+      },
+    });
+    await settle();
+
+    expect(remembered).toEqual([{ content: "User prefers concise replies" }]);
+    const functionCallOutput = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .find((event) => event.type === "conversation.item.create" && event.item?.type === "function_call_output");
+    expect(functionCallOutput).toBeTruthy();
+    expect(functionCallOutput!.item.output).toContain("mem-xyz");
+    expect(functionCallOutput!.item.output).toContain("User prefers concise replies");
+  });
+
+  it("resends session.update with the new memory set when refreshUserMemoryInstructions is invoked", async () => {
+    const socket = new FakeRealtimeSocket();
+    let memories: Array<{ id: string; content: string }> = [];
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+    runtime.setMainRealtimeUserMemoryProvider(() => memories);
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+
+    const sessionUpdatesBefore = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .filter((event) => event.type === "session.update");
+    expect(sessionUpdatesBefore.length).toBeGreaterThanOrEqual(1);
+    expect(sessionUpdatesBefore.at(-1)!.session.instructions).toContain("(No long-term memories stored yet.)");
+
+    // Simulate a `picky_remember` mutation outside the runtime
+    // (the supervisor mutates picky.json, then calls refresh).
+    memories = [{ id: "mem-1", content: "Always answer in Korean" }];
+    runtime.refreshUserMemoryInstructions();
+    await settle();
+
+    const sessionUpdatesAfter = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .filter((event) => event.type === "session.update");
+    expect(sessionUpdatesAfter.length).toBe(sessionUpdatesBefore.length + 1);
+    expect(sessionUpdatesAfter.at(-1)!.session.instructions).toContain("(id=mem-1) Always answer in Korean");
+  });
+});
+
 describe("SelectableMainRuntime", () => {
   it("keeps Pi runtime as the default main path and rejects realtime-only voice commands", async () => {
     const pi = new RecordingRuntime("pi");
@@ -1088,6 +1248,13 @@ function fakeToolHandlers() {
     async searchSkills() { return { query: "", root: "/tmp/skills", total: 1, skills: [{ name: "debug", description: "Debug", path: "/tmp/skills/debug/SKILL.md" }] }; },
     async getSkillDetails() { return { name: "debug", description: "Debug", path: "/tmp/skills/debug/SKILL.md", frontmatter: { name: "debug" }, content: "---\nname: debug\n---\n" }; },
     async readUserGuide() { return { section: "3. Global shortcuts", query: "shortcuts", path: "/tmp/docs/user-manual.md", content: "## 3. Global shortcuts\n\nShortcut details.", totalChars: 1200, excerpted: true }; },
+    // Default fakes: no memories, every CRUD succeeds with synthetic data.
+    // Tests that actually exercise memory tool behaviour replace these via
+    // an inline tool handler block instead of monkey-patching.
+    async rememberUserFact({ content }: { content: string }) { return { ok: true as const, memory: { id: "mem-fake", content } }; },
+    async updateUserFact({ id, content }: { id: string; content: string }) { return { ok: true as const, memory: { id, content } }; },
+    async forgetUserFact({ id }: { id: string }) { return { ok: true as const, removed: { id, content: "" } }; },
+    listUserFacts() { return [] as Array<{ id: string; content: string }>; },
   };
 }
 

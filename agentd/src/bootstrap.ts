@@ -344,6 +344,22 @@ function buildPrimaryMainRuntime(
       searchSkills: (request) => skillCatalog.search(request),
       getSkillDetails: (request) => skillCatalog.details(request),
       readUserGuide: (request) => readPickyUserGuide(request),
+      // Long-term user memory CRUD. The runtime relays tool calls here; the
+      // supervisor owns picky.json and pushes a refreshed session.update via
+      // refreshUserMemoryInstructions after every mutation.
+      rememberUserFact: async ({ content }) => {
+        const result = await requireSupervisor().addUserMemory(content);
+        return result.ok ? { ok: true, memory: { id: result.memory.id, content: result.memory.content } } : result;
+      },
+      updateUserFact: async ({ id, content }) => {
+        const result = await requireSupervisor().updateUserMemory(id, content);
+        return result.ok ? { ok: true, memory: { id: result.memory.id, content: result.memory.content } } : result;
+      },
+      forgetUserFact: async ({ id }) => {
+        const result = await requireSupervisor().removeUserMemory(id);
+        return result.ok ? { ok: true, removed: { id: result.removed.id, content: result.removed.content } } : result;
+      },
+      listUserFacts: () => requireSupervisor().listUserMemories().map((m) => ({ id: m.id, content: m.content })),
     },
   });
 

@@ -17,7 +17,7 @@ import { logAgentd } from "../local-log.js";
 import type { PickySkillDetails, PickySkillSummary } from "../application/skill-catalog.js";
 import { PICKY_USER_GUIDE_SECTIONS, type PickyUserGuideResult } from "../application/user-guide-tool.js";
 import { buildCodexClientHeaders, fetchCodexQuota, loadCodexOAuth, type CodexOAuthLoader, type CodexQuotaFetcher, type CodexQuotaSnapshot, type ResolvedCodexOAuth } from "./codex-oauth.js";
-import type { MainRealtimeHistoryMessage, MainRealtimeHistoryProvider, MainRealtimeQuotaSnapshot, MainRealtimeUsageSnapshot } from "./types.js";
+import type { MainRealtimeHistoryMessage, MainRealtimeHistoryProvider, MainRealtimeQuotaSnapshot, MainRealtimeUsageSnapshot, MainRealtimeUserMemoryItem, MainRealtimeUserMemoryProvider } from "./types.js";
 
 // Realtime sessions are capped server-side at 60 minutes. We rotate slightly
 // earlier so an in-flight rollover never collides with the hard kill.
@@ -55,6 +55,15 @@ interface OpenAIRealtimeToolHandlers {
   searchSkills(request: { query?: string; limit?: number; cwd?: string }): Promise<{ query: string; root: string; roots?: string[]; total: number; skills: PickySkillSummary[] }>;
   getSkillDetails(request: { name: string; cwd?: string }): Promise<PickySkillDetails>;
   readUserGuide(request: { section?: string; query?: string }): Promise<PickyUserGuideResult>;
+  // Long-term user memory CRUD. Backed by the supervisor's userMemories store
+  // in picky.json. The runtime never owns the storage — it just relays tool
+  // calls and then asks the supervisor to flush a refreshed session.update
+  // via refreshUserMemoryInstructions so the model sees the new set on the
+  // very next turn.
+  rememberUserFact(request: { content: string }): Promise<{ ok: true; memory: { id: string; content: string } } | { ok: false; error: string }>;
+  updateUserFact(request: { id: string; content: string }): Promise<{ ok: true; memory: { id: string; content: string } } | { ok: false; error: string }>;
+  forgetUserFact(request: { id: string }): Promise<{ ok: true; removed: { id: string; content: string } } | { ok: false; error: string }>;
+  listUserFacts(): Promise<Array<{ id: string; content: string }>> | Array<{ id: string; content: string }>;
 }
 
 export interface RealtimeWebSocketLike {
@@ -69,7 +78,17 @@ export interface RealtimeWebSocketLike {
 
 type RealtimeWebSocketFactory = (url: string, headers: Record<string, string>) => RealtimeWebSocketLike;
 
-type RealtimeToolName = "picky_start_pickle" | "picky_pickle_sessions" | "picky_steer_pickle" | "picky_skills_search" | "picky_skill_details" | "read_picky_user_guide";
+type RealtimeToolName =
+  | "picky_start_pickle"
+  | "picky_pickle_sessions"
+  | "picky_steer_pickle"
+  | "picky_skills_search"
+  | "picky_skill_details"
+  | "read_picky_user_guide"
+  | "picky_remember"
+  | "picky_list_memories"
+  | "picky_update_memory"
+  | "picky_forget";
 
 type PendingFunctionCall = {
   callId: string;
@@ -99,6 +118,7 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
   private handle?: OpenAIRealtimeSessionHandle;
   private thinkingLevel: ThinkingLevel = "medium";
   private historyProvider?: MainRealtimeHistoryProvider;
+  private userMemoryProvider?: MainRealtimeUserMemoryProvider;
   private narrationEnabled = true;
 
   constructor(private readonly options: OpenAIRealtimeMainRuntimeOptions) {
@@ -118,6 +138,15 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
   setMainRealtimeHistoryProvider(provider: MainRealtimeHistoryProvider | undefined): void {
     this.historyProvider = provider;
     this.handle?.setHistoryProvider(provider);
+  }
+
+  setMainRealtimeUserMemoryProvider(provider: MainRealtimeUserMemoryProvider | undefined): void {
+    this.userMemoryProvider = provider;
+    this.handle?.setUserMemoryProvider(provider);
+  }
+
+  refreshUserMemoryInstructions(): void {
+    this.handle?.refreshUserMemoryInstructions();
   }
 
   setMainAgentNarrationEnabled(enabled: boolean): void {
@@ -167,6 +196,7 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
         codexOAuthLoader: this.options.codexOAuthLoader,
         codexQuotaFetcher: this.options.codexQuotaFetcher,
         historyProvider: this.historyProvider,
+        userMemoryProvider: this.userMemoryProvider,
         narrationEnabled: this.narrationEnabled,
         now: this.options.now,
       });
@@ -203,6 +233,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   private thinkingLevel: ThinkingLevel;
   private cwd?: string;
   private historyProvider?: MainRealtimeHistoryProvider;
+  private userMemoryProvider?: MainRealtimeUserMemoryProvider;
   private narrationEnabled: boolean;
   private codexAuth?: ResolvedCodexOAuth;
   private sessionStartedAt = 0;
@@ -221,6 +252,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     codexOAuthLoader?: CodexOAuthLoader;
     codexQuotaFetcher?: CodexQuotaFetcher;
     historyProvider?: MainRealtimeHistoryProvider;
+    userMemoryProvider?: MainRealtimeUserMemoryProvider;
     narrationEnabled?: boolean;
     now?: () => number;
   }) {
@@ -229,12 +261,25 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     this.thinkingLevel = options.thinkingLevel;
     this.cwd = options.cwd;
     this.historyProvider = options.historyProvider;
+    this.userMemoryProvider = options.userMemoryProvider;
     this.narrationEnabled = options.narrationEnabled ?? true;
     this.now = options.now ?? (() => Date.now());
   }
 
   setHistoryProvider(provider: MainRealtimeHistoryProvider | undefined): void {
     this.historyProvider = provider;
+  }
+
+  setUserMemoryProvider(provider: MainRealtimeUserMemoryProvider | undefined): void {
+    this.userMemoryProvider = provider;
+  }
+
+  /** Resend `session.update` so the latest memory snapshot is reflected in
+   * the model's instructions. Fast-path no-op when the socket is not open
+   * yet; the next regular connect path picks the new set up automatically. */
+  refreshUserMemoryInstructions(): void {
+    if (this.ws?.readyState !== OPENAI_WS_READY_STATE_OPEN) return;
+    this.sendSessionUpdate();
   }
 
   setNarrationEnabled(enabled: boolean): void {
@@ -545,10 +590,11 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   private sendSessionUpdate(): void {
     const config = this.config;
     if (!config || this.ws?.readyState !== OPENAI_WS_READY_STATE_OPEN) return;
+    const memories = this.snapshotUserMemories();
     this.sendClientEvent({
       type: "session.update",
       session: this.usesAzurePreviewProtocol()
-        ? buildAzurePreviewSessionUpdate(config)
+        ? buildAzurePreviewSessionUpdate(config, memories)
         : {
             type: "realtime",
             model: config.modelOrDeployment,
@@ -565,11 +611,22 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
               },
             },
             reasoning: { effort: mapReasoningEffort(this.thinkingLevel, config.reasoningEffort) },
-            instructions: buildRealtimeInstructions(),
+            instructions: buildRealtimeInstructions(memories),
             tools: realtimeTools(),
             tool_choice: "auto",
           },
     });
+  }
+
+  private snapshotUserMemories(): MainRealtimeUserMemoryItem[] {
+    const provider = this.userMemoryProvider;
+    if (!provider) return [];
+    try {
+      return provider();
+    } catch (error) {
+      logAgentd("main realtime user memory provider failed", { error: error instanceof Error ? error.message : String(error) });
+      return [];
+    }
   }
 
   private usesAzurePreviewProtocol(): boolean {
@@ -852,6 +909,14 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
         return summarizeRealtimeSkillDetails(await this.options.toolHandlers.getSkillDetails({ name: stringArg(args, "name"), cwd: this.cwd }));
       case "read_picky_user_guide":
         return summarizeRealtimeUserGuide(await this.options.toolHandlers.readUserGuide({ section: optionalStringArg(args, "section"), query: optionalStringArg(args, "query") }));
+      case "picky_remember":
+        return this.options.toolHandlers.rememberUserFact({ content: stringArg(args, "content") });
+      case "picky_list_memories":
+        return { memories: await this.options.toolHandlers.listUserFacts() };
+      case "picky_update_memory":
+        return this.options.toolHandlers.updateUserFact({ id: stringArg(args, "id"), content: stringArg(args, "content") });
+      case "picky_forget":
+        return this.options.toolHandlers.forgetUserFact({ id: stringArg(args, "id") });
     }
   }
 
@@ -1035,10 +1100,10 @@ function buildInputTranscriptionConfig(config: OpenAIRealtimeAuthConfig): Record
   };
 }
 
-function buildAzurePreviewSessionUpdate(config: OpenAIRealtimeAuthConfig): Record<string, unknown> {
+function buildAzurePreviewSessionUpdate(config: OpenAIRealtimeAuthConfig, userMemories: MainRealtimeUserMemoryItem[] = []): Record<string, unknown> {
   return {
     modalities: ["text", "audio"],
-    instructions: buildRealtimeInstructions(),
+    instructions: buildRealtimeInstructions(userMemories),
     voice: azurePreviewVoice(config.voice),
     input_audio_format: "pcm16",
     output_audio_format: "pcm16",
@@ -1072,8 +1137,8 @@ function mapReasoningEffort(level: ThinkingLevel, fallback: OpenAIRealtimeAuthCo
   }
 }
 
-function buildRealtimeInstructions(): string {
-  return [
+function buildRealtimeInstructions(userMemories: MainRealtimeUserMemoryItem[] = []): string {
+  const baseLines = [
     buildMainAgentBootstrapPair({ omitTtsParenthesisHint: true }).user,
     "",
     "## Realtime voice mode overrides",
@@ -1083,7 +1148,21 @@ function buildRealtimeInstructions(): string {
     `- Use \`read_picky_user_guide\` before answering questions about how to use Picky. Prefer its \`section\` parameter when the question maps to one of these manual sections: ${PICKY_USER_GUIDE_SECTIONS.join("; ")}.`,
     "- You cannot execute Pi skills directly. If a skill is relevant, include the skill name and the essential details in `picky_start_pickle.instructions` or `picky_steer_pickle.message` for the Pickle.",
     "- Pickle hover follow-ups bypass you and go directly to the Pickle. If the user refers to delegated work during a Picky turn, call `picky_pickle_sessions` before deciding whether to use `picky_steer_pickle`.",
-  ].join("\n");
+    "",
+    "## Long-term user memory",
+    "- When the user asks you to remember a fact, rule, or preference (e.g. \"remember that X\", \"기억해놓아\", \"from now on, when I do X, do Y\"), call `picky_remember` with a short content describing exactly what to remember. Store at most one idea per item.",
+    "- When the user wants to revise or drop a previously stored memory, look it up with `picky_list_memories` first to obtain the id, then call `picky_update_memory` or `picky_forget`.",
+    "- Memories below are always in scope; apply the relevant ones to your reply without being asked. Do not recite them back unless the user explicitly asks what you remember.",
+  ];
+  if (userMemories.length === 0) {
+    baseLines.push("- (No long-term memories stored yet.)");
+    return baseLines.join("\n");
+  }
+  baseLines.push("", "### Stored memories");
+  for (const memory of userMemories) {
+    baseLines.push(`- (id=${memory.id}) ${memory.content}`);
+  }
+  return baseLines.join("\n");
 }
 
 function buildRealtimeContextText(context: PickyContextPacket): string {
@@ -1209,6 +1288,52 @@ function realtimeTools(): Array<Record<string, unknown>> {
           query: { type: "string", description: "The user's Picky usage question or topic. Used for relevant excerpts when section is omitted, or as context when section is provided." },
         },
         required: [],
+      },
+    },
+    {
+      type: "function",
+      name: "picky_remember",
+      description: "Persist a long-term fact, rule, or preference the user explicitly asked Picky to remember. Stored across sessions and shown to you on every reply via the Long-term user memory section in your instructions. Use ONLY when the user clearly asks to remember something (\"기억해\", \"remember that\", \"from now on...\"); never guess. One concept per call — split multiple ideas into multiple calls. Returns the assigned id so the user (or you, later) can update or forget it.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          content: { type: "string", description: "Short, self-contained statement of the thing to remember, in the user's language. Max 500 chars. Phrase it as a standing rule/fact (e.g. \"User's GitHub handle is jonghakseo\", \"When the user mentions 이 페이지, treat it as the Realtime API guide.\")" },
+        },
+        required: ["content"],
+      },
+    },
+    {
+      type: "function",
+      name: "picky_list_memories",
+      description: "List every long-term memory Picky has stored for this user, with their ids. Use this before picky_update_memory or picky_forget to obtain the right id, or when the user asks what you remember.",
+      parameters: { type: "object", additionalProperties: false, properties: {}, required: [] },
+    },
+    {
+      type: "function",
+      name: "picky_update_memory",
+      description: "Replace the content of an existing long-term memory. Call picky_list_memories first if you do not already have the id. Use when the user says the previously remembered fact has changed.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "string", description: "Memory id, exactly as returned by picky_remember or picky_list_memories." },
+          content: { type: "string", description: "Replacement statement, max 500 chars." },
+        },
+        required: ["id", "content"],
+      },
+    },
+    {
+      type: "function",
+      name: "picky_forget",
+      description: "Delete a long-term memory by id. Use when the user explicitly asks you to forget something. Get the id from picky_list_memories first if needed.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "string", description: "Memory id, exactly as returned by picky_remember or picky_list_memories." },
+        },
+        required: ["id"],
       },
     },
   ];
@@ -1478,6 +1603,10 @@ function normalizeToolName(name: string): RealtimeToolName | undefined {
     case "picky_skills_search":
     case "picky_skill_details":
     case "read_picky_user_guide":
+    case "picky_remember":
+    case "picky_list_memories":
+    case "picky_update_memory":
+    case "picky_forget":
       return name;
     default:
       return undefined;

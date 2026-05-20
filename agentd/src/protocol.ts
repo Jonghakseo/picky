@@ -85,6 +85,22 @@ const PickyMainAgentContextUsageSchema = z.object({
   contextWindow: z.number(),
   percent: z.number().nullable(),
 });
+/**
+ * Long-term memory item the user has asked Picky to remember. Surfaced into
+ * every Realtime `session.update.instructions` so the model can act on the
+ * stored rule/fact without the user having to repeat it each session. Each
+ * item is short (<=500 chars) and the full set is capped at 50 items / 4000
+ * chars total to keep the instruction budget bounded — see
+ * PICKY_USER_MEMORY_ITEM_LIMIT and friends in session-supervisor.ts.
+ */
+export const PickyUserMemorySchema = z.object({
+  id: z.string().min(1),
+  content: z.string().min(1),
+  createdAt: isoTimestamp,
+  updatedAt: isoTimestamp,
+});
+export type PickyUserMemory = z.infer<typeof PickyUserMemorySchema>;
+
 export const PickyMainAgentStateSchema = z.object({
   sessionFilePath: z.string().optional(),
   cwd: z.string().optional(),
@@ -95,6 +111,11 @@ export const PickyMainAgentStateSchema = z.object({
   lastRolloverAt: isoTimestamp.optional(),
   lastRolloverReason: z.string().optional(),
   contextUsage: PickyMainAgentContextUsageSchema.optional(),
+  // Long-term user memories. `.optional()` (not `.default([])`) so existing
+  // call sites that construct partial states (e.g. supervisor's initial
+  // `{ messages: [] }`) keep compiling without forcing a literal `[]` at
+  // every literal. The supervisor coalesces with `?? []` when reading.
+  userMemories: z.array(PickyUserMemorySchema).optional(),
 });
 export type PickyMainAgentState = z.infer<typeof PickyMainAgentStateSchema>;
 

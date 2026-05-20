@@ -1,7 +1,7 @@
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { BuiltPrompt } from "../prompt-builder.js";
 import type { MainAgentRuntimeMode, PickyContextPacket } from "../protocol.js";
-import type { AgentRuntime, MainRealtimeHistoryProvider, MainRealtimeRuntime, RuntimeModelOption, RuntimeSessionHandle, ThinkingLevel } from "./types.js";
+import type { AgentRuntime, MainRealtimeHistoryProvider, MainRealtimeRuntime, MainRealtimeUserMemoryProvider, RuntimeModelOption, RuntimeSessionHandle, ThinkingLevel } from "./types.js";
 
 interface SelectableMainRuntimeOptions {
   initialMode: MainAgentRuntimeMode;
@@ -93,6 +93,14 @@ export class SelectableMainRuntime implements MainRealtimeRuntime {
 
   setMainRealtimeHistoryProvider(provider: MainRealtimeHistoryProvider | undefined): void {
     this.options.realtimeRuntime.setMainRealtimeHistoryProvider?.(provider);
+  }
+
+  setMainRealtimeUserMemoryProvider(provider: MainRealtimeUserMemoryProvider | undefined): void {
+    this.options.realtimeRuntime.setMainRealtimeUserMemoryProvider?.(provider);
+  }
+
+  refreshUserMemoryInstructions(): void {
+    this.options.realtimeRuntime.refreshUserMemoryInstructions?.();
   }
 
   refreshCodexQuota(): Promise<void> {

@@ -4941,6 +4941,151 @@ describe("SessionSupervisor", () => {
     await supervisor.abort(session.id);
     await expect(supervisor.followUp(session.id, "nope")).rejects.toThrow(/Cannot follow up/);
   });
+
+  // ----- User memory CRUD -----
+
+  it("persists a new user memory and exposes it via listUserMemories + the supervisor snapshot", async () => {
+    const supervisor = await makeSupervisor();
+    const result = await supervisor.addUserMemory("GitHub handle is jonghakseo");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.memory.content).toBe("GitHub handle is jonghakseo");
+    expect(result.memory.id).toMatch(/^[0-9a-f]{12}$/);
+
+    const all = supervisor.listUserMemories();
+    expect(all).toHaveLength(1);
+    expect(all[0]?.id).toBe(result.memory.id);
+  });
+
+  it("round-trips user memories through the on-disk picky.json", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const supervisorA = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+    await supervisorA.load();
+    const addResult = await supervisorA.addUserMemory("Treat \"이 페이지\" as the OpenAI Realtime guide");
+    expect(addResult.ok).toBe(true);
+    if (!addResult.ok) return;
+
+    // Fresh supervisor over the same store should see the persisted memory.
+    const supervisorB = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+    await supervisorB.load();
+    expect(supervisorB.listUserMemories().map((m) => m.content)).toEqual([
+      "Treat \"이 페이지\" as the OpenAI Realtime guide",
+    ]);
+  });
+
+  it("rejects empty memory content", async () => {
+    const supervisor = await makeSupervisor();
+    const result = await supervisor.addUserMemory("   \n  ");
+    expect(result.ok).toBe(false);
+    expect(supervisor.listUserMemories()).toHaveLength(0);
+  });
+
+  it("rejects memories that exceed the per-item char limit", async () => {
+    const supervisor = await makeSupervisor();
+    const result = await supervisor.addUserMemory("x".repeat(501));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/max 500/);
+  });
+
+  it("rejects adds once the item-count cap is reached", async () => {
+    const supervisor = await makeSupervisor();
+    for (let i = 0; i < 50; i += 1) {
+      const result = await supervisor.addUserMemory(`memory ${i}`);
+      expect(result.ok).toBe(true);
+    }
+    const overflow = await supervisor.addUserMemory("one too many");
+    expect(overflow.ok).toBe(false);
+    if (overflow.ok) return;
+    expect(overflow.error).toMatch(/memory item limit/);
+  });
+
+  it("rejects adds once the total character budget would be exceeded", async () => {
+    const supervisor = await makeSupervisor();
+    // Each entry is 400 chars; 10 entries = 4000 chars (at the limit).
+    for (let i = 0; i < 10; i += 1) {
+      const result = await supervisor.addUserMemory("x".repeat(400));
+      expect(result.ok).toBe(true);
+    }
+    const overflow = await supervisor.addUserMemory("y".repeat(50));
+    expect(overflow.ok).toBe(false);
+    if (overflow.ok) return;
+    expect(overflow.error).toMatch(/budget/);
+  });
+
+  it("updates a memory in place, keeping the id and bumping updatedAt", async () => {
+    const supervisor = await makeSupervisor();
+    const added = await supervisor.addUserMemory("old content");
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    const originalCreatedAt = added.memory.createdAt;
+    await delay(5);
+    const updated = await supervisor.updateUserMemory(added.memory.id, "new content");
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) return;
+    expect(updated.memory.id).toBe(added.memory.id);
+    expect(updated.memory.content).toBe("new content");
+    expect(updated.memory.createdAt).toBe(originalCreatedAt);
+    expect(updated.memory.updatedAt >= originalCreatedAt).toBe(true);
+    expect(supervisor.listUserMemories()).toHaveLength(1);
+  });
+
+  it("reports an error when updating an unknown memory id", async () => {
+    const supervisor = await makeSupervisor();
+    const result = await supervisor.updateUserMemory("missing", "hello");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/no memory with id/);
+  });
+
+  it("forgets a memory by id and returns the removed item", async () => {
+    const supervisor = await makeSupervisor();
+    const added = await supervisor.addUserMemory("remember me, but not for long");
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    const removed = await supervisor.removeUserMemory(added.memory.id);
+    expect(removed.ok).toBe(true);
+    if (!removed.ok) return;
+    expect(removed.removed.content).toBe("remember me, but not for long");
+    expect(supervisor.listUserMemories()).toHaveLength(0);
+  });
+
+  it("reports an error when forgetting an unknown memory id", async () => {
+    const supervisor = await makeSupervisor();
+    const result = await supervisor.removeUserMemory("missing");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/no memory with id/);
+  });
+
+  it("notifies the main runtime to refresh instructions on every CRUD mutation", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    // Minimal stub that passes isMainRealtimeRuntime so the supervisor's
+    // notifyUserMemoryChanged actually fires refreshUserMemoryInstructions.
+    // We don't exercise any other realtime surface here.
+    const refreshes: string[] = [];
+    const realtimeRuntime = {
+      async create(_prompt: BuiltPrompt, _options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
+        throw new Error("create not used in this test");
+      },
+      async configureMainRealtimeAuth() {},
+      async beginMainRealtimeVoiceTurn() {},
+      async appendMainRealtimeInputAudio() {},
+      async commitMainRealtimeVoiceTurn() {},
+      async cancelMainRealtimeVoiceTurn() {},
+      refreshUserMemoryInstructions() { refreshes.push("refresh"); },
+    } as unknown as AgentRuntime;
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime: realtimeRuntime });
+    await supervisor.load();
+
+    const added = await supervisor.addUserMemory("alpha");
+    expect(added.ok).toBe(true);
+    if (!added.ok) return;
+    await supervisor.updateUserMemory(added.memory.id, "alpha v2");
+    await supervisor.removeUserMemory(added.memory.id);
+
+    expect(refreshes).toHaveLength(3);
+  });
 });
 
 describe("SessionSupervisor archived session purge", () => {

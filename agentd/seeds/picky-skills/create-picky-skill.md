@@ -7,7 +7,7 @@ description: Author a new Picky skill (a short behavior recipe for the realtime 
 
 ## When to use
 
-- The user says things like "Picky 스킬 만들어줘", "이런 상황엔 이렇게 답하게 해줘", "behavior recipe 추가", "스킬로 등록".
+- The user asks Picky to create, add, register, or save a skill / behavior recipe / response pattern, in any language.
 - The user wants Picky's main (voice) agent to behave a specific way for a specific kind of request.
 
 ## What a Picky skill is
@@ -19,10 +19,15 @@ description: Author a new Picky skill (a short behavior recipe for the realtime 
 ## What to do
 
 1. Confirm the trigger and behavior the user wants. Ask one short clarifying question if the trigger is unclear.
-2. Pick a kebab-case `<name>` (e.g. `summarize-pr-link`, `prefer-korean-replies`). Filename and frontmatter `name` must match.
+
+2. Pick a kebab-case `<name>` (e.g. `summarize-pr-link`, `escalate-to-pickle`, `prefer-concise-replies`). Filename and frontmatter `name` must match.
+
 3. Draft the body using the template below. Keep it tight — this is a recipe, not a manual.
+
 4. Before writing, if a file with the same name might exist, check with `picky_skill({ action: "get", name })` and confirm with the user before overwriting.
+
 5. Save with `picky_write_file({ path: "~/Library/Application Support/Picky/skills/<name>.md", content, mode: "overwrite" })`.
+
 6. Tell the user:
    
    - The full path of the new file.
@@ -51,9 +56,9 @@ description: <one sentence; when to invoke and what to do — shown in the sessi
 - (optional) Known anti-patterns to avoid.
 ```
 
-## 주의
+## What NOT to do
 
-- Picky 스킬은 Pickle/Pi 스킬과 별개다. Picky 메인(음성) 에이전트에만 적용되고, Pickle은 영향받지 않는다. `~/.pi/agent/skills/` 같은 Pi 경로를 참조하지 말 것.
-- 본문에 긴 단계별 워크플로우를 넣지 말 것. 파일 편집·다단계 리서치·3개 이상 도구 호출이 필요하면 "Pickle에 위임"하는 스킬로 작성하고 실제 절차는 `picky_start_pickle.instructions` 안에 넣는다.
-- 기존 스킬 파일을 사용자 확인 없이 덮어쓰지 말 것.
-- 자격증명·API 키·개인정보를 스킬에 적지 말 것 (디스크에 평문으로 저장됨).
+- Picky skills are independent from Pickle and Pi skills. They only affect the realtime main (voice) agent and never run inside a Pickle. Do not reference Pi paths such as `~/.pi/agent/skills/`.
+- Do not put long step-by-step workflows in the body. If the recipe needs file edits, multi-step research, or more than ~3 tool calls, write a skill that delegates to a Pickle and put the actual procedure inside `picky_start_pickle.instructions`.
+- Do not overwrite an existing skill file without the user's explicit confirmation.
+- Do not put credentials, API keys, or personal data in a skill (it is stored as plaintext on disk).

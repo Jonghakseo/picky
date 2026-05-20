@@ -381,6 +381,16 @@ final class CompanionManager: ObservableObject {
     private var realtimeCanSendAudio = false
     private var realtimeBufferedAudioChunks: [Data] = []
     private var realtimeOutputTranscriptByInputID: [UUID: String] = [:]
+    /// PTT press timestamp captured when a Realtime voice turn begins. Used at
+    /// release time to drop near-zero presses (abort taps) instead of sending
+    /// an empty commit that the Realtime API would either reject or echo back
+    /// as an empty new turn.
+    private var realtimeVoicePressStartedAt: Date?
+    /// Mirrors `BuddyDictationManager.minimumSubmittedRecordingDurationSeconds`
+    /// but tuned lower so short verbal interjections still register. Below
+    /// this duration a release is treated as an abort/interrupt instead of a
+    /// new realtime input turn.
+    private static let minimumRealtimePressDurationSeconds: TimeInterval = 0.5
     /// Tracks the physical push-to-talk hold separately from dictation state so
     /// audio stays suppressed even if recording fails before the key is released.
     private var isPushToTalkShortcutHeld = false
@@ -1240,6 +1250,7 @@ final class CompanionManager: ObservableObject {
 
             pendingKeyboardShortcutStartTask?.cancel()
             if shouldUseRealtimeMainVoiceTurn(targetSessionID: targetSessionID) {
+                realtimeVoicePressStartedAt = Date()
                 beginRealtimeMainVoiceTurn(inputID: inputID)
                 return
             }
@@ -1280,8 +1291,16 @@ final class CompanionManager: ObservableObject {
                 reduceVoiceInteraction(.pttReleased(inputID: releasedInputID))
             }
             if realtimeVoiceInputID == interactionVoiceInputID {
-                commitRealtimeMainVoiceTurn(inputID: interactionVoiceInputID)
+                let pressDuration = realtimeVoicePressStartedAt.map { Date().timeIntervalSince($0) }
+                realtimeVoicePressStartedAt = nil
+                if let pressDuration, pressDuration < Self.minimumRealtimePressDurationSeconds {
+                    print("🎙️ Picky realtime: short PTT — cancelling turn (\(String(format: "%.2f", pressDuration))s)")
+                    cancelRealtimeMainVoiceTurn(inputID: interactionVoiceInputID)
+                } else {
+                    commitRealtimeMainVoiceTurn(inputID: interactionVoiceInputID)
+                }
             } else {
+                realtimeVoicePressStartedAt = nil
                 buddyDictationManager.stopPushToTalkFromKeyboardShortcut()
             }
             if !buddyDictationManager.isDictationInProgress && realtimeVoiceInputID == nil {

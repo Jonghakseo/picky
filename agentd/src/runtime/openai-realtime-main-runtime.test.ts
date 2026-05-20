@@ -852,6 +852,58 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(failed!.message).toContain("WS handshake rejected");
   });
 
+  it("does not emit `failed` when the server sends a soft error frame over a healthy websocket", async () => {
+    // Regression: a server-side `error` frame (e.g.
+    // input_audio_buffer_commit_empty when the user releases PTT before
+    // 100ms of audio is captured) used to escalate to state="failed",
+    // which forced Picky's voice machine to clearToIdle and reset the
+    // in-flight turn. In practice OpenAI keeps honoring the
+    // response.create that came with the bad commit, so the response
+    // still streams back; the HUD got wedged because the voice machine
+    // had already been told the turn failed. The runtime now logs the
+    // diagnostic and leaves the last broadcast state alone. Real
+    // failures still surface via response.done(status="failed") and
+    // ws.on("error"), each of which has its own test.
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+    const handle = await runtime.prewarm({ sessionId: "picky" });
+    const stateEvents: Array<{ state: string; message?: string }> = [];
+    handle.subscribe((event) => {
+      if (event.type === "main_realtime_state") stateEvents.push({ state: event.state, message: event.message });
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    await settle();
+
+    const beforeError = stateEvents.length;
+    const lastStateBeforeError = stateEvents.at(-1)!.state;
+
+    socket.serverEvent({
+      type: "error",
+      error: {
+        type: "invalid_request_error",
+        code: "input_audio_buffer_commit_empty",
+        event_id: "event-fake-1",
+        message:
+          "Error committing input audio buffer: buffer too small. Expected at least 100ms of audio, but buffer only has 0.00ms of audio.",
+      },
+    });
+    await settle();
+
+    expect(stateEvents.length).toBe(beforeError);
+    expect(stateEvents.at(-1)!.state).toBe(lastStateBeforeError);
+    expect(stateEvents.some((e) => e.state === "failed")).toBe(false);
+  });
+
   it("sends audio modality by default and switches to text when narration is disabled", async () => {
     const socket = new FakeRealtimeSocket();
     const runtime = new OpenAIRealtimeMainRuntime({

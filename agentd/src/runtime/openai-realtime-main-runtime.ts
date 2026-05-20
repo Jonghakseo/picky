@@ -940,8 +940,21 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
         const type = stringField(event, "error.type");
         const param = stringField(event, "error.param");
         const eventId = stringField(event, "error.event_id");
+        // Server-side `error` frames arrive over a healthy websocket and are
+        // soft / recoverable signals (e.g. `input_audio_buffer_commit_empty`
+        // when the user releases PTT before 100ms of audio is captured,
+        // `response_cancel_not_active` when a cancel races response.done).
+        // OpenAI keeps honoring any in-flight `response.create` that came
+        // alongside the bad event, so the normal
+        // response.created -> output_audio -> response.done chain still
+        // arrives. Emitting `state: "failed"` here forced Picky's voice
+        // machine to clearToIdle and reset the active turn, which corrupted
+        // the HUD when the response landed a moment later. Mirror the
+        // ws.close fix: log the diagnostic and leave the last broadcast
+        // state in place. True failures still surface elsewhere -
+        // response-level failures via `response.done` (status="failed") and
+        // websocket-level failures via `ws.on("error")`.
         logAgentd("main realtime server error", { type, code, param, eventId, message });
-        this.emit({ type: "main_realtime_state", state: "failed", message });
         break;
       }
       default:

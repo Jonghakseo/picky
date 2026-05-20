@@ -65,6 +65,15 @@ final class OpenAIRealtimeAudioPlaybackEngine: PickyRealtimeAudioPlaybacking {
     private var isAttached = false
     private var pendingBuffers = 0
     private var playbackGeneration = 0
+    // playerTime.sampleTime is cumulative since the AVAudioPlayerNode was
+    // first attached, NOT the playback offset of the current response. We
+    // capture the sampleTime at the moment a fresh assistant audio item
+    // starts streaming so playedAudioMs reflects "ms played within this
+    // item". Without this, the value reported "ms the engine has been
+    // alive" (we observed ~19 minutes during idle time between turns),
+    // which then got sent to OpenAI Realtime as a hugely-inflated
+    // conversation.item.truncate.audio_end_ms on cancel.
+    private var sampleTimeBaseline: AVAudioFramePosition = 0
 
     private(set) var isPlaying = false
     var onPlaybackDrained: (() -> Void)?
@@ -82,6 +91,12 @@ final class OpenAIRealtimeAudioPlaybackEngine: PickyRealtimeAudioPlaybacking {
             print("⚠️ Realtime playback start failed: \(error.localizedDescription)")
             markPlaybackDrained()
             return
+        }
+        // First buffer of a fresh assistant audio item. Capture where the
+        // player's sampleTime is right now so subsequent playedAudioMs
+        // readings are relative to THIS item.
+        if !isPlaying {
+            captureSampleTimeBaseline()
         }
         let generation = playbackGeneration
         pendingBuffers += 1
@@ -122,7 +137,11 @@ final class OpenAIRealtimeAudioPlaybackEngine: PickyRealtimeAudioPlaybacking {
               let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else {
             return 0
         }
-        return max(0, Double(playerTime.sampleTime) / playerTime.sampleRate * 1_000)
+        // playerTime.sampleTime is cumulative across the player's lifetime;
+        // subtract the baseline captured when this assistant audio item
+        // began so we return only the time spent playing THIS item.
+        let elapsedSamples = max(0, playerTime.sampleTime - sampleTimeBaseline)
+        return Double(elapsedSamples) / playerTime.sampleRate * 1_000
     }
 
     private func ensureStarted() throws {
@@ -139,6 +158,19 @@ final class OpenAIRealtimeAudioPlaybackEngine: PickyRealtimeAudioPlaybacking {
             audioEngine.prepare()
             try audioEngine.start()
         }
+    }
+
+    private func captureSampleTimeBaseline() {
+        guard isAttached, audioEngine.isRunning,
+              let nodeTime = playerNode.lastRenderTime,
+              let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else {
+            // Either the engine just started (no lastRenderTime yet) or the
+            // node isn't attached. Reset to 0 so the first samples played by
+            // this item are counted from the very beginning.
+            sampleTimeBaseline = 0
+            return
+        }
+        sampleTimeBaseline = playerTime.sampleTime
     }
 
     private func bufferDidFinish(generation: Int) {

@@ -288,7 +288,15 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
       .filter((event) => event.type === "conversation.item.create" && event.item?.type === "function_call_output")
       .map((event) => [event.item.call_id, JSON.parse(event.item.output)]));
 
-    expect(outputs["call-steer"]).toEqual({ id: "pickle-1", title: "Pickle 1", status: "running", cwd: "/tmp/project" });
+    // The steer reply now mirrors the Pi SDK runtime's picky_steer_pickle
+    // response: an explicit success message so the realtime voice agent
+    // does not misread a session whose `status` happens to be `completed`
+    // as a failed steer, plus a trimmed session details block (id, title,
+    // status, cwd only — never the full message log).
+    expect(outputs["call-steer"]).toEqual({
+      message: "Steering sent to Pickle: Pickle 1 (pickle-1). Status is running. Now tell the user (in their language) that the existing Pickle was steered and progress can be checked in the Picky dock.",
+      session: { id: "pickle-1", title: "Pickle 1", status: "running", cwd: "/tmp/project" },
+    });
     expect(JSON.stringify(outputs["call-steer"])).not.toContain("summary should not be returned");
     expect(outputs["call-search"]).toEqual({ total: 1, skills: [{ name: "debug", description: "Debug workflow", match: "matched snippet" }] });
     expect(JSON.stringify(outputs["call-search"])).not.toContain("/tmp/skills/debug.md");

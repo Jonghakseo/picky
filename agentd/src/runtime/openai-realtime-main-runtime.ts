@@ -1677,10 +1677,17 @@ type RealtimePickleSessionSummary = {
 };
 
 type RealtimePickleSteerSummary = {
-  id: string;
-  title: string;
-  status: PickyAgentSession["status"];
-  cwd?: string;
+  /// Plain-text success line modeled after the Pi SDK runtime's
+  /// `picky_steer_pickle` reply (see `handoff-tool.ts`). Including it
+  /// explicitly stops the realtime voice agent from misreading a session
+  /// snapshot whose `status` happens to be `completed` as a failed steer.
+  message: string;
+  session: {
+    id: string;
+    title: string;
+    status: PickyAgentSession["status"];
+    cwd?: string;
+  };
 };
 
 type RealtimePickySkillListSummary = {
@@ -1754,13 +1761,16 @@ function compactRealtimePickleSessionText(text: string | undefined): string | un
 }
 
 function summarizeRealtimePickleSteerSession(session: PickyAgentSession): RealtimePickleSteerSummary {
-  const summary: RealtimePickleSteerSummary = {
+  const sessionSummary: RealtimePickleSteerSummary["session"] = {
     id: session.id,
     title: session.title,
     status: session.status,
   };
-  if (session.cwd) summary.cwd = session.cwd;
-  return summary;
+  if (session.cwd) sessionSummary.cwd = session.cwd;
+  return {
+    message: `Steering sent to Pickle: ${session.title} (${session.id}). Status is ${session.status}. Now tell the user (in their language) that the existing Pickle was steered and progress can be checked in the Picky dock.`,
+    session: sessionSummary,
+  };
 }
 
 /** Compact one PickyContextPacket into a text-only structure safe to send back

@@ -43,19 +43,30 @@ enum PickyWorkspaceSeeder {
     @discardableResult
     static func seedDefaultWorkspace(
         appSupportRoot: URL = PickyAppSupport.defaultRoot(),
+        mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi,
         fileManager: FileManager = .default,
         log: (String) -> Void = { print($0) }
     ) -> String {
         let path = defaultWorkspacePath(appSupportRoot: appSupportRoot)
-        seed(workspacePath: path, fileManager: fileManager, log: log)
+        seed(workspacePath: path, mainAgentRuntimeMode: mainAgentRuntimeMode, fileManager: fileManager, log: log)
         return path
     }
 
     /// Seed an arbitrary path. Splits out from `seedDefaultWorkspace` so
     /// migrations / tests can target a different root without hard-coding the
     /// AppSupport URL.
+    ///
+    /// `mainAgentRuntimeMode` gates the `picky-tell-plan` extension seed:
+    /// the extension only takes effect inside Pi's tool-call lifecycle, so
+    /// seeding it under the OpenAI Realtime runtime would create a dormant
+    /// `.pi/extensions/picky-tell-plan.ts` that the realtime main agent
+    /// never invokes and that confuses anyone inspecting the workspace.
+    /// The default `AGENTS.md` is still seeded regardless of runtime mode
+    /// because Pi reads it as the cwd's standing prompt independent of
+    /// which main runtime drives a turn.
     static func seed(
         workspacePath: String,
+        mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi,
         fileManager: FileManager = .default,
         log: (String) -> Void = { print($0) }
     ) {
@@ -75,6 +86,7 @@ enum PickyWorkspaceSeeder {
                 log("⚠️ Picky: Failed to seed \(agentsURL.path): \(error.localizedDescription)")
             }
         }
+        guard mainAgentRuntimeMode == .pi else { return }
         seedExtensions(workspaceURL: workspaceURL, fileManager: fileManager, log: log)
     }
 

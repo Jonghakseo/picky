@@ -50,6 +50,33 @@ struct PickyWorkspaceSeederTests {
         #expect(body.contains("block: true"))
     }
 
+    @Test func seedSkipsTellPlanExtensionUnderOpenAIRealtimeMode() throws {
+        // picky_tell_plan plugs into Pi's tool_call gate. Seeding it under the
+        // OpenAI Realtime runtime creates a dormant extension the realtime
+        // main never invokes, so the seeder must skip the .pi/extensions
+        // payload when the workspace is intended for the realtime runtime.
+        // The default AGENTS.md is still seeded because Pi reads it as the
+        // cwd's standing prompt regardless of which main runtime drives a
+        // turn.
+        let root = scratchRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let workspacePath = PickyWorkspaceSeeder.seedDefaultWorkspace(
+            appSupportRoot: root,
+            mainAgentRuntimeMode: .openAIRealtime,
+            log: { _ in }
+        )
+
+        let workspaceURL = URL(fileURLWithPath: workspacePath, isDirectory: true)
+        let agentsURL = workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.agentsMarkdownFilename)
+        let extensionURL = workspaceURL
+            .appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath, isDirectory: true)
+            .appendingPathComponent(PickyWorkspaceSeeder.tellPlanExtensionFilename, isDirectory: false)
+
+        #expect(FileManager.default.fileExists(atPath: agentsURL.path))
+        #expect(!FileManager.default.fileExists(atPath: extensionURL.path))
+    }
+
     @Test func seedNeverOverwritesExistingTellPlanExtension() throws {
         let root = scratchRoot()
         defer { try? FileManager.default.removeItem(at: root) }

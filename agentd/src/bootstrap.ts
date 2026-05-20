@@ -272,10 +272,17 @@ function buildPrimaryMainRuntime(
   // the realtime main agent can read on demand via picky_skill. The store
   // seeds the directory with bundled templates on first boot so users have
   // at least one example to copy from.
+  //
+  // Only seed when the active main runtime is the one that actually exposes
+  // the picky_skill tool. The Pi SDK runtime has its own skill catalog and
+  // never invokes picky_skill, so seeding picky-skills there would create a
+  // dormant directory the user has to keep in sync without any payoff.
   const pickySkillStore = new PickySkillStore();
-  void pickySkillStore.ensureSeeded().catch((error) => {
-    logAgentd("picky skill store seed failed", { error: error instanceof Error ? error.message : String(error) });
-  });
+  if (config.mainAgentRuntimeMode === "openai-realtime") {
+    void pickySkillStore.ensureSeeded().catch((error) => {
+      logAgentd("picky skill store seed failed", { error: error instanceof Error ? error.message : String(error) });
+    });
+  }
   const requireSupervisor = (): SessionSupervisor => {
     if (!supervisorRef.current) throw new Error("Supervisor not constructed yet");
     return supervisorRef.current;

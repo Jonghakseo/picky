@@ -1331,7 +1331,10 @@ struct CompanionPanelSettingsView: View {
         Button(action: {
             let cwd = viewModel.settings.mainAgentCwd
             guard !cwd.isEmpty else { return }
-            PickyWorkspaceSeeder.seed(workspacePath: cwd)
+            PickyWorkspaceSeeder.seed(
+                workspacePath: cwd,
+                mainAgentRuntimeMode: viewModel.settings.mainAgentRuntimeMode
+            )
             let url = URL(fileURLWithPath: cwd, isDirectory: true)
                 .appendingPathComponent(PickyWorkspaceSeeder.agentsMarkdownFilename, isDirectory: false)
             NSWorkspace.shared.open(url)

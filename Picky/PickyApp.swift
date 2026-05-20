@@ -202,7 +202,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             // starts so the always-on Picky main agent always has a valid cwd
             // (with our seed AGENTS.md) to load. Idempotent — never overwrites
             // user edits.
-            PickyWorkspaceSeeder.seedDefaultWorkspace()
+            PickyWorkspaceSeeder.seedDefaultWorkspace(
+                mainAgentRuntimeMode: AppBundleConfiguration.effectiveRuntimeMode
+            )
             // Bundled pi-extensions install is opt-in via the Status tab so
             // Picky never modifies `~/.pi/agent` on launch without consent.
             daemonLauncher.start()

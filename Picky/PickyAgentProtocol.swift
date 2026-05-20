@@ -294,6 +294,15 @@ enum PickyEvent: Equatable {
     case transcriptionStreamClosed(streamId: String)
     case sessionSnapshot([PickyAgentSession])
     case sessionUpdated(PickyAgentSession)
+    /// Authoritative archive-flag change signaled by agentd. Picky's session
+    /// view model trusts THIS event to update its local
+    /// `manuallyArchivedSessionIDs` UserDefaults; it deliberately ignores the
+    /// `archived` field on plain `sessionUpdated` to avoid mid-flight
+    /// unarchive flicker when an unrelated update arrives while the user has
+    /// just toggled archive locally. Fired by agentd whenever
+    /// `setSessionArchived` runs — from a Picky client command, from the
+    /// `picky_unarchive_pickle` realtime tool, etc.
+    case sessionArchivedAuthoritative(sessionId: String, archived: Bool)
     case sessionResourcesReloaded(sessionId: String)
     case sessionLogAppended(sessionId: String, line: String)
     case toolActivityUpdated(sessionId: String, tool: PickyToolActivity)
@@ -375,6 +384,9 @@ enum PickyEvent: Equatable {
         case "sessionUpdated":
             let payload = try PickySessionUpdatedPayload(from: decoder)
             self = .sessionUpdated(payload.session)
+        case "sessionArchivedAuthoritative":
+            let payload = try PickySessionArchivedAuthoritativePayload(from: decoder)
+            self = .sessionArchivedAuthoritative(sessionId: payload.sessionId, archived: payload.archived)
         case "sessionResourcesReloaded":
             let payload = try PickySessionResourcesReloadedPayload(from: decoder)
             self = .sessionResourcesReloaded(sessionId: payload.sessionId)
@@ -450,6 +462,7 @@ private struct PickyTranscriptionCompletedPayload: Decodable { let streamId: Str
 private struct PickyTranscriptionFailedPayload: Decodable { let streamId: String; let message: String }
 private struct PickySessionSnapshotPayload: Decodable { let sessions: [PickyAgentSession] }
 private struct PickySessionUpdatedPayload: Decodable { let session: PickyAgentSession }
+private struct PickySessionArchivedAuthoritativePayload: Decodable { let sessionId: String; let archived: Bool }
 private struct PickySessionResourcesReloadedPayload: Decodable { let sessionId: String }
 private struct PickySessionLogAppendedPayload: Decodable { let sessionId: String; let line: String }
 private struct PickyToolActivityUpdatedPayload: Decodable { let sessionId: String; let tool: PickyToolActivity }

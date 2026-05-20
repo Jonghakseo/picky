@@ -121,7 +121,12 @@ struct ElevenLabsTranscriptionProviderTests {
 
     // 13) Factory: ENV provider routing no longer overrides the local default
     @Test func envPickySTTProviderNoLongerRoutesToElevenLabsAutomatically() {
-        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        // The factory must not infer a provider from ENV alone — the user's
+        // settings.sttProvider is the source of truth. PickySettings.defaults()
+        // now baselines to .openaiRealtime (Codex OAuth realtime STT), so this
+        // test pins .local explicitly to keep the original contract testable.
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        settings.sttProvider = .local
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
             settings: settings,

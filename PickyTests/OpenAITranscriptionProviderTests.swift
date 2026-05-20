@@ -84,7 +84,12 @@ struct OpenAITranscriptionProviderTests {
 
     // 8) Factory: ENV provider routing no longer overrides the local default
     @Test func envPickySTTProviderNoLongerRoutesAutomatically() {
-        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        // PickySettings.defaults() now baselines to .openaiRealtime (Codex
+        // OAuth realtime STT) since d5af0ae8. The original contract under
+        // test — "ENV alone never overrides settings" — still holds; we just
+        // need to pin .local explicitly to keep the assertion scoped.
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        settings.sttProvider = .local
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
             settings: settings,

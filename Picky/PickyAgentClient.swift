@@ -390,6 +390,8 @@ private extension PickyEventEnvelope {
             return "type=sessionSnapshot id=\(id) sessions=\(sessions.count)"
         case .sessionUpdated(let session):
             return "type=sessionUpdated id=\(id) session=\(session.id) status=\(session.status.rawValue)"
+        case .sessionArchivedAuthoritative(let sessionId, let archived):
+            return "type=sessionArchivedAuthoritative id=\(id) session=\(sessionId) archived=\(archived)"
         case .sessionResourcesReloaded(let sessionId):
             return "type=sessionResourcesReloaded id=\(id) session=\(sessionId)"
         case .sessionLogAppended(let sessionId, let line):

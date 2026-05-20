@@ -1470,6 +1470,34 @@ final class PickySessionListViewModel: ObservableObject {
                 incomingCard,
                 preserveIncrementalConversationState: lastIncrementalSeqBySessionID[session.id] != nil
             )
+        case .sessionArchivedAuthoritative(let sessionId, let archived):
+            // agentd has issued an authoritative archive-state change (either
+            // from a client setSessionArchived command, or from the realtime
+            // picky_unarchive_pickle tool). Mirror it into the local
+            // manuallyArchivedSessionIDs set — the only thing upsert() looks
+            // at when deciding dock placement — and then re-upsert the card
+            // so the dock actually moves. We do this here rather than on
+            // plain sessionUpdated to avoid the long-standing
+            // mid-flight unarchive flicker race.
+            pickySessionLog("session archived authoritative session=\(sessionId) archived=\(archived)")
+            var archivedIDs = archiveStore.archivedSessionIDs
+            var manuallyArchivedIDs = archiveStore.manuallyArchivedSessionIDs
+            if archived {
+                if archivedIDs.insert(sessionId).inserted { archiveStore.archivedSessionIDs = archivedIDs }
+                if manuallyArchivedIDs.insert(sessionId).inserted { archiveStore.manuallyArchivedSessionIDs = manuallyArchivedIDs }
+            } else {
+                if archivedIDs.remove(sessionId) != nil { archiveStore.archivedSessionIDs = archivedIDs }
+                if manuallyArchivedIDs.remove(sessionId) != nil { archiveStore.manuallyArchivedSessionIDs = manuallyArchivedIDs }
+            }
+            // Re-place the card by feeding the cached snapshot back through
+            // upsert with its archived field updated to match. If we have no
+            // record of the session yet, drop the signal — the next regular
+            // sessionUpdated will hydrate it with the authoritative flag.
+            if let existing = (sessions + archivedSessions).first(where: { $0.id == sessionId }) {
+                var refreshed = existing
+                refreshed.archived = archived
+                upsert(refreshed, preserveIncrementalConversationState: true)
+            }
         case .sessionLogAppended(let sessionId, let line):
             pickySessionLog("session log session=\(sessionId) lineChars=\(line.count)")
             if SessionCard.piSessionFilePath(fromLogLine: line) != nil || SessionCard.isRuntimeReattachLogLine(line) {

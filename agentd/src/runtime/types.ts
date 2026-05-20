@@ -229,6 +229,17 @@ export interface MainRealtimeRuntime extends AgentRuntime {
    */
   refreshUserMemoryInstructions?(): void;
   /**
+   * Ask the runtime to push a refreshed `session.update` so the most recent N
+   * turns of the Picky conversation land in the model's instructions before
+   * the next turn. Called by the supervisor at every realtime turn boundary
+   * so the model treats freshly-completed exchanges as its own memory
+   * (instructions-level weight) instead of relying solely on the bulk
+   * conversation-item replay that the model treats as background context.
+   * Fast-path no-ops when the runtime has no live socket; the next regular
+   * connect path's session.update picks up the new snapshot anyway.
+   */
+  refreshConversationInstructions?(): void;
+  /**
    * Trigger a best-effort Codex quota refresh. Errors are swallowed; the
    * runtime emits a `main_realtime_quota` event on success or a quota=undefined
    * event on failure.

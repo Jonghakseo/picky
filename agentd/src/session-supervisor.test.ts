@@ -5086,6 +5086,72 @@ describe("SessionSupervisor", () => {
 
     expect(refreshes).toHaveLength(3);
   });
+
+  // ----- Recent main-agent context history -----
+  //
+  // The ring buffer is populated inside setMainContext, which only fires on
+  // the `routeThroughMainAgent` branch (i.e. when supervisor.options.mainRuntime
+  // is set). The default makeSupervisor() runs without a main runtime, so
+  // these tests wire a ManualRuntime as the main runtime so route() takes the
+  // main-agent path and exercises the buffer.
+
+  async function makeSupervisorWithMain(): Promise<SessionSupervisor> {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir), { mainRuntime: new ManualRuntime() });
+    await supervisor.load();
+    return supervisor;
+  }
+
+  it("captures every routed main context packet into the recall ring buffer, newest first", async () => {
+    const supervisor = await makeSupervisorWithMain();
+    await supervisor.route(context("first turn"));
+    await supervisor.route(context("second turn"));
+    await supervisor.route(context("third turn"));
+
+    const recalled = supervisor.recallRecentMainContext();
+    expect(recalled.map((p) => p.transcript)).toEqual(["third turn", "second turn", "first turn"]);
+  });
+
+  it("deduplicates by context id so a commit re-using the same packet only appears once", async () => {
+    const supervisor = await makeSupervisorWithMain();
+    const first = context("first");
+    await supervisor.route(first);
+    // Same id should not pile up.
+    await supervisor.route(first);
+    expect(supervisor.recallRecentMainContext()).toHaveLength(1);
+  });
+
+  it("caps the ring buffer at MAIN_CONTEXT_HISTORY_LIMIT entries, dropping the oldest", async () => {
+    const supervisor = await makeSupervisorWithMain();
+    // 12 distinct contexts; cap is 10. Oldest two should be dropped.
+    for (let i = 0; i < 12; i += 1) await supervisor.route(context(`turn-${i}`));
+    const recalled = supervisor.recallRecentMainContext(20);
+    expect(recalled).toHaveLength(10);
+    expect(recalled[0]!.transcript).toBe("turn-11");
+    expect(recalled[recalled.length - 1]!.transcript).toBe("turn-2");
+  });
+
+  it("recallRecentMainContext clamps limit to [1, MAIN_CONTEXT_HISTORY_LIMIT]", async () => {
+    const supervisor = await makeSupervisorWithMain();
+    for (let i = 0; i < 5; i += 1) await supervisor.route(context(`turn-${i}`));
+
+    expect(supervisor.recallRecentMainContext(0)).toHaveLength(1);  // floor 1
+    expect(supervisor.recallRecentMainContext(-3)).toHaveLength(1);
+    expect(supervisor.recallRecentMainContext(100)).toHaveLength(5);  // cap to actual size
+    expect(supervisor.recallRecentMainContext(2)).toHaveLength(2);
+  });
+
+  // ----- Pickle inspection -----
+
+  it("inspectPickleSession returns the supervisor's in-memory snapshot for known ids and undefined for unknown ids", async () => {
+    const supervisor = await makeSupervisor();
+    const created = await supervisor.create(context("hand off please"));
+    const found = supervisor.inspectPickleSession(created.id);
+    expect(found?.id).toBe(created.id);
+    expect(found?.title).toBe(created.title);
+
+    expect(supervisor.inspectPickleSession("not-a-real-id")).toBeUndefined();
+  });
 });
 
 describe("SessionSupervisor archived session purge", () => {

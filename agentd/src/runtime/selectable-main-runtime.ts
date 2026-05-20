@@ -103,6 +103,10 @@ export class SelectableMainRuntime implements MainRealtimeRuntime {
     this.options.realtimeRuntime.refreshUserMemoryInstructions?.();
   }
 
+  refreshConversationInstructions(): void {
+    this.options.realtimeRuntime.refreshConversationInstructions?.();
+  }
+
   refreshCodexQuota(): Promise<void> {
     return this.options.realtimeRuntime.refreshCodexQuota?.() ?? Promise.resolve();
   }

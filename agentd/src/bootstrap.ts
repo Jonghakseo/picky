@@ -360,6 +360,13 @@ function buildPrimaryMainRuntime(
         return result.ok ? { ok: true, removed: { id: result.removed.id, content: result.removed.content } } : result;
       },
       listUserFacts: () => requireSupervisor().listUserMemories().map((m) => ({ id: m.id, content: m.content })),
+      // Recent-context recall + Pickle inspect/abort. The runtime relays the
+      // tool calls here; supervisor owns the data (recent context ring buffer
+      // + sessions map), bootstrap owns the app-bridge calls that actually
+      // kill a child daemon for abort.
+      recallRecentMainContext: ({ limit }) => requireSupervisor().recallRecentMainContext(limit),
+      inspectPickleSession: ({ sessionId }) => requireSupervisor().inspectPickleSession(sessionId),
+      abortPickleSession: ({ sessionId }) => abortPickleSession({ sessionId }),
     },
   });
 

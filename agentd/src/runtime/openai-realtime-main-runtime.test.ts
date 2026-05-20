@@ -1157,6 +1157,202 @@ describe("OpenAIRealtimeMainRuntime user memory tools", () => {
   });
 });
 
+describe("OpenAIRealtimeMainRuntime context recall + pickle tools", () => {
+  // These three tools share one design goal: let the model answer follow-up
+  // questions about *earlier* state without spawning a new Pickle. The tests
+  // pin the contracts that matter to the user-facing behaviour: the tools are
+  // declared on the session, the runtime relays them to the right supervisor
+  // method, and the result shape stays text-only so the conversation token
+  // budget stays bounded.
+
+  it("declares the three new tools on session.update.tools", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: { provider: "openai", apiKey: "sk-test", modelOrDeployment: "gpt-realtime-2", voice: "marin" },
+      webSocketFactory: () => socket,
+    });
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    const sessionUpdate = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .find((event) => event.type === "session.update")!;
+    const toolNames = sessionUpdate.session.tools.map((t: any) => t.name);
+    expect(toolNames).toContain("picky_recall_recent_context");
+    expect(toolNames).toContain("picky_inspect_active_pickle");
+    expect(toolNames).toContain("picky_abort_pickle");
+  });
+
+  it("routes picky_recall_recent_context through recallRecentMainContext and strips screenshot bytes from the result", async () => {
+    const socket = new FakeRealtimeSocket();
+    let limitReceived: number | undefined;
+    const recentPacket: PickyContextPacket = {
+      id: "ctx-prev",
+      source: "voice",
+      capturedAt: "2026-05-19T12:00:00.000Z",
+      cwd: "/tmp/picky",
+      transcript: "이 페이지 어떻게 봐?",
+      activeApp: { name: "Safari" },
+      activeWindow: { title: "OpenAI Realtime guide" },
+      browser: { url: "https://platform.openai.com/docs/realtime", title: "Realtime API" },
+      selectedText: "This is the selected snippet ".repeat(20),
+      screenshots: [{ label: "screen-1", path: "/tmp/shot.png", screenId: "display-1", isCursorScreen: true } as PickyContextPacket["screenshots"][number]],
+      inkMarks: [],
+      warnings: [],
+    };
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        ...fakeToolHandlers(),
+        recallRecentMainContext({ limit }: { limit?: number }) { limitReceived = limit; return [recentPacket]; },
+      },
+      defaultConfig: { provider: "openai", apiKey: "sk-test", modelOrDeployment: "gpt-realtime-2", voice: "marin" },
+      webSocketFactory: () => socket,
+    });
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    socket.serverEvent({
+      type: "response.output_item.done",
+      item: { type: "function_call", name: "picky_recall_recent_context", call_id: "call-recall", arguments: JSON.stringify({ limit: 3 }) },
+    });
+    await settle();
+
+    expect(limitReceived).toBe(3);
+    const fnOutput = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .find((event) => event.type === "conversation.item.create" && event.item?.type === "function_call_output");
+    expect(fnOutput).toBeTruthy();
+    const output = JSON.parse(fnOutput!.item.output);
+    expect(output.count).toBe(1);
+    expect(output.contexts).toHaveLength(1);
+    const c = output.contexts[0];
+    expect(c.id).toBe("ctx-prev");
+    expect(c.browser.url).toBe("https://platform.openai.com/docs/realtime");
+    expect(c.activeApp).toBe("Safari");
+    expect(c.screenshots).toEqual([{ label: "screen-1", screenId: "display-1", isCursorScreen: true }]);
+    // Long selectedText gets truncated to the 200-char preview cap.
+    expect(c.selectedTextPreview.length).toBeLessThanOrEqual(200);
+    // Binary path field must not leak into the tool result.
+    expect(JSON.stringify(c.screenshots[0])).not.toContain("/tmp/shot.png");
+  });
+
+  it("routes picky_inspect_active_pickle through inspectPickleSession and returns a compact summary", async () => {
+    const socket = new FakeRealtimeSocket();
+    let inspectedId: string | undefined;
+    const targetSession: PickyAgentSession = {
+      id: "pickle-target",
+      title: "Refactor cursor follow spring",
+      status: "running",
+      cwd: "/tmp/picky",
+      createdAt: "2026-05-19T09:00:00.000Z",
+      updatedAt: "2026-05-19T09:05:00.000Z",
+      lastSummary: "Inspecting CursorFollowSpring.swift to wire the new\nspeed multiplier.",
+      logs: [],
+      tools: [
+        { toolCallId: "t1", name: "Read", status: "succeeded" },
+        { toolCallId: "t2", name: "Read", status: "succeeded" },
+        { toolCallId: "t3", name: "Edit", status: "succeeded", preview: "Edited CursorFollowSpring.swift" },
+      ],
+      artifacts: [],
+      changedFiles: [
+        { path: "Picky/CursorFollowSpring.swift", status: "modified" },
+      ],
+      activitySummary: { read: 2, bash: 0, edit: 1, write: 0, thinking: 3, other: 0 },
+    };
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        ...fakeToolHandlers(),
+        inspectPickleSession({ sessionId }: { sessionId: string }) { inspectedId = sessionId; return targetSession; },
+      },
+      defaultConfig: { provider: "openai", apiKey: "sk-test", modelOrDeployment: "gpt-realtime-2", voice: "marin" },
+      webSocketFactory: () => socket,
+    });
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    socket.serverEvent({
+      type: "response.output_item.done",
+      item: { type: "function_call", name: "picky_inspect_active_pickle", call_id: "call-insp", arguments: JSON.stringify({ sessionId: "pickle-target" }) },
+    });
+    await settle();
+
+    expect(inspectedId).toBe("pickle-target");
+    const fnOutput = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .find((event) => event.type === "conversation.item.create" && event.item?.type === "function_call_output");
+    expect(fnOutput).toBeTruthy();
+    const output = JSON.parse(fnOutput!.item.output);
+    expect(output.id).toBe("pickle-target");
+    expect(output.status).toBe("running");
+    expect(output.recentToolCalls).toHaveLength(3);
+    expect(output.recentToolCalls.map((t: any) => t.name)).toEqual(["Read", "Read", "Edit"]);
+    expect(output.changedFiles).toEqual([{ path: "Picky/CursorFollowSpring.swift", status: "modified" }]);
+    expect(output.activity).toEqual({ read: 2, edit: 1, thinking: 3 });
+    // Multi-line summary gets flattened to single-line, truncated at 240.
+    expect(output.lastSummary).not.toContain("\n");
+  });
+
+  it("returns ok:false when picky_inspect_active_pickle is called with an unknown session id", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        ...fakeToolHandlers(),
+        inspectPickleSession() { return undefined; },
+      },
+      defaultConfig: { provider: "openai", apiKey: "sk-test", modelOrDeployment: "gpt-realtime-2", voice: "marin" },
+      webSocketFactory: () => socket,
+    });
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    socket.serverEvent({
+      type: "response.output_item.done",
+      item: { type: "function_call", name: "picky_inspect_active_pickle", call_id: "call-miss", arguments: JSON.stringify({ sessionId: "nope" }) },
+    });
+    await settle();
+
+    const fnOutput = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .find((event) => event.type === "conversation.item.create" && event.item?.type === "function_call_output");
+    const output = JSON.parse(fnOutput!.item.output);
+    expect(output.ok).toBe(false);
+    expect(output.error).toMatch(/no pickle with id/);
+    expect(output.error).toMatch(/picky_pickle_sessions/);
+  });
+
+  it("routes picky_abort_pickle through abortPickleSession and echoes the new status", async () => {
+    const socket = new FakeRealtimeSocket();
+    let abortedId: string | undefined;
+    const targetSession: PickyAgentSession = {
+      id: "pickle-target",
+      title: "Big refactor",
+      status: "cancelled",
+      cwd: "/tmp/picky",
+      createdAt: "2026-05-19T09:00:00.000Z",
+      updatedAt: "2026-05-19T09:05:00.000Z",
+      logs: [],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    };
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        ...fakeToolHandlers(),
+        async abortPickleSession({ sessionId }: { sessionId: string }) { abortedId = sessionId; return targetSession; },
+      },
+      defaultConfig: { provider: "openai", apiKey: "sk-test", modelOrDeployment: "gpt-realtime-2", voice: "marin" },
+      webSocketFactory: () => socket,
+    });
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    socket.serverEvent({
+      type: "response.output_item.done",
+      item: { type: "function_call", name: "picky_abort_pickle", call_id: "call-abort", arguments: JSON.stringify({ sessionId: "pickle-target" }) },
+    });
+    await settle();
+
+    expect(abortedId).toBe("pickle-target");
+    const fnOutput = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .find((event) => event.type === "conversation.item.create" && event.item?.type === "function_call_output");
+    const output = JSON.parse(fnOutput!.item.output);
+    expect(output.id).toBe("pickle-target");
+    expect(output.status).toBe("cancelled");
+  });
+});
+
 describe("SelectableMainRuntime", () => {
   it("keeps Pi runtime as the default main path and rejects realtime-only voice commands", async () => {
     const pi = new RecordingRuntime("pi");
@@ -1255,6 +1451,9 @@ function fakeToolHandlers() {
     async updateUserFact({ id, content }: { id: string; content: string }) { return { ok: true as const, memory: { id, content } }; },
     async forgetUserFact({ id }: { id: string }) { return { ok: true as const, removed: { id, content: "" } }; },
     listUserFacts() { return [] as Array<{ id: string; content: string }>; },
+    recallRecentMainContext() { return [] as PickyContextPacket[]; },
+    inspectPickleSession() { return session; },
+    async abortPickleSession() { return { ...session, status: "cancelled" as const }; },
   };
 }
 

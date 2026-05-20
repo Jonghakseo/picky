@@ -20,7 +20,7 @@ export function buildMainAgentPrompt(context: PickyContextPacket): BuiltPrompt {
   const lines = [
     "# Picky turn",
     "",
-    "Follow the standing Picky bootstrap instructions. Use only this turn's user request and captured desktop context below for fresh context.",
+    "Follow the standing Picky bootstrap instructions. Combine this turn's user request and captured desktop context with the Picky conversation memory you already have from earlier turns of this session (see the session-level instructions and the prior conversation items already in this transcript). Treat the captured desktop context below as fresh additional signal — never as a replacement for the prior conversation, and never as a reason to claim you cannot see earlier turns.",
     "",
     "## User request",
     context.transcript?.trim() || "(no transcript provided)",

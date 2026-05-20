@@ -26,6 +26,17 @@ const MAIN_REALTIME_SESSION_MAX_MS = 50 * 60 * 1000;
 // can only restore text turns, and very long replays balloon the bootstrap
 // latency. The supervisor is expected to provide newest-last ordered messages.
 const MAIN_REALTIME_HISTORY_REPLAY_LIMIT = 60;
+// How many of the *most recent* prior turns we additionally pack into
+// `session.update.instructions` so the model treats them as its own memory.
+// Conversation-item replay (above) is bulk older context with weaker model
+// adherence; instructions-level history is the high-priority anchor used for
+// short-term recall ("내 이름이 뭐였지", "이전 턴에 뭐 했지"). Keep this small so
+// `session.update` payloads stay sub-10KB.
+const MAIN_REALTIME_HISTORY_INSTRUCTIONS_LIMIT = 20;
+// Per-line truncation budget for instruction-level history rendering. Long
+// monologues would otherwise blow the session.update payload past a comfortable
+// size when the agent gets chatty.
+const MAIN_REALTIME_HISTORY_INSTRUCTIONS_LINE_LIMIT = 400;
 const ZERO_USAGE: MainRealtimeUsageSnapshot = {
   totalTokens: 0,
   inputTokens: 0,
@@ -64,6 +75,17 @@ interface OpenAIRealtimeToolHandlers {
   updateUserFact(request: { id: string; content: string }): Promise<{ ok: true; memory: { id: string; content: string } } | { ok: false; error: string }>;
   forgetUserFact(request: { id: string }): Promise<{ ok: true; removed: { id: string; content: string } } | { ok: false; error: string }>;
   listUserFacts(): Promise<Array<{ id: string; content: string }>> | Array<{ id: string; content: string }>;
+  /** Recent captured context packets for `picky_recall_recent_context`. Newest-first.
+   *  The runtime only converts the packets to a textual summary before sending
+   *  them to the model — binary screenshot data is never forwarded. */
+  recallRecentMainContext(request: { limit?: number }): PickyContextPacket[] | Promise<PickyContextPacket[]>;
+  /** Look up one Pickle session by id for `picky_inspect_active_pickle`. Returns
+   *  the supervisor's authoritative in-memory snapshot or undefined when the id
+   *  is unknown (the tool surface treats undefined as an error). */
+  inspectPickleSession(request: { sessionId: string }): PickyAgentSession | undefined | Promise<PickyAgentSession | undefined>;
+  /** Best-effort abort of a running Pickle for `picky_abort_pickle`. Returns the
+   *  updated session so the model can confirm the new status to the user. */
+  abortPickleSession(request: { sessionId: string }): Promise<PickyAgentSession>;
 }
 
 export interface RealtimeWebSocketLike {
@@ -88,7 +110,10 @@ type RealtimeToolName =
   | "picky_remember"
   | "picky_list_memories"
   | "picky_update_memory"
-  | "picky_forget";
+  | "picky_forget"
+  | "picky_recall_recent_context"
+  | "picky_inspect_active_pickle"
+  | "picky_abort_pickle";
 
 type PendingFunctionCall = {
   callId: string;
@@ -147,6 +172,10 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
 
   refreshUserMemoryInstructions(): void {
     this.handle?.refreshUserMemoryInstructions();
+  }
+
+  refreshConversationInstructions(): void {
+    this.handle?.refreshConversationInstructions();
   }
 
   setMainAgentNarrationEnabled(enabled: boolean): void {
@@ -278,6 +307,16 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
    * the model's instructions. Fast-path no-op when the socket is not open
    * yet; the next regular connect path picks the new set up automatically. */
   refreshUserMemoryInstructions(): void {
+    if (this.ws?.readyState !== OPENAI_WS_READY_STATE_OPEN) return;
+    this.sendSessionUpdate();
+  }
+
+  /** Resend `session.update` so the latest recent-turn transcript snapshot
+   * is reflected in the model's instructions. Called by the supervisor on
+   * every realtime turn_done so the next user turn's instructions include the
+   * exchange that just finished as part of the model's high-priority memory.
+   * Same fast-path no-op as the user-memory refresh. */
+  refreshConversationInstructions(): void {
     if (this.ws?.readyState !== OPENAI_WS_READY_STATE_OPEN) return;
     this.sendSessionUpdate();
   }
@@ -591,10 +630,11 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     const config = this.config;
     if (!config || this.ws?.readyState !== OPENAI_WS_READY_STATE_OPEN) return;
     const memories = this.snapshotUserMemories();
+    const recentHistory = this.snapshotRecentHistoryForInstructions();
     this.sendClientEvent({
       type: "session.update",
       session: this.usesAzurePreviewProtocol()
-        ? buildAzurePreviewSessionUpdate(config, memories)
+        ? buildAzurePreviewSessionUpdate(config, memories, recentHistory)
         : {
             type: "realtime",
             model: config.modelOrDeployment,
@@ -611,11 +651,25 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
               },
             },
             reasoning: { effort: mapReasoningEffort(this.thinkingLevel, config.reasoningEffort) },
-            instructions: buildRealtimeInstructions(memories),
+            instructions: buildRealtimeInstructions(memories, recentHistory),
             tools: realtimeTools(),
             tool_choice: "auto",
           },
     });
+  }
+
+  private snapshotRecentHistoryForInstructions(): MainRealtimeHistoryMessage[] {
+    const provider = this.historyProvider;
+    if (!provider) return [];
+    let messages: MainRealtimeHistoryMessage[] = [];
+    try {
+      messages = provider().filter((m) => m.text && m.text.trim());
+    } catch (error) {
+      logAgentd("main realtime history provider failed (instructions snapshot)", { error: error instanceof Error ? error.message : String(error) });
+      return [];
+    }
+    if (messages.length === 0) return [];
+    return messages.slice(-MAIN_REALTIME_HISTORY_INSTRUCTIONS_LIMIT);
   }
 
   private snapshotUserMemories(): MainRealtimeUserMemoryItem[] {
@@ -917,6 +971,19 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
         return this.options.toolHandlers.updateUserFact({ id: stringArg(args, "id"), content: stringArg(args, "content") });
       case "picky_forget":
         return this.options.toolHandlers.forgetUserFact({ id: stringArg(args, "id") });
+      case "picky_recall_recent_context": {
+        const limit = numberArg(args, "limit");
+        const packets = await this.options.toolHandlers.recallRecentMainContext({ limit });
+        return summarizeRealtimeRecentContexts(packets);
+      }
+      case "picky_inspect_active_pickle": {
+        const sessionId = stringArg(args, "sessionId");
+        const session = await this.options.toolHandlers.inspectPickleSession({ sessionId });
+        if (!session) return { ok: false, error: `no pickle with id ${JSON.stringify(sessionId)} (use picky_pickle_sessions to look up valid ids)` };
+        return summarizeRealtimePickleInspection(session);
+      }
+      case "picky_abort_pickle":
+        return summarizeRealtimePickleAbort(await this.options.toolHandlers.abortPickleSession({ sessionId: stringArg(args, "sessionId") }));
     }
   }
 
@@ -1100,10 +1167,10 @@ function buildInputTranscriptionConfig(config: OpenAIRealtimeAuthConfig): Record
   };
 }
 
-function buildAzurePreviewSessionUpdate(config: OpenAIRealtimeAuthConfig, userMemories: MainRealtimeUserMemoryItem[] = []): Record<string, unknown> {
+function buildAzurePreviewSessionUpdate(config: OpenAIRealtimeAuthConfig, userMemories: MainRealtimeUserMemoryItem[] = [], recentHistory: MainRealtimeHistoryMessage[] = []): Record<string, unknown> {
   return {
     modalities: ["text", "audio"],
-    instructions: buildRealtimeInstructions(userMemories),
+    instructions: buildRealtimeInstructions(userMemories, recentHistory),
     voice: azurePreviewVoice(config.voice),
     input_audio_format: "pcm16",
     output_audio_format: "pcm16",
@@ -1137,7 +1204,7 @@ function mapReasoningEffort(level: ThinkingLevel, fallback: OpenAIRealtimeAuthCo
   }
 }
 
-function buildRealtimeInstructions(userMemories: MainRealtimeUserMemoryItem[] = []): string {
+function buildRealtimeInstructions(userMemories: MainRealtimeUserMemoryItem[] = [], recentHistory: MainRealtimeHistoryMessage[] = []): string {
   const baseLines = [
     buildMainAgentBootstrapPair({ omitTtsParenthesisHint: true }).user,
     "",
@@ -1147,7 +1214,8 @@ function buildRealtimeInstructions(userMemories: MainRealtimeUserMemoryItem[] = 
     "- Use `picky_skills_search` to discover available Pi skills before delegating specialized work, then `picky_skill_details` for exact usage guidance when needed.",
     `- Use \`read_picky_user_guide\` before answering questions about how to use Picky. Prefer its \`section\` parameter when the question maps to one of these manual sections: ${PICKY_USER_GUIDE_SECTIONS.join("; ")}.`,
     "- You cannot execute Pi skills directly. If a skill is relevant, include the skill name and the essential details in `picky_start_pickle.instructions` or `picky_steer_pickle.message` for the Pickle.",
-    "- Pickle hover follow-ups bypass you and go directly to the Pickle. If the user refers to delegated work during a Picky turn, call `picky_pickle_sessions` before deciding whether to use `picky_steer_pickle`.",
+    "- Pickle hover follow-ups bypass you and go directly to the Pickle. If the user refers to delegated work during a Picky turn, call `picky_pickle_sessions` before deciding whether to use `picky_steer_pickle`. To check progress on one specific Pickle without spawning another, call `picky_inspect_active_pickle`. To stop a Pickle when the user explicitly asks (\"멈춰\", \"cancel that\"), call `picky_abort_pickle`.",
+    "- When the user references an earlier turn's page, screen, selection, or file (\"방금 그 페이지\", \"5분 전\", \"the PR you saw\"), or when a stored memory rule depends on the current browser/cwd, call `picky_recall_recent_context` first. The single \"captured context\" you saw at the start of THIS turn is gone by the next one; that tool is how you look further back.",
     "",
     "## Long-term user memory",
     "- When the user asks you to remember a fact, rule, or preference (e.g. \"remember that X\", \"기억해놓아\", \"from now on, when I do X, do Y\"), call `picky_remember` with a short content describing exactly what to remember. Store at most one idea per item.",
@@ -1156,13 +1224,34 @@ function buildRealtimeInstructions(userMemories: MainRealtimeUserMemoryItem[] = 
   ];
   if (userMemories.length === 0) {
     baseLines.push("- (No long-term memories stored yet.)");
-    return baseLines.join("\n");
+  } else {
+    baseLines.push("", "### Stored memories");
+    for (const memory of userMemories) {
+      baseLines.push(`- (id=${memory.id}) ${memory.content}`);
+    }
   }
-  baseLines.push("", "### Stored memories");
-  for (const memory of userMemories) {
-    baseLines.push(`- (id=${memory.id}) ${memory.content}`);
-  }
+  appendRecentConversationSection(baseLines, recentHistory);
   return baseLines.join("\n");
+}
+
+function appendRecentConversationSection(lines: string[], recentHistory: MainRealtimeHistoryMessage[]): void {
+  if (recentHistory.length === 0) return;
+  lines.push(
+    "",
+    "## Recent conversation (your own memory)",
+    "The lines below are the most recent turns of your ongoing Picky conversation with this user. Treat each `User:` line as something the user actually said earlier and each `Picky (you):` line as something you actually replied. This is your own memory of what just happened, not background documentation. Apply it when answering follow-ups (especially when the user says \"earlier\", \"before\", \"이전\", \"방금\", \"내 이름\", \"우리 대화\"). Do not recite these lines verbatim, do not re-answer them line by line, and never tell the user you cannot see earlier turns when this section is present.",
+  );
+  for (const message of recentHistory) {
+    const label = message.role === "user" ? "User" : "Picky (you)";
+    const text = truncateConversationLineForInstructions(message.text);
+    lines.push(`- ${label}: ${text}`);
+  }
+}
+
+function truncateConversationLineForInstructions(text: string): string {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= MAIN_REALTIME_HISTORY_INSTRUCTIONS_LINE_LIMIT) return collapsed;
+  return `${collapsed.slice(0, MAIN_REALTIME_HISTORY_INSTRUCTIONS_LINE_LIMIT - 1)}…`;
 }
 
 function buildRealtimeContextText(context: PickyContextPacket): string {
@@ -1336,6 +1425,45 @@ function realtimeTools(): Array<Record<string, unknown>> {
         required: ["id"],
       },
     },
+    {
+      type: "function",
+      name: "picky_recall_recent_context",
+      description: "Look up the most recent captured context packets Picky has seen — the browser URL, selected text, cwd, active app, and screenshot labels the user attached on previous turns. Call this when the user references an *earlier* turn (\"방금 그 페이지\", \"5분 전\", \"아까 선택한 그 텍스트\", \"the PR\") or when a long-term memory rule keyed on browser/cwd should fire. Returns the newest packets first.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          limit: { type: "number", description: "Number of recent packets to return (default 5, max 10). The most recent first." },
+        },
+        required: [],
+      },
+    },
+    {
+      type: "function",
+      name: "picky_inspect_active_pickle",
+      description: "Get a short status summary for one running or recently-finished Pickle: current status, last summary message, most recent tool calls, and changed files. Use when the user asks how a specific delegated task is going (\"그 피클 어떻게 돼가\", \"how's the refactor going\"). Does NOT spawn a new Pickle. Resolve the id with picky_pickle_sessions first if needed.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          sessionId: { type: "string", description: "Pickle session id from picky_pickle_sessions." },
+        },
+        required: ["sessionId"],
+      },
+    },
+    {
+      type: "function",
+      name: "picky_abort_pickle",
+      description: "Stop a running Pickle. Use ONLY when the user explicitly asks to cancel, kill, or stop a Pickle (\"그거 멈춰\", \"cancel that\", \"필요 없어졌어\"). Resolve the id with picky_pickle_sessions first if needed. Never call without an explicit user request.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          sessionId: { type: "string", description: "Pickle session id from picky_pickle_sessions." },
+        },
+        required: ["sessionId"],
+      },
+    },
   ];
 }
 
@@ -1430,6 +1558,101 @@ function compactRealtimePickleSessionText(text: string | undefined): string | un
 
 function summarizeRealtimePickleSteerSession(session: PickyAgentSession): RealtimePickleSteerSummary {
   const summary: RealtimePickleSteerSummary = {
+    id: session.id,
+    title: session.title,
+    status: session.status,
+  };
+  if (session.cwd) summary.cwd = session.cwd;
+  return summary;
+}
+
+/** Compact one PickyContextPacket into a text-only structure safe to send back
+ *  to the model. Screenshot binary data is dropped; only the labels survive so
+ *  the model can say "the page you had open at 12:34" without us blowing the
+ *  conversation token budget. */
+function summarizeRealtimeRecentContext(packet: PickyContextPacket): Record<string, unknown> {
+  const summary: Record<string, unknown> = {
+    id: packet.id,
+    source: packet.source,
+    capturedAt: packet.capturedAt,
+  };
+  if (packet.cwd) summary.cwd = packet.cwd;
+  if (packet.activeApp?.name) summary.activeApp = packet.activeApp.name;
+  if (packet.activeWindow?.title) summary.activeWindowTitle = packet.activeWindow.title;
+  if (packet.browser?.url || packet.browser?.title) {
+    summary.browser = {
+      ...(packet.browser?.url ? { url: packet.browser.url } : {}),
+      ...(packet.browser?.title ? { title: packet.browser.title } : {}),
+    };
+  }
+  if (packet.selectedText) {
+    const compact = packet.selectedText.replace(/\s+/g, " ").trim();
+    summary.selectedTextPreview = compact.length > 200 ? `${compact.slice(0, 197)}...` : compact;
+  }
+  if (packet.screenshots.length > 0) {
+    summary.screenshots = packet.screenshots.map((s) => ({
+      label: s.label,
+      ...(s.screenId ? { screenId: s.screenId } : {}),
+      ...(s.isCursorScreen ? { isCursorScreen: true } : {}),
+    }));
+  }
+  if (packet.inkMarks.length > 0) summary.inkMarkCount = packet.inkMarks.length;
+  const transcriptCompact = packet.transcript?.replace(/\s+/g, " ").trim();
+  if (transcriptCompact) summary.transcriptPreview = transcriptCompact.length > 200 ? `${transcriptCompact.slice(0, 197)}...` : transcriptCompact;
+  return summary;
+}
+
+function summarizeRealtimeRecentContexts(packets: PickyContextPacket[]): { count: number; contexts: Record<string, unknown>[] } {
+  return { count: packets.length, contexts: packets.map(summarizeRealtimeRecentContext) };
+}
+
+/** Compact inspection summary for one Pickle session. Includes status, last
+ *  summary line, the 5 most recent tool calls (name + status), and the changed
+ *  files list (path + insertion/deletion counts when present). Everything
+ *  flattened and capped so the model can answer "지금 어떻게 돼가" in one
+ *  turn without blowing the token budget. */
+function summarizeRealtimePickleInspection(session: PickyAgentSession): Record<string, unknown> {
+  const summary: Record<string, unknown> = {
+    id: session.id,
+    title: session.title,
+    status: session.status,
+    updatedAt: session.updatedAt,
+  };
+  if (session.cwd) summary.cwd = session.cwd;
+  if (session.archived) summary.archived = true;
+  const lastSummary = compactRealtimePickleSessionText(session.lastSummary);
+  if (lastSummary) summary.lastSummary = lastSummary;
+  if (session.tools.length > 0) {
+    summary.recentToolCalls = session.tools.slice(-5).map((tool) => ({
+      name: tool.name,
+      status: tool.status,
+      ...(tool.preview ? { preview: compactRealtimePickleSessionText(tool.preview) } : {}),
+    }));
+  }
+  if (session.changedFiles.length > 0) {
+    summary.changedFiles = session.changedFiles.slice(0, 10).map((file) => ({
+      path: file.path,
+      status: file.status,
+      ...(file.summary ? { summary: compactRealtimePickleSessionText(file.summary) } : {}),
+    }));
+    if (session.changedFiles.length > 10) summary.changedFilesTruncated = session.changedFiles.length - 10;
+  }
+  if (session.activitySummary) {
+    const activity = session.activitySummary;
+    const compact: Record<string, number> = {};
+    if (activity.read) compact.read = activity.read;
+    if (activity.bash) compact.bash = activity.bash;
+    if (activity.write) compact.write = activity.write;
+    if (activity.edit) compact.edit = activity.edit;
+    if (activity.other) compact.other = activity.other;
+    if (activity.thinking) compact.thinking = activity.thinking;
+    if (Object.keys(compact).length > 0) summary.activity = compact;
+  }
+  return summary;
+}
+
+function summarizeRealtimePickleAbort(session: PickyAgentSession): Record<string, unknown> {
+  const summary: Record<string, unknown> = {
     id: session.id,
     title: session.title,
     status: session.status,
@@ -1607,6 +1830,9 @@ function normalizeToolName(name: string): RealtimeToolName | undefined {
     case "picky_list_memories":
     case "picky_update_memory":
     case "picky_forget":
+    case "picky_recall_recent_context":
+    case "picky_inspect_active_pickle":
+    case "picky_abort_pickle":
       return name;
     default:
       return undefined;

@@ -57,7 +57,7 @@ enum AppBundleConfiguration {
     static var testRuntimeModeSettingsURL: URL?
 
     nonisolated(unsafe) private static let runtimeModeCacheLock = NSLock()
-    nonisolated(unsafe) private static var cachedLaunchRuntimeMode: (settingsURL: URL?, mode: PickyMainAgentRuntimeMode)?
+    nonisolated(unsafe) private static var cachedLaunchRuntimeModes: [URL: PickyMainAgentRuntimeMode] = [:]
 
     /// Production resolves this once from persisted Settings at process launch
     /// so users can choose Pi or OpenAI Realtime and have the selection take
@@ -72,29 +72,36 @@ enum AppBundleConfiguration {
     static var effectiveRuntimeMode: PickyMainAgentRuntimeMode {
         if let override = testRuntimeModeOverride { return override }
 
-        let settingsURL = testRuntimeModeSettingsURL
-        runtimeModeCacheLock.lock()
-        defer { runtimeModeCacheLock.unlock() }
-
-        if let cachedLaunchRuntimeMode, cachedLaunchRuntimeMode.settingsURL == settingsURL {
-            return cachedLaunchRuntimeMode.mode
-        }
-
         let store: PickySettingsStore
-        if let settingsURL {
+        if let settingsURL = testRuntimeModeSettingsURL {
             store = PickySettingsStore(url: settingsURL)
         } else {
             store = PickySettingsStore()
         }
+        let cacheKey = store.url
+
+        runtimeModeCacheLock.lock()
+        defer { runtimeModeCacheLock.unlock() }
+
+        if let cachedLaunchRuntimeMode = cachedLaunchRuntimeModes[cacheKey] {
+            return cachedLaunchRuntimeMode
+        }
+
         let mode = store.load().mainAgentRuntimeMode
-        cachedLaunchRuntimeMode = (settingsURL, mode)
+        cachedLaunchRuntimeModes[cacheKey] = mode
         return mode
     }
 
     static func resetEffectiveRuntimeModeCacheForTesting() {
         runtimeModeCacheLock.lock()
         defer { runtimeModeCacheLock.unlock() }
-        cachedLaunchRuntimeMode = nil
+        let store: PickySettingsStore
+        if let settingsURL = testRuntimeModeSettingsURL {
+            store = PickySettingsStore(url: settingsURL)
+        } else {
+            store = PickySettingsStore()
+        }
+        cachedLaunchRuntimeModes[store.url] = nil
     }
 
     /// Historical name retained for call-site compatibility. This now means

@@ -131,10 +131,10 @@ struct PickySettingsPolishTests {
         settings.mainAgentRuntimeModeRealtimeOptInMigrationApplied = true
         try store.save(settings)
 
-        AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting()
-        defer { AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting() }
-
         try AppBundleConfiguration.$testRuntimeModeSettingsURL.withValue(store.url) {
+            AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting()
+            defer { AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting() }
+
             #expect(AppBundleConfiguration.effectiveRuntimeMode == .pi)
 
             var updated = settings
@@ -145,6 +145,61 @@ struct PickySettingsPolishTests {
 
             AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting()
             #expect(AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime)
+        }
+    }
+
+    @Test func effectiveRuntimeModeCacheIsScopedBySettingsURL() throws {
+        let firstRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        let secondRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: firstRoot)
+            try? FileManager.default.removeItem(at: secondRoot)
+        }
+        let firstProject = firstRoot.appendingPathComponent("project", isDirectory: true)
+        let secondProject = secondRoot.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: firstProject, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: secondProject, withIntermediateDirectories: true)
+        let firstStore = PickySettingsStore(appSupportRoot: firstRoot)
+        let secondStore = PickySettingsStore(appSupportRoot: secondRoot)
+        var firstSettings = PickySettings.defaults(appSupportRoot: firstRoot)
+        firstSettings.defaultCwd = firstProject.path
+        firstSettings.mainAgentCwd = firstProject.path
+        firstSettings.worktreeParent = firstProject.path
+        firstSettings.mainAgentRuntimeMode = .pi
+        firstSettings.mainAgentRuntimeModeRealtimeOptInMigrationApplied = true
+        try firstStore.save(firstSettings)
+        var secondSettings = PickySettings.defaults(appSupportRoot: secondRoot)
+        secondSettings.defaultCwd = secondProject.path
+        secondSettings.mainAgentCwd = secondProject.path
+        secondSettings.worktreeParent = secondProject.path
+        secondSettings.mainAgentRuntimeMode = .openAIRealtime
+        secondSettings.mainAgentRuntimeModeRealtimeOptInMigrationApplied = true
+        try secondStore.save(secondSettings)
+
+        try AppBundleConfiguration.$testRuntimeModeSettingsURL.withValue(firstStore.url) {
+            AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting()
+            #expect(AppBundleConfiguration.effectiveRuntimeMode == .pi)
+        }
+        try AppBundleConfiguration.$testRuntimeModeSettingsURL.withValue(secondStore.url) {
+            AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting()
+            #expect(AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime)
+        }
+
+        firstSettings.mainAgentRuntimeMode = .openAIRealtime
+        try firstStore.save(firstSettings)
+        secondSettings.mainAgentRuntimeMode = .pi
+        try secondStore.save(secondSettings)
+
+        try AppBundleConfiguration.$testRuntimeModeSettingsURL.withValue(secondStore.url) {
+            AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting()
+            #expect(AppBundleConfiguration.effectiveRuntimeMode == .pi)
+        }
+        try AppBundleConfiguration.$testRuntimeModeSettingsURL.withValue(firstStore.url) {
+            #expect(AppBundleConfiguration.effectiveRuntimeMode == .pi)
+            AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting()
+        }
+        try AppBundleConfiguration.$testRuntimeModeSettingsURL.withValue(secondStore.url) {
+            AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting()
         }
     }
 
@@ -162,10 +217,10 @@ struct PickySettingsPolishTests {
         settings.mainAgentRuntimeModeRealtimeOptInMigrationApplied = true
         try store.save(settings)
 
-        AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting()
-        defer { AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting() }
-
         try AppBundleConfiguration.$testRuntimeModeSettingsURL.withValue(store.url) {
+            AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting()
+            defer { AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting() }
+
             #expect(AppBundleConfiguration.effectiveRuntimeMode == .pi)
             try AppBundleConfiguration.$testRuntimeModeOverride.withValue(.openAIRealtime) {
                 #expect(AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime)

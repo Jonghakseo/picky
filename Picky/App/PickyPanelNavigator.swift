@@ -23,6 +23,11 @@ import SwiftUI
 final class PickyPanelNavigator: ObservableObject {
     @Published var selectedTab: CompanionPanelTab = .status
     @Published var settingsRoute: CompanionPanelSettingsRoute = .index
+    /// Status tab's inner navigation. Mirrors `settingsRoute` so the
+    /// Feedback page is reached as a Status sub-route rather than a
+    /// panel-level overlay — that way switching tabs hides Feedback without
+    /// losing its draft, exactly like Settings sub-pages.
+    @Published var statusRoute: CompanionPanelStatusRoute = .index
 
     /// Routes the panel to whatever the deep link points at. Callers that
     /// also need to make the panel visible should call
@@ -33,12 +38,15 @@ final class PickyPanelNavigator: ObservableObject {
         case .status:
             selectedTab = .status
             settingsRoute = .index
+            statusRoute = .index
         case .messages:
             selectedTab = .messages
             settingsRoute = .index
+            statusRoute = .index
         case .settings:
             selectedTab = .settings
             settingsRoute = deepLink.settingsRoute ?? .index
+            statusRoute = .index
         }
     }
 }

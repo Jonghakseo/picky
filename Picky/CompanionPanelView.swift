@@ -55,11 +55,6 @@ struct CompanionPanelView: View {
     /// the conversation) can drive the panel from outside the view.
     @ObservedObject var navigator: PickyPanelNavigator
     @StateObject private var settingsViewModel = PickySettingsViewModel()
-    /// Feedback is reached only via the Status tab deep link, so it renders
-    /// as a top-level overlay rather than a Settings sub-page. Keeping it
-    /// outside the tab switch means the tab bar can keep showing Status as
-    /// active while the user fills out the form, matching the back chevron.
-    @State private var isShowingFeedback: Bool = false
 
     private var selectedTab: CompanionPanelTab { navigator.selectedTab }
     private var settingsRoute: CompanionPanelSettingsRoute { navigator.settingsRoute }
@@ -68,6 +63,9 @@ struct CompanionPanelView: View {
     }
     private var settingsRouteBinding: Binding<CompanionPanelSettingsRoute> {
         Binding(get: { navigator.settingsRoute }, set: { navigator.settingsRoute = $0 })
+    }
+    private var statusRouteBinding: Binding<CompanionPanelStatusRoute> {
+        Binding(get: { navigator.statusRoute }, set: { navigator.statusRoute = $0 })
     }
 
     var body: some View {
@@ -90,41 +88,37 @@ struct CompanionPanelView: View {
             }
 
             Group {
-                if isShowingFeedback {
-                    feedbackOverlay
-                } else {
-                    switch selectedTab {
-                    case .messages:
-                        CompanionPanelMessagesView(companionManager: companionManager)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 14)
-                            .padding(.bottom, 12)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    case .status, .settings:
-                        ScrollView(.vertical, showsIndicators: selectedTab == .settings) {
-                            Group {
-                                switch selectedTab {
-                                case .status:
-                                    CompanionPanelStatusView(
-                                        companionManager: companionManager,
-                                        settingsViewModel: settingsViewModel,
-                                        onShowFeedback: showFeedback
-                                    )
-                                case .messages:
-                                    EmptyView()
-                                case .settings:
-                                    CompanionPanelSettingsView(
-                                        viewModel: settingsViewModel,
-                                        companionManager: companionManager,
-                                        route: settingsRouteBinding
-                                    )
-                                }
+                switch selectedTab {
+                case .messages:
+                    CompanionPanelMessagesView(companionManager: companionManager)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+                        .padding(.bottom, 12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                case .status, .settings:
+                    ScrollView(.vertical, showsIndicators: selectedTab == .settings) {
+                        Group {
+                            switch selectedTab {
+                            case .status:
+                                CompanionPanelStatusView(
+                                    companionManager: companionManager,
+                                    settingsViewModel: settingsViewModel,
+                                    route: statusRouteBinding
+                                )
+                            case .messages:
+                                EmptyView()
+                            case .settings:
+                                CompanionPanelSettingsView(
+                                    viewModel: settingsViewModel,
+                                    companionManager: companionManager,
+                                    route: settingsRouteBinding
+                                )
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.top, 14)
-                            .padding(.bottom, 12)
-                            .frame(maxWidth: .infinity, alignment: .topLeading)
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+                        .padding(.bottom, 12)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
                 }
             }
@@ -150,15 +144,15 @@ struct CompanionPanelView: View {
     }
 
     /// Re-tap of the already-active tab pops that tab back to its root view,
-    /// matching the iOS-style "tap active tab to go home" gesture. Status
-    /// pops the feedback overlay; Settings pops any sub-route back to the
-    /// index; Messages has no inner hierarchy so it's a no-op.
+    /// matching the iOS-style "tap active tab to go home" gesture. Each tab
+    /// with an inner hierarchy resets its own route; Messages has none so it
+    /// is a no-op.
     private func popActiveTabToRoot() {
         switch navigator.selectedTab {
         case .status:
-            if isShowingFeedback {
+            if navigator.statusRoute != .index {
                 withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) {
-                    isShowingFeedback = false
+                    navigator.statusRoute = .index
                 }
             }
         case .settings:
@@ -172,74 +166,16 @@ struct CompanionPanelView: View {
         }
     }
 
-    private func showFeedback() {
-        withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) {
-            navigator.selectedTab = .status
-            isShowingFeedback = true
-        }
-    }
-
-    /// Mirror of showFeedback: feedback is a Status-tab drill-down, so its
-    /// back chevron just collapses the overlay and reveals the Status content
-    /// again. Tab selection never moved, so nothing else needs resetting.
-    private func exitFeedbackToStatus() {
-        withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) {
-            isShowingFeedback = false
-        }
-    }
-
     /// Snap back to Status whenever the prerequisites become unmet. Without
     /// this, a user who had Messages or Settings open before revoking a
     /// permission (or having Pi go missing) would see a tab bar that's hidden
     /// while their selection points at a tab whose content the prerequisites
-    /// surface no longer reaches. The feedback overlay is allowed to keep
-    /// rendering — losing a prerequisite mid-form should not silently discard
-    /// the user's draft, and the back chevron still works without the tab bar.
+    /// surface no longer reaches. The Status sub-route (Feedback) is left
+    /// alone — losing a prerequisite mid-form should not silently discard the
+    /// user's draft, and the back chevron still works without the tab bar.
     private func handlePrerequisitesChanged(_ met: Bool) {
         if !met {
             navigator.selectedTab = .status
-        }
-    }
-
-    /// Feedback page rendered above the tab content. Mirrors the layout of a
-    /// Settings sub-page (back chevron + section header + form) but lives at
-    /// the panel level so the tab bar can keep highlighting Status — the tab
-    /// the user actually came from and will return to.
-    private var feedbackOverlay: some View {
-        ScrollView(.vertical, showsIndicators: true) {
-            VStack(alignment: .leading, spacing: 0) {
-                Button(action: exitFeedbackToStatus) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 11, weight: .semibold))
-                        Text("tab.status")
-                            .font(.system(size: 11.5, weight: .medium))
-                    }
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .pointerCursor()
-                .padding(.bottom, 8)
-
-                VStack(alignment: .leading, spacing: 9) {
-                    Text("settings.section.feedback.title")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(DS.Colors.textSecondary)
-                        .textCase(.uppercase)
-                        .tracking(0.4)
-                    Text("settings.section.feedback.subtitle")
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    CompanionPanelFeedbackView(viewModel: settingsViewModel)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 12)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
     }
 

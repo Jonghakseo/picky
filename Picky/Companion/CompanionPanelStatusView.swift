@@ -7,11 +7,20 @@
 
 import SwiftUI
 
+/// Inner navigation for the Status tab. Mirrors `CompanionPanelSettingsRoute`
+/// so the Feedback page renders as a Status sub-page rather than a
+/// panel-level overlay. Switching to Messages/Settings then back preserves
+/// the route, matching Settings sub-page behavior.
+enum CompanionPanelStatusRoute: Hashable {
+    case index
+    case feedback
+}
+
 struct CompanionPanelStatusView: View {
     @ObservedObject var companionManager: CompanionManager
     @ObservedObject var settingsViewModel: PickySettingsViewModel
     @EnvironmentObject private var updaterController: PickyUpdaterController
-    var onShowFeedback: () -> Void = {}
+    @Binding var route: CompanionPanelStatusRoute
 
     /// Cached `ShellCommandInstaller.currentStatus()` so the stale banner can
     /// render without recomputing on every body call. Refreshed on appear and
@@ -20,6 +29,20 @@ struct CompanionPanelStatusView: View {
     @State private var shellCommandStatus: ShellCommandInstaller.InstallStatus = .notInstalled
 
     var body: some View {
+        Group {
+            switch route {
+            case .index: indexContent
+            case .feedback: feedbackContent
+            }
+        }
+        .animation(.easeOut(duration: 0.16), value: route)
+        .onAppear { refreshShellCommandStatus() }
+        .onReceive(NotificationCenter.default.publisher(for: .pickyShellCommandStatusDidChange)) { _ in
+            refreshShellCommandStatus()
+        }
+    }
+
+    private var indexContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             staleShellCommandBanner
             if companionManager.allPrerequisitesMet {
@@ -58,9 +81,47 @@ struct CompanionPanelStatusView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onAppear { refreshShellCommandStatus() }
-        .onReceive(NotificationCenter.default.publisher(for: .pickyShellCommandStatusDidChange)) { _ in
-            refreshShellCommandStatus()
+    }
+
+    /// Feedback sub-page. Mirrors the Settings sub-page layout — back chevron
+    /// pointing at the tab name, section header, then the form. Tab bar above
+    /// keeps highlighting Status because route navigation never moves the tab.
+    private var feedbackContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: popToIndex) {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("tab.status")
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+                .foregroundColor(DS.Colors.textTertiary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .pointerCursor()
+            .padding(.bottom, 8)
+
+            VStack(alignment: .leading, spacing: 9) {
+                Text("settings.section.feedback.title")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .textCase(.uppercase)
+                    .tracking(0.4)
+                Text("settings.section.feedback.subtitle")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                CompanionPanelFeedbackView(viewModel: settingsViewModel)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func popToIndex() {
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) {
+            route = .index
         }
     }
 
@@ -111,10 +172,10 @@ struct CompanionPanelStatusView: View {
         shellCommandStatus = ShellCommandInstaller.currentStatus()
     }
 
-    /// Chevron entry that deep-links into the Settings tab's feedback page.
+    /// Chevron entry that drills into the Status tab's feedback sub-page.
     /// Mirrors the Settings index row style (title + subtitle + chevron).
     private var feedbackRow: some View {
-        Button(action: onShowFeedback) {
+        Button(action: { withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) { route = .feedback } }) {
             HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("status.feedback.title")

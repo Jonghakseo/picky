@@ -50,14 +50,15 @@ struct PickyWorkspaceSeederTests {
         #expect(body.contains("block: true"))
     }
 
-    @Test func seedSkipsTellPlanExtensionUnderOpenAIRealtimeMode() throws {
-        // picky_tell_plan plugs into Pi's tool_call gate. Seeding it under the
-        // OpenAI Realtime runtime creates a dormant extension the realtime
-        // main never invokes, so the seeder must skip the .pi/extensions
-        // payload when the workspace is intended for the realtime runtime.
-        // The default AGENTS.md is still seeded because Pi reads it as the
-        // cwd's standing prompt regardless of which main runtime drives a
-        // turn.
+    @Test func seedSkipsPiPayloadsUnderOpenAIRealtimeMode() throws {
+        // AGENTS.md and picky-tell-plan.ts are read exclusively by the Pi SDK
+        // runtime (cwd-loaded standing prompt + tool_call gate). The OpenAI
+        // Realtime runtime carries its own instructions inline via
+        // session.update and never touches either file, so seeding them
+        // under the realtime workspace would leave dormant files behind that
+        // confuse anyone inspecting the directory. The workspace directory
+        // itself is still created because Pickle daemons may use it as a
+        // cwd.
         let root = scratchRoot()
         defer { try? FileManager.default.removeItem(at: root) }
 
@@ -73,7 +74,10 @@ struct PickyWorkspaceSeederTests {
             .appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath, isDirectory: true)
             .appendingPathComponent(PickyWorkspaceSeeder.tellPlanExtensionFilename, isDirectory: false)
 
-        #expect(FileManager.default.fileExists(atPath: agentsURL.path))
+        var isDirectory: ObjCBool = false
+        #expect(FileManager.default.fileExists(atPath: workspaceURL.path, isDirectory: &isDirectory))
+        #expect(isDirectory.boolValue)
+        #expect(!FileManager.default.fileExists(atPath: agentsURL.path))
         #expect(!FileManager.default.fileExists(atPath: extensionURL.path))
     }
 

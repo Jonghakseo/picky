@@ -56,14 +56,16 @@ enum PickyWorkspaceSeeder {
     /// migrations / tests can target a different root without hard-coding the
     /// AppSupport URL.
     ///
-    /// `mainAgentRuntimeMode` gates the `picky-tell-plan` extension seed:
-    /// the extension only takes effect inside Pi's tool-call lifecycle, so
-    /// seeding it under the OpenAI Realtime runtime would create a dormant
-    /// `.pi/extensions/picky-tell-plan.ts` that the realtime main agent
-    /// never invokes and that confuses anyone inspecting the workspace.
-    /// The default `AGENTS.md` is still seeded regardless of runtime mode
-    /// because Pi reads it as the cwd's standing prompt independent of
-    /// which main runtime drives a turn.
+    /// `mainAgentRuntimeMode` gates the Pi-specific payloads under the
+    /// workspace. Both `AGENTS.md` (Pi's cwd-loaded standing prompt) and
+    /// `.pi/extensions/picky-tell-plan.ts` (Pi's tool_call gate) are only
+    /// read by the Pi SDK runtime - the OpenAI Realtime runtime carries its
+    /// own instructions in `session.update` and never opens the workspace
+    /// AGENTS.md or invokes the tell-plan extension. Seeding them under the
+    /// realtime runtime would leave dormant files behind that confuse
+    /// anyone inspecting the workspace, so the workspace directory itself
+    /// is still created (Pickle daemons may use it as a cwd) but no Pi
+    /// payload is written.
     static func seed(
         workspacePath: String,
         mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi,
@@ -77,6 +79,7 @@ enum PickyWorkspaceSeeder {
             log("⚠️ Picky: Failed to create workspace at \(workspaceURL.path): \(error.localizedDescription)")
             return
         }
+        guard mainAgentRuntimeMode == .pi else { return }
         let agentsURL = workspaceURL.appendingPathComponent(agentsMarkdownFilename, isDirectory: false)
         if !fileManager.fileExists(atPath: agentsURL.path) {
             do {
@@ -86,7 +89,6 @@ enum PickyWorkspaceSeeder {
                 log("⚠️ Picky: Failed to seed \(agentsURL.path): \(error.localizedDescription)")
             }
         }
-        guard mainAgentRuntimeMode == .pi else { return }
         seedExtensions(workspaceURL: workspaceURL, fileManager: fileManager, log: log)
     }
 

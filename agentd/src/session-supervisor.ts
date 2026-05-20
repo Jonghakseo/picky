@@ -1510,6 +1510,29 @@ export class SessionSupervisor extends EventEmitter {
       // ("내 이름", "이전 턴에 뭐", "우리 대화") working across turns.
       const realtimeRuntime = this.options.mainRuntime;
       if (isMainRealtimeRuntime(realtimeRuntime)) realtimeRuntime.refreshConversationInstructions?.();
+      // Mirror the Pi SDK `turn_text_complete` contract: emit a `quickReply`
+      // for the just-finished realtime turn so the Picky client's
+      // interactionCoordinator can collapse its `.waitingForAgent` output
+      // and the cursor returns to idle. Without this, every realtime turn
+      // initiated from a Quick Input (or any source whose ownership uses
+      // cursor-response presentation, i.e. .quickInputText / .cli) leaves
+      // the cursor parked on yellow (.processing) forever because the
+      // reducer never sees a terminating signal - voice-machine cleanup
+      // alone does not touch reducer state.output. The wedge becomes
+      // visible after a tool-call turn because the longer phase sequence
+      // outlives the brief voice-machine projection that was temporarily
+      // overriding the cursor color.
+      const replyContextId = this.mainReplyContextId;
+      const trimmedTranscript = finalTranscript?.trim();
+      if (replyContextId && trimmedTranscript) {
+        const isPickleReply = this.pickleSessionIds.has(replyContextId) || this.externalPickleReplyContexts.has(replyContextId);
+        this.emitQuickReply(replyContextId, trimmedTranscript, {
+          originSource: replyContextId === this.mainContext?.id ? quickReplyOriginFromContextSource(this.mainContext.source) : "system",
+          replyKind: isPickleReply ? "pickleCompletion" : "main",
+          sessionId: isPickleReply ? replyContextId : undefined,
+          inputId: event.inputId,
+        });
+      }
       this.emit("mainRealtimeTurnDone", event.inputId, event.status, finalTranscript);
       this.schedulePickleCompletionDrain();
       return;

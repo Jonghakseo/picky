@@ -196,6 +196,7 @@ agentd_input_hash() {
     cd "${ROOT_DIR}"
     /usr/bin/find \
       agentd/src \
+      agentd/seeds \
       agentd/package.json \
       agentd/tsconfig.json \
       docs/user-manual.md \

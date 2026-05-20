@@ -33,10 +33,6 @@ const HARD_PACKAGE_EXPORTS = [
   "createAgentSessionRuntime",
   "getAgentDir",
   "SessionManager",
-  // Skill / settings catalog used by application/skill-catalog.ts.
-  "loadSkills",
-  "SettingsManager",
-  "DefaultPackageManager",
   // Tool definition helper used by every application/*-tool.ts.
   "defineTool",
 ] as const;

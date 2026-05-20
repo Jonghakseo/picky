@@ -16,7 +16,7 @@ import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyAbortPickleTool, createPickyPickleSessionsTool, createPickyStartPickleTool, createPickySteerPickleTool, type PickyHandoffRequest, type PickyPickleAbortRequest, type PickyPickleSteerRequest } from "./application/handoff-tool.js";
 import { createPickyAskUserQuestionTool } from "./application/ask-user-question-tool.js";
 import { createReadPickyUserGuideTool, readPickyUserGuide } from "./application/user-guide-tool.js";
-import { PickySkillCatalog } from "./application/skill-catalog.js";
+import { PickySkillStore } from "./application/picky-skill-store.js";
 import { stabilizeProcessCwd, type ProcessCwdStabilizerResult } from "./process-cwd.js";
 import { ThinkingLevelSchema, type ThinkingLevel } from "./protocol.js";
 import type { AgentRuntime } from "./runtime/types.js";
@@ -267,7 +267,15 @@ function buildPrimaryMainRuntime(
     return { runtime: overridden, toolsBuilder: () => [] };
   }
 
-  const skillCatalog = new PickySkillCatalog();
+  // Picky-only skill catalog. Independent of Pi skills: each file under
+  // ~/Library/Application Support/Picky/skills/*.md is a short behavior recipe
+  // the realtime main agent can read on demand via picky_skill. The store
+  // seeds the directory with bundled templates on first boot so users have
+  // at least one example to copy from.
+  const pickySkillStore = new PickySkillStore();
+  void pickySkillStore.ensureSeeded().catch((error) => {
+    logAgentd("picky skill store seed failed", { error: error instanceof Error ? error.message : String(error) });
+  });
   const requireSupervisor = (): SessionSupervisor => {
     if (!supervisorRef.current) throw new Error("Supervisor not constructed yet");
     return supervisorRef.current;
@@ -382,8 +390,9 @@ function buildPrimaryMainRuntime(
       handoff: startPickleFromMainContext,
       listPickleSessions,
       steerPickleSession,
-      searchSkills: (request) => skillCatalog.search(request),
-      getSkillDetails: (request) => skillCatalog.details(request),
+      listPickySkills: () => pickySkillStore.list(),
+      searchPickySkills: (request) => pickySkillStore.search(request),
+      getPickySkillDetails: (request) => pickySkillStore.details(request),
       readUserGuide: (request) => readPickyUserGuide(request),
       // Long-term user memory CRUD. The runtime relays tool calls here; the
       // supervisor owns picky.json and pushes a refreshed session.update via

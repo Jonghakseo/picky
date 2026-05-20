@@ -2,12 +2,16 @@
 
 > 대상: `PICKY_REALTIME_OPT_IN=1` 빌드의 메인 OpenAI Realtime 런타임
 > 
-> 현재 활성 도구: `picky_start_pickle`, `picky_pickle_sessions`,
-> `picky_steer_pickle`, `picky_skills_search`, `picky_skill_details`,
-> `read_picky_user_guide`
+> 현재 활성 도구(요약): `picky_start_pickle`, `picky_pickle_sessions`,
+> `picky_steer_pickle`, `picky_skill`(Picky 전용 스킬 list/get;
+> `~/Library/Application Support/Picky/skills/`), `read_picky_user_guide`,
+> 그리고 메모리/리콜/Pickle 제어/파일·셸 단발 도구들.
 > 
-> 이 문서는 위 6개 도구 외에 Realtime 메인이 가지면 사용자 경험이 명확히 좋아질
-> 후보들을 우선순위와 트레이드오프 까지 정리한 제안서입니다. 코드 변경은 들어
+> 옛 `picky_skills_search` / `picky_skill_details`(Pi 스킬을 그대로 노출)
+> 는 제거되었고, Picky 자체 스킬 저장소 기반의 `picky_skill` 하나로 교체되었습니다.
+> 
+> 이 문서는 위 도구 외에 Realtime 메인이 가지면 사용자 경험이 명확히 좋아질
+> 후보들을 우선순위와 트레이드오프까지 정리한 제안서입니다. 코드 변경은 들어
 > 있지 않습니다.
 
 ---

@@ -167,26 +167,30 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(toolNames).toContain("picky_start_pickle");
     expect(toolNames).toContain("picky_pickle_sessions");
     expect(toolNames).toContain("picky_steer_pickle");
-    expect(toolNames).toContain("picky_skills_search");
-    expect(toolNames).toContain("picky_skill_details");
+    expect(toolNames).toContain("picky_skill");
+    expect(toolNames).not.toContain("picky_skills_search");
+    expect(toolNames).not.toContain("picky_skill_details");
     expect(toolNames).toContain("read_picky_user_guide");
     expect(toolNames).toContain("picky_read_file");
     expect(toolNames).toContain("picky_run_bash");
     expect(toolNames).toContain("picky_write_file");
     expect(toolNames).not.toContain("picky_pointer_overlay");
-    expect(sessionUpdate.session.instructions).toContain("one-shot only");
-    expect(sessionUpdate.session.instructions).toContain("DO NOT loop");
+    expect(sessionUpdate.session.instructions).toContain("Realtime voice mode overrides");
+    expect(sessionUpdate.session.instructions).toContain("picky_skill");
   });
 
-  it("passes the active cwd to skill lookup tool handlers", async () => {
+  it("snapshots Picky skills once at connect and embeds the names in session.update instructions", async () => {
     const socket = new FakeRealtimeSocket();
-    const cwdCalls: Array<string | undefined> = [];
+    let listCalls = 0;
     const runtime = new OpenAIRealtimeMainRuntime({
       toolHandlers: {
         ...fakeToolHandlers(),
-        async searchSkills(request) {
-          cwdCalls.push(request.cwd);
-          return { query: request.query ?? "", root: request.cwd ?? "", total: 0, skills: [] };
+        listPickySkills() {
+          listCalls += 1;
+          return [
+            { name: "create-picky-skill", description: "Author a new Picky skill", path: "/tmp/skills/create-picky-skill.md" },
+            { name: "prefer-korean", description: "Reply in Korean for casual chitchat", path: "/tmp/skills/prefer-korean.md" },
+          ];
         },
       },
       defaultConfig: {
@@ -198,19 +202,29 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
       webSocketFactory: () => socket,
     });
 
-    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context({ cwd: "/tmp/project" }) });
-    socket.serverEvent({
-      type: "response.output_item.done",
-      item: {
-        type: "function_call",
-        name: "picky_skills_search",
-        call_id: "call-skills",
-        arguments: JSON.stringify({ query: "debug" }),
-      },
-    });
-    await settle();
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
 
-    expect(cwdCalls).toEqual(["/tmp/project"]);
+    const sent = socket.sent.map((raw) => JSON.parse(raw) as Record<string, any>);
+    const sessionUpdate = sent.find((event) => event.type === "session.update")!;
+    expect(listCalls).toBe(1);
+    expect(sessionUpdate.session.instructions).toContain("## Picky skills");
+    expect(sessionUpdate.session.instructions).toContain("create-picky-skill \u2014 Author a new Picky skill");
+    expect(sessionUpdate.session.instructions).toContain("prefer-korean \u2014 Reply in Korean for casual chitchat");
+    expect(sessionUpdate.session.instructions).toContain("picky_skill");
+  });
+
+  it("falls back to an empty Picky skill section when no skills are authored yet", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: { ...fakeToolHandlers(), listPickySkills: () => [] },
+      defaultConfig: { provider: "openai", apiKey: "sk-test", modelOrDeployment: "gpt-realtime-2", voice: "marin" },
+      webSocketFactory: () => socket,
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    const sent = socket.sent.map((raw) => JSON.parse(raw) as Record<string, any>);
+    const sessionUpdate = sent.find((event) => event.type === "session.update")!;
+    expect(sessionUpdate.session.instructions).toContain("No Picky skills authored yet");
   });
 
   it("returns minimal outputs for steer and skill lookup tools", async () => {
@@ -234,20 +248,19 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
             messages: [{ id: "message-1", kind: "agent_text", createdAt: "2026-05-09T00:00:00.000Z", text: "message should not be returned" }],
           } satisfies PickyAgentSession;
         },
-        async searchSkills() {
+        async searchPickySkills() {
           return {
             query: "debug",
-            root: "/tmp/project",
-            roots: ["/tmp/project/.pi"],
+            root: "/tmp/skills",
             total: 1,
-            skills: [{ name: "debug", description: "Debug workflow", path: "/tmp/skills/debug/SKILL.md", match: "matched snippet" }],
+            skills: [{ name: "debug", description: "Debug workflow", path: "/tmp/skills/debug.md", match: "matched snippet" }],
           };
         },
-        async getSkillDetails() {
+        async getPickySkillDetails() {
           return {
             name: "debug",
             description: "Debug workflow",
-            path: "/tmp/skills/debug/SKILL.md",
+            path: "/tmp/skills/debug.md",
             match: "matched snippet",
             frontmatter: { name: "debug", description: "Debug workflow" },
             content: "---\nname: debug\n---\n\nUse systematic debugging.",
@@ -265,8 +278,8 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
 
     await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
     socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_steer_pickle", call_id: "call-steer", arguments: JSON.stringify({ sessionId: "pickle-1", message: "continue" }) } });
-    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_skills_search", call_id: "call-search", arguments: JSON.stringify({ query: "debug" }) } });
-    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_skill_details", call_id: "call-details", arguments: JSON.stringify({ name: "debug" }) } });
+    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_skill", call_id: "call-search", arguments: JSON.stringify({ action: "list", query: "debug" }) } });
+    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_skill", call_id: "call-details", arguments: JSON.stringify({ action: "get", name: "debug" }) } });
     socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "read_picky_user_guide", call_id: "call-guide", arguments: JSON.stringify({ section: "3. Global shortcuts", query: "shortcuts" }) } });
     await settle();
 
@@ -278,7 +291,7 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(outputs["call-steer"]).toEqual({ id: "pickle-1", title: "Pickle 1", status: "running", cwd: "/tmp/project" });
     expect(JSON.stringify(outputs["call-steer"])).not.toContain("summary should not be returned");
     expect(outputs["call-search"]).toEqual({ total: 1, skills: [{ name: "debug", description: "Debug workflow", match: "matched snippet" }] });
-    expect(JSON.stringify(outputs["call-search"])).not.toContain("/tmp/skills/debug/SKILL.md");
+    expect(JSON.stringify(outputs["call-search"])).not.toContain("/tmp/skills/debug.md");
     expect(outputs["call-details"]).toEqual({ name: "debug", description: "Debug workflow", instructions: "---\nname: debug\n---\n\nUse systematic debugging." });
     expect(outputs["call-details"]).not.toHaveProperty("path");
     expect(outputs["call-details"]).not.toHaveProperty("frontmatter");
@@ -1895,8 +1908,9 @@ function fakeToolHandlers() {
     async handoff() { return { sessionId: "pickle", title: "Pickle" }; },
     listPickleSessions() { return []; },
     async steerPickleSession() { return session; },
-    async searchSkills() { return { query: "", root: "/tmp/skills", total: 1, skills: [{ name: "debug", description: "Debug", path: "/tmp/skills/debug/SKILL.md" }] }; },
-    async getSkillDetails() { return { name: "debug", description: "Debug", path: "/tmp/skills/debug/SKILL.md", frontmatter: { name: "debug" }, content: "---\nname: debug\n---\n" }; },
+    listPickySkills() { return [] as Array<{ name: string; description: string; path: string }>; },
+    async searchPickySkills() { return { query: "", root: "/tmp/skills", total: 1, skills: [{ name: "debug", description: "Debug", path: "/tmp/skills/debug.md" }] }; },
+    async getPickySkillDetails() { return { name: "debug", description: "Debug", path: "/tmp/skills/debug.md", frontmatter: { name: "debug" }, content: "---\nname: debug\n---\n" }; },
     async readUserGuide() { return { section: "3. Global shortcuts", query: "shortcuts", path: "/tmp/docs/user-manual.md", content: "## 3. Global shortcuts\n\nShortcut details.", totalChars: 1200, excerpted: true }; },
     // Default fakes: no memories, every CRUD succeeds with synthetic data.
     // Tests that actually exercise memory tool behaviour replace these via

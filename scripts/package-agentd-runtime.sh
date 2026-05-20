@@ -55,6 +55,15 @@ fi
 mkdir -p "${RUNTIME_DIR}/docs"
 cp "${ROOT_DIR}/docs/user-manual.md" "${RUNTIME_DIR}/docs/user-manual.md"
 
+# Bundle the seed Picky skills so PickySkillStore can copy them into
+# ~/Library/Application Support/Picky/skills/ on first launch. The store
+# resolves this directory relative to dist/application/, mirroring the
+# user-guide doc lookup above.
+mkdir -p "${RUNTIME_DIR}/seeds/picky-skills"
+if compgen -G "${ROOT_DIR}/agentd/seeds/picky-skills/*.md" > /dev/null; then
+  cp "${ROOT_DIR}/agentd/seeds/picky-skills/"*.md "${RUNTIME_DIR}/seeds/picky-skills/"
+fi
+
 # The package metadata is used by Node to preserve ESM mode (`type: module`).
 # Remove development-only metadata so the bundled package is easier to inspect.
 node - "${RUNTIME_DIR}/package.json" <<'NODE'

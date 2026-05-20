@@ -15,6 +15,7 @@
 import { buildMainAgentBootstrapPair } from "../prompt-builder.js";
 import type { PickyContextPacket } from "../protocol.js";
 import { PICKY_USER_GUIDE_SECTIONS } from "../application/user-guide-tool.js";
+import type { PickySkillSummary } from "../application/picky-skill-store.js";
 import type { MainRealtimeHistoryMessage, MainRealtimeUserMemoryItem } from "./types.js";
 
 // Per-line truncation budget for instruction-level history rendering. Long
@@ -40,6 +41,7 @@ export const PICKY_TRANSCRIPTION_PROMPT = [
 export function buildRealtimeInstructions(
   userMemories: MainRealtimeUserMemoryItem[] = [],
   recentHistory: MainRealtimeHistoryMessage[] = [],
+  pickySkills: PickySkillSummary[] = [],
 ): string {
   const baseLines = [
     buildMainAgentBootstrapPair({ omitTtsParenthesisHint: true }).user,
@@ -49,10 +51,13 @@ export function buildRealtimeInstructions(
     "- To check the progress of one specific delegated Pickle, call `picky_inspect_active_pickle` (does not spawn a new Pickle). Call `picky_abort_pickle` only when the user explicitly asks to stop one.",
     "- The captured context you see at the start of THIS turn is gone by the next turn. Call `picky_recall_recent_context` when the user references an earlier turn or a stored memory rule depends on the prior browser/cwd.",
     "- The one-shot file/shell tools (`picky_read_file`, `picky_run_bash`, `picky_write_file`) follow the per-call rules in each tool's description. If answering would need 3+ calls or a long-running command, delegate to `picky_start_pickle` instead of looping.",
+  ];
+  appendPickySkillsSection(baseLines, pickySkills);
+  baseLines.push(
     "",
     "## Long-term user memory",
     "- Memories below are always in scope; apply the relevant ones to your reply without being asked. Do not recite them back unless the user explicitly asks what you remember.",
-  ];
+  );
   if (userMemories.length === 0) {
     baseLines.push("- (No long-term memories stored yet.)");
   } else {
@@ -63,6 +68,31 @@ export function buildRealtimeInstructions(
   }
   appendRecentConversationSection(baseLines, recentHistory);
   return baseLines.join("\n");
+}
+
+/** Picky-only skills authored by the user under
+ *  `~/Library/Application Support/Picky/skills/`. This list is a snapshot
+ *  taken once at session start — additions or edits the user makes mid-session
+ *  will NOT appear here until the next session, which is why the instruction
+ *  tells the model to call `picky_skill({ action: "list" })` when in doubt.
+ *  The body of each skill is fetched on demand via `picky_skill({ action: "get" })`. */
+function appendPickySkillsSection(lines: string[], skills: PickySkillSummary[]): void {
+  lines.push(
+    "",
+    "## Picky skills (user-authored behavior recipes)",
+    "- These are short behavior recipes the user has saved under `~/Library/Application Support/Picky/skills/`. The list below is a snapshot taken when this realtime session started.",
+    "- When a user turn matches one of these skills, call `picky_skill({ action: \"get\", name })` to read the full body BEFORE acting, then follow the recipe.",
+    "- New skills the user adds mid-session do not appear in this list. If the user mentions a skill that is missing here, call `picky_skill({ action: \"list\" })` (optionally with `query`) to refresh."
+  );
+  if (skills.length === 0) {
+    lines.push("- (No Picky skills authored yet. If the user asks to create one, use `picky_skill({ action: \"list\" })` to confirm and then follow the `create-picky-skill` recipe if it exists.)");
+    return;
+  }
+  lines.push("", "### Available Picky skills");
+  for (const skill of skills) {
+    const description = skill.description?.trim() || "(no description)";
+    lines.push(`- ${skill.name} — ${description}`);
+  }
 }
 
 function appendRecentConversationSection(lines: string[], recentHistory: MainRealtimeHistoryMessage[]): void {
@@ -177,34 +207,22 @@ export function realtimeTools(): Array<Record<string, unknown>> {
         required: ["sessionId", "message"],
       },
     },
-    // Disabled: skill discovery tools removed from realtime runtime.
-    // {
-    //   type: "function",
-    //   name: "picky_skills_search",
-    //   description: "Search local Pi skill specifications available to Pickles. Returns matching skill names, descriptions, paths, and snippets.",
-    //   parameters: {
-    //     type: "object",
-    //     additionalProperties: false,
-    //     properties: {
-    //       query: { type: "string", description: "Optional keywords, e.g. sentry, slack, release, debugging. Empty lists top skills." },
-    //       limit: { type: "number", description: "Maximum number of matches to return. Defaults to 8, max 20." },
-    //     },
-    //     required: [],
-    //   },
-    // },
-    // {
-    //   type: "function",
-    //   name: "picky_skill_details",
-    //   description: "Read the full SKILL.md instructions for one local Pi skill by name before delegating skill-specific work to a Pickle.",
-    //   parameters: {
-    //     type: "object",
-    //     additionalProperties: false,
-    //     properties: {
-    //       name: { type: "string", description: "Skill name, with or without the skill: prefix." },
-    //     },
-    //     required: ["name"],
-    //   },
-    // },
+    {
+      type: "function",
+      name: "picky_skill",
+      description: "Look up Picky-only behavior recipes the user has authored under ~/Library/Application Support/Picky/skills/. The session-start instructions already list every skill's name and one-line description; use this tool to read the body of a specific skill (`action: \"get\"`) before applying it, or to refresh the list mid-session when the user mentions a skill that is not in the snapshot (`action: \"list\"`).",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["list", "get"], description: "`list` returns the names and descriptions of all (or query-filtered) Picky skills. `get` returns the full Markdown body of one skill by name." },
+          query: { type: "string", description: "Optional keywords for action=list. Empty/omitted returns the full catalog." },
+          name: { type: "string", description: "Required when action=get. The skill's `name` from the snapshot, e.g. `create-picky-skill`." },
+          limit: { type: "number", description: "Optional cap on action=list results. Default 8, max 20." },
+        },
+        required: ["action"],
+      },
+    },
     {
       type: "function",
       name: "read_picky_user_guide",

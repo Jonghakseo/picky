@@ -1460,6 +1460,17 @@ final class CompanionManager: ObservableObject {
         realtimeVoiceInputID = nil
         realtimeCanSendAudio = false
         realtimeBufferedAudioChunks.removeAll()
+        // The pttReleased event already pushed the voice machine into
+        // .loading on the way here (PTT release path always reduces
+        // .pttReleased before deciding commit vs cancel). Without an
+        // explicit reset, the cursor would stay yellow until agentd echoes
+        // a main_realtime_turn_done(cancelled) + state=ready back through
+        // the websocket - and if agentd's `isCurrentInput` guard rejects
+        // the cancel (race against an unfinished begin), no echo comes at
+        // all and the cursor wedges. Clearing to idle locally is the only
+        // signal we own; agentd's subsequent state=ready is then a no-op.
+        clearPendingAgentResponseTiming()
+        reduceVoiceInteraction(.reset)
         Task { [agentClient] in
             do {
                 try await agentClient.send(PickyCommandEnvelope(
@@ -2400,10 +2411,19 @@ final class CompanionManager: ObservableObject {
         // for playback. PickyVoiceInteractionMachine's `.ready` branch calls
         // clearToIdle whenever `activeSpeechID` is nil — and realtime never
         // sets activeSpeechID — so forwarding `.ready` now would close the
-        // assistant bubble mid-speech. Hold the transition until the playback
-        // engine drains; `handleRealtimePlaybackDrained` dispatches
-        // `realtimeTurnDone`, which clears the machine to idle at that point.
+        // assistant bubble mid-speech. Hold the voice machine transition
+        // until the playback engine drains; `handleRealtimePlaybackDrained`
+        // dispatches `realtimeTurnDone`, which clears the machine to idle.
+        //
+        // But STILL clear pendingAgentResponseStartedAt now. Otherwise any
+        // later `updateVoicePresentation()` invocation - e.g. a Pickle hover
+        // toggling voiceFollowUpSessionIDForCurrentUtterance, or a dictation
+        // state change - sees `pendingAgentResponseStartedAt != nil` and
+        // re-pushes the voice machine into .loading (yellow cursor) for a
+        // response that has already finished. This is the wedge that left
+        // the cursor yellow during idle windows after a Realtime reply.
         if event.state == .ready, realtimeAudioPlaybackEngine.isPlaying {
+            clearPendingAgentResponseTiming()
             return
         }
         reduceVoiceInteraction(.realtimeStateChanged(event.state))

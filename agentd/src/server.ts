@@ -90,6 +90,7 @@ export class AgentdServer {
     });
 
     this.options.supervisor.on("session", (session) => this.broadcast({ type: "sessionUpdated", session: protocolSession(session) }));
+    this.options.supervisor.on("sessionArchivedAuthoritative", (sessionId: string, archived: boolean) => this.broadcast({ type: "sessionArchivedAuthoritative", sessionId, archived }));
     this.options.supervisor.on("resourcesReloaded", (sessionId) => this.broadcast({ type: "sessionResourcesReloaded", sessionId }));
     this.options.supervisor.on("log", (sessionId, line) => this.broadcast({ type: "sessionLogAppended", sessionId, line }));
     this.options.supervisor.on("extensionUiRequest", (request) => this.broadcast({ type: "extensionUiRequest", request }));
@@ -697,6 +698,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessions: event.sessions.length };
     case "sessionUpdated":
       return { eventId: event.id, type: event.type, sessionId: event.session.id, status: event.session.status };
+    case "sessionArchivedAuthoritative":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, archived: event.archived ? 1 : 0 };
     case "sessionResourcesReloaded":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId };
     case "sessionLogAppended":

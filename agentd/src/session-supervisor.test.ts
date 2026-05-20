@@ -3724,6 +3724,47 @@ describe("SessionSupervisor", () => {
     expect(replies.filter((entry) => entry.contextId === pickleSession.id)).toEqual([]);
   });
 
+  // Regression for the double-ack bug seen in Realtime mode: the Realtime model
+  // itself produces a natural follow-up text after `picky_start_pickle` returns
+  // (via `main_realtime_turn_done` -> `appendMainMessage`). If `announceMainHandoff`
+  // also injects the curated handoffAck as both a `mainMessage` and a `quickReply`,
+  // the Messages tab ends up with two assistant bubbles for one user turn and the
+  // system TTS races (and reorders) against the Realtime audio stream. The
+  // interaction reducer also gets a `quickReply replyKind=handoffAck` for the same
+  // inputId the Realtime turn still owns, locking the cursor in `.processing`.
+  // The fix gates the curated-ack side effects on `isMainRealtimeRuntime`.
+  it("skips the curated handoffAck mainMessage and quickReply when the main runtime is Realtime", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    // Minimal stub that passes isMainRealtimeRuntime. We are not exercising the
+    // realtime turn surface here — only verifying that announceMainHandoff stays
+    // silent on this runtime.
+    const realtimeRuntime = {
+      async create(_prompt: BuiltPrompt, _options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
+        throw new Error("create not used in this test");
+      },
+      async configureMainRealtimeAuth() {},
+      async beginMainRealtimeVoiceTurn() {},
+      async appendMainRealtimeInputAudio() {},
+      async commitMainRealtimeVoiceTurn() {},
+      async cancelMainRealtimeVoiceTurn() {},
+    } as unknown as AgentRuntime;
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime: realtimeRuntime });
+    const replies: Array<{ contextId: string; text: string; replyKind?: string }> = [];
+    const mainMessages: Array<{ role: string; text: string }> = [];
+    supervisor.on("quickReply", (contextId, text, metadata = {}) => replies.push({ contextId, text, replyKind: metadata.replyKind }));
+    supervisor.on("mainMessage", (message) => mainMessages.push({ role: message.role, text: message.text }));
+
+    const userCtx = context("피클 띄워줘");
+    supervisor.announceMainHandoff(userCtx.id, "피클에 위임할게요");
+    await settle();
+
+    // Neither the curated ack bubble nor its TTS quickReply may fire on the
+    // Realtime path — the Realtime model's own follow-up will handle the ack.
+    expect(mainMessages.filter((message) => message.text === "피클에 위임할게요")).toHaveLength(0);
+    expect(replies.filter((reply) => reply.replyKind === "handoffAck")).toHaveLength(0);
+    expect(supervisor.listMainMessages()).toHaveLength(0);
+  });
+
   it("routes complex requests to the long-running runtime", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir), { taskRouter: new StaticTaskRouter({ route: "handoff", reason: "needs tools" }) });
@@ -5178,6 +5219,29 @@ describe("SessionSupervisor", () => {
     const b = await supervisor.setSessionArchived(created.id, false);
     expect(a.archived).toBe(false);
     expect(b.archived).toBe(false);
+  });
+
+  it("emits sessionArchivedAuthoritative on every setSessionArchived call so Picky can sync its local archive UserDefaults", async () => {
+    // Regression: picky_unarchive_pickle calls setSessionArchived(false) but
+    // the Picky session view model intentionally ignores the `archived` field
+    // on plain `sessionUpdated` events (to avoid mid-flight unarchive flicker
+    // when an unrelated update arrives while the user has just
+    // archived/unarchived locally). The dedicated event is the only signal
+    // Picky trusts to mutate its local manuallyArchivedSessionIDs set.
+    const supervisor = await makeSupervisor();
+    const created = await supervisor.create(context("emit auth event"));
+    const events: Array<{ sessionId: string; archived: boolean }> = [];
+    supervisor.on("sessionArchivedAuthoritative", (sessionId: string, archived: boolean) => {
+      events.push({ sessionId, archived });
+    });
+
+    await supervisor.setSessionArchived(created.id, true);
+    await supervisor.setSessionArchived(created.id, false);
+
+    expect(events).toEqual([
+      { sessionId: created.id, archived: true },
+      { sessionId: created.id, archived: false },
+    ]);
   });
 });
 

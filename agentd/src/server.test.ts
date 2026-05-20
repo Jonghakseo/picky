@@ -59,6 +59,20 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("broadcasts sessionArchivedAuthoritative when setSessionArchived runs (regression for picky_unarchive_pickle not reaching the dock)", async () => {
+    const session = await supervisor.create(context("to be archived"));
+    const { ws } = await connectWithHello();
+
+    ws.send(JSON.stringify({ id: "cmd-archive", protocolVersion: PROTOCOL_VERSION, type: "setSessionArchived", sessionId: session.id, archived: true }));
+    const archivedAuth = await waitForEvent(ws, "sessionArchivedAuthoritative");
+    expect(archivedAuth).toMatchObject({ type: "sessionArchivedAuthoritative", sessionId: session.id, archived: true });
+
+    ws.send(JSON.stringify({ id: "cmd-unarchive", protocolVersion: PROTOCOL_VERSION, type: "setSessionArchived", sessionId: session.id, archived: false }));
+    const unarchivedAuth = await waitForEvent(ws, "sessionArchivedAuthoritative");
+    expect(unarchivedAuth).toMatchObject({ type: "sessionArchivedAuthoritative", sessionId: session.id, archived: false });
+    ws.close();
+  });
+
   it("passes optional steer context through to the supervisor", async () => {
     const session = await supervisor.create(context("initial"));
     const steer = vi.spyOn(supervisor, "steer");

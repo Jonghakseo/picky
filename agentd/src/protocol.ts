@@ -452,6 +452,14 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("transcriptionStreamClosed"), streamId: z.string() }),
   EventBaseSchema.extend({ type: z.literal("sessionSnapshot"), sessions: z.array(PickyAgentSessionSchema) }),
   EventBaseSchema.extend({ type: z.literal("sessionUpdated"), session: PickyAgentSessionSchema }),
+  // Explicit signal that a session's `archived` flag was just (un)set on the
+  // daemon side. Picky's session view model trusts THIS event to update its
+  // local `manuallyArchivedSessionIDs` UserDefaults; it deliberately ignores
+  // the `archived` field on plain `sessionUpdated` to avoid mid-flight
+  // unarchive flicker when an unrelated update arrives while the user has
+  // just archived/unarchived locally. Fired from `setSessionArchived`
+  // regardless of source (client command, picky_unarchive_pickle tool, ...).
+  EventBaseSchema.extend({ type: z.literal("sessionArchivedAuthoritative"), sessionId: z.string(), archived: z.boolean() }),
   EventBaseSchema.extend({ type: z.literal("sessionResourcesReloaded"), sessionId: z.string() }),
   EventBaseSchema.extend({ type: z.literal("sessionLogAppended"), sessionId: z.string(), line: z.string() }),
   EventBaseSchema.extend({ type: z.literal("toolActivityUpdated"), sessionId: z.string(), tool: PickyToolActivitySchema }),

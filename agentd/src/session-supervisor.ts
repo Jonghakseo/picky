@@ -850,6 +850,22 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   announceMainHandoff(contextId: string, text: string): void {
+    // In Realtime mode the model produces its own natural follow-up ack after the
+    // `picky_start_pickle` tool result is returned (see `main_realtime_turn_done`
+    // -> `appendMainMessage`). Emitting the curated handoffAck here would race
+    // that follow-up: the Picky menu-bar would show two assistant bubbles for one
+    // user turn, the system TTS of the curated ack would compete with the
+    // Realtime audio stream (and play out of order), and the interaction
+    // reducer would receive a `quickReply replyKind=handoffAck` for the same
+    // inputId the Realtime turn is still owning, locking the cursor in
+    // `.processing`/`.responding`. Skip both side effects on Realtime; the
+    // non-Realtime (Pi SDK) path still needs the curated ack because
+    // `suppressNextMainReply` only fires from the `main_status` terminal
+    // handler, which Realtime does not reach.
+    if (isMainRealtimeRuntime(this.options.mainRuntime)) {
+      logAgentd("main handoff announced", { contextId, textChars: text.length, runtime: "realtime", suppressedAck: true });
+      return;
+    }
     logAgentd("main handoff announced", { contextId, textChars: text.length });
     this.suppressNextMainReply = true;
     void this.appendMainMessage("assistant", text);
@@ -1761,6 +1777,14 @@ export class SessionSupervisor extends EventEmitter {
       ? { archived: true, archivedAt: new Date().toISOString() }
       : { archived: false, archivedAt: undefined };
     await this.patch(sessionId, patch);
+    // Emit a dedicated event in addition to the patch-driven sessionUpdated so
+    // the client knows this archive-state change is authoritative (rather than
+    // a stale `archived` field on an unrelated update). Picky's view model
+    // mirrors this into its local manuallyArchivedSessionIDs UserDefaults so
+    // tool-initiated unarchive (picky_unarchive_pickle) actually pops the
+    // dock card back — the local intent set is the source of truth for dock
+    // placement and is otherwise never touched by remote sessionUpdated.
+    this.emit("sessionArchivedAuthoritative", sessionId, archived);
     return this.mustGet(sessionId);
   }
 

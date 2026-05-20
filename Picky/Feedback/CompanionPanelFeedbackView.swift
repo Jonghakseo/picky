@@ -378,7 +378,7 @@ struct CompanionPanelFeedbackView: View {
     }
 
     private var runtimeModeLabel: String {
-        let mode = viewModel.settings.mainAgentRuntimeMode
+        let mode = AppBundleConfiguration.effectiveRuntimeMode
         return mode == .openAIRealtime ? "Realtime" : "Pi"
     }
 

@@ -1407,7 +1407,7 @@ struct CompanionPanelSettingsView: View {
             guard !cwd.isEmpty else { return }
             PickyWorkspaceSeeder.seed(
                 workspacePath: cwd,
-                mainAgentRuntimeMode: viewModel.settings.mainAgentRuntimeMode
+                mainAgentRuntimeMode: AppBundleConfiguration.effectiveRuntimeMode
             )
             let url = URL(fileURLWithPath: cwd, isDirectory: true)
                 .appendingPathComponent(PickyWorkspaceSeeder.agentsMarkdownFilename, isDirectory: false)

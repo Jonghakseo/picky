@@ -287,6 +287,10 @@ struct PickySettingsPolishTests {
 
         #expect(loaded.mainAgentRuntimeMode == .openAIRealtime)
         #expect(loaded.mainAgentRuntimeModeRealtimeOptInMigrationApplied)
+        let workspaceURL = root.appendingPathComponent("Workspace", isDirectory: true)
+        #expect(FileManager.default.fileExists(atPath: workspaceURL.path))
+        #expect(!FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.agentsMarkdownFilename).path))
+        #expect(!FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath).appendingPathComponent(PickyWorkspaceSeeder.tellPlanExtensionFilename).path))
     }
 
     @Test func realtimeOptInDoesNotOverwriteCorruptExistingSettings() throws {
@@ -319,6 +323,9 @@ struct PickySettingsPolishTests {
 
         #expect(loaded.mainAgentRuntimeMode == .pi)
         #expect(!loaded.mainAgentRuntimeModeRealtimeOptInMigrationApplied)
+        let workspaceURL = root.appendingPathComponent("Workspace", isDirectory: true)
+        #expect(FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.agentsMarkdownFilename).path))
+        #expect(FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath).appendingPathComponent(PickyWorkspaceSeeder.tellPlanExtensionFilename).path))
     }
 
     @Test func settingsRoundTripPreservesOpenAIRealtimeSettings() throws {

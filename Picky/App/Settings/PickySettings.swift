@@ -1068,14 +1068,20 @@ struct PickySettings: Codable, Equatable {
         releaseChannel.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "beta" ? .beta : .stable
     }
 
-    static func defaults(appSupportRoot: URL = PickyAppSupport.defaultRoot()) -> PickySettings {
+    static func defaults(
+        appSupportRoot: URL = PickyAppSupport.defaultRoot(),
+        mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi
+    ) -> PickySettings {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         // The Picky workspace seeded under appSupportRoot is the default cwd
         // for both ad-hoc tasks and the always-on Picky main agent so Pi
         // auto-loads its `AGENTS.md` (persona + Pickle routing rules) without
         // any extra wiring. The directory and the seed markdown file are
         // created here so first-launch settings validation succeeds.
-        let workspace = PickyWorkspaceSeeder.seedDefaultWorkspace(appSupportRoot: appSupportRoot)
+        let workspace = PickyWorkspaceSeeder.seedDefaultWorkspace(
+            appSupportRoot: appSupportRoot,
+            mainAgentRuntimeMode: mainAgentRuntimeMode
+        )
         return PickySettings(
             defaultCwd: workspace,
             mainAgentCwd: workspace,
@@ -1117,7 +1123,7 @@ struct PickySettings: Codable, Equatable {
             cursor: .defaults,
             overlayBubbles: .defaults,
             fontScales: .defaults,
-            mainAgentRuntimeMode: .pi,
+            mainAgentRuntimeMode: mainAgentRuntimeMode,
             mainAgentRuntimeModeRealtimeOptInMigrationApplied: false,
             openAIRealtime: .defaults,
             mainAgentModelPattern: "",

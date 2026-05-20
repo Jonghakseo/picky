@@ -18,7 +18,10 @@ struct PickyAgentBubbleView: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 6) {
-                PickyConversationMarkdownText(markdown: previewText)
+                PickyConversationMarkdownText(
+                    markdown: previewText,
+                    onOpenAsReport: hoverIconAction
+                )
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -134,7 +137,10 @@ struct PickyNotifyBubbleView: View {
                         .background(Capsule(style: .continuous).fill(notifyType.tintColor.opacity(0.12)))
                         .overlay(Capsule(style: .continuous).strokeBorder(notifyType.tintColor.opacity(0.28), lineWidth: 0.6))
                 }
-                PickyConversationMarkdownText(markdown: previewMarkdown)
+                PickyConversationMarkdownText(
+                    markdown: previewMarkdown,
+                    onOpenAsReport: hoverIconAction
+                )
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)

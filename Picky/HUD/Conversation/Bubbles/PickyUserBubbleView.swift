@@ -21,7 +21,8 @@ struct PickyUserBubbleView: View {
             VStack(alignment: .leading, spacing: 4) {
                 PickyConversationMarkdownText(
                     markdown: displayedMarkdownPreview,
-                    fillsAvailableWidth: false
+                    fillsAvailableWidth: false,
+                    onOpenAsReport: textViewOpenAsReportAction
                 )
                 .multilineTextAlignment(.leading)
                 if let displayedAttachedImagesLabel {
@@ -83,6 +84,15 @@ struct PickyUserBubbleView: View {
         if let onOpenAsReport, PickyAgentResponsePreview.isTruncated(message.text ?? "") {
             Button("Open as Report", action: onOpenAsReport)
         }
+    }
+
+    /// Mirrors the SwiftUI `.contextMenu` "Open as Report" gate so the
+    /// in-text right-click menu only offers the action when the bubble's
+    /// content is actually truncated in the preview.
+    private var textViewOpenAsReportAction: (() -> Void)? {
+        guard let onOpenAsReport,
+              PickyAgentResponsePreview.isTruncated(message.text ?? "") else { return nil }
+        return onOpenAsReport
     }
 
     private var isPiExtensionMessage: Bool {

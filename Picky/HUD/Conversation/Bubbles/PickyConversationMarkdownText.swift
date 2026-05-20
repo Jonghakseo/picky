@@ -4,6 +4,12 @@
 //
 //  Compact Markdown renderer for Pickle conversation bubbles.
 //
+//  Inline blocks (heading/paragraph/bullet) fold into a single NSTextView
+//  (PickyMarkdownInlineTextView) so selection sweeps across them and the
+//  macOS 26.x NSTextSelectionNavigation main-thread spin we saw on 2026-05-20
+//  doesn't recur. Tables and code blocks stay as SwiftUI views because they
+//  need horizontal scroll / column layout the text container can't express.
+//
 
 import SwiftUI
 
@@ -17,6 +23,11 @@ struct PickyConversationMarkdownText: View {
     /// Centralized in `PickyAgentResponsePreview` so the hover "open as report"
     /// gate can predict the same per-block truncation the renderer applies.
     var codeBlockMaxLines: Int = PickyAgentResponsePreview.codeBlockMaxLines
+    /// Forwarded into the inline NSTextView wrapper's right-click menu when
+    /// non-nil. Bubble views pass their existing "Open as Report" closure
+    /// through so the in-text menu offers the same shortcut their SwiftUI
+    /// `.contextMenu` does on the bubble surround.
+    var onOpenAsReport: (() -> Void)?
 
     private let renderer = PickyReportMarkdownRenderer()
 
@@ -35,6 +46,11 @@ struct PickyConversationMarkdownText: View {
     /// reply opens the right companion panel screen instead of bouncing
     /// to the browser. Other schemes (https, mailto) fall through to the
     /// system handler unchanged.
+    ///
+    /// Still applied even though inline text is now rendered through an
+    /// NSTextView (the wrapper's coordinator handles links there); table
+    /// cells and any future SwiftUI fragment still rely on
+    /// `Environment(\.openURL)` for deep-link routing.
     private var pickyDeepLinkOpenURL: OpenURLAction {
         OpenURLAction { url in
             if PickyDeepLinkDispatcher.shared.handle(url) {
@@ -44,54 +60,88 @@ struct PickyConversationMarkdownText: View {
         }
     }
 
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            ForEach(Array(renderer.blocks(from: markdown).enumerated()), id: \.offset) { _, block in
-                blockView(block)
+    /// Bucketed block stream:
+    ///   - runs of inline blocks (heading/paragraph/bullet) collapse into
+    ///     one NSTextView so selection spans them, and
+    ///   - codeBlock/table blocks stay as their existing SwiftUI views.
+    /// A code/table interruption splits inline runs — that matches the
+    /// per-block selection-island behavior the previous composition
+    /// already exhibited.
+    private enum BlockGroup {
+        case inline([PickyMarkdownInlineTextView.InlineBlock])
+        case table(headers: [String], rows: [[String]])
+        case codeBlock(String)
+    }
+
+    private func groupedBlocks() -> [BlockGroup] {
+        var groups: [BlockGroup] = []
+        var inlineBuffer: [PickyMarkdownInlineTextView.InlineBlock] = []
+
+        func flushInline() {
+            guard !inlineBuffer.isEmpty else { return }
+            groups.append(.inline(inlineBuffer))
+            inlineBuffer.removeAll(keepingCapacity: true)
+        }
+
+        for block in renderer.blocks(from: markdown) {
+            switch block {
+            case .heading(let level, let text):
+                inlineBuffer.append(.heading(level: level, text: text))
+            case .paragraph(let text):
+                inlineBuffer.append(.paragraph(text))
+            case .bullet(let text):
+                inlineBuffer.append(.bullet(text))
+            case .table(let headers, let rows):
+                flushInline()
+                groups.append(.table(headers: headers, rows: rows))
+            case .codeBlock(let text):
+                flushInline()
+                groups.append(.codeBlock(text))
             }
         }
-        .textSelection(.enabled)
+        flushInline()
+        return groups
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(Array(groupedBlocks().enumerated()), id: \.offset) { _, group in
+                groupView(group)
+            }
+        }
     }
 
     @ViewBuilder
-    private func blockView(_ block: PickyReportMarkdownRenderer.Block) -> some View {
-        switch block {
-        case .heading(let level, let text):
-            Text(renderer.inlineAttributedString(for: text))
-                .font(font(forHeadingLevel: level))
-                .foregroundColor(DS.Colors.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
-        case .paragraph(let text):
-            Text(renderer.inlineAttributedString(for: text))
-                .font(PickyHUDTypography.body)
-                .foregroundColor(DS.Colors.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
-        case .bullet(let text):
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("•")
-                    .font(PickyHUDTypography.bodySemibold)
-                    .foregroundColor(DS.Colors.textSecondary)
-                Text(renderer.inlineAttributedString(for: text))
-                    .font(PickyHUDTypography.body)
-                    .foregroundColor(DS.Colors.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+    private func groupView(_ group: BlockGroup) -> some View {
+        switch group {
+        case .inline(let blocks):
+            PickyMarkdownInlineTextView(
+                blocks: blocks,
+                fillsAvailableWidth: fillsAvailableWidth,
+                onOpenAsReport: onOpenAsReport
+            )
+            .fixedSize(horizontal: false, vertical: true)
         case .table(let headers, let rows):
-            VStack(alignment: .leading, spacing: 4) {
-                Text(headers.joined(separator: " · "))
-                    .font(PickyHUDTypography.supportingSemibold)
-                    .foregroundColor(DS.Colors.textPrimary)
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                    Text(row.joined(separator: " · "))
-                        .font(PickyHUDTypography.supporting)
-                        .foregroundColor(DS.Colors.textPrimary.opacity(0.92))
-                }
-            }
-            .padding(8)
-            .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            tableBlockView(headers: headers, rows: rows)
         case .codeBlock(let text):
             codeBlockView(text)
         }
+    }
+
+    @ViewBuilder
+    private func tableBlockView(headers: [String], rows: [[String]]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(headers.joined(separator: " · "))
+                .font(PickyHUDTypography.supportingSemibold)
+                .foregroundColor(DS.Colors.textPrimary)
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                Text(row.joined(separator: " · "))
+                    .font(PickyHUDTypography.supporting)
+                    .foregroundColor(DS.Colors.textPrimary.opacity(0.92))
+            }
+        }
+        .padding(8)
+        .background(DS.Colors.surface2, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 
     @ViewBuilder
@@ -135,9 +185,5 @@ struct PickyConversationMarkdownText: View {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .stroke(DS.Colors.borderSubtle, lineWidth: 0.8)
         )
-    }
-
-    private func font(forHeadingLevel level: Int) -> Font {
-        PickyHUDTypography.heading(level: level)
     }
 }

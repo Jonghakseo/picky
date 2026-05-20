@@ -1792,7 +1792,13 @@ final class CompanionManager: ObservableObject {
     }
 
     private func quickReplyWouldUseTTS(owner: PickyContextOwner?, replyKind: PickyQuickReplyKind) -> Bool {
-        (owner?.isVoiceOwned == true) || (owner?.usesCursorResponsePresentation == true) || replyKind == .pickleCompletion
+        // `.realtimeAck` is a reducer-cleanup-only signal emitted at the end
+        // of an OpenAI Realtime turn. The audio reply was already delivered
+        // by OpenAI, so we must not consider this kind for TTS regardless of
+        // owner - returning true here would deduplicate-suppress the cleanup
+        // path and leave the cursor stuck on .processing.
+        if replyKind == .realtimeAck { return false }
+        return (owner?.isVoiceOwned == true) || (owner?.usesCursorResponsePresentation == true) || replyKind == .pickleCompletion
     }
 
     private func shouldSuppressDuplicateQuickReplyTTS(_ reply: PickyQuickReplyEvent, replyKind: PickyQuickReplyKind) -> Bool {

@@ -261,6 +261,27 @@ enum PickyInteractionReducer {
 
         case .quickReply(let contextID, let text, let originSource, let replyKind, let sessionID, let inputID):
             if let sessionID { state.pendingAgentRequestsBySession[sessionID] = nil }
+            // Realtime ack: OpenAI Realtime already delivered the audio reply
+            // (and its transcript via output_transcript). This signal exists
+            // purely to release the reducer's `.waitingForAgent` output so the
+            // cursor returns to idle. Do NOT replay the text through TTS and
+            // do NOT replace the visible bubble - just clean up state for the
+            // matching inputID/contextID. Skip the rest of the .quickReply
+            // body (which would startSpeakingReply or set .showingTextReply).
+            if replyKind == .realtimeAck {
+                if let inputID { state.pendingTextInputs[inputID] = nil }
+                state.queuedSpeechReplies.removeAll()
+                state = state.removingOverlayReason(.waitingForVoiceResponse)
+                if case .waitingForAgent(let waitingInputID, let waitingContextID, _) = state.output,
+                   waitingInputID == inputID,
+                   waitingContextID == contextID {
+                    state.output = .idle
+                    record(.stateChanged, "Realtime ack received; cursor cleared")
+                } else {
+                    record(.accepted, "Realtime ack received; output already moved on")
+                }
+                break
+            }
             let timerID = envelope.id
             let deadline = envelope.occurredAt.addingTimeInterval(minimumDisplayDuration)
             let owner = state.contextOwnership[contextID] ?? ownerFromMetadata(originSource)

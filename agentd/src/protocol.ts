@@ -405,8 +405,10 @@ const QuickReplyKindSchema = z.preprocess((value) => {
   if (typeof value !== "string") return value;
   const normalized = value.trim().toLowerCase();
   if (["picklecompletion", "pickle-completion", "pickle_completion"].includes(normalized)) return "pickleCompletion";
+  if (["handoffack", "handoff-ack", "handoff_ack"].includes(normalized)) return "handoffAck";
+  if (["realtimeack", "realtime-ack", "realtime_ack"].includes(normalized)) return "realtimeAck";
   return value;
-}, z.enum(["main", "pickleCompletion", "router", "handoffAck", "error", "unknown"]));
+}, z.enum(["main", "pickleCompletion", "router", "handoffAck", "realtimeAck", "error", "unknown"]));
 
 export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("hello"), serverName: z.literal("picky-agentd"), supportedProtocolVersions: z.array(z.string()) }),

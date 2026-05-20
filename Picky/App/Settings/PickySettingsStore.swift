@@ -21,9 +21,12 @@ struct PickySettingsStore {
 
     func load() -> PickySettings {
         let appSupportRoot = url.deletingLastPathComponent().deletingLastPathComponent()
+        guard fileManager.fileExists(atPath: url.path) else {
+            return migrateRealtimeOptInRuntimeModeIfNeeded(.defaults(appSupportRoot: appSupportRoot))
+        }
         guard let data = try? Data(contentsOf: url),
               let settings = try? JSONDecoder().decode(PickySettings.self, from: data) else {
-            return migrateRealtimeOptInRuntimeModeIfNeeded(.defaults(appSupportRoot: appSupportRoot))
+            return .defaults(appSupportRoot: appSupportRoot)
         }
         return migrateRealtimeOptInRuntimeModeIfNeeded(settings)
     }

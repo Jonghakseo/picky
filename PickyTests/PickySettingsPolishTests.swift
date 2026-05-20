@@ -289,6 +289,25 @@ struct PickySettingsPolishTests {
         #expect(loaded.mainAgentRuntimeModeRealtimeOptInMigrationApplied)
     }
 
+    @Test func realtimeOptInDoesNotOverwriteCorruptExistingSettings() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let settingsDirectory = root.appendingPathComponent("Settings", isDirectory: true)
+        try FileManager.default.createDirectory(at: settingsDirectory, withIntermediateDirectories: true)
+        let settingsURL = settingsDirectory.appendingPathComponent("settings.json")
+        let corruptSettings = Data("{ not valid json".utf8)
+        try corruptSettings.write(to: settingsURL)
+        let store = PickySettingsStore(appSupportRoot: root)
+
+        let loaded = AppBundleConfiguration.$testRealtimeOptInOverride.withValue(true) {
+            store.load()
+        }
+
+        #expect(loaded.mainAgentRuntimeMode == .pi)
+        #expect(!loaded.mainAgentRuntimeModeRealtimeOptInMigrationApplied)
+        #expect(try Data(contentsOf: settingsURL) == corruptSettings)
+    }
+
     @Test func nonRealtimeOptInFreshInstallDefaultsToPiRuntime() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }

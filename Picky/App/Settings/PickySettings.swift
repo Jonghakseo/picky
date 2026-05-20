@@ -1070,18 +1070,22 @@ struct PickySettings: Codable, Equatable {
 
     static func defaults(
         appSupportRoot: URL = PickyAppSupport.defaultRoot(),
-        mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi
+        mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi,
+        seedDefaultWorkspace: Bool = true
     ) -> PickySettings {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         // The Picky workspace seeded under appSupportRoot is the default cwd
         // for both ad-hoc tasks and the always-on Picky main agent so Pi
         // auto-loads its `AGENTS.md` (persona + Pickle routing rules) without
-        // any extra wiring. The directory and the seed markdown file are
-        // created here so first-launch settings validation succeeds.
-        let workspace = PickyWorkspaceSeeder.seedDefaultWorkspace(
-            appSupportRoot: appSupportRoot,
-            mainAgentRuntimeMode: mainAgentRuntimeMode
-        )
+        // any extra wiring. Decode fallback construction opts out because
+        // Codable decoding must not create Pi-only workspace files as a side
+        // effect, especially when loading a Realtime runtime settings file.
+        let workspace = seedDefaultWorkspace
+            ? PickyWorkspaceSeeder.seedDefaultWorkspace(
+                appSupportRoot: appSupportRoot,
+                mainAgentRuntimeMode: mainAgentRuntimeMode
+            )
+            : PickyWorkspaceSeeder.defaultWorkspacePath(appSupportRoot: appSupportRoot)
         return PickySettings(
             defaultCwd: workspace,
             mainAgentCwd: workspace,
@@ -1240,7 +1244,7 @@ struct PickySettings: Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let defaults = PickySettings.defaults()
+        let defaults = PickySettings.defaults(seedDefaultWorkspace: false)
 
         defaultCwd = try container.decodeIfPresent(String.self, forKey: .defaultCwd) ?? defaults.defaultCwd
         mainAgentCwd = try container.decodeIfPresent(String.self, forKey: .mainAgentCwd) ?? defaultCwd

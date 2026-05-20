@@ -485,13 +485,15 @@ struct CompanionPanelSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                VStack(alignment: .leading, spacing: 5) {
-                    fieldLabel("settings.field.agentsFile")
-                    Text("settings.field.agentsFile.note")
-                        .font(.system(size: 11))
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    openAgentsFileButton
+                if appliedMainAgentRuntimeMode == .pi {
+                    VStack(alignment: .leading, spacing: 5) {
+                        fieldLabel("settings.field.agentsFile")
+                        Text("settings.field.agentsFile.note")
+                            .font(.system(size: 11))
+                            .foregroundColor(DS.Colors.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        openAgentsFileButton
+                    }
                 }
             }
         }

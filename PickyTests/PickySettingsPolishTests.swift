@@ -291,6 +291,13 @@ struct PickySettingsPolishTests {
         #expect(FileManager.default.fileExists(atPath: workspaceURL.path))
         #expect(!FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.agentsMarkdownFilename).path))
         #expect(!FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath).appendingPathComponent(PickyWorkspaceSeeder.tellPlanExtensionFilename).path))
+
+        _ = AppBundleConfiguration.$testRealtimeOptInOverride.withValue(true) {
+            store.load()
+        }
+
+        #expect(!FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.agentsMarkdownFilename).path))
+        #expect(!FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath).appendingPathComponent(PickyWorkspaceSeeder.tellPlanExtensionFilename).path))
     }
 
     @Test func realtimeOptInDoesNotOverwriteCorruptExistingSettings() throws {

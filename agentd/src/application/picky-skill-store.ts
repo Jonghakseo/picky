@@ -1,29 +1,38 @@
 // Picky-only skill store.
 //
-// Independent of Pi's skill catalog: each skill is a flat SKILL.md-style file
-// under ~/Library/Application Support/Picky/skills/ that the user can author
-// directly. The realtime main runtime reads names + descriptions once per
-// session and exposes the full body via the `picky_skill` tool (action=get).
+// Independent of Pi's skill catalog. Each skill lives in its own directory
+// under ~/Library/Application Support/Picky/skills/<name>/, containing at
+// least a SKILL.md file (YAML frontmatter + Markdown body). Additional files
+// referenced by the skill body may sit beside SKILL.md. This matches the
+// Anthropic Agent Skills convention so users can hand-author skills the same
+// way they would for any other agent.
 //
-// One file per skill. Frontmatter `name` is the canonical id; when missing,
-// the filename (without .md) is used. Filenames should be kebab-case.
+// The realtime main runtime reads each skill's name + description once per
+// session and exposes the full SKILL.md body via the `picky_skill` tool
+// (action=get). Directory name = canonical skill id; frontmatter `name`
+// overrides the display name but the directory is what `picky_skill` matches
+// against.
 //
-// Seeding: built-in templates ship in `seedSourceDir`. The store tracks which
-// seeds it has already delivered via a `.seeded` manifest — one filename per
-// line. A seed file is copied only when it is NOT in the manifest, so files
-// the user has intentionally deleted are not silently re-created and new
-// seeds added in later releases are picked up automatically.
+// Seeding: built-in skills ship in `seedSourceDir` using the same
+// `<name>/SKILL.md` layout. The store tracks which seeds it has already
+// delivered via a `.seeded` manifest \u2014 one directory name per line. A seed
+// directory is copied only when it is NOT in the manifest, so directories
+// the user has intentionally deleted are not silently re-created and seeds
+// added in later releases are picked up automatically.
 //
-// Hosts that shipped with the pre-manifest marker (an opaque "seeded at ..."
-// string) are migrated by assuming the user has already received the very
-// first seed (`create-picky-skill.md`) and nothing else — every later seed
-// is then delivered as if it were new.
+// Backwards compatibility:
+//   - The first release stored skills as flat `<name>.md` files. `ensureSeeded`
+//     migrates any such file into `<name>/SKILL.md` before doing anything else
+//     (without clobbering an existing directory).
+//   - Pre-manifest hosts carried an opaque "seeded at ..." marker. Those are
+//     migrated by assuming the user already received the very first seed
+//     (`create-picky-skill`) and nothing else \u2014 every later seed is then
+//     delivered as if it were new.
 
-import { copyFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { access, copyFile, cp, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
 
 export type PickySkillSummary = {
   name: string;
@@ -38,7 +47,9 @@ export type PickySkillDetails = PickySkillSummary & {
 };
 
 type SkillDoc = PickySkillDetails & {
+  directoryName: string;
   normalizedName: string;
+  normalizedDirectoryName: string;
   searchable: string;
   mtimeMs: number;
 };
@@ -54,12 +65,13 @@ export interface PickySkillStoreOptions {
 }
 
 const SEEDED_MARKER = ".seeded";
-const SEEDED_HEADER = "# Picky skill seeds already delivered. Each line is a filename in the seeds source dir. Do not edit unless you know what you are doing.\n";
-// Seeds that existed when the manifest format was first introduced. Used to
+const SEEDED_HEADER = "# Picky skill seeds already delivered. Each line is a directory name in the seeds source. Do not edit unless you know what you are doing.\n";
+const SKILL_FILE_NAME = "SKILL.md";
+// Skills that existed when the manifest format was first introduced. Used to
 // migrate hosts whose `.seeded` file still holds the opaque first-release
-// marker. Keep this list in sync only when adding NEW seeds — never remove
-// entries; doing so would re-deliver the seed to existing users.
-const LEGACY_SEEDED_FILES = ["create-picky-skill.md"];
+// marker. Names are stored without extension. Keep this list append-only \u2014
+// removing entries would re-deliver the seed to existing users.
+const LEGACY_SEEDED_NAMES = ["create-picky-skill"];
 
 export class PickySkillStore {
   private cache = new Map<string, SkillDoc>();
@@ -77,56 +89,72 @@ export class PickySkillStore {
     return this.skillsDir;
   }
 
-  /** Create the skills dir if needed and copy seed templates the first time.
-   *  Idempotent: a `.seeded` marker prevents repeated copies. Failures are
-   *  swallowed (best-effort) because losing a seed is not worth blocking the
-   *  realtime session boot. */
+  /** Create the skills dir if needed, migrate any leftover flat-layout files,
+   *  then copy seed skill directories the user has not received yet. The
+   *  `.seeded` manifest prevents re-delivery of seeds the user intentionally
+   *  removed. Failures are swallowed (best-effort) because losing a seed is
+   *  not worth blocking the realtime session boot. */
   async ensureSeeded(): Promise<void> {
     try {
       await mkdir(this.skillsDir, { recursive: true });
     } catch {
       return;
     }
+    await this.migrateFlatLayout();
+
     const sourceDir = this.seedSourceDir;
     if (!sourceDir) return;
 
     const manifestPath = join(this.skillsDir, SEEDED_MARKER);
     const delivered = await this.readSeededManifest(manifestPath);
 
-    let entries: string[];
+    let entries: Array<{ name: string; isDirectory(): boolean }>;
     try {
-      entries = await readdir(sourceDir);
+      entries = await readdir(sourceDir, { withFileTypes: true });
     } catch {
       entries = [];
     }
+
     let manifestChanged = false;
-    for (const entry of entries.sort()) {
-      if (!entry.endsWith(".md")) continue;
-      if (delivered.has(entry)) continue;
-      const dst = join(this.skillsDir, entry);
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (!entry.isDirectory()) continue;
+      const skillName = entry.name;
+      if (delivered.has(skillName)) continue;
+
+      const srcSkillMd = join(sourceDir, skillName, SKILL_FILE_NAME);
+      try {
+        await access(srcSkillMd);
+      } catch {
+        continue; // not a valid skill dir, ignore
+      }
+
+      const dst = join(this.skillsDir, skillName);
       try {
         await stat(dst);
-        // The user already has a file under that name (perhaps hand-authored).
-        // Record it as delivered so we never overwrite it, but do not copy.
-        delivered.add(entry);
+        // User already has a directory under that name (hand-authored or
+        // legacy). Record it as delivered so we never overwrite it, but do
+        // not copy.
+        delivered.add(skillName);
         manifestChanged = true;
         continue;
       } catch {
-        // missing — copy in
+        // missing \u2014 copy the whole seed directory in
       }
       try {
-        await copyFile(join(sourceDir, entry), dst);
-        delivered.add(entry);
+        await cp(join(sourceDir, skillName), dst, { recursive: true, force: false, errorOnExist: false });
+        delivered.add(skillName);
         manifestChanged = true;
       } catch {
-        // ignore individual file failures; we will retry on next boot.
+        // ignore individual copy failures; we will retry on the next boot.
       }
     }
+
     if (!manifestChanged && delivered.size > 0) {
       // Even with no new copies, persist a manifest if we migrated from the
       // legacy opaque marker so the next boot is a fast no-op.
       try {
-        await stat(manifestPath);
+        const raw = await readFile(manifestPath, "utf8");
+        if (!isManifestFormat(raw)) manifestChanged = true;
       } catch {
         manifestChanged = true;
       }
@@ -138,36 +166,6 @@ export class PickySkillStore {
         // marker write failure is non-fatal; worst case we attempt to re-seed next boot.
       }
     }
-  }
-
-  /** Read the per-skill manifest written by previous `ensureSeeded` runs.
-   *  Returns a set of filenames (e.g. "manage-pickles.md") that the store
-   *  has already delivered to the user's skills directory. Pre-manifest hosts
-   *  carried an opaque "seeded at <timestamp>" string — those are migrated
-   *  to the set of first-release seeds so later additions can still flow. */
-  private async readSeededManifest(path: string): Promise<Set<string>> {
-    const delivered = new Set<string>();
-    let raw: string;
-    try {
-      raw = await readFile(path, "utf8");
-    } catch {
-      return delivered;
-    }
-    let recognized = false;
-    for (const line of raw.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      if (!trimmed.endsWith(".md")) continue;
-      delivered.add(trimmed);
-      recognized = true;
-    }
-    if (!recognized) {
-      // Legacy opaque marker ("seeded at <iso>"). Assume the user already
-      // received the first-release seeds and nothing else; later additions
-      // will be delivered as fresh entries.
-      for (const legacy of LEGACY_SEEDED_FILES) delivered.add(legacy);
-    }
-    return delivered;
   }
 
   /** Cheap session-start snapshot: { name, description } for every skill in
@@ -205,9 +203,7 @@ export class PickySkillStore {
     if (!requested) throw new Error("Skill name is required");
     const normalized = requested.toLowerCase();
     const docs = await this.loadDocuments();
-    const doc = docs.find(
-      (d) => d.normalizedName === normalized || basename(d.path, ".md").toLowerCase() === normalized,
-    );
+    const doc = docs.find((d) => d.normalizedName === normalized || d.normalizedDirectoryName === normalized);
     if (!doc) throw new Error(`Skill not found: ${request.name}`);
     return {
       name: doc.name,
@@ -216,6 +212,86 @@ export class PickySkillStore {
       frontmatter: doc.frontmatter,
       content: doc.content,
     };
+  }
+
+  /** Move any leftover `<name>.md` from the original flat layout into
+   *  `<name>/SKILL.md`. Best-effort and idempotent: never overwrites an
+   *  existing directory or file. Runs every `ensureSeeded()` so a downgrade
+   *  + upgrade cycle still converges. */
+  private async migrateFlatLayout(): Promise<void> {
+    let entries: Array<{ name: string; isFile(): boolean }>;
+    try {
+      entries = await readdir(this.skillsDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      if (!entry.name.endsWith(".md")) continue;
+      if (entry.name === "README.md") continue;
+      if (entry.name.startsWith(".")) continue;
+      const skillName = entry.name.slice(0, -3);
+      if (!skillName) continue;
+      const src = join(this.skillsDir, entry.name);
+      const dstDir = join(this.skillsDir, skillName);
+      const dstFile = join(dstDir, SKILL_FILE_NAME);
+      try {
+        await stat(dstFile);
+        continue; // already migrated, leave the leftover for the user to clean up
+      } catch {
+        // dst missing \u2014 OK to migrate
+      }
+      try {
+        // Refuse to migrate if a directory with the same name already exists
+        // (could be a manual user setup). Better to leave both alone than to
+        // shove a SKILL.md into a directory the user did not expect.
+        const existing = await stat(dstDir);
+        if (existing.isDirectory()) continue;
+      } catch {
+        // dstDir does not exist; proceed
+      }
+      try {
+        await mkdir(dstDir, { recursive: true });
+        await rename(src, dstFile);
+      } catch {
+        // rename can fail across filesystems; fall back to copy + unlink.
+        try {
+          await copyFile(src, dstFile);
+        } catch {
+          // give up silently on this file
+        }
+      }
+    }
+  }
+
+  /** Read the per-skill manifest written by previous `ensureSeeded` runs.
+   *  Returns a set of directory names (e.g. "manage-pickles") that the store
+   *  has already delivered. Pre-manifest hosts carried an opaque
+   *  "seeded at <timestamp>" string \u2014 those are migrated to the set of
+   *  first-release seeds so later additions can still flow. The .md suffix
+   *  in older manifest entries is stripped for backward compatibility. */
+  private async readSeededManifest(path: string): Promise<Set<string>> {
+    const delivered = new Set<string>();
+    let raw: string;
+    try {
+      raw = await readFile(path, "utf8");
+    } catch {
+      return delivered;
+    }
+    if (!isManifestFormat(raw)) {
+      // Legacy opaque marker ("seeded at <iso>"). Assume the user already
+      // received the first-release seeds and nothing else; later additions
+      // will be delivered as fresh entries.
+      for (const legacy of LEGACY_SEEDED_NAMES) delivered.add(legacy);
+      return delivered;
+    }
+    for (const line of raw.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const name = trimmed.endsWith(".md") ? trimmed.slice(0, -3) : trimmed;
+      if (name) delivered.add(name);
+    }
+    return delivered;
   }
 
   private async loadDocuments(): Promise<SkillDoc[]> {
@@ -244,41 +320,53 @@ export class PickySkillStore {
     }
     const next = new Map<string, SkillDoc>();
     for (const entry of entries) {
-      if (!entry.endsWith(".md")) continue;
+      if (entry.startsWith(".")) continue;
       if (entry === "README.md") continue;
-      const path = join(this.skillsDir, entry);
+      const entryPath = join(this.skillsDir, entry);
+      let entryStat;
+      try {
+        entryStat = await stat(entryPath);
+      } catch {
+        continue;
+      }
+      if (!entryStat.isDirectory()) continue;
+
+      const skillFile = join(entryPath, SKILL_FILE_NAME);
       let fileStat;
       try {
-        fileStat = await stat(path);
+        fileStat = await stat(skillFile);
       } catch {
         continue;
       }
       if (!fileStat.isFile()) continue;
 
-      const cached = this.cache.get(path);
+      const cached = this.cache.get(skillFile);
       if (cached && cached.mtimeMs === fileStat.mtimeMs) {
-        next.set(path, cached);
+        next.set(skillFile, cached);
         continue;
       }
 
       let content: string;
       try {
-        content = await readFile(path, "utf8");
+        content = await readFile(skillFile, "utf8");
       } catch {
         continue;
       }
       const parsed = parseSkillMarkdown(content);
-      const name = (parsed.frontmatter.name || basename(entry, ".md")).trim();
+      const directoryName = entry;
+      const name = (parsed.frontmatter.name || directoryName).trim();
       const description = (parsed.frontmatter.description || "").trim();
       if (!name) continue;
-      next.set(path, {
+      next.set(skillFile, {
         name,
         description,
-        path,
+        path: skillFile,
+        directoryName,
         frontmatter: parsed.frontmatter,
         content,
         normalizedName: name.toLowerCase(),
-        searchable: [name, description, parsed.body].join("\n").toLowerCase(),
+        normalizedDirectoryName: directoryName.toLowerCase(),
+        searchable: [name, directoryName, description, parsed.body].join("\n").toLowerCase(),
         mtimeMs: fileStat.mtimeMs,
       });
     }
@@ -292,16 +380,32 @@ export function defaultPickySkillsDir(): string {
   return join(homedir(), "Library", "Application Support", "Picky", "skills");
 }
 
-/** Locate the bundled seed directory across the four runtimes Picky ships
- *  with: `node dist/index.js` from inside `Picky.app/Contents/Resources/agentd`,
+/** Locate the bundled seed directory across the runtimes Picky ships with:
+ *  `node dist/index.js` from inside `Picky.app/Contents/Resources/agentd`,
  *  `tsx src/index.ts` from a dev checkout, vitest from `src/`, and the
  *  pnpm-deployed runtime under `build/agentd-runtime`. The directory layout
- *  is `<agentd-root>/seeds/picky-skills/*.md` in every case. */
+ *  is `<agentd-root>/seeds/picky-skills/<name>/SKILL.md` in every case. */
 function defaultSeedSourceDir(): string | null {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   // Compiled runtime: dist/application/picky-skill-store.js -> agentd root is two levels up.
   // Source runtime:   src/application/picky-skill-store.ts  -> agentd root is two levels up.
   return join(moduleDir, "..", "..", "seeds", "picky-skills");
+}
+
+/** True iff the contents look like the per-skill manifest format (one
+ *  filename / directory name per line, ignoring comments and blanks).
+ *  Used to detect the legacy opaque marker on migration. */
+function isManifestFormat(raw: string): boolean {
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith("#")) continue;
+    // A manifest entry is a simple identifier; the legacy marker is a
+    // sentence with spaces ("seeded at 2026-...").
+    if (/\s/.test(trimmed)) return false;
+    return true;
+  }
+  return false;
 }
 
 function parseSkillMarkdown(content: string): { frontmatter: Record<string, string>; body: string } {
@@ -336,8 +440,8 @@ function scoreSkill(doc: SkillDoc, terms: string[]): number {
   const name = doc.name.toLowerCase();
   const description = doc.description.toLowerCase();
   for (const term of terms) {
-    if (name === term) score += 100;
-    if (name.includes(term)) score += 40;
+    if (name === term || doc.normalizedDirectoryName === term) score += 100;
+    if (name.includes(term) || doc.normalizedDirectoryName.includes(term)) score += 40;
     if (description.includes(term)) score += 20;
     if (doc.searchable.includes(term)) score += 5;
   }
@@ -353,10 +457,11 @@ function matchSnippet(doc: SkillDoc, terms: string[]): string | undefined {
     if (ci >= 0) {
       const start = Math.max(0, ci - 80);
       const end = Math.min(doc.content.length, ci + 160);
-      const prefix = start > 0 ? "…" : "";
-      const suffix = end < doc.content.length ? "…" : "";
+      const prefix = start > 0 ? "\u2026" : "";
+      const suffix = end < doc.content.length ? "\u2026" : "";
       return `${prefix}${doc.content.slice(start, end).replace(/\s+/g, " ").trim()}${suffix}`;
     }
   }
   return undefined;
 }
+

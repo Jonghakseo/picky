@@ -1170,26 +1170,43 @@ export class SessionSupervisor extends EventEmitter {
     const generation = this.mainHandleGeneration;
     this.beginMainTurn(context.id);
     this.setMainContext(context);
-    if (context.transcript?.trim()) await this.appendMainMessage("user", context.transcript.trim());
     const prompt = buildMainAgentPrompt(context);
-    if (this.mainHandlePromise && !this.mainHandle) {
-      const handle = await this.mainHandlePromise;
-      if (generation !== this.mainHandleGeneration) return;
-      await this.deliverMainPrompt(handle, prompt);
-      return;
+    // Append the user message to mainState.messages AFTER deliverMainPrompt
+    // resolves. The realtime runtime calls ensureConnected() inside
+    // handle.followUp(), and when the websocket needs to be (re)opened
+    // (initial connect, 50-min rollover, transient drop) connect() calls
+    // replayHistory() which snapshots mainState.messages into a single
+    // narrative `[Picky context replay] ...` conversation.item. Pushing the
+    // new user message before that point caused the message to land in BOTH
+    // the replay narrative AND the immediately-following
+    // conversation.item.create that followUp itself emits - the model saw
+    // the same user turn twice in one round-trip, wasting tokens and
+    // confusing follow-up phrasing. finally{} guarantees the message is
+    // still recorded if deliver throws, so the next turn's context still
+    // has the user's earlier line.
+    const transcript = context.transcript?.trim();
+    try {
+      if (this.mainHandlePromise && !this.mainHandle) {
+        const handle = await this.mainHandlePromise;
+        if (generation !== this.mainHandleGeneration) return;
+        await this.deliverMainPrompt(handle, prompt);
+        return;
+      }
+      if (!this.mainHandle) {
+        const initial = this.createInitialMainHandle(prompt, context.cwd, generation);
+        const trackedPromise = initial.then(({ handle }) => handle).finally(() => {
+          if (this.mainHandlePromise === trackedPromise) this.mainHandlePromise = undefined;
+        });
+        this.mainHandlePromise = trackedPromise;
+        const handle = await initial;
+        if (generation !== this.mainHandleGeneration) return;
+        if (!handle.initialPromptAlreadySent) await this.deliverMainPrompt(handle.handle, prompt);
+        return;
+      }
+      await this.deliverMainPrompt(this.mainHandle, prompt);
+    } finally {
+      if (transcript) await this.appendMainMessage("user", transcript);
     }
-    if (!this.mainHandle) {
-      const initial = this.createInitialMainHandle(prompt, context.cwd, generation);
-      const trackedPromise = initial.then(({ handle }) => handle).finally(() => {
-        if (this.mainHandlePromise === trackedPromise) this.mainHandlePromise = undefined;
-      });
-      this.mainHandlePromise = trackedPromise;
-      const handle = await initial;
-      if (generation !== this.mainHandleGeneration) return;
-      if (!handle.initialPromptAlreadySent) await this.deliverMainPrompt(handle.handle, prompt);
-      return;
-    }
-    await this.deliverMainPrompt(this.mainHandle, prompt);
   }
 
   private async maybeRolloverMainAgent(context: PickyContextPacket): Promise<void> {

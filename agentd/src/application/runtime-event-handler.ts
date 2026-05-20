@@ -182,6 +182,17 @@ export class RuntimeEventHandler {
 
     const patch: Partial<PickyAgentSession> = { status: event.status, lastSummary: finalAnswer ? summaryFromFinalAnswer(finalAnswer) : event.summary };
     if (event.assistantRun) patch.currentAssistantRun = event.assistantRun;
+    // Post-compaction token count is unknown until the next model response. Mirror the
+    // main agent runtime (session-supervisor.ts applyMainRuntimeEvent on compactionCompleted)
+    // so the Pickle header context bar drops to "?%" rather than staying pinned on the
+    // pre-compaction value. We rely on a follow-up runtime context_usage event from
+    // pi-sdk-runtime's emitContextUsageSnapshot, but that can be stale if a session_compact
+    // extension hook appended assistant-like entries between appendCompaction and
+    // compaction_end, so reset defensively here. compactionFailed intentionally preserves
+    // the existing usage (see the auto-compaction failure test in session-supervisor.test.ts).
+    if (event.compactionCompleted && currentSession.contextUsage) {
+      patch.contextUsage = { ...currentSession.contextUsage, tokens: null, percent: null };
+    }
     if (terminal || event.status === "waiting_for_input" || finalAnswer) {
       await this.dependencies.messageBuilder.flushAssistantText(sessionId, event.assistantRun);
       if (terminal) {

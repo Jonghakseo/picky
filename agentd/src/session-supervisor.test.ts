@@ -1413,11 +1413,13 @@ describe("SessionSupervisor", () => {
     await supervisor.load();
     const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
 
+    runtime.handle?.emit({ type: "context_usage", usage: { tokens: 184_000, contextWindow: 200_000, percent: 92 } });
     runtime.handle?.emit({ type: "assistant_delta", delta: "완료 답변" });
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     await settle();
     expect(supervisor.get(pickle.id)?.status).toBe("completed");
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("완료 답변");
+    expect(supervisor.get(pickle.id)?.contextUsage?.percent).toBe(92);
 
     runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting session…", compactionStarted: true, compactionReason: "threshold" });
     await settle();
@@ -1430,6 +1432,11 @@ describe("SessionSupervisor", () => {
     expect(updated.status).toBe("completed");
     expect(updated.lastSummary).toBe("Session compacted");
     expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted")).toBe(true);
+    // contextUsage tokens/percent must reset to null on compactionCompleted so the
+    // Pickle header drops to "?%" instead of staying pinned on the stale 92% (the
+    // post-compaction count is unknown until the next model response). The contextWindow
+    // is preserved so the bar can still show the model's window size.
+    expect(updated.contextUsage).toEqual({ tokens: null, contextWindow: 200_000, percent: null });
   });
 
   it("records a compact failure system message after automatic threshold compaction fails", async () => {

@@ -61,6 +61,17 @@ interface OpenAIRealtimeMainRuntimeOptions {
 
 interface OpenAIRealtimeToolHandlers {
   handoff(request: { title: string; instructions: string; userMessage?: string; cwd?: string }): Promise<{ sessionId: string; title: string; cwd?: string }>;
+  /** Read a small chunk of a file, applying the realtime hard cap. Long
+   *  contents may include an auto-generated `summary` field. Errors are
+   *  surfaced as `{ ok: false, error }`. The runtime never throws from a
+   *  tool dispatch — it always echoes the JSON back to the model. */
+  readFile(request: { path: string; offset?: number; limit?: number; cwd?: string; callId: string }): Promise<RealtimeReadFileToolResult>;
+  /** Run a short bash command with strict timeout. Full output is spilled to
+   *  a per-session log file; the model only sees the tail (and optionally a
+   *  summary). */
+  runBash(request: { command: string; cwd?: string; callId: string }): Promise<RealtimeRunBashToolResult>;
+  /** Overwrite or append a file. The body is never echoed back to the model. */
+  writeFile(request: { path: string; content: string; mode?: "overwrite" | "append"; cwd?: string; callId: string }): Promise<RealtimeWriteFileToolResult>;
   listPickleSessions(request: { includeArchive?: boolean; page?: number; limit?: number }): PickyAgentSession[] | Promise<PickyAgentSession[]>;
   steerPickleSession(request: { sessionId: string; message: string }): Promise<PickyAgentSession>;
   searchSkills(request: { query?: string; limit?: number; cwd?: string }): Promise<{ query: string; root: string; roots?: string[]; total: number; skills: PickySkillSummary[] }>;
@@ -123,7 +134,61 @@ type RealtimeToolName =
   | "picky_recall_recent_context"
   | "picky_inspect_active_pickle"
   | "picky_abort_pickle"
-  | "picky_unarchive_pickle";
+  | "picky_unarchive_pickle"
+  | "picky_read_file"
+  | "picky_run_bash"
+  | "picky_write_file";
+
+/** Outcome of a `picky_read_file` tool call. The `content` field is already
+ *  truncated to the realtime cap; `truncated=true` signals that more bytes
+ *  exist beyond what the model received. `summary` is best-effort and may be
+ *  omitted on auth/timeout failures. */
+export type RealtimeReadFileToolResult =
+  | {
+      ok: true;
+      path: string;
+      resolvedPath: string;
+      content: string;
+      totalLines: number;
+      totalBytes: number;
+      offset: number;
+      limit: number;
+      truncated: boolean;
+      summary?: string;
+    }
+  | { ok: false; error: string };
+
+/** Outcome of a `picky_run_bash` tool call. `output` is the tail captured
+ *  within the hard cap; `logPath` points to the on-disk spill of the full
+ *  combined stdout+stderr when the model only saw a tail. */
+export type RealtimeRunBashToolResult =
+  | {
+      ok: true;
+      command: string;
+      cwd: string;
+      exitCode: number | null;
+      signal?: string | null;
+      output: string;
+      totalBytes: number;
+      durationMs: number;
+      timedOut: boolean;
+      truncated: boolean;
+      logPath?: string;
+      summary?: string;
+    }
+  | { ok: false; error: string };
+
+/** Outcome of a `picky_write_file` tool call. The written body is never
+ *  echoed back to the model — only the resolved path and byte count. */
+export type RealtimeWriteFileToolResult =
+  | {
+      ok: true;
+      path: string;
+      resolvedPath: string;
+      bytesWritten: number;
+      mode: "overwrite" | "append";
+    }
+  | { ok: false; error: string };
 
 type PendingFunctionCall = {
   callId: string;
@@ -935,7 +1000,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     if (this.completedFunctionCallIds.has(callId)) return;
     this.completedFunctionCallIds.add(callId);
     if (this.completedFunctionCallIds.size > 200) this.completedFunctionCallIds.clear();
-    const result = await this.executeTool(name, parsed);
+    const result = await this.executeTool(name, parsed, callId);
     this.sendClientEvent({
       type: "conversation.item.create",
       item: {
@@ -948,7 +1013,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     this.sendResponseCreate();
   }
 
-  private async executeTool(name: RealtimeToolName, args: Record<string, unknown>): Promise<unknown> {
+  private async executeTool(name: RealtimeToolName, args: Record<string, unknown>, callId: string): Promise<unknown> {
     switch (name) {
       case "picky_start_pickle":
         return this.options.toolHandlers.handoff({
@@ -1000,6 +1065,31 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
         return summarizeRealtimePickleAbort(await this.options.toolHandlers.abortPickleSession({ sessionId: stringArg(args, "sessionId") }));
       case "picky_unarchive_pickle":
         return summarizeRealtimePickleUnarchive(await this.options.toolHandlers.unarchivePickleSession({ sessionId: stringArg(args, "sessionId") }));
+      case "picky_read_file":
+        return this.options.toolHandlers.readFile({
+          path: stringArg(args, "path"),
+          offset: numberArg(args, "offset"),
+          limit: numberArg(args, "limit"),
+          cwd: optionalStringArg(args, "cwd") ?? this.cwd,
+          callId,
+        });
+      case "picky_run_bash":
+        return this.options.toolHandlers.runBash({
+          command: stringArg(args, "command"),
+          cwd: optionalStringArg(args, "cwd") ?? this.cwd,
+          callId,
+        });
+      case "picky_write_file":
+        return this.options.toolHandlers.writeFile({
+          path: stringArg(args, "path"),
+          // Body must be passed through verbatim — trailing newlines and
+          // significant whitespace are meaningful for file writes, so the
+          // trim()-happy optionalStringArg helper is not used here.
+          content: rawStringArg(args, "content"),
+          mode: normalizeWriteFileMode(optionalStringArg(args, "mode")),
+          cwd: optionalStringArg(args, "cwd") ?? this.cwd,
+          callId,
+        });
     }
   }
 
@@ -1234,6 +1324,12 @@ function buildRealtimeInstructions(userMemories: MainRealtimeUserMemoryItem[] = 
     "- To find an archived Pickle the user wants to revisit (\"그거 다시 살려\", \"the one I archived\"), call `picky_pickle_sessions({ includeArchive: true })` first to locate it, then `picky_unarchive_pickle` to restore its dock card. The archived flag is the only thing flipped — once it's back on the dock, use `picky_steer_pickle` to continue (if status is still running) or `picky_start_pickle` to spawn a fresh Pickle when the previous one was completed/cancelled.",
     "- When the user references an earlier turn's page, screen, selection, or file (\"방금 그 페이지\", \"5분 전\", \"the PR you saw\"), or when a stored memory rule depends on the current browser/cwd, call `picky_recall_recent_context` first. The single \"captured context\" you saw at the start of THIS turn is gone by the next one; that tool is how you look further back.",
     "",
+    "## Filesystem / shell tools (one-shot only)",
+    "- `picky_read_file` / `picky_run_bash` / `picky_write_file` are for SHORT, low-latency 1-shot ops (e.g. `git status`, peek at one config line, write a one-line patch). Outputs are hard-capped at ~2 KB; the rest is auto-summarized by a small model — useful, but lossy.",
+    "- DO NOT loop these tools. If answering would need 3+ calls (recursive grep, multi-file inspection, repeated reads, long builds), call `picky_start_pickle` and let a Pickle do the multi-step work with full context.",
+    "- `picky_run_bash` is unsandboxed and runs as the user. Refuse destructive commands (`rm -rf`, `git push -f`, `git reset --hard`, overwriting redirects) unless the user explicitly asked for that exact action in this turn.",
+    "- `picky_write_file` overwrites by default (mode=\"append\" to append). The body is NOT echoed back — you cannot verify by reading the same file immediately after. Assume success unless `ok` is false.",
+    "",
     "## Long-term user memory",
     "- When the user asks you to remember a fact, rule, or preference (e.g. \"remember that X\", \"기억해놓아\", \"from now on, when I do X, do Y\"), call `picky_remember` with a short content describing exactly what to remember. Store at most one idea per item.",
     "- When the user wants to revise or drop a previously stored memory, look it up with `picky_list_memories` first to obtain the id, then call `picky_update_memory` or `picky_forget`.",
@@ -1306,6 +1402,11 @@ function buildRealtimeContextText(context: PickyContextPacket): string {
   }
   if (context.warnings.length > 0) lines.push("", "## Capture warnings", ...context.warnings.map((warning) => `- ${warning}`));
   return lines.join("\n");
+}
+
+function normalizeWriteFileMode(value: string | undefined): "overwrite" | "append" | undefined {
+  if (!value) return undefined;
+  return value === "append" ? "append" : "overwrite";
 }
 
 function realtimeTools(): Array<Record<string, unknown>> {
@@ -1492,6 +1593,50 @@ function realtimeTools(): Array<Record<string, unknown>> {
           sessionId: { type: "string", description: "Pickle session id from picky_pickle_sessions (with includeArchive=true if it has been archived)." },
         },
         required: ["sessionId"],
+      },
+    },
+    {
+      type: "function",
+      name: "picky_read_file",
+      description: "Read a short slice of a local text file for a 1-shot answer. Hard-capped at ~40 lines / 2 KB; longer files come back with `truncated: true` and an auto-generated `summary` from a small reasoning model. Use `offset`+`limit` to page through. For multi-file or multi-step inspection, delegate to picky_start_pickle instead of looping calls.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          path: { type: "string", description: "Absolute or cwd-relative file path." },
+          offset: { type: "number", description: "0-based line offset. Default 0." },
+          limit: { type: "number", description: "Max lines to return. Default 40, clamped." },
+        },
+        required: ["path"],
+      },
+    },
+    {
+      type: "function",
+      name: "picky_run_bash",
+      description: "Run a single short shell command. 10s timeout, output tail-capped at 2 KB (full log saved to disk; `logPath` is returned when truncated). Unsandboxed — NEVER call destructive commands (`rm -rf`, `git push -f`, `git reset --hard`, `>` redirects that overwrite existing files) unless the user explicitly asked in this turn. For long builds, recursive searches, or multi-step workflows, delegate to picky_start_pickle.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          command: { type: "string", description: "Shell command to run via `/bin/bash -lc`." },
+          cwd: { type: "string", description: "Optional absolute working directory. Defaults to Picky's tracked cwd." },
+        },
+        required: ["command"],
+      },
+    },
+    {
+      type: "function",
+      name: "picky_write_file",
+      description: "Overwrite or append a file. The body is NOT echoed back — you cannot verify with a follow-up read in the same turn. Default mode is `overwrite`; use `append` to add to existing files. Parent directories are created if missing. Confirm any destructive overwrite with the user in their previous message before calling.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          path: { type: "string", description: "Absolute or cwd-relative file path." },
+          content: { type: "string", description: "Bytes to write (UTF-8)." },
+          mode: { type: "string", enum: ["overwrite", "append"], description: "Default overwrite." },
+        },
+        required: ["path", "content"],
       },
     },
   ];
@@ -1875,6 +2020,9 @@ function normalizeToolName(name: string): RealtimeToolName | undefined {
     case "picky_inspect_active_pickle":
     case "picky_abort_pickle":
     case "picky_unarchive_pickle":
+    case "picky_read_file":
+    case "picky_run_bash":
+    case "picky_write_file":
       return name;
     default:
       return undefined;
@@ -1890,6 +2038,12 @@ function stringArg(args: Record<string, unknown>, key: string): string {
 function optionalStringArg(args: Record<string, unknown>, key: string): string | undefined {
   const value = args[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function rawStringArg(args: Record<string, unknown>, key: string): string {
+  const value = args[key];
+  if (typeof value !== "string") throw new Error(`Missing required string argument: ${key}`);
+  return value;
 }
 
 function numberArg(args: Record<string, unknown>, key: string): number | undefined {

@@ -4,7 +4,13 @@ import { SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import { PiSdkRuntime } from "./runtime/pi-sdk-runtime.js";
-import { OpenAIRealtimeMainRuntime } from "./runtime/openai-realtime-main-runtime.js";
+import { OpenAIRealtimeMainRuntime, type RealtimeReadFileToolResult, type RealtimeRunBashToolResult, type RealtimeWriteFileToolResult } from "./runtime/openai-realtime-main-runtime.js";
+import { executeRealtimeBash, executeRealtimeRead, executeRealtimeWrite } from "./application/realtime-fs-tools.js";
+import { RealtimeOutputSummarizer, DEFAULT_REALTIME_SUMMARIZER_MODEL } from "./runtime/realtime-output-summarizer.js";
+import { createPiAiCompleter } from "./runtime/realtime-summarizer-completer.js";
+import { loadCodexOAuth } from "./runtime/codex-oauth.js";
+import { mkdir, writeFile as fsWriteFile } from "node:fs/promises";
+import { join as joinPath } from "node:path";
 import { SelectableMainRuntime } from "./runtime/selectable-main-runtime.js";
 import { ConservativeMockTaskRouter } from "./task-router.js";
 import { createPickyAbortPickleTool, createPickyPickleSessionsTool, createPickyStartPickleTool, createPickySteerPickleTool, type PickyHandoffRequest, type PickyPickleAbortRequest, type PickyPickleSteerRequest } from "./application/handoff-tool.js";
@@ -336,6 +342,41 @@ function buildPrimaryMainRuntime(
     customTools: toolsBuilder(new Set()),
   });
 
+  // Summarizer used to compact long bash/read outputs before they reach the
+  // realtime model. Auth resolver lazily loads Codex OAuth on each call so a
+  // freshly minted access token is used (the realtime config rotates it).
+  const summarizer = new RealtimeOutputSummarizer({
+    completer: createPiAiCompleter({
+      resolveApiKey: async (provider) => {
+        if (provider !== "openai-codex") return undefined;
+        try {
+          const oauth = await loadCodexOAuth();
+          return oauth.accessToken;
+        } catch (error) {
+          logAgentd("realtime summarizer codex auth missing", { error: error instanceof Error ? error.message : String(error) });
+          return undefined;
+        }
+      },
+    }),
+    model: process.env.PICKY_REALTIME_SUMMARIZER_MODEL?.trim() || DEFAULT_REALTIME_SUMMARIZER_MODEL,
+  });
+
+  const spillRoot = joinPath(config.appSupportDir, "RealtimeToolOutputs");
+
+  async function writeBashSpill(callId: string, body: string): Promise<string | undefined> {
+    if (!body) return undefined;
+    try {
+      await mkdir(spillRoot, { recursive: true });
+      const safeCallId = callId.replace(/[^A-Za-z0-9_.-]/g, "_");
+      const path = joinPath(spillRoot, `${safeCallId}.log`);
+      await fsWriteFile(path, body, "utf8");
+      return path;
+    } catch (error) {
+      logAgentd("realtime bash spill failed", { error: error instanceof Error ? error.message : String(error) });
+      return undefined;
+    }
+  }
+
   const realtimeMainRuntime = new OpenAIRealtimeMainRuntime({
     toolHandlers: {
       handoff: startPickleFromMainContext,
@@ -371,6 +412,97 @@ function buildPrimaryMainRuntime(
       // dock card returns. We do NOT route through the app bridge here — the
       // child daemon (if any) is left alone, only the metadata changes.
       unarchivePickleSession: ({ sessionId }) => requireSupervisor().setSessionArchived(sessionId, false),
+
+      // -- Realtime filesystem / shell tools ---------------------------------
+      // Errors are wrapped into { ok: false, error } so the runtime always
+      // echoes back a parseable JSON payload to the model instead of throwing.
+      readFile: async (request): Promise<RealtimeReadFileToolResult> => {
+        try {
+          const result = await executeRealtimeRead({
+            path: request.path,
+            offset: request.offset,
+            limit: request.limit,
+            cwd: request.cwd,
+          });
+          let summary: string | undefined;
+          if (result.byteTruncated) {
+            summary = await summarizer.summarize({
+              kind: "read",
+              path: result.resolvedPath,
+              rawOutput: result.fullContent,
+            });
+          }
+          return {
+            ok: true,
+            path: result.path,
+            resolvedPath: result.resolvedPath,
+            content: result.content,
+            totalLines: result.totalLines,
+            totalBytes: result.totalBytes,
+            offset: result.offset,
+            limit: result.limit,
+            truncated: result.truncated,
+            ...(summary ? { summary } : {}),
+          };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      runBash: async (request): Promise<RealtimeRunBashToolResult> => {
+        try {
+          const result = await executeRealtimeBash({
+            command: request.command,
+            cwd: request.cwd,
+          });
+          let logPath: string | undefined;
+          let summary: string | undefined;
+          if (result.truncated) {
+            logPath = await writeBashSpill(request.callId, result.fullOutput);
+            summary = await summarizer.summarize({
+              kind: "bash",
+              command: result.command,
+              cwd: result.cwd,
+              exitCode: result.exitCode,
+              rawOutput: result.fullOutput,
+            });
+          }
+          return {
+            ok: true,
+            command: result.command,
+            cwd: result.cwd,
+            exitCode: result.exitCode,
+            signal: result.signal,
+            output: result.output,
+            totalBytes: result.totalBytes,
+            durationMs: result.durationMs,
+            timedOut: result.timedOut,
+            truncated: result.truncated,
+            ...(logPath ? { logPath } : {}),
+            ...(summary ? { summary } : {}),
+          };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      writeFile: async (request): Promise<RealtimeWriteFileToolResult> => {
+        try {
+          const result = await executeRealtimeWrite({
+            path: request.path,
+            content: request.content,
+            mode: request.mode,
+            cwd: request.cwd,
+          });
+          return {
+            ok: true,
+            path: result.path,
+            resolvedPath: result.resolvedPath,
+            bytesWritten: result.bytesWritten,
+            mode: result.mode,
+          };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
     },
   });
 

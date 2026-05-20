@@ -170,7 +170,12 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(toolNames).toContain("picky_skills_search");
     expect(toolNames).toContain("picky_skill_details");
     expect(toolNames).toContain("read_picky_user_guide");
+    expect(toolNames).toContain("picky_read_file");
+    expect(toolNames).toContain("picky_run_bash");
+    expect(toolNames).toContain("picky_write_file");
     expect(toolNames).not.toContain("picky_pointer_overlay");
+    expect(sessionUpdate.session.instructions).toContain("one-shot only");
+    expect(sessionUpdate.session.instructions).toContain("DO NOT loop");
   });
 
   it("passes the active cwd to skill lookup tool handlers", async () => {
@@ -1574,6 +1579,178 @@ describe("OpenAIRealtimeMainRuntime context recall + pickle tools", () => {
   });
 });
 
+describe("OpenAIRealtimeMainRuntime filesystem / shell tools", () => {
+  it("dispatches picky_read_file through the readFile handler and forwards the active cwd", async () => {
+    const socket = new FakeRealtimeSocket();
+    const calls: Array<{ path: string; offset?: number; limit?: number; cwd?: string; callId: string }> = [];
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        ...fakeToolHandlers(),
+        async readFile(request) {
+          calls.push(request);
+          return {
+            ok: true,
+            path: request.path,
+            resolvedPath: "/tmp/project/AGENTS.md",
+            content: "line-1\nline-2",
+            totalLines: 200,
+            totalBytes: 9000,
+            offset: request.offset ?? 0,
+            limit: request.limit ?? 40,
+            truncated: true,
+            summary: "Two-line excerpt; full file has 200 lines.",
+          };
+        },
+      },
+      defaultConfig: { provider: "openai", apiKey: "sk-test", modelOrDeployment: "gpt-realtime-2", voice: "marin" },
+      webSocketFactory: () => socket,
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context({ cwd: "/tmp/project" }) });
+    socket.serverEvent({
+      type: "response.output_item.done",
+      item: { type: "function_call", name: "picky_read_file", call_id: "call-read", arguments: JSON.stringify({ path: "AGENTS.md", limit: 40 }) },
+    });
+    await settle();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ path: "AGENTS.md", offset: undefined, limit: 40, cwd: "/tmp/project", callId: "call-read" });
+
+    const fnOutput = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .find((event) => event.type === "conversation.item.create" && event.item?.type === "function_call_output" && event.item.call_id === "call-read");
+    const payload = JSON.parse(fnOutput!.item.output);
+    expect(payload.ok).toBe(true);
+    expect(payload.content).toBe("line-1\nline-2");
+    expect(payload.truncated).toBe(true);
+    expect(payload.summary).toContain("200 lines");
+  });
+
+  it("dispatches picky_run_bash and echoes the handler's logPath/summary back to the model", async () => {
+    const socket = new FakeRealtimeSocket();
+    const calls: Array<{ command: string; cwd?: string; callId: string }> = [];
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        ...fakeToolHandlers(),
+        async runBash(request) {
+          calls.push(request);
+          return {
+            ok: true,
+            command: request.command,
+            cwd: request.cwd ?? "/tmp",
+            exitCode: 0,
+            signal: null,
+            output: "...tail of output\n",
+            totalBytes: 12_000,
+            durationMs: 120,
+            timedOut: false,
+            truncated: true,
+            logPath: "/var/log/picky/RealtimeToolOutputs/call-bash.log",
+            summary: "npm test passed. 42 tests OK.",
+          };
+        },
+      },
+      defaultConfig: { provider: "openai", apiKey: "sk-test", modelOrDeployment: "gpt-realtime-2", voice: "marin" },
+      webSocketFactory: () => socket,
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context({ cwd: "/tmp/project" }) });
+    socket.serverEvent({
+      type: "response.output_item.done",
+      item: { type: "function_call", name: "picky_run_bash", call_id: "call-bash", arguments: JSON.stringify({ command: "npm test" }) },
+    });
+    await settle();
+
+    expect(calls).toEqual([{ command: "npm test", cwd: "/tmp/project", callId: "call-bash" }]);
+
+    const fnOutput = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .find((event) => event.type === "conversation.item.create" && event.item?.type === "function_call_output" && event.item.call_id === "call-bash");
+    const payload = JSON.parse(fnOutput!.item.output);
+    expect(payload).toMatchObject({
+      ok: true,
+      exitCode: 0,
+      truncated: true,
+      logPath: "/var/log/picky/RealtimeToolOutputs/call-bash.log",
+      summary: "npm test passed. 42 tests OK.",
+    });
+  });
+
+  it("dispatches picky_write_file with the requested mode and returns a body-free payload", async () => {
+    const socket = new FakeRealtimeSocket();
+    const calls: Array<{ path: string; content: string; mode?: "overwrite" | "append"; cwd?: string; callId: string }> = [];
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        ...fakeToolHandlers(),
+        async writeFile(request) {
+          calls.push(request);
+          return {
+            ok: true,
+            path: request.path,
+            resolvedPath: `/tmp/project/${request.path}`,
+            bytesWritten: Buffer.byteLength(request.content, "utf8"),
+            mode: request.mode ?? "overwrite",
+          };
+        },
+      },
+      defaultConfig: { provider: "openai", apiKey: "sk-test", modelOrDeployment: "gpt-realtime-2", voice: "marin" },
+      webSocketFactory: () => socket,
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context({ cwd: "/tmp/project" }) });
+    socket.serverEvent({
+      type: "response.output_item.done",
+      item: { type: "function_call", name: "picky_write_file", call_id: "call-write", arguments: JSON.stringify({ path: "notes.md", content: "hello\n", mode: "append" }) },
+    });
+    await settle();
+
+    expect(calls).toEqual([{ path: "notes.md", content: "hello\n", mode: "append", cwd: "/tmp/project", callId: "call-write" }]);
+
+    const fnOutput = socket.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .find((event) => event.type === "conversation.item.create" && event.item?.type === "function_call_output" && event.item.call_id === "call-write");
+    const payload = JSON.parse(fnOutput!.item.output);
+    expect(payload).toEqual({
+      ok: true,
+      path: "notes.md",
+      resolvedPath: "/tmp/project/notes.md",
+      bytesWritten: 6,
+      mode: "append",
+    });
+    // The body must never be echoed back to the model.
+    expect(JSON.stringify(payload)).not.toContain("hello");
+  });
+
+  it("normalizes invalid mode values on picky_write_file to overwrite", async () => {
+    const socket = new FakeRealtimeSocket();
+    const modes: Array<string | undefined> = [];
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: {
+        ...fakeToolHandlers(),
+        async writeFile(request) {
+          modes.push(request.mode);
+          return { ok: true, path: request.path, resolvedPath: `/tmp/${request.path}`, bytesWritten: 1, mode: request.mode ?? "overwrite" };
+        },
+      },
+      defaultConfig: { provider: "openai", apiKey: "sk-test", modelOrDeployment: "gpt-realtime-2", voice: "marin" },
+      webSocketFactory: () => socket,
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    socket.serverEvent({
+      type: "response.output_item.done",
+      item: { type: "function_call", name: "picky_write_file", call_id: "call-w1", arguments: JSON.stringify({ path: "a.txt", content: "x", mode: "WHATEVER" }) },
+    });
+    socket.serverEvent({
+      type: "response.output_item.done",
+      item: { type: "function_call", name: "picky_write_file", call_id: "call-w2", arguments: JSON.stringify({ path: "b.txt", content: "x" }) },
+    });
+    await settle();
+
+    expect(modes).toEqual(["overwrite", undefined]);
+  });
+});
+
 describe("SelectableMainRuntime", () => {
   it("keeps Pi runtime as the default main path and rejects realtime-only voice commands", async () => {
     const pi = new RecordingRuntime("pi");
@@ -1680,6 +1857,18 @@ function fakeToolHandlers() {
     inspectPickleSession() { return session; },
     async abortPickleSession() { return { ...session, status: "cancelled" as const }; },
     async unarchivePickleSession() { return { ...session, archived: false }; },
+    // Realtime filesystem / shell tool stubs. Tests that exercise the new
+    // dispatch paths override these inline. Defaults are minimal happy-path
+    // values so unrelated tests continue to compile and pass.
+    async readFile() {
+      return { ok: true as const, path: "stub.txt", resolvedPath: "/tmp/stub.txt", content: "", totalLines: 0, totalBytes: 0, offset: 0, limit: 40, truncated: false };
+    },
+    async runBash() {
+      return { ok: true as const, command: "stub", cwd: "/tmp", exitCode: 0, signal: null, output: "", totalBytes: 0, durationMs: 0, timedOut: false, truncated: false };
+    },
+    async writeFile() {
+      return { ok: true as const, path: "stub.txt", resolvedPath: "/tmp/stub.txt", bytesWritten: 0, mode: "overwrite" as const };
+    },
   };
 }
 

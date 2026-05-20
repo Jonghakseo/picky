@@ -46,6 +46,8 @@ export function buildRealtimeInstructions(
   const baseLines = [
     buildMainAgentBootstrapPair({ omitTtsParenthesisHint: true }).user,
     "",
+    "Before replying, scan the `## Long-term user memory` section below and apply any item that matches the user's current request, identifiers, or captured context — even when the user did not ask you to recall it.",
+    "",
     "## Realtime voice mode overrides",
     `- Use \`read_picky_user_guide\` before answering questions about how to use Picky. Prefer its \`section\` parameter when the question maps to one of these manual sections: ${PICKY_USER_GUIDE_SECTIONS.join("; ")}.`,
     "- To check the progress of one specific delegated Pickle, call `picky_inspect_active_pickle` (does not spawn a new Pickle). Call `picky_abort_pickle` only when the user explicitly asks to stop one.",
@@ -57,20 +59,22 @@ export function buildRealtimeInstructions(
     "- For multi-step requests, tool routing decisions, or anything that requires checking recent context, reason internally before speaking.",
     "- Do not perform extended reasoning when the user's audio is unclear; ask for a short clarification instead.",
   ];
-  appendPickySkillsSection(baseLines, pickySkills);
   baseLines.push(
     "",
     "## Long-term user memory",
     "- Memories below are always in scope; apply the relevant ones to your reply without being asked. Do not recite them back unless the user explicitly asks what you remember.",
+    "- Trigger phrases to watch for: \"내 ~\", \"전에 말한\", \"기억하지\", \"우리가 정한\", \"my ~\", \"I told you\", \"we agreed\", or any identifier (name, handle, cwd, repo, URL) that overlaps with a stored item.",
+    "- IDs are not shown here; call `picky_list_memories` only when you need the id for `picky_update_memory` / `picky_forget` or when the user explicitly asks what you remember.",
   );
   if (userMemories.length === 0) {
     baseLines.push("- (No long-term memories stored yet.)");
   } else {
     baseLines.push("", "### Stored memories");
     for (const memory of userMemories) {
-      baseLines.push(`- (id=${memory.id}) ${memory.content}`);
+      baseLines.push(`- ${memory.content}`);
     }
   }
+  appendPickySkillsSection(baseLines, pickySkills);
   appendRecentConversationSection(baseLines, recentHistory);
   return baseLines.join("\n");
 }

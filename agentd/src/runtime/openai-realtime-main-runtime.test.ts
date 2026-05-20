@@ -1181,8 +1181,10 @@ describe("OpenAIRealtimeMainRuntime user memory tools", () => {
       .find((event) => event.type === "session.update")!;
     const instructions: string = sessionUpdate.session.instructions;
     expect(instructions).toContain("## Long-term user memory");
-    expect(instructions).toContain("(id=mem-a) User goes by 'Jong'");
-    expect(instructions).toContain("(id=mem-b) Treat \"이 페이지\"");
+    expect(instructions).toContain("- User goes by 'Jong'");
+    expect(instructions).toContain("- Treat \"이 페이지\"");
+    expect(instructions).not.toContain("(id=mem-a)");
+    expect(instructions).not.toContain("(id=mem-b)");
   });
 
   it("renders a placeholder line when no memories are stored", async () => {
@@ -1304,7 +1306,8 @@ describe("OpenAIRealtimeMainRuntime user memory tools", () => {
       .map((raw) => JSON.parse(raw) as Record<string, any>)
       .filter((event) => event.type === "session.update");
     expect(sessionUpdatesAfter.length).toBe(sessionUpdatesBefore.length + 1);
-    expect(sessionUpdatesAfter.at(-1)!.session.instructions).toContain("(id=mem-1) Always answer in Korean");
+    expect(sessionUpdatesAfter.at(-1)!.session.instructions).toContain("- Always answer in Korean");
+    expect(sessionUpdatesAfter.at(-1)!.session.instructions).not.toContain("(id=mem-1)");
   });
 
   it("packs the most recent N history turns into session.update.instructions as the model's own memory", async () => {

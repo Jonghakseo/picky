@@ -45,7 +45,7 @@ enum BuddyTranscriptionProviderFactory {
         isRealtimeOnlyBuild: Bool? = nil
     ) -> any BuddyTranscriptionProvider {
         let isRealtimeRuntime = isRealtimeOnlyBuild
-            ?? (settings.mainAgentRuntimeMode == .openAIRealtime)
+            ?? (AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime)
         // When the launch-time main agent runtime is OpenAI Realtime, force
         // the Realtime transcription provider regardless of what is currently
         // saved in settings.sttProvider. Existing settings files may still

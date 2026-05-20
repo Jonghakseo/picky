@@ -117,6 +117,63 @@ struct PickySettingsPolishTests {
         #expect(settings.openAIRealtime.azureRealtimeURL.isEmpty)
     }
 
+    @Test func effectiveRuntimeModeUsesLaunchSnapshotUntilCacheReset() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.defaultCwd = project.path
+        settings.mainAgentCwd = project.path
+        settings.worktreeParent = project.path
+        settings.mainAgentRuntimeMode = .pi
+        settings.mainAgentRuntimeModeRealtimeOptInMigrationApplied = true
+        try store.save(settings)
+
+        AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting()
+        defer { AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting() }
+
+        try AppBundleConfiguration.$testRuntimeModeSettingsURL.withValue(store.url) {
+            #expect(AppBundleConfiguration.effectiveRuntimeMode == .pi)
+
+            var updated = settings
+            updated.mainAgentRuntimeMode = .openAIRealtime
+            try store.save(updated)
+
+            #expect(AppBundleConfiguration.effectiveRuntimeMode == .pi)
+
+            AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting()
+            #expect(AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime)
+        }
+    }
+
+    @Test func runtimeModeTestOverrideStillWinsOverLaunchSnapshot() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.defaultCwd = project.path
+        settings.mainAgentCwd = project.path
+        settings.worktreeParent = project.path
+        settings.mainAgentRuntimeMode = .pi
+        settings.mainAgentRuntimeModeRealtimeOptInMigrationApplied = true
+        try store.save(settings)
+
+        AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting()
+        defer { AppBundleConfiguration.resetEffectiveRuntimeModeCacheForTesting() }
+
+        try AppBundleConfiguration.$testRuntimeModeSettingsURL.withValue(store.url) {
+            #expect(AppBundleConfiguration.effectiveRuntimeMode == .pi)
+            try AppBundleConfiguration.$testRuntimeModeOverride.withValue(.openAIRealtime) {
+                #expect(AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime)
+            }
+            #expect(AppBundleConfiguration.effectiveRuntimeMode == .pi)
+        }
+    }
+
     @Test func realtimeOptInBuildMigratesRuntimeModeOnceAndPersistsMarker() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }

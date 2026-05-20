@@ -28,7 +28,7 @@ enum PickySpeechPlaybackProviderFactory {
         isRealtimeOnlyBuild: Bool? = nil
     ) -> any PickySpeechPlaybackProvider {
         let isRealtimeRuntime = isRealtimeOnlyBuild
-            ?? (settings.mainAgentRuntimeMode == .openAIRealtime)
+            ?? (AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime)
         guard settings.ttsEnabled else {
             let provider = PickyMutedSpeechPlaybackProvider()
             print("🔇 TTS: spoken replies disabled")

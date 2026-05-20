@@ -49,16 +49,18 @@ struct PickyRealtimeOptInProviderGuardTests {
         #expect(provider is OpenAIRealtimeTranscriptionProvider)
     }
 
-    @Test func realtimeRuntimeSetting_forcesRealtimeTranscriptionProvider_withoutOverrideParameter() {
+    @Test func realtimeRuntimeSnapshot_forcesRealtimeTranscriptionProvider_withoutOverrideParameter() {
         var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
-        settings.mainAgentRuntimeMode = .openAIRealtime
+        settings.mainAgentRuntimeMode = .pi
         settings.sttProvider = .azure
         settings.azureOpenAIAPIKey = "azure-leftover"
 
-        let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
-            settings: settings,
-            environment: [:]
-        )
+        let provider = AppBundleConfiguration.$testRuntimeModeOverride.withValue(.openAIRealtime) {
+            BuddyTranscriptionProviderFactory.makeDefaultProvider(
+                settings: settings,
+                environment: [:]
+            )
+        }
 
         #expect(provider is OpenAIRealtimeTranscriptionProvider)
     }
@@ -106,17 +108,19 @@ struct PickyRealtimeOptInProviderGuardTests {
         #expect(provider is PickyMutedSpeechPlaybackProvider)
     }
 
-    @Test func realtimeRuntimeSetting_forcesSystemTtsProvider_withoutOverrideParameter() {
+    @Test func realtimeRuntimeSnapshot_forcesSystemTtsProvider_withoutOverrideParameter() {
         var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
-        settings.mainAgentRuntimeMode = .openAIRealtime
+        settings.mainAgentRuntimeMode = .pi
         settings.ttsEnabled = true
         settings.ttsProvider = .openai
         settings.openAITTSAPIKey = "sk-leftover"
 
-        let provider = PickySpeechPlaybackProviderFactory.makeDefaultProvider(
-            settings: settings,
-            environment: [:]
-        )
+        let provider = AppBundleConfiguration.$testRuntimeModeOverride.withValue(.openAIRealtime) {
+            PickySpeechPlaybackProviderFactory.makeDefaultProvider(
+                settings: settings,
+                environment: [:]
+            )
+        }
 
         #expect(provider is PickySystemSpeechPlaybackProvider)
     }

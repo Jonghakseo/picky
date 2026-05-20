@@ -136,7 +136,7 @@ enum PickyMainAgentRuntimeMode: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .pi: "Pi (current)"
+        case .pi: "Pi"
         case .openAIRealtime: "OpenAI Realtime"
         }
     }

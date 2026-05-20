@@ -430,12 +430,13 @@ struct CompanionPanelSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                // PICKY_REALTIME_OPT_IN=1 builds run as a Realtime-only
-                // product (see AppBundleConfiguration.effectiveRuntimeMode).
-                // The runtime picker is omitted because there is no second
-                // mode to choose, and the realtime fields are always shown.
-                // Legacy opt-in=0 builds keep the Pi model picker.
-                if AppBundleConfiguration.isRealtimeOnlyBuild {
+                mainAgentRuntimePicker
+
+                if isMainAgentRuntimeRestartPending {
+                    runtimeRestartNotice
+                }
+
+                if viewModel.settings.mainAgentRuntimeMode == .openAIRealtime {
                     realtimeSettingsFields
                 } else {
                     piMainAgentModelPicker
@@ -494,6 +495,78 @@ struct CompanionPanelSettingsView: View {
                 }
             }
         }
+    }
+
+    private var appliedMainAgentRuntimeMode: PickyMainAgentRuntimeMode {
+        AppBundleConfiguration.effectiveRuntimeMode
+    }
+
+    private var isMainAgentRuntimeRestartPending: Bool {
+        viewModel.settings.mainAgentRuntimeMode != appliedMainAgentRuntimeMode
+    }
+
+    private var mainAgentRuntimePicker: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            fieldLabel("settings.field.mainAgentRuntime")
+            Picker("settings.field.mainAgentRuntime", selection: $viewModel.settings.mainAgentRuntimeMode) {
+                ForEach(PickyMainAgentRuntimeMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onChange(of: viewModel.settings.mainAgentRuntimeMode) { _, _ in
+                saveImmediately(for: .mainAgent)
+            }
+
+            Text("Currently applied: \(appliedMainAgentRuntimeMode.displayName). Changes take effect after restarting Picky.")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundColor(DS.Colors.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var runtimeRestartNotice: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .top, spacing: 7) {
+                Image(systemName: "arrow.clockwise.circle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(DS.Colors.warningText)
+                Text("Runtime will switch to \(viewModel.settings.mainAgentRuntimeMode.displayName) after you restart Picky. The current session keeps using \(appliedMainAgentRuntimeMode.displayName).")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundColor(DS.Colors.warningText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Button(action: quitPickyForRuntimeRestart) {
+                HStack(spacing: 6) {
+                    Image(systemName: "power")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text("Quit Picky")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .foregroundColor(DS.Colors.textSecondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .stroke(DS.Colors.borderSubtle.opacity(0.6), lineWidth: 0.5)
+                )
+            }
+            .buttonStyle(.plain)
+            .pointerCursor()
+            .help("Quit Picky normally, then open it again to apply the selected runtime.")
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(DS.Colors.warningText.opacity(0.10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(DS.Colors.warningText.opacity(0.30), lineWidth: 0.5)
+                )
+        )
     }
 
     private var piMainAgentModelPicker: some View {
@@ -872,10 +945,11 @@ struct CompanionPanelSettingsView: View {
             subtitle: L10n.t("settings.section.voice.subtitle")
         ) {
             VStack(alignment: .leading, spacing: 14) {
-                // PICKY_REALTIME_OPT_IN=1 builds let OpenAI Realtime
-                // handle transcription internally, so the dedicated STT
-                // provider section is suppressed entirely. Opt-in=0 builds
-                // keep the full STT picker + per-provider key inputs.
+                // When the launch-time runtime is OpenAI Realtime, agentd owns
+                // transcription through the Realtime session, so the dedicated
+                // STT provider section is suppressed for this process. Changing
+                // the desired runtime in Settings does not affect this until
+                // Picky is restarted.
                 if !AppBundleConfiguration.isRealtimeOnlyBuild {
                 // ─── STT group ───
                 VStack(alignment: .leading, spacing: 10) {
@@ -957,7 +1031,7 @@ struct CompanionPanelSettingsView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         toggleRow("settings.voice.toggle.ttsEnabled", isOn: $viewModel.settings.ttsEnabled, divider: false)
-                        // On opt-in=1 the Realtime model voices every
+                        // On the Realtime runtime the model voices every
                         // assistant turn; `ttsEnabled` only gates onboarding
                         // narration there. The localized copy already
                         // describes the toggle generically.
@@ -975,11 +1049,11 @@ struct CompanionPanelSettingsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    // PICKY_REALTIME_OPT_IN=1: only the bundled system TTS
-                    // (Apple speech synthesizer) is available, and it is
-                    // used solely for onboarding narration. Hide the
-                    // provider picker and every external-API config block
-                    // because Realtime owns assistant audio playback.
+                    // Realtime runtime: only the bundled system TTS (Apple
+                    // speech synthesizer) is available, and it is used solely
+                    // for onboarding narration. Hide the provider picker and
+                    // every external-API config block because Realtime owns
+                    // assistant audio playback for this process.
                     if AppBundleConfiguration.isRealtimeOnlyBuild {
                         if viewModel.settings.ttsEnabled {
                             openMacOSSpeechSettingsButton
@@ -1444,6 +1518,10 @@ struct CompanionPanelSettingsView: View {
         } else {
             saveStatuses.markDirty(.onboarding)
         }
+    }
+
+    private func quitPickyForRuntimeRestart() {
+        NSApp.terminate(nil)
     }
 
     private func commitMainAgentCwdField() {

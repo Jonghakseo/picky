@@ -52,17 +52,43 @@ enum AppBundleConfiguration {
     @TaskLocal
     static var testRuntimeModeOverride: PickyMainAgentRuntimeMode?
 
-    /// The launch-time runtime mode the daemon should be driven to.
+    /// Tests can scope runtime-mode snapshot reads to a temporary settings file.
+    @TaskLocal
+    static var testRuntimeModeSettingsURL: URL?
+
+    nonisolated(unsafe) private static var cachedLaunchRuntimeMode: (settingsURL: URL?, mode: PickyMainAgentRuntimeMode)?
+
+    /// Production resolves this once from persisted Settings at process launch
+    /// so users can choose Pi or OpenAI Realtime and have the selection take
+    /// effect on the next app launch. Later Settings edits update the desired
+    /// value on disk, but the running app keeps this launch snapshot to avoid
+    /// mixing UI/voice/daemon runtime assumptions in one process.
     ///
-    /// Production resolves this from persisted Settings so users can choose Pi
-    /// or OpenAI Realtime and have the selection take effect on the next app
-    /// launch. `PICKY_REALTIME_OPT_IN=1` is now only a compatibility seed: on
-    /// first load, `PickySettingsStore` migrates unmarked settings to
+    /// `PICKY_REALTIME_OPT_IN=1` is now only a compatibility seed: on first
+    /// load, `PickySettingsStore` migrates unmarked settings to
     /// `.openAIRealtime` so existing realtime-channel users do not fall back to
     /// Pi after updating.
     static var effectiveRuntimeMode: PickyMainAgentRuntimeMode {
         if let override = testRuntimeModeOverride { return override }
-        return PickySettingsStore().load().mainAgentRuntimeMode
+
+        let settingsURL = testRuntimeModeSettingsURL
+        if let cachedLaunchRuntimeMode, cachedLaunchRuntimeMode.settingsURL == settingsURL {
+            return cachedLaunchRuntimeMode.mode
+        }
+
+        let store: PickySettingsStore
+        if let settingsURL {
+            store = PickySettingsStore(url: settingsURL)
+        } else {
+            store = PickySettingsStore()
+        }
+        let mode = store.load().mainAgentRuntimeMode
+        cachedLaunchRuntimeMode = (settingsURL, mode)
+        return mode
+    }
+
+    static func resetEffectiveRuntimeModeCacheForTesting() {
+        cachedLaunchRuntimeMode = nil
     }
 
     /// Historical name retained for call-site compatibility. This now means

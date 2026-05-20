@@ -27,25 +27,22 @@ enum PickySpeechPlaybackProviderFactory {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         isRealtimeOnlyBuild: Bool? = nil
     ) -> any PickySpeechPlaybackProvider {
-        // Already MainActor-isolated (the protocol is @MainActor), so we can
-        // read the build flag directly without an assumeIsolated dance.
-        let isRealtimeOnlyBuild = isRealtimeOnlyBuild ?? AppBundleConfiguration.isRealtimeOnlyBuild
+        let isRealtimeRuntime = isRealtimeOnlyBuild
+            ?? (settings.mainAgentRuntimeMode == .openAIRealtime)
         guard settings.ttsEnabled else {
             let provider = PickyMutedSpeechPlaybackProvider()
             print("🔇 TTS: spoken replies disabled")
             return provider
         }
 
-        // PICKY_REALTIME_OPT_IN=1 builds route every assistant turn through
-        // the Realtime audio pipeline, so `speechPlaybackProvider` is only
-        // ever used for onboarding narration and the legacy `agentReply`
-        // safety net. Skip every external-API provider here — nobody is
-        // going to type Azure/OpenAI/ElevenLabs credentials on this build
-        // (the Settings UI hides those fields) and falling through to the
-        // bundled macOS synthesizer keeps the surface keyless.
-        if isRealtimeOnlyBuild {
+        // OpenAI Realtime runtime routes every assistant turn through the
+        // Realtime audio pipeline, so `speechPlaybackProvider` is only ever
+        // used for onboarding narration and the legacy `agentReply` safety
+        // net. Skip every external-API provider here and fall through to the
+        // bundled macOS synthesizer to keep this path keyless.
+        if isRealtimeRuntime {
             let provider = PickySystemSpeechPlaybackProvider()
-            print("🔊 TTS: realtime build — using local provider \(provider.displayName)")
+            print("🔊 TTS: realtime runtime — using local provider \(provider.displayName)")
             return provider
         }
 

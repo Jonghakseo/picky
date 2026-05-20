@@ -117,6 +117,79 @@ struct PickySettingsPolishTests {
         #expect(settings.openAIRealtime.azureRealtimeURL.isEmpty)
     }
 
+    @Test func realtimeOptInBuildMigratesRuntimeModeOnceAndPersistsMarker() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.defaultCwd = project.path
+        settings.mainAgentCwd = project.path
+        settings.worktreeParent = project.path
+        settings.mainAgentRuntimeMode = .pi
+        settings.mainAgentRuntimeModeRealtimeOptInMigrationApplied = false
+        try store.save(settings)
+
+        let loaded = AppBundleConfiguration.$testRealtimeOptInOverride.withValue(true) {
+            store.load()
+        }
+
+        #expect(loaded.mainAgentRuntimeMode == .openAIRealtime)
+        #expect(loaded.mainAgentRuntimeModeRealtimeOptInMigrationApplied)
+        let persisted = try JSONDecoder().decode(PickySettings.self, from: Data(contentsOf: store.url))
+        #expect(persisted.mainAgentRuntimeMode == .openAIRealtime)
+        #expect(persisted.mainAgentRuntimeModeRealtimeOptInMigrationApplied)
+    }
+
+    @Test func realtimeOptInMigrationMarkerPreservesLaterPiSelection() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.defaultCwd = project.path
+        settings.mainAgentCwd = project.path
+        settings.worktreeParent = project.path
+        settings.mainAgentRuntimeMode = .pi
+        settings.mainAgentRuntimeModeRealtimeOptInMigrationApplied = true
+        try store.save(settings)
+
+        let loaded = AppBundleConfiguration.$testRealtimeOptInOverride.withValue(true) {
+            store.load()
+        }
+
+        #expect(loaded.mainAgentRuntimeMode == .pi)
+        #expect(loaded.mainAgentRuntimeModeRealtimeOptInMigrationApplied)
+    }
+
+    @Test func realtimeOptInFreshInstallDefaultsToRealtimeRuntime() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = PickySettingsStore(appSupportRoot: root)
+
+        let loaded = AppBundleConfiguration.$testRealtimeOptInOverride.withValue(true) {
+            store.load()
+        }
+
+        #expect(loaded.mainAgentRuntimeMode == .openAIRealtime)
+        #expect(loaded.mainAgentRuntimeModeRealtimeOptInMigrationApplied)
+    }
+
+    @Test func nonRealtimeOptInFreshInstallDefaultsToPiRuntime() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = PickySettingsStore(appSupportRoot: root)
+
+        let loaded = AppBundleConfiguration.$testRealtimeOptInOverride.withValue(false) {
+            store.load()
+        }
+
+        #expect(loaded.mainAgentRuntimeMode == .pi)
+        #expect(!loaded.mainAgentRuntimeModeRealtimeOptInMigrationApplied)
+    }
+
     @Test func settingsRoundTripPreservesOpenAIRealtimeSettings() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         let project = root.appendingPathComponent("project", isDirectory: true)

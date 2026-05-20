@@ -44,16 +44,15 @@ enum BuddyTranscriptionProviderFactory {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         isRealtimeOnlyBuild: Bool? = nil
     ) -> any BuddyTranscriptionProvider {
-        let isRealtimeOnlyBuild = isRealtimeOnlyBuild
-            ?? AppBundleConfiguration.isRealtimeOnlyBuild
-        // PICKY_REALTIME_OPT_IN=1 builds force the Realtime transcription
-        // provider regardless of what is currently saved in settings.sttProvider.
-        // The Settings UI on this build no longer exposes an STT picker, but
-        // existing user settings files may still carry a legacy provider
-        // selection (e.g. "openai" or "azure") inherited from a previous
-        // opt-in=0 install. Honouring that value would silently pop a
-        // key-input requirement we can no longer satisfy.
-        if isRealtimeOnlyBuild {
+        let isRealtimeRuntime = isRealtimeOnlyBuild
+            ?? (settings.mainAgentRuntimeMode == .openAIRealtime)
+        // When the launch-time main agent runtime is OpenAI Realtime, force
+        // the Realtime transcription provider regardless of what is currently
+        // saved in settings.sttProvider. Existing settings files may still
+        // carry a legacy provider selection (e.g. "openai" or "azure");
+        // honouring that value would silently route voice through a separate
+        // key-input path instead of the active Realtime session.
+        if isRealtimeRuntime {
             let language = settings.openAISTTPreferredLanguage
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .nilIfEmpty
@@ -61,7 +60,7 @@ enum BuddyTranscriptionProviderFactory {
                 agentClient: BuddyTranscriptionProviderFactory.sharedAgentClient,
                 preferredLanguage: language
             )
-            print("🎙️ Transcription: realtime build — forced provider \(provider.displayName), language: \(language ?? "auto")")
+            print("🎙️ Transcription: realtime runtime — forced provider \(provider.displayName), language: \(language ?? "auto")")
             return provider
         }
 

@@ -873,6 +873,9 @@ struct PickySettings: Codable, Equatable {
     var overlayBubbles: PickyOverlayBubblePreferences
     var fontScales: PickyFontScales
     var mainAgentRuntimeMode: PickyMainAgentRuntimeMode
+    /// One-shot compatibility marker for users who installed a
+    /// PICKY_REALTIME_OPT_IN=1 build before runtime mode became a user setting.
+    var mainAgentRuntimeModeRealtimeOptInMigrationApplied: Bool
     var openAIRealtime: PickyOpenAIRealtimeSettings
     /// Empty means Picky follows Pi's own default model/settings. Non-empty is a
     /// provider/model pattern returned by picky-agentd, for example `anthropic/claude-sonnet-4-5`.
@@ -981,6 +984,7 @@ struct PickySettings: Codable, Equatable {
         overlayBubbles: PickyOverlayBubblePreferences = .defaults,
         fontScales: PickyFontScales = .defaults,
         mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi,
+        mainAgentRuntimeModeRealtimeOptInMigrationApplied: Bool = false,
         openAIRealtime: PickyOpenAIRealtimeSettings = .defaults,
         mainAgentModelPattern: String = "",
         mainAgentThinkingLevel: PickyMainAgentThinkingLevel = .off,
@@ -1037,6 +1041,7 @@ struct PickySettings: Codable, Equatable {
         self.overlayBubbles = overlayBubbles
         self.fontScales = fontScales
         self.mainAgentRuntimeMode = mainAgentRuntimeMode
+        self.mainAgentRuntimeModeRealtimeOptInMigrationApplied = mainAgentRuntimeModeRealtimeOptInMigrationApplied
         self.openAIRealtime = openAIRealtime
         self.mainAgentModelPattern = mainAgentModelPattern
         self.mainAgentThinkingLevel = mainAgentThinkingLevel
@@ -1113,6 +1118,7 @@ struct PickySettings: Codable, Equatable {
             overlayBubbles: .defaults,
             fontScales: .defaults,
             mainAgentRuntimeMode: .pi,
+            mainAgentRuntimeModeRealtimeOptInMigrationApplied: false,
             openAIRealtime: .defaults,
             mainAgentModelPattern: "",
             mainAgentThinkingLevel: .off,
@@ -1203,6 +1209,7 @@ struct PickySettings: Codable, Equatable {
         case overlayBubbles
         case fontScales
         case mainAgentRuntimeMode
+        case mainAgentRuntimeModeRealtimeOptInMigrationApplied
         case openAIRealtime
         case mainAgentModelPattern
         case mainAgentThinkingLevel
@@ -1264,6 +1271,7 @@ struct PickySettings: Codable, Equatable {
         cursor = try container.decodeIfPresent(PickyCursorPreferences.self, forKey: .cursor) ?? defaults.cursor
         overlayBubbles = try container.decodeIfPresent(PickyOverlayBubblePreferences.self, forKey: .overlayBubbles) ?? defaults.overlayBubbles
         mainAgentRuntimeMode = try container.decodeIfPresent(PickyMainAgentRuntimeMode.self, forKey: .mainAgentRuntimeMode) ?? defaults.mainAgentRuntimeMode
+        mainAgentRuntimeModeRealtimeOptInMigrationApplied = try container.decodeIfPresent(Bool.self, forKey: .mainAgentRuntimeModeRealtimeOptInMigrationApplied) ?? defaults.mainAgentRuntimeModeRealtimeOptInMigrationApplied
         openAIRealtime = try container.decodeIfPresent(PickyOpenAIRealtimeSettings.self, forKey: .openAIRealtime) ?? defaults.openAIRealtime
         mainAgentModelPattern = try container.decodeIfPresent(String.self, forKey: .mainAgentModelPattern) ?? defaults.mainAgentModelPattern
         mainAgentThinkingLevel = try container.decodeIfPresent(PickyMainAgentThinkingLevel.self, forKey: .mainAgentThinkingLevel) ?? defaults.mainAgentThinkingLevel

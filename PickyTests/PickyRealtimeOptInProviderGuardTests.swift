@@ -2,8 +2,8 @@
 //  PickyRealtimeOptInProviderGuardTests.swift
 //  PickyTests
 //
-//  Unit tests for the PICKY_REALTIME_OPT_IN=1 short-circuits inside the
-//  Speech and Transcription provider factories. On the realtime-only build:
+//  Unit tests for the OpenAI Realtime runtime short-circuits inside the
+//  Speech and Transcription provider factories. On the realtime runtime:
 //    * `BuddyTranscriptionProviderFactory.makeDefaultProvider` must force the
 //      Realtime transcription provider regardless of whatever
 //      `settings.sttProvider` happens to be on disk (legacy installs may still
@@ -44,6 +44,20 @@ struct PickyRealtimeOptInProviderGuardTests {
             settings: settings,
             environment: [:],
             isRealtimeOnlyBuild: true
+        )
+
+        #expect(provider is OpenAIRealtimeTranscriptionProvider)
+    }
+
+    @Test func realtimeRuntimeSetting_forcesRealtimeTranscriptionProvider_withoutOverrideParameter() {
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        settings.mainAgentRuntimeMode = .openAIRealtime
+        settings.sttProvider = .azure
+        settings.azureOpenAIAPIKey = "azure-leftover"
+
+        let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
+            settings: settings,
+            environment: [:]
         )
 
         #expect(provider is OpenAIRealtimeTranscriptionProvider)
@@ -90,6 +104,21 @@ struct PickyRealtimeOptInProviderGuardTests {
         )
 
         #expect(provider is PickyMutedSpeechPlaybackProvider)
+    }
+
+    @Test func realtimeRuntimeSetting_forcesSystemTtsProvider_withoutOverrideParameter() {
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        settings.mainAgentRuntimeMode = .openAIRealtime
+        settings.ttsEnabled = true
+        settings.ttsProvider = .openai
+        settings.openAITTSAPIKey = "sk-leftover"
+
+        let provider = PickySpeechPlaybackProviderFactory.makeDefaultProvider(
+            settings: settings,
+            environment: [:]
+        )
+
+        #expect(provider is PickySystemSpeechPlaybackProvider)
     }
 
     @Test func legacyBuild_stillRoutesToConfiguredTtsProvider() {

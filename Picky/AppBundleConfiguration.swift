@@ -26,7 +26,11 @@ enum AppBundleConfiguration {
         return trimmedValue.isEmpty ? nil : trimmedValue
     }
 
+    @TaskLocal
+    static var testRealtimeOptInOverride: Bool?
+
     static var realtimeOptIn: Bool {
+        if let override = testRealtimeOptInOverride { return override }
         guard let buildInfoPath = Bundle.main.path(forResource: "PickyBuildInfo", ofType: "json"),
               let data = try? Data(contentsOf: URL(fileURLWithPath: buildInfoPath)),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -48,33 +52,24 @@ enum AppBundleConfiguration {
     @TaskLocal
     static var testRuntimeModeOverride: PickyMainAgentRuntimeMode?
 
-    /// The runtime mode the daemon should always be driven to in this build.
+    /// The launch-time runtime mode the daemon should be driven to.
     ///
-    /// `PICKY_REALTIME_OPT_IN=1` flips Picky into a Realtime-only product:
-    /// the user can no longer pick the Pi runtime from Settings, and every
-    /// daemon command, voice turn, and assistant reply is expected to go
-    /// through OpenAI Realtime. The legacy `PICKY_REALTIME_OPT_IN=0` builds
-    /// keep their existing behaviour and always resolve to `.pi`. Using a
-    /// single helper here means we never need to keep five call sites in
-    /// sync with the `realtimeOptIn` build flag.
-    ///
-    /// Note: `PickySettings.mainAgentRuntimeMode` is intentionally still
-    /// honoured on opt-in=0 (it's hard-pinned to `.pi` there) and ignored
-    /// on opt-in=1 (forced to `.openAIRealtime`). The stored field stays in
-    /// the JSON for forward/backward compatibility across the two build
-    /// flavours.
+    /// Production resolves this from persisted Settings so users can choose Pi
+    /// or OpenAI Realtime and have the selection take effect on the next app
+    /// launch. `PICKY_REALTIME_OPT_IN=1` is now only a compatibility seed: on
+    /// first load, `PickySettingsStore` migrates unmarked settings to
+    /// `.openAIRealtime` so existing realtime-channel users do not fall back to
+    /// Pi after updating.
     static var effectiveRuntimeMode: PickyMainAgentRuntimeMode {
         if let override = testRuntimeModeOverride { return override }
-        return realtimeOptIn ? .openAIRealtime : .pi
+        return PickySettingsStore().load().mainAgentRuntimeMode
     }
 
-    /// Convenience: `true` when this build wires Picky exclusively through
-    /// OpenAI Realtime. Use this to gate Settings UI, provider factories,
-    /// onboarding gates, and tests that should only run on the realtime
-    /// build flavour.
+    /// Historical name retained for call-site compatibility. This now means
+    /// "the runtime applied for the current launch is OpenAI Realtime", not a
+    /// hard build flavour where Pi is unavailable.
     static var isRealtimeOnlyBuild: Bool {
-        if let override = testRuntimeModeOverride { return override == .openAIRealtime }
-        return realtimeOptIn
+        effectiveRuntimeMode == .openAIRealtime
     }
 
     /// Release channel from `PickyBuildInfo.json` (`stable` / `beta` / `alpha`).

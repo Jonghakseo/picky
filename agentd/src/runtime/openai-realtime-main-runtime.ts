@@ -1638,15 +1638,16 @@ function azurePreviewVoice(voice: string | undefined): string {
   return normalized && supported.has(normalized) ? normalized : "verse";
 }
 
-function mapReasoningEffort(level: ThinkingLevel, fallback: OpenAIRealtimeAuthConfig["reasoningEffort"]): "low" | "medium" | "high" {
+function mapReasoningEffort(level: ThinkingLevel, fallback: OpenAIRealtimeAuthConfig["reasoningEffort"]): "low" | "medium" | "high" | "xhigh" {
   if (fallback) return fallback;
   switch (level) {
     case "off":
     case "minimal":
     case "low":
       return "low";
-    case "high":
     case "xhigh":
+      return "xhigh";
+    case "high":
       return "high";
     case "medium":
     default:

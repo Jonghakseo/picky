@@ -190,6 +190,7 @@ enum PickyOpenAIRealtimeReasoningEffort: String, Codable, CaseIterable, Identifi
     case low
     case medium
     case high
+    case xhigh
 
     var id: String { rawValue }
 
@@ -198,6 +199,7 @@ enum PickyOpenAIRealtimeReasoningEffort: String, Codable, CaseIterable, Identifi
         case .low: "Low"
         case .medium: "Medium"
         case .high: "High"
+        case .xhigh: "X-High"
         }
     }
 }
@@ -249,7 +251,7 @@ struct PickyOpenAIRealtimeSettings: Codable, Equatable {
         azureAPIVersion: "",
         azureAPIShape: .ga,
         voice: "marin",
-        reasoningEffort: .medium,
+        reasoningEffort: .high,
         transcriptionLanguage: ""
     )
 

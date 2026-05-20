@@ -51,6 +51,11 @@ export function buildRealtimeInstructions(
     "- To check the progress of one specific delegated Pickle, call `picky_inspect_active_pickle` (does not spawn a new Pickle). Call `picky_abort_pickle` only when the user explicitly asks to stop one.",
     "- The captured context you see at the start of THIS turn is gone by the next turn. Call `picky_recall_recent_context` when the user references an earlier turn or a stored memory rule depends on the prior browser/cwd.",
     "- The one-shot file/shell tools (`picky_read_file`, `picky_run_bash`, `picky_write_file`) follow the per-call rules in each tool's description. If answering would need 3+ calls or a long-running command, delegate to `picky_start_pickle` instead of looping.",
+    "",
+    "## Reasoning",
+    "- For greetings, acknowledgements, simple confirmations, and direct factual answers, respond immediately without extended reasoning.",
+    "- For multi-step requests, tool routing decisions, or anything that requires checking recent context, reason internally before speaking.",
+    "- Do not perform extended reasoning when the user's audio is unclear; ask for a short clarification instead.",
   ];
   appendPickySkillsSection(baseLines, pickySkills);
   baseLines.push(

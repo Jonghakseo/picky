@@ -416,7 +416,12 @@ function buildPrimaryMainRuntime(
       // -- Realtime filesystem / shell tools ---------------------------------
       // Errors are wrapped into { ok: false, error } so the runtime always
       // echoes back a parseable JSON payload to the model instead of throwing.
+      // Every entry / exit is logged via logAgentd so the user can grep the
+      // daemon stdout/stderr log to reconstruct exactly what the realtime
+      // model asked for and what it got back.
       readFile: async (request): Promise<RealtimeReadFileToolResult> => {
+        const startedAt = Date.now();
+        logAgentd("realtime read_file start", { callId: request.callId, path: request.path, offset: request.offset, limit: request.limit, cwd: request.cwd });
         try {
           const result = await executeRealtimeRead({
             path: request.path,
@@ -426,12 +431,24 @@ function buildPrimaryMainRuntime(
           });
           let summary: string | undefined;
           if (result.byteTruncated) {
+            logAgentd("realtime read_file summarize", { callId: request.callId, fullContentBytes: Buffer.byteLength(result.fullContent, "utf8") });
             summary = await summarizer.summarize({
               kind: "read",
               path: result.resolvedPath,
               rawOutput: result.fullContent,
             });
           }
+          logAgentd("realtime read_file done", {
+            callId: request.callId,
+            elapsedMs: Date.now() - startedAt,
+            resolvedPath: result.resolvedPath,
+            totalLines: result.totalLines,
+            totalBytes: result.totalBytes,
+            returnedChars: result.content.length,
+            truncated: result.truncated ? 1 : 0,
+            byteTruncated: result.byteTruncated ? 1 : 0,
+            summarized: summary ? 1 : 0,
+          });
           return {
             ok: true,
             path: result.path,
@@ -445,10 +462,14 @@ function buildPrimaryMainRuntime(
             ...(summary ? { summary } : {}),
           };
         } catch (error) {
-          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+          const message = error instanceof Error ? error.message : String(error);
+          logAgentd("realtime read_file failed", { callId: request.callId, elapsedMs: Date.now() - startedAt, error: message });
+          return { ok: false, error: message };
         }
       },
       runBash: async (request): Promise<RealtimeRunBashToolResult> => {
+        const startedAt = Date.now();
+        logAgentd("realtime run_bash start", { callId: request.callId, cwd: request.cwd, commandChars: request.command.length, command: request.command });
         try {
           const result = await executeRealtimeBash({
             command: request.command,
@@ -457,6 +478,7 @@ function buildPrimaryMainRuntime(
           let logPath: string | undefined;
           let summary: string | undefined;
           if (result.truncated) {
+            logAgentd("realtime run_bash spill", { callId: request.callId, fullOutputBytes: Buffer.byteLength(result.fullOutput, "utf8") });
             logPath = await writeBashSpill(request.callId, result.fullOutput);
             summary = await summarizer.summarize({
               kind: "bash",
@@ -466,6 +488,19 @@ function buildPrimaryMainRuntime(
               rawOutput: result.fullOutput,
             });
           }
+          logAgentd("realtime run_bash done", {
+            callId: request.callId,
+            elapsedMs: Date.now() - startedAt,
+            exitCode: result.exitCode,
+            signal: result.signal,
+            timedOut: result.timedOut ? 1 : 0,
+            durationMs: result.durationMs,
+            totalBytes: result.totalBytes,
+            returnedChars: result.output.length,
+            truncated: result.truncated ? 1 : 0,
+            logPath,
+            summarized: summary ? 1 : 0,
+          });
           return {
             ok: true,
             command: result.command,
@@ -481,16 +516,29 @@ function buildPrimaryMainRuntime(
             ...(summary ? { summary } : {}),
           };
         } catch (error) {
-          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+          const message = error instanceof Error ? error.message : String(error);
+          logAgentd("realtime run_bash failed", { callId: request.callId, elapsedMs: Date.now() - startedAt, error: message });
+          return { ok: false, error: message };
         }
       },
       writeFile: async (request): Promise<RealtimeWriteFileToolResult> => {
+        const startedAt = Date.now();
+        // We deliberately do NOT log the body (it may be large; bodies are
+        // never echoed to the model either) — only the byte count and mode.
+        logAgentd("realtime write_file start", { callId: request.callId, path: request.path, mode: request.mode ?? "overwrite", contentBytes: Buffer.byteLength(request.content, "utf8"), cwd: request.cwd });
         try {
           const result = await executeRealtimeWrite({
             path: request.path,
             content: request.content,
             mode: request.mode,
             cwd: request.cwd,
+          });
+          logAgentd("realtime write_file done", {
+            callId: request.callId,
+            elapsedMs: Date.now() - startedAt,
+            resolvedPath: result.resolvedPath,
+            bytesWritten: result.bytesWritten,
+            mode: result.mode,
           });
           return {
             ok: true,
@@ -500,7 +548,9 @@ function buildPrimaryMainRuntime(
             mode: result.mode,
           };
         } catch (error) {
-          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+          const message = error instanceof Error ? error.message : String(error);
+          logAgentd("realtime write_file failed", { callId: request.callId, elapsedMs: Date.now() - startedAt, error: message });
+          return { ok: false, error: message };
         }
       },
     },

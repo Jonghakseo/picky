@@ -333,6 +333,13 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   private inputTranscriptByInputId = new Map<string, string>();
   private functionCalls = new Map<string, PendingFunctionCall>();
   private completedFunctionCallIds = new Set<string>();
+  // Debug-only counters so we can dump per-turn audio chunk traffic at the
+  // end of each phase instead of logging every single base64 frame (those
+  // arrive every ~20-40 ms and would drown agentd.stdout.log otherwise).
+  private inputAudioMetrics = new Map<string, { chunks: number; b64Bytes: number }>();
+  private outputAudioMetrics = new Map<string, { chunks: number; b64Bytes: number }>();
+  private outputTranscriptChunkCount = new Map<string, number>();
+  private inputTranscriptChunkCount = new Map<string, number>();
   private generation = 0;
   private thinkingLevel: ThinkingLevel;
   private cwd?: string;
@@ -818,6 +825,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
 
   private handleServerEvent(event: Record<string, unknown>): void {
     const type = String(event.type ?? "");
+    this.traceServerEvent(type, event);
     switch (type) {
       case "response.created": {
         this.activeResponseId = stringField(event, "response.id") ?? stringField(event, "response_id") ?? this.activeResponseId;
@@ -941,6 +949,153 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     }
   }
 
+  /** Verbose tracing of every server → client frame. High-frequency frames
+   *  (audio deltas, transcript deltas, function-call arg deltas) are folded
+   *  into per-response counters that get dumped on the matching `.done`
+   *  event so the log stays tractable while still exposing every transition
+   *  the user might want for debugging. */
+  private traceServerEvent(type: string, event: Record<string, unknown>): void {
+    switch (type) {
+      case "response.created": {
+        logAgentd("main realtime recv response.created", {
+          responseId: this.responseIdForEvent(event),
+          inputId: this.activeInputId,
+        });
+        break;
+      }
+      case "response.output_audio.delta":
+      case "response.audio.delta": {
+        const responseId = this.responseIdForEvent(event) ?? "unknown";
+        const delta = stringField(event, "delta") ?? "";
+        const metrics = this.outputAudioMetrics.get(responseId) ?? { chunks: 0, b64Bytes: 0 };
+        metrics.chunks += 1;
+        metrics.b64Bytes += delta.length;
+        this.outputAudioMetrics.set(responseId, metrics);
+        break;
+      }
+      case "response.output_audio.done":
+      case "response.audio.done": {
+        const responseId = this.responseIdForEvent(event) ?? "unknown";
+        const metrics = this.outputAudioMetrics.get(responseId) ?? { chunks: 0, b64Bytes: 0 };
+        logAgentd("main realtime recv output_audio.done", {
+          responseId,
+          inputId: this.inputIdForResponseEvent(event),
+          chunks: metrics.chunks,
+          audioB64Bytes: metrics.b64Bytes,
+        });
+        this.outputAudioMetrics.delete(responseId);
+        break;
+      }
+      case "response.output_audio_transcript.delta":
+      case "response.audio_transcript.delta": {
+        const responseId = this.responseIdForEvent(event) ?? "unknown";
+        const next = (this.outputTranscriptChunkCount.get(responseId) ?? 0) + 1;
+        this.outputTranscriptChunkCount.set(responseId, next);
+        break;
+      }
+      case "response.output_audio_transcript.done":
+      case "response.audio_transcript.done": {
+        const responseId = this.responseIdForEvent(event) ?? "unknown";
+        const inputId = this.inputIdForResponseEvent(event);
+        const transcript = stringField(event, "transcript") ?? (inputId ? this.outputTranscriptByInputId.get(inputId) : undefined) ?? "";
+        logAgentd("main realtime recv output_transcript.done", {
+          responseId,
+          inputId,
+          chunks: this.outputTranscriptChunkCount.get(responseId) ?? 0,
+          transcriptChars: transcript.length,
+          transcript: summarizeTextForLog(transcript),
+        });
+        this.outputTranscriptChunkCount.delete(responseId);
+        break;
+      }
+      case "conversation.item.input_audio_transcription.delta": {
+        const key = this.activeInputId ?? "unknown";
+        this.inputTranscriptChunkCount.set(key, (this.inputTranscriptChunkCount.get(key) ?? 0) + 1);
+        break;
+      }
+      case "conversation.item.input_audio_transcription.completed": {
+        const inputId = this.activeInputId;
+        const transcript = stringField(event, "transcript") ?? (inputId ? this.inputTranscriptByInputId.get(inputId) : undefined) ?? "";
+        logAgentd("main realtime recv input_transcript.completed", {
+          inputId,
+          chunks: this.inputTranscriptChunkCount.get(inputId ?? "unknown") ?? 0,
+          transcriptChars: transcript.length,
+          transcript: summarizeTextForLog(transcript),
+        });
+        if (inputId) this.inputTranscriptChunkCount.delete(inputId);
+        break;
+      }
+      case "response.content_part.added": {
+        logAgentd("main realtime recv content_part.added", {
+          responseId: this.responseIdForEvent(event),
+          itemId: stringField(event, "item_id"),
+          contentIndex: numberField(event, "content_index"),
+          partType: stringField(event, "part.type"),
+        });
+        break;
+      }
+      case "response.output_item.added":
+      case "response.output_item.done": {
+        const item = objectField(event, "item");
+        logAgentd(`main realtime recv ${type === "response.output_item.added" ? "output_item.added" : "output_item.done"}`, {
+          responseId: this.responseIdForEvent(event),
+          itemId: stringField(event, "item.id") ?? stringField(event, "item_id"),
+          itemType: item?.type as string | undefined,
+          name: item?.name as string | undefined,
+          callId: (item?.call_id ?? item?.callId) as string | undefined,
+        });
+        break;
+      }
+      case "response.function_call_arguments.delta": {
+        // Args are reconstructed from deltas in accumulateFunctionArguments;
+        // we'll get a full dump on the `.done` event.
+        break;
+      }
+      case "response.function_call_arguments.done": {
+        logAgentd("main realtime recv function_call_arguments.done", {
+          callId: stringField(event, "call_id") ?? stringField(event, "item_id"),
+          name: stringField(event, "name"),
+          argsChars: (stringField(event, "arguments") ?? "").length,
+          arguments: summarizeTextForLog(stringField(event, "arguments") ?? ""),
+        });
+        break;
+      }
+      case "response.done": {
+        const status = stringField(event, "response.status") ?? "";
+        const usage = objectField(event, "response.usage");
+        logAgentd("main realtime recv response.done", {
+          responseId: this.responseIdForEvent(event),
+          inputId: this.inputIdForResponseEvent(event),
+          status,
+          includesFunctionCall: responseIncludesFunctionCall(event) ? 1 : 0,
+          totalTokens: numberFieldFromAny(usage, "total_tokens"),
+          inputTokens: numberFieldFromAny(usage, "input_tokens"),
+          outputTokens: numberFieldFromAny(usage, "output_tokens"),
+        });
+        break;
+      }
+      case "response.in_progress":
+      case "input_audio_buffer.committed":
+      case "input_audio_buffer.speech_started":
+      case "input_audio_buffer.speech_stopped":
+      case "conversation.item.created":
+      case "conversation.item.input_audio_transcription.failed":
+      case "rate_limits.updated":
+      case "session.created":
+      case "session.updated":
+      case "error":
+        logAgentd(`main realtime recv ${type}`, {
+          itemId: stringField(event, "item_id"),
+          callId: stringField(event, "call_id"),
+        });
+        break;
+      default: {
+        logAgentd("main realtime recv other", { type });
+        break;
+      }
+    }
+  }
+
   private responseIdForEvent(event: Record<string, unknown>): string | undefined {
     return stringField(event, "response_id") ?? stringField(event, "response.id");
   }
@@ -1000,7 +1155,28 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     if (this.completedFunctionCallIds.has(callId)) return;
     this.completedFunctionCallIds.add(callId);
     if (this.completedFunctionCallIds.size > 200) this.completedFunctionCallIds.clear();
-    const result = await this.executeTool(name, parsed, callId);
+    const startedAt = this.now();
+    logAgentd("main realtime tool dispatch", {
+      tool: name,
+      callId,
+      inputId: this.activeInputId,
+      argsChars: argumentsText.length,
+      arguments: summarizeTextForLog(argumentsText),
+    });
+    let result: unknown;
+    try {
+      result = await this.executeTool(name, parsed, callId);
+      logAgentd("main realtime tool done", {
+        tool: name,
+        callId,
+        elapsedMs: this.now() - startedAt,
+        resultChars: typeof result === "string" ? result.length : JSON.stringify(result ?? null).length,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logAgentd("main realtime tool threw", { tool: name, callId, elapsedMs: this.now() - startedAt, error: message });
+      throw error;
+    }
     this.sendClientEvent({
       type: "conversation.item.create",
       item: {
@@ -1101,16 +1277,133 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
 
   private sendClientEvent(event: Record<string, unknown>): void {
     if (this.ws?.readyState !== OPENAI_WS_READY_STATE_OPEN) throw new Error("Realtime WebSocket is not connected");
-    if (event.type === "conversation.item.create") {
-      const item = (event as { item?: Record<string, unknown> }).item ?? {};
-      const content = (item.content as Array<Record<string, unknown>> | undefined) ?? [];
-      logAgentd("main realtime client item create", {
-        role: item.role as string | undefined,
-        contentTypes: content.map((c) => c.type as string | undefined).join(","),
-        textChars: content.reduce((sum, c) => sum + (typeof c.text === "string" ? c.text.length : 0), 0),
-      });
-    }
+    this.traceClientEvent(event);
     this.ws.send(JSON.stringify({ event_id: `event-${randomUUID()}`, ...event }));
+  }
+
+  /** Verbose tracing of every client → server frame. Audio appends are folded
+   *  into per-input counters and only dumped on commit/clear so the log file
+   *  does not balloon at 25-50 frames per second. Everything else — session
+   *  updates, conversation items, response triggers, tool outputs — is
+   *  logged with its payload (truncated for very large fields) so the user
+   *  can reconstruct exactly what the model saw and produced. */
+  private traceClientEvent(event: Record<string, unknown>): void {
+    const type = String((event as { type?: unknown }).type ?? "");
+    switch (type) {
+      case "session.update": {
+        const session = ((event as { session?: Record<string, unknown> }).session) ?? {};
+        const tools = Array.isArray(session.tools)
+          ? (session.tools as Array<Record<string, unknown>>).map((t) => String(t.name ?? "")).filter((s) => s)
+          : [];
+        const instructions = typeof session.instructions === "string" ? session.instructions : "";
+        const voice = typeof (session as { audio?: Record<string, unknown> }).audio === "object"
+          ? String(((session as { audio?: { output?: { voice?: unknown } } }).audio?.output?.voice) ?? "")
+          : String((session as { voice?: unknown }).voice ?? "");
+        logAgentd("main realtime send session.update", {
+          tools: tools.join(","),
+          toolCount: tools.length,
+          voice,
+          instructionsChars: instructions.length,
+          instructions: summarizeTextForLog(instructions),
+        });
+        break;
+      }
+      case "conversation.item.create": {
+        const item = ((event as { item?: Record<string, unknown> }).item) ?? {};
+        const itemType = String(item.type ?? "");
+        if (itemType === "function_call_output") {
+          const output = typeof item.output === "string" ? item.output : "";
+          logAgentd("main realtime send function_call_output", {
+            callId: String(item.call_id ?? item.callId ?? ""),
+            outputChars: output.length,
+            output: summarizeTextForLog(output),
+          });
+          break;
+        }
+        const content = (item.content as Array<Record<string, unknown>> | undefined) ?? [];
+        const types = content.map((c) => String(c.type ?? "")).join(",");
+        const text = content
+          .filter((c) => typeof c.text === "string")
+          .map((c) => c.text as string)
+          .join("\n---\n");
+        const imageRefs = content
+          .filter((c) => typeof c.image_url === "string")
+          .map((c) => String(c.image_url).slice(0, 80));
+        logAgentd("main realtime send conversation.item", {
+          role: String(item.role ?? ""),
+          itemType,
+          contentTypes: types,
+          textChars: text.length,
+          text: summarizeTextForLog(text),
+          ...(imageRefs.length > 0 ? { images: imageRefs.length, imagePreview: imageRefs[0] } : {}),
+        });
+        break;
+      }
+      case "input_audio_buffer.append": {
+        const audio = String((event as { audio?: unknown }).audio ?? "");
+        const key = this.activeInputId ?? "unknown";
+        const metrics = this.inputAudioMetrics.get(key) ?? { chunks: 0, b64Bytes: 0 };
+        metrics.chunks += 1;
+        metrics.b64Bytes += audio.length;
+        this.inputAudioMetrics.set(key, metrics);
+        // No per-frame log on purpose.
+        break;
+      }
+      case "input_audio_buffer.commit": {
+        const key = this.activeInputId ?? "unknown";
+        const metrics = this.inputAudioMetrics.get(key) ?? { chunks: 0, b64Bytes: 0 };
+        logAgentd("main realtime send input_audio commit", {
+          inputId: this.activeInputId,
+          chunks: metrics.chunks,
+          audioB64Bytes: metrics.b64Bytes,
+        });
+        this.inputAudioMetrics.delete(key);
+        break;
+      }
+      case "input_audio_buffer.clear": {
+        const key = this.activeInputId ?? "unknown";
+        const metrics = this.inputAudioMetrics.get(key);
+        if (metrics) {
+          logAgentd("main realtime send input_audio clear", {
+            inputId: this.activeInputId,
+            chunksDiscarded: metrics.chunks,
+            b64BytesDiscarded: metrics.b64Bytes,
+          });
+          this.inputAudioMetrics.delete(key);
+        } else {
+          logAgentd("main realtime send input_audio clear", { inputId: this.activeInputId });
+        }
+        break;
+      }
+      case "response.create": {
+        const response = ((event as { response?: Record<string, unknown> }).response) ?? {};
+        const modalities = (response.output_modalities ?? response.modalities ?? []) as unknown[];
+        logAgentd("main realtime send response.create", {
+          inputId: this.activeInputId,
+          modalities: Array.isArray(modalities) ? modalities.join(",") : String(modalities),
+        });
+        break;
+      }
+      case "response.cancel": {
+        logAgentd("main realtime send response.cancel", {
+          inputId: this.activeInputId,
+          responseId: this.activeResponseId,
+        });
+        break;
+      }
+      case "conversation.item.truncate": {
+        logAgentd("main realtime send item.truncate", {
+          itemId: String((event as { item_id?: unknown }).item_id ?? ""),
+          contentIndex: numberField(event, "content_index"),
+          audioEndMs: numberField(event, "audio_end_ms"),
+        });
+        break;
+      }
+      default: {
+        logAgentd("main realtime send other", { type });
+        break;
+      }
+    }
   }
 
   private isCurrentInput(inputId: string): boolean {
@@ -1930,6 +2223,30 @@ function field(value: unknown, path: string): unknown {
     if (!current || typeof current !== "object") return undefined;
     return (current as Record<string, unknown>)[part];
   }, value);
+}
+
+function numberFieldFromAny(source: Record<string, unknown> | undefined, key: string): number | undefined {
+  if (!source) return undefined;
+  const value = source[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+// Head + tail summarization so very long realtime payloads (entire system
+// prompt, full history replay primer, long bash outputs) still land in
+// agentd.stdout.log without producing a multi-megabyte single line that is
+// hostile to `tail -f`. Keeps the leading context (where intent shows up)
+// and a trailing slice (so the final assistant words / error suffix is
+// still visible). Adjust REALTIME_LOG_TEXT_MAX_CHARS if you need to see
+// more raw content while debugging.
+const REALTIME_LOG_TEXT_MAX_CHARS = 8000;
+
+export function summarizeTextForLog(text: string, maxChars: number = REALTIME_LOG_TEXT_MAX_CHARS): string {
+  if (!text) return "";
+  if (text.length <= maxChars) return text;
+  const tail = Math.min(400, Math.floor(maxChars / 8));
+  const head = Math.max(0, maxChars - tail - 40);
+  const elided = text.length - head - tail;
+  return `${text.slice(0, head)}…[${elided} chars elided]…${text.slice(-tail)}`;
 }
 
 function responseIncludesFunctionCall(event: Record<string, unknown>): boolean {

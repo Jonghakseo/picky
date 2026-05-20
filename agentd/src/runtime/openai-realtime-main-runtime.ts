@@ -488,30 +488,45 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     const trimmed = messages.length > MAIN_REALTIME_HISTORY_REPLAY_LIMIT
       ? messages.slice(messages.length - MAIN_REALTIME_HISTORY_REPLAY_LIMIT)
       : messages;
-    if (trimmed.length < messages.length) {
-      this.sendClientEvent({
-        type: "conversation.item.create",
-        item: {
-          type: "message",
-          role: "user",
-          content: [{
-            type: "input_text",
-            text: `[Picky note] The earlier ${messages.length - trimmed.length} turn(s) of this conversation are omitted from this realtime session due to capacity limits. Treat the messages below as the most recent context.`,
-          }],
-        },
-      });
-    }
-    const assistantText = this.assistantTextContentType();
-    for (const message of trimmed) {
-      const content = message.role === "assistant"
-        ? [{ type: assistantText, text: message.text }]
-        : [{ type: "input_text", text: message.text }];
-      this.sendClientEvent({
-        type: "conversation.item.create",
-        item: { type: "message", role: message.role, content },
-      });
-    }
-    logAgentd("main realtime history replayed", { messages: trimmed.length, omitted: messages.length - trimmed.length });
+    // The Realtime API's `conversation.item.create` accepts assistant-role
+    // text items without complaint but the model ignores their content in
+    // practice (known limitation: OpenAI's own docs only guarantee replay
+    // for user audio/text, and community reports confirm assistant text
+    // round-trips silently). Replaying user + assistant alternation would
+    // surface ~half the history at best, which is why Picky users saw the
+    // model say "I don't remember" after an app restart even though
+    // picky.json had every turn on disk.
+    //
+    // Workaround: pack the entire transcript into ONE user-role message,
+    // explicitly framed as "this is the conversation that already happened,
+    // do not answer it line by line". The model is now reading the history
+    // as user-spoken context (which it does honour) instead of trying to
+    // recall its own past audio. The bootstrap "OK" assistant turn already
+    // injected before this method runs absorbs the implicit response slot,
+    // so the next real user message lands cleanly as a new turn.
+    const omittedCount = messages.length - trimmed.length;
+    const narrativeBody = trimmed
+      .map((m) => `${m.role === "user" ? "User" : "Picky"}: ${m.text}`)
+      .join("\n\n");
+    const omittedPrefix = omittedCount > 0
+      ? `[${omittedCount} earlier turn(s) omitted due to replay capacity limits.]\n\n`
+      : "";
+    const primer = [
+      "[Picky context replay] The block below is the conversation that already happened with this user in earlier turns of this Picky session. Treat each `User:` line as something the user previously said, and each `Picky:` line as something you (Picky) previously replied. Do NOT respond to these lines individually — they are background context only so you can answer the user's NEXT message with full memory of what was discussed. When the user references \"that\", \"earlier\", \"before\", or \"what we were talking about\", anchor on this block.",
+      "",
+      omittedPrefix + narrativeBody,
+      "",
+      "[End of context replay. Wait for the user's next message before responding.]",
+    ].join("\n");
+    this.sendClientEvent({
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: primer }],
+      },
+    });
+    logAgentd("main realtime history replayed", { messages: trimmed.length, omitted: omittedCount, primerChars: primer.length });
   }
 
   async refreshCodexQuota(): Promise<void> {

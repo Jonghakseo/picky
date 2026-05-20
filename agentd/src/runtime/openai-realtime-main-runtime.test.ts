@@ -633,7 +633,14 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(usageEvents[1].session.outputTokens).toBe(50);
   });
 
-  it("replays text-only history into a fresh WS session", async () => {
+  it("packs the entire transcript into a single user-role primer to survive Realtime's assistant-replay limitation", async () => {
+    // Regression: OpenAI Realtime accepts assistant-role text items via
+    // `conversation.item.create` without error, but the model ignores them
+    // when generating the next response. Replaying user + assistant in
+    // alternation — the obvious approach — surfaced only the user side and
+    // left the model with no memory of its own past replies. We work around
+    // this by collapsing both sides into ONE user message that explicitly
+    // frames the block as context.
     const sockets: FakeRealtimeSocket[] = [];
     const runtime = new OpenAIRealtimeMainRuntime({
       toolHandlers: fakeToolHandlers(),
@@ -662,15 +669,62 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
       .map((raw) => JSON.parse(raw) as Record<string, any>)
       .filter((event) => event.type === "conversation.item.create")
       .map((event) => event.item);
-    // After the bootstrap pair (2 items), the next three should be the replay.
-    const replay = items.slice(2, 5);
-    expect(replay.map((i: any) => i.role)).toEqual(["user", "assistant", "user"]);
-    expect(replay[0].content[0].text).toBe("first question");
-    expect(replay[1].content[0].text).toBe("first answer");
-    expect(replay[2].content[0].text).toBe("second question");
+    // Bootstrap pair (user persona + assistant "OK") + 1 primer item.
+    expect(items.length).toBeGreaterThanOrEqual(3);
+    const primer = items[2];
+    expect(primer.role).toBe("user");
+    expect(primer.content[0].type).toBe("input_text");
+    const primerText: string = primer.content[0].text;
+    expect(primerText).toContain("[Picky context replay]");
+    expect(primerText).toContain("User: first question");
+    expect(primerText).toContain("Picky: first answer");
+    expect(primerText).toContain("User: second question");
+    expect(primerText).toContain("[End of context replay");
+    // Crucially: no assistant-role replay item, because the API silently
+    // drops those for context purposes.
+    const replayItemRoles = items.slice(2).map((i: any) => i.role);
+    expect(replayItemRoles).not.toContain("assistant");
   });
 
-  it("reconnects and replays history after the websocket closes", async () => {
+  it("notes truncated turns inside the primer when history exceeds the replay limit", async () => {
+    const sockets: FakeRealtimeSocket[] = [];
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => {
+        const socket = new FakeRealtimeSocket();
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    // Build 65 messages so 5 must be dropped (limit is 60).
+    const history: { role: "user" | "assistant"; text: string }[] = [];
+    for (let i = 0; i < 65; i += 1) {
+      history.push({ role: i % 2 === 0 ? "user" : "assistant", text: `msg${i}` });
+    }
+    runtime.setMainRealtimeHistoryProvider(() => history);
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    await settle();
+
+    const items = sockets[0]!.sent
+      .map((raw) => JSON.parse(raw) as Record<string, any>)
+      .filter((event) => event.type === "conversation.item.create")
+      .map((event) => event.item);
+    const primer = items[2];
+    const primerText: string = primer.content[0].text;
+    expect(primerText).toContain("5 earlier turn(s) omitted");
+    // Truncated turns are the *oldest*; the most recent 60 stay.
+    expect(primerText).not.toContain("msg0\n");
+    expect(primerText).toContain("msg64");
+  });
+
+  it("reconnects and rebuilds the primer after the websocket closes", async () => {
     const sockets: FakeRealtimeSocket[] = [];
     const runtime = new OpenAIRealtimeMainRuntime({
       toolHandlers: fakeToolHandlers(),
@@ -701,12 +755,15 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     await settle();
 
     expect(sockets).toHaveLength(2);
-    const replayedRoles = sockets[1]!.sent
+    const items = sockets[1]!.sent
       .map((raw) => JSON.parse(raw) as Record<string, any>)
       .filter((event) => event.type === "conversation.item.create")
-      .map((event) => event.item.role);
-    // bootstrap pair (user, assistant) + history (user, assistant)
-    expect(replayedRoles.slice(0, 4)).toEqual(["user", "assistant", "user", "assistant"]);
+      .map((event) => event.item);
+    // Bootstrap pair + single primer item, no assistant replay item.
+    expect(items.slice(0, 3).map((i: any) => i.role)).toEqual(["user", "assistant", "user"]);
+    const primerText: string = items[2].content[0].text;
+    expect(primerText).toContain("User: prior user turn");
+    expect(primerText).toContain("Picky: prior assistant turn");
   });
 
   it("sends audio modality by default and switches to text when narration is disabled", async () => {

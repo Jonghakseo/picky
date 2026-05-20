@@ -123,7 +123,12 @@ describe("handoff tools", () => {
     expect(received).toEqual({ sessionId: "pickle-7", message: "stay focused" });
     expect(result.content[0]).toMatchObject({ type: "text" });
     if (result.content[0]?.type !== "text") throw new Error("expected text content");
-    expect(result.content[0].text).toContain("Steering sent to Pickle");
+    // Bare success message — no session metadata, no status line. The
+    // session snapshot used to leak via `result.details.session` and the
+    // text used to embed the live status, which the realtime voice agent
+    // misread as a failure when the snapshot happened to be `completed`.
+    expect(result.content[0].text).toBe("Steering sent to Pickle");
+    expect(result.details).toEqual({});
   });
 
   it("aborts a Pickle through the abort tool and reports the cancelled status", async () => {

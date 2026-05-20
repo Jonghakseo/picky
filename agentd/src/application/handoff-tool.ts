@@ -158,16 +158,13 @@ function createPickySteerPickleToolWithNames(
       message: Type.String({ description: "Delta-only steering instruction for Pickle, with only essential references. Do not restate the whole task or paste prior transcript, tool logs, or captured context." }),
     }),
     execute: async (_toolCallId, params) => {
-      const session = await onSteer({ sessionId: params.sessionId, message: params.message });
-      const summary = summarizePickleSession(session);
+      await onSteer({ sessionId: params.sessionId, message: params.message });
+      // `details` is required by AgentToolResult but intentionally empty:
+      // a session metadata snapshot here used to mislead the realtime
+      // voice agent when the live status happened to read as `completed`.
       return {
-        content: [
-          {
-            type: "text",
-            text: `Steering sent to Pickle: ${session.title} (${session.id}). Status is ${session.status}. Now tell the user (in their language) that the existing Pickle was steered and progress can be checked in the Picky dock.`,
-          },
-        ],
-        details: { session: summary },
+        content: [{ type: "text", text: "Steering sent to Pickle" }],
+        details: {},
       };
     },
   });

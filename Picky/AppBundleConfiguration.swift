@@ -56,6 +56,7 @@ enum AppBundleConfiguration {
     @TaskLocal
     static var testRuntimeModeSettingsURL: URL?
 
+    nonisolated(unsafe) private static let runtimeModeCacheLock = NSLock()
     nonisolated(unsafe) private static var cachedLaunchRuntimeMode: (settingsURL: URL?, mode: PickyMainAgentRuntimeMode)?
 
     /// Production resolves this once from persisted Settings at process launch
@@ -72,6 +73,9 @@ enum AppBundleConfiguration {
         if let override = testRuntimeModeOverride { return override }
 
         let settingsURL = testRuntimeModeSettingsURL
+        runtimeModeCacheLock.lock()
+        defer { runtimeModeCacheLock.unlock() }
+
         if let cachedLaunchRuntimeMode, cachedLaunchRuntimeMode.settingsURL == settingsURL {
             return cachedLaunchRuntimeMode.mode
         }
@@ -88,6 +92,8 @@ enum AppBundleConfiguration {
     }
 
     static func resetEffectiveRuntimeModeCacheForTesting() {
+        runtimeModeCacheLock.lock()
+        defer { runtimeModeCacheLock.unlock() }
         cachedLaunchRuntimeMode = nil
     }
 

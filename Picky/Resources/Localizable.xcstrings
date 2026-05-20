@@ -2239,6 +2239,88 @@
         }
       }
     },
+    "settings.field.mainAgentRuntime": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Main agent runtime"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메인 에이전트 런타임"
+          }
+        }
+      }
+    },
+    "settings.mainAgentRuntime.appliedNote": {
+      "comment": "Format: 'Currently applied: <runtime>. Changes take effect after restarting Picky.'. Arg is the applied runtime display name.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Currently applied: %@. Changes take effect after restarting Picky."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 적용됨: %@. 변경 사항은 Picky를 재시작한 뒤 적용돼요."
+          }
+        }
+      }
+    },
+    "settings.mainAgentRuntime.restartNotice": {
+      "comment": "Format: runtime will switch to <desired runtime>; current session keeps using <applied runtime>.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runtime will switch to %@ after you restart Picky. The current session keeps using %@."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky를 재시작하면 런타임이 %@로 전환돼요. 현재 세션은 계속 %@를 사용해요."
+          }
+        }
+      }
+    },
+    "settings.mainAgentRuntime.quitButton": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit Picky"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky 종료"
+          }
+        }
+      }
+    },
+    "settings.mainAgentRuntime.quitButton.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit Picky normally, then open it again to apply the selected runtime."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky를 정상 종료한 뒤 다시 열면 선택한 런타임이 적용돼요."
+          }
+        }
+      }
+    },
     "settings.field.piModel": {
       "localizations": {
         "en": {

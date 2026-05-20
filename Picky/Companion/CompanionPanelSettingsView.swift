@@ -520,7 +520,7 @@ struct CompanionPanelSettingsView: View {
                 saveImmediately(for: .mainAgent)
             }
 
-            Text("Currently applied: \(appliedMainAgentRuntimeMode.displayName). Changes take effect after restarting Picky.")
+            Text(L10n.t("settings.mainAgentRuntime.appliedNote", appliedMainAgentRuntimeMode.displayName))
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -533,7 +533,7 @@ struct CompanionPanelSettingsView: View {
                 Image(systemName: "arrow.clockwise.circle.fill")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(DS.Colors.warningText)
-                Text("Runtime will switch to \(viewModel.settings.mainAgentRuntimeMode.displayName) after you restart Picky. The current session keeps using \(appliedMainAgentRuntimeMode.displayName).")
+                Text(L10n.t("settings.mainAgentRuntime.restartNotice", viewModel.settings.mainAgentRuntimeMode.displayName, appliedMainAgentRuntimeMode.displayName))
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundColor(DS.Colors.warningText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -543,7 +543,7 @@ struct CompanionPanelSettingsView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "power")
                         .font(.system(size: 10, weight: .semibold))
-                    Text("Quit Picky")
+                    Text("settings.mainAgentRuntime.quitButton")
                         .font(.system(size: 11, weight: .semibold))
                 }
                 .foregroundColor(DS.Colors.textSecondary)
@@ -556,7 +556,7 @@ struct CompanionPanelSettingsView: View {
             }
             .buttonStyle(.plain)
             .pointerCursor()
-            .help("Quit Picky normally, then open it again to apply the selected runtime.")
+            .help(L10n.t("settings.mainAgentRuntime.quitButton.help"))
         }
         .padding(8)
         .background(

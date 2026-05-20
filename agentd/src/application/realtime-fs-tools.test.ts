@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   REALTIME_BASH_TAIL_BYTES,
   REALTIME_READ_DEFAULT_LIMIT_LINES,
@@ -152,5 +152,46 @@ describe("executeRealtimeWrite", () => {
 
   it("rejects empty paths", async () => {
     await expect(executeRealtimeWrite({ path: "", content: "x" })).rejects.toThrow(/path is required/);
+  });
+});
+
+describe("tilde expansion", () => {
+  const originalHome = process.env.HOME;
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+  });
+
+  it("writes `~/foo` under the user's home, not the cwd", async () => {
+    const fakeHome = await realpath(await tempDir("tilde-home"));
+    process.env.HOME = fakeHome;
+    const cwd = await realpath(await tempDir("tilde-cwd"));
+
+    const result = await executeRealtimeWrite({ path: "~/skills/example.md", content: "hi", cwd });
+
+    expect(await realpath(result.resolvedPath)).toBe(join(fakeHome, "skills", "example.md"));
+    await expect(readFile(join(fakeHome, "skills", "example.md"), "utf8")).resolves.toBe("hi");
+  });
+
+  it("reads `~/foo` from the user's home", async () => {
+    const fakeHome = await realpath(await tempDir("tilde-home-read"));
+    process.env.HOME = fakeHome;
+    const cwd = await realpath(await tempDir("tilde-cwd-read"));
+    await executeRealtimeWrite({ path: "~/notes.txt", content: "hello" });
+
+    const result = await executeRealtimeRead({ path: "~/notes.txt", cwd });
+
+    expect(await realpath(result.resolvedPath)).toBe(join(fakeHome, "notes.txt"));
+    expect(result.content).toBe("hello");
+  });
+
+  it("expands `~` in the bash cwd argument", async () => {
+    const fakeHome = await realpath(await tempDir("tilde-home-bash"));
+    process.env.HOME = fakeHome;
+
+    const result = await executeRealtimeBash({ command: "pwd", cwd: "~" });
+
+    expect(await realpath(result.cwd)).toBe(fakeHome);
+    expect(await realpath(result.output.trim())).toBe(fakeHome);
   });
 });

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { appendFile, readFile, stat, writeFile, mkdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { sliceUtf16Safe } from "../domain/safe-truncate.js";
 
@@ -234,14 +235,30 @@ export async function executeRealtimeWrite(request: RealtimeWriteRequest): Promi
 }
 
 function resolvePath(p: string, cwd: string | undefined): string {
-  if (isAbsolute(p)) return resolve(p);
-  return resolve(cwd ?? process.cwd(), p);
+  const expanded = expandHome(p);
+  if (isAbsolute(expanded)) return resolve(expanded);
+  const base = cwd ? expandHome(cwd) : process.cwd();
+  return resolve(base, expanded);
 }
 
 function resolveBashCwd(cwd: string | undefined): string {
   const candidate = cwd?.trim();
   if (!candidate) return process.cwd();
-  return isAbsolute(candidate) ? candidate : resolve(process.cwd(), candidate);
+  const expanded = expandHome(candidate);
+  return isAbsolute(expanded) ? expanded : resolve(process.cwd(), expanded);
+}
+
+// Expand a leading `~` (alone or followed by `/`) to the current user's home
+// directory. Realtime models routinely pass paths like
+// `~/Library/Application Support/Picky/skills/foo.md` verbatim from the
+// session-start instructions, and node's `path.resolve` does NOT treat `~`
+// specially — without this, those paths land under <cwd>/~/... instead of the
+// real home directory. Other `~user` forms are a shell feature we do not
+// implement; leave them untouched so the caller sees a clean ENOENT.
+function expandHome(p: string): string {
+  if (p === "~") return homedir();
+  if (p.startsWith("~/")) return resolve(homedir(), p.slice(2));
+  return p;
 }
 
 function normalizeOffset(value: unknown): number {

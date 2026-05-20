@@ -101,7 +101,16 @@ final class OpenAIRealtimeAudioPlaybackEngine: PickyRealtimeAudioPlaybacking {
         let generation = playbackGeneration
         pendingBuffers += 1
         isPlaying = true
-        playerNode.scheduleBuffer(buffer) { [weak self] in
+        // Use `.dataPlayedBack` so the completion fires only after the audio
+        // has actually been rendered through the output device. The default
+        // single-argument `scheduleBuffer(_:completionHandler:)` uses
+        // `.dataConsumed`, which fires as soon as the player has accepted
+        // the buffer for processing - well before the user hears the
+        // samples. With the default callback the last buffer reported
+        // "drained" several hundred milliseconds early, which let
+        // handleRealtimePlaybackDrained run while audio was still playing
+        // and the assistant bubble disappeared mid-speech.
+        playerNode.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.bufferDidFinish(generation: generation)
             }

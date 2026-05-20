@@ -46,7 +46,6 @@ export function buildRealtimeInstructions(
     "",
     "## Realtime voice mode overrides",
     `- Use \`read_picky_user_guide\` before answering questions about how to use Picky. Prefer its \`section\` parameter when the question maps to one of these manual sections: ${PICKY_USER_GUIDE_SECTIONS.join("; ")}.`,
-    "- You cannot execute Pi skills directly. If the user names a Pi skill that is relevant, include the skill name and the essential details in `picky_start_pickle.instructions` or `picky_steer_pickle.message` for the Pickle to follow.",
     "- To check the progress of one specific delegated Pickle, call `picky_inspect_active_pickle` (does not spawn a new Pickle). Call `picky_abort_pickle` only when the user explicitly asks to stop one.",
     "- The captured context you see at the start of THIS turn is gone by the next turn. Call `picky_recall_recent_context` when the user references an earlier turn or a stored memory rule depends on the prior browser/cwd.",
     "- The one-shot file/shell tools (`picky_read_file`, `picky_run_bash`, `picky_write_file`) follow the per-call rules in each tool's description. If answering would need 3+ calls or a long-running command, delegate to `picky_start_pickle` instead of looping.",

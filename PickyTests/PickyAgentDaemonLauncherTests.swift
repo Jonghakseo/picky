@@ -815,6 +815,91 @@ struct PickyAgentDaemonLauncherTests {
         let data = try Data(contentsOf: url)
         return try JSONDecoder().decode(PickyDaemonStatusSnapshot.self, from: data)
     }
+
+    @Test func stdoutLogRotatesWhenSizeExceedsThreshold() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let agentd = temp.appendingPathComponent("agentd", isDirectory: true)
+        try makeAgentdPackage(at: agentd)
+        let logs = temp.appendingPathComponent("Logs")
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19030,
+            token: "token-rotate",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: "mock",
+            workingDirectory: agentd,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["node", "dist/index.js"]
+        )
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: logs,
+            maxLogFileSize: 1024,
+            maxLogRotations: 2
+        )
+
+        launcher.start()
+        let chunk = String(repeating: "X", count: 600) + "\n"
+        runner.emitStdout(chunk) // ~600B, under threshold
+        runner.emitStdout(chunk) // ~1.2KB total, the third write triggers rotation
+        runner.emitStdout("AFTER_FIRST_ROTATION\n")
+        runner.emitStdout(String(repeating: "Y", count: 600) + "\n")
+        runner.emitStdout(String(repeating: "Z", count: 600) + "\n")
+        runner.emitStdout("AFTER_SECOND_ROTATION\n")
+
+        let stdout = logs.appendingPathComponent("agentd.stdout.log")
+        let backup1 = logs.appendingPathComponent("agentd.stdout.log.1")
+        let backup2 = logs.appendingPathComponent("agentd.stdout.log.2")
+        let backup3 = logs.appendingPathComponent("agentd.stdout.log.3")
+
+        #expect(FileManager.default.fileExists(atPath: backup1.path))
+        #expect(FileManager.default.fileExists(atPath: backup2.path))
+        #expect(!FileManager.default.fileExists(atPath: backup3.path), "maxLogRotations=2 must cap at .2")
+
+        let live = try String(contentsOf: stdout)
+        #expect(live.contains("AFTER_SECOND_ROTATION"))
+        let liveSize = (try FileManager.default.attributesOfItem(atPath: stdout.path)[.size] as? NSNumber)?.int64Value ?? 0
+        #expect(liveSize <= 1024 + Int64(600 + 1))
+    }
+
+    @Test func startPurgesStaleChildSessionStatusFilesOlderThan24Hours() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let agentd = temp.appendingPathComponent("agentd", isDirectory: true)
+        try makeAgentdPackage(at: agentd)
+        let logs = temp.appendingPathComponent("Logs")
+        try FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
+
+        let stalePath = logs.appendingPathComponent("agentd.status.child-session-AAA.json")
+        let freshPath = logs.appendingPathComponent("agentd.status.child-session-BBB.json")
+        let unrelatedPath = logs.appendingPathComponent("agentd.status.primary.json")
+        try "{}".write(to: stalePath, atomically: true, encoding: .utf8)
+        try "{}".write(to: freshPath, atomically: true, encoding: .utf8)
+        try "{}".write(to: unrelatedPath, atomically: true, encoding: .utf8)
+        let twoDaysAgo = Date(timeIntervalSinceNow: -2 * 24 * 60 * 60)
+        try FileManager.default.setAttributes([.modificationDate: twoDaysAgo], ofItemAtPath: stalePath.path)
+        try FileManager.default.setAttributes([.modificationDate: twoDaysAgo], ofItemAtPath: unrelatedPath.path)
+
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19031,
+            token: "token-purge",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: "mock",
+            workingDirectory: agentd,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["node", "dist/index.js"]
+        )
+        let launcher = PickyAgentDaemonLauncher(configuration: configuration, runner: runner, logDirectory: logs)
+
+        launcher.start()
+
+        #expect(!FileManager.default.fileExists(atPath: stalePath.path))
+        #expect(FileManager.default.fileExists(atPath: freshPath.path), "recent child-session status must be preserved")
+        #expect(FileManager.default.fileExists(atPath: unrelatedPath.path), "non-child-session status files must be preserved even when stale")
+    }
 }
 
 private func makeAgentdPackage(at url: URL, source: Bool = false, compiled: Bool = false) throws {

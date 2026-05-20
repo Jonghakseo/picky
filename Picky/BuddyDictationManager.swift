@@ -74,6 +74,12 @@ final class BuddyDictationManager: NSObject, ObservableObject {
 
     private var transcriptionProvider: any BuddyTranscriptionProvider
     private let audioEngine = AVAudioEngine()
+    /// NotificationCenter token for the AVAudioEngine configuration-change
+    /// observer. AVFAudio fires this when CoreAudio swaps the input device
+    /// or sample rate out from under us (e.g. AirPods A2DP -> HFP). The
+    /// observer rebuilds the tap so dictation keeps capturing instead of
+    /// silently dropping audio after a route change.
+    private var audioEngineConfigurationChangeObserver: NSObjectProtocol?
     private var activeTranscriptionSession: (any BuddyStreamingTranscriptionSession)?
     private var activeStartSource: BuddyDictationStartSource?
     private var draftCallbacks: BuddyDictationDraftCallbacks?
@@ -100,6 +106,13 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         self.transcriptionProvider = resolvedTranscriptionProvider
         self.transcriptionProviderDisplayName = resolvedTranscriptionProvider.displayName
         super.init()
+        observeAudioEngineConfigurationChanges()
+    }
+
+    deinit {
+        if let observer = audioEngineConfigurationChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     func updateContextualKeyterms(_ contextualKeyterms: [String]) {
@@ -406,17 +419,78 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         self.activeTranscriptionSession = activeTranscriptionSession
         print("🎙️ BuddyDictationManager: provider ready, starting audio engine")
 
-        let inputNode = audioEngine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
+        try installInputTapAndStartAudioEngine()
+    }
 
+    /// Installs the input tap and starts the audio engine.
+    ///
+    /// Three defensive layers guard against the AVFAudio crash where the input
+    /// hardware (e.g. AirPods HFP at 24 kHz) doesn't match the engine's cached
+    /// client format (48 kHz):
+    ///   1. `prepare()` runs BEFORE reading the format so AVAudioEngine has
+    ///      negotiated with the HAL.
+    ///   2. We snapshot `inputNode.outputFormat(forBus: 0)` after prepare;
+    ///      that is what the tap must use to avoid the "format mismatch"
+    ///      NSException.
+    ///   3. `installTap` is wrapped in `PickyTrapObjCException` so any Obj-C
+    ///      exception (race with a concurrent route change) surfaces as a
+    ///      Swift error rather than terminating the app.
+    private func installInputTapAndStartAudioEngine() throws {
+        let inputNode = audioEngine.inputNode
         inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
-            self?.activeTranscriptionSession?.appendAudioBuffer(buffer)
-            self?.updateAudioPowerLevel(from: buffer)
-        }
 
         audioEngine.prepare()
+        let inputFormat = inputNode.outputFormat(forBus: 0)
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            throw PickyRealtimeVoiceInputError.installTapFailed(
+                reason: "Input node reported an invalid format after prepare (sampleRate=\(inputFormat.sampleRate), channels=\(inputFormat.channelCount))."
+            )
+        }
+
+        var trapError: NSError?
+        let installed = PickyTrapObjCException({
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+                self?.activeTranscriptionSession?.appendAudioBuffer(buffer)
+                self?.updateAudioPowerLevel(from: buffer)
+            }
+        }, &trapError)
+        if !installed {
+            let reason = trapError?.localizedDescription ?? "installTap raised an unknown NSException"
+            print("❌ BuddyDictationManager: installTap failed: \(reason)")
+            throw PickyRealtimeVoiceInputError.installTapFailed(reason: reason)
+        }
+
         try audioEngine.start()
+    }
+
+    private func observeAudioEngineConfigurationChanges() {
+        audioEngineConfigurationChangeObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: audioEngine,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleAudioEngineConfigurationChange()
+            }
+        }
+    }
+
+    private func handleAudioEngineConfigurationChange() {
+        // AVAudioEngine auto-stops on configuration change. If a dictation
+        // session is in progress, transparently rebuild the tap so the user
+        // doesn't notice the route swap mid-utterance. If the session is idle,
+        // there's nothing to repair.
+        guard isActivelyRecordingAudio else { return }
+        print("🎙️ BuddyDictationManager: AVAudioEngine configuration changed; rebuilding input tap")
+        audioEngine.inputNode.removeTap(onBus: 0)
+        audioEngine.stop()
+        do {
+            try installInputTapAndStartAudioEngine()
+        } catch {
+            print("❌ BuddyDictationManager: failed to rebuild input tap after configuration change: \(error.localizedDescription)")
+            lastErrorMessage = userFacingErrorMessage(from: error, fallback: "couldn't recover from audio device change.")
+            cancelCurrentDictation(preserveDraftText: false)
+        }
     }
 
     private func handleRecognitionError(_ error: Error) {

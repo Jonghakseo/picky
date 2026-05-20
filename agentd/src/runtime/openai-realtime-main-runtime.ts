@@ -514,13 +514,17 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
       this.bootstrapped = false;
       this.clearSessionMaxTimer();
       const message = reason.toString("utf8").trim();
-      // Do NOT emit `failed` here. A close that we triggered (rollover, manual
-      // dispose) or that the server sent for the 60-minute cap is an expected
-      // lifecycle event; the next `ensureConnected()` call will reconnect and
-      // replay history. Surface a transient `connecting` so the HUD can show a
-      // spinner instead of a permanent failure badge.
+      // Do NOT emit `failed` or `connecting` here. A close that we triggered
+      // (50-min rollover, manual dispose) or that the server sent for the
+      // 60-minute cap is an expected lifecycle event, and the next
+      // `ensureConnected()` call will naturally emit `connecting -> ready`
+      // when the user kicks off the next turn. Emitting `connecting` on
+      // close looked transient in code but in practice the cursor stayed
+      // yellow / processing forever because nothing triggers a reconnect
+      // until the user PTTs / submits text. We log the lifecycle event for
+      // diagnostics and leave the last broadcast state (typically `ready`)
+      // in place so the cursor returns to idle until the user interacts.
       logAgentd("main realtime disconnected", { message: message || "closed" });
-      this.emit({ type: "main_realtime_state", state: "connecting", message: message || undefined });
     });
     ws.on("error", (error) => {
       this.emit({ type: "main_realtime_state", state: "failed", message: error.message });

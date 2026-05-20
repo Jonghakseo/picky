@@ -766,6 +766,87 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(primerText).toContain("Picky: prior assistant turn");
   });
 
+  it("does not emit `connecting` when the websocket closes without a fresh ensureConnected", async () => {
+    // Regression: the previous behaviour emitted `state: connecting` from
+    // the ws.close handler so the HUD could show a transient spinner. In
+    // practice nothing triggers a reconnect until the user PTTs / submits
+    // text, so the cursor was stuck in the processing colour (.loading
+    // phase) for the entire idle window between turns. The close path now
+    // logs the disconnect but leaves the last broadcast state in place;
+    // the next ensureConnected naturally emits connecting -> ready when
+    // the user interacts.
+    const sockets: FakeRealtimeSocket[] = [];
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => {
+        const socket = new FakeRealtimeSocket();
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    const handle = await runtime.prewarm({ sessionId: "picky" });
+    const stateEvents: Array<{ state: string; message?: string }> = [];
+    handle.subscribe((event) => {
+      if (event.type === "main_realtime_state") stateEvents.push({ state: event.state, message: event.message });
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    await settle();
+
+    // The exact last state at this point depends on the connect path
+    // (`ready` after bootstrap, then `listening` once beginVoiceTurn runs);
+    // what matters is that ws.close does NOT push another state event.
+    const beforeClose = stateEvents.length;
+    const lastStateBeforeClose = stateEvents.at(-1)!.state;
+    sockets[0]!.close();
+    await settle();
+
+    expect(stateEvents.length).toBe(beforeClose);
+    expect(stateEvents.at(-1)!.state).toBe(lastStateBeforeClose);
+  });
+
+  it("still emits `failed` when the websocket fires an error", async () => {
+    // Companion to the close-quiet test: a true error (TLS, auth, network)
+    // is a different signal from a normal close, and Picky's voice machine
+    // needs that signal to clearToIdle and surface the error message.
+    const sockets: FakeRealtimeSocket[] = [];
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => {
+        const socket = new FakeRealtimeSocket();
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    const handle = await runtime.prewarm({ sessionId: "picky" });
+    const stateEvents: Array<{ state: string; message?: string }> = [];
+    handle.subscribe((event) => {
+      if (event.type === "main_realtime_state") stateEvents.push({ state: event.state, message: event.message });
+    });
+
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    await settle();
+
+    sockets[0]!.serverError(new Error("WS handshake rejected"));
+    await settle();
+
+    const failed = stateEvents.find((e) => e.state === "failed");
+    expect(failed).toBeTruthy();
+    expect(failed!.message).toContain("WS handshake rejected");
+  });
+
   it("sends audio modality by default and switches to text when narration is disabled", async () => {
     const socket = new FakeRealtimeSocket();
     const runtime = new OpenAIRealtimeMainRuntime({
@@ -1549,6 +1630,10 @@ class FakeRealtimeSocket implements RealtimeWebSocketLike {
 
   serverEvent(event: Record<string, unknown>): void {
     this.emit("message", Buffer.from(JSON.stringify(event)));
+  }
+
+  serverError(error: Error): void {
+    this.emit("error", error);
   }
 
   on(event: "open" | "message" | "close" | "error", listener: (...args: any[]) => void): this {

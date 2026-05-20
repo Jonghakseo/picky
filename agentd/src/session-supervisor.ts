@@ -216,11 +216,16 @@ export class SessionSupervisor extends EventEmitter {
       if (isOrphanedChildSessionRecovery(session)) {
         const interrupted = await this.interruptedRuntimeLiveStatePatch(session.id);
         const current = this.mustGet(session.id);
+        // Strip the ORPHANED marker from the persisted logs after we surface the recovery summary
+        // once. Without this the marker stays in logs forever and every subsequent restart re-enters
+        // this branch, leaving the dock icon permanently in the blocked/help state even when the Pi
+        // session file is still alive and reattachable.
         const restored = {
           ...current,
           ...interrupted.patch,
           status: "blocked" as const,
           lastSummary: ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY,
+          logs: current.logs.filter((line) => line !== ORPHANED_CHILD_SESSION_RECOVERY_LOG),
           updatedAt: new Date().toISOString(),
         };
         this.sessions.set(restored.id, restored);
@@ -3099,7 +3104,7 @@ function piSessionFilePathForSession(session: PickyAgentSession): string | undef
 }
 
 function shouldReattachBlockedSessionOnStartup(session: PickyAgentSession): boolean {
-  return session.status === "blocked" && session.archived !== true && !isOrphanedChildSessionRecovery(session) && Boolean(piSessionFilePathForSession(session));
+  return session.status === "blocked" && session.archived !== true && Boolean(piSessionFilePathForSession(session));
 }
 
 function isOrphanedChildSessionRecovery(session: PickyAgentSession): boolean {

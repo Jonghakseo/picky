@@ -7,7 +7,7 @@ import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { BuiltPrompt } from "./prompt-builder.js";
 import type { AgentRuntime, AnswerExtensionUiOptions, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, ThinkingLevel } from "./runtime/types.js";
 import type { TaskRouteDecision, TaskRouter } from "./task-router.js";
-import { SessionStore } from "./session-store.js";
+import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, SessionStore } from "./session-store.js";
 import { SessionSupervisor } from "./session-supervisor.js";
 
 const context = (text: string): PickyContextPacket => ({
@@ -2553,6 +2553,74 @@ describe("SessionSupervisor", () => {
     expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/orphan-child.jsonl", cwd: "/tmp/project", sessionId: "orphan-child" }]);
     expect(runtime.handle?.followUps[0].text).toContain("continue after recovery");
     expect(followedUp.status).toBe("running");
+  });
+
+  it("strips the orphaned recovery marker on the first restart so it never re-triggers", async () => {
+    // Regression: previously the ORPHANED marker stayed in `logs` forever, so every restart
+    // re-entered the orphaned branch and the session was permanently stuck on `blocked` even
+    // when the Pi session file was still resumable.
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const scopedStore = new SessionStore(dir, { scopeSessionId: "orphan-once" });
+    await scopedStore.save({
+      id: "orphan-once",
+      title: "Orphan Once Pickle",
+      status: "running",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "Still working in child before restart",
+      logs: ["Picky handoff: investigate", "pi session: /tmp/orphan-once.jsonl"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    });
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+
+    await supervisor.load();
+
+    const restored = supervisor.get("orphan-once");
+    expect(restored?.status).toBe("blocked");
+    expect(restored?.lastSummary).toBe(ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY);
+    expect(restored?.logs).not.toContain(ORPHANED_CHILD_SESSION_RECOVERY_LOG);
+
+    const flat = JSON.parse(await readFile(join(dir, "sessions", "orphan-once.json"), "utf8"));
+    expect(flat.status).toBe("blocked");
+    expect(flat.logs).not.toContain(ORPHANED_CHILD_SESSION_RECOVERY_LOG);
+  });
+
+  it("auto-reattaches a previously orphaned session on the next restart when the Pi session file is still around", async () => {
+    // Regression: the orphaned marker used to be sticky, so even after a fresh restart with the
+    // Pi session file intact, the supervisor would refuse to reattach the runtime and the user
+    // saw the dock icon stuck in the blocked state forever.
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const scopedStore = new SessionStore(dir, { scopeSessionId: "orphan-then-reattach" });
+    await scopedStore.save({
+      id: "orphan-then-reattach",
+      title: "Orphan Then Reattach Pickle",
+      status: "running",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "Still working in child before restart",
+      logs: ["Picky handoff: investigate", "pi session: /tmp/orphan-then-reattach.jsonl"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    });
+    const runtime = new ResumableRuntime();
+    const flatStore = new SessionStore(dir);
+
+    const firstSupervisor = new SessionSupervisor(runtime, flatStore);
+    await firstSupervisor.load();
+    expect(runtime.resumeCalls).toEqual([]);
+
+    const secondSupervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await secondSupervisor.load();
+
+    expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/orphan-then-reattach.jsonl", cwd: "/tmp/project", sessionId: "orphan-then-reattach" }]);
+    const reattached = secondSupervisor.get("orphan-then-reattach");
+    expect(reattached?.logs).toContain("runtime reattached from pi session: /tmp/orphan-then-reattach.jsonl");
   });
 
   it("reattaches blocked sessions from Pi session files during startup", async () => {

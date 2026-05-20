@@ -181,7 +181,7 @@ function appendContext(lines: string[], context: PickyContextPacket): void {
   lines.push("", "## Captured context", `- Source: ${context.source}`, `- Captured at: ${context.capturedAt}`);
   if (context.cwd) lines.push(`- CWD: ${context.cwd}`);
   if (context.activeApp?.name) lines.push(`- Active app: ${context.activeApp.name}`);
-  if (context.activeWindow?.title) lines.push(`- Active window: ${context.activeWindow.title}`);
+  if (context.activeWindow?.title && !context.browser?.title) lines.push(`- Active window: ${context.activeWindow.title}`);
   if (context.browser?.title) lines.push(`- Browser title: ${context.browser.title}`);
   if (context.browser?.url) lines.push(`- Browser URL: ${context.browser.url}`);
   if (context.selectedText) lines.push("", "## Selected text", context.selectedText);
@@ -202,9 +202,6 @@ function appendContext(lines: string[], context: PickyContextPacket): void {
       const screen = mark.screenId ? ` on ${mark.screenId}` : "";
       lines.push(`- mark${index + 1}${screen}`);
     }
-  }
-  if (context.warnings.length > 0) {
-    lines.push("", "## Capture warnings", ...context.warnings.map((warning) => `- ${warning}`));
   }
 }
 

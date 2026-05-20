@@ -10,7 +10,6 @@ Use available Pi skills, extensions, MCPs, and local tools as appropriate. Treat
 - Captured at: 2026-05-01T00:00:00.000Z
 - CWD: /Users/example/app
 - Active app: Browser
-- Active window: Issue page
 - Browser title: Issue 123456
 - Browser URL: https://acme.sentry.io/issues/123456/
 

@@ -749,6 +749,54 @@
         }
       }
     },
+    "hud.archivedList.empty": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No archived Pickles."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아카이브된 피클이 없어요."
+          }
+        }
+      }
+    },
+    "hud.archivedList.restore": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복원"
+          }
+        }
+      }
+    },
+    "hud.archivedList.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archived Pickles"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아카이브된 피클"
+          }
+        }
+      }
+    },
     "hud.menu.archive": {
       "localizations": {
         "en": {
@@ -809,6 +857,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pi 터미널 열기"
+          }
+        }
+      }
+    },
+    "hud.menu.showArchivedList": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show archived list…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아카이브 목록 보기…"
           }
         }
       }

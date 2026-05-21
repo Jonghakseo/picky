@@ -298,7 +298,11 @@ After archiving:
 - A screen-level **Session archived** toast appears.
 - Click **Undo** within the toast window to restore it.
 
-The current UI exposes immediate restore through the undo toast.
+Restore paths after archiving:
+
+- The screen-level **Undo** toast (immediate, time-limited).
+- The card header menu's **Show archived list…** popover (any time the dock has at least one open Pickle card).
+- Asking the Picky main agent to bring it back (e.g. "되살려", "restore that pickle").
 
 ## 8. Pickle conversation card
 
@@ -501,6 +505,7 @@ The Pickle card menu contains:
 | Duplicate | Duplicate this Pickle session. |
 | Stop session | Abort the active session. |
 | Archive | Archive the Pickle. |
+| Show archived list… | Open a popover listing previously archived Pickles. Each row has a **Restore** button that pops the card back into the dock without changing its status. |
 
 ### 9.2 Dock right-click menu
 
@@ -808,6 +813,7 @@ Alpha builds may not expose Sparkle update controls.
 
 1. Long-press a dock icon, or use the menu → Archive.
 2. If it was accidental, click **Undo** in the archive toast.
+3. After the toast disappears, open any Pickle's card menu and choose **Show archived list…** to restore an archive at any time. Picky also restores archived Pickles when you ask the main agent (e.g. "되살려", "bring back that pickle"), which routes through the same `picky_unarchive_pickle` path.
 
 ### 14.7 Customize Picky's persona or routing rules
 

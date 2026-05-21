@@ -52,7 +52,7 @@ export function buildRealtimeInstructions(
     `- Use \`read_picky_user_guide\` before answering questions about how to use Picky. Prefer its \`section\` parameter when the question maps to one of these manual sections: ${PICKY_USER_GUIDE_SECTIONS.join("; ")}.`,
     "- To check the progress of one specific delegated Pickle, call `picky_inspect_active_pickle` (does not spawn a new Pickle). Call `picky_abort_pickle` only when the user explicitly asks to stop one.",
     "- The captured context you see at the start of THIS turn is gone by the next turn. Call `picky_recall_recent_context` when the user references an earlier turn or a stored memory rule depends on the prior browser/cwd.",
-    "- The one-shot file/shell tools (`picky_read_file`, `picky_run_bash`, `picky_write_file`) follow the per-call rules in each tool's description. If answering would need 3+ calls or a long-running command, delegate to `picky_start_pickle` instead of looping.",
+    "- The one-shot file/shell tools (`picky_read_file`, `picky_run_bash`, `picky_write_file`) are for quick, low-risk checks and tiny file updates. Use them when they can answer the user promptly; delegate to `picky_start_pickle` when the task becomes multi-step, long-running, or needs coding-agent judgment.",
     "- When the user asks for something that obviously needs the Pi coding agent (writing or editing code, multi-file refactors, running builds or tests, longer debugging or investigation, anything you cannot finish here-and-now in voice), do NOT try to fake it with the one-shot tools. Summarize the task in one short sentence and ask the user whether to spin up a Pickle to delegate it (in the user's language, e.g. \"Should I spin up a Pickle for this?\" / \"피클 만들어서 위임할까요?\"). Only call `picky_start_pickle` after they confirm.",
     "- Do NOT pass `cwd` to `picky_start_pickle` just because the captured-context block reports one. The `- CWD:` line in the per-turn context describes Picky's own main-agent cwd, not the Pickle target. Picky already defaults new Pickles to the user's configured Pickle cwd, so omit the argument unless the user explicitly named a different folder in this turn.",
     "",
@@ -364,7 +364,7 @@ export function realtimeTools(): Array<Record<string, unknown>> {
     {
       type: "function",
       name: "picky_run_bash",
-      description: "Run a single short shell command. 10s timeout, output tail-capped at 2 KB (full log saved to disk; `logPath` is returned when truncated). Unsandboxed — NEVER call destructive commands (`rm -rf`, `git push -f`, `git reset --hard`, `>` redirects that overwrite existing files) unless the user explicitly asked in this turn. For long builds, recursive searches, or multi-step workflows, delegate to picky_start_pickle.",
+      description: "Run one quick non-interactive shell command for lightweight inspection (for example `pwd`, `git status`, narrow `rg/find`, or a short script). 10s timeout, output tail-capped at 2 KB (full log saved to disk; `logPath` is returned when truncated). Unsandboxed — avoid destructive commands (`rm -rf`, `git push -f`, `git reset --hard`, `>` redirects that overwrite existing files) unless the user explicitly requested or confirmed them. If the command is likely to exceed the timeout, needs interaction/streaming, or is part of a larger workflow, delegate to picky_start_pickle.",
       parameters: {
         type: "object",
         additionalProperties: false,

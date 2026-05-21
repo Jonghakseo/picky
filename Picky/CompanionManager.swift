@@ -297,12 +297,16 @@ final class CompanionManager: ObservableObject {
         self.ownsAgentClientLifecycle = ownsAgentClientLifecycle
         self.selectionStore = selectionStore
         // Hovered Pickle voice follow-ups still use the BuddyDictationManager
-        // STT path even when the main-agent runtime is OpenAI Realtime. Seed
-        // the factory before constructing the default dictation manager so the
-        // forced realtime STT provider can proxy through this agent client on
-        // first launch, not only after a Settings save triggers a provider reload.
-        BuddyTranscriptionProviderFactory.sharedAgentClient = agentClient
-        self.buddyDictationManager = buddyDictationManager ?? BuddyDictationManager()
+        // STT path even when the main-agent runtime is OpenAI Realtime. Build
+        // the default dictation provider with this manager's client directly so
+        // the forced realtime STT provider can proxy through agentd on first
+        // launch, not only after a Settings save triggers a provider reload.
+        self.buddyDictationManager = buddyDictationManager ?? BuddyDictationManager(
+            transcriptionProvider: BuddyTranscriptionProviderFactory.makeDefaultProvider(
+                settings: initialSettings,
+                agentClient: agentClient
+            )
+        )
         self.speechPlaybackProvider = speechPlaybackProvider ?? PickySpeechPlaybackProviderFactory.makeDefaultProvider(settings: initialSettings)
         self.ttsPlaybackEnabled = speechPlaybackProvider == nil ? initialSettings.ttsEnabled : true
         self.narrationEnabled = initialSettings.narrationEnabled
@@ -866,12 +870,13 @@ final class CompanionManager: ObservableObject {
     }
 
     private func reloadVoiceProvidersFromSettings(_ settings: PickySettings = PickySettingsStore().load()) {
-        // Realtime STT proxies its WebSocket through agentd, so the factory needs
-        // a back-reference to the agent client. The factory stores it weakly to
-        // avoid extending the client's lifetime.
-        BuddyTranscriptionProviderFactory.sharedAgentClient = agentClient
+        // Realtime STT proxies its WebSocket through agentd, so provide the
+        // live agent client directly when rebuilding the dictation provider.
         buddyDictationManager.updateTranscriptionProvider(
-            BuddyTranscriptionProviderFactory.makeDefaultProvider(settings: settings)
+            BuddyTranscriptionProviderFactory.makeDefaultProvider(
+                settings: settings,
+                agentClient: agentClient
+            )
         )
         ttsPlaybackEnabled = settings.ttsEnabled
         narrationEnabled = settings.narrationEnabled

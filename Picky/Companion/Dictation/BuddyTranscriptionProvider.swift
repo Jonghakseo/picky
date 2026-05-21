@@ -42,7 +42,8 @@ enum BuddyTranscriptionProviderFactory {
     static func makeDefaultProvider(
         settings: PickySettings = PickySettingsStore().load(),
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        isRealtimeOnlyBuild: Bool? = nil
+        isRealtimeOnlyBuild: Bool? = nil,
+        agentClient: PickyAgentClient? = BuddyTranscriptionProviderFactory.sharedAgentClient
     ) -> any BuddyTranscriptionProvider {
         let isRealtimeRuntime = isRealtimeOnlyBuild
             ?? (AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime)
@@ -57,7 +58,7 @@ enum BuddyTranscriptionProviderFactory {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .nilIfEmpty
             let provider = OpenAIRealtimeTranscriptionProvider(
-                agentClient: BuddyTranscriptionProviderFactory.sharedAgentClient,
+                agentClient: agentClient,
                 preferredLanguage: language
             )
             print("🎙️ Transcription: realtime runtime — forced provider \(provider.displayName), language: \(language ?? "auto")")
@@ -69,7 +70,7 @@ enum BuddyTranscriptionProviderFactory {
         if requestedProvider == "openai-realtime" || requestedProvider == "openaiRealtime" {
             let language = settings.openAISTTPreferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             let provider = OpenAIRealtimeTranscriptionProvider(
-                agentClient: BuddyTranscriptionProviderFactory.sharedAgentClient,
+                agentClient: agentClient,
                 preferredLanguage: language
             )
             print("🎙️ Transcription: using provider \(provider.displayName), language: \(language ?? "auto")")

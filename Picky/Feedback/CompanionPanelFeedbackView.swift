@@ -29,17 +29,18 @@ struct CompanionPanelFeedbackView: View {
         static let maxCount = 5
         static let maxFileBytes = 100 * 1_024 * 1_024
         static let maxTotalBytes = 250 * 1_024 * 1_024
-        static let allowedTypes: [UTType] = [.image, .movie, .video]
     }
 
     private enum MediaAttachmentKind: Equatable {
         case image
         case video
+        case file
 
         var iconName: String {
             switch self {
             case .image: "photo"
             case .video: "video"
+            case .file: "doc"
             }
         }
     }
@@ -55,7 +56,6 @@ struct CompanionPanelFeedbackView: View {
 
     private enum MediaAttachmentError: LocalizedError {
         case notRegularFile(String)
-        case unsupported(String)
         case fileTooLarge(String, Int)
         case totalTooLarge(Int)
         case tooMany
@@ -63,15 +63,13 @@ struct CompanionPanelFeedbackView: View {
         var errorDescription: String? {
             switch self {
             case .notRegularFile(let filename):
-                return "Cannot attach \(filename). Choose a regular image or video file."
-            case .unsupported(let filename):
-                return "Cannot attach \(filename). Only images and videos are supported."
+                return "Cannot attach \(filename). Choose a regular file."
             case .fileTooLarge(let filename, let byteCount):
                 return "\(filename) is \(Self.format(byteCount)); max is \(Self.format(MediaAttachmentPolicy.maxFileBytes))."
             case .totalTooLarge(let byteCount):
-                return "Selected media is \(Self.format(byteCount)); total max is \(Self.format(MediaAttachmentPolicy.maxTotalBytes))."
+                return "Selected files are \(Self.format(byteCount)); total max is \(Self.format(MediaAttachmentPolicy.maxTotalBytes))."
             case .tooMany:
-                return "Attach up to \(MediaAttachmentPolicy.maxCount) images or videos."
+                return "Attach up to \(MediaAttachmentPolicy.maxCount) files."
             }
         }
 
@@ -393,13 +391,12 @@ struct CompanionPanelFeedbackView: View {
         defer { setPanelAutoDismissSuspended(false) }
 
         let panel = NSOpenPanel()
-        panel.title = "Attach screenshots or videos"
-        panel.message = "Choose up to \(MediaAttachmentPolicy.maxCount) image or video files."
+        panel.title = "Attach files"
+        panel.message = "Choose up to \(MediaAttachmentPolicy.maxCount) files."
         panel.prompt = "Attach"
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = MediaAttachmentPolicy.allowedTypes
 
         if panel.runModal() == .OK {
             addMediaAttachments(panel.urls)
@@ -457,9 +454,7 @@ struct CompanionPanelFeedbackView: View {
         }
 
         let type = values.contentType ?? UTType(filenameExtension: standardizedURL.pathExtension)
-        guard let type, let kind = mediaAttachmentKind(for: type) else {
-            throw MediaAttachmentError.unsupported(filename)
-        }
+        let kind = type.map(mediaAttachmentKind(for:)) ?? .file
 
         let byteCount = try fileByteCount(for: standardizedURL, resourceValues: values)
         guard byteCount <= MediaAttachmentPolicy.maxFileBytes else {
@@ -469,10 +464,10 @@ struct CompanionPanelFeedbackView: View {
         return SelectedMediaAttachment(url: standardizedURL, filename: filename, byteCount: byteCount, kind: kind)
     }
 
-    private func mediaAttachmentKind(for type: UTType) -> MediaAttachmentKind? {
+    private func mediaAttachmentKind(for type: UTType) -> MediaAttachmentKind {
         if type.conforms(to: .image) { return .image }
         if type.conforms(to: .movie) || type.conforms(to: .video) { return .video }
-        return nil
+        return .file
     }
 
     private func fileByteCount(for url: URL, resourceValues: URLResourceValues) throws -> Int {

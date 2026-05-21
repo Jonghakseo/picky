@@ -181,7 +181,7 @@ struct PickyFeedbackSenderTests {
         ])
         let initialComment = try #require(completeJSON["initial_comment"] as? String)
         #expect(initialComment.contains("Diagnostics:* diag.zip"))
-        #expect(initialComment.contains("Media:* screen.png"))
+        #expect(initialComment.contains("Files:* screen.png"))
     }
 
     @Test func emptyMessageThrowsEmptyMessage() async {

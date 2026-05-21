@@ -337,13 +337,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Optional. Up to %1$lld images or videos, %2$@ each, %3$@ total."
+            "value": "Optional. Up to %1$lld files, %2$@ each, %3$@ total."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "선택 항목이에요. 이미지·비디오 최대 %1$lld개, 개별 %2$@, 합계 %3$@까지."
+            "value": "선택 항목이에요. 파일 최대 %1$lld개, 개별 %2$@, 합계 %3$@까지."
           }
         }
       }
@@ -353,13 +353,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Attach screenshots/videos"
+            "value": "Attach files"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "스크린샷/비디오 첨부"
+            "value": "파일 첨부"
           }
         }
       }

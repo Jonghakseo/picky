@@ -313,9 +313,9 @@ struct PickyFeedbackSender {
         if !diagnostics.isEmpty {
             lines.append("• *Diagnostics:* \(diagnostics)")
         }
-        let media = attachmentFilenames(for: attachments, kind: .media)
-        if !media.isEmpty {
-            lines.append("• *Media:* \(media)")
+        let files = attachmentFilenames(for: attachments, kind: .media)
+        if !files.isEmpty {
+            lines.append("• *Files:* \(files)")
         }
         return lines.joined(separator: "\n")
     }

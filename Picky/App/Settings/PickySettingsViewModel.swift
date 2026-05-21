@@ -24,7 +24,12 @@ final class PickySettingsViewModel: ObservableObject {
 
     func save() -> Bool {
         do {
-            try store.save(settings)
+            var updated = settings
+            // The settings panel edits a cached full settings snapshot, while manual Pickle
+            // creation updates recentPickleCwds in the shared settings file at runtime. Preserve
+            // the latest disk-backed recents so a later Settings save cannot clobber them.
+            updated.recentPickleCwds = store.load().recentPickleCwds
+            try store.save(updated)
             settings = store.load()
             validationError = nil
             NotificationCenter.default.post(name: .pickySettingsDidSave, object: nil)

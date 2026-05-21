@@ -478,7 +478,7 @@ struct PickyHUDView: View {
     }
 
     private var visibleRecentPickleCwds: [String] {
-        Array(viewModel.recentPickleCwds.filter(Self.isExistingDirectory).prefix(PickySettings.maxVisibleRecentPickleCwds))
+        PickyRecentPickleFolderPolicy.visibleCwds(viewModel.recentPickleCwds, exists: Self.isExistingDirectory)
     }
 
     private static func isExistingDirectory(_ path: String) -> Bool {
@@ -1731,6 +1731,7 @@ private struct PickyHUDDockRailView: View {
         .pointerCursor()
         .recentPickleFolderPicker(
             isPresented: $isRecentPickleFolderPickerPresented,
+            arrowEdge: recentPickleFolderPickerArrowEdge,
             recentPickleCwds: recentPickleCwds,
             onCreatePickleInRecentFolder: onCreatePickleInRecentFolder,
             onChooseFolder: onCreatePickle,
@@ -1783,6 +1784,7 @@ private struct PickyHUDDockRailView: View {
         .pointerCursor()
         .recentPickleFolderPicker(
             isPresented: $isRecentPickleFolderPickerPresented,
+            arrowEdge: recentPickleFolderPickerArrowEdge,
             recentPickleCwds: recentPickleCwds,
             onCreatePickleInRecentFolder: onCreatePickleInRecentFolder,
             onChooseFolder: onCreatePickle,
@@ -1798,17 +1800,33 @@ private struct PickyHUDDockRailView: View {
         .accessibilityLabel("Start Pickle")
         .accessibilityHint("Choose a recent working folder or browse for a new one")
     }
+
+    private var recentPickleFolderPickerArrowEdge: Edge {
+        switch dockSide {
+        case .right: .trailing
+        case .left: .leading
+        case .top: .top
+        case .bottom: .bottom
+        }
+    }
+}
+
+struct PickyRecentPickleFolderPolicy {
+    static func visibleCwds(_ cwds: [String], exists: (String) -> Bool) -> [String] {
+        Array(cwds.filter(exists).prefix(PickySettings.maxVisibleRecentPickleCwds))
+    }
 }
 
 private extension View {
     func recentPickleFolderPicker(
         isPresented: Binding<Bool>,
+        arrowEdge: Edge,
         recentPickleCwds: [String],
         onCreatePickleInRecentFolder: @escaping (String) -> Void,
         onChooseFolder: @escaping () -> Void,
         onRemoveRecentPickleFolder: @escaping (String) -> Void
     ) -> some View {
-        popover(isPresented: isPresented, arrowEdge: .trailing) {
+        popover(isPresented: isPresented, arrowEdge: arrowEdge) {
             PickyRecentPickleFolderPickerView(
                 isPresented: isPresented,
                 recentPickleCwds: recentPickleCwds,

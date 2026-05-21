@@ -350,6 +350,15 @@ struct PickySessionViewModelTests {
         #expect(settings.recentPickleCwds == ["/tmp/p5", "/tmp/p1", "/tmp/p2", "/tmp/p4", "/tmp/p6", "/tmp/p7", "/tmp/p8"])
     }
 
+    @Test func visibleRecentPickleCwdsHideMissingPathsAndCapAtFive() {
+        let candidates = ["/tmp/p1", "/tmp/missing", "/tmp/p2", "/tmp/p3", "/tmp/p4", "/tmp/p5", "/tmp/p6"]
+        let existing: Set<String> = ["/tmp/p1", "/tmp/p2", "/tmp/p3", "/tmp/p4", "/tmp/p5", "/tmp/p6"]
+
+        let visible = PickyRecentPickleFolderPolicy.visibleCwds(candidates) { existing.contains($0) }
+
+        #expect(visible == ["/tmp/p1", "/tmp/p2", "/tmp/p3", "/tmp/p4", "/tmp/p5"])
+    }
+
     @Test func duplicateSendsDuplicateSessionCommandWithSourceID() async throws {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())

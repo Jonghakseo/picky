@@ -97,6 +97,31 @@ struct PickySettingsPolishTests {
         #expect(store.load().mainAgentThinkingLevel == .high)
     }
 
+    @MainActor @Test func settingsViewModelSavePreservesRuntimeRecentPickleFolders() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.defaultCwd = project.path
+        settings.mainAgentCwd = project.path
+        settings.worktreeParent = project.path
+        try store.save(settings)
+
+        let viewModel = PickySettingsViewModel(store: store)
+        var runtimeSettings = store.load()
+        runtimeSettings.recordRecentPickleCwd(project.path)
+        try store.save(runtimeSettings)
+
+        viewModel.settings.mainAgentThinkingLevel = .high
+        #expect(viewModel.save())
+
+        let saved = store.load()
+        #expect(saved.mainAgentThinkingLevel == .high)
+        #expect(saved.recentPickleCwds == [project.path])
+    }
+
     @Test func settingsLoadDefaultsMainAgentRuntimeToPiWhenLegacyFileLacksField() throws {
         let legacyJSON = """
         {

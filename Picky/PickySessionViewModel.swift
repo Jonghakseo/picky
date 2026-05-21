@@ -125,15 +125,17 @@ struct PickySettingsRecentPickleFolderStore: PickyRecentPickleFolderStoring {
     func record(cwd: String) throws -> [String] {
         var settings = settingsStore.load()
         settings.recordRecentPickleCwd(cwd)
+        let updatedRecent = settings.normalizedPaths().recentPickleCwds
         try settingsStore.save(settings)
-        return settingsStore.load().recentPickleCwds
+        return updatedRecent
     }
 
     func remove(cwd: String) throws -> [String] {
         var settings = settingsStore.load()
         settings.removeRecentPickleCwd(cwd)
+        let updatedRecent = settings.normalizedPaths().recentPickleCwds
         try settingsStore.save(settings)
-        return settingsStore.load().recentPickleCwds
+        return updatedRecent
     }
 }
 

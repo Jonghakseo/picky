@@ -386,6 +386,9 @@ struct PickyHUDView: View {
                 onArchiveSession: archiveSession,
                 onStopSession: stopSession,
                 onCreatePickle: chooseFolderForEmptyPickle,
+                recentPickleCwds: visibleRecentPickleCwds,
+                onCreatePickleInRecentFolder: startEmptyPickle,
+                onRemoveRecentPickleFolder: viewModel.removeRecentPickleFolder,
                 onDockHoverChanged: handleDockHover,
                 onAddSlotExpandedChanged: { isDockAddSlotExpanded = $0 },
                 onDoneFlashConsumed: viewModel.markDoneFlashConsumed(sessionID:),
@@ -474,6 +477,15 @@ struct PickyHUDView: View {
         hoverPreviewSessionID == sessionID && heldSession?.sessionID != sessionID
     }
 
+    private var visibleRecentPickleCwds: [String] {
+        Array(viewModel.recentPickleCwds.filter(Self.isExistingDirectory).prefix(PickySettings.maxVisibleRecentPickleCwds))
+    }
+
+    private static func isExistingDirectory(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+
     private func chooseFolderForEmptyPickle() {
         NSApp.activate(ignoringOtherApps: true)
 
@@ -486,16 +498,20 @@ struct PickyHUDView: View {
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
         if panel.runModal() == .OK, let url = panel.url {
-            Task {
-                do {
-                    let sessionID = try await viewModel.createEmptyPickleSession(cwd: url.path)
-                    await MainActor.run {
-                        requestManualAutoOpen(sessionID: sessionID)
-                    }
-                } catch {
-                    // `createEmptyPickleSession` already surfaces the error through the shared
-                    // view model; keep the currently-open card untouched when creation fails.
+            startEmptyPickle(cwd: url.path)
+        }
+    }
+
+    private func startEmptyPickle(cwd: String) {
+        Task {
+            do {
+                let sessionID = try await viewModel.createEmptyPickleSession(cwd: cwd)
+                await MainActor.run {
+                    requestManualAutoOpen(sessionID: sessionID)
                 }
+            } catch {
+                // `createEmptyPickleSession` already surfaces the error through the shared
+                // view model; keep the currently-open card untouched when creation fails.
             }
         }
     }
@@ -1350,6 +1366,9 @@ private struct PickyHUDDockRailView: View {
     let onArchiveSession: (String) -> Void
     let onStopSession: (String) -> Void
     let onCreatePickle: () -> Void
+    let recentPickleCwds: [String]
+    let onCreatePickleInRecentFolder: (String) -> Void
+    let onRemoveRecentPickleFolder: (String) -> Void
     let onDockHoverChanged: (Bool) -> Void
     let onAddSlotExpandedChanged: (Bool) -> Void
     let onDoneFlashConsumed: (String) -> Void
@@ -1362,6 +1381,7 @@ private struct PickyHUDDockRailView: View {
     let onMoveSession: (_ sessionID: String, _ toVisibleIndex: Int) -> Void
 
     @State private var isAddSlotExpanded = false
+    @State private var isRecentPickleFolderPickerPresented = false
     @State private var isHandleHovered = false
     @State private var isHandleDragging = false
     @State private var draggingSessionID: String?
@@ -1403,6 +1423,12 @@ private struct PickyHUDDockRailView: View {
         }
         .background(dockGlassBackground)
         .onHover(perform: onDockHoverChanged)
+        .onChange(of: isRecentPickleFolderPickerPresented) { _, isPresented in
+            withAnimation(PickyHUDExpansion.animation) {
+                isAddSlotExpanded = isPresented
+            }
+            onAddSlotExpandedChanged(isPresented)
+        }
     }
 
     private var railHeight: CGFloat {
@@ -1674,8 +1700,16 @@ private struct PickyHUDDockRailView: View {
             )
     }
 
+    private func showRecentPickleFolderPicker() {
+        withAnimation(PickyHUDExpansion.animation) {
+            isAddSlotExpanded = true
+        }
+        onAddSlotExpandedChanged(true)
+        isRecentPickleFolderPickerPresented = true
+    }
+
     private var addAgentSlotButton: some View {
-        Button(action: onCreatePickle) {
+        Button(action: showRecentPickleFolderPicker) {
             ZStack {
                 RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
                     .fill(.ultraThinMaterial)
@@ -1695,12 +1729,19 @@ private struct PickyHUDDockRailView: View {
         }
         .buttonStyle(.plain)
         .pointerCursor()
+        .recentPickleFolderPicker(
+            isPresented: $isRecentPickleFolderPickerPresented,
+            recentPickleCwds: recentPickleCwds,
+            onCreatePickleInRecentFolder: onCreatePickleInRecentFolder,
+            onChooseFolder: onCreatePickle,
+            onRemoveRecentPickleFolder: onRemoveRecentPickleFolder
+        )
         .accessibilityLabel("Start Pickle")
-        .accessibilityHint("Choose a working folder and start an empty Pickle")
+        .accessibilityHint("Choose a recent working folder or browse for a new one")
     }
 
     private var collapsibleAddAgentSlot: some View {
-        Button(action: onCreatePickle) {
+        Button(action: showRecentPickleFolderPicker) {
             ZStack {
                 ZStack {
                     RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
@@ -1740,14 +1781,174 @@ private struct PickyHUDDockRailView: View {
         }
         .buttonStyle(.plain)
         .pointerCursor()
+        .recentPickleFolderPicker(
+            isPresented: $isRecentPickleFolderPickerPresented,
+            recentPickleCwds: recentPickleCwds,
+            onCreatePickleInRecentFolder: onCreatePickleInRecentFolder,
+            onChooseFolder: onCreatePickle,
+            onRemoveRecentPickleFolder: onRemoveRecentPickleFolder
+        )
         .onHover { hovering in
-            onAddSlotExpandedChanged(hovering)
+            let expanded = hovering || isRecentPickleFolderPickerPresented
+            onAddSlotExpandedChanged(expanded)
             withAnimation(PickyHUDExpansion.animation) {
-                isAddSlotExpanded = hovering
+                isAddSlotExpanded = expanded
             }
         }
         .accessibilityLabel("Start Pickle")
-        .accessibilityHint("Choose a working folder and start an empty Pickle")
+        .accessibilityHint("Choose a recent working folder or browse for a new one")
+    }
+}
+
+private extension View {
+    func recentPickleFolderPicker(
+        isPresented: Binding<Bool>,
+        recentPickleCwds: [String],
+        onCreatePickleInRecentFolder: @escaping (String) -> Void,
+        onChooseFolder: @escaping () -> Void,
+        onRemoveRecentPickleFolder: @escaping (String) -> Void
+    ) -> some View {
+        popover(isPresented: isPresented, arrowEdge: .trailing) {
+            PickyRecentPickleFolderPickerView(
+                isPresented: isPresented,
+                recentPickleCwds: recentPickleCwds,
+                onCreatePickleInRecentFolder: onCreatePickleInRecentFolder,
+                onChooseFolder: onChooseFolder,
+                onRemoveRecentPickleFolder: onRemoveRecentPickleFolder
+            )
+        }
+    }
+}
+
+private struct PickyRecentPickleFolderPickerView: View {
+    @Binding var isPresented: Bool
+    let recentPickleCwds: [String]
+    let onCreatePickleInRecentFolder: (String) -> Void
+    let onChooseFolder: () -> Void
+    let onRemoveRecentPickleFolder: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            if recentPickleCwds.isEmpty {
+                emptyState
+            } else {
+                VStack(spacing: 2) {
+                    ForEach(recentPickleCwds, id: \.self) { cwd in
+                        PickyRecentPickleFolderRow(
+                            cwd: cwd,
+                            onCreate: {
+                                isPresented = false
+                                onCreatePickleInRecentFolder(cwd)
+                            },
+                            onRemove: {
+                                onRemoveRecentPickleFolder(cwd)
+                            }
+                        )
+                    }
+                }
+            }
+            Divider()
+            Button {
+                isPresented = false
+                onChooseFolder()
+            } label: {
+                Label("Choose Folder…", systemImage: "folder.badge.plus")
+                    .frame(maxWidth: .infinity, minHeight: 28)
+            }
+            .buttonStyle(.borderless)
+            .padding(.vertical, 2)
+            .accessibilityHint("Open the macOS folder picker")
+        }
+        .padding(14)
+        .frame(width: 286)
+    }
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("Recent folders")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(DS.Colors.textPrimary)
+            Spacer()
+            Text("Start Pickle")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(DS.Colors.textTertiary)
+        }
+    }
+
+    private var emptyState: some View {
+        Text("No recent folders yet. Choose a working folder to start your first Pickle.")
+            .font(.system(size: 12))
+            .foregroundStyle(DS.Colors.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, 8)
+    }
+}
+
+private struct PickyRecentPickleFolderRow: View {
+    let cwd: String
+    let onCreate: () -> Void
+    let onRemove: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button(action: onCreate) {
+                HStack(spacing: 9) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(DS.Colors.accentText)
+                        .frame(width: 22, height: 22)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(displayName)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(DS.Colors.textPrimary)
+                            .lineLimit(1)
+                        Text(compactPath)
+                            .font(.system(size: 11))
+                            .foregroundStyle(DS.Colors.textSecondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 8)
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Start Pickle in \(displayName)")
+            .accessibilityHint(compactPath)
+
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(DS.Colors.textTertiary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .opacity(isHovered ? 1 : 0.35)
+            .accessibilityLabel("Remove from recent folders")
+            .accessibilityHint("This does not delete the folder")
+        }
+        .background(isHovered ? DS.Colors.surface2 : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onHover { isHovered = $0 }
+    }
+
+    private var displayName: String {
+        let last = URL(fileURLWithPath: cwd, isDirectory: true).lastPathComponent
+        return last.isEmpty ? cwd : last
+    }
+
+    private var compactPath: String {
+        let homePath = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+        let standardizedPath = NSString(string: cwd).standardizingPath
+        if standardizedPath == homePath { return "~" }
+        if standardizedPath.hasPrefix(homePath + "/") {
+            return "~" + String(standardizedPath.dropFirst(homePath.count))
+        }
+        return cwd
     }
 }
 

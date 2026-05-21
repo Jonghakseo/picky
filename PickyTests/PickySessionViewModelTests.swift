@@ -52,6 +52,29 @@ private final class FakeManualPickleChildSpawner: PickyManualPickleChildSpawning
     }
 }
 
+private final class FakeRecentPickleFolderStore: PickyRecentPickleFolderStoring {
+    private(set) var recorded: [String] = []
+    private(set) var removed: [String] = []
+    var recentPickleCwds: [String]
+
+    init(recentPickleCwds: [String] = []) {
+        self.recentPickleCwds = recentPickleCwds
+    }
+
+    func record(cwd: String) throws -> [String] {
+        recorded.append(cwd)
+        recentPickleCwds.removeAll { $0 == cwd }
+        recentPickleCwds.insert(cwd, at: 0)
+        return recentPickleCwds
+    }
+
+    func remove(cwd: String) throws -> [String] {
+        removed.append(cwd)
+        recentPickleCwds.removeAll { $0 == cwd }
+        return recentPickleCwds
+    }
+}
+
 private final class FakeSelectionStore: PickySessionSelectionStoring {
     var selectedSessionID: String?
     var hoveredVoiceFollowUpSessionID: String?
@@ -263,6 +286,68 @@ struct PickySessionViewModelTests {
         #expect(command.context?.transcript == nil)
         #expect(command.context?.screenshots.isEmpty == true)
         #expect(command.context?.warnings == ["manualPickle=true"])
+    }
+
+    @Test func createEmptyPickleSessionRecordsSuccessfulManualCwd() async throws {
+        let recentStore = FakeRecentPickleFolderStore()
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            recentPickleFolderStore: recentStore,
+            manualPickleChildSpawner: FakeManualPickleChildSpawner()
+        )
+
+        _ = try await viewModel.createEmptyPickleSession(cwd: "  /tmp/manual-project  ")
+
+        #expect(recentStore.recorded == ["/tmp/manual-project"])
+        #expect(viewModel.recentPickleCwds == ["/tmp/manual-project"])
+    }
+
+    @Test func createEmptyPickleSessionDoesNotRecordCwdWhenSpawnFails() async throws {
+        let recentStore = FakeRecentPickleFolderStore()
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            recentPickleFolderStore: recentStore
+        )
+
+        await #expect(throws: PickySessionListViewModelError.pickleRuntimeUnavailable) {
+            _ = try await viewModel.createEmptyPickleSession(cwd: "/tmp/manual-project")
+        }
+        #expect(recentStore.recorded.isEmpty)
+        #expect(viewModel.recentPickleCwds.isEmpty)
+    }
+
+    @Test func removeRecentPickleFolderUpdatesStoreBackedList() {
+        let recentStore = FakeRecentPickleFolderStore(recentPickleCwds: ["/tmp/picky", "/tmp/old"])
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            recentPickleFolderStore: recentStore
+        )
+
+        viewModel.removeRecentPickleFolder("/tmp/picky")
+
+        #expect(recentStore.removed == ["/tmp/picky"])
+        #expect(viewModel.recentPickleCwds == ["/tmp/old"])
+    }
+
+    @Test func recentPickleCwdsNormalizeDedupeAndCapStoredPaths() {
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+
+        settings.recentPickleCwds = [
+            " /tmp/p1 ", "/tmp/p1", "/tmp/p2", "/tmp/p3", "/tmp/p4",
+            "/tmp/p5", "/tmp/p6", "/tmp/p7", "/tmp/p8", "/tmp/p9"
+        ]
+        settings = settings.normalizedPaths()
+
+        #expect(settings.recentPickleCwds == ["/tmp/p1", "/tmp/p2", "/tmp/p3", "/tmp/p4", "/tmp/p5", "/tmp/p6", "/tmp/p7", "/tmp/p8"])
+
+        settings.recordRecentPickleCwd("/tmp/p5")
+        #expect(settings.recentPickleCwds == ["/tmp/p5", "/tmp/p1", "/tmp/p2", "/tmp/p3", "/tmp/p4", "/tmp/p6", "/tmp/p7", "/tmp/p8"])
+
+        settings.removeRecentPickleCwd("/tmp/p3")
+        #expect(settings.recentPickleCwds == ["/tmp/p5", "/tmp/p1", "/tmp/p2", "/tmp/p4", "/tmp/p6", "/tmp/p7", "/tmp/p8"])
     }
 
     @Test func duplicateSendsDuplicateSessionCommandWithSourceID() async throws {

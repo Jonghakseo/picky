@@ -103,6 +103,40 @@ struct PickyPasteboardClipboardWriter: PickyClipboardWriting {
     }
 }
 
+protocol PickyRecentPickleFolderStoring {
+    var recentPickleCwds: [String] { get }
+    func record(cwd: String) throws -> [String]
+    func remove(cwd: String) throws -> [String]
+}
+
+struct PickyNoopRecentPickleFolderStore: PickyRecentPickleFolderStoring {
+    var recentPickleCwds: [String] { [] }
+    func record(cwd: String) throws -> [String] { [] }
+    func remove(cwd: String) throws -> [String] { [] }
+}
+
+struct PickySettingsRecentPickleFolderStore: PickyRecentPickleFolderStoring {
+    var settingsStore: PickySettingsStore = PickySettingsStore()
+
+    var recentPickleCwds: [String] {
+        settingsStore.load().recentPickleCwds
+    }
+
+    func record(cwd: String) throws -> [String] {
+        var settings = settingsStore.load()
+        settings.recordRecentPickleCwd(cwd)
+        try settingsStore.save(settings)
+        return settingsStore.load().recentPickleCwds
+    }
+
+    func remove(cwd: String) throws -> [String] {
+        var settings = settingsStore.load()
+        settings.removeRecentPickleCwd(cwd)
+        try settingsStore.save(settings)
+        return settingsStore.load().recentPickleCwds
+    }
+}
+
 struct PickyComposerDraftRequest: Equatable, Identifiable {
     let id: String
     let text: String
@@ -322,6 +356,7 @@ final class PickySessionListViewModel: ObservableObject {
     /// by the user yet. Lives on the view model (single source of truth) so all
     /// dock instances render the indicator in sync.
     @Published private(set) var unreadSessionIDs: Set<String> = []
+    @Published private(set) var recentPickleCwds: [String]
     @Published private(set) var isLoadingInitialSessionSnapshot = true
     @Published private(set) var openSessionRequest: PickyHUDOpenSessionRequest?
     /// Fires every time a dock card is opened (the user clicked it to expand).
@@ -356,6 +391,7 @@ final class PickySessionListViewModel: ObservableObject {
     private let composerDraftStore: PickyComposerDraftStoring
     private let composerAttachmentDraftStore: PickyComposerAttachmentDraftStoring
     private let sessionNoteStore: PickySessionNoteStoring
+    private let recentPickleFolderStore: PickyRecentPickleFolderStoring
     private let artifactPathValidator: PickyArtifactPathValidator
     private let clipboardWriter: PickyClipboardWriting
     private let terminalPresenter: PickyTerminalOverlayPresenting
@@ -407,6 +443,7 @@ final class PickySessionListViewModel: ObservableObject {
         composerDraftStore: PickyComposerDraftStoring = PickyUserDefaultsComposerDraftStore.shared,
         composerAttachmentDraftStore: PickyComposerAttachmentDraftStoring = PickyUserDefaultsComposerAttachmentDraftStore.shared,
         sessionNoteStore: PickySessionNoteStoring = PickyUserDefaultsSessionNoteStore.shared,
+        recentPickleFolderStore: PickyRecentPickleFolderStoring = PickyNoopRecentPickleFolderStore(),
         artifactPathValidator: PickyArtifactPathValidator = PickyArtifactPathValidator(appSupportRoot: PickyAppSupport.defaultRoot()),
         clipboardWriter: PickyClipboardWriting = PickyPasteboardClipboardWriter(),
         terminalPresenter: PickyTerminalOverlayPresenting? = nil,
@@ -429,6 +466,8 @@ final class PickySessionListViewModel: ObservableObject {
         self.composerDraftStore = composerDraftStore
         self.composerAttachmentDraftStore = composerAttachmentDraftStore
         self.sessionNoteStore = sessionNoteStore
+        self.recentPickleFolderStore = recentPickleFolderStore
+        self.recentPickleCwds = recentPickleFolderStore.recentPickleCwds
         self.artifactPathValidator = artifactPathValidator
         self.clipboardWriter = clipboardWriter
         self.terminalPresenter = terminalPresenter ?? PickyTerminalOverlayPresenter.shared
@@ -560,10 +599,32 @@ final class PickySessionListViewModel: ObservableObject {
             )
             try await childClient.send(command)
             lastError = nil
+            if let cwd = context.cwd {
+                recordRecentPickleFolder(cwd)
+            }
             return sessionID
         } catch {
             lastError = error.localizedDescription
             throw error
+        }
+    }
+
+    func removeRecentPickleFolder(_ cwd: String) {
+        do {
+            recentPickleCwds = try recentPickleFolderStore.remove(cwd: cwd)
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    private func recordRecentPickleFolder(_ cwd: String) {
+        do {
+            recentPickleCwds = try recentPickleFolderStore.record(cwd: cwd)
+        } catch {
+            // A Pickle already started successfully; keep the session creation result and
+            // surface only the persistence failure for diagnostics.
+            lastError = error.localizedDescription
         }
     }
 

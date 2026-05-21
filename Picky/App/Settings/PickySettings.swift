@@ -931,6 +931,9 @@ struct PickySettings: Codable, Equatable {
     /// app even when the OS is set to something else. Adding a language is
     /// just a new `PickyLanguage` case + catalog entry.
     var appLanguage: PickyLanguage
+    /// Recently used working folders for manual Pickle creation. Kept small so
+    /// the dock picker stays lightweight and focused on the common paths.
+    var recentPickleCwds: [String]
     /// Last user-moved frame for each kind of detached panel (markdown report
     /// viewer, tool history viewer, Pi terminal overlay), keyed by
     /// `PickyDetachedPanelKind.rawValue`. Empty/missing entries fall back to
@@ -939,6 +942,8 @@ struct PickySettings: Codable, Equatable {
 
     static let dockTopAnchorPercentRange: ClosedRange<Double> = 2.0...70.0
     static let defaultDockTopAnchorPercent: Double = 22.0
+    static let maxStoredRecentPickleCwds = 8
+    static let maxVisibleRecentPickleCwds = 5
 
     /// Clamp any incoming value (slider, persisted file, programmatic) to the supported
     /// range. Out-of-range values can come from corrupted settings files or a future
@@ -1004,6 +1009,7 @@ struct PickySettings: Codable, Equatable {
         shellCommandAutoInstallOptedOut: Bool = false,
         mainThreadWatchdogEnabled: Bool = true,
         appLanguage: PickyLanguage = .system,
+        recentPickleCwds: [String] = [],
         detachedPanelFrames: [String: PickyDetachedPanelFrame] = [:]
     ) {
         self.defaultCwd = defaultCwd
@@ -1061,6 +1067,7 @@ struct PickySettings: Codable, Equatable {
         self.shellCommandAutoInstallOptedOut = shellCommandAutoInstallOptedOut
         self.mainThreadWatchdogEnabled = mainThreadWatchdogEnabled
         self.appLanguage = appLanguage
+        self.recentPickleCwds = PickySettings.normalizedRecentPickleCwds(recentPickleCwds)
         self.detachedPanelFrames = detachedPanelFrames
     }
 
@@ -1148,6 +1155,7 @@ struct PickySettings: Codable, Equatable {
             shellCommandAutoInstallOptedOut: false,
             mainThreadWatchdogEnabled: true,
             appLanguage: .system,
+            recentPickleCwds: [],
             detachedPanelFrames: [:]
         )
     }
@@ -1180,7 +1188,36 @@ struct PickySettings: Codable, Equatable {
         copy.mainAgentModelPattern = mainAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.pickleAgentModelPattern = pickleAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.hudCardSizes = hudCardSizes.mapValues { $0.clamped() }
+        copy.recentPickleCwds = Self.normalizedRecentPickleCwds(recentPickleCwds)
         return copy
+    }
+
+    static func normalizedRecentPickleCwd(_ cwd: String) -> String? {
+        let trimmed = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return (NSString(string: trimmed).expandingTildeInPath as NSString).standardizingPath
+    }
+
+    static func normalizedRecentPickleCwds(_ cwds: [String]) -> [String] {
+        var normalized: [String] = []
+        for cwd in cwds {
+            guard let path = normalizedRecentPickleCwd(cwd), !normalized.contains(path) else { continue }
+            normalized.append(path)
+            if normalized.count == maxStoredRecentPickleCwds { break }
+        }
+        return normalized
+    }
+
+    mutating func recordRecentPickleCwd(_ cwd: String) {
+        guard let path = Self.normalizedRecentPickleCwd(cwd) else { return }
+        recentPickleCwds.removeAll { $0 == path }
+        recentPickleCwds.insert(path, at: 0)
+        recentPickleCwds = Array(recentPickleCwds.prefix(Self.maxStoredRecentPickleCwds))
+    }
+
+    mutating func removeRecentPickleCwd(_ cwd: String) {
+        guard let path = Self.normalizedRecentPickleCwd(cwd) else { return }
+        recentPickleCwds.removeAll { $0 == path }
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1239,6 +1276,7 @@ struct PickySettings: Codable, Equatable {
         case shellCommandAutoInstallOptedOut
         case mainThreadWatchdogEnabled
         case appLanguage
+        case recentPickleCwds
         case detachedPanelFrames
     }
 
@@ -1312,6 +1350,7 @@ struct PickySettings: Codable, Equatable {
         // they'll follow whatever language they were already comfortable with
         // (the OS preference) without any visible change.
         appLanguage = try container.decodeIfPresent(PickyLanguage.self, forKey: .appLanguage) ?? defaults.appLanguage
+        recentPickleCwds = Self.normalizedRecentPickleCwds(try container.decodeIfPresent([String].self, forKey: .recentPickleCwds) ?? defaults.recentPickleCwds)
         detachedPanelFrames = try container.decodeIfPresent([String: PickyDetachedPanelFrame].self, forKey: .detachedPanelFrames) ?? defaults.detachedPanelFrames
         if let storedScales = try container.decodeIfPresent(PickyFontScales.self, forKey: .fontScales) {
             fontScales = PickyFontScales(

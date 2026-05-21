@@ -212,8 +212,8 @@ struct PickyCompanionManagerTests {
         #expect(client.submissions.isEmpty)
     }
 
-    @Test @MainActor func realtimeCompanionSeedsDictationProviderForPickleHoverVoiceFollowUp() async throws {
-        try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.openAIRealtime) {
+    @Test @MainActor func realtimeCompanionSeedsDictationProviderForPickleHoverVoiceFollowUp() {
+        AppBundleConfiguration.$testRuntimeModeOverride.withValue(.openAIRealtime) {
             let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
 
             #expect(manager.buddyDictationManager.transcriptionProviderDisplayName == "OpenAI Realtime STT")

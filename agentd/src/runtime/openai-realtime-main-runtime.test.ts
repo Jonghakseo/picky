@@ -161,10 +161,12 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     const sent = socket.sent.map((raw) => JSON.parse(raw) as Record<string, any>);
     const sessionUpdate = sent.find((event) => event.type === "session.update")!;
     const toolNames = sessionUpdate.session.tools.map((tool: Record<string, unknown>) => tool.name);
+    const startPickleTool = sessionUpdate.session.tools.find((tool: Record<string, unknown>) => tool.name === "picky_start_pickle");
 
     expect(sessionUpdate.session.audio.input.transcription.prompt).toContain("Picky");
     expect(sessionUpdate.session.audio.input.transcription.prompt).toContain("Pickle");
     expect(toolNames).toContain("picky_start_pickle");
+    expect(startPickleTool?.description).toContain("Ask once before calling");
     expect(toolNames).toContain("picky_pickle_sessions");
     expect(toolNames).toContain("picky_steer_pickle");
     expect(toolNames).toContain("picky_skills");

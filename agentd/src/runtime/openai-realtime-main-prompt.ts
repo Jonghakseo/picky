@@ -180,7 +180,7 @@ export function realtimeTools(): Array<Record<string, unknown>> {
     {
       type: "function",
       name: "picky_start_pickle",
-      description: "Delegate complex, long-running, tool-heavy, or multi-turn work to a Pickle shown in Picky's dock.",
+      description: "Delegate complex, long-running, tool-heavy, or multi-turn work to a Pickle shown in Picky's dock. Ask once before calling if the user did not explicitly ask to start a Pickle.",
       parameters: {
         type: "object",
         additionalProperties: false,

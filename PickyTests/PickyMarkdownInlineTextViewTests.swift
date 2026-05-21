@@ -128,6 +128,31 @@ struct PickyMarkdownInlineTextViewTests {
         #expect(attributed.string.isEmpty)
     }
 
+    @Test func hugModeIntrinsicWidthUsesMeasuredTextInsteadOfFullCap() {
+        let view = SelfSizingMarkdownTextView()
+        view.textStorage?.setAttributedString(PickyMarkdownInlineTextView.buildAttributedString(from: [
+            .paragraph("근데 왜 이렇게 렉이 걸리지?")
+        ]))
+        view.fillsAvailableWidth = false
+        view.hugContentMaxWidth = 900
+
+        let size = view.intrinsicContentSize
+
+        #expect(size.width > 100)
+        #expect(size.width < 260)
+    }
+
+    @Test func fillModeIntrinsicWidthKeepsStretchableWidth() {
+        let view = SelfSizingMarkdownTextView()
+        view.textStorage?.setAttributedString(PickyMarkdownInlineTextView.buildAttributedString(from: [
+            .paragraph("agent replies stretch to the available column")
+        ]))
+        view.fillsAvailableWidth = true
+        view.hugContentMaxWidth = 900
+
+        #expect(view.intrinsicContentSize.width == NSView.noIntrinsicMetric)
+    }
+
     @Test func builderCachesByBlockSequence() {
         let blocks: [PickyMarkdownInlineTextView.InlineBlock] = [
             .paragraph("cached"),

@@ -73,6 +73,7 @@ struct PickyMarkdownInlineTextView: NSViewRepresentable {
             view.invalidateIntrinsicContentSize()
         }
         view.fillsAvailableWidth = fillsAvailableWidth
+        view.hugContentMaxWidth = hugContentMaxWidth
         view.onOpenAsReport = onOpenAsReport
     }
 
@@ -371,7 +372,21 @@ extension PickyMarkdownInlineTextView {
 /// container width in sync with `frame.width` so wrapping recalculates when
 /// the parent card resizes.
 final class SelfSizingMarkdownTextView: NSTextView {
-    var fillsAvailableWidth: Bool = true
+    var fillsAvailableWidth: Bool = true {
+        didSet {
+            guard fillsAvailableWidth != oldValue else { return }
+            updateHorizontalSizingPriority()
+            invalidateIntrinsicContentSize()
+        }
+    }
+
+    var hugContentMaxWidth: CGFloat? {
+        didSet {
+            guard hugContentMaxWidth != oldValue else { return }
+            invalidateIntrinsicContentSize()
+        }
+    }
+
     var onOpenAsReport: (() -> Void)?
 
     init() {
@@ -398,6 +413,7 @@ final class SelfSizingMarkdownTextView: NSTextView {
         usesFindBar = false
         allowsUndo = false
         smartInsertDeleteEnabled = false
+        updateHorizontalSizingPriority()
         // Links come from the attributed string; don't let NSTextView add
         // ad-hoc data detectors which would conflict with our deep-link
         // dispatcher.
@@ -417,11 +433,18 @@ final class SelfSizingMarkdownTextView: NSTextView {
     override var intrinsicContentSize: NSSize {
         // Fallback for hosts that don't call `sizeThatFits` (older AppKit
         // entry points / test environments). The representable's
-        // `sizeThatFits` is the canonical sizing path; this just keeps the
-        // height honest when SwiftUI hasn't asked yet.
+        // `sizeThatFits` is the canonical sizing path; this keeps both
+        // height and hug-mode width honest when SwiftUI falls back to
+        // AppKit intrinsic sizing.
         guard let layoutManager, let textContainer else {
             return super.intrinsicContentSize
         }
+
+        if !fillsAvailableWidth, let cap = intrinsicHugWidthCap {
+            let measured = measureUsedSize(forWidth: cap)
+            return NSSize(width: min(ceil(measured.width), cap), height: ceil(measured.height))
+        }
+
         layoutManager.ensureLayout(for: textContainer)
         let used = layoutManager.usedRect(for: textContainer)
         return NSSize(width: NSView.noIntrinsicMetric, height: ceil(used.height))
@@ -435,6 +458,22 @@ final class SelfSizingMarkdownTextView: NSTextView {
             layoutManager?.ensureLayout(for: textContainer)
             invalidateIntrinsicContentSize()
         }
+    }
+
+    private var intrinsicHugWidthCap: CGFloat? {
+        if let hugContentMaxWidth, hugContentMaxWidth.isFinite, hugContentMaxWidth > 0 {
+            return hugContentMaxWidth
+        }
+        if frame.width.isFinite, frame.width > 0 {
+            return frame.width
+        }
+        return nil
+    }
+
+    private func updateHorizontalSizingPriority() {
+        let priority: NSLayoutConstraint.Priority = fillsAvailableWidth ? .defaultLow : .required
+        setContentHuggingPriority(priority, for: .horizontal)
+        setContentCompressionResistancePriority(priority, for: .horizontal)
     }
 
     /// Layout the text at `width` and return the layout manager's used

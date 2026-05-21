@@ -57,7 +57,7 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         static let bubbleRadii = BubbleRadii(topLeft: 12, topRight: 12, bottomRight: 4, bottomLeft: 12)
     }
 
-    private let textView = SelfSizingMarkdownTextView()
+    private let markdownView = PickyBubbleMarkdownContentView()
     private let attachedImagesField = NSTextField(labelWithString: "")
     private let originField = NSTextField(labelWithString: "")
 
@@ -80,10 +80,7 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
 
-        textView.fillsAvailableWidth = false
-        textView.textContainerInset = .zero
-        textView.drawsBackground = false
-        addSubview(textView)
+        addSubview(markdownView)
 
         configureLabel(attachedImagesField)
         configureLabel(originField)
@@ -104,11 +101,12 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         onCopyText: (() -> Void)?,
         onEditText: (() -> Void)?
     ) {
-        let blocks = inlineBlocks(from: markdown)
-        let attributed = PickyMarkdownInlineTextView.buildAttributedString(from: blocks)
-        if textView.attributedString() != attributed {
-            textView.textStorage?.setAttributedString(attributed)
-        }
+        markdownView.configure(
+            markdown: markdown,
+            onOpenAsReport: onOpenAsReport,
+            onCopyText: { [weak self] in self?.copyTextClicked() },
+            onEditText: { [weak self] in self?.editTextClicked() }
+        )
 
         self.attachedImagesLabel = attachedImagesLabel
         self.originLabel = originLabel
@@ -118,11 +116,6 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         self.onCopyText = onCopyText
         self.onEditText = onEditText
         self.onOpenAsReport = onOpenAsReport
-
-        textView.hugContentMaxWidth = textInteriorCap
-        textView.onOpenAsReport = onOpenAsReport
-        textView.onCopyText = { [weak self] in self?.copyTextClicked() }
-        textView.onEditText = { [weak self] in self?.editTextClicked() }
 
         setLabel(attachedImagesField, text: attachedImagesLabel)
         setLabel(originField, text: originLabel)
@@ -153,13 +146,13 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         let textWidth = max(0, bubbleRect.width - 2 * Metrics.horizontalPadding)
         let textSize = measuredTextContentSize(forWidth: textWidth)
         var y = bubbleRect.minY + Metrics.verticalPadding
-        textView.frame = NSRect(
+        markdownView.frame = NSRect(
             x: bubbleRect.minX + Metrics.horizontalPadding,
             y: y,
             width: textWidth,
             height: ceil(textSize.height)
         )
-        y = textView.frame.maxY
+        y = markdownView.frame.maxY
 
         layoutLabel(attachedImagesField, in: bubbleRect, y: &y, textWidth: textWidth)
         layoutLabel(originField, in: bubbleRect, y: &y, textWidth: textWidth)
@@ -193,10 +186,6 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         return menu.items.isEmpty ? nil : menu
     }
 
-    private var textInteriorCap: CGFloat {
-        max(0, maxBubbleWidth - 2 * Metrics.horizontalPadding)
-    }
-
     private var bubbleFill: NSColor {
         if isPiExtensionMessage { return NSColor(DS.Colors.surface2.opacity(0.92)) }
         return NSColor(DS.Colors.accentSubtle.opacity(0.95))
@@ -225,13 +214,7 @@ final class PickyUserBubbleSurfaceNSView: NSView {
     }
 
     private func measuredTextContentSize(forWidth width: CGFloat) -> NSSize {
-        let attributed = textView.attributedString()
-        guard attributed.length > 0, width > 0 else { return .zero }
-        let rect = attributed.boundingRect(
-            with: NSSize(width: width, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        )
-        return NSSize(width: min(width, ceil(rect.width)), height: ceil(rect.height))
+        markdownView.measuredSize(forWidth: width)
     }
 
     private func configureLabel(_ field: NSTextField) {
@@ -267,26 +250,6 @@ final class PickyUserBubbleSurfaceNSView: NSView {
             height: height
         )
         y += height
-    }
-
-    private func inlineBlocks(from markdown: String) -> [PickyMarkdownInlineTextView.InlineBlock] {
-        let renderer = PickyReportMarkdownRenderer()
-        let blocks = renderer.blocks(from: markdown).flatMap { block -> [PickyMarkdownInlineTextView.InlineBlock] in
-            switch block {
-            case .heading(let level, let text):
-                return [.heading(level: level, text: text)]
-            case .paragraph(let text):
-                return [.paragraph(text)]
-            case .bullet(let text):
-                return [.bullet(text)]
-            case .table(let headers, let rows):
-                let tableText = ([headers] + rows).map { $0.joined(separator: " · ") }.joined(separator: "\n")
-                return [.paragraph(tableText)]
-            case .codeBlock(let text):
-                return [.paragraph(text)]
-            }
-        }
-        return blocks.isEmpty ? [.paragraph("")] : blocks
     }
 
     private func bubblePath(in rect: NSRect) -> NSBezierPath {

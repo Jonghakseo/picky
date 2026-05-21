@@ -216,6 +216,25 @@ struct PickyUserBubblePixelWidthTests {
         #expect(actual <= outerCap + 1, "long agent message must not exceed the bubble cap (cap=\(outerCap), got \(actual))")
         #expect(actual > outerCap * 0.7, "long agent message should consume most of the bubble cap (cap=\(outerCap), got \(actual))")
     }
+
+    @Test func agentCodeBlockUsesDedicatedAppKitCodeBlockInsteadOfInlineFlattening() throws {
+        let surface = try layoutAgentBubble(text: "```\nlet value = 42\n```", cardWidth: 600)
+        let typeNames = collectSubviewTypeNames(surface)
+        #expect(
+            typeNames.contains("PickyCodeMarkdownBlockView"),
+            "code blocks should render through the AppKit code block view, not flatten into a paragraph-only text view (types=\(typeNames))"
+        )
+    }
+
+    @Test func agentTableUsesDedicatedAppKitTableBlockInsteadOfInlineFlattening() throws {
+        let markdown = "| Name | Value |\n| --- | --- |\n| Width | Hug |"
+        let surface = try layoutAgentBubble(text: markdown, cardWidth: 600)
+        let typeNames = collectSubviewTypeNames(surface)
+        #expect(
+            typeNames.contains("PickyTableMarkdownBlockView"),
+            "tables should render through the AppKit table block view, not flatten into a paragraph-only text view (types=\(typeNames))"
+        )
+    }
 }
 
 private func collectUserBubbleSurfaces(_ root: NSView) -> [PickyUserBubbleSurfaceNSView] {
@@ -238,6 +257,14 @@ private func collectAgentBubbleSurfaces(_ root: NSView) -> [PickyAgentBubbleSurf
         out.append(contentsOf: collectAgentBubbleSurfaces(sub))
     }
     return out
+}
+
+private func collectSubviewTypeNames(_ root: NSView) -> Set<String> {
+    var names: Set<String> = [String(describing: type(of: root))]
+    for subview in root.subviews {
+        names.formUnion(collectSubviewTypeNames(subview))
+    }
+    return names
 }
 
 /// Minimal `PickyAgentClient` stand-in used only so `PickySessionListViewModel`

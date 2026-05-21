@@ -53,7 +53,7 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         static let badgeInset: CGFloat = 6
     }
 
-    private let textView = SelfSizingMarkdownTextView()
+    private let markdownView = PickyBubbleMarkdownContentView()
     private let hoverButton = NSButton(title: "", target: nil, action: nil)
 
     private var maxBubbleWidth: CGFloat = Metrics.maxBubbleWidthFallback
@@ -74,10 +74,7 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
 
-        textView.fillsAvailableWidth = false
-        textView.textContainerInset = .zero
-        textView.drawsBackground = false
-        addSubview(textView)
+        addSubview(markdownView)
 
         hoverButton.isBordered = false
         hoverButton.bezelStyle = .regularSquare
@@ -102,11 +99,12 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         onOpenAsReport: (() -> Void)?,
         onCopyText: (() -> Void)?
     ) {
-        let blocks = inlineBlocks(from: markdown)
-        let attributed = PickyMarkdownInlineTextView.buildAttributedString(from: blocks)
-        if textView.attributedString() != attributed {
-            textView.textStorage?.setAttributedString(attributed)
-        }
+        markdownView.configure(
+            markdown: markdown,
+            onOpenAsReport: onOpenAsReport,
+            onCopyText: { [weak self] in self?.copyTextClicked() },
+            onEditText: nil
+        )
 
         self.maxBubbleWidth = max(0, maxBubbleWidth)
         self.showsShortcutBadge = showsShortcutBadge
@@ -114,10 +112,6 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         self.onCopyText = onCopyText
         self.onOpenAsReport = onOpenAsReport
 
-        textView.hugContentMaxWidth = textInteriorCap
-        textView.onOpenAsReport = onOpenAsReport
-        textView.onCopyText = { [weak self] in self?.copyTextClicked() }
-        textView.onEditText = nil
         hoverButton.toolTip = "Open this message as report"
 
         needsLayout = true
@@ -145,7 +139,7 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
 
         let textWidth = max(0, bubbleRect.width - 2 * Metrics.horizontalPadding)
         let textSize = measuredTextContentSize(forWidth: textWidth)
-        textView.frame = NSRect(
+        markdownView.frame = NSRect(
             x: bubbleRect.minX + Metrics.horizontalPadding,
             y: bubbleRect.minY + Metrics.verticalPadding,
             width: textWidth,
@@ -215,10 +209,6 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         return menu.items.isEmpty ? nil : menu
     }
 
-    private var textInteriorCap: CGFloat {
-        max(0, maxBubbleWidth - 2 * Metrics.horizontalPadding)
-    }
-
     private var bubbleFill: NSColor {
         NSColor(DS.Colors.surface3.opacity(0.84))
     }
@@ -240,33 +230,7 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
     }
 
     private func measuredTextContentSize(forWidth width: CGFloat) -> NSSize {
-        let attributed = textView.attributedString()
-        guard attributed.length > 0, width > 0 else { return .zero }
-        let rect = attributed.boundingRect(
-            with: NSSize(width: width, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        )
-        return NSSize(width: min(width, ceil(rect.width)), height: ceil(rect.height))
-    }
-
-    private func inlineBlocks(from markdown: String) -> [PickyMarkdownInlineTextView.InlineBlock] {
-        let renderer = PickyReportMarkdownRenderer()
-        let blocks = renderer.blocks(from: markdown).flatMap { block -> [PickyMarkdownInlineTextView.InlineBlock] in
-            switch block {
-            case .heading(let level, let text):
-                return [.heading(level: level, text: text)]
-            case .paragraph(let text):
-                return [.paragraph(text)]
-            case .bullet(let text):
-                return [.bullet(text)]
-            case .table(let headers, let rows):
-                let tableText = ([headers] + rows).map { $0.joined(separator: " · ") }.joined(separator: "\n")
-                return [.paragraph(tableText)]
-            case .codeBlock(let text):
-                return [.paragraph(text)]
-            }
-        }
-        return blocks.isEmpty ? [.paragraph("")] : blocks
+        markdownView.measuredSize(forWidth: width)
     }
 
     private func bubblePath(in rect: NSRect) -> NSBezierPath {

@@ -37,6 +37,14 @@ struct PickyMarkdownInlineTextView: NSViewRepresentable {
     /// stretching to the SwiftUI-allotted width. Used by the user bubble,
     /// which sizes the bubble to its own content.
     var fillsAvailableWidth: Bool = true
+    /// Hug-fit cap when `fillsAvailableWidth` is false. The wrapper would
+    /// otherwise inherit the SwiftUI parent's full width proposal as its
+    /// hug-fit ceiling, and the user bubble's `.frame(maxWidth: cardWidth
+    /// * 0.85)` would stretch the bubble to that whole 85% column even for
+    /// short messages (see screenshot 2026-05-21 12:16:57). Pass the
+    /// allowed bubble interior width here so wrapping and the reported
+    /// ideal width both respect it.
+    var hugContentMaxWidth: CGFloat?
     /// Appended to the NSTextView's right-click menu as "Open as Report"
     /// when non-nil. Mirrors the SwiftUI `.contextMenu` action the bubble
     /// view used to attach — that modifier no longer covers the text region
@@ -85,18 +93,29 @@ struct PickyMarkdownInlineTextView: NSViewRepresentable {
         context: Context
     ) -> CGSize? {
         let proposedWidth = proposal.width ?? .greatestFiniteMagnitude
-        let availableWidth = proposedWidth.isFinite ? proposedWidth : .greatestFiniteMagnitude
-        let measured = nsView.measureUsedSize(forWidth: availableWidth)
-        let height = ceil(measured.height)
+        let proposedFinite = proposedWidth.isFinite ? proposedWidth : .greatestFiniteMagnitude
+
         if fillsAvailableWidth {
-            return CGSize(width: availableWidth, height: height)
-        } else {
-            // Hug content but never exceed the proposal — a single long
-            // line clipped by the bubble's outer .frame stays inside the
-            // bubble background even though its natural width is wider.
-            let width = min(ceil(measured.width), availableWidth)
-            return CGSize(width: width, height: height)
+            // Stretch to the SwiftUI-allotted column (agent bubble case).
+            let measured = nsView.measureUsedSize(forWidth: proposedFinite)
+            return CGSize(width: proposedFinite, height: ceil(measured.height))
         }
+
+        // Hug content. The cap is the explicit `hugContentMaxWidth` when
+        // the caller passed one (user bubble path: bubble interior width);
+        // otherwise fall back to whatever SwiftUI proposed. Layout once at
+        // the cap so the measured width reflects post-wrap reality, then
+        // report that width as the wrapper's ideal so the parent
+        // `.frame(maxWidth:)` does not stretch the bubble background.
+        let cap: CGFloat
+        if let hugCap = hugContentMaxWidth, hugCap.isFinite, hugCap > 0 {
+            cap = min(hugCap, proposedFinite)
+        } else {
+            cap = proposedFinite
+        }
+        let measured = nsView.measureUsedSize(forWidth: cap)
+        let width = min(ceil(measured.width), cap)
+        return CGSize(width: width, height: ceil(measured.height))
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {

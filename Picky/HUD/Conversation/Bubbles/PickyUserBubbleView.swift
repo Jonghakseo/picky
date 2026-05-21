@@ -22,6 +22,7 @@ struct PickyUserBubbleView: View {
                 PickyConversationMarkdownText(
                     markdown: displayedMarkdownPreview,
                     fillsAvailableWidth: false,
+                    hugContentMaxWidth: bubbleMarkdownMaxWidth,
                     onOpenAsReport: textViewOpenAsReportAction
                 )
                 .multilineTextAlignment(.leading)
@@ -84,6 +85,16 @@ struct PickyUserBubbleView: View {
         if let onOpenAsReport, PickyAgentResponsePreview.isTruncated(message.text ?? "") {
             Button("Open as Report", action: onOpenAsReport)
         }
+    }
+
+    /// Width budget passed into the markdown wrapper as its hug-fit cap.
+    /// Matches the bubble's outer `.frame(maxWidth: pickyHUDDetailWidth *
+    /// 0.85)` minus the bubble's horizontal padding so the NSTextView
+    /// inside reports its ideal width correctly and the bubble background
+    /// hugs short messages instead of stretching to the full 85% column.
+    private var bubbleMarkdownMaxWidth: CGFloat {
+        let bubbleHorizontalPadding: CGFloat = 20 // 10 leading + 10 trailing
+        return max(0, pickyHUDDetailWidth * 0.85 - bubbleHorizontalPadding)
     }
 
     /// Mirrors the SwiftUI `.contextMenu` "Open as Report" gate so the

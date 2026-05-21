@@ -23,6 +23,12 @@ struct PickyConversationMarkdownText: View {
     /// Centralized in `PickyAgentResponsePreview` so the hover "open as report"
     /// gate can predict the same per-block truncation the renderer applies.
     var codeBlockMaxLines: Int = PickyAgentResponsePreview.codeBlockMaxLines
+    /// Hug-fit width cap forwarded to the inline NSTextView wrapper when
+    /// `fillsAvailableWidth == false`. Without this, the wrapper would
+    /// inherit the parent's full width proposal as its ideal size and
+    /// stretch the user bubble background to the entire 85% card column
+    /// regardless of how short the message text is.
+    var hugContentMaxWidth: CGFloat?
     /// Forwarded into the inline NSTextView wrapper's right-click menu when
     /// non-nil. Bubble views pass their existing "Open as Report" closure
     /// through so the in-text menu offers the same shortcut their SwiftUI
@@ -118,6 +124,7 @@ struct PickyConversationMarkdownText: View {
             PickyMarkdownInlineTextView(
                 blocks: blocks,
                 fillsAvailableWidth: fillsAvailableWidth,
+                hugContentMaxWidth: hugContentMaxWidth,
                 onOpenAsReport: onOpenAsReport
             )
             .fixedSize(horizontal: false, vertical: true)

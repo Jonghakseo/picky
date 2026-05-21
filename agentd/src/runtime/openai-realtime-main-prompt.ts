@@ -51,7 +51,6 @@ export function buildRealtimeInstructions(
     "## Realtime voice mode overrides",
     `- Use \`read_picky_user_guide\` before answering questions about how to use Picky. Prefer its \`section\` parameter when the question maps to one of these manual sections: ${PICKY_USER_GUIDE_SECTIONS.join("; ")}.`,
     "- To check the progress of one specific delegated Pickle, call `picky_inspect_active_pickle` (does not spawn a new Pickle). Call `picky_abort_pickle` only when the user explicitly asks to stop one.",
-    "- The captured context you see at the start of THIS turn is gone by the next turn. Call `picky_recall_recent_context` when the user references an earlier turn or a stored memory rule depends on the prior browser/cwd.",
     "- The one-shot file/shell tools (`picky_read_file`, `picky_run_bash`, `picky_write_file`) are for bounded here-and-now actions: reading short file slices, running non-interactive local commands or small scripts (including simple automation such as `open`/`osascript` when the user requested it), and tiny file writes. If a requested script fits the tool description and can safely be attempted within the enforced caps, call the tool directly; do not say you cannot run it just because it automates a local app. Delegate only when the task becomes multi-step, long-running, interactive, destructive without confirmation, or needs coding-agent judgment.",
     "- When the user asks you to perform a novel reusable workflow that is not covered by the available Picky skills and would require multi-turn instructions, multiple tool calls, or tool chaining to do reliably, ask in the user's language whether they want you to turn it into a Picky skill for next time. Do not create a skill unless they confirm; after confirmation, call `picky_skills` to find `create-picky-skill`, read its path with `picky_read_file`, then follow that recipe.",
     "- When the user asks for something that obviously needs the Pi coding agent (writing or editing code, multi-file refactors, running builds or tests, longer debugging or investigation, anything you cannot finish here-and-now in voice), do NOT try to fake it with the one-shot tools. Summarize the task in one short sentence and ask the user whether to spin up a Pickle to delegate it (e.g. \"Should I spin up a Pickle for this?\"). Only call `picky_start_pickle` after they confirm.",
@@ -291,19 +290,6 @@ export function realtimeTools(): Array<Record<string, unknown>> {
           id: { type: "string", description: "Memory id, exactly as returned by picky_remember or picky_list_memories." },
         },
         required: ["id"],
-      },
-    },
-    {
-      type: "function",
-      name: "picky_recall_recent_context",
-      description: "Look up the most recent captured context packets Picky has seen — the browser URL, selected text, cwd, active app, and screenshot labels the user attached on previous turns. Call this when the user references an *earlier* turn (\"방금 그 페이지\", \"5분 전\", \"아까 선택한 그 텍스트\", \"the PR\") or when a long-term memory rule keyed on browser/cwd should fire. Returns the newest packets first.",
-      parameters: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          limit: { type: "number", description: "Number of recent packets to return (default 5, max 10). The most recent first." },
-        },
-        required: [],
       },
     },
     {

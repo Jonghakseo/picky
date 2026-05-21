@@ -49,7 +49,7 @@ description: <one sentence; when to invoke and what to do — shown in the sessi
 
 ## What to do
 1. Step the realtime agent should follow.
-2. Reference Picky tools by name when relevant (`picky_start_pickle`, `picky_steer_pickle`, `picky_recall_recent_context`, `picky_remember`, ...).
+2. Reference Picky tools by name when relevant (`picky_start_pickle`, `picky_steer_pickle`, `picky_remember`, ...).
 3. Keep it under ~30 lines. Long workflows belong inside a Pickle's instructions.
 
 ## What NOT to do

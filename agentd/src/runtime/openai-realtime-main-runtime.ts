@@ -92,10 +92,6 @@ interface OpenAIRealtimeToolHandlers {
   updateUserFact(request: { id: string; content: string }): Promise<{ ok: true; memory: { id: string; content: string } } | { ok: false; error: string }>;
   forgetUserFact(request: { id: string }): Promise<{ ok: true; removed: { id: string; content: string } } | { ok: false; error: string }>;
   listUserFacts(): Promise<Array<{ id: string; content: string }>> | Array<{ id: string; content: string }>;
-  /** Recent captured context packets for `picky_recall_recent_context`. Newest-first.
-   *  The runtime only converts the packets to a textual summary before sending
-   *  them to the model — binary screenshot data is never forwarded. */
-  recallRecentMainContext(request: { limit?: number }): PickyContextPacket[] | Promise<PickyContextPacket[]>;
   /** Look up one Pickle session by id for `picky_inspect_active_pickle`. Returns
    *  the supervisor's authoritative in-memory snapshot or undefined when the id
    *  is unknown (the tool surface treats undefined as an error). */
@@ -136,7 +132,6 @@ type RealtimeToolName =
   | "picky_list_memories"
   | "picky_update_memory"
   | "picky_forget"
-  | "picky_recall_recent_context"
   | "picky_inspect_active_pickle"
   | "picky_abort_pickle"
   | "picky_unarchive_pickle"
@@ -1272,11 +1267,6 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
         return this.options.toolHandlers.updateUserFact({ id: stringArg(args, "id"), content: stringArg(args, "content") });
       case "picky_forget":
         return this.options.toolHandlers.forgetUserFact({ id: stringArg(args, "id") });
-      case "picky_recall_recent_context": {
-        const limit = numberArg(args, "limit");
-        const packets = await this.options.toolHandlers.recallRecentMainContext({ limit });
-        return summarizeRealtimeRecentContexts(packets);
-      }
       case "picky_inspect_active_pickle": {
         const sessionId = stringArg(args, "sessionId");
         const session = await this.options.toolHandlers.inspectPickleSession({ sessionId });
@@ -1747,46 +1737,6 @@ function summarizeRealtimePickleSteerSession(_session: PickyAgentSession): Realt
   return { message: "Steering sent to Pickle" };
 }
 
-/** Compact one PickyContextPacket into a text-only structure safe to send back
- *  to the model. Screenshot binary data is dropped; only the labels survive so
- *  the model can say "the page you had open at 12:34" without us blowing the
- *  conversation token budget. */
-function summarizeRealtimeRecentContext(packet: PickyContextPacket): Record<string, unknown> {
-  const summary: Record<string, unknown> = {
-    id: packet.id,
-    source: packet.source,
-    capturedAt: packet.capturedAt,
-  };
-  if (packet.cwd) summary.cwd = packet.cwd;
-  if (packet.activeApp?.name) summary.activeApp = packet.activeApp.name;
-  if (packet.activeWindow?.title) summary.activeWindowTitle = packet.activeWindow.title;
-  if (packet.browser?.url || packet.browser?.title) {
-    summary.browser = {
-      ...(packet.browser?.url ? { url: packet.browser.url } : {}),
-      ...(packet.browser?.title ? { title: packet.browser.title } : {}),
-    };
-  }
-  if (packet.selectedText) {
-    const compact = packet.selectedText.replace(/\s+/g, " ").trim();
-    summary.selectedTextPreview = compact.length > 200 ? `${compact.slice(0, 197)}...` : compact;
-  }
-  if (packet.screenshots.length > 0) {
-    summary.screenshots = packet.screenshots.map((s) => ({
-      label: s.label,
-      ...(s.screenId ? { screenId: s.screenId } : {}),
-      ...(s.isCursorScreen ? { isCursorScreen: true } : {}),
-    }));
-  }
-  if (packet.inkMarks.length > 0) summary.inkMarkCount = packet.inkMarks.length;
-  const transcriptCompact = packet.transcript?.replace(/\s+/g, " ").trim();
-  if (transcriptCompact) summary.transcriptPreview = transcriptCompact.length > 200 ? `${transcriptCompact.slice(0, 197)}...` : transcriptCompact;
-  return summary;
-}
-
-function summarizeRealtimeRecentContexts(packets: PickyContextPacket[]): { count: number; contexts: Record<string, unknown>[] } {
-  return { count: packets.length, contexts: packets.map(summarizeRealtimeRecentContext) };
-}
-
 /** Compact inspection summary for one Pickle session. Includes status, last
  *  summary line, the 5 most recent tool calls (name + status), and the changed
  *  files list (path + insertion/deletion counts when present). Everything
@@ -2034,7 +1984,6 @@ function normalizeToolName(name: string): RealtimeToolName | undefined {
     case "picky_list_memories":
     case "picky_update_memory":
     case "picky_forget":
-    case "picky_recall_recent_context":
     case "picky_inspect_active_pickle":
     case "picky_abort_pickle":
     case "picky_unarchive_pickle":

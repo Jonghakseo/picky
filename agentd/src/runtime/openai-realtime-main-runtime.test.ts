@@ -1423,15 +1423,13 @@ describe("OpenAIRealtimeMainRuntime user memory tools", () => {
   });
 });
 
-describe("OpenAIRealtimeMainRuntime context recall + pickle tools", () => {
-  // These three tools share one design goal: let the model answer follow-up
-  // questions about *earlier* state without spawning a new Pickle. The tests
-  // pin the contracts that matter to the user-facing behaviour: the tools are
-  // declared on the session, the runtime relays them to the right supervisor
-  // method, and the result shape stays text-only so the conversation token
-  // budget stays bounded.
+describe("OpenAIRealtimeMainRuntime pickle tools", () => {
+  // These tools let the model answer questions about delegated Pickles without
+  // spawning another Pickle. The tests pin the contracts that matter to the
+  // user-facing behaviour: the tools are declared on the session and the
+  // runtime relays them to the right supervisor method.
 
-  it("declares the three new tools on session.update.tools", async () => {
+  it("declares the Pickle tools on session.update.tools", async () => {
     const socket = new FakeRealtimeSocket();
     const runtime = new OpenAIRealtimeMainRuntime({
       toolHandlers: fakeToolHandlers(),
@@ -1443,60 +1441,9 @@ describe("OpenAIRealtimeMainRuntime context recall + pickle tools", () => {
       .map((raw) => JSON.parse(raw) as Record<string, any>)
       .find((event) => event.type === "session.update")!;
     const toolNames = sessionUpdate.session.tools.map((t: any) => t.name);
-    expect(toolNames).toContain("picky_recall_recent_context");
     expect(toolNames).toContain("picky_inspect_active_pickle");
     expect(toolNames).toContain("picky_abort_pickle");
-  });
-
-  it("routes picky_recall_recent_context through recallRecentMainContext and strips screenshot bytes from the result", async () => {
-    const socket = new FakeRealtimeSocket();
-    let limitReceived: number | undefined;
-    const recentPacket: PickyContextPacket = {
-      id: "ctx-prev",
-      source: "voice",
-      capturedAt: "2026-05-19T12:00:00.000Z",
-      cwd: "/tmp/picky",
-      transcript: "이 페이지 어떻게 봐?",
-      activeApp: { name: "Safari" },
-      activeWindow: { title: "OpenAI Realtime guide" },
-      browser: { url: "https://platform.openai.com/docs/realtime", title: "Realtime API" },
-      selectedText: "This is the selected snippet ".repeat(20),
-      screenshots: [{ label: "screen-1", path: "/tmp/shot.png", screenId: "display-1", isCursorScreen: true } as PickyContextPacket["screenshots"][number]],
-      inkMarks: [],
-      warnings: [],
-    };
-    const runtime = new OpenAIRealtimeMainRuntime({
-      toolHandlers: {
-        ...fakeToolHandlers(),
-        recallRecentMainContext({ limit }: { limit?: number }) { limitReceived = limit; return [recentPacket]; },
-      },
-      defaultConfig: { provider: "openai", apiKey: "sk-test", modelOrDeployment: "gpt-realtime-2", voice: "marin" },
-      webSocketFactory: () => socket,
-    });
-    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
-    socket.serverEvent({
-      type: "response.output_item.done",
-      item: { type: "function_call", name: "picky_recall_recent_context", call_id: "call-recall", arguments: JSON.stringify({ limit: 3 }) },
-    });
-    await settle();
-
-    expect(limitReceived).toBe(3);
-    const fnOutput = socket.sent
-      .map((raw) => JSON.parse(raw) as Record<string, any>)
-      .find((event) => event.type === "conversation.item.create" && event.item?.type === "function_call_output");
-    expect(fnOutput).toBeTruthy();
-    const output = JSON.parse(fnOutput!.item.output);
-    expect(output.count).toBe(1);
-    expect(output.contexts).toHaveLength(1);
-    const c = output.contexts[0];
-    expect(c.id).toBe("ctx-prev");
-    expect(c.browser.url).toBe("https://platform.openai.com/docs/realtime");
-    expect(c.activeApp).toBe("Safari");
-    expect(c.screenshots).toEqual([{ label: "screen-1", screenId: "display-1", isCursorScreen: true }]);
-    // Long selectedText gets truncated to the 200-char preview cap.
-    expect(c.selectedTextPreview.length).toBeLessThanOrEqual(200);
-    // Binary path field must not leak into the tool result.
-    expect(JSON.stringify(c.screenshots[0])).not.toContain("/tmp/shot.png");
+    expect(toolNames).not.toContain("picky_recall_recent_context");
   });
 
   it("routes picky_inspect_active_pickle through inspectPickleSession and returns a compact summary", async () => {
@@ -1953,7 +1900,6 @@ function fakeToolHandlers() {
     async updateUserFact({ id, content }: { id: string; content: string }) { return { ok: true as const, memory: { id, content } }; },
     async forgetUserFact({ id }: { id: string }) { return { ok: true as const, removed: { id, content: "" } }; },
     listUserFacts() { return [] as Array<{ id: string; content: string }>; },
-    recallRecentMainContext() { return [] as PickyContextPacket[]; },
     inspectPickleSession() { return session; },
     async abortPickleSession() { return { ...session, status: "cancelled" as const }; },
     async unarchivePickleSession() { return { ...session, archived: false }; },

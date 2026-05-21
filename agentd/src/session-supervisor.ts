@@ -85,15 +85,6 @@ export class SessionSupervisor extends EventEmitter {
   private mainThinkingLevel?: ThinkingLevel;
   private mainDraft = "";
   private mainContext?: PickyContextPacket;
-  /** Short ring buffer of the most recent main-agent context packets. The
-   * `mainContext` field is a single slot — once the next turn starts, the
-   * previous packet's URL / selectedText / screenshot metadata is gone unless
-   * the model captured those facts in its transcript. This history backs the
-   * `picky_recall_recent_context` tool so the model can answer
-   * "방금 그 페이지", "5분 전 내 화면" style follow-ups (and so memory-based
-   * rules anchored on browser/cwd can fire on the very next turn). Bounded to
-   * MAIN_CONTEXT_HISTORY_LIMIT so token budget stays predictable. */
-  private mainContextHistory: PickyContextPacket[] = [];
   private mainState: PickyMainAgentState = { messages: [] };
   private mainReplyContextId = "main";
   private mainIsProcessing = false;
@@ -686,39 +677,6 @@ export class SessionSupervisor extends EventEmitter {
     return randomUUID().replace(/-/g, "").slice(0, 12);
   }
 
-  // ----- Recent main-agent context history -----
-  //
-  // Every time main routes a fresh PickyContextPacket (PTT begin, route, text
-  // submit) we keep a short ring buffer of the packet so the Realtime model
-  // can answer follow-ups that reference an *earlier* turn's browser URL /
-  // selectedText / screenshot label without us having to re-capture. The
-  // current `mainContext` field is a single slot — it gets clobbered on every
-  // new turn — which is fine for the current turn's runtime but useless when
-  // the user says "방금 그 페이지" two turns later. The model gets a textual
-  // summary (no screenshot bytes) so the conversation token budget stays
-  // bounded.
-
-  private setMainContext(context: PickyContextPacket): void {
-    this.mainContext = context;
-    // Same context id (e.g. when commit reuses the begin context) shouldn't
-    // appear twice in the buffer. Drop any prior occurrence and append fresh
-    // so the most recent reference stays at the tail.
-    this.mainContextHistory = this.mainContextHistory.filter((p) => p.id !== context.id);
-    this.mainContextHistory.push(context);
-    if (this.mainContextHistory.length > MAIN_CONTEXT_HISTORY_LIMIT) {
-      this.mainContextHistory.splice(0, this.mainContextHistory.length - MAIN_CONTEXT_HISTORY_LIMIT);
-    }
-  }
-
-  /** Newest-first slice of the captured context history, up to `limit` items
-   *  (clamped to MAIN_CONTEXT_HISTORY_LIMIT). Returns the bare packets; the
-   *  Realtime runtime is responsible for summarising them for the model so
-   *  binary screenshot data never enters the conversation. */
-  recallRecentMainContext(limit = MAIN_CONTEXT_HISTORY_LIMIT): PickyContextPacket[] {
-    const clamped = Math.min(Math.max(1, Math.floor(limit)), MAIN_CONTEXT_HISTORY_LIMIT);
-    return this.mainContextHistory.slice(-clamped).reverse();
-  }
-
   // ----- Pickle inspection -----
   //
   // `picky_pickle_sessions` is a list. When the user asks "how's that pickle
@@ -736,7 +694,7 @@ export class SessionSupervisor extends EventEmitter {
     const runtime = this.requireMainRealtimeRuntime();
     await this.ensurePrewarmedMainHandle(context.cwd ?? process.cwd());
     this.beginMainTurn(context.id);
-    this.setMainContext(context);
+    this.mainContext = context;
     this.activeMainRealtimeInputId = inputId;
     this.mainIsProcessing = true;
     await runtime.beginMainRealtimeVoiceTurn({ inputId, context });
@@ -752,7 +710,7 @@ export class SessionSupervisor extends EventEmitter {
     if (context) {
       await this.ensurePrewarmedMainHandle(context.cwd ?? process.cwd());
       this.beginMainTurn(context.id);
-      this.setMainContext(context);
+      this.mainContext = context;
       this.activeMainRealtimeInputId = inputId;
     }
     await runtime.commitMainRealtimeVoiceTurn(inputId, context);
@@ -1169,7 +1127,7 @@ export class SessionSupervisor extends EventEmitter {
     await this.maybeRolloverMainAgent(context);
     const generation = this.mainHandleGeneration;
     this.beginMainTurn(context.id);
-    this.setMainContext(context);
+    this.mainContext = context;
     const prompt = buildMainAgentPrompt(context);
     // Append the user message to mainState.messages AFTER deliverMainPrompt
     // resolves. The realtime runtime calls ensureConnected() inside
@@ -3215,11 +3173,6 @@ function normalizeSlashCommands(commands: RuntimeSlashCommand[]): RuntimeSlashCo
 }
 
 const MAIN_AGENT_MESSAGE_LIMIT = 100;
-/** How many of the most recent main-agent PickyContextPacket entries we keep
- * for `picky_recall_recent_context`. The packets are inlined into a single
- * tool result so the conversation token cost is bounded — 10 entries average
- * ~80 chars of summary each, well under 1k tokens. */
-const MAIN_CONTEXT_HISTORY_LIMIT = 10;
 // User-memory caps. Items are inlined into every Realtime session.update so
 // the instruction budget needs to stay bounded. 50 items × 500 chars = 25k
 // chars worst-case, but the total cap of 4k chars is the actual gate: once

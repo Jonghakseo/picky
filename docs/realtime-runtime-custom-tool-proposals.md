@@ -39,35 +39,7 @@ Realtime 메인은 다음 네 가지 강점에서 Pi 메인과 다릅니다:
 
 ## 1. 우선순위 A — 즉시 추가 가치가 큰 도구
 
-### 1.1 `picky_recall_recent_context`
-
-**한 줄**: 사용자가 "방금 그거", "5분 전 본 화면", "그 PR" 같이 가까운 과거를
-가리킬 때, 메인이 captured context 의 최근 N개를 직접 조회.
-
-**왜 필요한가**: Transcript-only 모델 + 60분 rollover 때문에 메인은 자기
-이전 대화의 텍스트만 갖고 있고 첨부된 screenshot, browser URL, selected text
-등은 잃습니다. Pickle 에 매번 위임해서 다시 캡처시키는 건 과함.
-
-**제안 시그니처**:
-
-```ts
-{ name: "picky_recall_recent_context",
-  description: "Look up the last N captured context packets (browser URL, selected text, screenshot label, cwd) the user submitted to Picky in this session.",
-  parameters: { limit: number (default 5, max 20), source?: "voice" | "text" | "cli" | "quickInput" } }
-```
-
-**구현 노트**:
-
-- `mainState.contextHistory` 같은 짧은 ring buffer 를 supervisor 에 추가
-- 도구 결과는 textOnly summary (URL/path/cwd 등 식별자만, screenshot 바이너리는 제외)
-- 비용: 1 turn 당 수십 토큰 추가
-
-**위험**: 사용자가 "내 화면 본 거 기억해?" 라고 물을 때마다 호출되면 quota 낭비
-가능. 모델이 적절히 호출하도록 instruction 에 명시 필요.
-
----
-
-### 1.2 `picky_ask_user_confirm`
+### 1.1 `picky_ask_user_confirm`
 
 **한 줄**: 모델이 발화 중에 사용자에게 짧은 yes/no 또는 2~3 선택지를 시각적으로 묻고, 답이 오면 같은 턴 안에서 응답을 이어감.
 
@@ -97,7 +69,7 @@ Realtime 메인은 다음 네 가지 강점에서 Pi 메인과 다릅니다:
 
 ---
 
-### 1.3 `picky_show_link_or_path`
+### 1.2 `picky_show_link_or_path`
 
 **한 줄**: 모델이 음성으로 발화할 수 없는 URL/file path 를 화면 위 작은 chip 으로 띄움 (클립보드 복사 가능).
 
@@ -315,13 +287,12 @@ Realtime 메인은 다음 네 가지 강점에서 Pi 메인과 다릅니다:
 
 가장 적은 코드/risk 대비 사용자 가치가 큰 순서:
 
-1. **1.3 `picky_show_link_or_path`** — 결정 1 으로 인해 URL 발화 못 함 → 가장 시급한 보강
-2. **1.1 `picky_recall_recent_context`** — Realtime 의 transcript-only 모델의 누락 컨텍스트 회복
-3. **2.2 `picky_inspect_active_pickle`** — 사용자 "어떻게 돼가?" 류 빈도 높음
-4. **2.3 `picky_quick_clipboard_get/put`** — 단순/높은 가치, redact 만 신경
-5. **1.2 `picky_ask_user_confirm`** — UI 추가 필요, 디자인 시간 필요
-6. **2.1 `picky_get_current_time_context`** — 도구 vs 정적 hint 결정 후
-7. 3.x / 4.x — 별도 PR
+1. **1.2 `picky_show_link_or_path`** — 결정 1 으로 인해 URL 발화 못 함 → 가장 시급한 보강
+2. **2.2 `picky_inspect_active_pickle`** — 사용자 "어떻게 돼가?" 류 빈도 높음
+3. **2.3 `picky_quick_clipboard_get/put`** — 단순/높은 가치, redact 만 신경
+4. **1.1 `picky_ask_user_confirm`** — UI 추가 필요, 디자인 시간 필요
+5. **2.1 `picky_get_current_time_context`** — 도구 vs 정적 hint 결정 후
+6. 3.x / 4.x — 별도 PR
 
 각 항목별로 별도 PR 권장. 한 PR 에 여러 도구를 묶으면 prompt budget / 회귀
 범위가 커집니다.

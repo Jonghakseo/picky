@@ -121,13 +121,29 @@ struct PickyConversationMarkdownText: View {
     private func groupView(_ group: BlockGroup) -> some View {
         switch group {
         case .inline(let blocks):
+            // Horizontal axis: when we want to hug content (user bubble),
+            // pin the wrapper to its ideal width via fixedSize so SwiftUI
+            // does not feed it the full parent proposal and stretch the
+            // bubble background to the 85% card column. The wrapper's
+            // `sizeThatFits` already lays out at `hugContentMaxWidth` and
+            // reports the measured glyph width as its ideal, so the
+            // resulting bubble width is min(measured, cap) — short
+            // messages hug, long messages wrap at the cap.
+            //
+            // Agent bubble keeps `fillsAvailableWidth = true` and the
+            // horizontal axis unfixed so it continues to stretch to the
+            // SwiftUI-allotted column. Macroscopic regression history:
+            // commits 66cb4a0d and 23c2f321 fixed the wrapper's reported
+            // size but not this axis override; on macOS 26.x the parent's
+            // proposal still won, which is what the user reported in the
+            // 2026-05-21 screenshot.
             PickyMarkdownInlineTextView(
                 blocks: blocks,
                 fillsAvailableWidth: fillsAvailableWidth,
                 hugContentMaxWidth: hugContentMaxWidth,
                 onOpenAsReport: onOpenAsReport
             )
-            .fixedSize(horizontal: false, vertical: true)
+            .fixedSize(horizontal: !fillsAvailableWidth, vertical: true)
         case .table(let headers, let rows):
             tableBlockView(headers: headers, rows: rows)
         case .codeBlock(let text):

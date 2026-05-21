@@ -38,7 +38,7 @@ struct PickyUserBubblePixelWidthTests {
     /// the assertion meaningful: the stretching only happens through the
     /// bubble's outer VStack + padding + background + `.frame(maxWidth:)`
     /// envelope, not the markdown view in isolation.
-    private func layoutBubble(text: String, cardWidth: CGFloat) throws -> SelfSizingMarkdownTextView {
+    private func layoutBubble(text: String, cardWidth: CGFloat) throws -> PickyUserBubbleSurfaceNSView {
         // Mount the full `PickyConversationCardView` so any wrapping that
         // surrounds the user bubble in production (turn cards, list scroll
         // view, card padding, environment overrides) is part of the layout
@@ -96,22 +96,24 @@ struct PickyUserBubblePixelWidthTests {
         let host = NSHostingView(rootView: card)
         host.frame = NSRect(x: 0, y: 0, width: cardWidth, height: 800)
         host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        host.layoutSubtreeIfNeeded()
 
-        let wrappers = collectSelfSizingTextViews(host)
-        #expect(wrappers.count >= 1, "expected at least one inline NSTextView wrapper in the conversation card")
-        return try #require(wrappers.first)
+        let surfaces = collectUserBubbleSurfaces(host)
+        #expect(surfaces.count >= 1, "expected at least one AppKit user bubble surface in the conversation card")
+        return try #require(surfaces.first)
     }
 
     @Test func shortUserMessageHugsToTextWidthInsteadOfStretchingToFullColumn() throws {
         let cardWidth: CGFloat = 600
         let cap = bubbleInteriorCap(forCardWidth: cardWidth)
-        let wrapper = try layoutBubble(text: "수정해줘.", cardWidth: cardWidth)
+        let surface = try layoutBubble(text: "수정해줘.", cardWidth: cardWidth)
 
         // "수정해줘." renders at body size; its glyph run is comfortably
         // under 120pt at the body font. A regression that stretches the
-        // bubble to the full 85% column ends up at ~`cap` (≈490pt here),
-        // which is well outside this allowance.
-        let actual = wrapper.frame.width
+        // visual bubble to the full 85% column ends up near the outer cap
+        // (≈510pt here), which is well outside this allowance.
+        let actual = surface.lastBubbleRect.width
         #expect(
             actual < 200,
             "short user message should hug its text width, but the wrapper laid out at \(actual)pt (cap=\(cap)pt)"
@@ -125,23 +127,23 @@ struct PickyUserBubblePixelWidthTests {
             repeating: "이것은 충분히 긴 한 줄짜리 사용자 메시지입니다. ",
             count: 8
         )
-        let wrapper = try layoutBubble(text: longText, cardWidth: cardWidth)
+        let surface = try layoutBubble(text: longText, cardWidth: cardWidth)
 
-        // Long content should fill (and wrap at) the bubble interior cap —
-        // never wider, never the full column either (we have padding).
-        let actual = wrapper.frame.width
-        #expect(actual <= cap + 1, "long message must not exceed the bubble interior cap (cap=\(cap), got \(actual))")
-        #expect(actual > cap * 0.7, "long message should consume most of the bubble interior cap (cap=\(cap), got \(actual))")
+        // Long content should fill (and wrap at) the bubble cap — never wider.
+        let actual = surface.lastBubbleRect.width
+        let outerCap = cardWidth * 0.85
+        #expect(actual <= outerCap + 1, "long message must not exceed the bubble cap (cap=\(outerCap), got \(actual))")
+        #expect(actual > cap * 0.7, "long message should consume most of the bubble cap (interior cap=\(cap), got \(actual))")
     }
 }
 
-private func collectSelfSizingTextViews(_ root: NSView) -> [SelfSizingMarkdownTextView] {
-    var out: [SelfSizingMarkdownTextView] = []
-    if let match = root as? SelfSizingMarkdownTextView {
+private func collectUserBubbleSurfaces(_ root: NSView) -> [PickyUserBubbleSurfaceNSView] {
+    var out: [PickyUserBubbleSurfaceNSView] = []
+    if let match = root as? PickyUserBubbleSurfaceNSView {
         out.append(match)
     }
     for sub in root.subviews {
-        out.append(contentsOf: collectSelfSizingTextViews(sub))
+        out.append(contentsOf: collectUserBubbleSurfaces(sub))
     }
     return out
 }

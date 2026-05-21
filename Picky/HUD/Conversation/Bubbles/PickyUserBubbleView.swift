@@ -18,50 +18,19 @@ struct PickyUserBubbleView: View {
     var body: some View {
         HStack {
             Spacer(minLength: 48)
-            VStack(alignment: .leading, spacing: 4) {
-                PickyConversationMarkdownText(
-                    markdown: displayedMarkdownPreview,
-                    fillsAvailableWidth: false,
-                    hugContentMaxWidth: bubbleMarkdownMaxWidth,
-                    onOpenAsReport: textViewOpenAsReportAction
-                )
-                .multilineTextAlignment(.leading)
-                if let displayedAttachedImagesLabel {
-                    Text(displayedAttachedImagesLabel)
-                        .font(PickyHUDTypography.minimumMedium)
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .help("Screenshots from the current display were attached to this message as model context.")
-                }
-                if let originLabel {
-                    Text(originLabel)
-                        .font(PickyHUDTypography.minimumMedium)
-                        .foregroundColor(DS.Colors.textTertiary)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(
-                userBubbleShape
-                    .fill(bubbleFill)
+            PickyUserBubbleSurfaceView(
+                markdown: displayedMarkdownPreview,
+                attachedImagesLabel: displayedAttachedImagesLabel,
+                originLabel: originLabel,
+                isPiExtensionMessage: isPiExtensionMessage,
+                maxBubbleWidth: bubbleMaxWidth,
+                onOpenAsReport: textViewOpenAsReportAction,
+                onCopyText: copyTextAction,
+                onEditText: editTextAction
             )
-            // Clip content to the bubble shape so that any text-selection focus
-            // re-measurement (`.textSelection(.enabled)` can ignore SwiftUI line
-            // limits on macOS) can't visibly overflow the rounded background.
-            .clipShape(userBubbleShape)
-            .contextMenu { contextMenuItems }
-            .frame(maxWidth: pickyHUDDetailWidth * 0.85, alignment: .trailing)
+            .frame(width: bubbleMaxWidth, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
-    }
-
-    private var userBubbleShape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            topLeadingRadius: 12,
-            bottomLeadingRadius: 12,
-            bottomTrailingRadius: 4,
-            topTrailingRadius: 12,
-            style: .continuous
-        )
     }
 
     var displayedOriginLabel: String? { originLabel }
@@ -74,27 +43,18 @@ struct PickyUserBubbleView: View {
         return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
     }
 
-    @ViewBuilder
-    private var contextMenuItems: some View {
-        if let actionText, let onCopyText {
-            Button("Copy Text") { onCopyText(actionText) }
-        }
-        if let actionText, let onEditText {
-            Button("Edit in Composer") { onEditText(actionText) }
-        }
-        if let onOpenAsReport, PickyAgentResponsePreview.isTruncated(message.text ?? "") {
-            Button("Open as Report", action: onOpenAsReport)
-        }
+    private var copyTextAction: (() -> Void)? {
+        guard let actionText, let onCopyText else { return nil }
+        return { onCopyText(actionText) }
     }
 
-    /// Width budget passed into the markdown wrapper as its hug-fit cap.
-    /// Matches the bubble's outer `.frame(maxWidth: pickyHUDDetailWidth *
-    /// 0.85)` minus the bubble's horizontal padding so the NSTextView
-    /// inside reports its ideal width correctly and the bubble background
-    /// hugs short messages instead of stretching to the full 85% column.
-    private var bubbleMarkdownMaxWidth: CGFloat {
-        let bubbleHorizontalPadding: CGFloat = 20 // 10 leading + 10 trailing
-        return max(0, pickyHUDDetailWidth * 0.85 - bubbleHorizontalPadding)
+    private var editTextAction: (() -> Void)? {
+        guard let actionText, let onEditText else { return nil }
+        return { onEditText(actionText) }
+    }
+
+    private var bubbleMaxWidth: CGFloat {
+        max(0, pickyHUDDetailWidth * 0.85)
     }
 
     /// Mirrors the SwiftUI `.contextMenu` "Open as Report" gate so the
@@ -108,11 +68,6 @@ struct PickyUserBubbleView: View {
 
     private var isPiExtensionMessage: Bool {
         message.originatedBy == .piExtension
-    }
-
-    private var bubbleFill: Color {
-        if isPiExtensionMessage { return DS.Colors.surface2.opacity(0.92) }
-        return DS.Colors.accentSubtle.opacity(0.95)
     }
 
     private var originLabel: String? {

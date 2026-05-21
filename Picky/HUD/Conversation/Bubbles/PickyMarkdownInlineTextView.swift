@@ -50,6 +50,8 @@ struct PickyMarkdownInlineTextView: NSViewRepresentable {
     /// view used to attach — that modifier no longer covers the text region
     /// once an NSTextView claims the click.
     var onOpenAsReport: (() -> Void)?
+    var onCopyText: (() -> Void)?
+    var onEditText: (() -> Void)?
 
     /// Vertical gap appended after every block except the last. Matches the
     /// `VStack(spacing: 5)` used by the previous SwiftUI composition so the
@@ -75,6 +77,8 @@ struct PickyMarkdownInlineTextView: NSViewRepresentable {
         view.fillsAvailableWidth = fillsAvailableWidth
         view.hugContentMaxWidth = hugContentMaxWidth
         view.onOpenAsReport = onOpenAsReport
+        view.onCopyText = onCopyText
+        view.onEditText = onEditText
     }
 
     /// Reports the layout-measured size for the SwiftUI parent's width
@@ -388,6 +392,8 @@ final class SelfSizingMarkdownTextView: NSTextView {
     }
 
     var onOpenAsReport: (() -> Void)?
+    var onCopyText: (() -> Void)?
+    var onEditText: (() -> Void)?
 
     init() {
         let storage = NSTextStorage()
@@ -499,8 +505,20 @@ final class SelfSizingMarkdownTextView: NSTextView {
     /// live in the SwiftUI `.contextMenu`.
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event) ?? NSMenu()
-        if onOpenAsReport != nil {
+        if onCopyText != nil || onEditText != nil || onOpenAsReport != nil {
             menu.addItem(.separator())
+        }
+        if onCopyText != nil {
+            let item = NSMenuItem(title: "Copy Text", action: #selector(copyTextClicked), keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+        if onEditText != nil {
+            let item = NSMenuItem(title: "Edit in Composer", action: #selector(editTextClicked), keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+        if onOpenAsReport != nil {
             let item = NSMenuItem(
                 title: "Open as Report",
                 action: #selector(openAsReportClicked),
@@ -510,6 +528,14 @@ final class SelfSizingMarkdownTextView: NSTextView {
             menu.addItem(item)
         }
         return menu
+    }
+
+    @objc private func copyTextClicked() {
+        onCopyText?()
+    }
+
+    @objc private func editTextClicked() {
+        onEditText?()
     }
 
     @objc private func openAsReportClicked() {

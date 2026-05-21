@@ -66,8 +66,11 @@ export function buildRealtimeInstructions(
     "",
     "## Long-term user memory",
     "- Memories below are always in scope; apply the relevant ones to your reply without being asked. Do not recite them back unless the user explicitly asks what you remember.",
+    "- Automatically maintain memory when you learn durable, reusable information: user preferences, standing rules, personal/project facts, stable identifiers, or new capabilities/workflows Picky can perform. The user does NOT need to say \"remember\" for these.",
+    "- If new information conflicts with or meaningfully refines an existing memory, call `picky_list_memories` to get the id and then `picky_update_memory` with the corrected self-contained statement. Add a new memory only when no existing memory should be updated.",
+    "- Do not store one-off task details, transient screen state, secrets, credentials, sensitive personal data, or raw logs. Use one concise concept per memory.",
     "- Trigger phrases to watch for: \"내 ~\", \"전에 말한\", \"기억하지\", \"우리가 정한\", \"my ~\", \"I told you\", \"we agreed\", or any identifier (name, handle, cwd, repo, URL) that overlaps with a stored item.",
-    "- IDs are not shown here; call `picky_list_memories` only when you need the id for `picky_update_memory` / `picky_forget` or when the user explicitly asks what you remember.",
+    "- IDs are not shown here; call `picky_list_memories` when you need the id for `picky_update_memory` / `picky_forget`, when checking for conflicts before storing, or when the user asks what you remember.",
   );
   if (userMemories.length === 0) {
     baseLines.push("- (No long-term memories stored yet.)");
@@ -247,7 +250,7 @@ export function realtimeTools(): Array<Record<string, unknown>> {
     {
       type: "function",
       name: "picky_remember",
-      description: "Persist a long-term fact, rule, or preference the user explicitly asked Picky to remember. Stored across sessions and shown to you on every reply via the Long-term user memory section in your instructions. Use ONLY when the user clearly asks to remember something (\"기억해\", \"remember that\", \"from now on...\"); never guess. One concept per call — split multiple ideas into multiple calls. Returns the assigned id so the user (or you, later) can update or forget it.",
+      description: "Persist a durable long-term fact, rule, preference, stable identifier, or reusable capability/workflow you learned. The user may explicitly ask to remember it, but explicit wording is NOT required when the information is clearly useful across future sessions. Before adding, prefer updating an existing related memory if the new information conflicts with or refines it. Never store one-off task details, secrets, credentials, sensitive personal data, or raw logs. One concise concept per call. Returns the assigned id so the user or you can update/forget it later.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -260,13 +263,13 @@ export function realtimeTools(): Array<Record<string, unknown>> {
     {
       type: "function",
       name: "picky_list_memories",
-      description: "List every long-term memory Picky has stored for this user, with their ids. Use this before picky_update_memory or picky_forget to obtain the right id, or when the user asks what you remember.",
+      description: "List every long-term memory Picky has stored for this user, with their ids. Use this before picky_update_memory or picky_forget, when checking whether newly learned information should update an existing memory instead of creating a duplicate, or when the user asks what you remember.",
       parameters: { type: "object", additionalProperties: false, properties: {}, required: [] },
     },
     {
       type: "function",
       name: "picky_update_memory",
-      description: "Replace the content of an existing long-term memory. Call picky_list_memories first if you do not already have the id. Use when the user says the previously remembered fact has changed.",
+      description: "Replace the content of an existing long-term memory. Call picky_list_memories first if you do not already have the id. Use proactively when newly learned durable information conflicts with, corrects, or meaningfully refines an existing memory; the user does not need to explicitly ask for the update.",
       parameters: {
         type: "object",
         additionalProperties: false,

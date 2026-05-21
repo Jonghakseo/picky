@@ -1170,6 +1170,9 @@ describe("OpenAIRealtimeMainRuntime user memory tools", () => {
       .find((event) => event.type === "session.update")!;
     const instructions: string = sessionUpdate.session.instructions;
     expect(instructions).toContain("## Long-term user memory");
+    expect(instructions).toContain("Automatically maintain memory when you learn durable, reusable information");
+    expect(instructions).toContain("The user does NOT need to say \"remember\"");
+    expect(instructions).toContain("If new information conflicts with or meaningfully refines an existing memory");
     expect(instructions).toContain("- User goes by 'Jong'");
     expect(instructions).toContain("- Treat \"이 페이지\"");
     expect(instructions).not.toContain("(id=mem-a)");
@@ -1213,11 +1216,14 @@ describe("OpenAIRealtimeMainRuntime user memory tools", () => {
     const sessionUpdate = socket.sent
       .map((raw) => JSON.parse(raw) as Record<string, any>)
       .find((event) => event.type === "session.update")!;
-    const toolNames = sessionUpdate.session.tools.map((t: any) => t.name);
+    const toolsByName = Object.fromEntries(sessionUpdate.session.tools.map((t: any) => [t.name, t]));
+    const toolNames = Object.keys(toolsByName);
     expect(toolNames).toContain("picky_remember");
     expect(toolNames).toContain("picky_list_memories");
     expect(toolNames).toContain("picky_update_memory");
     expect(toolNames).toContain("picky_forget");
+    expect(toolsByName.picky_remember.description).toContain("explicit wording is NOT required");
+    expect(toolsByName.picky_update_memory.description).toContain("Use proactively");
   });
 
   it("routes a picky_remember tool call through rememberUserFact and emits a function_call_output with the assigned id", async () => {

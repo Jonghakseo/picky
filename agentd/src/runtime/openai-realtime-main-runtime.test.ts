@@ -177,6 +177,8 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(toolNames).toContain("picky_write_file");
     expect(toolNames).not.toContain("picky_pointer_overlay");
     expect(sessionUpdate.session.instructions).toContain("Realtime voice mode overrides");
+    expect(sessionUpdate.session.instructions).toContain("novel reusable workflow");
+    expect(sessionUpdate.session.instructions).toContain("multi-turn instructions, multiple tool calls, or tool chaining");
     expect(sessionUpdate.session.instructions).toContain("picky_skills");
   });
 

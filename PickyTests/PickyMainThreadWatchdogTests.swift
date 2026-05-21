@@ -100,6 +100,35 @@ struct PickyMainThreadWatchdogTests {
         #expect(h.spinCount == 2)
     }
 
+    @Test("메인 큐 heartbeat가 1초 주기로 갱신되면 idle 상태에서도 spin 콜백 호출 안 함")
+    func mainQueueHeartbeatPreventsIdleFalsePositive() {
+        // Simulates the production behavior where the main-queue heartbeat
+        // timer fires at 1Hz even when the CFRunLoopObserver gets no
+        // beforeWaiting/afterWaiting callbacks (UIElement app idle in
+        // mach_msg). The utility poller should never see a stale heartbeat.
+        let h = TestHarness()
+        h.advance(by: 60) // past grace
+        for _ in 0..<10 {
+            h.heartbeat() // proxy for main-queue 1Hz heartbeat tick
+            h.advance(by: 1)
+            h.check()    // proxy for utility 1Hz poll
+        }
+        #expect(h.spinCount == 0)
+    }
+
+    @Test("메인 큐 heartbeat가 멈추면 utility 폴러가 spin 감지")
+    func mainQueueHeartbeatStallStillTriggers() {
+        // If main is truly pegged the main-queue timer also stops firing.
+        // Utility poller must still see the heartbeat go stale and trip.
+        let h = TestHarness()
+        h.advance(by: 60)
+        h.heartbeat()
+        // No further heartbeats — emulate main pegged.
+        h.advance(by: 6)
+        h.check()
+        #expect(h.spinCount == 1)
+    }
+
     @Test("sleep wake 통지 후 cooldown 동안은 spin 콜백 호출 안 함")
     func sleepCooldownSuppressesSpin() {
         let h = TestHarness(sleepCooldown: 5)

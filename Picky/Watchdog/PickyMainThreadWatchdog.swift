@@ -38,6 +38,7 @@ final class PickyMainThreadWatchdog {
 
     private var observer: CFRunLoopObserver?
     private var pollTimer: DispatchSourceTimer?
+    private var mainHeartbeatTimer: DispatchSourceTimer?
 
     // MARK: - Init
 
@@ -78,6 +79,22 @@ final class PickyMainThreadWatchdog {
         CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
         self.observer = observer
 
+        // Drive a 1Hz heartbeat from the main queue. The CFRunLoopObserver
+        // above only refreshes when the loop wakes/sleeps around an event;
+        // a UIElement app that sits idle in `mach_msg` for >threshold gets
+        // no callbacks and looks spun even though main is healthy. This
+        // timer guarantees a heartbeat as long as the main queue can drain.
+        // If main is actually pegged, the timer won't fire either and the
+        // utility poller still detects the stale heartbeat.
+        let mainTimer = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
+        mainTimer.schedule(deadline: .now() + 1, repeating: 1)
+        mainTimer.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.heartbeat(at: self.clock())
+        }
+        mainTimer.resume()
+        self.mainHeartbeatTimer = mainTimer
+
         // Poll from a utility queue at 1Hz. Spin pegs the main thread but
         // utility QoS still runs, so we can detect staleness independent
         // of whatever holds main.
@@ -100,6 +117,8 @@ final class PickyMainThreadWatchdog {
         }
         pollTimer?.cancel()
         pollTimer = nil
+        mainHeartbeatTimer?.cancel()
+        mainHeartbeatTimer = nil
     }
 
     /// Notifies the watchdog that the system just woke from sleep. Pushes the

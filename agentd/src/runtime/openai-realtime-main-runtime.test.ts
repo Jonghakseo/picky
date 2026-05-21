@@ -188,6 +188,36 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(sessionUpdate.session.instructions).toContain("do not say you cannot run it just because it automates a local app");
   });
 
+  it("disposes the live websocket on handle abort so a reset starts a fresh realtime conversation", async () => {
+    const sockets: FakeRealtimeSocket[] = [];
+    let history: Array<{ role: "user" | "assistant"; text: string }> = [
+      { role: "user", text: "old topic that must not survive reset" },
+    ];
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: { provider: "openai", apiKey: "sk-test", modelOrDeployment: "gpt-realtime-2", voice: "marin" },
+      webSocketFactory: () => {
+        const socket = new FakeRealtimeSocket();
+        sockets.push(socket);
+        return socket;
+      },
+    });
+    runtime.setMainRealtimeHistoryProvider?.(() => history);
+
+    const handle = await runtime.prewarm!({ sessionId: "picky" });
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0].sent.join("\n")).toContain("old topic that must not survive reset");
+
+    await handle.abort();
+    expect(sockets[0].readyState).toBe(3);
+
+    history = [];
+    await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-2", context: context() });
+    expect(sockets).toHaveLength(2);
+    expect(sockets[1].sent.join("\n")).not.toContain("old topic that must not survive reset");
+  });
+
   it("snapshots Picky skills once at connect and embeds the names in session.update instructions", async () => {
     const socket = new FakeRealtimeSocket();
     let listCalls = 0;

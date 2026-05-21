@@ -286,7 +286,7 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
   }
 
   private async ensureHandle(options: { cwd?: string; sessionId?: string }): Promise<OpenAIRealtimeSessionHandle> {
-    if (!this.handle) {
+    if (!this.handle || this.handle.isDisposed) {
       this.handle = new OpenAIRealtimeSessionHandle({
         id: options.sessionId ?? "picky",
         cwd: options.cwd,
@@ -450,8 +450,26 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     throw new Error("OpenAI Realtime main runtime does not support Pickle steer handles.");
   }
 
+  get isDisposed(): boolean {
+    return this.disposed;
+  }
+
   async abort(): Promise<void> {
     await this.cancelVoiceTurn(this.activeInputId);
+    this.dispose("picky-abort");
+  }
+
+  private dispose(reason: string): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.clearSessionMaxTimer();
+    const ws = this.ws;
+    if (!ws) return;
+    try {
+      ws.close(1000, reason);
+    } catch (error) {
+      logAgentd("main realtime dispose close failed", { error: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   async injectInitialBootstrap(messages: { user: string; assistant: string }): Promise<void> {
@@ -542,6 +560,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   }
 
   private async ensureConnected(): Promise<void> {
+    if (this.disposed) throw new Error("Realtime session handle is disposed");
     if (this.ws?.readyState === OPENAI_WS_READY_STATE_OPEN) return;
     if (!this.config) {
       this.emit({ type: "main_realtime_state", state: "failed", message: "OpenAI Realtime auth not configured" });

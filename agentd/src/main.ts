@@ -36,7 +36,7 @@ let shuttingDown = false;
 const parentWatcher = startParentExitWatcher({
   parentPid: parseParentPid(process.env.PICKY_AGENTD_PARENT_PID),
   onParentExit: () => {
-    void shutdown(0);
+    void shutdown(0, { forceExitAfterMs: 1_000 });
   },
 });
 
@@ -74,13 +74,18 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-async function shutdown(exitCode: number): Promise<void> {
+async function shutdown(exitCode: number, options: { forceExitAfterMs?: number } = {}): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   parentWatcher?.stop();
+  const forceExitTimer = options.forceExitAfterMs
+    ? setTimeout(() => process.exit(exitCode), options.forceExitAfterMs)
+    : undefined;
+  forceExitTimer?.unref();
   if (config.mode === "primary") {
     await removeConnectionInfo(config.appSupportDir).catch((error) => logAgentd("connection info remove failed", { error: error instanceof Error ? error.message : String(error) }));
   }
   await services.server.stop();
+  if (forceExitTimer) clearTimeout(forceExitTimer);
   process.exit(exitCode);
 }

@@ -11,14 +11,12 @@ describe("parent watchdog", () => {
     expect(parseParentPid("abc")).toBeUndefined();
   });
 
-  it("notifies when the recorded app parent pid changes", () => {
+  it("keeps running while the recorded app parent pid is alive", () => {
     let tick: (() => void) | undefined;
     const events: string[] = [];
-    let currentParentPid = 42;
     const watcher = startParentExitWatcher({
       parentPid: 42,
       intervalMs: 10,
-      getCurrentParentPid: () => currentParentPid,
       isProcessAlive: () => true,
       setIntervalFn: (callback) => {
         tick = callback;
@@ -30,11 +28,12 @@ describe("parent watchdog", () => {
     });
 
     expect(watcher).toBeDefined();
-    currentParentPid = 1;
     tick?.();
     tick?.();
 
-    expect(events).toEqual(["cleared", "parent process exited:ppid-changed", "exit:ppid-changed"]);
+    expect(events).toEqual([]);
+    watcher?.stop();
+    expect(events).toEqual(["cleared"]);
   });
 
   it("notifies when the parent process is no longer alive", () => {
@@ -42,7 +41,6 @@ describe("parent watchdog", () => {
     const events: string[] = [];
     startParentExitWatcher({
       parentPid: 42,
-      getCurrentParentPid: () => 42,
       isProcessAlive: () => false,
       setIntervalFn: (callback) => {
         tick = callback;

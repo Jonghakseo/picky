@@ -1,6 +1,6 @@
 import { logAgentd } from "./local-log.js";
 
-export type ParentExitReason = "ppid-changed" | "parent-not-running";
+export type ParentExitReason = "parent-not-running";
 
 interface ParentExitWatcherHandle {
   stop: () => void;
@@ -9,7 +9,6 @@ interface ParentExitWatcherHandle {
 interface ParentExitWatcherOptions {
   parentPid: number | undefined;
   intervalMs?: number;
-  getCurrentParentPid?: () => number;
   isProcessAlive?: (pid: number) => boolean;
   onParentExit: (reason: ParentExitReason) => void;
   log?: (event: string, fields: Record<string, string | number | boolean | null | undefined>) => void;
@@ -30,7 +29,6 @@ export function startParentExitWatcher(options: ParentExitWatcherOptions): Paren
   if (!parentPid) return undefined;
 
   const intervalMs = options.intervalMs ?? 500;
-  const getCurrentParentPid = options.getCurrentParentPid ?? (() => process.ppid);
   const isProcessAlive = options.isProcessAlive ?? defaultIsProcessAlive;
   const log = options.log ?? logAgentd;
   const setIntervalFn = options.setIntervalFn ?? ((callback, ms) => setInterval(callback, ms));
@@ -44,16 +42,12 @@ export function startParentExitWatcher(options: ParentExitWatcherOptions): Paren
   };
   const notify = (reason: ParentExitReason) => {
     stop();
-    log("parent process exited", { parentPid, currentParentPid: getCurrentParentPid(), reason });
+    log("parent process exited", { parentPid, reason });
     options.onParentExit(reason);
   };
 
   const timer = setIntervalFn(() => {
     if (stopped) return;
-    if (getCurrentParentPid() !== parentPid) {
-      notify("ppid-changed");
-      return;
-    }
     if (!isProcessAlive(parentPid)) {
       notify("parent-not-running");
     }

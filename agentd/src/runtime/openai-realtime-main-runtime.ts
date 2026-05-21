@@ -20,7 +20,7 @@ import type {
   ThinkingLevel,
 } from "./types.js";
 import { logAgentd } from "../local-log.js";
-import type { PickySkillDetails, PickySkillSummary } from "../application/picky-skill-store.js";
+import type { PickySkillSummary } from "../application/picky-skill-store.js";
 import { type PickyUserGuideResult } from "../application/user-guide-tool.js";
 import { buildCodexClientHeaders, fetchCodexQuota, loadCodexOAuth, type CodexOAuthLoader, type CodexQuotaFetcher, type CodexQuotaSnapshot, type ResolvedCodexOAuth } from "./codex-oauth.js";
 import type { MainRealtimeHistoryMessage, MainRealtimeHistoryProvider, MainRealtimeQuotaSnapshot, MainRealtimeUsageSnapshot, MainRealtimeUserMemoryItem, MainRealtimeUserMemoryProvider } from "./types.js";
@@ -76,18 +76,12 @@ interface OpenAIRealtimeToolHandlers {
   writeFile(request: { path: string; content: string; mode?: "overwrite" | "append"; cwd?: string; callId: string }): Promise<RealtimeWriteFileToolResult>;
   listPickleSessions(request: { includeArchive?: boolean; page?: number; limit?: number }): PickyAgentSession[] | Promise<PickyAgentSession[]>;
   steerPickleSession(request: { sessionId: string; message: string }): Promise<PickyAgentSession>;
-  /** Cheap session-start snapshot of Picky-only skills (user-authored
-   *  behavior recipes under ~/Library/Application Support/Picky/skills/).
-   *  Called once during `connect()` and cached on the handle so subsequent
-   *  `session.update` payloads reuse the same list. */
+  /** Picky-only skills (user-authored behavior recipes under
+   *  ~/Library/Application Support/Picky/skills/). Called once during
+   *  `connect()` for the instruction snapshot and again by the `picky_skills`
+   *  tool to refresh mid-session. Returns metadata only; the model reads the
+   *  listed path with `picky_read_file` when it needs the body. */
   listPickySkills(): PickySkillSummary[] | Promise<PickySkillSummary[]>;
-  /** Tool-dispatch path for `picky_skill({ action: "list" })`. The model
-   *  uses this to refresh the snapshot mid-session when it suspects the
-   *  always-on list is stale or wants to filter by `query`. */
-  searchPickySkills(request: { query?: string; limit?: number }): Promise<{ query: string; root: string; total: number; skills: PickySkillSummary[] }>;
-  /** Tool-dispatch path for `picky_skill({ action: "get" })`. Returns the
-   *  full Markdown body so the realtime model can follow the recipe. */
-  getPickySkillDetails(request: { name: string }): Promise<PickySkillDetails>;
   readUserGuide(request: { section?: string; query?: string }): Promise<PickyUserGuideResult>;
   // Long-term user memory CRUD. Backed by the supervisor's userMemories store
   // in picky.json. The runtime never owns the storage — it just relays tool
@@ -136,7 +130,7 @@ type RealtimeToolName =
   | "picky_start_pickle"
   | "picky_pickle_sessions"
   | "picky_steer_pickle"
-  | "picky_skill"
+  | "picky_skills"
   | "read_picky_user_guide"
   | "picky_remember"
   | "picky_list_memories"
@@ -353,8 +347,8 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   // Snapshot of the user's Picky-only skill catalog, captured once per
   // `connect()` so the realtime instructions stay stable across the
   // memory/conversation refreshes that re-issue `session.update`. The model
-  // can still call `picky_skill({ action: "list" })` mid-session to discover
-  // skills added after the snapshot.
+  // can still call `picky_skills` mid-session to discover skills added after
+  // the snapshot.
   private pickySkillsSnapshot: PickySkillSummary[] = [];
   private sessionStartedAt = 0;
   private sessionMaxTimer?: ReturnType<typeof setTimeout>;
@@ -717,9 +711,9 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     try {
       const result = await this.options.toolHandlers.listPickySkills();
       this.pickySkillsSnapshot = Array.isArray(result) ? result : [];
-      logAgentd("main realtime picky_skill snapshot", { count: this.pickySkillsSnapshot.length });
+      logAgentd("main realtime picky_skills snapshot", { count: this.pickySkillsSnapshot.length });
     } catch (error) {
-      logAgentd("main realtime picky_skill snapshot failed", { error: error instanceof Error ? error.message : String(error) });
+      logAgentd("main realtime picky_skills snapshot failed", { error: error instanceof Error ? error.message : String(error) });
       this.pickySkillsSnapshot = [];
     }
   }
@@ -1247,26 +1241,8 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
       }
       case "picky_steer_pickle":
         return summarizeRealtimePickleSteerSession(await this.options.toolHandlers.steerPickleSession({ sessionId: stringArg(args, "sessionId"), message: stringArg(args, "message") }));
-      case "picky_skill": {
-        const action = stringArg(args, "action");
-        if (action === "list") {
-          const result = await this.options.toolHandlers.searchPickySkills({
-            query: optionalStringArg(args, "query"),
-            limit: numberArg(args, "limit"),
-          });
-          return summarizeRealtimePickySkillList(result);
-        }
-        if (action === "get") {
-          const skillName = optionalStringArg(args, "name");
-          if (!skillName) return { ok: false, error: "name is required when action=get" };
-          try {
-            return summarizeRealtimePickySkillDetails(await this.options.toolHandlers.getPickySkillDetails({ name: skillName }));
-          } catch (error) {
-            return { ok: false, error: error instanceof Error ? error.message : String(error) };
-          }
-        }
-        return { ok: false, error: `unknown picky_skill action ${JSON.stringify(action)} (use "list" or "get")` };
-      }
+      case "picky_skills":
+        return summarizeRealtimePickySkillList(await this.options.toolHandlers.listPickySkills());
       case "read_picky_user_guide":
         return summarizeRealtimeUserGuide(await this.options.toolHandlers.readUserGuide({ section: optionalStringArg(args, "section"), query: optionalStringArg(args, "query") }));
       case "picky_remember":
@@ -1686,13 +1662,7 @@ type RealtimePickleSteerSummary = {
 
 type RealtimePickySkillListSummary = {
   total: number;
-  skills: Array<{ name: string; description: string; match?: string }>;
-};
-
-type RealtimePickySkillDetailsSummary = {
-  name: string;
-  description: string;
-  instructions: string;
+  skills: Array<{ name: string; description: string; path: string }>;
 };
 
 type RealtimeUserGuideSummary = {
@@ -1864,25 +1834,14 @@ function summarizeRealtimePickleUnarchive(session: PickyAgentSession): Record<st
   return summary;
 }
 
-function summarizeRealtimePickySkillList(result: { total: number; skills: PickySkillSummary[] }): RealtimePickySkillListSummary {
+function summarizeRealtimePickySkillList(skills: PickySkillSummary[]): RealtimePickySkillListSummary {
   return {
-    total: result.total,
-    skills: result.skills.map((skill) => {
-      const summary: { name: string; description: string; match?: string } = {
-        name: skill.name,
-        description: skill.description,
-      };
-      if (skill.match) summary.match = skill.match;
-      return summary;
-    }),
-  };
-}
-
-function summarizeRealtimePickySkillDetails(skill: PickySkillDetails): RealtimePickySkillDetailsSummary {
-  return {
-    name: skill.name,
-    description: skill.description,
-    instructions: skill.content.trim(),
+    total: skills.length,
+    skills: skills.map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+      path: skill.path,
+    })),
   };
 }
 
@@ -2050,7 +2009,7 @@ function normalizeToolName(name: string): RealtimeToolName | undefined {
     case "picky_start_pickle":
     case "picky_pickle_sessions":
     case "picky_steer_pickle":
-    case "picky_skill":
+    case "picky_skills":
     case "read_picky_user_guide":
     case "picky_remember":
     case "picky_list_memories":

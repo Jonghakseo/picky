@@ -7,11 +7,10 @@
 // Anthropic Agent Skills convention so users can hand-author skills the same
 // way they would for any other agent.
 //
-// The realtime main runtime reads each skill's name + description once per
-// session and exposes the full SKILL.md body via the `picky_skill` tool
-// (action=get). Directory name = canonical skill id; frontmatter `name`
-// overrides the display name but the directory is what `picky_skill` matches
-// against.
+// The realtime main runtime reads each skill's name, description, and SKILL.md
+// path once per session and exposes the same metadata via the `picky_skills`
+// tool. Directory name = canonical skill id; frontmatter `name` overrides the
+// display name.
 //
 // Seeding: built-in skills ship in `seedSourceDir` using the same
 // `<name>/SKILL.md` layout. The store tracks which seeds it has already
@@ -168,9 +167,9 @@ export class PickySkillStore {
     }
   }
 
-  /** Cheap session-start snapshot: { name, description } for every skill in
-   *  the folder. Used to inject the catalog into the realtime instructions
-   *  once at connect time. */
+  /** Cheap session-start snapshot: { name, description, path } for every
+   *  skill in the folder. Used to inject the catalog into the realtime
+   *  instructions once at connect time and to refresh via `picky_skills`. */
   async list(): Promise<PickySkillSummary[]> {
     const docs = await this.loadDocuments();
     return docs.map(({ name, description, path }) => ({ name, description, path }));

@@ -85,24 +85,24 @@ export function buildRealtimeInstructions(
  *  `~/Library/Application Support/Picky/skills/`. This list is a snapshot
  *  taken once at session start — additions or edits the user makes mid-session
  *  will NOT appear here until the next session, which is why the instruction
- *  tells the model to call `picky_skill({ action: "list" })` when in doubt.
- *  The body of each skill is fetched on demand via `picky_skill({ action: "get" })`. */
+ *  tells the model to call `picky_skills` when in doubt. Skill bodies stay on
+ *  disk; read the listed path with `picky_read_file` before applying one. */
 function appendPickySkillsSection(lines: string[], skills: PickySkillSummary[]): void {
   lines.push(
     "",
     "## Picky skills (user-authored behavior recipes)",
     "- These are short behavior recipes the user has saved under `~/Library/Application Support/Picky/skills/`. The list below is a snapshot taken when this realtime session started.",
-    "- When a user turn matches one of these skills, call `picky_skill({ action: \"get\", name })` to read the full body BEFORE acting, then follow the recipe.",
-    "- New skills the user adds mid-session do not appear in this list. If the user mentions a skill that is missing here, call `picky_skill({ action: \"list\" })` (optionally with `query`) to refresh."
+    "- When a user turn matches one of these skills, read the listed `path` with `picky_read_file` BEFORE acting, then follow the recipe.",
+    "- New skills the user adds mid-session do not appear in this list. If the user mentions a skill that is missing here, call `picky_skills` to refresh the catalog."
   );
   if (skills.length === 0) {
-    lines.push("- (No Picky skills authored yet. If the user asks to create one, use `picky_skill({ action: \"list\" })` to confirm and then follow the `create-picky-skill` recipe if it exists.)");
+    lines.push("- (No Picky skills authored yet. If the user asks to create one, call `picky_skills` to confirm whether `create-picky-skill` exists, then read its `path` with `picky_read_file`.)");
     return;
   }
   lines.push("", "### Available Picky skills");
   for (const skill of skills) {
     const description = skill.description?.trim() || "(no description)";
-    lines.push(`- ${skill.name} — ${description}`);
+    lines.push(`- ${skill.name} — ${description} — path: ${skill.path}`);
   }
 }
 
@@ -220,18 +220,13 @@ export function realtimeTools(): Array<Record<string, unknown>> {
     },
     {
       type: "function",
-      name: "picky_skill",
-      description: "Look up Picky-only behavior recipes the user has authored under ~/Library/Application Support/Picky/skills/. The session-start instructions already list every skill's name and one-line description; use this tool to read the body of a specific skill (`action: \"get\"`) before applying it, or to refresh the list mid-session when the user mentions a skill that is not in the snapshot (`action: \"list\"`).",
+      name: "picky_skills",
+      description: "List every Picky-only behavior recipe the user has authored under ~/Library/Application Support/Picky/skills/. Returns only each skill's name, description, and SKILL.md file path. To apply a skill, read its path with `picky_read_file` first; this tool does not return skill bodies.",
       parameters: {
         type: "object",
         additionalProperties: false,
-        properties: {
-          action: { type: "string", enum: ["list", "get"], description: "`list` returns the names and descriptions of all (or query-filtered) Picky skills. `get` returns the full Markdown body of one skill by name." },
-          query: { type: "string", description: "Optional keywords for action=list. Empty/omitted returns the full catalog." },
-          name: { type: "string", description: "Required when action=get. The skill's `name` from the snapshot, e.g. `create-picky-skill`." },
-          limit: { type: "number", description: "Optional cap on action=list results. Default 8, max 20." },
-        },
-        required: ["action"],
+        properties: {},
+        required: [],
       },
     },
     {

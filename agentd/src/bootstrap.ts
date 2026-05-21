@@ -267,15 +267,15 @@ function buildPrimaryMainRuntime(
     return { runtime: overridden, toolsBuilder: () => [] };
   }
 
-  // Picky-only skill catalog. Independent of Pi skills: each file under
-  // ~/Library/Application Support/Picky/skills/*.md is a short behavior recipe
-  // the realtime main agent can read on demand via picky_skill. The store
-  // seeds the directory with bundled templates on first boot so users have
-  // at least one example to copy from.
+  // Picky-only skill catalog. Independent of Pi skills: each SKILL.md under
+  // ~/Library/Application Support/Picky/skills/ is a short behavior recipe
+  // the realtime main agent can discover via picky_skills and read via
+  // picky_read_file. The store seeds the directory with bundled templates on
+  // first boot so users have at least one example to copy from.
   //
   // Only seed when the active main runtime is the one that actually exposes
-  // the picky_skill tool. The Pi SDK runtime has its own skill catalog and
-  // never invokes picky_skill, so seeding picky-skills there would create a
+  // the picky_skills tool. The Pi SDK runtime has its own skill catalog and
+  // never invokes picky_skills, so seeding picky-skills there would create a
   // dormant directory the user has to keep in sync without any payoff.
   const pickySkillStore = new PickySkillStore();
   if (config.mainAgentRuntimeMode === "openai-realtime") {
@@ -398,8 +398,6 @@ function buildPrimaryMainRuntime(
       listPickleSessions,
       steerPickleSession,
       listPickySkills: () => pickySkillStore.list(),
-      searchPickySkills: (request) => pickySkillStore.search(request),
-      getPickySkillDetails: (request) => pickySkillStore.details(request),
       readUserGuide: (request) => readPickyUserGuide(request),
       // Long-term user memory CRUD. The runtime relays tool calls here; the
       // supervisor owns picky.json and pushes a refreshed session.update via

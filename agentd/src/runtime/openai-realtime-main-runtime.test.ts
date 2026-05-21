@@ -167,7 +167,8 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(toolNames).toContain("picky_start_pickle");
     expect(toolNames).toContain("picky_pickle_sessions");
     expect(toolNames).toContain("picky_steer_pickle");
-    expect(toolNames).toContain("picky_skill");
+    expect(toolNames).toContain("picky_skills");
+    expect(toolNames).not.toContain("picky_skill");
     expect(toolNames).not.toContain("picky_skills_search");
     expect(toolNames).not.toContain("picky_skill_details");
     expect(toolNames).toContain("read_picky_user_guide");
@@ -176,7 +177,7 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(toolNames).toContain("picky_write_file");
     expect(toolNames).not.toContain("picky_pointer_overlay");
     expect(sessionUpdate.session.instructions).toContain("Realtime voice mode overrides");
-    expect(sessionUpdate.session.instructions).toContain("picky_skill");
+    expect(sessionUpdate.session.instructions).toContain("picky_skills");
   });
 
   it("snapshots Picky skills once at connect and embeds the names in session.update instructions", async () => {
@@ -208,9 +209,9 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     const sessionUpdate = sent.find((event) => event.type === "session.update")!;
     expect(listCalls).toBe(1);
     expect(sessionUpdate.session.instructions).toContain("## Picky skills");
-    expect(sessionUpdate.session.instructions).toContain("create-picky-skill \u2014 Author a new Picky skill");
-    expect(sessionUpdate.session.instructions).toContain("prefer-korean \u2014 Reply in Korean for casual chitchat");
-    expect(sessionUpdate.session.instructions).toContain("picky_skill");
+    expect(sessionUpdate.session.instructions).toContain("create-picky-skill \u2014 Author a new Picky skill \u2014 path: /tmp/skills/create-picky-skill.md");
+    expect(sessionUpdate.session.instructions).toContain("prefer-korean \u2014 Reply in Korean for casual chitchat \u2014 path: /tmp/skills/prefer-korean.md");
+    expect(sessionUpdate.session.instructions).toContain("picky_skills");
   });
 
   it("falls back to an empty Picky skill section when no skills are authored yet", async () => {
@@ -227,7 +228,7 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(sessionUpdate.session.instructions).toContain("No Picky skills authored yet");
   });
 
-  it("returns minimal outputs for steer and skill lookup tools", async () => {
+  it("returns minimal outputs for steer and skill catalog tools", async () => {
     const socket = new FakeRealtimeSocket();
     const runtime = new OpenAIRealtimeMainRuntime({
       toolHandlers: {
@@ -248,23 +249,8 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
             messages: [{ id: "message-1", kind: "agent_text", createdAt: "2026-05-09T00:00:00.000Z", text: "message should not be returned" }],
           } satisfies PickyAgentSession;
         },
-        async searchPickySkills() {
-          return {
-            query: "debug",
-            root: "/tmp/skills",
-            total: 1,
-            skills: [{ name: "debug", description: "Debug workflow", path: "/tmp/skills/debug.md", match: "matched snippet" }],
-          };
-        },
-        async getPickySkillDetails() {
-          return {
-            name: "debug",
-            description: "Debug workflow",
-            path: "/tmp/skills/debug.md",
-            match: "matched snippet",
-            frontmatter: { name: "debug", description: "Debug workflow" },
-            content: "---\nname: debug\n---\n\nUse systematic debugging.",
-          };
+        listPickySkills() {
+          return [{ name: "debug", description: "Debug workflow", path: "/tmp/skills/debug.md" }];
         },
       },
       defaultConfig: {
@@ -278,8 +264,7 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
 
     await runtime.beginMainRealtimeVoiceTurn({ inputId: "input-1", context: context() });
     socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_steer_pickle", call_id: "call-steer", arguments: JSON.stringify({ sessionId: "pickle-1", message: "continue" }) } });
-    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_skill", call_id: "call-search", arguments: JSON.stringify({ action: "list", query: "debug" }) } });
-    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_skill", call_id: "call-details", arguments: JSON.stringify({ action: "get", name: "debug" }) } });
+    socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "picky_skills", call_id: "call-skills", arguments: JSON.stringify({}) } });
     socket.serverEvent({ type: "response.output_item.done", item: { type: "function_call", name: "read_picky_user_guide", call_id: "call-guide", arguments: JSON.stringify({ section: "3. Global shortcuts", query: "shortcuts" }) } });
     await settle();
 
@@ -294,12 +279,10 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     // so the response was reduced to a single line shared with the
     // Pi SDK runtime's picky_steer_pickle tool.
     expect(outputs["call-steer"]).toEqual({ message: "Steering sent to Pickle" });
-    expect(outputs["call-search"]).toEqual({ total: 1, skills: [{ name: "debug", description: "Debug workflow", match: "matched snippet" }] });
-    expect(JSON.stringify(outputs["call-search"])).not.toContain("/tmp/skills/debug.md");
-    expect(outputs["call-details"]).toEqual({ name: "debug", description: "Debug workflow", instructions: "---\nname: debug\n---\n\nUse systematic debugging." });
-    expect(outputs["call-details"]).not.toHaveProperty("path");
-    expect(outputs["call-details"]).not.toHaveProperty("frontmatter");
-    expect(outputs["call-details"]).not.toHaveProperty("match");
+    expect(outputs["call-skills"]).toEqual({ total: 1, skills: [{ name: "debug", description: "Debug workflow", path: "/tmp/skills/debug.md" }] });
+    expect(outputs["call-skills"].skills[0]).not.toHaveProperty("instructions");
+    expect(outputs["call-skills"].skills[0]).not.toHaveProperty("frontmatter");
+    expect(outputs["call-skills"].skills[0]).not.toHaveProperty("match");
     expect(outputs["call-guide"]).toEqual({ section: "3. Global shortcuts", query: "shortcuts", content: "## 3. Global shortcuts\n\nShortcut details.", excerpted: true });
   });
 
@@ -1916,8 +1899,6 @@ function fakeToolHandlers() {
     listPickleSessions() { return []; },
     async steerPickleSession() { return session; },
     listPickySkills() { return [] as Array<{ name: string; description: string; path: string }>; },
-    async searchPickySkills() { return { query: "", root: "/tmp/skills", total: 1, skills: [{ name: "debug", description: "Debug", path: "/tmp/skills/debug.md" }] }; },
-    async getPickySkillDetails() { return { name: "debug", description: "Debug", path: "/tmp/skills/debug.md", frontmatter: { name: "debug" }, content: "---\nname: debug\n---\n" }; },
     async readUserGuide() { return { section: "3. Global shortcuts", query: "shortcuts", path: "/tmp/docs/user-manual.md", content: "## 3. Global shortcuts\n\nShortcut details.", totalChars: 1200, excerpted: true }; },
     // Default fakes: no memories, every CRUD succeeds with synthetic data.
     // Tests that actually exercise memory tool behaviour replace these via

@@ -1,45 +1,39 @@
 //
-//  PickyUserBubbleSurfaceView.swift
+//  PickyAgentBubbleSurfaceView.swift
 //  Picky
 //
-//  AppKit-owned user bubble surface. The SwiftUI host may allocate the full
-//  trailing bubble slot, but this view measures the markdown text internally
-//  and draws only the trailing rounded rect that the content actually needs.
+//  AppKit-owned assistant bubble surface. SwiftUI may allocate the full
+//  leading bubble slot, but this view measures markdown internally and draws
+//  only the leading rounded rect that the content actually needs.
 //
 
 import AppKit
 import SwiftUI
 
-struct PickyUserBubbleSurfaceView: NSViewRepresentable {
+struct PickyAgentBubbleSurfaceView: NSViewRepresentable {
     let markdown: String
-    let attachedImagesLabel: String?
-    let originLabel: String?
-    let isPiExtensionMessage: Bool
     let maxBubbleWidth: CGFloat
+    let showsShortcutBadge: Bool
     let onOpenAsReport: (() -> Void)?
     let onCopyText: (() -> Void)?
-    let onEditText: (() -> Void)?
 
-    func makeNSView(context: Context) -> PickyUserBubbleSurfaceNSView {
-        PickyUserBubbleSurfaceNSView()
+    func makeNSView(context: Context) -> PickyAgentBubbleSurfaceNSView {
+        PickyAgentBubbleSurfaceNSView()
     }
 
-    func updateNSView(_ view: PickyUserBubbleSurfaceNSView, context: Context) {
+    func updateNSView(_ view: PickyAgentBubbleSurfaceNSView, context: Context) {
         view.configure(
             markdown: markdown,
-            attachedImagesLabel: attachedImagesLabel,
-            originLabel: originLabel,
-            isPiExtensionMessage: isPiExtensionMessage,
             maxBubbleWidth: maxBubbleWidth,
+            showsShortcutBadge: showsShortcutBadge,
             onOpenAsReport: onOpenAsReport,
-            onCopyText: onCopyText,
-            onEditText: onEditText
+            onCopyText: onCopyText
         )
     }
 
     func sizeThatFits(
         _ proposal: ProposedViewSize,
-        nsView: PickyUserBubbleSurfaceNSView,
+        nsView: PickyAgentBubbleSurfaceNSView,
         context: Context
     ) -> CGSize? {
         let proposedWidth = proposal.width?.isFinite == true ? proposal.width! : maxBubbleWidth
@@ -48,27 +42,27 @@ struct PickyUserBubbleSurfaceView: NSViewRepresentable {
     }
 }
 
-final class PickyUserBubbleSurfaceNSView: NSView {
+final class PickyAgentBubbleSurfaceNSView: NSView {
     private enum Metrics {
         static let horizontalPadding: CGFloat = 10
         static let verticalPadding: CGFloat = 8
-        static let labelSpacing: CGFloat = 4
         static let maxBubbleWidthFallback: CGFloat = 320
-        static let bubbleRadii = BubbleRadii(topLeft: 12, topRight: 12, bottomRight: 4, bottomLeft: 12)
+        static let bubbleRadii = AgentBubbleRadii(topLeft: 12, topRight: 12, bottomRight: 12, bottomLeft: 4)
+        static let badgeWidth: CGFloat = 28
+        static let badgeHeight: CGFloat = 15
+        static let badgeInset: CGFloat = 6
     }
 
     private let textView = SelfSizingMarkdownTextView()
-    private let attachedImagesField = NSTextField(labelWithString: "")
-    private let originField = NSTextField(labelWithString: "")
+    private let hoverButton = NSButton(title: "", target: nil, action: nil)
 
     private var maxBubbleWidth: CGFloat = Metrics.maxBubbleWidthFallback
-    private var attachedImagesLabel: String?
-    private var originLabel: String?
-    private var isPiExtensionMessage = false
     private var actionText: String?
+    private var showsShortcutBadge = false
     private var onCopyText: (() -> Void)?
-    private var onEditText: (() -> Void)?
     private var onOpenAsReport: (() -> Void)?
+    private var trackingArea: NSTrackingArea?
+    private var isPointerInside = false
 
     private(set) var lastBubbleRect: NSRect = .zero
 
@@ -85,8 +79,15 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         textView.drawsBackground = false
         addSubview(textView)
 
-        configureLabel(attachedImagesField)
-        configureLabel(originField)
+        hoverButton.isBordered = false
+        hoverButton.bezelStyle = .regularSquare
+        hoverButton.image = NSImage(systemSymbolName: "arrow.up.right.square", accessibilityDescription: "Open this message as report")
+        hoverButton.imagePosition = .imageOnly
+        hoverButton.contentTintColor = NSColor(DS.Colors.accentText).withAlphaComponent(0.95)
+        hoverButton.target = self
+        hoverButton.action = #selector(openAsReportClicked)
+        hoverButton.isHidden = true
+        addSubview(hoverButton)
     }
 
     @available(*, unavailable)
@@ -96,13 +97,10 @@ final class PickyUserBubbleSurfaceNSView: NSView {
 
     func configure(
         markdown: String,
-        attachedImagesLabel: String?,
-        originLabel: String?,
-        isPiExtensionMessage: Bool,
         maxBubbleWidth: CGFloat,
+        showsShortcutBadge: Bool,
         onOpenAsReport: (() -> Void)?,
-        onCopyText: (() -> Void)?,
-        onEditText: (() -> Void)?
+        onCopyText: (() -> Void)?
     ) {
         let blocks = inlineBlocks(from: markdown)
         let attributed = PickyMarkdownInlineTextView.buildAttributedString(from: blocks)
@@ -110,22 +108,18 @@ final class PickyUserBubbleSurfaceNSView: NSView {
             textView.textStorage?.setAttributedString(attributed)
         }
 
-        self.attachedImagesLabel = attachedImagesLabel
-        self.originLabel = originLabel
-        self.isPiExtensionMessage = isPiExtensionMessage
         self.maxBubbleWidth = max(0, maxBubbleWidth)
+        self.showsShortcutBadge = showsShortcutBadge
         self.actionText = markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : markdown
         self.onCopyText = onCopyText
-        self.onEditText = onEditText
         self.onOpenAsReport = onOpenAsReport
 
         textView.hugContentMaxWidth = textInteriorCap
         textView.onOpenAsReport = onOpenAsReport
         textView.onCopyText = { [weak self] in self?.copyTextClicked() }
-        textView.onEditText = { [weak self] in self?.editTextClicked() }
+        textView.onEditText = nil
+        hoverButton.toolTip = "Open this message as report"
 
-        setLabel(attachedImagesField, text: attachedImagesLabel)
-        setLabel(originField, text: originLabel)
         needsLayout = true
         needsDisplay = true
         invalidateIntrinsicContentSize()
@@ -146,42 +140,70 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         super.layout()
         let bubbleWidth = measuredBubbleWidth(rootWidth: bounds.width)
         let bubbleHeight = measuredBubbleHeight(interiorWidth: max(0, bubbleWidth - 2 * Metrics.horizontalPadding))
-        let bubbleX = max(0, bounds.width - bubbleWidth)
-        let bubbleRect = NSRect(x: bubbleX, y: 0, width: bubbleWidth, height: bubbleHeight)
+        let bubbleRect = NSRect(x: 0, y: 0, width: bubbleWidth, height: bubbleHeight)
         lastBubbleRect = bubbleRect
 
         let textWidth = max(0, bubbleRect.width - 2 * Metrics.horizontalPadding)
         let textSize = measuredTextContentSize(forWidth: textWidth)
-        var y = bubbleRect.minY + Metrics.verticalPadding
         textView.frame = NSRect(
             x: bubbleRect.minX + Metrics.horizontalPadding,
-            y: y,
+            y: bubbleRect.minY + Metrics.verticalPadding,
             width: textWidth,
             height: ceil(textSize.height)
         )
-        y = textView.frame.maxY
 
-        layoutLabel(attachedImagesField, in: bubbleRect, y: &y, textWidth: textWidth)
-        layoutLabel(originField, in: bubbleRect, y: &y, textWidth: textWidth)
+        hoverButton.frame = NSRect(
+            x: bubbleRect.maxX - Metrics.badgeHeight - 4,
+            y: bubbleRect.minY + 4,
+            width: 20,
+            height: 20
+        )
+        hoverButton.isHidden = !(isPointerInside && onOpenAsReport != nil)
         needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard !lastBubbleRect.isEmpty else { return }
+        let path = bubblePath(in: lastBubbleRect)
         bubbleFill.setFill()
-        bubblePath(in: lastBubbleRect).fill()
+        path.fill()
+        bubbleStroke.setStroke()
+        path.lineWidth = 0.7
+        path.stroke()
+
+        if showsShortcutBadge {
+            drawShortcutBadge(in: lastBubbleRect)
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        trackingArea = area
+        addTrackingArea(area)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isPointerInside = true
+        needsLayout = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isPointerInside = false
+        needsLayout = true
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
         if actionText != nil, onCopyText != nil {
             let item = NSMenuItem(title: "Copy Text", action: #selector(copyTextClicked), keyEquivalent: "")
-            item.target = self
-            menu.addItem(item)
-        }
-        if actionText != nil, onEditText != nil {
-            let item = NSMenuItem(title: "Edit in Composer", action: #selector(editTextClicked), keyEquivalent: "")
             item.target = self
             menu.addItem(item)
         }
@@ -198,30 +220,23 @@ final class PickyUserBubbleSurfaceNSView: NSView {
     }
 
     private var bubbleFill: NSColor {
-        if isPiExtensionMessage { return NSColor(DS.Colors.surface2.opacity(0.92)) }
-        return NSColor(DS.Colors.accentSubtle.opacity(0.95))
+        NSColor(DS.Colors.surface3.opacity(0.84))
+    }
+
+    private var bubbleStroke: NSColor {
+        NSColor(DS.Colors.borderSubtle.opacity(0.72))
     }
 
     private func measuredBubbleWidth(rootWidth: CGFloat) -> CGFloat {
         let bubbleCap = min(maxBubbleWidth, rootWidth)
         let interiorCap = max(0, bubbleCap - 2 * Metrics.horizontalPadding)
         let textSize = measuredTextContentSize(forWidth: interiorCap)
-        let labelWidth = max(labelWidth(attachedImagesField), labelWidth(originField))
-        let contentWidth = min(interiorCap, ceil(max(textSize.width, labelWidth)))
+        let contentWidth = min(interiorCap, ceil(textSize.width))
         return min(bubbleCap, contentWidth + 2 * Metrics.horizontalPadding)
     }
 
     private func measuredBubbleHeight(interiorWidth: CGFloat) -> CGFloat {
-        let textHeight = ceil(measuredTextContentSize(forWidth: interiorWidth).height)
-        var height = Metrics.verticalPadding + textHeight
-        if attachedImagesLabel != nil {
-            height += Metrics.labelSpacing + ceil(attachedImagesField.fittingSize.height)
-        }
-        if originLabel != nil {
-            height += Metrics.labelSpacing + ceil(originField.fittingSize.height)
-        }
-        height += Metrics.verticalPadding
-        return height
+        ceil(measuredTextContentSize(forWidth: interiorWidth).height) + 2 * Metrics.verticalPadding
     }
 
     private func measuredTextContentSize(forWidth width: CGFloat) -> NSSize {
@@ -232,41 +247,6 @@ final class PickyUserBubbleSurfaceNSView: NSView {
             options: [.usesLineFragmentOrigin, .usesFontLeading]
         )
         return NSSize(width: min(width, ceil(rect.width)), height: ceil(rect.height))
-    }
-
-    private func configureLabel(_ field: NSTextField) {
-        field.font = NSFont.systemFont(ofSize: PickyHUDTypography.Size.minimumText, weight: .medium)
-        field.textColor = NSColor(DS.Colors.textTertiary)
-        field.backgroundColor = .clear
-        field.isBordered = false
-        field.isEditable = false
-        field.isSelectable = false
-        field.lineBreakMode = .byTruncatingTail
-        field.maximumNumberOfLines = 1
-        field.isHidden = true
-        addSubview(field)
-    }
-
-    private func setLabel(_ field: NSTextField, text: String?) {
-        field.stringValue = text ?? ""
-        field.isHidden = text == nil
-    }
-
-    private func labelWidth(_ field: NSTextField) -> CGFloat {
-        field.isHidden ? 0 : ceil(field.fittingSize.width)
-    }
-
-    private func layoutLabel(_ field: NSTextField, in bubbleRect: NSRect, y: inout CGFloat, textWidth: CGFloat) {
-        guard !field.isHidden else { return }
-        y += Metrics.labelSpacing
-        let height = ceil(field.fittingSize.height)
-        field.frame = NSRect(
-            x: bubbleRect.minX + Metrics.horizontalPadding,
-            y: y,
-            width: textWidth,
-            height: height
-        )
-        y += height
     }
 
     private func inlineBlocks(from markdown: String) -> [PickyMarkdownInlineTextView.InlineBlock] {
@@ -294,31 +274,35 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         let path = NSBezierPath()
         path.move(to: NSPoint(x: rect.minX + radii.topLeft, y: rect.minY))
         path.line(to: NSPoint(x: rect.maxX - radii.topRight, y: rect.minY))
-        path.curve(
-            to: NSPoint(x: rect.maxX, y: rect.minY + radii.topRight),
-            controlPoint1: NSPoint(x: rect.maxX - radii.topRight * 0.45, y: rect.minY),
-            controlPoint2: NSPoint(x: rect.maxX, y: rect.minY + radii.topRight * 0.45)
-        )
+        path.curve(to: NSPoint(x: rect.maxX, y: rect.minY + radii.topRight), controlPoint1: NSPoint(x: rect.maxX - radii.topRight * 0.45, y: rect.minY), controlPoint2: NSPoint(x: rect.maxX, y: rect.minY + radii.topRight * 0.45))
         path.line(to: NSPoint(x: rect.maxX, y: rect.maxY - radii.bottomRight))
-        path.curve(
-            to: NSPoint(x: rect.maxX - radii.bottomRight, y: rect.maxY),
-            controlPoint1: NSPoint(x: rect.maxX, y: rect.maxY - radii.bottomRight * 0.45),
-            controlPoint2: NSPoint(x: rect.maxX - radii.bottomRight * 0.45, y: rect.maxY)
-        )
+        path.curve(to: NSPoint(x: rect.maxX - radii.bottomRight, y: rect.maxY), controlPoint1: NSPoint(x: rect.maxX, y: rect.maxY - radii.bottomRight * 0.45), controlPoint2: NSPoint(x: rect.maxX - radii.bottomRight * 0.45, y: rect.maxY))
         path.line(to: NSPoint(x: rect.minX + radii.bottomLeft, y: rect.maxY))
-        path.curve(
-            to: NSPoint(x: rect.minX, y: rect.maxY - radii.bottomLeft),
-            controlPoint1: NSPoint(x: rect.minX + radii.bottomLeft * 0.45, y: rect.maxY),
-            controlPoint2: NSPoint(x: rect.minX, y: rect.maxY - radii.bottomLeft * 0.45)
-        )
+        path.curve(to: NSPoint(x: rect.minX, y: rect.maxY - radii.bottomLeft), controlPoint1: NSPoint(x: rect.minX + radii.bottomLeft * 0.45, y: rect.maxY), controlPoint2: NSPoint(x: rect.minX, y: rect.maxY - radii.bottomLeft * 0.45))
         path.line(to: NSPoint(x: rect.minX, y: rect.minY + radii.topLeft))
-        path.curve(
-            to: NSPoint(x: rect.minX + radii.topLeft, y: rect.minY),
-            controlPoint1: NSPoint(x: rect.minX, y: rect.minY + radii.topLeft * 0.45),
-            controlPoint2: NSPoint(x: rect.minX + radii.topLeft * 0.45, y: rect.minY)
-        )
+        path.curve(to: NSPoint(x: rect.minX + radii.topLeft, y: rect.minY), controlPoint1: NSPoint(x: rect.minX, y: rect.minY + radii.topLeft * 0.45), controlPoint2: NSPoint(x: rect.minX + radii.topLeft * 0.45, y: rect.minY))
         path.close()
         return path
+    }
+
+    private func drawShortcutBadge(in bubbleRect: NSRect) {
+        let rect = NSRect(
+            x: bubbleRect.maxX - Metrics.badgeWidth - Metrics.badgeInset,
+            y: bubbleRect.maxY - Metrics.badgeHeight - Metrics.badgeInset,
+            width: Metrics.badgeWidth,
+            height: Metrics.badgeHeight
+        )
+        let path = NSBezierPath(roundedRect: rect, xRadius: Metrics.badgeHeight / 2, yRadius: Metrics.badgeHeight / 2)
+        NSColor(DS.Colors.surface1.opacity(0.70)).setFill()
+        path.fill()
+        NSColor(DS.Colors.borderSubtle.opacity(0.72)).setStroke()
+        path.lineWidth = 0.7
+        path.stroke()
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 7.5, weight: .bold),
+            .foregroundColor: NSColor(DS.Colors.textPrimary)
+        ]
+        NSAttributedString(string: "⌘ R", attributes: attributes).draw(in: rect.insetBy(dx: 4, dy: 2))
     }
 
     @objc private func copyTextClicked() {
@@ -326,25 +310,20 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         onCopyText?()
     }
 
-    @objc private func editTextClicked() {
-        guard actionText != nil else { return }
-        onEditText?()
-    }
-
     @objc private func openAsReportClicked() {
         onOpenAsReport?()
     }
 }
 
-private struct BubbleRadii {
+private struct AgentBubbleRadii {
     var topLeft: CGFloat
     var topRight: CGFloat
     var bottomRight: CGFloat
     var bottomLeft: CGFloat
 
-    func clamped(to rect: NSRect) -> BubbleRadii {
+    func clamped(to rect: NSRect) -> AgentBubbleRadii {
         let limit = min(rect.width, rect.height) / 2
-        return BubbleRadii(
+        return AgentBubbleRadii(
             topLeft: min(topLeft, limit),
             topRight: min(topRight, limit),
             bottomRight: min(bottomRight, limit),

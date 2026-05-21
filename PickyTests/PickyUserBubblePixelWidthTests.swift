@@ -38,7 +38,7 @@ struct PickyUserBubblePixelWidthTests {
     /// the assertion meaningful: the stretching only happens through the
     /// bubble's outer VStack + padding + background + `.frame(maxWidth:)`
     /// envelope, not the markdown view in isolation.
-    private func layoutBubble(text: String, cardWidth: CGFloat) throws -> PickyUserBubbleSurfaceNSView {
+    private func layoutUserBubble(text: String, cardWidth: CGFloat) throws -> PickyUserBubbleSurfaceNSView {
         // Mount the full `PickyConversationCardView` so any wrapping that
         // surrounds the user bubble in production (turn cards, list scroll
         // view, card padding, environment overrides) is part of the layout
@@ -107,7 +107,7 @@ struct PickyUserBubblePixelWidthTests {
     @Test func shortUserMessageHugsToTextWidthInsteadOfStretchingToFullColumn() throws {
         let cardWidth: CGFloat = 600
         let cap = bubbleInteriorCap(forCardWidth: cardWidth)
-        let surface = try layoutBubble(text: "수정해줘.", cardWidth: cardWidth)
+        let surface = try layoutUserBubble(text: "수정해줘.", cardWidth: cardWidth)
 
         // "수정해줘." renders at body size; its glyph run is comfortably
         // under 120pt at the body font. A regression that stretches the
@@ -127,13 +127,94 @@ struct PickyUserBubblePixelWidthTests {
             repeating: "이것은 충분히 긴 한 줄짜리 사용자 메시지입니다. ",
             count: 8
         )
-        let surface = try layoutBubble(text: longText, cardWidth: cardWidth)
+        let surface = try layoutUserBubble(text: longText, cardWidth: cardWidth)
 
         // Long content should fill (and wrap at) the bubble cap — never wider.
         let actual = surface.lastBubbleRect.width
         let outerCap = cardWidth * 0.85
         #expect(actual <= outerCap + 1, "long message must not exceed the bubble cap (cap=\(outerCap), got \(actual))")
         #expect(actual > cap * 0.7, "long message should consume most of the bubble cap (interior cap=\(cap), got \(actual))")
+    }
+
+    private func layoutAgentBubble(text: String, cardWidth: CGFloat) throws -> PickyAgentBubbleSurfaceNSView {
+        let agentMessage = PickySessionMessage(
+            id: "a-1",
+            kind: .agentText,
+            createdAt: Date(timeIntervalSince1970: 1_777_777_778),
+            originatedBy: nil,
+            text: text,
+            question: nil,
+            cancelledAt: nil,
+            activitySnapshot: nil,
+            assistantRun: nil,
+            errorContext: nil,
+            errorMessage: nil,
+            notifyType: nil,
+            attachedImagesCount: nil
+        )
+        let session = PickySessionListViewModel.SessionCard.fromAgentSession(
+            PickyAgentSession(
+                id: "session-agent-bubble",
+                title: "Agent bubble test",
+                status: .running,
+                cwd: "/tmp/picky",
+                createdAt: Date(timeIntervalSince1970: 1_777_777_777),
+                updatedAt: Date(timeIntervalSince1970: 1_777_777_778),
+                lastSummary: "",
+                logs: [],
+                tools: [],
+                artifacts: [],
+                changedFiles: [],
+                messages: [agentMessage],
+                queuedSteers: [],
+                queuedFollowUps: [],
+                steeringMode: .oneAtATime,
+                followUpMode: .oneAtATime,
+                activitySummary: .zero,
+                contextUsage: nil,
+                pendingExtensionUiRequest: nil,
+                notifyMainOnCompletion: nil
+            )
+        )
+        let viewModel = PickySessionListViewModel(
+            client: BubbleStubClient(),
+            notificationCenter: PickyNoopNotificationCenter()
+        )
+        let card = PickyConversationCardView(
+            viewModel: viewModel,
+            session: session,
+            width: cardWidth
+        )
+
+        let host = NSHostingView(rootView: card)
+        host.frame = NSRect(x: 0, y: 0, width: cardWidth, height: 800)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        host.layoutSubtreeIfNeeded()
+
+        let surfaces = collectAgentBubbleSurfaces(host)
+        #expect(surfaces.count >= 1, "expected at least one AppKit agent bubble surface in the conversation card")
+        return try #require(surfaces.first)
+    }
+
+    @Test func shortAgentMessageHugsToTextWidthInsteadOfStretchingToFullColumn() throws {
+        let cardWidth: CGFloat = 600
+        let surface = try layoutAgentBubble(text: "Done.", cardWidth: cardWidth)
+        let actual = surface.lastBubbleRect.width
+        #expect(
+            actual < 160,
+            "short agent message should hug its text width, but the visual bubble laid out at \(actual)pt"
+        )
+    }
+
+    @Test func longAgentMessageWrapsAtBubbleInteriorCap() throws {
+        let cardWidth: CGFloat = 600
+        let longText = String(repeating: "This is a sufficiently long assistant response line. ", count: 10)
+        let surface = try layoutAgentBubble(text: longText, cardWidth: cardWidth)
+        let outerCap = cardWidth * 0.85
+        let actual = surface.lastBubbleRect.width
+        #expect(actual <= outerCap + 1, "long agent message must not exceed the bubble cap (cap=\(outerCap), got \(actual))")
+        #expect(actual > outerCap * 0.7, "long agent message should consume most of the bubble cap (cap=\(outerCap), got \(actual))")
     }
 }
 
@@ -144,6 +225,17 @@ private func collectUserBubbleSurfaces(_ root: NSView) -> [PickyUserBubbleSurfac
     }
     for sub in root.subviews {
         out.append(contentsOf: collectUserBubbleSurfaces(sub))
+    }
+    return out
+}
+
+private func collectAgentBubbleSurfaces(_ root: NSView) -> [PickyAgentBubbleSurfaceNSView] {
+    var out: [PickyAgentBubbleSurfaceNSView] = []
+    if let match = root as? PickyAgentBubbleSurfaceNSView {
+        out.append(match)
+    }
+    for sub in root.subviews {
+        out.append(contentsOf: collectAgentBubbleSurfaces(sub))
     }
     return out
 }

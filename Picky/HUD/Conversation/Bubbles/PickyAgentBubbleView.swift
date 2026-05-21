@@ -17,67 +17,21 @@ struct PickyAgentBubbleView: View {
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 6) {
-                PickyConversationMarkdownText(
-                    markdown: previewText,
-                    onOpenAsReport: hoverIconAction
-                )
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(maxWidth: pickyHUDDetailWidth * 0.85, alignment: .leading)
-            .background(
-                agentBubbleShape
-                    .fill(DS.Colors.surface3.opacity(0.84))
+            PickyAgentBubbleSurfaceView(
+                markdown: previewText,
+                maxBubbleWidth: bubbleMaxWidth,
+                showsShortcutBadge: isLatestResponseShortcutHintVisible,
+                onOpenAsReport: hoverIconAction,
+                onCopyText: copyTextAction
             )
-            .overlay(
-                agentBubbleShape
-                    .stroke(DS.Colors.borderSubtle.opacity(0.72), lineWidth: 0.7)
-            )
-            // Clip content to the bubble shape so that any text-selection focus
-            // re-measurement (`.textSelection(.enabled)` can ignore SwiftUI line
-            // limits on macOS) can't visibly overflow the rounded background.
-            .clipShape(agentBubbleShape)
-            .overlay(alignment: .bottomTrailing) {
-                if isLatestResponseShortcutHintVisible {
-                    latestResponseShortcutBadge
-                        .offset(x: -6, y: -6)
-                        .transition(.scale(scale: 0.88, anchor: .bottomTrailing).combined(with: .opacity))
-                }
-            }
-            .openAsReportHoverIcon(onOpen: hoverIconAction, alignment: .topTrailing)
-            .contextMenu { contextMenuItems }
-            .animation(.easeOut(duration: 0.12), value: isLatestResponseShortcutHintVisible)
+            .frame(width: bubbleMaxWidth, alignment: .leading)
             Spacer(minLength: 48)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var latestResponseShortcutBadge: some View {
-        HStack(spacing: 1.5) {
-            Image(systemName: "command")
-                .font(.system(size: 6.5, weight: .bold))
-            Text("R")
-                .font(.system(size: 7.5, weight: .bold, design: .rounded))
-        }
-        .foregroundColor(DS.Colors.textPrimary)
-        .padding(.horizontal, 4.5)
-        .frame(height: 15)
-        .background(Capsule(style: .continuous).fill(.ultraThinMaterial))
-        .overlay(Capsule(style: .continuous).fill(DS.Colors.surface1.opacity(0.70)))
-        .overlay(Capsule(style: .continuous).strokeBorder(DS.Colors.borderSubtle.opacity(0.72), lineWidth: 0.7))
-        .shadow(color: Color.black.opacity(0.18), radius: 4, x: 0, y: 1.5)
-        .accessibilityHidden(true)
-    }
-
-    private var agentBubbleShape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            topLeadingRadius: 12,
-            bottomLeadingRadius: 4,
-            bottomTrailingRadius: 12,
-            topTrailingRadius: 12,
-            style: .continuous
-        )
+    private var bubbleMaxWidth: CGFloat {
+        max(0, pickyHUDDetailWidth * 0.85)
     }
 
     private var previewText: String {
@@ -86,15 +40,10 @@ struct PickyAgentBubbleView: View {
         return PickyAgentResponsePreview.truncatedMarkdown(text)
     }
 
-    @ViewBuilder
-    private var contextMenuItems: some View {
+    private var copyTextAction: (() -> Void)? {
         let text = displayText
-        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let onCopyText {
-            Button("Copy Text") { onCopyText(text) }
-        }
-        if let hoverIconAction {
-            Button("Open as Report", action: hoverIconAction)
-        }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let onCopyText else { return nil }
+        return { onCopyText(text) }
     }
 
     /// Only expose the hover icon when the bubble's full text wouldn't fit in

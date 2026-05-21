@@ -363,7 +363,7 @@ export function realtimeTools(): Array<Record<string, unknown>> {
     {
       type: "function",
       name: "picky_run_bash",
-      description: "Run one quick non-interactive shell command for lightweight inspection (for example `pwd`, `git status`, narrow `rg/find`, or a short script). 10s timeout, output tail-capped at 2 KB (full log saved to disk; `logPath` is returned when truncated). Unsandboxed — avoid destructive commands (`rm -rf`, `git push -f`, `git reset --hard`, `>` redirects that overwrite existing files) unless the user explicitly requested or confirmed them. If the command is likely to exceed the timeout, needs interaction/streaming, or is part of a larger workflow, delegate to picky_start_pickle.",
+      description: "Run a non-interactive local shell command or small script via `/bin/bash -lc`. Use it for bounded checks, local inspection, and simple automation that can safely be attempted with the enforced 10s timeout. Output is tail-capped at 2 KB (full log saved to disk; `logPath` is returned when truncated). Unsandboxed — do not run destructive commands (`rm -rf`, `git push -f`, `git reset --hard`, or overwrite redirects) unless the user explicitly requested or confirmed them. If the task needs interaction, streaming, long-running processes, repeated tool chaining, or coding-agent judgment, delegate to `picky_start_pickle`.",
       parameters: {
         type: "object",
         additionalProperties: false,

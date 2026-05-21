@@ -105,6 +105,8 @@ protocol OnboardingNarrationPlayer: AnyObject {
 @MainActor
 final class SystemSpeechNarrationPlayer: NSObject, OnboardingNarrationPlayer {
     private let synthesizer: NSSpeechSynthesizer
+    private let suppressAudioOutput: Bool
+    private let suppressedPlaybackDuration: TimeInterval
 
     /// Active utterance bookkeeping. Only one onFinish closure is ever live
     /// because each `speak` cancels the previous one before starting; the
@@ -115,8 +117,14 @@ final class SystemSpeechNarrationPlayer: NSObject, OnboardingNarrationPlayer {
     private var activeGeneration: Int = 0
     private var prerollTask: Task<Void, Never>?
 
-    init(synthesizer: NSSpeechSynthesizer = NSSpeechSynthesizer()) {
+    init(
+        synthesizer: NSSpeechSynthesizer = NSSpeechSynthesizer(),
+        suppressAudioOutput: Bool? = nil,
+        suppressedPlaybackDuration: TimeInterval = 0.01
+    ) {
         self.synthesizer = synthesizer
+        self.suppressAudioOutput = suppressAudioOutput ?? PickyRuntimeEnvironment.isRunningUnitTests
+        self.suppressedPlaybackDuration = max(0, suppressedPlaybackDuration)
         super.init()
         synthesizer.delegate = self
         synthesizer.usesFeedbackWindow = false
@@ -155,6 +163,10 @@ final class SystemSpeechNarrationPlayer: NSObject, OnboardingNarrationPlayer {
             await MainActor.run { [weak self] in
                 guard let self, self.activeGeneration == myGen else { return }
                 self.prerollTask = nil
+                if self.suppressAudioOutput {
+                    self.finishSuppressedSpeech(generation: myGen)
+                    return
+                }
                 let started = self.synthesizer.startSpeaking(prepared)
                 if !started, self.activeGeneration == myGen {
                     let finish = self.activeOnFinish
@@ -174,6 +186,21 @@ final class SystemSpeechNarrationPlayer: NSObject, OnboardingNarrationPlayer {
         prerollTask?.cancel()
         prerollTask = nil
         synthesizer.stopSpeaking()
+    }
+
+    private func finishSuppressedSpeech(generation: Int) {
+        let duration = suppressedPlaybackDuration
+        prerollTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self, self.activeGeneration == generation else { return }
+                guard let finish = self.activeOnFinish else { return }
+                self.prerollTask = nil
+                self.activeOnFinish = nil
+                finish(true)
+            }
+        }
     }
 
     /// Resolves a voice from `NSSpeechSynthesizer.availableVoices` whose

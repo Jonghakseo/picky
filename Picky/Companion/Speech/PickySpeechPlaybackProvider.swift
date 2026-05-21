@@ -380,6 +380,8 @@ final class PickySystemSpeechPlaybackProvider: PickySpeechPlaybackProvider {
 
     private let speechSynthesizer: any PickyNSSpeechSynthesizing
     private let prerollDelay: TimeInterval
+    private let suppressAudioOutput: Bool
+    private let suppressedPlaybackDuration: TimeInterval
     private var speechSynthesizerDelegate: PickyNSSpeechSynthesizerDelegate?
     private var activeSpeechID: UUID?
     private var onFinish: ((Bool) -> Void)?
@@ -387,10 +389,15 @@ final class PickySystemSpeechPlaybackProvider: PickySpeechPlaybackProvider {
 
     init(
         speechSynthesizer: any PickyNSSpeechSynthesizing = NSSpeechSynthesizer(),
-        prerollDelay: TimeInterval = PickySpeechPlaybackPreparation.prerollSilenceSeconds
+        prerollDelay: TimeInterval = PickySpeechPlaybackPreparation.prerollSilenceSeconds,
+        suppressAudioOutput: Bool? = nil,
+        suppressedPlaybackDuration: TimeInterval = 0.01
     ) {
         self.speechSynthesizer = speechSynthesizer
         self.prerollDelay = max(0, prerollDelay)
+        self.suppressAudioOutput = suppressAudioOutput
+            ?? (PickyRuntimeEnvironment.isRunningUnitTests && speechSynthesizer is NSSpeechSynthesizer)
+        self.suppressedPlaybackDuration = max(0, suppressedPlaybackDuration)
     }
 
     @discardableResult
@@ -434,6 +441,21 @@ final class PickySystemSpeechPlaybackProvider: PickySpeechPlaybackProvider {
 
     @discardableResult
     private func startPreparedSpeech(speechID: UUID, utterance: String, originalCharacterCount: Int) -> Bool {
+        if suppressAudioOutput {
+            PickyLog.notice(.speech, prefix: "🔇 Picky speech —", message: "system provider suppressed audio during unit tests speechID=\(speechID) chars=\(originalCharacterCount)")
+            let duration = suppressedPlaybackDuration
+            prerollTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                await MainActor.run { [weak self] in
+                    guard let self, self.activeSpeechID == speechID else { return }
+                    self.prerollTask = nil
+                    self.handleDelegateFinish(speechID: speechID, didFinish: true)
+                }
+            }
+            return true
+        }
+
         let started = speechSynthesizer.startSpeaking(utterance)
         PickyLog.notice(.speech, prefix: "🔊 Picky speech —", message: "system provider start result=\(started) speechID=\(speechID) chars=\(originalCharacterCount) preparedChars=\(utterance.count) speakingAfterStart=\(speechSynthesizer.isSpeaking)")
 

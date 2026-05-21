@@ -650,6 +650,17 @@ struct PickyCompanionManagerTests {
         try await waitUntil { synthesizer.spokenStrings == ["안녕하세요"] }
     }
 
+    @Test func systemSpeechProviderSuppressesRealAudioDuringUnitTests() async throws {
+        let provider = PickySystemSpeechPlaybackProvider(prerollDelay: 0, suppressedPlaybackDuration: 0.01)
+        var finishes: [Bool] = []
+
+        #expect(provider.speak("기존 응답") { finishes.append($0) })
+        #expect(provider.isSpeaking)
+
+        try await waitUntil { finishes == [true] }
+        #expect(!provider.isSpeaking)
+    }
+
     @Test func speechFallbackProviderUsesFallbackWhenPrimaryFailsAsynchronously() async throws {
         let primary = FakeSpeechPlaybackProvider()
         let fallback = FakeSpeechPlaybackProvider()

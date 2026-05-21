@@ -162,6 +162,7 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     const sessionUpdate = sent.find((event) => event.type === "session.update")!;
     const toolNames = sessionUpdate.session.tools.map((tool: Record<string, unknown>) => tool.name);
     const startPickleTool = sessionUpdate.session.tools.find((tool: Record<string, unknown>) => tool.name === "picky_start_pickle");
+    const runBashTool = sessionUpdate.session.tools.find((tool: Record<string, unknown>) => tool.name === "picky_run_bash");
 
     expect(sessionUpdate.session.audio.input.transcription.prompt).toContain("Picky");
     expect(sessionUpdate.session.audio.input.transcription.prompt).toContain("Pickle");
@@ -176,12 +177,15 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(toolNames).toContain("read_picky_user_guide");
     expect(toolNames).toContain("picky_read_file");
     expect(toolNames).toContain("picky_run_bash");
+    expect(runBashTool?.description).toContain("small script");
+    expect(runBashTool?.description).toContain("enforced 10s timeout");
     expect(toolNames).toContain("picky_write_file");
     expect(toolNames).not.toContain("picky_pointer_overlay");
     expect(sessionUpdate.session.instructions).toContain("Realtime voice mode overrides");
     expect(sessionUpdate.session.instructions).toContain("novel reusable workflow");
     expect(sessionUpdate.session.instructions).toContain("multi-turn instructions, multiple tool calls, or tool chaining");
     expect(sessionUpdate.session.instructions).toContain("picky_skills");
+    expect(sessionUpdate.session.instructions).toContain("do not say you cannot run it just because it automates a local app");
   });
 
   it("snapshots Picky skills once at connect and embeds the names in session.update instructions", async () => {

@@ -3,6 +3,7 @@ import { installExtensionCrashGuard } from "./extension-crash-guard.js";
 import { removeConnectionInfo, writeConnectionInfo } from "./connection-info-store.js";
 import { PROTOCOL_VERSION } from "./protocol.js";
 import { logAgentd } from "./local-log.js";
+import { parseParentPid, startParentExitWatcher } from "./parent-watchdog.js";
 
 // pi extensions run in-process within agentd. A throw from a passive hook
 // (e.g. an idle-timer screensaver calling `ctx.ui.custom`, or an extension
@@ -31,6 +32,14 @@ logAgentd("startup", {
 });
 
 const services = composeAgentdServices(config);
+let shuttingDown = false;
+const parentWatcher = startParentExitWatcher({
+  parentPid: parseParentPid(process.env.PICKY_AGENTD_PARENT_PID),
+  onParentExit: () => {
+    void shutdown(0);
+  },
+});
+
 await services.supervisor.load();
 primeSessionIdFactoryForResume(services);
 const boundPort = await services.server.start();
@@ -61,11 +70,17 @@ if (config.mode === "primary" && services.mainRuntime) {
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
-    const cleanup = config.mode === "primary"
-      ? removeConnectionInfo(config.appSupportDir).catch((error) => logAgentd("connection info remove failed", { error: error instanceof Error ? error.message : String(error) }))
-      : Promise.resolve();
-    void cleanup
-      .then(() => services.server.stop())
-      .then(() => process.exit(0));
+    void shutdown(0);
   });
+}
+
+async function shutdown(exitCode: number): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  parentWatcher?.stop();
+  if (config.mode === "primary") {
+    await removeConnectionInfo(config.appSupportDir).catch((error) => logAgentd("connection info remove failed", { error: error instanceof Error ? error.message : String(error) }));
+  }
+  await services.server.stop();
+  process.exit(exitCode);
 }

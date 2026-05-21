@@ -6,6 +6,7 @@
 //
 
 import Combine
+import Darwin
 import Foundation
 
 enum PickyAgentDaemonRole: Equatable {
@@ -257,6 +258,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
         var env = baseEnvironment ?? ProcessInfo.processInfo.environment
         env["PATH"] = Self.augmentedExecutablePATH(from: env)
         env["PICKY_AGENTD_TOKEN"] = token
+        env["PICKY_AGENTD_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         env["PICKY_APP_SUPPORT_DIR"] = appSupportRoot.path
         return env
     }
@@ -617,6 +619,9 @@ struct PATHPickyExecutableChecker: PickyExecutableChecking {
 }
 
 final class FoundationPickyProcessRunner: PickyProcessRunning {
+    private static let terminationGracePeriod: TimeInterval = 2.0
+    private static let terminationPollInterval: TimeInterval = 0.05
+
     private var process: Process?
     private var stdoutPipe: Pipe?
     private var stderrPipe: Pipe?
@@ -647,8 +652,25 @@ final class FoundationPickyProcessRunner: PickyProcessRunning {
     func terminate() {
         stdoutPipe?.fileHandleForReading.readabilityHandler = nil
         stderrPipe?.fileHandleForReading.readabilityHandler = nil
-        process?.terminate()
-        process = nil
+        guard let process else {
+            stdoutPipe = nil
+            stderrPipe = nil
+            return
+        }
+        if process.isRunning {
+            process.terminate()
+            let deadline = Date().addingTimeInterval(Self.terminationGracePeriod)
+            while process.isRunning && Date() < deadline {
+                Thread.sleep(forTimeInterval: Self.terminationPollInterval)
+            }
+            if process.isRunning {
+                Darwin.kill(process.processIdentifier, SIGKILL)
+                process.waitUntilExit()
+            }
+        }
+        self.process = nil
+        stdoutPipe = nil
+        stderrPipe = nil
     }
 }
 

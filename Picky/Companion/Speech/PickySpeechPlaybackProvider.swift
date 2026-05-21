@@ -345,6 +345,22 @@ protocol PickyNSSpeechSynthesizing: AnyObject {
 
 extension NSSpeechSynthesizer: PickyNSSpeechSynthesizing {}
 
+@MainActor
+private final class PickySilentNSSpeechSynthesizer: PickyNSSpeechSynthesizing {
+    var delegate: NSSpeechSynthesizerDelegate?
+    private(set) var isSpeaking = false
+
+    @discardableResult
+    func startSpeaking(_ string: String) -> Bool {
+        isSpeaking = true
+        return true
+    }
+
+    func stopSpeaking() {
+        isSpeaking = false
+    }
+}
+
 private final class PickyNSSpeechSynthesizerDelegate: NSObject, NSSpeechSynthesizerDelegate {
     private let onFinish: @MainActor (Bool) -> Void
 
@@ -388,15 +404,19 @@ final class PickySystemSpeechPlaybackProvider: PickySpeechPlaybackProvider {
     private var prerollTask: Task<Void, Never>?
 
     init(
-        speechSynthesizer: any PickyNSSpeechSynthesizing = NSSpeechSynthesizer(),
+        speechSynthesizer: (any PickyNSSpeechSynthesizing)? = nil,
         prerollDelay: TimeInterval = PickySpeechPlaybackPreparation.prerollSilenceSeconds,
         suppressAudioOutput: Bool? = nil,
         suppressedPlaybackDuration: TimeInterval = 0.01
     ) {
-        self.speechSynthesizer = speechSynthesizer
+        let isRunningUnitTests = PickyRuntimeEnvironment.isRunningUnitTests
+        let resolvedSpeechSynthesizer: any PickyNSSpeechSynthesizing = speechSynthesizer
+            ?? (isRunningUnitTests ? PickySilentNSSpeechSynthesizer() : NSSpeechSynthesizer())
+
+        self.speechSynthesizer = resolvedSpeechSynthesizer
         self.prerollDelay = max(0, prerollDelay)
         self.suppressAudioOutput = suppressAudioOutput
-            ?? (PickyRuntimeEnvironment.isRunningUnitTests && speechSynthesizer is NSSpeechSynthesizer)
+            ?? (isRunningUnitTests && (speechSynthesizer == nil || resolvedSpeechSynthesizer is NSSpeechSynthesizer))
         self.suppressedPlaybackDuration = max(0, suppressedPlaybackDuration)
     }
 

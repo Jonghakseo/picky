@@ -250,7 +250,7 @@ function resolveBashCwd(cwd: string | undefined): string {
 
 // Expand a leading `~` (alone or followed by `/`) to the current user's home
 // directory. Realtime models routinely pass paths like
-// `~/Library/Application Support/Picky/skills/foo.md` verbatim from the
+// `~/Library/Application Support/Picky/skills/foo/SKILL.md` verbatim from the
 // session-start instructions, and node's `path.resolve` does NOT treat `~`
 // specially — without this, those paths land under <cwd>/~/... instead of the
 // real home directory. Other `~user` forms are a shell feature we do not

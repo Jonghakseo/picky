@@ -229,8 +229,8 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
         listPickySkills() {
           listCalls += 1;
           return [
-            { name: "create-picky-skill", description: "Author a new Picky skill", path: "/tmp/skills/create-picky-skill.md" },
-            { name: "prefer-korean", description: "Reply in Korean for casual chitchat", path: "/tmp/skills/prefer-korean.md" },
+            { name: "create-picky-skill", description: "Author a new Picky skill", path: "/tmp/skills/create-picky-skill/SKILL.md" },
+            { name: "prefer-korean", description: "Reply in Korean for casual chitchat", path: "/tmp/skills/prefer-korean/SKILL.md" },
           ];
         },
       },
@@ -249,8 +249,8 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     const sessionUpdate = sent.find((event) => event.type === "session.update")!;
     expect(listCalls).toBe(1);
     expect(sessionUpdate.session.instructions).toContain("## Picky skills");
-    expect(sessionUpdate.session.instructions).toContain("create-picky-skill \u2014 Author a new Picky skill \u2014 path: /tmp/skills/create-picky-skill.md");
-    expect(sessionUpdate.session.instructions).toContain("prefer-korean \u2014 Reply in Korean for casual chitchat \u2014 path: /tmp/skills/prefer-korean.md");
+    expect(sessionUpdate.session.instructions).toContain("create-picky-skill \u2014 Author a new Picky skill \u2014 path: /tmp/skills/create-picky-skill/SKILL.md");
+    expect(sessionUpdate.session.instructions).toContain("prefer-korean \u2014 Reply in Korean for casual chitchat \u2014 path: /tmp/skills/prefer-korean/SKILL.md");
     expect(sessionUpdate.session.instructions).toContain("picky_skills");
   });
 

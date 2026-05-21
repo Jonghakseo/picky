@@ -1,8 +1,13 @@
 import { mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { PickySkillStore } from "./picky-skill-store.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const REPO_ROOT = resolve(__dirname, "../../..");
 
 async function writeSkillDir(parent: string, name: string, body: string): Promise<void> {
   const dir = join(parent, name);
@@ -74,6 +79,13 @@ describe("PickySkillStore", () => {
     const root = await mkdtemp(join(tmpdir(), "picky-skill-store-missing-dir-"));
     const store = new PickySkillStore({ skillsDir: join(root, "skills"), seedSourceDir: null });
     expect(await store.list()).toEqual([]);
+  });
+
+  it("documents the seeded create-picky-skill output as <name>/SKILL.md", async () => {
+    const body = await readFile(join(REPO_ROOT, "agentd/seeds/picky-skills/create-picky-skill/SKILL.md"), "utf8");
+    expect(body).toContain("skills/<name>/SKILL.md");
+    expect(body).toContain("Do not use the legacy flat `skills/<name>.md` path");
+    expect(body).not.toContain("skills/<name>.md\", content");
   });
 
   it("copies every seed directory on first run and records them in the manifest", async () => {

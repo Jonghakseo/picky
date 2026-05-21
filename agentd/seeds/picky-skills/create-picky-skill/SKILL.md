@@ -12,21 +12,21 @@ description: Author a new Picky skill (a short behavior recipe for the realtime 
 
 ## What a Picky skill is
 
-- A single Markdown file with YAML frontmatter and a short body.
-- Lives under `~/Library/Application Support/Picky/skills/<name>.md`.
-- Read by the realtime main agent via the `picky_skill` tool. The list of names + descriptions is injected once at session start.
+- A skill directory containing a `SKILL.md` file with YAML frontmatter and a short body.
+- Lives at `~/Library/Application Support/Picky/skills/<name>/SKILL.md`.
+- Read by the realtime main agent via the `picky_skills` catalog plus `picky_read_file` for the listed `SKILL.md` path. The list of names + descriptions is injected once at session start.
 
 ## What to do
 
 1. Confirm the trigger and behavior the user wants. Ask one short clarifying question if the trigger is unclear.
 
-2. Pick a kebab-case `<name>` (e.g. `summarize-pr-link`, `escalate-to-pickle`, `prefer-concise-replies`). Filename and frontmatter `name` must match.
+2. Pick a kebab-case `<name>` (e.g. `summarize-pr-link`, `escalate-to-pickle`, `prefer-concise-replies`). The directory name and frontmatter `name` must match.
 
 3. Draft the body using the template below. Keep it tight — this is a recipe, not a manual.
 
 4. Before writing, if a file with the same name might exist, check with `picky_skill({ action: "get", name })` and confirm with the user before overwriting.
 
-5. Save with `picky_write_file({ path: "~/Library/Application Support/Picky/skills/<name>.md", content, mode: "overwrite" })`.
+5. Save with `picky_write_file({ path: "~/Library/Application Support/Picky/skills/<name>/SKILL.md", content, mode: "overwrite" })`. Do not use the legacy flat `skills/<name>.md` path.
 
 6. Tell the user:
    

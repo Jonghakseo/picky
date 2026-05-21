@@ -188,7 +188,6 @@ export function realtimeTools(): Array<Record<string, unknown>> {
         properties: {
           title: { type: "string", description: "Short title for the Pickle card in the user's language." },
           instructions: { type: "string", description: "Compact delta-first brief for the Pickle." },
-          userMessage: { type: "string", description: "Optional message in the user's language to tell the user after starting Pickle." },
           cwd: { type: "string", description: "Optional. Omit to use Picky's configured default Pickle cwd. Only set this when the user explicitly named a different folder in this turn — do NOT copy the `- CWD:` line from the per-turn captured context, which describes Picky's main-agent cwd and is not the Pickle target." },
         },
         required: ["title", "instructions"],

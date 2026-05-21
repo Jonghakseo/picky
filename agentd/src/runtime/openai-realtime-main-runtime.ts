@@ -62,7 +62,7 @@ interface OpenAIRealtimeMainRuntimeOptions {
 }
 
 interface OpenAIRealtimeToolHandlers {
-  handoff(request: { title: string; instructions: string; userMessage?: string; cwd?: string }): Promise<{ sessionId: string; title: string; cwd?: string }>;
+  handoff(request: { title: string; instructions: string; cwd?: string }): Promise<{ sessionId: string; title: string; cwd?: string }>;
   /** Read a small chunk of a file, applying the realtime hard cap. Long
    *  contents may include an auto-generated `summary` field. Errors are
    *  surfaced as `{ ok: false, error }`. The runtime never throws from a
@@ -1242,7 +1242,6 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
         return this.options.toolHandlers.handoff({
           title: stringArg(args, "title"),
           instructions: stringArg(args, "instructions"),
-          userMessage: optionalStringArg(args, "userMessage"),
           cwd: optionalStringArg(args, "cwd"),
         });
       case "picky_pickle_sessions": {

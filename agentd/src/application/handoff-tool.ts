@@ -7,7 +7,6 @@ import type { PickyAgentSession } from "../protocol.js";
 export interface PickyHandoffRequest {
   title: string;
   instructions: string;
-  userMessage?: string;
   cwd?: string;
 }
 
@@ -64,14 +63,12 @@ function createPickyStartPickleToolWithNames(
     parameters: Type.Object({
       title: Type.String({ description: "Short Pickle card title in the user's language." }),
       instructions: Type.String({ description: "Compact delta-first brief (~300 chars in the user's language): goal, essential constraints, key paths/URLs/IDs, known decisions, expected output. No full prompts, transcripts, logs, or screenshot metadata." }),
-      userMessage: Type.Optional(Type.String({ description: "Optional short follow-up line you intend to tell the user after starting Pickle, in their language." })),
       cwd: Type.Optional(Type.String({ description: "Optional absolute working directory. Omit to use Picky's configured default cwd." })),
     }),
     execute: async (_toolCallId, params) => {
       const session = await onHandoff({
         title: params.title,
         instructions: params.instructions,
-        userMessage: params.userMessage,
         cwd: normalizeOptionalString(params.cwd),
       });
       return {

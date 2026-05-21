@@ -296,7 +296,7 @@ function buildPrimaryMainRuntime(
     logAgentd("pickle start requested", { contextId: context.id, titleChars: request.title.length, instructionChars: request.instructions.length, cwd });
     supervisor.announceMainHandoff(
       context.id,
-      request.userMessage?.trim() || "이건 피클에 맡길게요. 진행 상황은 Picky dock에서 확인할 수 있어요.",
+      "이건 피클에 맡길게요. 진행 상황은 Picky dock에서 확인할 수 있어요.",
     );
     if (!appPickleHandoffRef.current) throw new Error(APP_PICKLE_HANDOFF_UNAVAILABLE);
     const session = await appPickleHandoffRef.current({ context, title: request.title, instructions: request.instructions, cwd });

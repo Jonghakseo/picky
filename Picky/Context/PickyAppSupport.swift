@@ -6,11 +6,38 @@
 import AppKit
 import Foundation
 
+enum PickyRuntimeEnvironment {
+    static var isRunningUnitTests: Bool {
+        let environment = ProcessInfo.processInfo.environment
+        return environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCTestBundlePath"] != nil
+            || ProcessInfo.processInfo.arguments.contains { $0.contains(".xctest") || $0.contains("xctest") }
+    }
+}
+
 enum PickyAppSupport {
+    nonisolated(unsafe) private static let unitTestRootLock = NSLock()
+    nonisolated(unsafe) private static var cachedUnitTestRoot: URL?
+
     static func defaultRoot() -> URL {
+        if PickyRuntimeEnvironment.isRunningUnitTests {
+            return unitTestRoot()
+        }
+
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
         return base.appendingPathComponent("Picky", isDirectory: true)
+    }
+
+    private static func unitTestRoot() -> URL {
+        unitTestRootLock.lock()
+        defer { unitTestRootLock.unlock() }
+        if let cachedUnitTestRoot { return cachedUnitTestRoot }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PickyUnitTests", isDirectory: true)
+            .appendingPathComponent(String(ProcessInfo.processInfo.processIdentifier), isDirectory: true)
+        cachedUnitTestRoot = root
+        return root
     }
 
     /// Default location for transient screenshot bytes captured during a Picky

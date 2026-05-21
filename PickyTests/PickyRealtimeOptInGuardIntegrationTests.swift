@@ -69,10 +69,9 @@ struct PickyRealtimeOptInGuardIntegrationTests {
             )
 
             // CompanionManager constructs its own PickySettingsStore() to look up
-            // realtime auth, which reads the real settings file. The inspector
-            // returns blocked unless ~/.codex/auth.json exists with a token. On
-            // CI it does not; on a signed-in developer machine it does. Either
-            // outcome must be internally consistent.
+            // realtime auth. Unit tests use an isolated app-support root, while
+            // the auth inspector still depends on the developer/CI Codex login
+            // state. Either outcome must be internally consistent.
             let didSend = await manager.sendDirectMessage("hello", source: .quickInput)
 
             if !didSend {

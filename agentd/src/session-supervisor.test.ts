@@ -1427,7 +1427,7 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get(pickle.id)?.lastSummary).toBe("Compacting session…");
 
     runtime.handle?.emit({ type: "status", status: "completed", summary: "Session compacted", noTurnRan: true, compactionCompleted: true, compactionReason: "threshold" });
-    await settle();
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed" && supervisor.get(pickle.id)?.lastSummary === "Session compacted");
     const updated = supervisor.get(pickle.id)!;
     expect(updated.status).toBe("completed");
     expect(updated.lastSummary).toBe("Session compacted");
@@ -3045,7 +3045,7 @@ describe("SessionSupervisor", () => {
     await supervisor.route(context("시각 알려줘"));
     mainRuntime.handle?.emit({ type: "status", status: "running", summary: "Running" });
     mainRuntime.handle?.emit({ type: "turn_text_complete", text: "파일 확인해볼게요." });
-    await settle();
+    await waitUntil(() => replies.some((reply) => reply.contextId === "context-시각 알려줘" && reply.text === "파일 확인해볼게요."));
 
     expect(replies).toEqual([
       { contextId: "context-시각 알려줘", text: "파일 확인해볼게요." },
@@ -3694,14 +3694,14 @@ describe("SessionSupervisor", () => {
     // duplicate terminal events must still produce only one main follow-up.
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
     sideRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
+    await waitUntil(() => (mainRuntime.handle?.followUps ?? []).length === 1);
 
     expect(mainRuntime.handle?.followUps).toHaveLength(1);
     expect(mainRuntime.handle?.followUps[0]?.text).toContain(`Title: ${pickleSession.title}`);
 
     mainRuntime.handle?.emit({ type: "assistant_delta", delta: "바로 끝났어요" });
     mainRuntime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
-    await settle();
+    await waitUntil(() => replies.some((reply) => reply.contextId === pickleSession.id && reply.text === "바로 끝났어요"));
 
     expect(replies).toContainEqual({ contextId: pickleSession.id, text: "바로 끝났어요" });
   });

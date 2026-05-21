@@ -87,7 +87,8 @@ struct AzureOpenAIAudioConfigurationTests {
             environment: [
                 "PICKY_STT_PROVIDER": "local",
                 "AZURE_OPENAI_API_KEY": "ignored-key"
-            ]
+            ],
+            isRealtimeOnlyBuild: false
         )
 
         #expect(provider.displayName == "Azure OpenAI Speech to Text")
@@ -149,7 +150,8 @@ struct AzureOpenAIAudioConfigurationTests {
                 "AZURE_OPENAI_ENDPOINT": "https://picky-resource.openai.azure.com",
                 "AZURE_OPENAI_API_KEY": "test-key",
                 "AZURE_OPENAI_STT_DEPLOYMENT_NAME": "whisper-stt"
-            ]
+            ],
+            isRealtimeOnlyBuild: false
         )
 
         #expect(provider.displayName == "Apple Speech")

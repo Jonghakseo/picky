@@ -827,69 +827,77 @@ struct PickyCompanionManagerTests {
     }
 
     @Test func voiceInputInterruptSendsMainAgentAbortBeforeNextTranscriptRouting() async throws {
-        let client = FakeVoiceClient()
-        let selection = FakeVoiceSelectionStore()
-        selection.hoveredVoiceFollowUpSessionID = "changed-after-press"
-        let manager = CompanionManager(agentClient: client, selectionStore: selection)
+        try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.pi) {
+            let client = FakeVoiceClient()
+            let selection = FakeVoiceSelectionStore()
+            selection.hoveredVoiceFollowUpSessionID = "changed-after-press"
+            let manager = CompanionManager(agentClient: client, selectionStore: selection)
 
-        manager.interruptSpokenResponseForVoiceInput()
-        try await settle()
-        _ = try await manager.routeVoiceTranscript(transcript: "새 음성 입력", contextPacket: context(source: "voice-follow-up"), voiceFollowUpSessionID: "session-hovered")
+            manager.interruptSpokenResponseForVoiceInput()
+            try await settle()
+            _ = try await manager.routeVoiceTranscript(transcript: "새 음성 입력", contextPacket: context(source: "voice-follow-up"), voiceFollowUpSessionID: "session-hovered")
 
-        #expect(client.calls == ["send:abortMainAgent", "send:followUp"])
-        #expect(client.commands.map(\.type) == [.abortMainAgent, .followUp])
-        #expect(client.commands.first?.sessionId == nil)
-        #expect(client.commands.last?.sessionId == "session-hovered")
-        #expect(client.commands.last?.text == "새 음성 입력")
+            #expect(client.calls == ["send:abortMainAgent", "send:followUp"])
+            #expect(client.commands.map(\.type) == [.abortMainAgent, .followUp])
+            #expect(client.commands.first?.sessionId == nil)
+            #expect(client.commands.last?.sessionId == "session-hovered")
+            #expect(client.commands.last?.text == "새 음성 입력")
+        }
     }
 
     @Test func voiceInputAbortPrecedesNewTaskSubmission() async throws {
-        let client = FakeVoiceClient()
-        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+        try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.pi) {
+            let client = FakeVoiceClient()
+            let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
 
-        manager.interruptSpokenResponseForVoiceInput()
-        try await settle()
-        _ = try await manager.routeVoiceTranscript(transcript: "새 작업", contextPacket: context(source: "voice"))
+            manager.interruptSpokenResponseForVoiceInput()
+            try await settle()
+            _ = try await manager.routeVoiceTranscript(transcript: "새 작업", contextPacket: context(source: "voice"))
 
-        #expect(client.calls == ["send:abortMainAgent", "submit"])
-        #expect(client.commands.map(\.type) == [.abortMainAgent])
-        #expect(client.submissions.first?.transcript == "새 작업")
+            #expect(client.calls == ["send:abortMainAgent", "submit"])
+            #expect(client.commands.map(\.type) == [.abortMainAgent])
+            #expect(client.submissions.first?.transcript == "새 작업")
+        }
     }
 
     @Test func voiceInputAbortAlsoAbortsInFlightPickleFollowUpTarget() async throws {
-        let client = FakeVoiceClient()
-        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
-        // Simulate a previous voice utterance routed to a Pickle while the
-        // response is still loading so the session-scoped abort must be
-        // dispatched alongside `abortMainAgent`.
-        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-in-flight")
-        manager.beginAwaitingAgentResponse(recognizedTranscript: "이전 질문")
+        try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.pi) {
+            let client = FakeVoiceClient()
+            let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+            // Simulate a previous voice utterance routed to a Pickle while the
+            // response is still loading so the session-scoped abort must be
+            // dispatched alongside `abortMainAgent`.
+            manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-in-flight")
+            manager.beginAwaitingAgentResponse(recognizedTranscript: "이전 질문")
 
-        manager.interruptSpokenResponseForVoiceInput()
-        // `abortMainAgentForVoiceInput` dispatches two detached
-        // `Task { agentClient.send(...) }` blocks; a fixed `settle()` sleep
-        // races them under load. Poll until both commands have been recorded.
-        try await waitUntil { Set(client.calls) == Set(["send:abortMainAgent", "send:abort"]) }
+            manager.interruptSpokenResponseForVoiceInput()
+            // `abortMainAgentForVoiceInput` dispatches two detached
+            // `Task { agentClient.send(...) }` blocks; a fixed `settle()` sleep
+            // races them under load. Poll until both commands have been recorded.
+            try await waitUntil { Set(client.calls) == Set(["send:abortMainAgent", "send:abort"]) }
 
-        let abortCommand = client.commands.first { $0.type == .abort }
-        #expect(abortCommand?.sessionId == "pickle-in-flight")
+            let abortCommand = client.commands.first { $0.type == .abort }
+            #expect(abortCommand?.sessionId == "pickle-in-flight")
+        }
     }
 
     @Test func voiceInputAbortDoesNotTouchPickleWhenNoResponseIsInFlight() async throws {
-        // Regression guard: when the previous Pickle follow-up has already
-        // completed (no pending response, voiceState != .responding) the PTT
-        // interrupt must not send `.abort` for that stale session id, which
-        // would otherwise overwrite a `done` Pickle to `cancelled` on agentd.
-        let client = FakeVoiceClient()
-        let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
-        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-already-done")
+        try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.pi) {
+            // Regression guard: when the previous Pickle follow-up has already
+            // completed (no pending response, voiceState != .responding) the PTT
+            // interrupt must not send `.abort` for that stale session id, which
+            // would otherwise overwrite a `done` Pickle to `cancelled` on agentd.
+            let client = FakeVoiceClient()
+            let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+            manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-already-done")
 
-        manager.interruptSpokenResponseForVoiceInput()
-        // Wait for the fire-and-forget `abortMainAgent` Task to flush so the
-        // no-abort assertion below doesn't race the dispatch.
-        try await waitUntil { client.calls == ["send:abortMainAgent"] }
+            manager.interruptSpokenResponseForVoiceInput()
+            // Wait for the fire-and-forget `abortMainAgent` Task to flush so the
+            // no-abort assertion below doesn't race the dispatch.
+            try await waitUntil { client.calls == ["send:abortMainAgent"] }
 
-        #expect(client.commands.contains { $0.type == .abort } == false)
+            #expect(client.commands.contains { $0.type == .abort } == false)
+        }
     }
 
     @Test func voiceInputSuppressesQuickReplySpeechWithoutQueueing() async throws {

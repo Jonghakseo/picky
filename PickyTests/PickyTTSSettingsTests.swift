@@ -98,7 +98,7 @@ struct PickyTTSSettingsTests {
         settings.ttsEnabled = false
         settings.ttsProvider = .azure
 
-        let provider = PickySpeechPlaybackProviderFactory.makeDefaultProvider(settings: settings, environment: [:])
+        let provider = PickySpeechPlaybackProviderFactory.makeDefaultProvider(settings: settings, environment: [:], isRealtimeOnlyBuild: false)
 
         #expect(provider.displayName == "Off")
         #expect(provider.isSpeaking == false)

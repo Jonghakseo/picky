@@ -110,7 +110,8 @@ struct OpenAISpeechPlaybackProviderTests {
 
         let provider = PickySpeechPlaybackProviderFactory.makeDefaultProvider(
             settings: settings,
-            environment: [:]
+            environment: [:],
+            isRealtimeOnlyBuild: false
         )
         // FallbackSpeechPlaybackProvider wraps "<primary> + macOS Speech fallback"
         #expect(provider.displayName.contains("OpenAI") == true)
@@ -127,7 +128,8 @@ struct OpenAISpeechPlaybackProviderTests {
             environment: [
                 "PICKY_TTS_PROVIDER": "openai",
                 "OPENAI_API_KEY": "sk-env"
-            ]
+            ],
+            isRealtimeOnlyBuild: false
         )
         #expect(provider.displayName == "macOS Speech")
     }
@@ -142,7 +144,8 @@ struct OpenAISpeechPlaybackProviderTests {
 
         let provider = PickySpeechPlaybackProviderFactory.makeDefaultProvider(
             settings: settings,
-            environment: [:]
+            environment: [:],
+            isRealtimeOnlyBuild: false
         )
         #expect(provider.displayName == "Off")
     }

@@ -77,7 +77,8 @@ struct OpenAITranscriptionProviderTests {
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
             settings: settings,
-            environment: [:]
+            environment: [:],
+            isRealtimeOnlyBuild: false
         )
         #expect(provider.displayName == "OpenAI Speech to Text")
     }
@@ -96,7 +97,8 @@ struct OpenAITranscriptionProviderTests {
             environment: [
                 "PICKY_STT_PROVIDER": "openai",
                 "OPENAI_API_KEY": "sk-env"
-            ]
+            ],
+            isRealtimeOnlyBuild: false
         )
         #expect(provider.displayName == AppleSpeechTranscriptionProvider().displayName)
     }
@@ -109,7 +111,8 @@ struct OpenAITranscriptionProviderTests {
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
             settings: settings,
-            environment: [:]
+            environment: [:],
+            isRealtimeOnlyBuild: false
         )
         #expect(provider.displayName == "OpenAI Speech to Text")
         #expect(provider.isConfigured == false)
@@ -125,7 +128,8 @@ struct OpenAITranscriptionProviderTests {
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
             settings: settings,
-            environment: [:]
+            environment: [:],
+            isRealtimeOnlyBuild: false
         )
         #expect(provider.displayName == "Azure OpenAI Speech to Text")
     }
@@ -137,7 +141,8 @@ struct OpenAITranscriptionProviderTests {
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
             settings: settings,
-            environment: [:]
+            environment: [:],
+            isRealtimeOnlyBuild: false
         )
         #expect(provider.displayName == AppleSpeechTranscriptionProvider().displayName)
     }

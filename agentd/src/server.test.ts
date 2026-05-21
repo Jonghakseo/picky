@@ -121,7 +121,7 @@ describe("AgentdServer", () => {
     const ignored = await connectWithHello();
     const { ws } = await connectWithHello();
     ws.send(JSON.stringify({ id: "cmd-register", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleHandoff", "pickleBridge"] }));
-    await sleep(10);
+    await waitForRegisteredCapability("pickleHandoff");
     const pending = server.requestPickleHandoffFromApp({ context: context("app handoff"), title: "App Handoff", instructions: "Do it", cwd: "/tmp/product" });
     const request = await nextEvent(ws);
     expect(request.type).toBe("pickleHandoffRequested");
@@ -146,7 +146,7 @@ describe("AgentdServer", () => {
   it("requests child-aware Pickle bridge operations from a capable app client", async () => {
     const { ws } = await connectWithHello();
     ws.send(JSON.stringify({ id: "cmd-register", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleBridge"] }));
-    await sleep(10);
+    await waitForRegisteredCapability("pickleBridge");
     const pending = server.requestPickleBridgeFromApp({ operation: "listSessions" });
     const request = await nextEvent(ws);
     expect(request.type).toBe("pickleBridgeRequested");
@@ -303,7 +303,7 @@ describe("AgentdServer", () => {
       type: "registerAppCapabilities",
       capabilities: ["externalEntry"],
     }));
-    await sleep(20);
+    await waitForRegisteredCapability("externalEntry");
 
     const { ws: cliWs } = await connectWithHello();
     cliWs.send(JSON.stringify({
@@ -380,7 +380,7 @@ describe("AgentdServer", () => {
     const create = vi.spyOn(supervisor, "createPickleFromHandoff");
     const { ws: appWs } = await connectWithHello();
     appWs.send(JSON.stringify({ id: "cmd-register", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["externalEntry"] }));
-    await sleep(20);
+    await waitForRegisteredCapability("externalEntry");
 
     const { ws: cliWs } = await connectWithHello();
     cliWs.send(JSON.stringify({ id: "cmd-q3-1", protocolVersion: PROTOCOL_VERSION, type: "createPickleFromExternal", title: "first pickle", instructions: "first", captureContext: true }));
@@ -602,6 +602,11 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
     if (Date.now() > deadline) throw new Error("Timed out waiting for condition");
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
+}
+
+async function waitForRegisteredCapability(capability: string): Promise<void> {
+  const visibleServer = server as unknown as { firstClientWithCapability: (capability: string) => WebSocket | undefined };
+  await waitUntil(() => Boolean(visibleServer.firstClientWithCapability(capability)));
 }
 
 function context(text: string): PickyContextPacket {

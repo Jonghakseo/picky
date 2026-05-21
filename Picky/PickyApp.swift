@@ -163,6 +163,11 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         // `apply(_:)` path from the settings UI.
         LocaleManager.shared.apply(settingsStore.load().appLanguage)
 
+        guard !Self.isRunningUnitTests else {
+            print("🎯 Picky: Unit test host detected; skipping app services and permission probes")
+            return
+        }
+
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 0])
         UNUserNotificationCenter.current().delegate = self
         PickyAppMenuInstaller.install(updaterController: updaterController.standardController)
@@ -326,6 +331,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        guard !Self.isRunningUnitTests else { return }
         if let observer = settingsSaveObserver {
             NotificationCenter.default.removeObserver(observer)
             settingsSaveObserver = nil
@@ -380,10 +386,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     /// startup. Uses SMAppService which shows the app in System Settings >
     /// General > Login Items, letting the user toggle it off if they want.
     private static var isRunningUnitTests: Bool {
-        let environment = ProcessInfo.processInfo.environment
-        return environment["XCTestConfigurationFilePath"] != nil
-            || environment["XCTestBundlePath"] != nil
-            || ProcessInfo.processInfo.arguments.contains { $0.contains(".xctest") || $0.contains("xctest") }
+        PickyRuntimeEnvironment.isRunningUnitTests
     }
 
     private func registerAsLoginItemIfNeeded() {

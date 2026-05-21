@@ -391,6 +391,11 @@ final class CompanionManager: ObservableObject {
     private var realtimeCanSendAudio = false
     private var realtimeBufferedAudioChunks: [Data] = []
     private var realtimeOutputTranscriptByInputID: [UUID: String] = [:]
+    /// True while a Realtime assistant audio response has been handed to the
+    /// local playback engine but has not yet drained. This separates the
+    /// playback-drain cleanup for the just-finished Realtime reply from
+    /// unrelated voice/quick-input loading states that may start later.
+    private var isRealtimePlaybackResponseActive = false
     /// PTT press timestamp captured when a Realtime voice turn begins. Used at
     /// release time to drop near-zero presses (abort taps) instead of sending
     /// an empty commit that the Realtime API would either reject or echo back
@@ -1488,6 +1493,7 @@ final class CompanionManager: ObservableObject {
         realtimeVoiceInputID = nil
         realtimeCanSendAudio = false
         realtimeBufferedAudioChunks.removeAll()
+        isRealtimePlaybackResponseActive = false
         // The pttReleased event already pushed the voice machine into
         // .loading on the way here (PTT release path always reduces
         // .pttReleased before deciding commit vs cancel). Without an
@@ -2371,11 +2377,13 @@ final class CompanionManager: ObservableObject {
             currentVoicePromptPreview = transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : transcript
             reduceVoiceInteraction(.sttFinal(inputID: inputId, text: transcript, now: Date()))
         case .mainRealtimeOutputAudioDelta(_, let audioBase64):
+            isRealtimePlaybackResponseActive = true
             stopCurrentSpeech()
             hideVoicePromptBubbleForRealtimeResponse()
             reduceVoiceInteraction(.realtimeAudioStarted)
             guard ttsPlaybackEnabled else {
                 realtimeAudioPlaybackEngine.stop()
+                isRealtimePlaybackResponseActive = false
                 clearPendingAgentResponseTiming()
                 break
             }
@@ -2410,8 +2418,13 @@ final class CompanionManager: ObservableObject {
                 latestAgentSessionSummary = final
             }
             if !realtimeAudioPlaybackEngine.isPlaying {
-                reduceVoiceInteraction(.realtimeTurnDone)
-                scheduleTransientHideIfNeeded()
+                if isRealtimePlaybackResponseActive {
+                    finishRealtimePlaybackResponse(reason: "turn-done-without-playback")
+                } else {
+                    clearPendingAgentResponseTiming()
+                    reduceVoiceInteraction(.realtimeTurnDone)
+                    scheduleTransientHideIfNeeded()
+                }
             }
         case .transcriptionStreamStarted(let streamId):
             NotificationCenter.default.post(name: .pickyTranscriptionStreamStarted, object: nil, userInfo: ["streamId": streamId])
@@ -2442,8 +2455,25 @@ final class CompanionManager: ObservableObject {
     }
 
     private func handleRealtimePlaybackDrained() {
+        finishRealtimePlaybackResponse(reason: "playback-drained")
+    }
+
+    private func finishRealtimePlaybackResponse(reason: String) {
+        guard isRealtimePlaybackResponseActive else { return }
         guard realtimeVoiceInputID == nil else { return }
-        guard voiceState == .responding else { return }
+
+        switch voiceInteractionState.phase {
+        case .speaking, .loading:
+            break
+        case .idle:
+            guard voiceState == .responding || voiceState == .processing else { return }
+        case .pttInput:
+            return
+        }
+
+        isRealtimePlaybackResponseActive = false
+        clearPendingAgentResponseTiming()
+        logSpeech("realtime playback settled reason=\(reason) voiceState=\(voiceState) phase=\(voiceInteractionState.phase)")
         reduceVoiceInteraction(.realtimeTurnDone)
         scheduleTransientHideIfNeeded()
     }
@@ -2490,6 +2520,7 @@ final class CompanionManager: ObservableObject {
             realtimeVoiceInputID = nil
             realtimeCanSendAudio = false
             realtimeBufferedAudioChunks.removeAll()
+            isRealtimePlaybackResponseActive = false
             scheduleTransientHideIfNeeded()
         }
     }

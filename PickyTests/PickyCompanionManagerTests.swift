@@ -541,6 +541,30 @@ struct PickyCompanionManagerTests {
         #expect(manager.voiceState == .idle)
     }
 
+    @Test func realtimePlaybackDrainClearsLoadingStateAfterLateThinkingEvent() async throws {
+        // Regression: Realtime completion-notification turns can receive a
+        // late `thinking` projection while local audio is still draining. The
+        // old drain handler only cleared `.responding`, so the cursor stayed
+        // yellow (`.processing`) even after playback had finished.
+        let playback = FakeRealtimeAudioPlaybackEngine()
+        let inputID = UUID()
+        let manager = CompanionManager(
+            agentClient: FakeVoiceClient(),
+            selectionStore: FakeVoiceSelectionStore(),
+            realtimeAudioPlaybackEngine: playback
+        )
+
+        manager.applyAgentEvent(.mainRealtimeOutputAudioDelta(inputId: inputID, audioBase64: "AAAA"))
+        manager.applyAgentEvent(.mainRealtimeStateChanged(PickyMainRealtimeStateEvent(state: .thinking, message: nil)))
+        manager.applyAgentEvent(.mainRealtimeTurnDone(PickyMainRealtimeTurnDoneEvent(inputId: inputID, status: .completed, finalTranscript: "완료")))
+
+        #expect(manager.voiceState == .processing)
+
+        playback.finishPlayback()
+
+        #expect(manager.voiceState == .idle)
+    }
+
     @Test @MainActor func quickInputSubmissionCancelsOngoingRealtimeAudioBeforeAuthCheck() async throws {
         // Regression: while the Realtime audio is still draining locally,
         // typing a fresh Quick Input request used to queue the new response

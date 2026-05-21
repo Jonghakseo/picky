@@ -178,6 +178,8 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(toolNames).toContain("picky_read_file");
     expect(toolNames).toContain("picky_run_bash");
     expect(runBashTool?.description).toContain("small script");
+    expect(runBashTool?.description).toContain("pbcopy");
+    expect(runBashTool?.description).toContain("osascript");
     expect(runBashTool?.description).toContain("enforced 10s timeout");
     expect(toolNames).toContain("picky_write_file");
     expect(toolNames).not.toContain("picky_pointer_overlay");

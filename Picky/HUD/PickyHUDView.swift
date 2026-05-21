@@ -505,9 +505,28 @@ struct PickyHUDView: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
-        if panel.runModal() == .OK, let url = panel.url {
+        let response = Self.runWithHUDPanelsBelowSystemModal {
+            panel.runModal()
+        }
+        if response == .OK, let url = panel.url {
             startEmptyPickle(cwd: url.path)
         }
+    }
+
+    private static func runWithHUDPanelsBelowSystemModal<T>(_ operation: () throws -> T) rethrows -> T {
+        let hudPanels = NSApp.windows.compactMap { $0 as? PickyHUDPanel }
+        let originalLevels = hudPanels.map { panel in
+            (panel: panel, level: panel.level)
+        }
+        hudPanels.forEach { panel in
+            panel.level = .floating
+        }
+        defer {
+            originalLevels.forEach { entry in
+                entry.panel.level = entry.level
+            }
+        }
+        return try operation()
     }
 
     private func startEmptyPickle(cwd: String) {

@@ -156,6 +156,11 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// any external entry is rejected with `externalEntryProviderUnavailable`.
     var externalEntryContextProvider: ((PickyExternalEntryRequest) async throws -> PickyContextPacket)?
 
+    /// Async closure invoked when the daemon forwards a CLI-originated PTT
+    /// control request (`picky ptt press|release`). The closure should run the
+    /// same app-side press/release path as the global keyboard shortcut.
+    var pushToTalkControlHandler: ((PickyPushToTalkControlRequest) async throws -> Void)?
+
     init(
         primaryClient: PickyAgentClient,
         pool: PickyAgentDaemonPool,
@@ -559,6 +564,11 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                                 await self?.handleExternalEntryRequest(request)
                             }
                             continue
+                        case .pushToTalkControlRequested(let request):
+                            Task { @MainActor [weak self] in
+                                await self?.handlePushToTalkControlRequest(request)
+                            }
+                            continue
                         default:
                             break
                         }
@@ -578,7 +588,7 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private func registerAppCapabilities(on client: PickyAgentClient) async {
         try? await client.send(PickyCommandEnvelope(
             type: .registerAppCapabilities,
-            capabilities: ["pickleHandoff", "pickleBridge", "externalEntry"]
+            capabilities: ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl"]
         ))
     }
 
@@ -596,6 +606,25 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         } catch {
             try? await primaryClient.send(PickyCommandEnvelope(
                 type: .completeExternalEntryRequest,
+                requestId: request.requestId,
+                errorMessage: error.localizedDescription
+            ))
+        }
+    }
+
+    private func handlePushToTalkControlRequest(_ request: PickyPushToTalkControlRequest) async {
+        do {
+            guard let handler = pushToTalkControlHandler else {
+                throw PickyAgentClientRouterError.pushToTalkControlHandlerUnavailable
+            }
+            try await handler(request)
+            try await primaryClient.send(PickyCommandEnvelope(
+                type: .completePushToTalkControlRequest,
+                requestId: request.requestId
+            ))
+        } catch {
+            try? await primaryClient.send(PickyCommandEnvelope(
+                type: .completePushToTalkControlRequest,
                 requestId: request.requestId,
                 errorMessage: error.localizedDescription
             ))
@@ -632,6 +661,7 @@ enum PickyAgentClientRouterError: LocalizedError, Equatable {
     case unknownChildSession(sessionId: String)
     case routerUnavailable
     case externalEntryProviderUnavailable
+    case pushToTalkControlHandlerUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -641,6 +671,7 @@ enum PickyAgentClientRouterError: LocalizedError, Equatable {
         case .unknownChildSession(let sessionId): "Unknown child Pickle session: \(sessionId)."
         case .routerUnavailable: "Picky router is unavailable."
         case .externalEntryProviderUnavailable: "Picky context provider is not ready for external CLI entry."
+        case .pushToTalkControlHandlerUnavailable: "Picky push-to-talk control handler is not ready for external CLI input."
         }
     }
 }

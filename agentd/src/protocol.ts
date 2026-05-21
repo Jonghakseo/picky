@@ -169,6 +169,8 @@ export type OpenAIRealtimeAuthConfig = z.infer<typeof OpenAIRealtimeAuthConfigSc
 export const ModelCycleDirectionSchema = z.enum(["forward", "backward"]);
 export type ModelCycleDirection = z.infer<typeof ModelCycleDirectionSchema>;
 const PickySlashCommandSourceSchema = z.enum(["extension", "prompt", "skill", "builtin"]);
+const PickyPushToTalkControlActionSchema = z.enum(["press", "release"]);
+export type PickyPushToTalkControlAction = z.infer<typeof PickyPushToTalkControlActionSchema>;
 const PickySlashCommandSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
@@ -315,9 +317,11 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("createEmptyPickleSession"), context: PickyContextPacketSchema }),
   CommandBaseSchema.extend({ type: z.literal("createPickleFromHandoff"), context: PickyContextPacketSchema, title: z.string().min(1), instructions: z.string().min(1), cwd: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("completePickleHandoff"), requestId: z.string().min(1), sessionId: z.string().min(1).optional(), title: z.string().min(1).optional(), cwd: z.string().optional(), errorMessage: z.string().min(1).optional() }),
-  CommandBaseSchema.extend({ type: z.literal("registerAppCapabilities"), capabilities: z.array(z.enum(["pickleHandoff", "pickleBridge", "externalEntry"])).min(1) }),
+  CommandBaseSchema.extend({ type: z.literal("registerAppCapabilities"), capabilities: z.array(z.enum(["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl"])).min(1) }),
   CommandBaseSchema.extend({ type: z.literal("submitMainFromExternal"), text: z.string().min(1), captureContext: z.boolean().default(true), cwd: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("createPickleFromExternal"), title: z.string().min(1), instructions: z.string().min(1), captureContext: z.boolean().default(true), cwd: z.string().min(1).optional() }),
+  CommandBaseSchema.extend({ type: z.literal("controlPushToTalkFromExternal"), action: PickyPushToTalkControlActionSchema }),
+  CommandBaseSchema.extend({ type: z.literal("completePushToTalkControlRequest"), requestId: z.string().min(1), errorMessage: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("completeExternalEntryRequest"), requestId: z.string().min(1), context: PickyContextPacketSchema.optional(), errorMessage: z.string().min(1).optional() }),
   CommandBaseSchema.extend({
     type: z.literal("completePickleBridgeRequest"),
@@ -502,6 +506,16 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
     sessionId: z.string().min(1).optional(),
     contextId: z.string().min(1).optional(),
     errorMessage: z.string().min(1).optional(),
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("pushToTalkControlRequested"),
+    requestId: z.string().min(1),
+    action: PickyPushToTalkControlActionSchema,
+  }),
+  EventBaseSchema.extend({
+    type: z.literal("pushToTalkControlAck"),
+    commandId: z.string().min(1),
+    action: PickyPushToTalkControlActionSchema,
   }),
   EventBaseSchema.extend({ type: z.literal("slashCommandsSnapshot"), sessionId: z.string(), requestId: z.string().optional(), commands: z.array(PickySlashCommandSchema) }),
   EventBaseSchema.extend({ type: z.literal("sessionMessageAppended"), sessionId: z.string(), message: PickySessionMessageSchema, seq: z.number().int() }),

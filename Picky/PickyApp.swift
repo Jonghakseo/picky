@@ -222,6 +222,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             autoInstallShellCommandIfPermitted()
         }
         wireExternalEntryProvider(on: hudAgentClientRouter)
+        wirePushToTalkControlHandler(on: hudAgentClientRouter)
         // Wire the appearance store and shared settings store into singletons that live
         // outside the SwiftUI tree (markdown report viewer / terminal overlay) so every
         // secondary NSPanel flips with the rest of the app and the user's per-panel zoom
@@ -327,6 +328,13 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             }
             self.companionManager.noteExternalSubmission(text: transcript, context: result.contextPacket)
             return result.contextPacket
+        }
+    }
+
+    private func wirePushToTalkControlHandler(on router: PickyAgentClientRouter) {
+        router.pushToTalkControlHandler = { [weak self] request in
+            guard let self else { throw PickyAgentClientRouterError.routerUnavailable }
+            self.companionManager.controlPushToTalkFromExternal(action: request.action)
         }
     }
 

@@ -256,6 +256,23 @@ describe("picky cli", () => {
     expect(result.stdout).toContain("Abort requested for p-1");
   });
 
+  it("ptt press and release send push-to-talk control commands", async () => {
+    server.onCommand("controlPushToTalkFromExternal", (command, send) => {
+      const cmd = command as { id: string; action: "press" | "release" };
+      send({ type: "pushToTalkControlAck", commandId: cmd.id, action: cmd.action });
+    });
+
+    const press = await runCli(["ptt", "press"]);
+    const release = await runCli(["ptt", "release"]);
+
+    expect(press.code).toBe(0);
+    expect(press.stdout).toContain("PTT press sent");
+    expect(release.code).toBe(0);
+    expect(release.stdout).toContain("PTT release sent");
+    expect(server.received[0]).toMatchObject({ type: "controlPushToTalkFromExternal", action: "press" });
+    expect(server.received[1]).toMatchObject({ type: "controlPushToTalkFromExternal", action: "release" });
+  });
+
   it("--help exits 0 and prints command list", async () => {
     const result = await runCli(["--help"]);
     expect(result.code).toBe(0);
@@ -264,6 +281,7 @@ describe("picky cli", () => {
     expect(result.stdout).toContain("pickle-list");
     expect(result.stdout).toContain("pickle-followup");
     expect(result.stdout).toContain("pickle-abort");
+    expect(result.stdout).toContain("ptt");
     expect(result.stdout).toContain("Examples:");
   });
 

@@ -231,6 +231,22 @@ private func makeExternalEntryRequestEvent(
     return try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: data)
 }
 
+private func makePushToTalkControlRequestEvent(
+    requestId: String = "ptt-control-1",
+    action: String = "press"
+) throws -> PickyEventEnvelope {
+    let payload: [String: Any] = [
+        "id": "event-ptt-control",
+        "protocolVersion": "2026-05-09",
+        "timestamp": "2026-05-01T00:00:00.000Z",
+        "type": "pushToTalkControlRequested",
+        "requestId": requestId,
+        "action": action,
+    ]
+    let data = try JSONSerialization.data(withJSONObject: payload)
+    return try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: data)
+}
+
 private func makePickleHandoffRequestEvent() throws -> PickyEventEnvelope {
     let json = """
     {
@@ -322,7 +338,7 @@ struct PickyAgentClientRouterTests {
 
         let registrations = primary.sentCommands.filter { $0.type == .registerAppCapabilities }
         #expect(registrations.count == registrationsBeforeReconnect + 1)
-        #expect(registrations.last?.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry"])
+        #expect(registrations.last?.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl"])
     }
 
     @Test func sendsCompleteExternalEntryWithCapturedContextWhenProviderResolves() async throws {
@@ -382,6 +398,47 @@ struct PickyAgentClientRouterTests {
         #expect(completion.errorMessage == "capture refused")
     }
 
+    @Test func sendsCompletePushToTalkControlWhenHandlerRuns() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        var observedAction: PickyPushToTalkControlAction?
+        router.pushToTalkControlHandler = { request in
+            observedAction = request.action
+        }
+
+        await router.connect()
+        primary.emit(.protocolEvent(try makePushToTalkControlRequestEvent(action: "press")))
+
+        try await waitUntil { primary.sentCommands.contains { $0.type == .completePushToTalkControlRequest } }
+        let completion = try #require(primary.sentCommands.first { $0.type == .completePushToTalkControlRequest })
+        #expect(observedAction == .press)
+        #expect(completion.requestId == "ptt-control-1")
+        #expect(completion.errorMessage == nil)
+    }
+
+    @Test func sendsCompletePushToTalkControlWithErrorMessageWhenHandlerThrows() async throws {
+        let primary = StubAgentClient(id: "primary")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(token: "tok", appSupportRoot: root)
+        )
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: StubClientFactory())
+        struct StubFailure: LocalizedError { var errorDescription: String? { "button refused" } }
+        router.pushToTalkControlHandler = { _ in throw StubFailure() }
+
+        await router.connect()
+        primary.emit(.protocolEvent(try makePushToTalkControlRequestEvent(action: "release")))
+
+        try await waitUntil { primary.sentCommands.contains { $0.type == .completePushToTalkControlRequest } }
+        let completion = try #require(primary.sentCommands.first { $0.type == .completePushToTalkControlRequest })
+        #expect(completion.requestId == "ptt-control-1")
+        #expect(completion.errorMessage == "button refused")
+    }
+
     @Test func registersAppCapabilitiesWhenChildConnectsForPickleBridge() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
         let agentd = root.appendingPathComponent("agentd", isDirectory: true)
@@ -408,7 +465,7 @@ struct PickyAgentClientRouterTests {
         let child = try #require(clientFactory.madeClients.first?.client)
         try await waitUntil { child.sentCommands.contains { $0.type == .registerAppCapabilities } }
         let registration = try #require(child.sentCommands.first { $0.type == .registerAppCapabilities })
-        #expect(registration.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry"])
+        #expect(registration.capabilities == ["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl"])
         #expect(primary.sentCommands.filter { $0.type == .registerAppCapabilities }.isEmpty)
     }
 

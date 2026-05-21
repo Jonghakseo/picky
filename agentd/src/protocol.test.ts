@@ -159,6 +159,40 @@ describe("protocol contract fixtures", () => {
     }
   });
 
+  it("parses external push-to-talk control command and events", () => {
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-ptt-press",
+      protocolVersion: "2026-05-09",
+      type: "controlPushToTalkFromExternal",
+      action: "press",
+    })).toMatchObject({ type: "controlPushToTalkFromExternal", action: "press" });
+
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-ptt-complete",
+      protocolVersion: "2026-05-09",
+      type: "completePushToTalkControlRequest",
+      requestId: "ptt-control-1",
+    })).toMatchObject({ type: "completePushToTalkControlRequest", requestId: "ptt-control-1" });
+
+    expect(EventEnvelopeSchema.parse({
+      id: "event-ptt-request",
+      protocolVersion: "2026-05-09",
+      timestamp: "2026-05-09T00:00:00.000Z",
+      type: "pushToTalkControlRequested",
+      requestId: "ptt-control-1",
+      action: "release",
+    })).toMatchObject({ type: "pushToTalkControlRequested", action: "release" });
+
+    expect(EventEnvelopeSchema.parse({
+      id: "event-ptt-ack",
+      protocolVersion: "2026-05-09",
+      timestamp: "2026-05-09T00:00:00.000Z",
+      type: "pushToTalkControlAck",
+      commandId: "cmd-ptt-release",
+      action: "release",
+    })).toMatchObject({ type: "pushToTalkControlAck", action: "release" });
+  });
+
   it("parses session message events with full message payloads", () => {
     expect(() =>
       EventEnvelopeSchema.parse({

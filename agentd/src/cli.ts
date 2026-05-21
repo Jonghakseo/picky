@@ -24,6 +24,8 @@ Examples:
   $ picky pickle-list --include-archived
   $ picky pickle-followup pickle-abc "production 환경으로 다시"
   $ picky pickle-abort pickle-abc
+  $ picky ptt press
+  $ picky ptt release
 
 Environment:
   PICKY_APP_SUPPORT_DIR   Override the directory containing agentd-connection.json
@@ -168,6 +170,47 @@ program
     });
   });
 
+const ptt = program
+  .command("ptt")
+  .description("Control Picky push-to-talk from external integrations such as hardware buttons.");
+
+ptt
+  .command("press")
+  .description("Start a Picky push-to-talk turn, equivalent to pressing the configured PTT shortcut.")
+  .option("--json", "Emit the raw ack JSON to stdout")
+  .addHelpText("after", `
+Examples:
+  $ picky ptt press
+`)
+  .action(async (options: SharedOptions) => {
+    await runWithErrorHandling(async () => {
+      const connection = await loadCliConnection();
+      const ack = await sendCommand(connection, { type: "controlPushToTalkFromExternal", action: "press" }, {
+        matchEvent: matchPushToTalkControlAck("press"),
+      });
+      printAck(ack, options.json, "PTT press sent");
+    });
+  });
+
+ptt
+  .command("release")
+  .description("End the current Picky push-to-talk turn, equivalent to releasing the configured PTT shortcut.")
+  .option("--json", "Emit the raw ack JSON to stdout")
+  .addHelpText("after", `
+Examples:
+  $ picky ptt release
+`)
+  .action(async (options: SharedOptions) => {
+    await runWithErrorHandling(async () => {
+      const connection = await loadCliConnection();
+      const ack = await sendCommand(connection, { type: "controlPushToTalkFromExternal", action: "release" }, {
+        matchEvent: matchPushToTalkControlAck("release"),
+      });
+      printAck(ack, options.json, "PTT release sent");
+    });
+  });
+void ptt;
+
 program
   .command("pickle-followup <session-id> <text>")
   .description("Append <text> as a follow-up turn to an existing Pickle session.")
@@ -260,6 +303,23 @@ interface ExternalEntryAck {
   sessionId?: string;
   contextId?: string;
   errorMessage?: string;
+}
+
+type PushToTalkControlAction = "press" | "release";
+
+interface PushToTalkControlAck {
+  commandId: string;
+  action: PushToTalkControlAction;
+}
+
+function matchPushToTalkControlAck(action: PushToTalkControlAction): (event: EventEnvelope, commandId: string) => EventEnvelope | null {
+  return (event, commandId) => {
+    if (event.type !== "pushToTalkControlAck") return null;
+    const ack = event as unknown as PushToTalkControlAck;
+    if (ack.commandId !== commandId) return null;
+    if (ack.action !== action) return null;
+    return event;
+  };
 }
 
 function matchExternalEntryAck(kind: "submitMain" | "createPickle"): (event: EventEnvelope, commandId: string) => EventEnvelope | null {

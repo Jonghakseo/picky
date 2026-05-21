@@ -1,0 +1,6 @@
+{
+  "id": "cmd-complete-ptt",
+  "protocolVersion": "2026-05-09",
+  "type": "completePushToTalkControlRequest",
+  "requestId": "ptt-control-1"
+}

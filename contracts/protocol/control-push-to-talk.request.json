@@ -1,0 +1,6 @@
+{
+  "id": "cmd-ptt-press",
+  "protocolVersion": "2026-05-09",
+  "type": "controlPushToTalkFromExternal",
+  "action": "press"
+}

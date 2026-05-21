@@ -341,6 +341,7 @@ private extension PickyCommandEnvelope {
         if let inputId { parts.append("input=\(inputId.uuidString)") }
         if let audioBase64 { parts.append("audioBase64Chars=\(audioBase64.count)") }
         if let baselinePiMessageId { parts.append("baselinePiMessage=\(baselinePiMessageId)") }
+        if let action { parts.append("action=\(action.rawValue)") }
         return parts.joined(separator: " ")
     }
 }
@@ -412,6 +413,8 @@ private extension PickyEventEnvelope {
             return "type=pickleBridgeRequested id=\(id) request=\(request.requestId) operation=\(request.operation.rawValue) session=\(request.sessionId ?? "none")"
         case .externalEntryRequested(let request):
             return "type=externalEntryRequested id=\(id) request=\(request.requestId) kind=\(request.kind.rawValue) cwd=\(request.cwd ?? "none")"
+        case .pushToTalkControlRequested(let request):
+            return "type=pushToTalkControlRequested id=\(id) request=\(request.requestId) action=\(request.action.rawValue)"
         case .slashCommandsSnapshot(let sessionId, let requestId, let commands):
             return "type=slashCommandsSnapshot id=\(id) session=\(sessionId) request=\(requestId ?? "none") commands=\(commands.count)"
         case .sessionMessageAppended(let sessionId, _, let seq):

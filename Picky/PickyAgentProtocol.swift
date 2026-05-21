@@ -95,6 +95,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var language: String?
     var model: String?
     var keyterms: [String]?
+    var action: PickyPushToTalkControlAction?
 
     init(
         id: String = "cmd-\(UUID().uuidString)",
@@ -138,7 +139,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
         streamId: String? = nil,
         language: String? = nil,
         model: String? = nil,
-        keyterms: [String]? = nil
+        keyterms: [String]? = nil,
+        action: PickyPushToTalkControlAction? = nil
     ) {
         self.id = id
         self.protocolVersion = pickyAgentProtocolVersion
@@ -182,6 +184,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.language = language
         self.model = model
         self.keyterms = keyterms
+        self.action = action
         self.disabledBuiltinTools = disabledBuiltinTools
     }
 }
@@ -209,6 +212,8 @@ enum PickyCommandType: String, Codable, Equatable {
     case registerAppCapabilities
     case completePickleBridgeRequest
     case completeExternalEntryRequest
+    case controlPushToTalkFromExternal
+    case completePushToTalkControlRequest
     case duplicatePickleSession
     case pinPickleSession
     case clearQueue
@@ -313,6 +318,7 @@ enum PickyEvent: Equatable {
     case narrateProgressRequested(PickyNarrateProgressRequest)
     case pickleBridgeRequested(PickyPickleBridgeRequest)
     case externalEntryRequested(PickyExternalEntryRequest)
+    case pushToTalkControlRequested(PickyPushToTalkControlRequest)
     case slashCommandsSnapshot(sessionId: String, requestId: String?, commands: [PickySlashCommand])
     case sessionMessageAppended(sessionId: String, message: PickySessionMessage, seq: Int)
     case sessionMessageReplaced(sessionId: String, messageId: String, message: PickySessionMessage, seq: Int)
@@ -413,6 +419,8 @@ enum PickyEvent: Equatable {
             self = .pickleBridgeRequested(try PickyPickleBridgeRequest(from: decoder))
         case "externalEntryRequested":
             self = .externalEntryRequested(try PickyExternalEntryRequest(from: decoder))
+        case "pushToTalkControlRequested":
+            self = .pushToTalkControlRequested(try PickyPushToTalkControlRequest(from: decoder))
         case "slashCommandsSnapshot":
             let payload = try PickySlashCommandsSnapshotPayload(from: decoder)
             self = .slashCommandsSnapshot(sessionId: payload.sessionId, requestId: payload.requestId, commands: payload.commands)
@@ -574,6 +582,16 @@ struct PickyExternalEntryRequest: Decodable, Equatable {
     let title: String?
     let instructions: String?
     let cwd: String?
+}
+
+enum PickyPushToTalkControlAction: String, Codable, Equatable {
+    case press
+    case release
+}
+
+struct PickyPushToTalkControlRequest: Decodable, Equatable {
+    let requestId: String
+    let action: PickyPushToTalkControlAction
 }
 
 enum PickyPickleBridgeOperation: String, Decodable, Equatable {

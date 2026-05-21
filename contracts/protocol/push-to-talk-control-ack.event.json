@@ -1,0 +1,8 @@
+{
+  "id": "event-ptt-control-ack",
+  "protocolVersion": "2026-05-09",
+  "timestamp": "2026-05-09T00:00:00.000Z",
+  "type": "pushToTalkControlAck",
+  "commandId": "cmd-ptt-press",
+  "action": "press"
+}

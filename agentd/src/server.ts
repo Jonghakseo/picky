@@ -4,7 +4,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { isAuthorized } from "./auth.js";
 import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-prefixes.js";
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
-import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type EventEnvelope, type MainRealtimeQuotaSnapshot, type MainRealtimeUsageSnapshot, type PickyAgentSession, type PickyAgentSessionParsed, type PickyContextPacket } from "./protocol.js";
+import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type EventEnvelope, type MainRealtimeQuotaSnapshot, type MainRealtimeUsageSnapshot, type PickyAgentSession, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
 
@@ -50,6 +50,9 @@ const APP_PICKLE_HANDOFF_TIMEOUT = "Picky app handoff timed out";
 export const APP_EXTERNAL_ENTRY_UNAVAILABLE = "Picky app external entry unavailable";
 const APP_EXTERNAL_ENTRY_TIMEOUT = "Picky app external entry timed out";
 const EXTERNAL_ENTRY_TIMEOUT_MS = 10_000;
+export const APP_PUSH_TO_TALK_CONTROL_UNAVAILABLE = "Picky app push-to-talk control unavailable";
+const APP_PUSH_TO_TALK_CONTROL_TIMEOUT = "Picky app push-to-talk control timed out";
+const PUSH_TO_TALK_CONTROL_TIMEOUT_MS = 2_000;
 
 export class AgentdServer {
   private httpServer?: HttpServer;
@@ -59,6 +62,7 @@ export class AgentdServer {
   private pendingPickleHandoffs = new Map<string, { resolve: (result: AppPickleHandoffResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private pendingPickleBridgeRequests = new Map<string, { resolve: (result: AppPickleBridgeResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private pendingExternalEntries = new Map<string, ExternalEntryPending>();
+  private pendingPushToTalkControls = new Map<string, PushToTalkControlPending>();
   /**
    * FIFO queue of external CLI submissions. Per the agreed Q3 policy, only one
    * `submitMainFromExternal` / `createPickleFromExternal` is processed at a time;
@@ -193,6 +197,11 @@ export class AgentdServer {
       pending.reject(new Error(APP_EXTERNAL_ENTRY_UNAVAILABLE));
     }
     this.pendingExternalEntries.clear();
+    for (const pending of this.pendingPushToTalkControls.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error(APP_PUSH_TO_TALK_CONTROL_UNAVAILABLE));
+    }
+    this.pendingPushToTalkControls.clear();
     for (const client of this.clients) client.close();
     await new Promise<void>((resolve) => this.wsServer?.close(() => resolve()) ?? resolve());
     await new Promise<void>((resolve) => this.httpServer?.close(() => resolve()) ?? resolve());
@@ -210,6 +219,13 @@ export class AgentdServer {
           clearTimeout(pending.timer);
           pending.reject(new Error(APP_EXTERNAL_ENTRY_UNAVAILABLE));
           this.pendingExternalEntries.delete(requestId);
+        }
+      }
+      if (lostCapabilities?.has("pushToTalkControl")) {
+        for (const [requestId, pending] of this.pendingPushToTalkControls) {
+          clearTimeout(pending.timer);
+          pending.reject(new Error(APP_PUSH_TO_TALK_CONTROL_UNAVAILABLE));
+          this.pendingPushToTalkControls.delete(requestId);
         }
       }
       logAgentd("ws disconnected", { clients: this.clients.size });
@@ -288,6 +304,11 @@ export class AgentdServer {
       completePickleBridgeRequest: (cmd) => this.completePendingPickleBridgeRequest(cmd),
       submitMainFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "submitMain", { text: cmd.text, captureContext: cmd.captureContext, cwd: cmd.cwd }),
       createPickleFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "createPickle", { title: cmd.title, instructions: cmd.instructions, captureContext: cmd.captureContext, cwd: cmd.cwd }),
+      controlPushToTalkFromExternal: async (cmd) => {
+        await this.requestPushToTalkControl(cmd.action);
+        this.send(ws, { type: "pushToTalkControlAck", commandId: cmd.id, action: cmd.action });
+      },
+      completePushToTalkControlRequest: (cmd) => this.completePendingPushToTalkControl(cmd),
       completeExternalEntryRequest: (cmd) => this.completePendingExternalEntry(cmd),
       duplicatePickleSession: (cmd) => this.options.supervisor.duplicatePickleSession(cmd.sessionId),
       pinPickleSession: (cmd) => this.options.supervisor.pinPickleSession(cmd.context, cmd.title),
@@ -478,6 +499,34 @@ export class AgentdServer {
     pending.resolve(command.context);
   }
 
+  private requestPushToTalkControl(action: PickyPushToTalkControlAction, timeoutMs = PUSH_TO_TALK_CONTROL_TIMEOUT_MS): Promise<void> {
+    const app = this.firstClientWithCapability("pushToTalkControl");
+    if (!app) return Promise.reject(new Error(APP_PUSH_TO_TALK_CONTROL_UNAVAILABLE));
+    const requestId = `ptt-control-${randomUUID()}`;
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const pending = this.pendingPushToTalkControls.get(requestId);
+        if (!pending) return;
+        this.pendingPushToTalkControls.delete(requestId);
+        pending.reject(new Error(APP_PUSH_TO_TALK_CONTROL_TIMEOUT));
+      }, timeoutMs);
+      this.pendingPushToTalkControls.set(requestId, { resolve, reject, timer });
+      this.send(app, { type: "pushToTalkControlRequested", requestId, action });
+    });
+  }
+
+  private completePendingPushToTalkControl(command: Extract<ReturnType<typeof parseCommand>, { type: "completePushToTalkControlRequest" }>): void {
+    const pending = this.pendingPushToTalkControls.get(command.requestId);
+    if (!pending) throw new Error(`Unknown push-to-talk control request: ${command.requestId}`);
+    this.pendingPushToTalkControls.delete(command.requestId);
+    clearTimeout(pending.timer);
+    if (command.errorMessage) {
+      pending.reject(new Error(command.errorMessage));
+      return;
+    }
+    pending.resolve();
+  }
+
   private broadcast(event: EventPayload): void {
     if (this.clients.size === 0) return;
     let bytes = 0;
@@ -501,6 +550,12 @@ export class AgentdServer {
 
 interface ExternalEntryPending {
   resolve: (context: PickyContextPacket) => void;
+  reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
+}
+
+interface PushToTalkControlPending {
+  resolve: () => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
 }
@@ -571,6 +626,10 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, textChars: command.text.length, captureContext: command.captureContext ? 1 : 0, cwd: command.cwd };
     case "createPickleFromExternal":
       return { commandId: command.id, type: command.type, titleChars: command.title.length, instructionChars: command.instructions.length, captureContext: command.captureContext ? 1 : 0, cwd: command.cwd };
+    case "controlPushToTalkFromExternal":
+      return { commandId: command.id, type: command.type, action: command.action };
+    case "completePushToTalkControlRequest":
+      return { commandId: command.id, type: command.type, requestId: command.requestId, errorChars: command.errorMessage?.length };
     case "completeExternalEntryRequest":
       return { commandId: command.id, type: command.type, requestId: command.requestId, hasContext: command.context ? 1 : 0, errorChars: command.errorMessage?.length };
     case "notifyMainOfPickleCompletion":
@@ -722,6 +781,10 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, requestId: event.requestId, kind: event.kind, textChars: event.text?.length, titleChars: event.title?.length, instructionChars: event.instructions?.length, cwd: event.cwd };
     case "externalEntryAck":
       return { eventId: event.id, type: event.type, commandId: event.commandId, kind: event.kind, sessionId: event.sessionId, contextId: event.contextId, errorChars: event.errorMessage?.length };
+    case "pushToTalkControlRequested":
+      return { eventId: event.id, type: event.type, requestId: event.requestId, action: event.action };
+    case "pushToTalkControlAck":
+      return { eventId: event.id, type: event.type, commandId: event.commandId, action: event.action };
     case "slashCommandsSnapshot":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, commands: event.commands.length };
     case "sessionMessageAppended":

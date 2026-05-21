@@ -1216,6 +1216,21 @@ final class CompanionManager: ObservableObject {
         }
     }
 
+    /// Allows external hardware integrations to drive the same push-to-talk
+    /// lifecycle as the global keyboard shortcut through `picky ptt press|release`.
+    /// Duplicate presses/releases are ignored so button bounce cannot start a
+    /// second voice turn or stop an unrelated microphone-button dictation.
+    func controlPushToTalkFromExternal(action: PickyPushToTalkControlAction) {
+        switch action {
+        case .press:
+            guard !isPushToTalkShortcutHeld else { return }
+            handleShortcutTransition(.pressed)
+        case .release:
+            guard isPushToTalkShortcutHeld else { return }
+            handleShortcutTransition(.released)
+        }
+    }
+
     private func handleShortcutTransition(_ transition: BuddyPushToTalkShortcut.ShortcutTransition) {
         // Defensive: even though GlobalPushToTalkShortcutMonitor short-circuits
         // its callback while paused, swallowing transitions here too keeps any
@@ -2448,7 +2463,7 @@ final class CompanionManager: ObservableObject {
             finishAwaitingAgentResponse(visibleText: error.message, spokenText: nil)
         case .hello, .sessionSnapshot, .artifactUpdated, .slashCommandsSnapshot, .unknown,
              .sessionMessageAppended, .sessionMessageReplaced, .sessionMessageRemoved, .sessionQueueUpdated, .sessionActivityUpdated, .terminalSessionSyncOutcome,
-             .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested:
+             .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested, .pushToTalkControlRequested:
             break
         }
     }

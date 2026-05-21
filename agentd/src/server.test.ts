@@ -143,6 +143,38 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("routes external push-to-talk control through a capable app client and acks the CLI", async () => {
+    const ignored = await connectWithHello();
+    const app = await connectWithHello();
+    app.ws.send(JSON.stringify({ id: "cmd-register-ptt", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pushToTalkControl"] }));
+    await waitForRegisteredCapability("pushToTalkControl");
+
+    const cli = await connectWithHello();
+    cli.ws.send(JSON.stringify({ id: "cmd-ptt-press", protocolVersion: PROTOCOL_VERSION, type: "controlPushToTalkFromExternal", action: "press" }));
+
+    const request = await nextEvent(app.ws);
+    expect(request).toMatchObject({ type: "pushToTalkControlRequested", action: "press" });
+    if (request.type !== "pushToTalkControlRequested") throw new Error("expected ptt request");
+    await expect(nextEventWithin(ignored.ws, 50)).resolves.toBeUndefined();
+
+    app.ws.send(JSON.stringify({ id: "cmd-complete-ptt", protocolVersion: PROTOCOL_VERSION, type: "completePushToTalkControlRequest", requestId: request.requestId }));
+
+    const ack = await nextEvent(cli.ws);
+    expect(ack).toMatchObject({ type: "pushToTalkControlAck", commandId: "cmd-ptt-press", action: "press" });
+    ignored.ws.close();
+    app.ws.close();
+    cli.ws.close();
+  });
+
+  it("rejects external push-to-talk control when no capable app is connected", async () => {
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-ptt-release", protocolVersion: PROTOCOL_VERSION, type: "controlPushToTalkFromExternal", action: "release" }));
+    const error = await nextEvent(ws);
+    expect(error).toMatchObject({ type: "error", commandId: "cmd-ptt-release" });
+    if (error.type === "error") expect(error.message).toContain("push-to-talk control unavailable");
+    ws.close();
+  });
+
   it("requests child-aware Pickle bridge operations from a capable app client", async () => {
     const { ws } = await connectWithHello();
     ws.send(JSON.stringify({ id: "cmd-register", protocolVersion: PROTOCOL_VERSION, type: "registerAppCapabilities", capabilities: ["pickleBridge"] }));

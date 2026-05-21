@@ -46,6 +46,10 @@ class WindowPositionManager {
             hasAttemptedSystemPrompt: hasAttemptedAccessibilitySystemPromptDuringCurrentLaunch
         )
 
+        guard !PickyRuntimeEnvironment.isRunningUnitTests else {
+            return presentationDestination
+        }
+
         switch presentationDestination {
         case .alreadyGranted:
             return .alreadyGranted
@@ -115,6 +119,10 @@ class WindowPositionManager {
             hasPermissionNow: hasScreenRecordingPermission(),
             hasAttemptedSystemPrompt: hasAttemptedScreenRecordingSystemPromptDuringCurrentLaunch
         )
+
+        guard !PickyRuntimeEnvironment.isRunningUnitTests else {
+            return presentationDestination
+        }
 
         switch presentationDestination {
         case .alreadyGranted:

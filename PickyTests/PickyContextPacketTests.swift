@@ -72,6 +72,16 @@ struct PickyContextPacketTests {
         ) == (width: 1440, height: 2560))
     }
 
+    @Test @MainActor func realScreenCaptureIsDisabledInUnitTests() async throws {
+        do {
+            _ = try await CompanionScreenCaptureUtility.captureScreensAsJPEG(scope: .focusedScreen)
+            Issue.record("Expected real screen capture to be disabled during unit tests")
+        } catch let error as NSError {
+            #expect(error.domain == "CompanionScreenCapture")
+            #expect(error.code == -1000)
+        }
+    }
+
     @Test @MainActor func contextCaptureExcludesPickyChromeButKeepsArtifactViewers() {
         let hud = PickyHUDPanel(
             contentRect: .zero,

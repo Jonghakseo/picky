@@ -630,6 +630,10 @@ final class CompanionManager: ObservableObject {
 
     func requestScreenContentPermission() {
         guard !isRequestingScreenContent else { return }
+        guard !PickyRuntimeEnvironment.isRunningUnitTests else {
+            print("🔑 Screen content permission request skipped during unit tests")
+            return
+        }
         isRequestingScreenContent = true
         Task {
             do {

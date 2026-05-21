@@ -72,6 +72,14 @@ enum CompanionScreenCaptureUtility {
         scope: PickyScreenContextScope,
         maximumDimension: Int = PickyScreenshotQuality.defaultMaximumDimension
     ) async throws -> [CompanionScreenCapture] {
+        guard !PickyRuntimeEnvironment.isRunningUnitTests else {
+            throw NSError(
+                domain: "CompanionScreenCapture",
+                code: -1000,
+                userInfo: [NSLocalizedDescriptionKey: "Screen capture is disabled while running unit tests"]
+            )
+        }
+
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
 
         guard !content.displays.isEmpty else {

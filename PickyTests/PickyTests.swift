@@ -30,6 +30,14 @@ struct PickyTests {
         #expect(presentationDestination == .systemSettings)
     }
 
+    @Test func screenRecordingRequestHasNoSideEffectInUnitTests() async throws {
+        #expect(PickyRuntimeEnvironment.isRunningUnitTests)
+
+        let presentationDestination = WindowPositionManager.requestScreenRecordingPermission()
+
+        #expect(presentationDestination == .alreadyGranted || presentationDestination == .systemPrompt)
+    }
+
     @Test func knownGrantedScreenRecordingPermissionSkipsTheGate() async throws {
         let shouldTreatPermissionAsGranted = WindowPositionManager.shouldTreatScreenRecordingPermissionAsGrantedForSessionLaunch(
             hasScreenRecordingPermissionNow: false,

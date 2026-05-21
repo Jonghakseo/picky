@@ -212,6 +212,15 @@ struct PickyCompanionManagerTests {
         #expect(client.submissions.isEmpty)
     }
 
+    @Test @MainActor func realtimeCompanionSeedsDictationProviderForPickleHoverVoiceFollowUp() async throws {
+        try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.openAIRealtime) {
+            let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+
+            #expect(manager.buddyDictationManager.transcriptionProviderDisplayName == "OpenAI Realtime STT")
+            #expect(manager.buddyDictationManager.isTranscriptionProviderConfigured)
+        }
+    }
+
     // Regression: between `stopPushToTalkFromKeyboardShortcut` and the eventual
     // `submitDraftText` -> `submitTranscriptToPickyAgent` callback, the dictation
     // publishers (isKeyboardRecording / isFinalizingTranscript / isPreparingToRecord)

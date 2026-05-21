@@ -296,6 +296,12 @@ final class CompanionManager: ObservableObject {
         self.agentClient = agentClient
         self.ownsAgentClientLifecycle = ownsAgentClientLifecycle
         self.selectionStore = selectionStore
+        // Hovered Pickle voice follow-ups still use the BuddyDictationManager
+        // STT path even when the main-agent runtime is OpenAI Realtime. Seed
+        // the factory before constructing the default dictation manager so the
+        // forced realtime STT provider can proxy through this agent client on
+        // first launch, not only after a Settings save triggers a provider reload.
+        BuddyTranscriptionProviderFactory.sharedAgentClient = agentClient
         self.buddyDictationManager = buddyDictationManager ?? BuddyDictationManager()
         self.speechPlaybackProvider = speechPlaybackProvider ?? PickySpeechPlaybackProviderFactory.makeDefaultProvider(settings: initialSettings)
         self.ttsPlaybackEnabled = speechPlaybackProvider == nil ? initialSettings.ttsEnabled : true

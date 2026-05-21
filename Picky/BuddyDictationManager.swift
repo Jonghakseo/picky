@@ -43,6 +43,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
     )
     @Published private(set) var microphoneButtonRecordingStartedAt: Date?
     @Published private(set) var transcriptionProviderDisplayName = ""
+    @Published private(set) var isTranscriptionProviderConfigured = false
     @Published var lastErrorMessage: String?
     @Published private(set) var currentPermissionProblem: BuddyDictationPermissionProblem?
 
@@ -105,6 +106,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         let resolvedTranscriptionProvider = transcriptionProvider ?? BuddyTranscriptionProviderFactory.makeDefaultProvider()
         self.transcriptionProvider = resolvedTranscriptionProvider
         self.transcriptionProviderDisplayName = resolvedTranscriptionProvider.displayName
+        self.isTranscriptionProviderConfigured = resolvedTranscriptionProvider.isConfigured
         super.init()
         observeAudioEngineConfigurationChanges()
     }
@@ -125,6 +127,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         }
         transcriptionProvider = provider
         transcriptionProviderDisplayName = provider.displayName
+        isTranscriptionProviderConfigured = provider.isConfigured
         currentPermissionProblem = nil
         lastErrorMessage = nil
         print("🎙️ BuddyDictationManager: switched transcription provider to \(provider.displayName)")

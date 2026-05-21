@@ -56,6 +56,12 @@ private final class FakeVoiceSelectionStore: PickySessionSelectionStoring {
     var selectedSessionID: String?
     var hoveredVoiceFollowUpSessionID: String?
     var screenContextTargetSessionID: String?
+    var screenContextTargetSticky: Bool = false
+
+    func setScreenContextTarget(sessionID: String?, sticky: Bool) {
+        screenContextTargetSessionID = sessionID
+        screenContextTargetSticky = sessionID == nil ? false : sticky
+    }
 }
 
 @MainActor
@@ -1093,6 +1099,29 @@ struct PickyCompanionManagerTests {
         #expect(command.context?.screenshots.map(\.path) == ["/tmp/picky/shot-1.jpg"])
         #expect(command.context?.warnings == [])
         #expect(selection.screenContextTargetSessionID == nil)
+    }
+
+    @Test func quickInputWithStickyScreenContextTargetKeepsTargetArmedAfterSteer() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.setScreenContextTarget(sessionID: "pickle-locked", sticky: true)
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(screenshots: [screenshot(path: "/tmp/picky/shot-locked.jpg")])
+        )
+
+        let didSend = await manager.sendDirectMessage("잠긴 피클에 고정 입력", source: .quickInput)
+        try await settle()
+
+        #expect(didSend)
+        let command = try #require(client.commands.first)
+        #expect(command.type == .steer)
+        #expect(command.sessionId == "pickle-locked")
+        // Sticky armed Pickles persist across steer dispatches so the user can
+        // keep speaking/typing without re-arming after every input.
+        #expect(selection.screenContextTargetSessionID == "pickle-locked")
+        #expect(selection.screenContextTargetSticky == true)
     }
 
     @Test func voiceReplyPreemptedByQuickInputSubmissionClearsVoiceStateViaSafetyNet() async throws {

@@ -1628,7 +1628,11 @@ final class CompanionManager: ObservableObject {
 
     private func clearScreenContextTargetIfCurrent(_ sessionID: String?) {
         guard let sessionID, selectionStore.screenContextTargetSessionID == sessionID else { return }
-        selectionStore.screenContextTargetSessionID = nil
+        // Sticky armed Pickles persist across follow-up/steer dispatches; only
+        // an explicit user gesture (re-tap, arming another Pickle) or a hard
+        // failure (dictation error, session removed) clears them.
+        if selectionStore.screenContextTargetSticky { return }
+        selectionStore.setScreenContextTarget(sessionID: nil, sticky: false)
         applyScreenContextTarget(nil)
     }
 

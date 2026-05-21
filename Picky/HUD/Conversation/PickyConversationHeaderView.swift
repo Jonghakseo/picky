@@ -7,6 +7,22 @@
 
 import SwiftUI
 
+/// Visual + timing parameters for the header Pickle-badge long-press that
+/// promotes the armed Pickle to sticky mode. Mirrors
+/// `PickyHUDArchiveHoldPolicy` so both gestures feel consistent.
+enum PickyConversationStickyArmHoldPolicy {
+    static let duration: TimeInterval = 1.0
+    static let feedbackStartDelay: TimeInterval = 0.15
+    static let feedbackStartDelayNanoseconds: UInt64 = 150_000_000
+    static let maximumDistance: CGFloat = 8
+    static let ringGapStartFraction = 0.22
+    static let ringUsableFraction = 0.73
+
+    static var feedbackAnimationDuration: TimeInterval {
+        max(0, duration - feedbackStartDelay)
+    }
+}
+
 struct PickyConversationHeaderView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     let session: PickySessionListViewModel.SessionCard
@@ -18,6 +34,10 @@ struct PickyConversationHeaderView: View {
     @State private var titleDraft = ""
     @State private var isTitleHovered = false
     @State private var isShowingArchivedList = false
+    @State private var stickyHoldFeedbackStartTask: Task<Void, Never>?
+    @State private var isStickyHolding = false
+    @State private var stickyHoldProgress: Double = 0
+    @State private var didCompleteStickyHold = false
     @FocusState private var isTitleFieldFocused: Bool
 
     private var isVoiceFollowUpTarget: Bool {
@@ -29,6 +49,10 @@ struct PickyConversationHeaderView: View {
 
     private var isScreenContextArmed: Bool {
         viewModel.screenContextTargetSessionID == session.id
+    }
+
+    private var isScreenContextStickyArmed: Bool {
+        isScreenContextArmed && viewModel.screenContextTargetSticky
     }
 
     var body: some View {
@@ -201,30 +225,148 @@ struct PickyConversationHeaderView: View {
     }
 
     private var piBadgeSlot: some View {
-        Button {
-            viewModel.toggleScreenContextTarget(sessionID: session.id)
-        } label: {
-            piBadge
-                .overlay(alignment: .bottomTrailing) {
-                    if !isScreenContextArmed, isVoiceFollowUpTarget {
-                        voiceTargetMicBadge
-                    }
+        piBadge
+            .overlay(alignment: .bottomTrailing) {
+                if !isScreenContextArmed, isVoiceFollowUpTarget {
+                    voiceTargetMicBadge
                 }
-                .frame(width: 26, height: 26)
-                .contentShape(Rectangle())
+            }
+            .overlay(alignment: .center) {
+                stickyHoldProgressRing
+            }
+            .overlay(alignment: .topLeading) {
+                if isScreenContextStickyArmed {
+                    stickyArmLockBadge
+                        .offset(x: -4, y: -4)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .frame(width: 26, height: 26)
+            .contentShape(Rectangle())
+            .pointerCursor()
+            .onTapGesture { handleBadgeTap() }
+            .onLongPressGesture(
+                minimumDuration: PickyConversationStickyArmHoldPolicy.duration,
+                maximumDistance: PickyConversationStickyArmHoldPolicy.maximumDistance,
+                perform: { completeStickyHold() },
+                onPressingChanged: { handleStickyHoldPressing($0) }
+            )
+            .onDisappear { cancelStickyHoldFeedback() }
+            .animation(.spring(response: 0.22, dampingFraction: 0.78), value: isScreenContextStickyArmed)
+            .overlay(alignment: .topTrailing) {
+                screenContextShortcutBadge
+                    .offset(x: 11, y: -8)
+                    .opacity(isCommandShortcutHintVisible ? 1 : 0)
+                    .scaleEffect(isCommandShortcutHintVisible ? 1 : 0.88, anchor: .center)
+                    .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
+                    .allowsHitTesting(false)
+            }
+            .help(piBadgeHelpText)
+            .accessibilityLabel(piBadgeAccessibilityLabel)
+            .accessibilityAction(named: Text("Toggle Pickle target")) { handleBadgeTap() }
+            .accessibilityAction(named: Text("Lock Pickle as sticky target")) {
+                viewModel.armScreenContextTarget(sessionID: session.id, sticky: true)
+            }
+    }
+
+    private var stickyHoldProgressRing: some View {
+        ZStack {
+            stickyHoldRingArc(progress: 1)
+                .opacity(0.18)
+            stickyHoldRingArc(progress: stickyHoldProgress)
         }
-        .buttonStyle(.plain)
-        .pointerCursor()
-        .overlay(alignment: .topTrailing) {
-            screenContextShortcutBadge
-                .offset(x: 11, y: -8)
-                .opacity(isCommandShortcutHintVisible ? 1 : 0)
-                .scaleEffect(isCommandShortcutHintVisible ? 1 : 0.88, anchor: .center)
-                .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
-                .allowsHitTesting(false)
+        .frame(width: 28, height: 28)
+        .opacity(isStickyHolding || stickyHoldProgress > 0 ? 1 : 0)
+        .shadow(color: DS.Colors.accentText.opacity(0.34), radius: 4, x: 0, y: 0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func stickyHoldRingArc(progress: Double) -> some View {
+        Circle()
+            .trim(
+                from: PickyConversationStickyArmHoldPolicy.ringGapStartFraction,
+                to: PickyConversationStickyArmHoldPolicy.ringGapStartFraction
+                    + (max(0, min(progress, 1)) * PickyConversationStickyArmHoldPolicy.ringUsableFraction)
+            )
+            .stroke(
+                DS.Colors.accentText,
+                style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round)
+            )
+            .rotationEffect(.degrees(-90))
+    }
+
+    private var stickyArmLockBadge: some View {
+        Image(systemName: "lock.fill")
+            .font(.system(size: 6.8, weight: .bold))
+            .foregroundColor(DS.Colors.accentText)
+            .frame(width: 11, height: 11)
+            .background(Circle().fill(DS.Colors.surface1))
+            .overlay(Circle().stroke(DS.Colors.accentText.opacity(0.78), lineWidth: 0.9))
+            .accessibilityHidden(true)
+    }
+
+    private func handleBadgeTap() {
+        // The tap fires even when the long-press completed, so guard against
+        // immediately undoing the sticky promotion the user just made.
+        if didCompleteStickyHold {
+            didCompleteStickyHold = false
+            return
         }
-        .help(piBadgeHelpText)
-        .accessibilityLabel(piBadgeAccessibilityLabel)
+        viewModel.toggleScreenContextTarget(sessionID: session.id)
+    }
+
+    private func handleStickyHoldPressing(_ isPressing: Bool) {
+        if isPressing {
+            scheduleStickyHoldFeedbackStart()
+        } else if !didCompleteStickyHold {
+            cancelStickyHoldFeedback()
+        }
+    }
+
+    private func scheduleStickyHoldFeedbackStart() {
+        stickyHoldFeedbackStartTask?.cancel()
+        didCompleteStickyHold = false
+        stickyHoldProgress = 0
+        stickyHoldFeedbackStartTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: PickyConversationStickyArmHoldPolicy.feedbackStartDelayNanoseconds)
+            guard !Task.isCancelled else { return }
+            stickyHoldFeedbackStartTask = nil
+            beginStickyHoldFeedback()
+        }
+    }
+
+    private func beginStickyHoldFeedback() {
+        isStickyHolding = true
+        withAnimation(.linear(duration: PickyConversationStickyArmHoldPolicy.feedbackAnimationDuration)) {
+            stickyHoldProgress = 1
+        }
+    }
+
+    private func cancelStickyHoldFeedback() {
+        stickyHoldFeedbackStartTask?.cancel()
+        stickyHoldFeedbackStartTask = nil
+        isStickyHolding = false
+        withAnimation(.easeOut(duration: 0.18)) {
+            stickyHoldProgress = 0
+        }
+    }
+
+    private func completeStickyHold() {
+        stickyHoldFeedbackStartTask?.cancel()
+        stickyHoldFeedbackStartTask = nil
+        didCompleteStickyHold = true
+        stickyHoldProgress = 1
+        isStickyHolding = false
+        viewModel.armScreenContextTarget(sessionID: session.id, sticky: true)
+        // Fade the ring out shortly after the lock badge appears so the badge
+        // is the primary signal that the gesture succeeded.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 220_000_000)
+            withAnimation(.easeOut(duration: 0.18)) {
+                stickyHoldProgress = 0
+            }
+        }
     }
 
     private var screenContextShortcutBadge: some View {
@@ -330,14 +472,18 @@ struct PickyConversationHeaderView: View {
     }
 
     private var piBadgeHelpText: String {
+        if isScreenContextStickyArmed {
+            return "Pickle cursor is locked. Every Picky voice or quick text input keeps going to this Pickle until you click again or arm another. Long-press another Pickle to switch."
+        }
         if isScreenContextArmed {
-            return "Pickle cursor is armed. The next Picky voice or quick text input goes directly to this Pickle. Click or press ⌘K to cancel."
+            return "Pickle cursor is armed. The next Picky voice or quick text input goes directly to this Pickle. Click or press ⌘K to cancel, or long-press to lock."
         }
         if isVoiceFollowUpTarget { return "\(statusDescription). Voice steering target" }
-        return "\(statusDescription). Click or press ⌘K to route the next Picky screen-context input to this Pickle."
+        return "\(statusDescription). Click or press ⌘K to route the next Picky screen-context input to this Pickle. Long-press to lock it as the sticky target."
     }
 
     private var piBadgeAccessibilityLabel: String {
+        if isScreenContextStickyArmed { return "Session status: \(statusDescription), Pickle cursor locked" }
         if isScreenContextArmed { return "Session status: \(statusDescription), Pickle cursor armed" }
         return isVoiceFollowUpTarget ? "Session status: \(statusDescription), voice steering target" : "Session status: \(statusDescription)"
     }

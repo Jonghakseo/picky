@@ -329,6 +329,16 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var hoveredVoiceFollowUpSessionID: String?
     @Published private(set) var activeVoiceFollowUpSessionID: String?
     @Published private(set) var screenContextTargetSessionID: String?
+    /// `true` when the armed Pickle should keep receiving Picky inputs until
+    /// the user clicks it again or arms another. `false` is the legacy one-shot
+    /// behavior. Always `false` when `screenContextTargetSessionID` is nil.
+    @Published private(set) var screenContextTargetSticky: Bool = false
+    /// Bumped to a fresh UUID every time the user arms a Pickle (one-shot or
+    /// sticky). The HUD observes this token and collapses any expanded card so
+    /// the user can immediately drive the armed Pickle from another app. Using
+    /// a UUID rather than a flag avoids missed transitions when the user arms
+    /// the same Pickle twice in a row from different entry points.
+    @Published private(set) var screenContextArmCollapseToken: UUID = UUID()
     @Published private(set) var lastError: String?
     @Published private(set) var lastOpenedArtifactPath: String?
     @Published private(set) var slashCommandsBySessionID: [String: [PickySlashCommand]] = [:]
@@ -484,6 +494,7 @@ final class PickySessionListViewModel: ObservableObject {
         self.selectedSessionID = selectionStore.selectedSessionID
         self.hoveredVoiceFollowUpSessionID = selectionStore.hoveredVoiceFollowUpSessionID
         self.screenContextTargetSessionID = selectionStore.screenContextTargetSessionID
+        self.screenContextTargetSticky = selectionStore.screenContextTargetSticky
         self.hasExplicitSelection = self.selectedSessionID != nil
         self.voiceFollowUpTargetCancellable = NotificationCenter.default.publisher(for: .pickyVoiceFollowUpTargetChanged)
             .receive(on: DispatchQueue.main)
@@ -493,7 +504,10 @@ final class PickySessionListViewModel: ObservableObject {
         self.screenContextTargetCancellable = NotificationCenter.default.publisher(for: .pickyScreenContextTargetChanged)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] notification in
-                self?.screenContextTargetSessionID = notification.userInfo?[PickyScreenContextTargetNotification.sessionIDKey] as? String
+                let sessionID = notification.userInfo?[PickyScreenContextTargetNotification.sessionIDKey] as? String
+                let sticky = (notification.userInfo?[PickyScreenContextTargetNotification.stickyKey] as? Bool) ?? false
+                self?.screenContextTargetSessionID = sessionID
+                self?.screenContextTargetSticky = sessionID == nil ? false : sticky
             }
         self.composerDraftAppendCancellable = NotificationCenter.default.publisher(for: .pickyComposerDraftAppendRequested)
             .receive(on: DispatchQueue.main)
@@ -665,10 +679,20 @@ final class PickySessionListViewModel: ObservableObject {
             clearScreenContextTarget(sessionID: sessionID)
             return
         }
+        armScreenContextTarget(sessionID: sessionID, sticky: false)
+    }
+
+    /// Promotes (or replaces) the armed Pickle. `sticky=true` keeps the Pickle
+    /// armed across follow-up/steer dispatches; `sticky=false` matches the
+    /// existing one-shot tap behavior. Used by the header long-press gesture.
+    func armScreenContextTarget(sessionID: String, sticky: Bool) {
+        guard sessions.contains(where: { $0.id == sessionID }) else { return }
         screenContextTargetSessionID = sessionID
-        selectionStore.screenContextTargetSessionID = sessionID
+        screenContextTargetSticky = sticky
+        selectionStore.setScreenContextTarget(sessionID: sessionID, sticky: sticky)
         select(sessionID: sessionID)
-        pickySessionLog("screen context target armed session=\(sessionID)")
+        screenContextArmCollapseToken = UUID()
+        pickySessionLog("screen context target armed session=\(sessionID) sticky=\(sticky)")
     }
 
     func clearScreenContextTarget(sessionID: String? = nil) {
@@ -709,7 +733,8 @@ final class PickySessionListViewModel: ObservableObject {
         guard screenContextTargetSessionID != nil || selectionStore.screenContextTargetSessionID != nil else { return }
         let cleared = screenContextTargetSessionID ?? selectionStore.screenContextTargetSessionID ?? "<nil>"
         screenContextTargetSessionID = nil
-        selectionStore.screenContextTargetSessionID = nil
+        screenContextTargetSticky = false
+        selectionStore.setScreenContextTarget(sessionID: nil, sticky: false)
         pickySessionLog("screen context cleared session=\(cleared)")
     }
 
@@ -2059,7 +2084,7 @@ final class PickySessionListViewModel: ObservableObject {
 
     private func syncScreenContextTargetAfterSessionListChange() {
         if let screenContextTargetSessionID, sessions.contains(where: { $0.id == screenContextTargetSessionID }) {
-            selectionStore.screenContextTargetSessionID = screenContextTargetSessionID
+            selectionStore.setScreenContextTarget(sessionID: screenContextTargetSessionID, sticky: screenContextTargetSticky)
         } else if screenContextTargetSessionID != nil {
             clearScreenContextTarget(sessionID: screenContextTargetSessionID)
         }

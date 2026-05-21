@@ -19,6 +19,7 @@ enum PickyVoiceFollowUpTargetNotification {
 
 enum PickyScreenContextTargetNotification {
     static let sessionIDKey = "sessionID"
+    static let stickyKey = "sticky"
 }
 
 enum PickyComposerDraftAppendNotification {
@@ -30,6 +31,23 @@ protocol PickySessionSelectionStoring: AnyObject {
     var selectedSessionID: String? { get set }
     var hoveredVoiceFollowUpSessionID: String? { get set }
     var screenContextTargetSessionID: String? { get set }
+    /// Whether the currently armed screen-context target should persist across
+    /// follow-up/steer dispatches. `false` means the existing one-shot behavior;
+    /// `true` keeps the same Pickle armed until the user clicks it again or
+    /// arms another. Always cleared when `screenContextTargetSessionID` is nil.
+    var screenContextTargetSticky: Bool { get set }
+    /// Atomically updates the armed Pickle and its sticky flag. Implementations
+    /// must emit a single `pickyScreenContextTargetChanged` notification when
+    /// either value changes.
+    func setScreenContextTarget(sessionID: String?, sticky: Bool)
+}
+
+extension PickySessionSelectionStoring {
+    /// Default fallback so legacy call sites (`store.screenContextTargetSessionID = id`)
+    /// keep the one-shot semantics they always had.
+    func setScreenContextTarget(sessionID: String?) {
+        setScreenContextTarget(sessionID: sessionID, sticky: false)
+    }
 }
 
 protocol PickySessionArchiveStoring: AnyObject {
@@ -51,6 +69,7 @@ final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring
     private let defaults: UserDefaults
     private var transientHoveredVoiceFollowUpSessionID: String?
     private var transientScreenContextTargetSessionID: String?
+    private var transientScreenContextTargetSticky: Bool = false
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -77,20 +96,42 @@ final class PickyUserDefaultsSessionSelectionStore: PickySessionSelectionStoring
 
     var screenContextTargetSessionID: String? {
         get { transientScreenContextTargetSessionID }
+        set { setScreenContextTarget(sessionID: newValue, sticky: false) }
+    }
+
+    var screenContextTargetSticky: Bool {
+        get { transientScreenContextTargetSticky }
         set {
-            let normalized = newValue?.isEmpty == true ? nil : newValue
-            guard transientScreenContextTargetSessionID != normalized else { return }
-            transientScreenContextTargetSessionID = normalized
-            var userInfo: [String: String] = [:]
-            if let normalized {
-                userInfo[PickyScreenContextTargetNotification.sessionIDKey] = normalized
-            }
-            NotificationCenter.default.post(
-                name: .pickyScreenContextTargetChanged,
-                object: nil,
-                userInfo: userInfo
-            )
+            let next = transientScreenContextTargetSessionID == nil ? false : newValue
+            guard transientScreenContextTargetSticky != next else { return }
+            transientScreenContextTargetSticky = next
+            postScreenContextTargetNotification()
         }
+    }
+
+    func setScreenContextTarget(sessionID: String?, sticky: Bool) {
+        let normalized = sessionID?.isEmpty == true ? nil : sessionID
+        let normalizedSticky = normalized == nil ? false : sticky
+        guard transientScreenContextTargetSessionID != normalized
+            || transientScreenContextTargetSticky != normalizedSticky
+        else { return }
+        transientScreenContextTargetSessionID = normalized
+        transientScreenContextTargetSticky = normalizedSticky
+        postScreenContextTargetNotification()
+    }
+
+    private func postScreenContextTargetNotification() {
+        var userInfo: [String: Any] = [
+            PickyScreenContextTargetNotification.stickyKey: transientScreenContextTargetSticky
+        ]
+        if let id = transientScreenContextTargetSessionID {
+            userInfo[PickyScreenContextTargetNotification.sessionIDKey] = id
+        }
+        NotificationCenter.default.post(
+            name: .pickyScreenContextTargetChanged,
+            object: nil,
+            userInfo: userInfo
+        )
     }
 }
 

@@ -119,6 +119,14 @@ struct PickyHUDView: View {
             .onChange(of: viewModel.openSessionRequest) { _, request in
                 handleOpenSessionRequest(request)
             }
+            .onChange(of: viewModel.screenContextArmCollapseToken) { _, _ in
+                // Arming a Pickle (one-shot or sticky) from any entry point —
+                // header tap/long-press, dock context menu, ⌘K — collapses
+                // the expanded card so the user can immediately drive the
+                // armed Pickle from whatever app they're focused on.
+                cancelPendingClose()
+                heldSession = nil
+            }
             .onDisappear {
                 closeExpansionTask?.cancel()
                 closeExpansionTask = nil
@@ -584,6 +592,10 @@ struct PickyHUDView: View {
 
     private func toggleScreenContextTarget(_ sessionID: String) {
         cancelPendingClose()
+        // Arm path collapses the expanded card via the
+        // `screenContextArmCollapseToken` onChange handler above; nothing else
+        // to do here. Disarm taps leave the card visible so users can keep
+        // reading.
         viewModel.toggleScreenContextTarget(sessionID: sessionID)
     }
 
@@ -767,8 +779,7 @@ struct PickyHUDView: View {
             modifiers: flags
         ), let activeSession,
            !isTextInputFocused(in: keyWindow) {
-            cancelPendingClose()
-            viewModel.toggleScreenContextTarget(sessionID: activeSession.id)
+            toggleScreenContextTarget(activeSession.id)
             return true
         }
 

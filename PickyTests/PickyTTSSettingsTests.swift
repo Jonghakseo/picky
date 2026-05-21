@@ -22,6 +22,12 @@ private final class TTSTestVoiceSelectionStore: PickySessionSelectionStoring {
     var selectedSessionID: String?
     var hoveredVoiceFollowUpSessionID: String?
     var screenContextTargetSessionID: String?
+    var screenContextTargetSticky: Bool = false
+
+    func setScreenContextTarget(sessionID: String?, sticky: Bool) {
+        screenContextTargetSessionID = sessionID
+        screenContextTargetSticky = sessionID == nil ? false : sticky
+    }
 }
 
 @MainActor

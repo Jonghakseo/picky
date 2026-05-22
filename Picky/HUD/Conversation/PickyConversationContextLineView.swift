@@ -264,12 +264,20 @@ struct PickyConversationContextLineView: View {
     @ViewBuilder
     private func gitMetrics(status: PickyGitRepositoryStatus) -> some View {
         if status.insertions > 0 {
-            gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
-                .help("Insertions")
+            Button(action: { openDiffViewer(status: status, initialScope: .worktree) }) {
+                gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
+            }
+            .buttonStyle(.plain)
+            .help("Open worktree diff (\(status.insertions) insertions)")
+            .pointerCursor()
         }
         if status.deletions > 0 {
-            gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
-                .help("Deletions")
+            Button(action: { openDiffViewer(status: status, initialScope: .worktree) }) {
+                gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
+            }
+            .buttonStyle(.plain)
+            .help("Open worktree diff (\(status.deletions) deletions)")
+            .pointerCursor()
         }
         if status.aheadCount > 0 {
             Button(action: { runRemoteAction(.push) }) {
@@ -310,12 +318,12 @@ struct PickyConversationContextLineView: View {
         }
         .contentShape(Rectangle())
 
-        if let url = status.branchWebURL {
-            Link(destination: url) {
+        if canOpenDiffViewer {
+            Button(action: { openDiffViewer(status: status, initialScope: .branch) }) {
                 content
             }
             .buttonStyle(.plain)
-            .help("Open branch \(url.absoluteString)")
+            .help("Open branch diff")
             .pointerCursor()
         } else {
             content
@@ -433,6 +441,30 @@ struct PickyConversationContextLineView: View {
         Text(text)
             .font(PickyHUDTypography.statusMonospacedMedium)
             .foregroundColor(color.opacity(0.92))
+            .contentShape(Rectangle())
+    }
+
+    private var canOpenDiffViewer: Bool {
+        guard let cwd = session.cwd?.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
+        return !cwd.isEmpty
+    }
+
+    private func openDiffViewer(status: PickyGitRepositoryStatus, initialScope: PickyGitDiffViewerScope) {
+        guard let cwd = session.cwd?.trimmingCharacters(in: .whitespacesAndNewlines), !cwd.isEmpty else { return }
+        PickyDiffViewerPresenter.shared.openDiff(
+            sessionID: session.id,
+            title: diffViewerTitle(status: status),
+            cwd: cwd,
+            initialScope: initialScope
+        )
+    }
+
+    private func diffViewerTitle(status: PickyGitRepositoryStatus) -> String {
+        let trimmedSessionTitle = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedSessionTitle.isEmpty {
+            return trimmedSessionTitle
+        }
+        return "\(status.repositoryDisplayName) · \(status.branchName)"
     }
 
     private func runRemoteAction(_ action: GitRemoteAction) {

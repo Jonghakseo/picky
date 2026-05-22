@@ -527,6 +527,41 @@ struct PickyAgentDaemonLauncherTests {
         #expect(snapshot.contains("process.versions.node"))
     }
 
+    @Test func unsupportedNodeDiagnosticStopsRestartLoopWithActionableState() async throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        try makeAgentdPackage(at: temp)
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19025,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: temp,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["node", "dist/index.js"],
+            requiredExecutableName: "node"
+        )
+        let launcher = PickyAgentDaemonLauncher(
+            configuration: configuration,
+            runner: runner,
+            logDirectory: temp.appendingPathComponent("Logs"),
+            executableChecker: FakeExecutableChecker(exists: true, version: "v18.12.1")
+        )
+
+        launcher.start()
+        runner.emitStderr("PICKY_UNSUPPORTED_NODE:18.12.1:required=22.19.0\n")
+        runner.crash(code: 2)
+        try await Task.sleep(nanoseconds: 20_000_000)
+
+        if case .failedToStart(let message) = launcher.state {
+            #expect(message.contains("Node 18.12.1 is too old"))
+            #expect(message.contains("22.19.0"))
+        } else {
+            Issue.record("Expected unsupported Node to become a terminal failedToStart state")
+        }
+    }
+
     @Test func supportedNodeVersionPassesPreflight() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
         try makeAgentdPackage(at: temp)

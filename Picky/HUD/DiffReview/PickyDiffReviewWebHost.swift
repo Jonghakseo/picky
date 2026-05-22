@@ -36,6 +36,11 @@ final class PickyDiffReviewWebHost: NSObject, WKScriptMessageHandler {
         configuration.setURLSchemeHandler(schemeHandler, forURLScheme: PickyDiffReviewURLSchemeHandler.scheme)
 
         self.webView = WKWebView(frame: .zero, configuration: configuration)
+        #if DEBUG
+        if #available(macOS 13.3, *) {
+            self.webView.isInspectable = true
+        }
+        #endif
 
         super.init()
 

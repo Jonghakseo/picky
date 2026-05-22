@@ -1021,10 +1021,18 @@ function applyEditorOptions() {
 	if (!diffEditor) return;
 	const addedOnly = activeFileIsAddedOnly();
 	const showDiff = activeFileShowsDiff();
+	const wrapMode = state.wrapLines ? "on" : "off";
 	editorContainerEl.dataset.addedOnly = addedOnly ? "true" : "false";
+	// Why both `wordWrap` and `wordWrapOverride1/2`:
+	// Monaco's diff editor internally applies `wordWrapOverride1` (and sometimes
+	// `wordWrapOverride2`) on the original/modified sides to enforce diff-specific
+	// behavior. Those overrides take precedence over `wordWrap`, so setting only
+	// `wordWrap` on each side leaves the effective wrapping column out of sync
+	// (original keeps wrap off, modified honors wrap on -> asymmetric rendering).
+	// Setting both overrides to the same value forces the effective wrap to match.
 	diffEditor.updateOptions({
 		renderSideBySide: showDiff,
-		diffWordWrap: state.wrapLines ? "on" : "off",
+		diffWordWrap: "inherit",
 		hideUnchangedRegions: {
 			enabled: showDiff && state.hideUnchanged,
 			contextLineCount: 4,
@@ -1035,10 +1043,16 @@ function applyEditorOptions() {
 	// For added-only files, hide the original editor's line numbers so the inline diff
 	// gutter doesn't paint a redundant two-column layout alongside the modified numbers.
 	diffEditor.getOriginalEditor().updateOptions({
-		wordWrap: state.wrapLines ? "on" : "off",
+		wordWrap: wrapMode,
+		wordWrapOverride1: wrapMode,
+		wordWrapOverride2: wrapMode,
 		lineNumbers: addedOnly ? "off" : "on",
 	});
-	diffEditor.getModifiedEditor().updateOptions({ wordWrap: state.wrapLines ? "on" : "off" });
+	diffEditor.getModifiedEditor().updateOptions({
+		wordWrap: wrapMode,
+		wordWrapOverride1: wrapMode,
+		wordWrapOverride2: wrapMode,
+	});
 }
 
 function renderTree() {
@@ -1560,6 +1574,11 @@ function mountFile(options = {}) {
 		revealEditorNow();
 	});
 	diffEditor.setModel({ original: originalModel, modified: modifiedModel });
+	// Re-apply editor options AFTER setModel: Monaco can derive original-side
+	// wrap overrides (`wordWrapOverride1`) from the swapped-in model, leaving the
+	// pre-setModel `applyEditorOptions()` call partially overridden. A second
+	// call ensures both sides observe the user's wrap toggle symmetrically.
+	applyEditorOptions();
 	syncViewZones();
 	updateDecorations();
 	renderFileComments();
@@ -1884,13 +1903,7 @@ function setupMonaco() {
 		diffEditor = monacoApi.editor.createDiffEditor(editorContainerEl, {
 			automaticLayout: true,
 			renderSideBySide: activeFileShowsDiff(),
-			// `originalEditable: false` (the default for diff editors) causes Monaco to
-			// silently turn off wordWrap on the original/left editor, producing an
-			// asymmetric diff where only the modified side wraps. Setting it `true` and
-			// relying on `readOnly: true` (plus our per-editor wordWrap calls in
-			// `applyEditorOptions`) keeps wrapping symmetric without making the original
-			// editor user-editable in practice.
-			originalEditable: true,
+			originalEditable: false,
 			readOnly: true,
 			// GitHub-style review: no minimap and no diff overview ruler on the side.
 			// Those were the panels that visibly flashed during remount because Monaco

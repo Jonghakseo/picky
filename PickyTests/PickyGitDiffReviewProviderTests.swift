@@ -79,6 +79,24 @@ struct PickyGitDiffReviewProviderTests {
         #expect(worktree.insertions == 2)
     }
 
+    @Test func loadIncludesWorkingTreePseudoCommitForRepositoryWithoutHead() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try initializeRepository(at: directory)
+        try "hello\nworld\n".write(to: directory.appendingPathComponent("notes.txt"), atomically: true, encoding: .utf8)
+
+        let session = PickyGitDiffReviewProvider().makeSession()
+        let data = try await session.load(cwd: directory.path)
+        let files = try await session.loadCommitFiles(commitSha: "__pi_working_tree__")
+        await session.close()
+
+        #expect(data.repositoryHasHead == false)
+        #expect(data.commits.first?.sha == "__pi_working_tree__")
+        #expect(data.commits.first?.kind == .workingTree)
+        #expect(files.map(\.displayPath) == ["notes.txt"])
+    }
+
     @Test func loadPreservesRenameStatsFromGitNumstatBraceFormat() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

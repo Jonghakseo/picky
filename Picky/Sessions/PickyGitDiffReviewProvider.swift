@@ -644,8 +644,6 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding, PickyG
         branchScope: PickyGitDiffScopeData,
         worktreeScope: PickyGitDiffScopeData
     ) -> [PickyGitDiffCommitInfo] {
-        guard repositoryHasHead else { return [] }
-
         var commits: [PickyGitDiffCommitInfo] = []
         if worktreeScope.hasChanges {
             commits.append(PickyGitDiffCommitInfo(
@@ -657,6 +655,8 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding, PickyG
                 kind: .workingTree
             ))
         }
+
+        guard repositoryHasHead else { return commits }
 
         var rangeCommits: [PickyGitDiffCommitInfo] = []
         if let branchMergeBaseSha, !branchMergeBaseSha.isEmpty {

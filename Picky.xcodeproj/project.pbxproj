@@ -40,6 +40,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				Resources/DiffReview,
 				Watchdog/PickyWatchdogAlertHelper/main.swift,
 			);
 			target = 28F22CBE2F56440300A0FC59 /* Picky */;
@@ -49,6 +50,9 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		28F22CC12F56440300A0FC59 /* Picky */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFolders = (
+				Resources/DiffReview,
+			);
 			exceptions = (
 				28F22CE92F56440300A0FC59 /* Exceptions for "Picky" folder in "Picky" target */,
 			);

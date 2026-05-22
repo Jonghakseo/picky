@@ -18,8 +18,18 @@ private let testProjectCwd: String = URL(fileURLWithPath: #filePath)
 private final class FakePickyAgentClient: PickyAgentClient {
     private let continuation: AsyncStream<PickyClientEvent>.Continuation
     let events: AsyncStream<PickyClientEvent>
-    private(set) var submitted: [PickyAgentSubmission] = []
-    private(set) var sentCommands: [PickyCommandEnvelope] = []
+    // `submitted` / `sentCommands` are mutated from `submit`/`send` (non-isolated
+    // `async` protocol methods run on the cooperative pool) and read from the
+    // tests' MainActor `wait { … }` / `#expect`. Without serializing, that's a
+    // data race on Array<…> storage — reproducible as the
+    // `slashCommandResourcesReloadedBumpsEpochAndReRequestsOnlyPreviouslyRequestedSession`
+    // flake under heavy parallel xcodebuild load, where the reader sees stale
+    // count/last and the next `#expect(count == 2)` fails. Hopping the append
+    // onto MainActor.run gives both sides a single serialization point so the
+    // observable buffer is always consistent with what the production code has
+    // sent so far.
+    @MainActor private(set) var submitted: [PickyAgentSubmission] = []
+    @MainActor private(set) var sentCommands: [PickyCommandEnvelope] = []
 
     init() {
         var continuation: AsyncStream<PickyClientEvent>.Continuation!
@@ -29,10 +39,12 @@ private final class FakePickyAgentClient: PickyAgentClient {
 
     func connect() async { continuation.yield(.connected) }
     func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt {
-        submitted.append(submission)
+        await MainActor.run { submitted.append(submission) }
         return PickyAgentSubmissionReceipt(sessionID: "session-1", message: "sent")
     }
-    func send(_ command: PickyCommandEnvelope) async throws { sentCommands.append(command) }
+    func send(_ command: PickyCommandEnvelope) async throws {
+        await MainActor.run { sentCommands.append(command) }
+    }
     func disconnect() { continuation.yield(.disconnected) }
     func emit(_ event: PickyClientEvent) { continuation.yield(event) }
 }
@@ -4021,6 +4033,7 @@ struct PickySessionViewModelTests {
     }
 }
 
+@MainActor
 private func waitForCommand(_ type: PickyCommandType, in client: FakePickyAgentClient) async throws {
     for _ in 0..<20 {
         if client.sentCommands.contains(where: { $0.type == type }) { return }

@@ -125,6 +125,7 @@ final class PickyDiffViewerModel: ObservableObject {
     @Published private(set) var diffErrorMessage: String?
 
     private let provider: any PickyGitDiffReviewProviding
+    private var diffSession: (any PickyGitDiffReviewSessioning)?
     private var diffCache: [PickyGitDiffViewerScope: [String: String]] = [:]
     private var loadGeneration = UUID()
     private var diffGeneration = UUID()
@@ -135,6 +136,12 @@ final class PickyDiffViewerModel: ObservableObject {
         self.selectedScope = initialScope
         self.provider = provider
         Task { await reload() }
+    }
+
+    deinit {
+        if let diffSession {
+            Task { await diffSession.close() }
+        }
     }
 
     var selectedScopeData: PickyGitDiffScopeData? {
@@ -164,6 +171,7 @@ final class PickyDiffViewerModel: ObservableObject {
         self.title = title
         self.cwd = cwd
         if cwdChanged {
+            closeDiffSession()
             invalidateInFlightDiffLoad()
             data = nil
             selectedFileID = nil
@@ -186,15 +194,25 @@ final class PickyDiffViewerModel: ObservableObject {
         unifiedDiff = ""
         selectedFileID = nil
         diffCache.removeAll()
+        closeDiffSession()
+        let session = makeDiffSession()
+        diffSession = session
 
         do {
-            let loaded = try await provider.load(cwd: cwd)
-            guard loadGeneration == generation else { return }
+            let loaded = try await session.load(cwd: cwd)
+            guard loadGeneration == generation else {
+                await session.close()
+                return
+            }
             data = loaded
             isLoadingData = false
             selectFirstAvailableFile()
         } catch {
+            await session.close()
             guard loadGeneration == generation else { return }
+            if diffSession === session {
+                diffSession = nil
+            }
             data = nil
             isLoadingData = false
             errorMessage = Self.displayMessage(for: error)
@@ -245,7 +263,12 @@ final class PickyDiffViewerModel: ObservableObject {
         diffErrorMessage = nil
         Task {
             do {
-                let diff = try await provider.loadDiff(cwd: cwd, scope: scope, fileID: fileID)
+                let diff: String
+                if let diffSession {
+                    diff = try await diffSession.loadDiff(scope: scope, fileID: fileID)
+                } else {
+                    diff = try await provider.loadDiff(cwd: cwd, scope: scope, fileID: fileID)
+                }
                 guard diffGeneration == generation else { return }
                 var scopedCache = diffCache[scope] ?? [:]
                 scopedCache[fileID] = diff
@@ -259,6 +282,19 @@ final class PickyDiffViewerModel: ObservableObject {
                 diffErrorMessage = Self.displayMessage(for: error)
             }
         }
+    }
+
+    private func makeDiffSession() -> any PickyGitDiffReviewSessioning {
+        if let factory = provider as? PickyGitDiffReviewSessionFactory {
+            return factory.makeSession()
+        }
+        return PickyLegacyGitDiffReviewSession(provider: provider)
+    }
+
+    private func closeDiffSession() {
+        guard let diffSession else { return }
+        self.diffSession = nil
+        Task { await diffSession.close() }
     }
 
     @discardableResult
@@ -275,6 +311,27 @@ final class PickyDiffViewerModel: ObservableObject {
         }
         return error.localizedDescription
     }
+}
+
+private final class PickyLegacyGitDiffReviewSession: PickyGitDiffReviewSessioning {
+    private let provider: any PickyGitDiffReviewProviding
+    private var cwd: String?
+
+    init(provider: any PickyGitDiffReviewProviding) {
+        self.provider = provider
+    }
+
+    func load(cwd: String) async throws -> PickyGitDiffViewerData {
+        self.cwd = cwd
+        return try await provider.load(cwd: cwd)
+    }
+
+    func loadDiff(scope: PickyGitDiffViewerScope, fileID: String) async throws -> String {
+        guard let cwd else { throw PickyGitDiffReviewProviderError.notGitRepository }
+        return try await provider.loadDiff(cwd: cwd, scope: scope, fileID: fileID)
+    }
+
+    func close() async {}
 }
 
 struct PickyDiffUnifiedDiffLine: Equatable, Identifiable {

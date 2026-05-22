@@ -104,20 +104,153 @@ protocol PickyGitDiffReviewProviding {
     func loadDiff(cwd: String, scope: PickyGitDiffViewerScope, fileID: String) async throws -> String
 }
 
-struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding {
+protocol PickyGitDiffReviewSessioning: AnyObject {
+    func load(cwd: String) async throws -> PickyGitDiffViewerData
+    func loadDiff(scope: PickyGitDiffViewerScope, fileID: String) async throws -> String
+    func close() async
+}
+
+protocol PickyGitDiffReviewSessionFactory {
+    func makeSession() -> any PickyGitDiffReviewSessioning
+}
+
+typealias PickyGitDiffReviewSession = PickyGitDiffReviewProvider.Session
+
+struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding, PickyGitDiffReviewSessionFactory {
+    func makeSession() -> any PickyGitDiffReviewSessioning {
+        Session()
+    }
+
     func load(cwd: String) async throws -> PickyGitDiffViewerData {
-        try await Task.detached(priority: .utility) {
-            try Self.loadSynchronously(cwd: cwd)
-        }.value
+        let session = Session()
+        do {
+            let data = try await session.load(cwd: cwd)
+            await session.close()
+            return data
+        } catch {
+            await session.close()
+            throw error
+        }
     }
 
     func loadDiff(cwd: String, scope: PickyGitDiffViewerScope, fileID: String) async throws -> String {
-        try await Task.detached(priority: .utility) {
-            let data = try Self.loadSynchronously(cwd: cwd)
-            guard let scopeData = data.scopeData(scope) else { throw PickyGitDiffReviewProviderError.missingScope(scope) }
-            guard let file = scopeData.files.first(where: { $0.id == fileID }) else { throw PickyGitDiffReviewProviderError.missingFile(fileID) }
-            return try Self.diffSynchronously(cwd: cwd, data: data, scope: scope, file: file)
-        }.value
+        let session = Session()
+        do {
+            _ = try await session.load(cwd: cwd)
+            let diff = try await session.loadDiff(scope: scope, fileID: fileID)
+            await session.close()
+            return diff
+        } catch {
+            await session.close()
+            throw error
+        }
+    }
+
+    final class Session: @unchecked Sendable, PickyGitDiffReviewSessioning {
+        private struct LoadedState {
+            let data: PickyGitDiffViewerData
+            let snapshots: [PickyGitDiffViewerScope: SnapshotIndex]
+            let filesByScope: [PickyGitDiffViewerScope: [String: PickyGitDiffFile]]
+        }
+
+        private let lock = NSLock()
+        private var state: LoadedState?
+        private var isClosed = false
+
+        func load(cwd: String) async throws -> PickyGitDiffViewerData {
+            try await Task.detached(priority: .utility) {
+                try self.loadSynchronously(cwd: cwd)
+            }.value
+        }
+
+        func loadDiff(scope: PickyGitDiffViewerScope, fileID: String) async throws -> String {
+            try await Task.detached(priority: .utility) {
+                try self.diffSynchronously(scope: scope, fileID: fileID)
+            }.value
+        }
+
+        func close() async {
+            closeSynchronously()
+        }
+
+        deinit {
+            closeSynchronously()
+        }
+
+        private func loadSynchronously(cwd: String) throws -> PickyGitDiffViewerData {
+            let repoRoot = try getRepoRoot(cwd: cwd)
+            let repositoryHasHead = hasHead(repoRoot: repoRoot)
+            let branchName = currentBranch(repoRoot: repoRoot)
+            let repositoryName = remoteWebURLForOrigin(repoRoot: repoRoot).flatMap(PickyGitRepositoryStatus.remoteRepositoryName(from:))
+                ?? URL(fileURLWithPath: repoRoot, isDirectory: true).lastPathComponent
+            let reviewBase = repositoryHasHead ? findReviewBase(repoRoot: repoRoot, branch: branchName) : nil
+            let branchComparisonBase = reviewBase?.mergeBase ?? (repositoryHasHead ? "HEAD" : nil)
+            let worktreeComparisonBase = repositoryHasHead ? "HEAD" : nil
+
+            var createdSnapshots: [PickyGitDiffViewerScope: SnapshotIndex] = [:]
+            do {
+                let branchSnapshot = try SnapshotIndex(repoRoot: repoRoot, baseRevision: branchComparisonBase)
+                createdSnapshots[.branch] = branchSnapshot
+                let worktreeSnapshot = try SnapshotIndex(repoRoot: repoRoot, baseRevision: worktreeComparisonBase)
+                createdSnapshots[.worktree] = worktreeSnapshot
+
+                let branchScope = try makeScopeData(
+                    snapshot: branchSnapshot,
+                    scope: .branch,
+                    baseLabel: reviewBase?.baseRef ?? (repositoryHasHead ? "HEAD" : "Empty tree"),
+                    targetLabel: "Working tree"
+                )
+                let worktreeScope = try makeScopeData(
+                    snapshot: worktreeSnapshot,
+                    scope: .worktree,
+                    baseLabel: repositoryHasHead ? "HEAD" : "Empty tree",
+                    targetLabel: "Working tree"
+                )
+
+                let data = PickyGitDiffViewerData(
+                    repoRoot: repoRoot,
+                    repositoryName: repositoryName,
+                    branchName: branchName,
+                    branchBaseRef: reviewBase?.baseRef,
+                    branchMergeBaseSha: branchComparisonBase,
+                    repositoryHasHead: repositoryHasHead,
+                    scopes: [branchScope, worktreeScope]
+                )
+                let filesByScope = Dictionary(uniqueKeysWithValues: data.scopes.map { scopeData in
+                    (scopeData.scope, Dictionary(uniqueKeysWithValues: scopeData.files.map { ($0.id, $0) }))
+                })
+                let newState = LoadedState(data: data, snapshots: createdSnapshots, filesByScope: filesByScope)
+
+                lock.lock()
+                let oldState = state
+                state = newState
+                isClosed = false
+                lock.unlock()
+                oldState?.snapshots.values.forEach { $0.cleanup() }
+                return data
+            } catch {
+                createdSnapshots.values.forEach { $0.cleanup() }
+                throw error
+            }
+        }
+
+        private func diffSynchronously(scope: PickyGitDiffViewerScope, fileID: String) throws -> String {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !isClosed, let state else { throw PickyGitDiffReviewProviderError.missingScope(scope) }
+            guard let snapshot = state.snapshots[scope] else { throw PickyGitDiffReviewProviderError.missingScope(scope) }
+            guard let file = state.filesByScope[scope]?[fileID] else { throw PickyGitDiffReviewProviderError.missingFile(fileID) }
+            return try snapshot.run(mode: .unifiedDiff(paths: diffPathspecs(for: file)))
+        }
+
+        private func closeSynchronously() {
+            lock.lock()
+            let oldState = state
+            state = nil
+            isClosed = true
+            lock.unlock()
+            oldState?.snapshots.values.forEach { $0.cleanup() }
+        }
     }
 
     static func loadSynchronously(cwd: String) throws -> PickyGitDiffViewerData {
@@ -184,6 +317,80 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding {
         case unifiedDiff(paths: [String])
     }
 
+    private final class SnapshotIndex: @unchecked Sendable {
+        let repoRoot: String
+        let baseRevision: String?
+        private let indexPath: String
+        private let lock = NSLock()
+        private var isCleanedUp = false
+
+        init(repoRoot: String, baseRevision: String?) throws {
+            self.repoRoot = repoRoot
+            self.baseRevision = baseRevision
+            self.indexPath = Self.makeTemporaryIndexPath()
+
+            do {
+                try FileManager.default.removeItem(atPath: indexPath)
+            } catch CocoaError.fileNoSuchFile {
+                // Expected: git creates a fresh index for empty-tree snapshots.
+            } catch {
+                throw PickyGitDiffReviewProviderError.gitFailed(error.localizedDescription)
+            }
+
+            if let baseRevision {
+                try runGitChecked(["read-tree", baseRevision])
+            }
+            try runGitChecked(["add", "-A", "--", "."])
+        }
+
+        deinit {
+            cleanup()
+        }
+
+        func run(mode: SnapshotDiffMode) throws -> String {
+            let arguments: [String]
+            let baseArguments = baseRevision.map { [$0] } ?? ["--root"]
+            switch mode {
+            case .nameStatus:
+                arguments = ["diff", "--cached", "--find-renames", "-M", "--name-status"] + baseArguments + ["--"]
+            case .numstat:
+                arguments = ["diff", "--cached", "--numstat"] + baseArguments + ["--"]
+            case .unifiedDiff(let paths):
+                arguments = ["diff", "--cached", "--find-renames", "-M", "--no-color", "--unified=80"] + baseArguments + ["--"] + paths
+            }
+            return try runGitChecked(arguments).stdout
+        }
+
+        func cleanup() {
+            lock.lock()
+            guard !isCleanedUp else {
+                lock.unlock()
+                return
+            }
+            isCleanedUp = true
+            let path = indexPath
+            lock.unlock()
+            try? FileManager.default.removeItem(atPath: path)
+        }
+
+        private func runGitChecked(_ arguments: [String]) throws -> ProcessResult {
+            let result = runGit(arguments, cwd: repoRoot, environment: ["GIT_INDEX_FILE": indexPath])
+            guard result.exitCode == 0 else {
+                let message = [result.stderr, result.stdout]
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: "\n")
+                throw PickyGitDiffReviewProviderError.gitFailed(message.isEmpty ? "git diff failed" : message)
+            }
+            return result
+        }
+
+        private static func makeTemporaryIndexPath() -> String {
+            let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            return directory.appendingPathComponent("picky-diff-viewer-index-\(UUID().uuidString)").path
+        }
+    }
+
     private struct ChangedPath: Equatable {
         let status: PickyGitDiffChangeStatus
         let oldPath: String?
@@ -222,8 +429,19 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding {
         baseLabel: String,
         targetLabel: String
     ) throws -> PickyGitDiffScopeData {
-        let changedPaths = parseNameStatus(try runSnapshotDiff(repoRoot: repoRoot, baseRevision: baseRevision, mode: .nameStatus))
-        let statsByPath = parseNumstatByPath(try runSnapshotDiff(repoRoot: repoRoot, baseRevision: baseRevision, mode: .numstat))
+        let snapshot = try SnapshotIndex(repoRoot: repoRoot, baseRevision: baseRevision)
+        defer { snapshot.cleanup() }
+        return try makeScopeData(snapshot: snapshot, scope: scope, baseLabel: baseLabel, targetLabel: targetLabel)
+    }
+
+    private static func makeScopeData(
+        snapshot: SnapshotIndex,
+        scope: PickyGitDiffViewerScope,
+        baseLabel: String,
+        targetLabel: String
+    ) throws -> PickyGitDiffScopeData {
+        let changedPaths = parseNameStatus(try snapshot.run(mode: .nameStatus))
+        let statsByPath = parseNumstatByPath(try snapshot.run(mode: .numstat))
         let files: [PickyGitDiffFile] = changedPaths
             .filter { isIncludedReviewPath($0.primaryPath) }
             .map { change in
@@ -445,12 +663,12 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding {
         let stderr: String
     }
 
-    private static func runGit(_ arguments: [String], cwd: String) -> ProcessResult {
-        runProcess(executable: "/usr/bin/env", arguments: ["git", "-C", cwd] + arguments, cwd: nil)
+    private static func runGit(_ arguments: [String], cwd: String, environment: [String: String]? = nil) -> ProcessResult {
+        runProcess(executable: "/usr/bin/env", arguments: ["git", "-C", cwd] + arguments, cwd: nil, environment: environment)
     }
 
     private static func runBash(_ script: String, cwd: String) -> ProcessResult {
-        runProcess(executable: "/bin/bash", arguments: ["-lc", script], cwd: cwd)
+        runProcess(executable: "/bin/bash", arguments: ["-lc", script], cwd: cwd, environment: nil)
     }
 
     private final class PipeDataCollector: @unchecked Sendable {
@@ -472,11 +690,18 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding {
         }
     }
 
-    private static func runProcess(executable: String, arguments: [String], cwd: String?) -> ProcessResult {
+    private static func runProcess(executable: String, arguments: [String], cwd: String?, environment: [String: String]?) -> ProcessResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         if let cwd { process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true) }
+        if let environment {
+            var processEnvironment = ProcessInfo.processInfo.environment
+            for (key, value) in environment {
+                processEnvironment[key] = value
+            }
+            process.environment = processEnvironment
+        }
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()

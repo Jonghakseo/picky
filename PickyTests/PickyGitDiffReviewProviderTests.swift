@@ -152,6 +152,29 @@ struct PickyGitDiffReviewProviderTests {
         #expect(diff.contains("+modified line 1199"))
     }
 
+    @Test func sessionDiffUsesLoadedSnapshotInsteadOfReloadingWorkingTree() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try initializeRepository(at: directory)
+        try "base\n".write(to: directory.appendingPathComponent("tracked.txt"), atomically: true, encoding: .utf8)
+        try runGit(["add", "tracked.txt"], cwd: directory)
+        try runGit(["commit", "-m", "initial"], cwd: directory)
+        try "base\nfirst snapshot\n".write(to: directory.appendingPathComponent("tracked.txt"), atomically: true, encoding: .utf8)
+
+        let session = PickyGitDiffReviewProvider().makeSession()
+        let data = try await session.load(cwd: directory.path)
+        let worktree = try #require(data.scopeData(.worktree))
+        let file = try #require(worktree.files.first { $0.displayPath == "tracked.txt" })
+
+        try "base\nchanged after load\n".write(to: directory.appendingPathComponent("tracked.txt"), atomically: true, encoding: .utf8)
+        let diff = try await session.loadDiff(scope: .worktree, fileID: file.id)
+        await session.close()
+
+        #expect(diff.contains("+first snapshot"))
+        #expect(!diff.contains("+changed after load"))
+    }
+
     @Test func loadThrowsOutsideGitRepository() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

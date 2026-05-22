@@ -92,6 +92,59 @@ final class PickyDiffViewerTests: XCTestCase {
         XCTAssertFalse(model.isLoadingDiff)
     }
 
+    @MainActor
+    func testModelUsesReusableDiffSessionWhenProviderSuppliesOne() async throws {
+        let file = PickyGitDiffFile(
+            id: "worktree::modified::tracked.txt",
+            path: "tracked.txt",
+            oldPath: "tracked.txt",
+            newPath: "tracked.txt",
+            displayPath: "tracked.txt",
+            status: .modified,
+            insertions: 1,
+            deletions: 0
+        )
+        let data = PickyGitDiffViewerData(
+            repoRoot: "/tmp/repo",
+            repositoryName: "repo",
+            branchName: "feature/test",
+            branchBaseRef: "origin/main",
+            branchMergeBaseSha: "abc123",
+            repositoryHasHead: true,
+            scopes: [
+                PickyGitDiffScopeData(
+                    scope: .branch,
+                    baseLabel: "origin/main",
+                    targetLabel: "Working tree",
+                    files: [],
+                    insertions: 0,
+                    deletions: 0
+                ),
+                PickyGitDiffScopeData(
+                    scope: .worktree,
+                    baseLabel: "HEAD",
+                    targetLabel: "Working tree",
+                    files: [file],
+                    insertions: 1,
+                    deletions: 0
+                )
+            ]
+        )
+        let provider = PickyDiffViewerSessionFactoryFakeProvider(data: data, diff: "session diff")
+        let model = PickyDiffViewerModel(title: "Diff", cwd: "/tmp/repo", initialScope: .worktree, provider: provider)
+
+        let loaded = await waitUntil {
+            model.selectedFileID == file.id && model.unifiedDiff == "session diff" && !model.isLoadingDiff
+        }
+
+        XCTAssertTrue(loaded)
+        XCTAssertEqual(provider.makeSessionCount, 1)
+        XCTAssertEqual(provider.legacyLoadCount, 0)
+        XCTAssertEqual(provider.legacyLoadDiffCount, 0)
+        XCTAssertEqual(provider.sessionLoadCount, 1)
+        XCTAssertEqual(provider.sessionLoadDiffCount, 1)
+    }
+
     func testUnifiedDiffLineKindsClassifyGitHeadersBeforeAdditionsAndDeletions() {
         XCTAssertEqual(PickyDiffUnifiedDiffLine.kind(for: "diff --git a/old.txt b/new.txt"), .fileHeader)
         XCTAssertEqual(PickyDiffUnifiedDiffLine.kind(for: "--- a/old.txt"), .fileHeader)
@@ -122,6 +175,79 @@ final class PickyDiffViewerTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
         return await condition()
+    }
+}
+
+private final class PickyDiffViewerSessionFactoryFakeProvider: @unchecked Sendable, PickyGitDiffReviewProviding, PickyGitDiffReviewSessionFactory {
+    private let lock = NSLock()
+    private let session: PickyDiffViewerCountingSession
+    private var _makeSessionCount = 0
+    private var _legacyLoadCount = 0
+    private var _legacyLoadDiffCount = 0
+
+    var makeSessionCount: Int { locked { _makeSessionCount } }
+    var legacyLoadCount: Int { locked { _legacyLoadCount } }
+    var legacyLoadDiffCount: Int { locked { _legacyLoadDiffCount } }
+    var sessionLoadCount: Int { session.loadCount }
+    var sessionLoadDiffCount: Int { session.loadDiffCount }
+
+    init(data: PickyGitDiffViewerData, diff: String) {
+        self.session = PickyDiffViewerCountingSession(data: data, diff: diff)
+    }
+
+    func makeSession() -> any PickyGitDiffReviewSessioning {
+        locked { _makeSessionCount += 1 }
+        return session
+    }
+
+    func load(cwd: String) async throws -> PickyGitDiffViewerData {
+        locked { _legacyLoadCount += 1 }
+        return try await session.load(cwd: cwd)
+    }
+
+    func loadDiff(cwd: String, scope: PickyGitDiffViewerScope, fileID: String) async throws -> String {
+        locked { _legacyLoadDiffCount += 1 }
+        return try await session.loadDiff(scope: scope, fileID: fileID)
+    }
+
+    private func locked<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+}
+
+private final class PickyDiffViewerCountingSession: @unchecked Sendable, PickyGitDiffReviewSessioning {
+    private let lock = NSLock()
+    private let data: PickyGitDiffViewerData
+    private let diff: String
+    private var _loadCount = 0
+    private var _loadDiffCount = 0
+
+    var loadCount: Int { locked { _loadCount } }
+    var loadDiffCount: Int { locked { _loadDiffCount } }
+
+    init(data: PickyGitDiffViewerData, diff: String) {
+        self.data = data
+        self.diff = diff
+    }
+
+    func load(cwd: String) async throws -> PickyGitDiffViewerData {
+        locked { _loadCount += 1 }
+        return data
+    }
+
+    func loadDiff(scope: PickyGitDiffViewerScope, fileID: String) async throws -> String {
+        locked { _loadDiffCount += 1 }
+        return diff
+    }
+
+    func close() async {}
+
+    private func locked<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
     }
 }
 

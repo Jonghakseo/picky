@@ -318,6 +318,107 @@ struct PickyAgentDaemonLauncherTests {
         #expect(configuration.requiredAgentdEntryPoint == "dist/index.js")
     }
 
+    @Test func resolveNodeExecutableWithPickyNodePathOverrideReturnsAbsolute() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let node = temp.appendingPathComponent("override-node")
+        try makeExecutableFile(at: node)
+
+        let resolved = PickyAgentDaemonConfiguration.resolveNodeExecutable(
+            bundleResourceURL: nil,
+            environment: ["PICKY_NODE_PATH": node.path]
+        )
+
+        #expect(resolved == .absolute(node, source: .override))
+    }
+
+    @Test func resolveNodeExecutableWithBundledNodeReturnsAbsolute() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let resources = temp.appendingPathComponent("Resources", isDirectory: true)
+        let node = resources.appendingPathComponent("agentd-runtime/bin/node")
+        try makeExecutableFile(at: node)
+
+        let resolved = PickyAgentDaemonConfiguration.resolveNodeExecutable(
+            bundleResourceURL: resources,
+            environment: [:]
+        )
+
+        #expect(resolved == .absolute(node, source: .bundled))
+    }
+
+    @Test func resolveNodeExecutableOverrideWinsOverBundle() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let resources = temp.appendingPathComponent("Resources", isDirectory: true)
+        let bundledNode = resources.appendingPathComponent("agentd-runtime/bin/node")
+        let overrideNode = temp.appendingPathComponent("override-node")
+        try makeExecutableFile(at: bundledNode)
+        try makeExecutableFile(at: overrideNode)
+
+        let resolved = PickyAgentDaemonConfiguration.resolveNodeExecutable(
+            bundleResourceURL: resources,
+            environment: ["PICKY_NODE_PATH": overrideNode.path]
+        )
+
+        #expect(resolved == .absolute(overrideNode, source: .override))
+    }
+
+    @Test func resolveNodeExecutableInvalidOverrideFallsBack() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let resources = temp.appendingPathComponent("Resources", isDirectory: true)
+        let bundledNode = resources.appendingPathComponent("agentd-runtime/bin/node")
+        try makeExecutableFile(at: bundledNode)
+
+        let resolved = PickyAgentDaemonConfiguration.resolveNodeExecutable(
+            bundleResourceURL: resources,
+            environment: ["PICKY_NODE_PATH": temp.appendingPathComponent("missing-node").path]
+        )
+
+        #expect(resolved == .absolute(bundledNode, source: .bundled))
+    }
+
+    @Test func resolveNodeExecutableNoBundleNoOverrideReturnsViaEnv() {
+        let resolved = PickyAgentDaemonConfiguration.resolveNodeExecutable(
+            bundleResourceURL: nil,
+            environment: [:]
+        )
+
+        #expect(resolved == .viaEnv)
+    }
+
+    @Test func configurationExternalCompiledWithBundledNodeUsesAbsolutePath() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let resources = temp.appendingPathComponent("Resources", isDirectory: true)
+        let bundledNode = resources.appendingPathComponent("agentd-runtime/bin/node")
+        let agentd = temp.appendingPathComponent("agentd-runtime", isDirectory: true)
+        try makeExecutableFile(at: bundledNode)
+        try makeAgentdPackage(at: agentd, compiled: true)
+
+        let configuration = PickyAgentDaemonConfiguration.development(
+            appSupportRoot: temp,
+            environment: ["PICKY_AGENTD_ROOT": agentd.path],
+            bundleResourceURL: resources
+        )
+
+        #expect(configuration.executableURL == bundledNode)
+        #expect(configuration.arguments == [agentd.appendingPathComponent("dist/index.js").path])
+        #expect(configuration.requiredExecutableName == nil)
+    }
+
+    @Test func configurationExternalCompiledWithoutBundledNodeUsesEnvNode() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let agentd = temp.appendingPathComponent("agentd-runtime", isDirectory: true)
+        try makeAgentdPackage(at: agentd, compiled: true)
+
+        let configuration = PickyAgentDaemonConfiguration.development(
+            appSupportRoot: temp,
+            environment: ["PICKY_AGENTD_ROOT": agentd.path],
+            bundleResourceURL: nil
+        )
+
+        #expect(configuration.executableURL == URL(fileURLWithPath: "/usr/bin/env"))
+        #expect(configuration.arguments == ["node", agentd.appendingPathComponent("dist/index.js").path])
+        #expect(configuration.requiredExecutableName == "node")
+    }
+
     @Test func bundledCompiledAgentdUsesNodeWithoutPnpm() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
         let resources = temp.appendingPathComponent("Resources", isDirectory: true)
@@ -954,6 +1055,12 @@ struct PickyAgentDaemonLauncherTests {
         #expect(FileManager.default.fileExists(atPath: freshPath.path), "recent child-session status must be preserved")
         #expect(FileManager.default.fileExists(atPath: unrelatedPath.path), "non-child-session status files must be preserved even when stale")
     }
+}
+
+private func makeExecutableFile(at url: URL) throws {
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try "#!/bin/sh\n".write(to: url, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
 }
 
 private func makeAgentdPackage(at url: URL, source: Bool = false, compiled: Bool = false) throws {

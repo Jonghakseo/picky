@@ -26,6 +26,14 @@ local ~/.pi/agent skills/extensions/MCP/tools
 
 Default daemon port is `127.0.0.1:17631`. Mock runtime is available via `PICKY_AGENTD_RUNTIME=mock`.
 
+Packaged Picky.app bundles a pinned Node 22.x arm64 runtime under `Contents/Resources/agentd-runtime/bin/node`, signed separately with `Picky/NodeRuntime.entitlements` for V8 JIT. The launcher (`Picky/PickyAgentDaemonLauncher.swift`) resolves Node in this order:
+
+1. `PICKY_NODE_PATH` env override (dev/debug).
+2. Bundled `Resources/agentd-runtime/bin/node`.
+3. `/usr/bin/env node` from inherited PATH (dev builds, `PICKY_SKIP_NODE_BUNDLE=1` packages).
+
+Node version is single-sourced from `agentd/package.json#engines.node` (exact pin, no range). `scripts/fetch-node-runtime.sh` downloads + SHA256-verifies + caches under `build/cache/node/`. `agentd.node-preflight.json` records which source the launcher chose.
+
 ## Distribution identity
 
 The upstream appcast URL, bundle identifier, logging subsystem, and keychain service currently use the maintainer's personal namespace (`Jonghakseo` / `com.jonghakseo.picky`). Forks or downstream distributions must replace those identifiers, Sparkle appcast URL, signing settings, and feedback Slack configuration with their own values before shipping.

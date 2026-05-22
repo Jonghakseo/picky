@@ -10,7 +10,7 @@ Use this flow when all of the following are true:
 
 - The tester is an internal/trusted colleague.
 - The tester uses Apple Silicon macOS.
-- The tester already has Pi/Node installed.
+- The tester already has Pi installed (Node is bundled with the app).
 - The tester is willing to remove the downloaded quarantine attribute manually.
 
 Do **not** use this flow for public/external beta distribution.
@@ -92,7 +92,7 @@ The quarantine workaround is only for trusted internal builds. It bypasses the d
 ## Tester prerequisites
 
 - Apple Silicon Mac
-- Pi installed, including a working `node` executable in normal shell PATH
+- Pi installed (no system-wide `node` required — the app ships a pinned Node 22.x arm64 binary under `Contents/Resources/agentd-runtime/bin/node`)
 - macOS permissions granted when prompted:
   - Accessibility
   - Screen Recording
@@ -102,10 +102,12 @@ The quarantine workaround is only for trusted internal builds. It bypasses the d
 If the app launches but the daemon does not start, check:
 
 ```bash
-node --version
 ls -la ~/Library/Application\ Support/Picky/Logs/
+cat ~/Library/Application\ Support/Picky/Logs/agentd.node-preflight.json
 tail -200 ~/Library/Application\ Support/Picky/Logs/agentd.stderr.log
 ```
+
+`agentd.node-preflight.json` records `nodeSource` (`override` / `bundled` / `external`), `nodePath`, and `status` so you can tell which Node the launcher tried to use.
 
 ## Runtime behavior
 
@@ -115,13 +117,20 @@ The packaged app resolves `picky-agentd` in this order:
 2. Bundled `Picky.app/Contents/Resources/agentd/dist/index.js`.
 3. Friendly startup failure.
 
-The bundled daemon runs with:
+For the Node executable the launcher uses (in priority order):
 
-```bash
-node Picky.app/Contents/Resources/agentd/dist/index.js
-```
+1. `PICKY_NODE_PATH` env var, when set to an executable Node 22.x binary (dev/debug override).
+2. Bundled `Picky.app/Contents/Resources/agentd-runtime/bin/node` (Node 22.x arm64, pinned via `agentd/package.json#engines.node`).
+3. `/usr/bin/env node` from the inherited PATH (dev builds or `PICKY_SKIP_NODE_BUNDLE=1` packages).
 
-So testers do not need `pnpm`, `tsx`, TypeScript, or the source tree at launch time.
+The bundled Node is signed separately with `Picky/NodeRuntime.entitlements` so V8 JIT works under hardened runtime; the main app entitlements are unchanged.
+
+So testers do not need `pnpm`, `tsx`, TypeScript, the source tree, **or a system `node`** at launch time.
+
+## Packager-only knobs
+
+- `PICKY_NODE_VERSION` — override the Node version fetched by `scripts/fetch-node-runtime.sh` (defaults to `agentd/package.json#engines.node`, currently `22.19.0`).
+- `PICKY_SKIP_NODE_BUNDLE=1` — package without bundling Node (tester must provide a system Node). Used for niche CI/dev scenarios only.
 
 ## When to switch to proper beta distribution
 

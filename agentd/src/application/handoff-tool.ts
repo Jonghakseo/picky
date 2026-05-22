@@ -57,7 +57,7 @@ function createPickyStartPickleToolWithNames(
     promptSnippet: `${names.start}: delegate complex or long-running work to Pickle in the Picky dock.`,
     promptGuidelines: [
       `Use ${names.start} for substantial work (code/repo, web/video, MCP, deep screen analysis, multi-turn).`,
-      `Before creating, call ${names.sessions} and prefer ${names.steer} for a matching existing Pickle.`,
+      `Use your judgment on whether to reuse a prior Pickle; when reuse fits the context, check ${names.sessions} and prefer ${names.steer} on a match.`,
       "Deltas only — never paste full prompts, transcripts, logs, or screenshot metadata. See `instructions` for the brief format.",
     ],
     parameters: Type.Object({

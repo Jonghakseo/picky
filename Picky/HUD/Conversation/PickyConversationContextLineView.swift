@@ -18,6 +18,7 @@ enum PickyGitContextRefreshPolicy {
 }
 
 struct PickyConversationContextLineView: View {
+    @ObservedObject var viewModel: PickySessionListViewModel
     let session: PickySessionListViewModel.SessionCard
     @Environment(\.colorScheme) private var colorScheme
     @State private var gitStatus: PickyGitRepositoryStatus?
@@ -25,7 +26,8 @@ struct PickyConversationContextLineView: View {
     @State private var inFlightGitAction: GitRemoteAction?
     @State private var manualRefreshTick: Int = 0
 
-    init(session: PickySessionListViewModel.SessionCard) {
+    init(viewModel: PickySessionListViewModel, session: PickySessionListViewModel.SessionCard) {
+        self.viewModel = viewModel
         self.session = session
         // Seed @State synchronously from process-wide caches so the very first paint after a
         // session switch already has git/PR data — eliminates the staircase of layout shifts
@@ -264,12 +266,22 @@ struct PickyConversationContextLineView: View {
     @ViewBuilder
     private func gitMetrics(status: PickyGitRepositoryStatus) -> some View {
         if status.insertions > 0 {
-            gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
-                .help("Insertions")
+            Button(action: { openDiffReview() }) {
+                gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Open diff review (\(status.insertions + status.deletions) lines)")
+            .pointerCursor()
         }
         if status.deletions > 0 {
-            gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
-                .help("Deletions")
+            Button(action: { openDiffReview() }) {
+                gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Open diff review (\(status.insertions + status.deletions) lines)")
+            .pointerCursor()
         }
         if status.aheadCount > 0 {
             Button(action: { runRemoteAction(.push) }) {
@@ -299,27 +311,20 @@ struct PickyConversationContextLineView: View {
             .frame(width: 3, height: 3)
     }
 
-    @ViewBuilder
     private func branchLabel(status: PickyGitRepositoryStatus) -> some View {
-        let content = HStack(spacing: 4) {
-            Image(systemName: "point.3.connected.trianglepath.dotted")
-            Text(status.branchDisplayName)
-                .font(PickyHUDTypography.labelMonospacedMedium)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .contentShape(Rectangle())
-
-        if let url = status.branchWebURL {
-            Link(destination: url) {
-                content
+        Button(action: { openDiffReview() }) {
+            HStack(spacing: 4) {
+                Image(systemName: "point.3.connected.trianglepath.dotted")
+                Text(status.branchDisplayName)
+                    .font(PickyHUDTypography.labelMonospacedMedium)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
-            .buttonStyle(.plain)
-            .help("Open branch \(url.absoluteString)")
-            .pointerCursor()
-        } else {
-            content
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .help("Open diff review for branch \(status.branchName)")
+        .pointerCursor()
     }
 
     private func linkBadge(_ artifact: PickyArtifact) -> some View {
@@ -435,6 +440,26 @@ struct PickyConversationContextLineView: View {
             .foregroundColor(color.opacity(0.92))
     }
 
+    private func openDiffReview() {
+        guard let cwd = session.cwd?.trimmingCharacters(in: .whitespacesAndNewlines), !cwd.isEmpty else { return }
+        PickyDiffReviewPresenter.shared.open(
+            sessionID: session.id,
+            cwd: cwd,
+            onSubmit: { [weak viewModel] prompt in
+                Task {
+                    do {
+                        try await viewModel?.followUp(text: prompt, sessionID: session.id)
+                    } catch {
+                        await MainActor.run {
+                            deliverFollowUpFailureNotification(error: error)
+                        }
+                    }
+                }
+            },
+            onCancel: {}
+        )
+    }
+
     private func runRemoteAction(_ action: GitRemoteAction) {
         guard inFlightGitAction == nil else { return }
         guard let cwd = session.cwd?.trimmingCharacters(in: .whitespacesAndNewlines), !cwd.isEmpty else { return }
@@ -450,6 +475,15 @@ struct PickyConversationContextLineView: View {
                 }
             }
         }
+    }
+
+    private func deliverFollowUpFailureNotification(error: Error) {
+        let content = UNMutableNotificationContent()
+        content.title = "Diff review follow-up failed"
+        content.body = String(error.localizedDescription.prefix(280))
+        content.sound = nil
+        let request = UNNotificationRequest(identifier: "picky-diff-review-follow-up-\(UUID().uuidString)", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request) { _ in }
     }
 
     private func deliverGitFailureNotification(action: GitRemoteAction, outcome: PickyGitRepositoryStatus.GitCommandOutcome) {

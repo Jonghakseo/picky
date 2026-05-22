@@ -228,6 +228,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         // secondary NSPanel flips with the rest of the app and the user's per-panel zoom
         // level (⌘+ / ⌘- / ⌘0) round-trips through the same settings file.
         PickyReportViewerPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
+        PickyDiffReviewPresenter.shared.configure(settingsStore: settingsStore)
         PickyToolHistoryPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
         PickyTerminalOverlayPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
         menuBarPanelManager = MenuBarPanelManager(

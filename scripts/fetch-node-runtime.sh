@@ -53,21 +53,18 @@ validate_node_binary() {
 }
 
 if [[ -n "${PICKY_NODE_VERSION:-}" ]]; then
-  VERSION="${PICKY_NODE_VERSION}"
-  if ! is_exact_version "${VERSION}"; then
-    error "PICKY_NODE_VERSION must be an exact version like \"22.19.0\", got \"${VERSION}\""
-    exit 1
-  fi
-else
-  VERSION="$(read_package_node_version)"
-  if [[ -z "${VERSION}" ]]; then
-    error "Could not read engines.node from ${PACKAGE_JSON}"
-    exit 1
-  fi
-  if ! is_exact_version "${VERSION}"; then
-    error "engines.node must be an exact version like \"22.19.0\", got \"${VERSION}\""
-    exit 1
-  fi
+  error "PICKY_NODE_VERSION is no longer supported. Update engines.node in agentd/package.json to change the bundled Node version (single source of truth)."
+  exit 1
+fi
+
+VERSION="$(read_package_node_version)"
+if [[ -z "${VERSION}" ]]; then
+  error "Could not read engines.node from ${PACKAGE_JSON}"
+  exit 1
+fi
+if ! is_exact_version "${VERSION}"; then
+  error "engines.node must be an exact version like \"22.19.0\", got \"${VERSION}\""
+  exit 1
 fi
 
 ARCH="$(uname -m)"

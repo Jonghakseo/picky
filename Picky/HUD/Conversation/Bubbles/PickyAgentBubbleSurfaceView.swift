@@ -48,9 +48,12 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         static let verticalPadding: CGFloat = 8
         static let maxBubbleWidthFallback: CGFloat = 320
         static let bubbleRadii = AgentBubbleRadii(topLeft: 12, topRight: 12, bottomRight: 12, bottomLeft: 4)
-        static let badgeWidth: CGFloat = 28
-        static let badgeHeight: CGFloat = 15
+        static let badgeWidth: CGFloat = 30
+        static let badgeHeight: CGFloat = 17
         static let badgeInset: CGFloat = 6
+        static let hoverIconSize: CGFloat = 22
+        static let hoverIconInset: CGFloat = 5
+        static let hoverIconCornerRadius: CGFloat = 6
     }
 
     private let markdownView = PickyBubbleMarkdownContentView()
@@ -78,12 +81,19 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
 
         hoverButton.isBordered = false
         hoverButton.bezelStyle = .regularSquare
-        hoverButton.image = NSImage(systemSymbolName: "arrow.up.right.square", accessibilityDescription: "Open this message as report")
+        let symbolConfig = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+        hoverButton.image = NSImage(systemSymbolName: "arrow.up.right", accessibilityDescription: "Open this message as report")?
+            .withSymbolConfiguration(symbolConfig)
         hoverButton.imagePosition = .imageOnly
-        hoverButton.contentTintColor = NSColor(DS.Colors.accentText).withAlphaComponent(0.95)
+        hoverButton.contentTintColor = NSColor(DS.Colors.textSecondary)
         hoverButton.target = self
         hoverButton.action = #selector(openAsReportClicked)
         hoverButton.isHidden = true
+        hoverButton.wantsLayer = true
+        hoverButton.layer?.cornerRadius = Metrics.hoverIconCornerRadius
+        hoverButton.layer?.backgroundColor = NSColor(DS.Colors.surface1).withAlphaComponent(0.78).cgColor
+        hoverButton.layer?.borderWidth = 0.5
+        hoverButton.layer?.borderColor = NSColor(DS.Colors.borderSubtle).withAlphaComponent(0.55).cgColor
         addSubview(hoverButton)
     }
 
@@ -147,10 +157,10 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         )
 
         hoverButton.frame = NSRect(
-            x: bubbleRect.maxX - Metrics.badgeHeight - 4,
-            y: bubbleRect.minY + 4,
-            width: 20,
-            height: 20
+            x: bubbleRect.maxX - Metrics.hoverIconSize - Metrics.hoverIconInset,
+            y: bubbleRect.minY + Metrics.hoverIconInset,
+            width: Metrics.hoverIconSize,
+            height: Metrics.hoverIconSize
         )
         hoverButton.isHidden = !(isPointerInside && onOpenAsReport != nil)
         needsDisplay = true
@@ -256,17 +266,28 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
             width: Metrics.badgeWidth,
             height: Metrics.badgeHeight
         )
-        let path = NSBezierPath(roundedRect: rect, xRadius: Metrics.badgeHeight / 2, yRadius: Metrics.badgeHeight / 2)
-        NSColor(DS.Colors.surface1.opacity(0.70)).setFill()
+        let path = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
+        NSColor(DS.Colors.surface1.opacity(0.82)).setFill()
         path.fill()
-        NSColor(DS.Colors.borderSubtle.opacity(0.72)).setStroke()
-        path.lineWidth = 0.7
+        NSColor(DS.Colors.borderSubtle.opacity(0.55)).setStroke()
+        path.lineWidth = 0.6
         path.stroke()
+        let text = "⌘R"
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 7.5, weight: .bold),
-            .foregroundColor: NSColor(DS.Colors.textPrimary)
+            .font: NSFont.systemFont(ofSize: 9, weight: .semibold),
+            .foregroundColor: NSColor(DS.Colors.textSecondary),
+            .kern: 0.4
         ]
-        NSAttributedString(string: "⌘ R", attributes: attributes).draw(in: rect.insetBy(dx: 4, dy: 2))
+        // Manually center the glyph inside the pill — `draw(in:)` would
+        // anchor the text to the top-left of `rect` and leave it visually
+        // floating above the vertical midline because system glyphs have a
+        // descender region that the box doesn't account for.
+        let measured = NSString(string: text).size(withAttributes: attributes)
+        let origin = NSPoint(
+            x: rect.midX - measured.width / 2,
+            y: rect.midY - measured.height / 2
+        )
+        NSAttributedString(string: text, attributes: attributes).draw(at: origin)
     }
 
     @objc private func copyTextClicked() {

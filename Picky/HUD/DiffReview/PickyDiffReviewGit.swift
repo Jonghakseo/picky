@@ -199,17 +199,46 @@ enum PickyDiffReviewGit {
     private static func getReviewWindowData(cwd: URL) throws -> ReviewWindowData {
         let repoRoot = try getRepoRoot(cwd: cwd)
         let repositoryHasHead = hasHead(repoRoot: repoRoot)
-        let reviewBase = repositoryHasHead ? findReviewBase(repoRoot: repoRoot) : nil
+
+        // Phase 1: workingTreeStatus and reviewBase are independent once we know
+        // repoRoot + repositoryHasHead. Running them in parallel cuts roughly
+        // findReviewBase()'s cost (a chain of `git symbolic-ref` + `git merge-base`
+        // probes) out of the critical path on large repos.
+        var workingTreeStatus = PickyDiffReviewWorkingTreeStatusInfo.empty
+        var reviewBase: ReviewBaseInfo?
+        let phase1 = DispatchGroup()
+        DispatchQueue.global(qos: .utility).async(group: phase1) {
+            workingTreeStatus = getWorkingTreeStatusInfo(repoRoot: repoRoot)
+        }
+        DispatchQueue.global(qos: .utility).async(group: phase1) {
+            reviewBase = repositoryHasHead ? findReviewBase(repoRoot: repoRoot) : nil
+        }
+        phase1.wait()
+
         let branchComparisonBase = reviewBase?.mergeBase ?? (repositoryHasHead ? "HEAD" : nil)
-        let workingTreeStatus = getWorkingTreeStatusInfo(repoRoot: repoRoot)
-        let branchChanges = repositoryHasHead
-            ? getBranchReviewChanges(repoRoot: repoRoot, branchComparisonBase: branchComparisonBase, workingTreeStatus: workingTreeStatus)
-            : getWorkingTreeReviewChanges(repoRoot: repoRoot, repositoryHasHead: false)
+
+        // Phase 2: branchChanges (a heavy `git diff --name-status` against the
+        // comparison base) and the commit list (`git log -100`) only share the
+        // comparison base / merge base inputs, so they can run concurrently.
+        var branchChanges: [PickyDiffReviewChangedPath] = []
+        var commits: [ReviewCommitInfo] = []
+        let phase2 = DispatchGroup()
+        DispatchQueue.global(qos: .utility).async(group: phase2) {
+            branchChanges = repositoryHasHead
+                ? getBranchReviewChanges(repoRoot: repoRoot, branchComparisonBase: branchComparisonBase, workingTreeStatus: workingTreeStatus)
+                : getWorkingTreeReviewChanges(repoRoot: repoRoot, repositoryHasHead: false)
+        }
+        if let reviewBase {
+            DispatchQueue.global(qos: .utility).async(group: phase2) {
+                commits = listRangeCommits(repoRoot: repoRoot, range: "\(reviewBase.mergeBase)..HEAD", limit: 100)
+            }
+        }
+        phase2.wait()
+
         let files = branchChanges
             .filter { isIncludedReviewPath($0.newPath ?? $0.oldPath ?? "") }
             .map(toBranchReviewFile)
             .sorted(by: compareReviewFiles)
-        let commits = reviewBase.map { listRangeCommits(repoRoot: repoRoot, range: "\($0.mergeBase)..HEAD", limit: 100) } ?? []
         let workingTreeCommit = workingTreeStatus.hasReviewableChanges ? [createWorkingTreeCommitInfo()] : []
         let fallbackCommits = repositoryHasHead && files.isEmpty && commits.isEmpty && !workingTreeStatus.hasReviewableChanges
             ? listRangeCommits(repoRoot: repoRoot, range: "HEAD", limit: 20)

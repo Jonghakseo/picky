@@ -104,22 +104,17 @@ function createPickyPickleSessionsToolWithNames(onList: () => PickyAgentSession[
       `Prefer ${names.steer} on a matching session over creating a duplicate.`,
     ],
     parameters: Type.Object({
-      includeTerminal: Type.Optional(Type.Boolean({ description: "Whether to include completed, failed, and cancelled Pickle sessions. Defaults to true." })),
       includeArchived: Type.Optional(Type.Boolean({ description: "Whether to include archived Pickle sessions hidden from the Picky dock. Defaults to false." })),
       page: Type.Optional(Type.Number({ description: "1-based page number to return. Defaults to 1.", minimum: 1 })),
       limit: Type.Optional(Type.Number({ description: `Maximum number of Pickle sessions to return on this page. Defaults to ${PICKLE_SESSIONS_DEFAULT_PAGE_SIZE}; capped at ${PICKLE_SESSIONS_MAX_PAGE_SIZE}.`, minimum: 1, maximum: PICKLE_SESSIONS_MAX_PAGE_SIZE })),
     }),
     execute: async (_toolCallId, params) => {
-      const includeTerminal = params.includeTerminal !== false;
       const includeArchived = params.includeArchived === true;
       const page = normalizePage(params.page);
       const pageSize = clampLimit(params.limit, PICKLE_SESSIONS_DEFAULT_PAGE_SIZE);
       const start = (page - 1) * pageSize;
       const end = start + pageSize;
-      const allSessions = (await onList()).filter((session) => {
-        if (!includeArchived && session.archived === true) return false;
-        return includeTerminal || !["completed", "failed", "cancelled"].includes(session.status);
-      });
+      const allSessions = (await onList()).filter((session) => includeArchived || session.archived !== true);
       const sessions = allSessions.slice(start, end).map(summarizePickleSession);
       const hasMore = allSessions.length > end;
       const nextPage = hasMore ? page + 1 : undefined;

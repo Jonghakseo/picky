@@ -78,7 +78,7 @@ describe("handoff tools", () => {
     expect(details).toMatchObject({ page: 2, pageSize: 10, hasMore: true, nextPage: 3 });
   });
 
-  it("paginates Pickle sessions after filtering terminal sessions", async () => {
+  it("always includes terminal Pickle sessions in paginated results", async () => {
     const sessions = [
       makeSession(1, "completed"),
       makeSession(2, "running"),
@@ -88,11 +88,13 @@ describe("handoff tools", () => {
       makeSession(6, "blocked"),
     ];
     const tool = createPickyPickleSessionsTool(() => sessions);
+    const definition = tool as unknown as { parameters?: unknown };
 
-    const result = await tool.execute("tool-1", { includeTerminal: false, limit: 2 } as never, undefined, undefined, {} as never);
+    const result = await tool.execute("tool-1", { limit: 2 } as never, undefined, undefined, {} as never);
     const details = result.details as { sessions: Array<{ id: string }>; pageSize: number; hasMore: boolean; nextPage?: number };
 
-    expect(details.sessions.map((session) => session.id)).toEqual(["pickle-2", "pickle-4"]);
+    expect(JSON.stringify(definition.parameters)).not.toContain("includeTerminal");
+    expect(details.sessions.map((session) => session.id)).toEqual(["pickle-1", "pickle-2"]);
     expect(details).toMatchObject({ pageSize: 2, hasMore: true, nextPage: 2 });
   });
 

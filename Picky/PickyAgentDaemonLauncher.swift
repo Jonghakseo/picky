@@ -30,6 +30,17 @@ enum PickyResolvedNodeExecutable: Equatable {
     }
 }
 
+enum PickyNodeSource: String, Codable, Equatable {
+    /// PICKY_NODE_PATH override.
+    case override
+    /// app Resources/agentd-runtime/bin/node.
+    case bundled
+    /// `/usr/bin/env` resolves node from PATH.
+    case external
+    /// Node is not the direct executable for this launch path (for example pnpm source mode).
+    case absent
+}
+
 struct PickyAgentDaemonConfiguration: Equatable {
     var port: Int
     var token: String
@@ -45,6 +56,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
     var workingDirectory: URL
     var executableURL: URL
     var arguments: [String]
+    var nodeSource: PickyNodeSource = .absent
     var requiredExecutableName: String? = nil
     var requiredAgentdEntryPoint: String? = nil
     var missingAgentdPackageMessage: String? = nil
@@ -124,17 +136,17 @@ struct PickyAgentDaemonConfiguration: Equatable {
         fileManager: FileManager = .default,
         baseEnvironment: [String: String]? = nil
     ) -> PickyAgentDaemonConfiguration {
-        func nodeCommand(entryPoint: String) -> (URL, [String], String?) {
+        func nodeCommand(entryPoint: String) -> (URL, [String], String?, PickyNodeSource) {
             let resolvedNode = resolveNodeExecutable(
                 bundleResourceURL: bundleResourceURL,
                 environment: environment,
                 fileManager: fileManager
             )
             switch resolvedNode {
-            case .absolute(let nodeURL, _):
-                return (nodeURL, [entryPoint], nil)
+            case .absolute(let nodeURL, let source):
+                return (nodeURL, [entryPoint], nil, nodeSource(for: source))
             case .viaEnv:
-                return (URL(fileURLWithPath: "/usr/bin/env"), ["node", entryPoint], "node")
+                return (URL(fileURLWithPath: "/usr/bin/env"), ["node", entryPoint], "node", .external)
             }
         }
 
@@ -178,6 +190,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 workingDirectory: root,
                 executableURL: command.0,
                 arguments: command.1,
+                nodeSource: command.3,
                 requiredExecutableName: command.2,
                 requiredAgentdEntryPoint: "dist/index.js"
             )
@@ -201,6 +214,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 workingDirectory: root,
                 executableURL: command.0,
                 arguments: command.1,
+                nodeSource: command.3,
                 requiredExecutableName: command.2,
                 requiredAgentdEntryPoint: "dist/index.js",
                 missingAgentdPackageMessage: message,
@@ -226,6 +240,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 workingDirectory: root,
                 executableURL: command.0,
                 arguments: command.1,
+                nodeSource: command.3,
                 requiredExecutableName: command.2,
                 requiredAgentdEntryPoint: "dist/index.js",
                 missingAgentdPackageMessage: message,
@@ -364,6 +379,15 @@ struct PickyAgentDaemonConfiguration: Equatable {
             env["PICKY_PICKLE_THINKING_LEVEL"] = thinkingLevel
         } else {
             env.removeValue(forKey: "PICKY_PICKLE_THINKING_LEVEL")
+        }
+    }
+
+    private static func nodeSource(for resolvedSource: PickyResolvedNodeExecutable.Source) -> PickyNodeSource {
+        switch resolvedSource {
+        case .override:
+            return .override
+        case .bundled:
+            return .bundled
         }
     }
 
@@ -593,6 +617,7 @@ struct PickyNodePreflightSnapshot: Codable, Equatable {
     var command: [String]
     var requiredNodeVersion: String
     var nodePath: String?
+    var nodeSource: String?
     var status: String
     var version: String?
     var failureReason: String?
@@ -906,9 +931,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         }
         if configuration.executableURL.path != "/usr/bin/env" {
             guard PickyAgentDaemonConfiguration.isExecutableRegularFile(atPath: configuration.executableURL.path, fileManager: fileManager) else {
-                throw PickyDaemonLaunchPreflightError.missingExecutableAtPath(
-                    "Bundled node at \(configuration.executableURL.path) is missing or not executable. Reinstall Picky."
-                )
+                throw PickyDaemonLaunchPreflightError.missingExecutableAtPath(missingNodeExecutableMessage())
             }
         } else if let requiredExecutableName = configuration.requiredExecutableName,
                   requiredExecutableName != "node",
@@ -927,7 +950,8 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         let env = configuration.environment
         let nodePath = executableChecker.executablePath(named: "node", environment: env)
         guard nodePath != nil || executableChecker.executableExists(named: "node", environment: env) else {
-            writeNodePreflightSnapshot(path: nodePath, result: .launchFailed("node not found in PATH"))
+            let message = "node not found in PATH. Install node or launch Picky with a PATH that includes it."
+            writeNodePreflightSnapshot(path: nodePath, result: .launchFailed(message))
             throw PickyDaemonLaunchPreflightError.missingRequiredExecutable("node")
         }
         // Do not run a separate `node --version` helper here. On macOS 26 some sandboxed
@@ -936,6 +960,17 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         // validates `process.versions.node` as its first entrypoint step, which is both cheaper
         // and exactly matches the runtime that will execute Pi.
         writeNodePreflightDeferredSnapshot(path: nodePath)
+    }
+
+    private func missingNodeExecutableMessage() -> String {
+        switch configuration.nodeSource {
+        case .override:
+            return "PICKY_NODE_PATH=\(configuration.executableURL.path) is not executable. Unset the variable or point it to a Node 22.x binary."
+        case .bundled:
+            return "Bundled Node at \(configuration.executableURL.path) is missing or not executable. Reinstall Picky."
+        case .external, .absent:
+            return "Required executable at \(configuration.executableURL.path) is missing or not executable."
+        }
     }
 
     private func processTerminated(exitCode: Int32) {
@@ -1151,6 +1186,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             command: ["node", "--version"],
             requiredNodeVersion: Self.minimumSupportedNodeVersion,
             nodePath: path,
+            nodeSource: nodeSourceDiagnosticsValue,
             status: result.diagnosticsStatus,
             version: result.versionString,
             failureReason: result.failureReason,
@@ -1173,6 +1209,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             command: configuration.arguments,
             requiredNodeVersion: Self.minimumSupportedNodeVersion,
             nodePath: path,
+            nodeSource: nodeSourceDiagnosticsValue,
             status: "deferredToAgentd",
             version: nil,
             failureReason: "Node version is validated by agentd at startup via process.versions.node.",
@@ -1181,6 +1218,10 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             outputPreview: nil
         )
         writeNodePreflightSnapshot(snapshot)
+    }
+
+    private var nodeSourceDiagnosticsValue: String? {
+        configuration.nodeSource == .absent ? nil : configuration.nodeSource.rawValue
     }
 
     private func writeNodePreflightSnapshot(_ snapshot: PickyNodePreflightSnapshot) {

@@ -297,6 +297,7 @@ struct PickyAgentDaemonLauncherTests {
 
         #expect(configuration.workingDirectory == agentd)
         #expect(configuration.arguments == ["pnpm", "--dir", agentd.path, "exec", "tsx", "src/index.ts"])
+        #expect(configuration.nodeSource == .absent)
         #expect(configuration.requiredExecutableName == "pnpm")
         #expect(configuration.requiredAgentdEntryPoint == "src/index.ts")
     }
@@ -433,6 +434,70 @@ struct PickyAgentDaemonLauncherTests {
         #expect(configuration.requiredExecutableName == nil)
     }
 
+    @Test func configurationExternalCompiledWithBundledNodeSetsNodeSourceBundled() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let resources = temp.appendingPathComponent("Resources", isDirectory: true)
+        let bundledNode = resources.appendingPathComponent("agentd-runtime/bin/node")
+        let agentd = temp.appendingPathComponent("agentd-runtime", isDirectory: true)
+        try makeExecutableFile(at: bundledNode)
+        try makeAgentdPackage(at: agentd, compiled: true)
+
+        let configuration = PickyAgentDaemonConfiguration.development(
+            appSupportRoot: temp,
+            environment: ["PICKY_AGENTD_ROOT": agentd.path],
+            bundleResourceURL: resources
+        )
+
+        #expect(configuration.nodeSource == .bundled)
+    }
+
+    @Test func configurationExternalCompiledWithOverrideSetsNodeSourceOverride() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let overrideNode = temp.appendingPathComponent("override-node")
+        let agentd = temp.appendingPathComponent("agentd-runtime", isDirectory: true)
+        try makeExecutableFile(at: overrideNode)
+        try makeAgentdPackage(at: agentd, compiled: true)
+
+        let configuration = PickyAgentDaemonConfiguration.development(
+            appSupportRoot: temp,
+            environment: [
+                "PICKY_AGENTD_ROOT": agentd.path,
+                "PICKY_NODE_PATH": overrideNode.path
+            ],
+            bundleResourceURL: nil
+        )
+
+        #expect(configuration.nodeSource == .override)
+    }
+
+    @Test func configurationExternalCompiledWithoutBundleOrOverrideSetsNodeSourceExternal() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let agentd = temp.appendingPathComponent("agentd-runtime", isDirectory: true)
+        try makeAgentdPackage(at: agentd, compiled: true)
+
+        let configuration = PickyAgentDaemonConfiguration.development(
+            appSupportRoot: temp,
+            environment: ["PICKY_AGENTD_ROOT": agentd.path],
+            bundleResourceURL: nil
+        )
+
+        #expect(configuration.nodeSource == .external)
+    }
+
+    @Test func configurationExternalSourcePnpmSetsNodeSourceAbsent() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let agentd = temp.appendingPathComponent("agentd", isDirectory: true)
+        try makeAgentdPackage(at: agentd, source: true, compiled: true)
+
+        let configuration = PickyAgentDaemonConfiguration.development(
+            appSupportRoot: temp,
+            environment: ["PICKY_AGENTD_ROOT": agentd.path],
+            bundleResourceURL: nil
+        )
+
+        #expect(configuration.nodeSource == .absent)
+    }
+
     @Test func configurationExternalCompiledWithoutBundledNodeUsesEnvNode() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
         let agentd = temp.appendingPathComponent("agentd-runtime", isDirectory: true)
@@ -446,6 +511,7 @@ struct PickyAgentDaemonLauncherTests {
 
         #expect(configuration.executableURL == URL(fileURLWithPath: "/usr/bin/env"))
         #expect(configuration.arguments == ["node", agentd.appendingPathComponent("dist/index.js").path])
+        #expect(configuration.nodeSource == .external)
         #expect(configuration.requiredExecutableName == "node")
     }
 
@@ -595,6 +661,62 @@ struct PickyAgentDaemonLauncherTests {
         #expect(env["PICKY_PICKLE_MODEL"] == "openai/gpt-test")
     }
 
+    @Test func missingOverrideNodeExecutableFailsWithActionableMessage() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        try makeAgentdPackage(at: temp)
+        let missingNode = temp.appendingPathComponent("missing-node")
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19026,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: temp,
+            executableURL: missingNode,
+            arguments: ["dist/index.js"],
+            nodeSource: .override
+        )
+        let launcher = PickyAgentDaemonLauncher(configuration: configuration, runner: runner, logDirectory: temp.appendingPathComponent("Logs"))
+
+        launcher.start()
+
+        if case .failedToStart(let message) = launcher.state {
+            #expect(message == "PICKY_NODE_PATH=\(missingNode.path) is not executable. Unset the variable or point it to a Node 22.x binary.")
+        } else {
+            Issue.record("Expected friendly failedToStart state")
+        }
+        #expect(runner.launchedConfiguration == nil)
+    }
+
+    @Test func missingBundledNodeExecutableFailsWithActionableMessage() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        try makeAgentdPackage(at: temp)
+        let missingNode = temp.appendingPathComponent("agentd-runtime/bin/node")
+        let runner = FakeProcessRunner()
+        let configuration = PickyAgentDaemonConfiguration(
+            port: 19027,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: nil,
+            workingDirectory: temp,
+            executableURL: missingNode,
+            arguments: ["dist/index.js"],
+            nodeSource: .bundled
+        )
+        let launcher = PickyAgentDaemonLauncher(configuration: configuration, runner: runner, logDirectory: temp.appendingPathComponent("Logs"))
+
+        launcher.start()
+
+        if case .failedToStart(let message) = launcher.state {
+            #expect(message == "Bundled Node at \(missingNode.path) is missing or not executable. Reinstall Picky.")
+        } else {
+            Issue.record("Expected friendly failedToStart state")
+        }
+        #expect(runner.launchedConfiguration == nil)
+    }
+
     @Test func missingRequiredExecutableFailsFriendlyWithoutRestartLoop() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
         try makeAgentdPackage(at: temp)
@@ -631,7 +753,7 @@ struct PickyAgentDaemonLauncherTests {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
         try makeAgentdPackage(at: temp)
         let runner = FakeProcessRunner()
-        let configuration = PickyAgentDaemonConfiguration(
+        var configuration = PickyAgentDaemonConfiguration(
             port: 19018,
             token: "token-123",
             appSupportRoot: temp,
@@ -642,6 +764,7 @@ struct PickyAgentDaemonLauncherTests {
             arguments: ["node", "dist/index.js"],
             requiredExecutableName: "node"
         )
+        configuration.nodeSource = .external
         let launcher = PickyAgentDaemonLauncher(
             configuration: configuration,
             runner: runner,
@@ -655,6 +778,7 @@ struct PickyAgentDaemonLauncherTests {
         #expect(runner.launchedConfiguration != nil)
         let snapshot = try String(contentsOf: temp.appendingPathComponent("Logs/agentd.node-preflight.json"))
         #expect(snapshot.contains(#""status" : "deferredToAgentd""#))
+        #expect(snapshot.contains(#""nodeSource" : "external""#))
         #expect(snapshot.contains("process.versions.node"))
     }
 

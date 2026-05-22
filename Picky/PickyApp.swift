@@ -230,7 +230,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         PickyReportViewerPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
         PickyToolHistoryPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
         PickyTerminalOverlayPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
-        PickyDiffViewerPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
         menuBarPanelManager = MenuBarPanelManager(
             companionManager: companionManager,
             appearanceStore: appearanceStore,

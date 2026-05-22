@@ -26,7 +26,6 @@ enum PickyDetachedPanelKind: String {
     case reportViewer = "PickyReportViewer"
     case toolHistoryViewer = "PickyToolHistoryViewer"
     case terminalOverlay = "PickyTerminalOverlay"
-    case diffViewer = "PickyDiffViewer"
 }
 
 /// Window-scoped persistence hook for a single detached panel's frame.

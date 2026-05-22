@@ -1024,9 +1024,7 @@ function applyEditorOptions() {
 	editorContainerEl.dataset.addedOnly = addedOnly ? "true" : "false";
 	diffEditor.updateOptions({
 		renderSideBySide: showDiff,
-		// See createDiffEditor: keep `diffWordWrap` on "inherit" and drive wrapping via
-		// each editor's own `wordWrap` setting below for symmetric left/right behavior.
-		diffWordWrap: "inherit",
+		diffWordWrap: state.wrapLines ? "on" : "off",
 		hideUnchangedRegions: {
 			enabled: showDiff && state.hideUnchanged,
 			contextLineCount: 4,
@@ -1886,20 +1884,21 @@ function setupMonaco() {
 		diffEditor = monacoApi.editor.createDiffEditor(editorContainerEl, {
 			automaticLayout: true,
 			renderSideBySide: activeFileShowsDiff(),
+			// `originalEditable: false` (the default for diff editors) causes Monaco to
+			// silently turn off wordWrap on the original/left editor, producing an
+			// asymmetric diff where only the modified side wraps. Setting it `true` and
+			// relying on `readOnly: true` (plus our per-editor wordWrap calls in
+			// `applyEditorOptions`) keeps wrapping symmetric without making the original
+			// editor user-editable in practice.
+			originalEditable: true,
 			readOnly: true,
-			originalEditable: false,
 			// GitHub-style review: no minimap and no diff overview ruler on the side.
 			// Those were the panels that visibly flashed during remount because Monaco
 			// repaints them as hide-unchanged view zones settle.
 			minimap: { enabled: false },
 			renderOverviewRuler: false,
 			overviewRulerLanes: 0,
-			// `diffWordWrap: "on"` mis-syncs between the original (read-only) and modified
-			// editors when `originalEditable: false` + `hideUnchangedRegions` are combined:
-			// the original side stops wrapping while the modified side keeps wrapping.
-			// Using `inherit` defers wrapping to each side's own `wordWrap` setting,
-			// which `applyEditorOptions` keeps in lockstep on both editors.
-			diffWordWrap: "inherit",
+			diffWordWrap: "on",
 			scrollBeyondLastLine: false,
 			lineNumbersMinChars: 4,
 			glyphMargin: true,

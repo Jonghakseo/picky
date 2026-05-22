@@ -18,7 +18,7 @@ struct PickyMainThreadWatchdogTests {
         var spinCount = 0
         let watchdog: PickyMainThreadWatchdog
 
-        init(threshold: TimeInterval = 5, grace: TimeInterval = 30, sleepCooldown: TimeInterval = 5) {
+        init(threshold: TimeInterval = 10, grace: TimeInterval = 30, sleepCooldown: TimeInterval = 5) {
             var capturedSelf: TestHarness?
             let now: () -> Date = { capturedSelf?.currentTime ?? Date() }
             self.watchdog = PickyMainThreadWatchdog(
@@ -59,7 +59,7 @@ struct PickyMainThreadWatchdogTests {
         let h = TestHarness()
         h.advance(by: 60)
         h.heartbeat()
-        h.advance(by: 6) // > threshold 5
+        h.advance(by: 11) // > threshold 10
         h.check()
         #expect(h.spinCount == 1)
     }
@@ -78,7 +78,7 @@ struct PickyMainThreadWatchdogTests {
         let h = TestHarness()
         h.advance(by: 60)
         h.heartbeat()
-        h.advance(by: 6)
+        h.advance(by: 11)
         h.check()
         h.check()
         h.check()
@@ -90,12 +90,12 @@ struct PickyMainThreadWatchdogTests {
         let h = TestHarness()
         h.advance(by: 60)
         h.heartbeat()
-        h.advance(by: 6)
+        h.advance(by: 11)
         h.check() // first spin
         // Recover
         h.advance(by: 1)
         h.heartbeat()
-        h.advance(by: 6)
+        h.advance(by: 11)
         h.check() // second spin
         #expect(h.spinCount == 2)
     }
@@ -124,7 +124,7 @@ struct PickyMainThreadWatchdogTests {
         h.advance(by: 60)
         h.heartbeat()
         // No further heartbeats — emulate main pegged.
-        h.advance(by: 6)
+        h.advance(by: 11)
         h.check()
         #expect(h.spinCount == 1)
     }
@@ -136,11 +136,11 @@ struct PickyMainThreadWatchdogTests {
         h.heartbeat()
         // System wakes; heartbeat hasn't caught up yet, but cooldown is active.
         h.watchdog.noteWoke(at: h.currentTime)
-        h.advance(by: 6) // beyond threshold but within cooldown? cooldown starts at wake
+        h.advance(by: 11) // beyond threshold but still protected by wake cooldown reference
         h.check()
         #expect(h.spinCount == 0)
         // After cooldown plus another threshold without heartbeat, spin should fire.
-        h.advance(by: 6)
+        h.advance(by: 11)
         h.check()
         #expect(h.spinCount == 1)
     }

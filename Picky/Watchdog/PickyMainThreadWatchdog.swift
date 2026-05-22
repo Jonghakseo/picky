@@ -44,7 +44,7 @@ final class PickyMainThreadWatchdog {
 
     init(
         clock: @escaping () -> Date = Date.init,
-        threshold: TimeInterval = 5,
+        threshold: TimeInterval = 10,
         grace: TimeInterval = 30,
         sleepCooldown: TimeInterval = 5,
         onSpinDetected: @escaping () -> Void

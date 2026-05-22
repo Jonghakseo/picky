@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D1F2A3B4C5D64718293A4B5C /* DiffReview in Resources */ = {isa = PBXBuildFile; fileRef = D1F2A3B4C5D64718293A4B5B /* DiffReview */; };
 		EEAD1FD3827B40F48220A79C /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = FA606A6D792443B3BC19DE3C /* SwiftTerm */; };
 /* End PBXBuildFile section */
 
@@ -28,6 +29,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		D1F2A3B4C5D64718293A4B5B /* DiffReview */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Picky/Resources/DiffReview; sourceTree = SOURCE_ROOT; };
 		28F22CBF2F56440300A0FC59 /* Picky.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Picky.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		28F22CCC2F56440300A0FC59 /* PickyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PickyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		28F22CD62F56440300A0FC59 /* PickyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PickyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -239,6 +241,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D1F2A3B4C5D64718293A4B5C /* DiffReview in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

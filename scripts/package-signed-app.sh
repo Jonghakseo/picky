@@ -5,8 +5,8 @@ set -euo pipefail
 #
 # The final app embeds picky-agentd under Contents/Resources/agentd and re-signs
 # the mutated bundle, so beta testers do not need pnpm/tsx or the source tree at
-# launch time. Node itself is intentionally expected to come from the user's Pi
-# installation.
+# launch time. A pinned Node runtime is bundled under Resources/agentd-runtime
+# so beta testers do not need a system Node installation.
 #
 # Defaults to ad-hoc "Sign to Run Locally" signing so contributors can verify
 # bundle sealing and app launch without an Apple Developer certificate. For a
@@ -375,7 +375,21 @@ if [[ -f "${WATCHDOG_HELPER_SRC}" ]]; then
   /usr/bin/xcrun swiftc -O "${WATCHDOG_HELPER_SRC}" \
     -o "${WATCHDOG_HELPER_DIR}/picky-watchdog-alert"
 fi
+
 step_end
+
+if [[ "${PICKY_SKIP_NODE_BUNDLE:-0}" == "1" ]]; then
+  echo "⚠️  PICKY_SKIP_NODE_BUNDLE=1; bundled Node runtime is skipped (Picky will require external node)."
+else
+  step_start "bundle_node_runtime"
+  NODE_BIN_SRC=$("${ROOT_DIR}/scripts/fetch-node-runtime.sh" | tail -n1)
+  NODE_BIN_DST_DIR="${PACKAGED_APP}/Contents/Resources/agentd-runtime/bin"
+  mkdir -p "${NODE_BIN_DST_DIR}"
+  /bin/cp -f "${NODE_BIN_SRC}" "${NODE_BIN_DST_DIR}/node"
+  chmod +x "${NODE_BIN_DST_DIR}/node"
+  echo "✅ Bundled Node runtime at ${NODE_BIN_DST_DIR}/node"
+  step_end
+fi
 
 step_start "codesign"
 # Mutating the bundle after xcodebuild signing invalidates the resource seal.
@@ -417,6 +431,7 @@ Configuration: ${CONFIGURATION}
 Build info: ${BUILD_INFO_PATH}
 $(if [[ "${PACKAGE_AGENTD}" == "1" ]]; then printf 'Bundled agentd: %s\n' "${PACKAGED_APP}/Contents/Resources/agentd"; fi)
 $(if [[ -d "${PACKAGED_APP}/Contents/Resources/pi-extensions" ]]; then printf 'Bundled pi-extensions: %s\n' "${PACKAGED_APP}/Contents/Resources/pi-extensions"; fi)
+$(if [[ -f "${PACKAGED_APP}/Contents/Resources/agentd-runtime/bin/node" ]]; then printf 'Bundled Node: %s\n' "${PACKAGED_APP}/Contents/Resources/agentd-runtime/bin/node"; fi)
 $(if [[ "${CREATE_ZIP}" == "1" ]]; then printf 'Zip: %s\n' "${ZIP_PATH}"; fi)
 
 Smoke tip:

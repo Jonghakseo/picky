@@ -836,10 +836,12 @@ struct PickyAgentDaemonLauncherTests {
         runner.crash(code: 137)
         // The launcher's termination handler hops to the MainActor via
         // `Task { @MainActor ... }`, so the status file is rewritten
-        // asynchronously. Yield a couple of times so the queued task lands
-        // before we read back the file.
-        for _ in 0..<5 { await Task.yield() }
-        let crashedSnapshot = try decodeStatus(at: statusURL)
+        // asynchronously. Under the full parallel suite, a fixed number of
+        // yields can still race with other MainActor-heavy tests, so poll until
+        // the lifecycle snapshot advances.
+        let crashedSnapshot = try await waitForStatus(at: statusURL) { snapshot in
+            snapshot.state == "restarting" || snapshot.state == "crashed"
+        }
         #expect(crashedSnapshot.state == "restarting" || crashedSnapshot.state == "crashed")
 
         launcher.stop()
@@ -850,6 +852,22 @@ struct PickyAgentDaemonLauncherTests {
     private func decodeStatus(at url: URL) throws -> PickyDaemonStatusSnapshot {
         let data = try Data(contentsOf: url)
         return try JSONDecoder().decode(PickyDaemonStatusSnapshot.self, from: data)
+    }
+
+    private func waitForStatus(
+        at url: URL,
+        timeout: TimeInterval = 10,
+        matching predicate: (PickyDaemonStatusSnapshot) -> Bool
+    ) async throws -> PickyDaemonStatusSnapshot {
+        let deadline = Date().addingTimeInterval(timeout)
+        var latest = try decodeStatus(at: url)
+        while Date() < deadline {
+            latest = try decodeStatus(at: url)
+            if predicate(latest) { return latest }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        Issue.record("Timed out waiting for daemon status snapshot")
+        return latest
     }
 
     @Test func stdoutLogRotatesWhenSizeExceedsThreshold() throws {

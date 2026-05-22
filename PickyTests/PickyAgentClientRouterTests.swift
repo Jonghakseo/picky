@@ -274,7 +274,7 @@ private func makePickleHandoffRequestEvent() throws -> PickyEventEnvelope {
 }
 
 @MainActor
-private func waitUntil(timeout: TimeInterval = 2, _ predicate: @escaping @MainActor () -> Bool) async throws {
+private func waitUntil(timeout: TimeInterval = 10, _ predicate: @escaping @MainActor () -> Bool) async throws {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
         if predicate() { return }

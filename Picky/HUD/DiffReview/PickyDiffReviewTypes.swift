@@ -31,6 +31,12 @@ enum ReviewCommitKind: String, Codable, Equatable {
     case workingTree = "working-tree"
 }
 
+enum CommentSide: String, Codable, Equatable {
+    case original
+    case modified
+    case file
+}
+
 struct ReviewFileComparison: Codable, Equatable {
     let status: ChangeStatus
     let oldPath: String?
@@ -134,6 +140,19 @@ struct ReviewFileContents: Codable, Equatable {
         try container.encode(originalPreviewUrl, forKey: .originalPreviewUrl)
         try container.encode(modifiedPreviewUrl, forKey: .modifiedPreviewUrl)
     }
+}
+
+struct DiffReviewComment: Codable, Equatable {
+    let id: String
+    let fileId: String
+    let scope: ReviewScope
+    let commitSha: String?
+    let commitShort: String?
+    let commitKind: ReviewCommitKind?
+    let side: CommentSide
+    let startLine: Int?
+    let endLine: Int?
+    let body: String
 }
 
 struct ReviewWindowData: Codable, Equatable {

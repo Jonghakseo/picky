@@ -20,7 +20,7 @@ struct PickyTypingBubbleView: View {
     }
 
     var body: some View {
-        HStack {
+        HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
             Button {
                 isCollapsed.toggle()
             } label: {
@@ -38,7 +38,7 @@ struct PickyTypingBubbleView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .frame(maxWidth: pickyHUDDetailWidth * 0.85, alignment: .leading)
+                .frame(maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth), alignment: .leading)
                 .contentShape(Rectangle())
                 .background(
                     UnevenRoundedRectangle(
@@ -66,7 +66,7 @@ struct PickyTypingBubbleView: View {
             .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
             .help(isCollapsed ? "Expand thinking" : "Collapse thinking")
             .pointerCursor()
-            Spacer(minLength: 48)
+            Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: externallyCollapsed) { _, newValue in

@@ -37,7 +37,7 @@ struct PickyCompactCompletionBubbleView: View {
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
     var body: some View {
-        HStack {
+        HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
             HStack(alignment: .top, spacing: 8) {
                 ZStack {
                     Circle()
@@ -61,10 +61,10 @@ struct PickyCompactCompletionBubbleView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
-            .frame(maxWidth: pickyHUDDetailWidth * 0.86, alignment: .leading)
+            .frame(maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth, fraction: 0.86), alignment: .leading)
             .background(compactBubbleShape.fill(DS.Colors.accentSubtle.opacity(0.28)))
             .overlay(compactBubbleShape.stroke(DS.Colors.info.opacity(0.25), lineWidth: 0.7))
-            Spacer(minLength: 48)
+            Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -75,7 +75,7 @@ struct PickyCompactFailureBubbleView: View {
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
     var body: some View {
-        HStack {
+        HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
             HStack(alignment: .top, spacing: 8) {
                 ZStack {
                     Circle()
@@ -101,10 +101,10 @@ struct PickyCompactFailureBubbleView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
-            .frame(maxWidth: pickyHUDDetailWidth * 0.86, alignment: .leading)
+            .frame(maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth, fraction: 0.86), alignment: .leading)
             .background(compactBubbleShape.fill(DS.Colors.destructiveText.opacity(0.07)))
             .overlay(compactBubbleShape.stroke(DS.Colors.destructiveText.opacity(0.38), lineWidth: 0.7))
-            Spacer(minLength: 48)
+            Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

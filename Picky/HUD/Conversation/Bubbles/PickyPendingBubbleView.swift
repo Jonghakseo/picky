@@ -40,8 +40,8 @@ struct PickyPendingBubbleView: View {
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
     var body: some View {
-        HStack {
-            Spacer(minLength: 48)
+        HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
+            Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
             VStack(alignment: .leading, spacing: 5) {
                 Text(PickyQueuedInputText.displayText(from: queueItem.text))
                     .font(PickyHUDTypography.body)
@@ -71,7 +71,7 @@ struct PickyPendingBubbleView: View {
                 )
                 .stroke(kind.color.opacity(0.48), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
             )
-            .frame(maxWidth: pickyHUDDetailWidth * 0.85, alignment: .trailing)
+            .frame(maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth), alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }

@@ -30,7 +30,7 @@ struct PickyQuestionBubbleView: View {
     }
 
     var body: some View {
-        HStack {
+        HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
             VStack(alignment: .leading, spacing: 8) {
                 headerRow
                 if !isCollapsedDisplay {
@@ -59,7 +59,7 @@ struct PickyQuestionBubbleView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, isCollapsedDisplay ? 6 : 9)
-            .frame(maxWidth: pickyHUDDetailWidth * 0.88, alignment: .leading)
+            .frame(maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth, fraction: 0.88, oppositeSideReserve: 36), alignment: .leading)
             .background(
                 UnevenRoundedRectangle(
                     topLeadingRadius: 12,

@@ -88,10 +88,10 @@ struct PickyMarkdownInlineTextView: NSViewRepresentable {
     /// renders at the wider value, which is how the user bubble started
     /// spilling out of the card after the migration.
     ///
-    /// By measuring inside the proposed width we let the bubble's
-    /// `.frame(maxWidth: pickyHUDDetailWidth * 0.85)` actually clamp
-    /// hug-fit content, while `fillsAvailableWidth = true` keeps the agent
-    /// bubble stretching to the full available column.
+    /// By measuring inside the proposed width we let the conversation bubble
+    /// layout cap actually clamp hug-fit content, while
+    /// `fillsAvailableWidth = true` keeps the agent bubble stretching to the
+    /// full available column.
     func sizeThatFits(
         _ proposal: ProposedViewSize,
         nsView: SelfSizingMarkdownTextView,

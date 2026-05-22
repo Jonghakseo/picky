@@ -16,8 +16,8 @@ struct PickyUserBubbleView: View {
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
     var body: some View {
-        HStack {
-            Spacer(minLength: 48)
+        HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
+            Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
             PickyUserBubbleSurfaceView(
                 markdown: displayedMarkdownPreview,
                 attachedImagesLabel: displayedAttachedImagesLabel,
@@ -54,7 +54,7 @@ struct PickyUserBubbleView: View {
     }
 
     private var bubbleMaxWidth: CGFloat {
-        max(0, pickyHUDDetailWidth * 0.85)
+        PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth)
     }
 
     /// Mirrors the SwiftUI `.contextMenu` "Open as Report" gate so the

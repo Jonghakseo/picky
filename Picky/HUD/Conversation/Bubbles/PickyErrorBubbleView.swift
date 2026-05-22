@@ -22,7 +22,7 @@ struct PickyErrorBubbleView: View {
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
     var body: some View {
-        HStack {
+        HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("⚠ FAILED · runtime error")
                     .font(PickyHUDTypography.metaBold)
@@ -58,7 +58,7 @@ struct PickyErrorBubbleView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
-            .frame(maxWidth: pickyHUDDetailWidth * 0.88, alignment: .leading)
+            .frame(maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth, fraction: 0.88, oppositeSideReserve: 36), alignment: .leading)
             .background(
                 UnevenRoundedRectangle(
                     topLeadingRadius: 12,

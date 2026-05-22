@@ -16,7 +16,7 @@ struct PickyAgentBubbleView: View {
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
     var body: some View {
-        HStack {
+        HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
             PickyAgentBubbleSurfaceView(
                 markdown: previewText,
                 maxBubbleWidth: bubbleMaxWidth,
@@ -25,13 +25,13 @@ struct PickyAgentBubbleView: View {
                 onCopyText: copyTextAction
             )
             .frame(width: bubbleMaxWidth, alignment: .leading)
-            Spacer(minLength: 48)
+            Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var bubbleMaxWidth: CGFloat {
-        max(0, pickyHUDDetailWidth * 0.85)
+        PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth)
     }
 
     private var previewText: String {
@@ -69,7 +69,7 @@ struct PickyNotifyBubbleView: View {
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
     var body: some View {
-        HStack {
+        HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 6) {
                     Image(systemName: notifyType.iconName)
@@ -93,7 +93,7 @@ struct PickyNotifyBubbleView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .frame(maxWidth: pickyHUDDetailWidth * 0.85, alignment: .leading)
+            .frame(maxWidth: PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth), alignment: .leading)
             .background(
                 notifyBubbleShape
                     .fill(DS.Colors.surface3.opacity(0.86))
@@ -108,7 +108,7 @@ struct PickyNotifyBubbleView: View {
             )
             .clipShape(notifyBubbleShape)
             .openAsReportHoverIcon(onOpen: hoverIconAction, alignment: .topTrailing)
-            Spacer(minLength: 48)
+            Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

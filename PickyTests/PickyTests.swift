@@ -62,6 +62,29 @@ struct PickyTests {
         #expect(longWidth == maxWidth)
     }
 
+    @Test func conversationBubbleWidthFitsInsideDetailContentColumn() throws {
+        let contentWidth = PickyHUDDockLayout.detailContentWidth
+        let bubbleWidth = PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: PickyHUDDockLayout.detailWidth)
+        let occupiedWidth = bubbleWidth
+            + PickyConversationBubbleLayout.oppositeSideReserve
+            + PickyConversationBubbleLayout.horizontalStackSpacing
+
+        #expect(bubbleWidth == contentWidth * PickyConversationBubbleLayout.defaultMaxWidthFraction)
+        #expect(occupiedWidth <= contentWidth)
+        #expect(bubbleWidth < PickyHUDDockLayout.detailWidth * PickyConversationBubbleLayout.defaultMaxWidthFraction)
+    }
+
+    @Test func conversationBubbleWidthKeepsReserveOnNarrowColumns() throws {
+        let detailWidth: CGFloat = 120
+        let contentWidth = PickyConversationBubbleLayout.contentWidth(forDetailWidth: detailWidth)
+        let bubbleWidth = PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: detailWidth)
+        let occupiedWidth = bubbleWidth
+            + PickyConversationBubbleLayout.oppositeSideReserve
+            + PickyConversationBubbleLayout.horizontalStackSpacing
+
+        #expect(occupiedWidth <= contentWidth)
+    }
+
     @Test func bubbleMarkdownRendersEmphasisWithoutRawDelimiters() throws {
         let attributed = PickyBubbleMarkdown.attributedText(for: "이건 **중요**해요")
 

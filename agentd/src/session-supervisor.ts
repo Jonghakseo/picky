@@ -2349,7 +2349,10 @@ export class SessionSupervisor extends EventEmitter {
     const currentTurn = this.turnActivity.get(sessionId) ?? zeroActivitySummary();
     const nextTurn = { ...currentTurn, [category]: currentTurn[category] + 1 };
     this.turnActivity.set(sessionId, nextTurn);
-    await this.patch(sessionId, { activitySummary: nextTurn });
+    // activitySummary is broadcast via the dedicated `sessionActivityUpdated` event; suppress the
+    // accompanying full `sessionUpdated` so streaming tool/thinking turns do not flood the HUD
+    // with redundant whole-session snapshots. Disk persistence still happens inside patch().
+    await this.patch(sessionId, { activitySummary: nextTurn }, { emitSession: false });
     const seq = this.nextSeq(sessionId);
     await this.chainEmit(sessionId, async () => { this.emit("activityUpdated", sessionId, nextTurn, seq); });
   }
@@ -2367,7 +2370,9 @@ export class SessionSupervisor extends EventEmitter {
     await this.messageBuilder.recordActivitySnapshot(sessionId, snapshot);
     this.turnActivity.delete(sessionId);
     const reset = zeroActivitySummary();
-    await this.patch(sessionId, { activitySummary: reset });
+    // Same rationale as incrementActivityNow: the live update is carried by `sessionActivityUpdated`,
+    // so we suppress the accompanying full `sessionUpdated` here too.
+    await this.patch(sessionId, { activitySummary: reset }, { emitSession: false });
     const seq = this.nextSeq(sessionId);
     await this.chainEmit(sessionId, async () => { this.emit("activityUpdated", sessionId, reset, seq); });
   }

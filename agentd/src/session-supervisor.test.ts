@@ -275,6 +275,43 @@ describe("SessionSupervisor", () => {
     expect(events.map((event) => event.seq)).toEqual([1]);
   });
 
+  it("broadcasts activitySummary via sessionActivityUpdated without an accompanying full sessionUpdated", async () => {
+    // Phase 1 of the live-update slim-down: streaming tool/thinking turns previously fired a full
+    // sessionUpdated (full PickyAgentSession payload) on top of every sessionActivityUpdated, which
+    // doubled HUD decode/render work on busy turns. The activitySummary patch must stay disk-
+    // persistent but stop emitting a session event; only the dedicated activity event is allowed.
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-activity-no-session-update-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("activity no session emit"));
+
+    const sessionEvents: PickyAgentSession[] = [];
+    const activityEvents: Array<{ seq: number; summary: NonNullable<ReturnType<SessionSupervisor["get"]>>["activitySummary"] }> = [];
+    supervisor.on("session", (emitted: PickyAgentSession) => sessionEvents.push(emitted));
+    supervisor.on("activityUpdated", (_sessionId, summary, seq) => activityEvents.push({ seq, summary }));
+
+    // Drive a thinking-only turn so the only patches in flight are activity + thinking preview.
+    // Tool/queue paths still legitimately emit a session for their own fields and would mask the
+    // assertion we care about here.
+    runtime.handle!.emit({ type: "thinking_delta", delta: "reasoning step" });
+    await waitUntil(() => activityEvents.length === 1);
+
+    expect(activityEvents.map((event) => event.summary)).toEqual([{ read: 0, bash: 0, edit: 0, write: 0, thinking: 1, other: 0 }]);
+    // The thinking delta itself triggers a thinkingPreview patch (which still emits a session
+    // until Phase 3); the activitySummary patch is the one we are guaranteeing is silent now.
+    // A full sessionUpdated for activity would push this past the single thinkingPreview emit.
+    expect(sessionEvents.length).toBeLessThanOrEqual(1);
+    if (sessionEvents.length === 1) {
+      expect(sessionEvents[0]?.thinkingPreview).toBe("reasoning step");
+    }
+
+    // Disk persistence still mirrors the new activitySummary so reconnect/snapshot is correct.
+    const persisted = await new SessionStore(dir).loadAll();
+    const restored = persisted.find((entry) => entry.id === session.id);
+    expect(restored?.activitySummary).toEqual({ read: 0, bash: 0, edit: 0, write: 0, thinking: 1, other: 0 });
+  });
+
   it("emits a turn-local activity message at terminal turn boundary and resets it for the next turn", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-activity-message-test-"));

@@ -99,7 +99,12 @@ enum PickyGitDiffReviewProviderError: LocalizedError, Equatable {
     }
 }
 
-struct PickyGitDiffReviewProvider: Sendable {
+protocol PickyGitDiffReviewProviding {
+    func load(cwd: String) async throws -> PickyGitDiffViewerData
+    func loadDiff(cwd: String, scope: PickyGitDiffViewerScope, fileID: String) async throws -> String
+}
+
+struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding {
     func load(cwd: String) async throws -> PickyGitDiffViewerData {
         try await Task.detached(priority: .utility) {
             try Self.loadSynchronously(cwd: cwd)

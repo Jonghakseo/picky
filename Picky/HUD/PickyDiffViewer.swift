@@ -124,12 +124,12 @@ final class PickyDiffViewerModel: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var diffErrorMessage: String?
 
-    private let provider: PickyGitDiffReviewProvider
+    private let provider: any PickyGitDiffReviewProviding
     private var diffCache: [PickyGitDiffViewerScope: [String: String]] = [:]
     private var loadGeneration = UUID()
     private var diffGeneration = UUID()
 
-    init(title: String, cwd: String, initialScope: PickyGitDiffViewerScope, provider: PickyGitDiffReviewProvider = PickyGitDiffReviewProvider()) {
+    init(title: String, cwd: String, initialScope: PickyGitDiffViewerScope, provider: any PickyGitDiffReviewProviding = PickyGitDiffReviewProvider()) {
         self.title = title
         self.cwd = cwd
         self.selectedScope = initialScope
@@ -164,6 +164,7 @@ final class PickyDiffViewerModel: ObservableObject {
         self.title = title
         self.cwd = cwd
         if cwdChanged {
+            invalidateInFlightDiffLoad()
             data = nil
             selectedFileID = nil
             unifiedDiff = ""
@@ -178,6 +179,7 @@ final class PickyDiffViewerModel: ObservableObject {
     func reload() async {
         let generation = UUID()
         loadGeneration = generation
+        invalidateInFlightDiffLoad()
         isLoadingData = true
         errorMessage = nil
         diffErrorMessage = nil
@@ -225,6 +227,7 @@ final class PickyDiffViewerModel: ObservableObject {
     }
 
     private func loadSelectedDiff() {
+        let generation = invalidateInFlightDiffLoad()
         guard let fileID = selectedFileID else {
             isLoadingDiff = false
             unifiedDiff = ""
@@ -238,8 +241,6 @@ final class PickyDiffViewerModel: ObservableObject {
 
         let scope = selectedScope
         let cwd = cwd
-        let generation = UUID()
-        diffGeneration = generation
         isLoadingDiff = true
         diffErrorMessage = nil
         Task {
@@ -258,6 +259,14 @@ final class PickyDiffViewerModel: ObservableObject {
                 diffErrorMessage = Self.displayMessage(for: error)
             }
         }
+    }
+
+    @discardableResult
+    private func invalidateInFlightDiffLoad() -> UUID {
+        let generation = UUID()
+        diffGeneration = generation
+        isLoadingDiff = false
+        return generation
     }
 
     private static func displayMessage(for error: Error) -> String {

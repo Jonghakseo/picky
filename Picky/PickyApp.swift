@@ -123,6 +123,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         appearanceStore: appearanceStore,
         settingsStore: settingsStore
     )
+    private var systemCaptureMonitor: PickySystemCaptureMonitor?
     /// Persistent activator that decides whether the takeover overlay should
     /// run on this launch (fresh install or explicit replay via Settings).
     /// Kept as a stored property so the coordinator can mark completion through
@@ -246,6 +247,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             self?.menuBarPanelManager?.present(deepLink: link)
         }
         companionManager.start()
+        startSystemCaptureMonitor()
         // Auto-open the panel only when the user still needs to finish macOS
         // permissions setup. Mirrors what the prerequisites surface gates on so
         // launch matches the panel's own visibility logic.
@@ -346,6 +348,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             settingsSaveObserver = nil
         }
         stopMainThreadWatchdog()
+        stopSystemCaptureMonitor()
         companionManager.stop()
         hudOverlayManager.stop()
         agentDaemonPool.terminateAllChildren()
@@ -389,6 +392,22 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         mainThreadWatchdog?.stop()
         mainThreadWatchdog = nil
         mainThreadWatchdogResponder = nil
+    }
+
+    private func startSystemCaptureMonitor() {
+        guard systemCaptureMonitor == nil else { return }
+        let monitor = PickySystemCaptureMonitor { [weak self] isActive in
+            guard let self else { return }
+            self.hudOverlayManager.setSystemCaptureSuppressed(isActive)
+            self.companionManager.setSystemCaptureSuppressed(isActive)
+        }
+        systemCaptureMonitor = monitor
+        monitor.start()
+    }
+
+    private func stopSystemCaptureMonitor() {
+        systemCaptureMonitor?.stop()
+        systemCaptureMonitor = nil
     }
 
     /// Registers the app as a login item so it launches automatically on

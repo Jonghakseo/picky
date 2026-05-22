@@ -468,6 +468,10 @@ final class CompanionManager: ObservableObject {
         }
     }
 
+    func setSystemCaptureSuppressed(_ suppressed: Bool) {
+        overlayWindowManager.setSuppressedForSystemCapture(suppressed)
+    }
+
     func start() {
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
             bindAgentEvents()

@@ -15,6 +15,7 @@ class OverlayWindowManager {
     private var overlayWindows: [OverlayWindow] = []
     private weak var currentCompanionManager: CompanionManager?
     private var screenParametersObserver: NSObjectProtocol?
+    private var isSuppressedForSystemCapture = false
 
     func showOverlay(onScreens screens: [NSScreen], companionManager: CompanionManager) {
         currentCompanionManager = companionManager
@@ -26,6 +27,23 @@ class OverlayWindowManager {
         stopScreenParametersObserver()
         currentCompanionManager = nil
         removeOverlayWindows()
+    }
+
+    func setSuppressedForSystemCapture(_ suppressed: Bool) {
+        guard isSuppressedForSystemCapture != suppressed else { return }
+        isSuppressedForSystemCapture = suppressed
+
+        if suppressed {
+            for window in overlayWindows {
+                window.orderOut(nil)
+            }
+            return
+        }
+
+        guard currentCompanionManager != nil else { return }
+        for window in overlayWindows {
+            window.orderFrontRegardless()
+        }
     }
 
     /// Fades out overlay windows over `duration` seconds, then removes them.
@@ -71,7 +89,9 @@ class OverlayWindowManager {
             window.contentView = hostingView
 
             overlayWindows.append(window)
-            window.orderFrontRegardless()
+            if !isSuppressedForSystemCapture {
+                window.orderFrontRegardless()
+            }
         }
     }
 

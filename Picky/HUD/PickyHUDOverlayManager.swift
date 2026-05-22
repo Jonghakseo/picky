@@ -81,6 +81,7 @@ final class PickyHUDOverlayManager {
     private var settingsObserver: NSObjectProtocol?
     private var currentDockSizePreset: PickyHUDDockSizePreset
     private var currentCardSizesByDisplayID: [String: PickyHUDCardSize]
+    private var isSuppressedForSystemCapture = false
 
     /// Per-display dock position state. Each display remembers its own side,
     /// anchor percent, and horizontal offset so users can place the dock
@@ -157,7 +158,31 @@ final class PickyHUDOverlayManager {
     /// its open card in local `heldSession` state.
     func focusSession(id: String) {
         viewModel.requestOpenSession(sessionID: id)
+        guard !isSuppressedForSystemCapture else { return }
         for (_, entry) in panelsByDisplayID {
+            entry.panel.orderFrontRegardless()
+        }
+    }
+
+    func setSystemCaptureSuppressed(_ suppressed: Bool) {
+        guard isSuppressedForSystemCapture != suppressed else { return }
+        isSuppressedForSystemCapture = suppressed
+
+        if suppressed {
+            for (_, entry) in panelsByDisplayID {
+                entry.panel.orderOut(nil)
+            }
+            for (_, entry) in archiveUndoToastsByDisplayID {
+                entry.panel.orderOut(nil)
+            }
+            return
+        }
+
+        syncPanelsForCurrentScreens()
+        for (_, entry) in panelsByDisplayID {
+            entry.panel.orderFrontRegardless()
+        }
+        for (_, entry) in archiveUndoToastsByDisplayID where entry.toast != nil {
             entry.panel.orderFrontRegardless()
         }
     }
@@ -206,7 +231,7 @@ final class PickyHUDOverlayManager {
                 panelsByDisplayID[displayID] = makePanelEntry(displayID: displayID)
             }
             positionPanel(on: screen, displayID: displayID)
-            if shouldOrderFront {
+            if shouldOrderFront, !isSuppressedForSystemCapture {
                 panelsByDisplayID[displayID]?.panel.orderFrontRegardless()
             }
         }
@@ -526,7 +551,9 @@ final class PickyHUDOverlayManager {
         entry.panel.alphaValue = 0
         archiveUndoToastsByDisplayID[displayID] = entry
         positionArchiveUndoToast(displayID: displayID)
-        entry.panel.orderFrontRegardless()
+        if !isSuppressedForSystemCapture {
+            entry.panel.orderFrontRegardless()
+        }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = PickyHUDExpansion.duration
             entry.panel.animator().alphaValue = 1

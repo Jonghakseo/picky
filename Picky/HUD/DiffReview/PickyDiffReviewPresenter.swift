@@ -112,7 +112,7 @@ final class PickyDiffReviewPresenter {
                 },
                 onClose: { [weak self] in
                     guard let self, let record = self.records[sessionID] else { return }
-                    self.handleClose(record: record, shouldCancel: true)
+                    self.scheduleCloseGrace(record: record)
                 }
             )
             let title = "Pickle review — \(repoRoot.lastPathComponent)"
@@ -121,11 +121,9 @@ final class PickyDiffReviewPresenter {
                 title: title,
                 frame: PickyDiffReviewWindowController.targetFrame(),
                 framePersister: PickyDetachedPanelFramePersister.backed(by: settingsStore, kind: .diffReviewWindow),
-                onClose: {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) { [weak self] in
-                        guard let self, let record = self.records[sessionID] else { return }
-                        self.handleClose(record: record, shouldCancel: true)
-                    }
+                onClose: { [weak self] in
+                    guard let self, let record = self.records[sessionID] else { return }
+                    self.scheduleCloseGrace(record: record)
                 }
             )
 
@@ -137,6 +135,7 @@ final class PickyDiffReviewPresenter {
                 data: reviewData,
                 onCancel: onCancel
             )
+            createdRecord.didServeInitialData = true
             records[sessionID] = createdRecord
 
             createdRecord.watcher = PickyDiffReviewRepoWatcher(
@@ -153,7 +152,16 @@ final class PickyDiffReviewPresenter {
                 }
             )
 
-            host.loadInitialPage()
+            do {
+                try host.loadInitialPage(initialData: reviewData)
+            } catch {
+                records.removeValue(forKey: sessionID)
+                createdRecord.watcher?.dispose()
+                createdRecord.watcher = nil
+                notify(title: "Review failed", body: error.localizedDescription)
+                onCancel()
+                return
+            }
             focus(createdRecord)
         }
     }
@@ -274,6 +282,13 @@ final class PickyDiffReviewPresenter {
             branchMergeBaseSha: data.branchMergeBaseSha,
             repositoryHasHead: data.repositoryHasHead
         ))
+    }
+
+    private func scheduleCloseGrace(record: ReviewRecord) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) { [weak self, weak record] in
+            guard let self, let record else { return }
+            self.handleClose(record: record, shouldCancel: true)
+        }
     }
 
     private func handleClose(record: ReviewRecord, shouldCancel: Bool) {

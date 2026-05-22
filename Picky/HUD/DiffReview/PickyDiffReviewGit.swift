@@ -328,14 +328,32 @@ enum PickyDiffReviewGit {
         return String(data: result.stdout, encoding: .utf8) ?? ""
     }
 
+    private static func readWorkingTreePath(_ url: URL) throws -> Data {
+        let resourceValues = try url.resourceValues(forKeys: [.isSymbolicLinkKey])
+        if resourceValues.isSymbolicLink == true {
+            let target = try FileManager.default.destinationOfSymbolicLink(atPath: url.path)
+            return Data(target.utf8)
+        }
+        return try Data(contentsOf: url)
+    }
+
     private static func getWorkingTreeContent(repoRoot: String, path: String) -> String {
         let url = URL(fileURLWithPath: repoRoot).appendingPathComponent(path)
-        return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        do {
+            let data = try readWorkingTreePath(url)
+            return String(data: data, encoding: .utf8) ?? ""
+        } catch {
+            return ""
+        }
     }
 
     private static func getWorkingTreeBytes(repoRoot: String, path: String) -> Data? {
         let url = URL(fileURLWithPath: repoRoot).appendingPathComponent(path)
-        return try? Data(contentsOf: url)
+        do {
+            return try readWorkingTreePath(url)
+        } catch {
+            return nil
+        }
     }
 
     private static func shellQuote(_ value: String) -> String {

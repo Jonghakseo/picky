@@ -145,6 +145,28 @@ struct PickyDiffReviewGitTests {
         #expect(data.files.first?.hasWorkingTreeFile == true)
     }
 
+    @Test func loadFileContents_workingTreeSymlinkReturnsLinkTarget() async throws {
+        let tmp = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        try await shell("git init -q .", cwd: tmp)
+        try await shell("git -c user.email=test@e -c user.name=t commit --allow-empty -m init -q", cwd: tmp)
+        try "target-text-payload".write(to: tmp.appendingPathComponent("target-file.txt"), atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(atPath: tmp.appendingPathComponent("leak.txt").path, withDestinationPath: "target-file.txt")
+
+        let data = try await PickyDiffReviewGit.loadReviewWindowData(cwd: tmp)
+        let file = try #require(data.files.first { $0.path == "leak.txt" })
+        let contents = try await PickyDiffReviewGit.loadFileContents(
+            repoRoot: tmp,
+            file: file,
+            scope: .all,
+            commitSha: nil,
+            branchMergeBaseSha: data.branchMergeBaseSha
+        )
+
+        #expect(contents.modifiedContent == "target-file.txt")
+        #expect(contents.modifiedContent != "target-text-payload")
+    }
+
     private func statusInfo(
         hasUntracked: Bool = false,
         hasTrackedDeletions: Bool = false,

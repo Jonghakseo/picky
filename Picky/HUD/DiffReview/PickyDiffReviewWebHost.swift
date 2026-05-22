@@ -12,6 +12,7 @@ final class PickyDiffReviewWebHost: NSObject, WKScriptMessageHandler {
 
     let webView: WKWebView
 
+    private let schemeHandler = PickyDiffReviewURLSchemeHandler()
     private let onMessage: MessageHandler
     private let onClose: () -> Void
 
@@ -32,6 +33,7 @@ final class PickyDiffReviewWebHost: NSObject, WKScriptMessageHandler {
         configuration.userContentController = userContentController
         configuration.processPool = WKProcessPool()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        configuration.setURLSchemeHandler(schemeHandler, forURLScheme: PickyDiffReviewURLSchemeHandler.scheme)
 
         self.webView = WKWebView(frame: .zero, configuration: configuration)
 
@@ -40,10 +42,26 @@ final class PickyDiffReviewWebHost: NSObject, WKScriptMessageHandler {
         userContentController.add(self, name: "glimpse")
     }
 
-    func loadInitialPage() {
-        guard let indexURL = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "DiffReview"),
-              let resourceURL = Bundle.main.resourceURL else { return }
-        webView.loadFileURL(indexURL, allowingReadAccessTo: resourceURL)
+    func loadInitialPage(initialData: ReviewWindowData) throws {
+        guard let resourceURL = Bundle.main.url(forResource: "DiffReview", withExtension: nil) else {
+            throw PickyDiffReviewWebHostError.missingResourceDirectory
+        }
+        let template = try String(contentsOf: resourceURL.appendingPathComponent("index.html"), encoding: .utf8)
+        let appJs = try String(contentsOf: resourceURL.appendingPathComponent("app.js"), encoding: .utf8)
+        schemeHandler.configure(resourceRoot: resourceURL, renderedHTML: try Self.renderHTML(template: template, appJs: appJs, initialData: initialData))
+        webView.load(URLRequest(url: PickyDiffReviewURLSchemeHandler.indexURL))
+    }
+
+    nonisolated static func renderHTML(template: String, appJs: String, initialData: ReviewWindowData) throws -> String {
+        let raw = try JSONEncoder.diffReview.encode(initialData)
+        let json = String(data: raw, encoding: .utf8) ?? "{}"
+        let escaped = json
+            .replacingOccurrences(of: "<", with: "\\u003c")
+            .replacingOccurrences(of: ">", with: "\\u003e")
+            .replacingOccurrences(of: "&", with: "\\u0026")
+        return template
+            .replacingOccurrences(of: "\"__INLINE_DATA__\"", with: escaped)
+            .replacingOccurrences(of: "__INLINE_JS__", with: appJs)
     }
 
     func dispose() {
@@ -203,6 +221,97 @@ enum ReviewHostMessage: Encodable {
         case .workingTreeChanged(let changedAt):
             try container.encode("working-tree-changed", forKey: .type)
             try container.encode(changedAt, forKey: .changedAt)
+        }
+    }
+}
+
+enum PickyDiffReviewWebHostError: LocalizedError {
+    case missingResourceDirectory
+
+    var errorDescription: String? {
+        switch self {
+        case .missingResourceDirectory:
+            "DiffReview resources are missing from the app bundle."
+        }
+    }
+}
+
+private final class PickyDiffReviewURLSchemeHandler: NSObject, WKURLSchemeHandler {
+    static let scheme = "pickydiff"
+    static let indexURL = URL(string: "pickydiff://review/index.html")!
+
+    private var resourceRoot: URL?
+    private var renderedHTML: String?
+
+    func configure(resourceRoot: URL, renderedHTML: String) {
+        self.resourceRoot = resourceRoot.standardizedFileURL
+        self.renderedHTML = renderedHTML
+    }
+
+    func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
+        guard let url = urlSchemeTask.request.url else {
+            fail(urlSchemeTask, message: "Missing request URL.")
+            return
+        }
+
+        if url.host == "review", url.path == "/index.html" {
+            guard let renderedHTML, let data = renderedHTML.data(using: .utf8) else {
+                fail(urlSchemeTask, message: "Rendered review HTML is unavailable.")
+                return
+            }
+            send(data: data, mimeType: "text/html", url: url, task: urlSchemeTask)
+            return
+        }
+
+        guard let resourceRoot, let fileURL = resolveResourceURL(for: url, resourceRoot: resourceRoot) else {
+            fail(urlSchemeTask, message: "Requested resource is outside DiffReview resources.")
+            return
+        }
+
+        do {
+            let data = try Data(contentsOf: fileURL)
+            send(data: data, mimeType: mimeType(for: fileURL), url: url, task: urlSchemeTask)
+        } catch {
+            fail(urlSchemeTask, message: error.localizedDescription)
+        }
+    }
+
+    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
+
+    private func resolveResourceURL(for url: URL, resourceRoot: URL) -> URL? {
+        guard url.host == "review" else { return nil }
+        let relativePath = String(url.path.dropFirst())
+        guard !relativePath.isEmpty,
+              !relativePath.hasPrefix("/"),
+              relativePath.split(separator: "/").allSatisfy({ $0 != ".." }) else { return nil }
+
+        let fileURL = resourceRoot.appendingPathComponent(relativePath).standardizedFileURL
+        let rootPath = resourceRoot.path.hasSuffix("/") ? resourceRoot.path : resourceRoot.path + "/"
+        guard fileURL.path.hasPrefix(rootPath) else { return nil }
+        return fileURL
+    }
+
+    private func send(data: Data, mimeType: String, url: URL, task: WKURLSchemeTask) {
+        let response = URLResponse(url: url, mimeType: mimeType, expectedContentLength: data.count, textEncodingName: mimeType.hasPrefix("text/") ? "utf-8" : nil)
+        task.didReceive(response)
+        task.didReceive(data)
+        task.didFinish()
+    }
+
+    private func fail(_ task: WKURLSchemeTask, message: String) {
+        task.didFailWithError(NSError(domain: "PickyDiffReviewURLSchemeHandler", code: 1, userInfo: [NSLocalizedDescriptionKey: message]))
+    }
+
+    private func mimeType(for url: URL) -> String {
+        switch url.pathExtension.lowercased() {
+        case "js": "application/javascript"
+        case "css": "text/css"
+        case "ttf": "font/ttf"
+        case "woff": "font/woff"
+        case "woff2": "font/woff2"
+        case "json": "application/json"
+        case "html": "text/html"
+        default: "application/octet-stream"
         }
     }
 }

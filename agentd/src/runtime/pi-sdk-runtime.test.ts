@@ -13,6 +13,7 @@ class FakeSession extends EventEmitter {
   reloads = 0;
   compactCalls: Array<string | undefined> = [];
   thinkingLevels: string[] = [];
+  scopedModelUpdates: unknown[][] = [];
   isStreaming = false;
   isCompacting = false;
   bound = false;
@@ -118,6 +119,10 @@ class FakeSession extends EventEmitter {
 
   setThinkingLevel(level: string): void {
     this.thinkingLevels.push(level);
+  }
+
+  setScopedModels(scopedModels: unknown[]): void {
+    this.scopedModelUpdates.push(scopedModels);
   }
 
   async bindExtensions(options?: { uiContext?: Record<string, unknown> }): Promise<void> {
@@ -1168,6 +1173,68 @@ describe("PiSdkRuntime", () => {
     expect(fakeSession.prompts).toEqual([]);
     expect(events).toContainEqual({ type: "log", line: "/reload rejected: wait for the current response to finish" });
     expect(events).toContainEqual({ type: "status", status: "completed", summary: "/reload is unavailable while the agent is running", noTurnRan: true, preserveSessionState: true });
+  });
+
+  it("does not pass settings enabledModels as scopedModels during Pi-default session creation", async () => {
+    const fakeSession = new FakeSession();
+    const codexModel = { provider: "openai-codex", id: "gpt-5.5", name: "GPT-5.5" };
+    const createSessionFromServices = vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } }));
+    const runtime = new PiSdkRuntime({
+      getAgentDir: () => "/tmp/.pi/agent",
+      createServices: vi.fn(async () => ({
+        diagnostics: [],
+        settingsManager: { getEnabledModels: () => ["openai-codex/gpt-5.5"] },
+        modelRegistry: { getAvailable: async () => [codexModel] },
+      })) as never,
+      createSessionFromServices: createSessionFromServices as never,
+      createRuntime: vi.fn(async (factory, options) => {
+        const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
+        return {
+          session: result.session,
+          diagnostics: result.diagnostics,
+          setRebindSession: vi.fn(),
+        };
+      }) as never,
+    });
+
+    await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
+
+    expect(createSessionFromServices).toHaveBeenCalledWith(expect.not.objectContaining({ scopedModels: expect.anything() }));
+    expect(createSessionFromServices).toHaveBeenCalledWith(expect.not.objectContaining({ model: expect.anything() }));
+    expect(fakeSession.scopedModelUpdates).toEqual([[{ model: codexModel }]]);
+  });
+
+  it("passes scopedModels only when Picky has an explicit fixed model override", async () => {
+    const fakeSession = new FakeSession();
+    const codexModel = { provider: "openai-codex", id: "gpt-5.5", name: "GPT-5.5" };
+    const createSessionFromServices = vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } }));
+    const runtime = new PiSdkRuntime({
+      getAgentDir: () => "/tmp/.pi/agent",
+      modelPattern: "openai-codex/gpt-5.5",
+      thinkingLevel: "high",
+      createServices: vi.fn(async () => ({
+        diagnostics: [],
+        settingsManager: { getEnabledModels: () => [] },
+        modelRegistry: { getAvailable: async () => [codexModel] },
+      })) as never,
+      createSessionFromServices: createSessionFromServices as never,
+      createRuntime: vi.fn(async (factory, options) => {
+        const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
+        return {
+          session: result.session,
+          diagnostics: result.diagnostics,
+          setRebindSession: vi.fn(),
+        };
+      }) as never,
+    });
+
+    await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
+
+    expect(createSessionFromServices).toHaveBeenCalledWith(expect.objectContaining({
+      model: codexModel,
+      scopedModels: [{ model: codexModel, thinkingLevel: "high" }],
+    }));
+    expect(fakeSession.scopedModelUpdates).toEqual([]);
   });
 
   it("updates the active Pi session thinking level", async () => {

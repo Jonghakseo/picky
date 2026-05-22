@@ -138,16 +138,17 @@ export class PiSdkRuntime implements AgentRuntime {
       const scopedModels = fixedModel
         ? [{ model: fixedModel as ScopedModelOption["model"], ...(this.thinkingLevel ? { thinkingLevel: this.thinkingLevel } : {}) }]
         : await scopedModelsFromServices(services);
+      const sessionResult = await createSessionFromServices({
+        services,
+        sessionManager,
+        sessionStartEvent,
+        customTools,
+        thinkingLevel: this.thinkingLevel,
+        ...(fixedModel ? { model: fixedModel as ScopedModelOption["model"], scopedModels } : {}),
+      });
+      if (!fixedModel) applyScopedModelsForCycling(sessionResult.session, scopedModels);
       return {
-        ...(await createSessionFromServices({
-          services,
-          sessionManager,
-          sessionStartEvent,
-          customTools,
-          thinkingLevel: this.thinkingLevel,
-          scopedModels,
-          ...(fixedModel ? { model: fixedModel as ScopedModelOption["model"] } : {}),
-        })),
+        ...sessionResult,
         services,
         diagnostics: services.diagnostics,
       };
@@ -1284,6 +1285,13 @@ function modelsEqual(left: unknown, right: unknown): boolean {
   const rightRecord = asRecord(right);
   return stringValue(leftRecord.provider) === stringValue(rightRecord.provider)
     && stringValue(leftRecord.id) === stringValue(rightRecord.id);
+}
+
+function applyScopedModelsForCycling(session: AgentSession, scopedModels: ScopedModelOption[]): void {
+  if (scopedModels.length === 0) return;
+  const setScopedModels = (session as AgentSession & { setScopedModels?: (scopedModels: ScopedModelOption[]) => void }).setScopedModels;
+  if (typeof setScopedModels !== "function") return;
+  setScopedModels.call(session, scopedModels);
 }
 
 function currentModelId(session: AgentSession): string | undefined {

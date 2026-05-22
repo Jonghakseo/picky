@@ -22,11 +22,14 @@ struct CompanionPanelMessagesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Header sits outside the ScrollView so the title, "새 세션", and the
+            // Pi terminal/resume command row stay pinned while only the message
+            // list scrolls.
+            header
+
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: true) {
                     VStack(alignment: .leading, spacing: 14) {
-                        header
-
                         if companionManager.mainAgentMessages.isEmpty {
                             emptyState
                         } else {

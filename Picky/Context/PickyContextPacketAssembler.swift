@@ -81,7 +81,7 @@ struct PickyContextPacketAssembler {
         }
         let selectedTextResult = selectedTextProvider.selectedTextResult()
         warnings.append(contentsOf: selectedTextResult.warnings)
-        let selectedText = selectedTextResult.value?.text ?? browser?.selectedText
+        let selectedText = browser?.selectedText ?? selectedTextResult.value?.text
 
         return PickyContextPacket(
             id: contextID,

@@ -80,6 +80,22 @@ struct PickyAdvancedContextTests {
         #expect(packet.warnings == ["Browser context permission failure"])
     }
 
+    @Test func browserSelectedTextWinsOverClipboardFallback() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-browser-selection-\(UUID().uuidString)", isDirectory: true)
+        let assembler = PickyContextPacketAssembler(
+            appProvider: AdvancedFakeAppProvider(),
+            advancedBrowserProvider: FakeAdvancedBrowserProvider(result: .value(PickyBrowserContext(url: URL(string: "https://example.com")!, title: "Example", selectedText: "browser selection"))),
+            selectedTextProvider: FakeSelectedTextProvider(result: .value(PickySelectedTextCapture(text: "quick input draft", isTruncated: false, originalLength: 17))),
+            screenProvider: MultiDisplayScreenProvider(),
+            screenshotStore: PickyAppSupportScreenshotStore(screenshotsRoot: root),
+            defaultCwd: nil
+        )
+
+        let packet = try assembler.assemble(source: "text", transcript: "ask about this")
+
+        #expect(packet.selectedText == "browser selection")
+    }
+
     @Test func selectedTextTruncatesAndClipboardProviderRestoresPasteboard() throws {
         let capture = PickySelectedTextTruncator(maxCharacters: 5).truncate("abcdefg")
         #expect(capture?.isTruncated == true)
@@ -108,6 +124,41 @@ struct PickyAdvancedContextTests {
 
         #expect(result.value == nil)
         #expect(result.warnings.first?.contains("Accessibility permission") == true)
+    }
+
+    @Test func accessibilitySelectedTextProviderReturnsFocusedSelectionWithoutClipboard() throws {
+        let root = AXUIElementCreateSystemWide()
+        var provider = AccessibilitySelectedTextProvider()
+        provider.frontmostApplicationProvider = { NSRunningApplication.current }
+        provider.ignoredBundleIds = []
+        provider.axTrustChecker = { true }
+        provider.candidateElementsProvider = { _ in [root] }
+        provider.selectedTextFinder = { elements in
+            #expect(elements.count == 1)
+            return "AX selected text"
+        }
+
+        let result = provider.selectedTextResult()
+
+        #expect(result.value?.text == "AX selected text")
+        #expect(result.warnings.isEmpty)
+    }
+
+    @Test func chainedSelectedTextProviderFallsBackAfterAXMiss() throws {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("picky-chain-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        let provider = ChainedSelectedTextProvider(providers: [
+            FakeSelectedTextProvider(result: .unavailable()),
+            ClipboardSelectedTextProvider(pasteboard: pasteboard, keyboardCopier: {
+                pasteboard.clearContents()
+                pasteboard.setString("clipboard fallback text", forType: .string)
+                return true
+            })
+        ])
+
+        let result = provider.selectedTextResult()
+
+        #expect(result.value?.text == "clipboard fallback text")
     }
 
     @Test func regionMetadataValidatesBoundsAgainstScreen() {
@@ -160,7 +211,7 @@ struct PickyAdvancedContextTests {
         provider.instanceCountProvider = { _ in 1 }
         provider.frontmostWindowTitleProvider = { "Picky Docs" }
         provider.scriptRunner = { _ in
-            "https://example.com/picky\nPicky Docs\n2\nPicky Docs\u{1F}Other Tab\u{1F}"
+            "https://example.com/picky\nPicky Docs\n2\nPicky Docs\u{1F}Other Tab\u{1F}\nselected browser text"
         }
 
         let result = provider.browserContextResult()
@@ -168,7 +219,40 @@ struct PickyAdvancedContextTests {
 
         #expect(context.url?.absoluteString == "https://example.com/picky")
         #expect(context.title == "Picky Docs")
+        #expect(context.selectedText == "selected browser text")
         #expect(result.warnings.isEmpty)
+    }
+
+    @Test func appleScriptProviderKeepsMultilineSelectedTextFromFifthField() throws {
+        var provider = AppleScriptBrowserContextProvider()
+        provider.frontmostBundleIdProvider = { "com.google.Chrome" }
+        provider.instanceCountProvider = { _ in 1 }
+        provider.frontmostWindowTitleProvider = { "Picky Docs" }
+        provider.scriptRunner = { _ in
+            "https://example.com/picky\nPicky Docs\n1\nPicky Docs\u{1F}\nfirst line\nsecond line"
+        }
+
+        let result = provider.browserContextResult()
+        let context = try #require(result.value)
+
+        #expect(context.selectedText == "first line\nsecond line")
+    }
+
+    @Test func appleScriptProviderWarnsWhenBrowserSelectedTextIsTruncated() throws {
+        var provider = AppleScriptBrowserContextProvider()
+        provider.frontmostBundleIdProvider = { "com.google.Chrome" }
+        provider.instanceCountProvider = { _ in 1 }
+        provider.frontmostWindowTitleProvider = { "Picky Docs" }
+        provider.selectedTextTruncator = PickySelectedTextTruncator(maxCharacters: 5)
+        provider.scriptRunner = { _ in
+            "https://example.com/picky\nPicky Docs\n1\nPicky Docs\u{1F}\nabcdefg"
+        }
+
+        let result = provider.browserContextResult()
+        let context = try #require(result.value)
+
+        #expect(context.selectedText?.contains("[truncated by Picky]") == true)
+        #expect(result.warnings.contains(where: { $0.contains("Selected text truncated") }))
     }
 
     @Test func appleScriptProviderSkipsCrossCheckWhenFrontmostWindowTitleUnavailable() throws {

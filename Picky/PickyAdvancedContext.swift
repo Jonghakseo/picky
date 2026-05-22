@@ -72,6 +72,104 @@ struct NullPickySelectedTextProvider: PickySelectedTextProviding {
     func selectedTextResult() -> PickyContextCaptureResult<PickySelectedTextCapture> { .unavailable() }
 }
 
+struct ChainedSelectedTextProvider: PickySelectedTextProviding {
+    let providers: [PickySelectedTextProviding]
+
+    func selectedTextResult() -> PickyContextCaptureResult<PickySelectedTextCapture> {
+        var accumulated: [String] = []
+        for provider in providers {
+            let result = provider.selectedTextResult()
+            switch result {
+            case .value(let value, let warnings):
+                return .value(value, warnings: accumulated + warnings)
+            case .unavailable(let warnings):
+                accumulated.append(contentsOf: warnings)
+            }
+        }
+        return .unavailable(warnings: accumulated)
+    }
+}
+
+struct AccessibilitySelectedTextProvider: PickySelectedTextProviding {
+    var frontmostApplicationProvider: () -> NSRunningApplication? = { NSWorkspace.shared.frontmostApplication }
+    var axTrustChecker: () -> Bool = { AXIsProcessTrusted() }
+    var ignoredBundleIds: Set<String> = Set([Bundle.main.bundleIdentifier].compactMap { $0 })
+    var candidateElementsProvider: (pid_t) -> [AXUIElement] = AccessibilitySelectedTextProvider.defaultCandidateElements
+    var selectedTextFinder: ([AXUIElement]) -> String? = AccessibilitySelectedTextProvider.firstSelectedText
+    var truncator = PickySelectedTextTruncator()
+
+    func selectedTextResult() -> PickyContextCaptureResult<PickySelectedTextCapture> {
+        guard let app = frontmostApplicationProvider() else { return .unavailable() }
+        if let bundleId = app.bundleIdentifier, ignoredBundleIds.contains(bundleId) {
+            return .unavailable()
+        }
+        guard axTrustChecker() else {
+            return .unavailable(warnings: ["Selected text unavailable: Accessibility permission is required to read the focused element."])
+        }
+        guard let capture = selectedTextFinder(candidateElementsProvider(app.processIdentifier)).flatMap(truncator.truncate) else {
+            return .unavailable()
+        }
+        var warnings: [String] = []
+        if capture.isTruncated { warnings.append("Selected text truncated from \(capture.originalLength) characters.") }
+        return .value(capture, warnings: warnings)
+    }
+
+    static func defaultCandidateElements(pid: pid_t) -> [AXUIElement] {
+        let app = AXUIElementCreateApplication(pid)
+        var candidates: [AXUIElement] = []
+        for attribute in [kAXFocusedUIElementAttribute, kAXFocusedWindowAttribute] {
+            var anyValue: AnyObject?
+            if AXUIElementCopyAttributeValue(app, attribute as CFString, &anyValue) == .success,
+               let value = anyValue {
+                candidates.append(value as! AXUIElement)
+            }
+        }
+        candidates.append(app)
+        return candidates
+    }
+
+    static func firstSelectedText(in roots: [AXUIElement]) -> String? {
+        var queue = roots
+        var visited = 0
+        let maxNodes = 2_000
+        while !queue.isEmpty && visited < maxNodes {
+            let element = queue.removeFirst()
+            visited += 1
+            if let text = selectedText(in: element) { return text }
+            var childrenAny: AnyObject?
+            if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenAny) == .success,
+               let children = childrenAny as? [AXUIElement] {
+                queue.append(contentsOf: children)
+            }
+        }
+        return nil
+    }
+
+    private static func selectedText(in element: AXUIElement) -> String? {
+        if let selected = stringAttribute(kAXSelectedTextAttribute as CFString, from: element),
+           !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return selected
+        }
+        guard let value = stringAttribute(kAXValueAttribute as CFString, from: element) else { return nil }
+        var rangeAny: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &rangeAny) == .success,
+              let rangeObject = rangeAny else { return nil }
+        let rangeValue = rangeObject as! AXValue
+        var range = CFRange()
+        guard AXValueGetValue(rangeValue, .cfRange, &range), range.location >= 0, range.length > 0 else { return nil }
+        let nsValue = value as NSString
+        let nsRange = NSRange(location: range.location, length: range.length)
+        guard NSMaxRange(nsRange) <= nsValue.length else { return nil }
+        return nsValue.substring(with: nsRange)
+    }
+
+    private static func stringAttribute(_ attribute: CFString, from element: AXUIElement) -> String? {
+        var anyValue: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, attribute, &anyValue) == .success else { return nil }
+        return anyValue as? String
+    }
+}
+
 struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
     struct BrowserScriptTarget {
         let bundleIdentifier: String
@@ -151,14 +249,17 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
         return arguments.isEmpty ? nil : arguments
     }
 
-    /// Each target's script returns four newline-separated fields:
+    /// Each target's script returns five newline-separated fields:
     ///   1) URL of the front window's active tab
     ///   2) Title of that active tab
     ///   3) Total count of windows visible to AppleScript
     ///   4) Active-tab titles of every window joined by character id 31 (US).
+    ///   5) Text selected in the active tab, when the browser allows JavaScript from Apple Events.
     /// We need (3)/(4) so the caller can detect when the OS frontmost window is
     /// not visible to AppleScript at all (e.g. Chrome incognito or Playwright
     /// background instance), in which case (1)/(2) describe a different window.
+    var selectedTextTruncator = PickySelectedTextTruncator()
+
     private let targets: [BrowserScriptTarget] = [
         BrowserScriptTarget(
             bundleIdentifier: "com.apple.Safari",
@@ -174,7 +275,11 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
               repeat with w in windows
                 set ns to ns & (name of current tab of w) & sep
               end repeat
-              return u & linefeed & t & linefeed & wc & linefeed & ns
+              set s to ""
+              try
+                set s to do JavaScript "(function(){var s=window.getSelection&&window.getSelection();return s?s.toString():'';})()" in current tab of front window
+              end try
+              return u & linefeed & t & linefeed & wc & linefeed & ns & linefeed & s
             end tell
             """
         ),
@@ -192,7 +297,11 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
               repeat with w in windows
                 set ns to ns & (title of active tab of w) & sep
               end repeat
-              return u & linefeed & t & linefeed & wc & linefeed & ns
+              set s to ""
+              try
+                set s to execute active tab of front window javascript "(function(){var s=window.getSelection&&window.getSelection();return s?s.toString():'';})()"
+              end try
+              return u & linefeed & t & linefeed & wc & linefeed & ns & linefeed & s
             end tell
             """
         ),
@@ -210,7 +319,11 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
               repeat with w in windows
                 set ns to ns & (title of active tab of w) & sep
               end repeat
-              return u & linefeed & t & linefeed & wc & linefeed & ns
+              set s to ""
+              try
+                set s to execute active tab of front window javascript "(function(){var s=window.getSelection&&window.getSelection();return s?s.toString():'';})()"
+              end try
+              return u & linefeed & t & linefeed & wc & linefeed & ns & linefeed & s
             end tell
             """
         )
@@ -232,7 +345,7 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
         } catch {
             return .unavailable(warnings: ["Browser context permission or automation failure for \(target.applicationName): \(error.localizedDescription)"])
         }
-        let parts = raw.split(separator: "\n", maxSplits: 3, omittingEmptySubsequences: false).map(String.init)
+        let parts = raw.split(separator: "\n", maxSplits: 4, omittingEmptySubsequences: false).map(String.init)
         guard parts.count >= 4 else {
             return .unavailable(warnings: ["Browser context unavailable: unexpected response format from \(target.applicationName)."])
         }
@@ -255,7 +368,12 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
             ])
         }
         let resolvedTitle = title.isEmpty ? nil : title
-        return .value(PickyBrowserContext(url: url, title: resolvedTitle, selectedText: nil))
+        var warnings: [String] = []
+        let selectedText = parts.count >= 5 ? selectedTextTruncator.truncate(parts[4]) : nil
+        if let selectedText = selectedText, selectedText.isTruncated {
+            warnings.append("Selected text truncated from \(selectedText.originalLength) characters.")
+        }
+        return .value(PickyBrowserContext(url: url, title: resolvedTitle, selectedText: selectedText?.text), warnings: warnings)
     }
 }
 

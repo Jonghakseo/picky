@@ -77,7 +77,10 @@ struct PickyVoiceContextCaptureCoordinator {
                 AppleScriptBrowserContextProvider(),
                 AccessibilityBrowserContextProvider()
             ]),
-            selectedTextProvider: ClipboardSelectedTextProvider(),
+            selectedTextProvider: ChainedSelectedTextProvider(providers: [
+                AccessibilitySelectedTextProvider(),
+                ClipboardSelectedTextProvider()
+            ]),
             screenProvider: StaticPickyScreenContextProvider(captures: screenCaptures, inkCapture: inkCapture),
             defaultCwd: PickySettingsStore().load().mainAgentCwd
         )

@@ -132,6 +132,7 @@ struct PickyContextPacketTests {
         #expect(packet.activeApp?.bundleId == "com.apple.Safari")
         #expect(packet.activeWindow?.title == "Issue page")
         #expect(packet.browser?.url?.absoluteString == "https://example.com/issue/123")
+        #expect(packet.selectedText == "selected text")
         #expect(packet.screenshots.first?.label == "primary focus")
         #expect(packet.screenshots.first?.path.hasPrefix(screenshotsRoot.path) == true)
         #expect(packet.screenshots.first?.screenshotWidthInPixels == 3024)

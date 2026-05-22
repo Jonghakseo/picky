@@ -232,6 +232,7 @@ final class PickyHUDOverlayManager {
         hudPanel.hasShadow = false
         hudPanel.hidesOnDeactivate = false
         hudPanel.isExcludedFromWindowsMenu = true
+        hudPanel.sharingType = .none
         hudPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         let panelIdentifier = NSUserInterfaceItemIdentifier("picky-hud-\(displayID)")
         hudPanel.identifier = panelIdentifier
@@ -553,6 +554,7 @@ final class PickyHUDOverlayManager {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isExcludedFromWindowsMenu = true
+        panel.sharingType = .none
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         return ArchiveUndoToastEntry(panel: panel, dismissTask: nil, toast: nil)
     }

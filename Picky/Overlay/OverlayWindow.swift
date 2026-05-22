@@ -38,6 +38,11 @@ class OverlayWindow: NSPanel, PickyScreenCaptureExcludedWindow {
         self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         self.isReleasedWhenClosed = false
         self.hasShadow = false
+        // Keep the always-on cursor chrome out of macOS' built-in window
+        // capture target. Without this, Screenshot's "selected window" mode can
+        // choose the transparent full-screen panel and save a black image with
+        // only the Picky cursor.
+        self.sharingType = .none
 
         // Important: Allow the window to appear even when app is not active
         self.hidesOnDeactivate = false

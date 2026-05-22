@@ -406,7 +406,39 @@ if [[ "${CODE_SIGN_IDENTITY}" == "-" ]]; then
   CODESIGN_ARGS+=(--timestamp=none)
 fi
 /usr/bin/codesign "${CODESIGN_ARGS[@]}" "${PACKAGED_APP}"
+step_end
 
+step_start "codesign_node_runtime"
+NODE_BIN_PATH="${PACKAGED_APP}/Contents/Resources/agentd-runtime/bin/node"
+if [[ -f "${NODE_BIN_PATH}" ]]; then
+  NODE_ENTITLEMENTS="${ROOT_DIR}/Picky/NodeRuntime.entitlements"
+  if [[ ! -f "${NODE_ENTITLEMENTS}" ]]; then
+    echo "❌ NodeRuntime.entitlements not found at ${NODE_ENTITLEMENTS}" >&2
+    exit 1
+  fi
+  NODE_CODESIGN_ARGS=(--force --options runtime --entitlements "${NODE_ENTITLEMENTS}" --sign "${CODE_SIGN_IDENTITY}")
+  if [[ "${CODE_SIGN_IDENTITY}" == "-" ]]; then
+    NODE_CODESIGN_ARGS+=(--timestamp=none)
+  fi
+  /usr/bin/codesign "${NODE_CODESIGN_ARGS[@]}" "${NODE_BIN_PATH}"
+  /usr/bin/codesign --verify --strict --verbose=2 "${NODE_BIN_PATH}"
+else
+  echo "⚠️  Node runtime missing at ${NODE_BIN_PATH}; skipping codesign_node_runtime"
+fi
+step_end
+
+step_start "reseal_app_bundle"
+# Re-signing the nested Node binary changes the outer app resource seal. Refresh
+# only the app bundle signature here (without --deep) so Node keeps its dedicated
+# JIT entitlements while the final bundle remains sealed and verifiable.
+APP_SEAL_CODESIGN_ARGS=(--force --options runtime --sign "${CODE_SIGN_IDENTITY}")
+if [[ -f "${ENTITLEMENTS_PLIST}" ]]; then
+  APP_SEAL_CODESIGN_ARGS+=(--entitlements "${ENTITLEMENTS_PLIST}")
+fi
+if [[ "${CODE_SIGN_IDENTITY}" == "-" ]]; then
+  APP_SEAL_CODESIGN_ARGS+=(--timestamp=none)
+fi
+/usr/bin/codesign "${APP_SEAL_CODESIGN_ARGS[@]}" "${PACKAGED_APP}"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "${PACKAGED_APP}"
 step_end
 

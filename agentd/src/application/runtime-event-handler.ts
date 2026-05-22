@@ -44,6 +44,13 @@ interface RuntimeEventHandlerDependencies {
 
 const THINKING_PREVIEW_CHAR_LIMIT = 240;
 const THINKING_DRAFT_CHAR_LIMIT = THINKING_PREVIEW_CHAR_LIMIT * 4;
+const THINKING_DELTA_FLUSH_INTERVAL_MS = 150;
+
+interface PendingThinkingFlush {
+  delta: string;
+  preview?: string;
+  timer?: ReturnType<typeof setTimeout>;
+}
 
 type MainRealtimeRuntimeEvent = Extract<RuntimeEvent, { type: `main_realtime_${string}` }>;
 
@@ -67,6 +74,8 @@ export class RuntimeEventHandler {
   private readonly assistantDrafts = new Map<string, string>();
   private readonly thinkingDrafts = new Map<string, string>();
   private readonly thinkingActive = new Map<string, boolean>();
+  private readonly pendingThinkingFlushes = new Map<string, PendingThinkingFlush>();
+  private readonly activeThinkingFlushes = new Map<string, Promise<void>>();
   private readonly seenToolCallIds = new Map<string, Set<string>>();
 
   constructor(private readonly dependencies: RuntimeEventHandlerDependencies) {}
@@ -75,6 +84,7 @@ export class RuntimeEventHandler {
     this.assistantDrafts.set(sessionId, "");
     this.thinkingDrafts.set(sessionId, "");
     this.thinkingActive.set(sessionId, false);
+    this.clearPendingThinkingFlush(sessionId);
     this.seenToolCallIds.delete(sessionId);
   }
 
@@ -83,10 +93,12 @@ export class RuntimeEventHandler {
     if (event.type === "input_message") {
       const currentStatus = this.dependencies.getSession(sessionId).status;
       if (isTerminalStatus(currentStatus) && currentStatus !== "completed") return;
+      await this.drainPendingThinkingFlush(sessionId);
       return this.applyInputMessageEvent(sessionId, event);
     }
     if (event.type !== "status" && isTerminalStatus(this.dependencies.getSession(sessionId).status)) return;
     if (event.type === "assistant_delta") {
+      await this.drainPendingThinkingFlush(sessionId);
       this.thinkingActive.set(sessionId, false);
       this.dependencies.messageBuilder.appendAssistantDelta(sessionId, event.delta);
       this.assistantDrafts.set(sessionId, `${this.assistantDrafts.get(sessionId) ?? ""}${event.delta}`);
@@ -95,11 +107,13 @@ export class RuntimeEventHandler {
     if (event.type === "thinking_delta") return this.applyThinkingEvent(sessionId, event);
     if (event.type === "queue_update") return this.dependencies.applyQueueUpdate(sessionId, event.steering, event.followUp);
     if (event.type === "status") {
+      await this.drainPendingThinkingFlush(sessionId);
       this.thinkingActive.set(sessionId, false);
       return this.applyStatusEvent(sessionId, event);
     }
     if (event.type === "extension_ui") {
       if (isIgnoredFireAndForgetExtensionUi(event)) return;
+      await this.drainPendingThinkingFlush(sessionId);
       this.thinkingActive.set(sessionId, false);
       logAgentd("extension ui event", { sessionId, waitsForInput: event.waitsForInput, method: typeof event.request.method === "string" ? event.request.method : undefined });
       return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
@@ -113,6 +127,7 @@ export class RuntimeEventHandler {
     // has no meaning here and must be ignored before falling through to applyToolEvent.
     if (event.type === "turn_text_complete") return;
     if (isMainRealtimeRuntimeEvent(event)) return;
+    await this.drainPendingThinkingFlush(sessionId);
     return this.applyToolEvent(sessionId, event);
   }
 
@@ -262,15 +277,65 @@ export class RuntimeEventHandler {
     }
 
     const nextDraft = sliceUtf16Safe(`${previousDraft}${event.delta}`, THINKING_DRAFT_CHAR_LIMIT);
+    const acceptedDelta = nextDraft.slice(previousDraft.length);
     this.thinkingDrafts.set(sessionId, nextDraft);
 
-    await this.dependencies.messageBuilder.appendThinkingDelta(sessionId, event.delta);
+    if (acceptedDelta) this.queueThinkingDeltaFlush(sessionId, acceptedDelta, compactThinkingPreview(nextDraft));
     if (shouldIncrementThinking) await this.dependencies.incrementActivity(sessionId, "thinking");
+  }
 
-    const thinkingPreview = compactThinkingPreview(this.thinkingDrafts.get(sessionId) ?? nextDraft);
-    if (!thinkingPreview || thinkingPreview === this.dependencies.getSession(sessionId).thinkingPreview) return;
+  private queueThinkingDeltaFlush(sessionId: string, delta: string, preview: string | undefined): void {
+    const pending = this.pendingThinkingFlushes.get(sessionId) ?? { delta: "" };
+    pending.delta += delta;
+    pending.preview = preview;
+    if (!pending.timer) {
+      pending.timer = setTimeout(() => {
+        const current = this.pendingThinkingFlushes.get(sessionId);
+        if (current) current.timer = undefined;
+        void this.flushPendingThinking(sessionId).catch((error) => {
+          logAgentd("thinking delta flush failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
+        });
+      }, THINKING_DELTA_FLUSH_INTERVAL_MS);
+      pending.timer.unref?.();
+    }
+    this.pendingThinkingFlushes.set(sessionId, pending);
+  }
 
-    await this.dependencies.patchSession(sessionId, { thinkingPreview });
+  private async drainPendingThinkingFlush(sessionId: string): Promise<void> {
+    do {
+      await this.flushPendingThinking(sessionId);
+      await (this.activeThinkingFlushes.get(sessionId) ?? Promise.resolve());
+    } while (this.pendingThinkingFlushes.has(sessionId));
+  }
+
+  private async flushPendingThinking(sessionId: string): Promise<void> {
+    const pending = this.pendingThinkingFlushes.get(sessionId);
+    if (!pending) {
+      await (this.activeThinkingFlushes.get(sessionId) ?? Promise.resolve());
+      return;
+    }
+
+    if (pending.timer) clearTimeout(pending.timer);
+    this.pendingThinkingFlushes.delete(sessionId);
+
+    const flush = (async () => {
+      if (pending.delta) await this.dependencies.messageBuilder.appendThinkingDelta(sessionId, pending.delta);
+      if (pending.preview && pending.preview !== this.dependencies.getSession(sessionId).thinkingPreview) {
+        await this.dependencies.patchSession(sessionId, { thinkingPreview: pending.preview });
+      }
+    })();
+    this.activeThinkingFlushes.set(sessionId, flush);
+    try {
+      await flush;
+    } finally {
+      if (this.activeThinkingFlushes.get(sessionId) === flush) this.activeThinkingFlushes.delete(sessionId);
+    }
+  }
+
+  private clearPendingThinkingFlush(sessionId: string): void {
+    const pending = this.pendingThinkingFlushes.get(sessionId);
+    if (pending?.timer) clearTimeout(pending.timer);
+    this.pendingThinkingFlushes.delete(sessionId);
   }
 
   private async applyExtensionUiEvent(sessionId: string, rawRequest: Record<string, unknown>, waitsForInput: boolean): Promise<void> {

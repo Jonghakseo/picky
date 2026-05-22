@@ -4989,6 +4989,26 @@ describe("SessionSupervisor", () => {
     expect(supervisor.get("persisted-message-session")?.messages?.map((message) => message.text)).toEqual(["first steer", "second steer"]);
   });
 
+  it("coalesces rapid thinking deltas before emitting message replacements", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-thinking-coalesce-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("thinking coalesce"));
+    const events: Array<{ type: "append" | "replace"; kind?: string; text?: string }> = [];
+    supervisor.on("messageAppended", (_sessionId, message) => events.push({ type: "append", kind: message.kind, text: message.text }));
+    supervisor.on("messageReplaced", (_sessionId, _messageId, message) => events.push({ type: "replace", kind: message.kind, text: message.text }));
+
+    for (let index = 0; index < 5; index += 1) runtime.handle?.emit({ type: "thinking_delta", delta: `step ${index} ` });
+
+    await waitUntil(() => (supervisor.get(session.id)?.messages ?? []).some((message) => message.kind === "agent_thinking"));
+    await waitUntil(() => events.some((event) => event.kind === "agent_thinking"));
+
+    const thinkingEvents = events.filter((event) => event.kind === "agent_thinking");
+    expect(thinkingEvents).toEqual([{ type: "append", kind: "agent_thinking", text: "step 0 step 1 step 2 step 3 step 4 " }]);
+    expect(supervisor.get(session.id)?.thinkingPreview).toBe("step 0 step 1 step 2 step 3 step 4");
+  });
+
   it("commits assistant text and thinking messages at runtime boundaries", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-message-runtime-"));

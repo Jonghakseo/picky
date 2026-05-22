@@ -369,10 +369,14 @@ private struct PickleTargetCursorMascotView: View {
         if needsTimelineAnimation {
             TimelineView(.animation) { timeline in
                 let time = timeline.date.timeIntervalSinceReferenceDate
-                targetIcon(scale: scale(at: time), rotation: rotation(at: time))
+                targetIcon(
+                    scale: scale(at: time),
+                    rotation: rotation(at: time),
+                    processingPulse: processingPulse(at: time)
+                )
             }
         } else {
-            targetIcon(scale: 1.0, rotation: isStartled ? -5 : 0)
+            targetIcon(scale: 1.0, rotation: isStartled ? -5 : 0, processingPulse: 0)
         }
     }
 
@@ -385,15 +389,14 @@ private struct PickleTargetCursorMascotView: View {
         }
     }
 
-    private func targetIcon(scale: CGFloat, rotation: Double) -> some View {
+    private func targetIcon(scale: CGFloat, rotation: Double, processingPulse: Double) -> some View {
         let frame = CGFloat(style.frameSize)
         let iconSize = CGFloat(style.mascotSize) * 0.86
         let glowSize = CGFloat(style.mascotSize) * 0.74
-        // Armed Pickle cursor stays green by default. While PTT is active
-        // (voiceState == .listening) the glyph shifts to the listening mood
-        // color so the user can see the armed cursor is actively capturing
-        // their voice, mirroring how the regular Picky cursor recolors.
-        let glowColor: Color = voiceState == .listening ? style.listeningColor : Color(hex: "#67ECA4")
+        // Armed Pickle cursor reuses the same voiceState->color mapping as the
+        // regular Picky cursor (via the `tint` argument from `moodColor`), so
+        // idle/listening/processing/responding all match across both cursors.
+        let glowColor = tint
         return ZStack {
             PickleLogoGlyph()
                 .fill(glowColor.opacity(0.30), style: FillStyle(eoFill: true))
@@ -405,11 +408,29 @@ private struct PickleTargetCursorMascotView: View {
                 .fill(glowColor, style: FillStyle(eoFill: true))
                 .frame(width: iconSize, height: iconSize)
                 .shadow(color: Color.black.opacity(0.22), radius: 1.6, x: 0, y: 0.8)
+
+            // Processing pulse: mirror the Picky mascot's amber -> white ->
+            // amber loading cadence on the Pickle glyph so the armed cursor
+            // also signals "thinking" while preparing a response.
+            if processingPulse > 0 {
+                PickleLogoGlyph()
+                    .fill(Color.white, style: FillStyle(eoFill: true))
+                    .frame(width: iconSize, height: iconSize)
+                    .opacity(processingPulse)
+            }
         }
         .frame(width: frame, height: frame)
         .scaleEffect(scale)
         .rotationEffect(.degrees(rotation))
         .animation(.easeInOut(duration: 0.18), value: voiceState)
+    }
+
+    private func processingPulse(at time: TimeInterval) -> Double {
+        guard voiceState == .processing else { return 0 }
+        // Match PickyCursorMascotView's 1.3s breathing period so the two
+        // cursors pulse in sync when both states are active.
+        let cycle = (sin(time * (2.0 * .pi / 1.3)) + 1.0) * 0.5
+        return cycle * 0.85
     }
 
     private func scale(at time: TimeInterval) -> CGFloat {

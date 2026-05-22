@@ -155,6 +155,7 @@ final class PickyDiffReviewPresenter {
             do {
                 try host.loadInitialPage(initialData: reviewData)
             } catch {
+                host.dispose()
                 records.removeValue(forKey: sessionID)
                 createdRecord.watcher?.dispose()
                 createdRecord.watcher = nil

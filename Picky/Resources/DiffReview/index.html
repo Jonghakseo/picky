@@ -775,6 +775,13 @@
       const key = e.key.toLowerCase();
       if (key === "w") {
         e.preventDefault();
+        // Cmd-W posts close to Swift immediately, so unload-time draft submit can race
+        // after the script message handler is gone. Flush synchronously first.
+        try {
+          if (typeof window.submitDraftOnClose === "function") {
+            window.submitDraftOnClose();
+          }
+        } catch (_) { /* ignore — best-effort flush before close */ }
         if (window.glimpse && typeof window.glimpse.close === "function") window.glimpse.close();
         else if (typeof window.close === "function") window.close();
         return;

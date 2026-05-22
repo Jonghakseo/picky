@@ -72,9 +72,12 @@ Picky는 현재 로컬 Pi 사용자와 테스터를 위한 macOS 앱입니다.
 
 - macOS 14.2 이상
 - 로컬에 설치된 Pi
+- Picky 실행 환경에서 찾을 수 있는 Node.js 22.19.0 이상
 - 프로젝트/테스트 배포 채널의 Picky 빌드 또는 소스에서 직접 빌드한 앱
 
-처음 실행하면 Picky를 열고 설정 체크리스트를 따라가세요. Picky가 필요한 macOS 권한과 Pi 런타임 확인 과정을 안내합니다.
+Picky는 `PATH`에서 찾은 로컬 `node` 실행 파일로 `picky-agentd`를 시작합니다. macOS 앱 실행 환경을 고려해 `/opt/homebrew/bin`, `/usr/local/bin` 같은 일반적인 fallback 경로도 함께 확인합니다. Node가 22.19.0보다 낮으면 agentd가 시작되지 않으며, Pi handoff 기능이 `agentd-connection.json`을 만들 수 없습니다.
+
+처음 실행하면 Picky를 열고 설정 체크리스트를 따라가세요. Picky가 필요한 macOS 권한을 안내합니다.
 
 전체 안내는 [사용자 매뉴얼](docs/user-manual.md)을 참고하세요. Picky에는 사용자 매뉴얼을 읽고 설정을 도와줄 수 있는 내장 도구도 있으니, 설정 방법을 Picky에게 직접 물어봐도 됩니다.
 

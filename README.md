@@ -72,9 +72,12 @@ You will need:
 
 - macOS 14.2 or newer
 - Pi installed locally
+- Node.js 22.19.0 or newer available to Picky's launch environment
 - A Picky build from the project/test distribution channel, or a local build from source
 
-On first launch, open Picky and follow the setup checklist. Picky will guide you through the required macOS permissions and Pi runtime check.
+Picky starts `picky-agentd` with the local `node` executable it finds in `PATH` (including common macOS fallback paths such as `/opt/homebrew/bin` and `/usr/local/bin`). If Node is older than 22.19.0, agentd will not start and Pi handoff features cannot create `agentd-connection.json`.
+
+On first launch, open Picky and follow the setup checklist. Picky will guide you through the required macOS permissions.
 
 For the full walkthrough, see the [User Manual](docs/user-manual.md). Picky can also read that manual through its built-in tools, so you can ask Picky to help with setup too.
 

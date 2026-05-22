@@ -476,6 +476,45 @@
                 transition: none;
               }
 
+              /* Editor loading overlay shown until Monaco finishes loading.
+                 Monaco's bundle is ~14 MB and takes ~1–2 s to import on first
+                 paint. Without a placeholder the viewer chrome appears with a
+                 blank black rectangle where the diff should be, which reads as
+                 "the click did nothing." This spinner keeps the user oriented
+                 until the diff editor is ready. */
+              #editor-loading {
+                position: absolute;
+                inset: 0;
+                background: #0d1117;
+                z-index: 6;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 14px;
+                color: #8b949e;
+                font-size: 12px;
+                letter-spacing: 0.02em;
+                pointer-events: none;
+              }
+
+              #editor-loading[data-active="false"] {
+                display: none;
+              }
+
+              #editor-loading-spinner {
+                width: 22px;
+                height: 22px;
+                border-radius: 50%;
+                border: 2px solid rgba(139, 148, 158, 0.2);
+                border-top-color: rgba(139, 148, 158, 0.85);
+                animation: editor-loading-spin 0.9s linear infinite;
+              }
+
+              @keyframes editor-loading-spin {
+                to { transform: rotate(360deg); }
+              }
+
 
               .monaco-editor .view-zones {
                 z-index: 10;
@@ -611,6 +650,10 @@
     <div id="editor-container" class="min-h-0 min-w-0 flex-1">
       <div id="binary-preview" data-active="false"></div>
       <div id="editor-cover" aria-hidden="true"></div>
+      <div id="editor-loading" data-active="true" aria-live="polite">
+        <div id="editor-loading-spinner" aria-hidden="true"></div>
+        <div>Loading diff editor…</div>
+      </div>
     </div>
     </main>
   </div>

@@ -54,6 +54,7 @@ const currentFileLabelEl = document.getElementById("current-file-label");
 const modeHintEl = document.getElementById("mode-hint");
 const fileCommentsContainer = document.getElementById("file-comments-container");
 const editorContainerEl = document.getElementById("editor-container");
+const editorLoadingEl = document.getElementById("editor-loading");
 const refreshReviewButton = document.getElementById("refresh-review-button");
 const submitButton = document.getElementById("submit-button");
 const cancelButton = document.getElementById("cancel-button");
@@ -1938,6 +1939,10 @@ function setupMonaco() {
 		});
 
 		mountFile();
+		// Hide the loading overlay only after the first file's diff is mounted, so
+		// the user never sees an unstyled flash between Monaco init and the first
+		// `setModel` paint. `mountFile` is synchronous up to scheduling layout work.
+		if (editorLoadingEl) editorLoadingEl.dataset.active = "false";
 	});
 }
 

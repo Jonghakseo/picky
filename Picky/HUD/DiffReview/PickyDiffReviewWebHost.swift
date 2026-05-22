@@ -46,6 +46,11 @@ final class PickyDiffReviewWebHost: NSObject, WKScriptMessageHandler {
         webView.loadFileURL(indexURL, allowingReadAccessTo: resourceURL)
     }
 
+    func dispose() {
+        webView.stopLoading()
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "glimpse")
+    }
+
     func send(_ message: ReviewHostMessage) {
         guard let data = try? JSONEncoder.diffReview.encode(message),
               let json = String(data: data, encoding: .utf8) else { return }

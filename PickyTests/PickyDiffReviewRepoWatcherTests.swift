@@ -23,4 +23,30 @@ struct PickyDiffReviewRepoWatcherTests {
         #expect(PickyDiffReviewRepoWatcher.isIgnoredWatchPath("coverage/") == true)
         #expect(PickyDiffReviewRepoWatcher.isIgnoredWatchPath("Sources/App/main.swift") == false)
     }
+
+    @Test func relativizingAbsolutePathsUnderRepoUnderIgnoredAncestorDoesNotIgnoreReviewableFile() {
+        let result = PickyDiffReviewRepoWatcher.relativizeForIgnoreCheck(
+            absolutePath: "/tmp/foo/src/Main.swift",
+            repoRoot: "/tmp/foo"
+        )
+        #expect(result == "src/Main.swift")
+        #expect(PickyDiffReviewRepoWatcher.isIgnoredWatchPath(result) == false)
+    }
+
+    @Test func relativizingAbsolutePathsOutsideRepoReturnsOriginal() {
+        let result = PickyDiffReviewRepoWatcher.relativizeForIgnoreCheck(
+            absolutePath: "/var/log/system.log",
+            repoRoot: "/tmp/foo"
+        )
+        #expect(result == "/var/log/system.log")
+    }
+
+    @Test func relativizingThenIgnoreCheckRespectsRepoLocalNodeModules() {
+        let result = PickyDiffReviewRepoWatcher.relativizeForIgnoreCheck(
+            absolutePath: "/tmp/foo/node_modules/foo/index.js",
+            repoRoot: "/tmp/foo"
+        )
+        #expect(result == "node_modules/foo/index.js")
+        #expect(PickyDiffReviewRepoWatcher.isIgnoredWatchPath(result) == true)
+    }
 }

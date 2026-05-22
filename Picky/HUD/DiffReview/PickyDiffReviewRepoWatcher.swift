@@ -27,11 +27,14 @@ final class PickyDiffReviewRepoWatcher {
     static let ignoredFileNames: Set<String> = [".DS_Store"]
 
     private var stream: FSEventStreamRef?
+    private let repoRootPath: String
     private let onChange: () -> Void
     private let onError: ((Error) -> Void)?
     private var disposed = false
 
     init(repoRoot: URL, debounceMs: Int = 2000, onChange: @escaping () -> Void, onError: ((Error) -> Void)? = nil) {
+        let canonicalRepoRoot = repoRoot.standardizedFileURL.resolvingSymlinksInPath().path
+        self.repoRootPath = canonicalRepoRoot
         self.onChange = onChange
         self.onError = onError
 
@@ -42,13 +45,23 @@ final class PickyDiffReviewRepoWatcher {
             release: nil,
             copyDescription: nil
         )
-        let paths = [repoRoot.standardizedFileURL.path] as CFArray
+        let paths = [canonicalRepoRoot] as CFArray
         let callback: FSEventStreamCallback = { _, contextInfo, eventCount, eventPaths, _, _ in
             guard let contextInfo else { return }
             let watcher = Unmanaged<PickyDiffReviewRepoWatcher>.fromOpaque(contextInfo).takeUnretainedValue()
             guard !watcher.disposed else { return }
             let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] ?? []
-            let hasRelevantChange = paths.prefix(eventCount).contains { !PickyDiffReviewRepoWatcher.isIgnoredWatchPath($0) }
+            let hasRelevantChange = paths.prefix(eventCount).contains { absolutePath in
+                let pathForIgnoreCheck = PickyDiffReviewRepoWatcher.relativizeForIgnoreCheck(
+                    absolutePath: absolutePath,
+                    repoRoot: watcher.repoRootPath
+                )
+                if pathForIgnoreCheck == absolutePath,
+                   !PickyDiffReviewRepoWatcher.isPath(absolutePath, underRepoRoot: watcher.repoRootPath) {
+                    return true
+                }
+                return !PickyDiffReviewRepoWatcher.isIgnoredWatchPath(pathForIgnoreCheck)
+            }
             guard hasRelevantChange else { return }
             DispatchQueue.main.async {
                 guard !watcher.disposed else { return }
@@ -91,8 +104,22 @@ final class PickyDiffReviewRepoWatcher {
         dispose()
     }
 
+    static func relativizeForIgnoreCheck(absolutePath: String, repoRoot: String) -> String {
+        let normalizedRepoRoot = normalizeRootPath(repoRoot)
+        let normalizedAbsolutePath = normalizePath(absolutePath)
+        guard !normalizedRepoRoot.isEmpty else { return absolutePath }
+
+        if normalizedAbsolutePath == normalizedRepoRoot {
+            return ""
+        }
+
+        let prefix = normalizedRepoRoot + "/"
+        guard normalizedAbsolutePath.hasPrefix(prefix) else { return absolutePath }
+        return String(normalizedAbsolutePath.dropFirst(prefix.count))
+    }
+
     static func isIgnoredWatchPath(_ path: String) -> Bool {
-        let normalized = path.replacingOccurrences(of: "\\", with: "/").replacingOccurrences(of: "^/+", with: "", options: .regularExpression)
+        let normalized = normalizePath(path).replacingOccurrences(of: "^/+", with: "", options: .regularExpression)
         if normalized.isEmpty { return false }
 
         let segments = normalized.split(separator: "/").map(String.init).filter { !$0.isEmpty }
@@ -103,6 +130,22 @@ final class PickyDiffReviewRepoWatcher {
         if fileName.hasSuffix("~") || fileName.hasSuffix(".swp") || fileName.hasSuffix(".tmp") { return true }
 
         return false
+    }
+
+    private static func isPath(_ path: String, underRepoRoot repoRoot: String) -> Bool {
+        let normalizedPath = normalizePath(path)
+        let normalizedRepoRoot = normalizeRootPath(repoRoot)
+        return normalizedPath == normalizedRepoRoot || normalizedPath.hasPrefix(normalizedRepoRoot + "/")
+    }
+
+    private static func normalizeRootPath(_ path: String) -> String {
+        let normalized = normalizePath(path)
+        guard normalized.count > 1 else { return normalized }
+        return normalized.replacingOccurrences(of: "/+$", with: "", options: .regularExpression)
+    }
+
+    private static func normalizePath(_ path: String) -> String {
+        path.replacingOccurrences(of: "\\", with: "/").replacingOccurrences(of: "/+", with: "/", options: .regularExpression)
     }
 }
 

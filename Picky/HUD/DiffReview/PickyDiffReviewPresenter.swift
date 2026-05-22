@@ -121,9 +121,11 @@ final class PickyDiffReviewPresenter {
                 title: title,
                 frame: PickyDiffReviewWindowController.targetFrame(),
                 framePersister: PickyDetachedPanelFramePersister.backed(by: settingsStore, kind: .diffReviewWindow),
-                onClose: { [weak self] in
-                    guard let self, let record = self.records[sessionID] else { return }
-                    self.handleClose(record: record, shouldCancel: true)
+                onClose: {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) { [weak self] in
+                        guard let self, let record = self.records[sessionID] else { return }
+                        self.handleClose(record: record, shouldCancel: true)
+                    }
                 }
             )
 
@@ -276,6 +278,7 @@ final class PickyDiffReviewPresenter {
 
     private func handleClose(record: ReviewRecord, shouldCancel: Bool) {
         guard records[record.sessionID] === record else { return }
+        record.host.dispose()
         records.removeValue(forKey: record.sessionID)
         record.watcher?.dispose()
         record.watcher = nil

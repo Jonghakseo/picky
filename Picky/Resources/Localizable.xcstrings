@@ -135,7 +135,7 @@
       }
     },
     "common.ready": {
-      "comment": "Status pill for non-permission readiness (e.g. Pi runtime detected).",
+      "comment": "Status pill for non-permission readiness.",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1735,54 +1735,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "마이크"
-          }
-        }
-      }
-    },
-    "prereq.pi.detail.missing": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Install Pi to let Picky run sessions"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Picky가 세션을 실행할 수 있도록 Pi를 설치해 주세요"
-          }
-        }
-      }
-    },
-    "prereq.pi.detail.ready": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Local Pi SDK and executable found"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "로컬 Pi SDK와 실행 파일을 찾았어요"
-          }
-        }
-      }
-    },
-    "prereq.pi.title": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi runtime"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pi 런타임"
           }
         }
       }

@@ -159,19 +159,12 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var hasScreenRecordingPermission = false
     @Published private(set) var hasMicrophonePermission = false
     @Published private(set) var hasScreenContentPermission = false
-    /// True when the local Pi SDK + `pi` executable are both discoverable. Lives
-    /// alongside the permission flags so the same panel can surface a runtime
-    /// readiness row without forcing macOS-permission semantics on a Pi install
-    /// check. Polled on the same cadence as the permissions.
-    @Published private(set) var hasPiRuntime = false
-    private let piRuntimeChecker = PickyRuntimeDependencyChecker()
     /// Developer override: when `PICKY_FORCE_PERMISSIONS_MISSING=1` is set, every
     /// macOS permission flag is reported as false regardless of the actual system
-    /// state, so the panel renders the full "setup" surface (permissions rows +
-    /// Pi runtime row) without anyone having to revoke real permissions. The
-    /// underlying side effects (PTT monitor, screen capture) still follow real
-    /// macOS state because there's no safe way to simulate a denial there.
-    /// Mirrors `PICKY_AGENTD_RUNTIME=mock` and `PICKY_FORCE_PI_MISSING=1`.
+    /// state, so the panel renders the full setup surface without anyone having
+    /// to revoke real permissions. The underlying side effects (PTT monitor,
+    /// screen capture) still follow real macOS state because there's no safe way
+    /// to simulate a denial there. Mirrors `PICKY_AGENTD_RUNTIME=mock`.
     private let forcePermissionsMissing: Bool = ProcessInfo.processInfo.environment["PICKY_FORCE_PERMISSIONS_MISSING"] == "1"
     /// Onboarding-only: when set, every voice / text submission path consults
     /// this closure first. Returning a non-nil receipt fakes a successful submit
@@ -437,11 +430,10 @@ final class CompanionManager: ObservableObject {
     }
 
     /// Everything the user needs in place before the panel hides its setup
-    /// surface: macOS permissions AND a discoverable local Pi runtime. Drives
-    /// the prerequisites view's gate so adding more checks (license, network
-    /// reachability, etc.) is a one-line change later.
+    /// surface. Agent runtime health is reported by agentd itself rather than
+    /// a separate local Pi executable probe.
     var allPrerequisitesMet: Bool {
-        allPermissionsGranted && hasPiRuntime
+        allPermissionsGranted
     }
 
     /// Whether the blue cursor overlay is currently visible on screen.
@@ -628,8 +620,6 @@ final class CompanionManager: ObservableObject {
             hasScreenContentPermission = false
         }
 
-        refreshPiRuntimeAvailability()
-
         if !previouslyHadAll && allPermissionsGranted {
             PickyAnalytics.trackAllPermissionsGranted()
             if isPickyCursorEnabled {
@@ -787,27 +777,6 @@ final class CompanionManager: ObservableObject {
             Task { @MainActor [weak self] in
                 self?.hasMicrophonePermission = granted
             }
-        }
-    }
-
-    /// Re-evaluates whether the local Pi SDK + executable are both present.
-    /// Cheap (two filesystem stats) so we can fold it into the existing
-    /// permission polling cadence and call it directly from the panel's
-    /// "Recheck" button without debouncing.
-    func recheckPiRuntime() {
-        refreshPiRuntimeAvailability()
-    }
-
-    private func refreshPiRuntimeAvailability() {
-        // The SDK ships bundled inside Picky.app/.../agentd/node_modules, so the
-        // only thing the user has to provide locally is the `pi` executable
-        // (PATH or one of the well-known probe paths). One source of truth keeps
-        // the row label honest — we don't claim "Pi runtime missing" because of
-        // an SDK location we ourselves don't actually depend on.
-        let isAvailable = piRuntimeChecker.missingPiExecutableErrorIfNeeded() == nil
-        if hasPiRuntime != isAvailable {
-            hasPiRuntime = isAvailable
-            print("🔍 Pi runtime availability — \(isAvailable ? "found" : "missing")")
         }
     }
 

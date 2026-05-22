@@ -3,8 +3,8 @@
 //  Picky
 //
 //  Prerequisites copy and rows for the companion panel. Bundles the macOS
-//  permission gates and the local Pi runtime check into a single "setup"
-//  surface that hides the rest of the panel until everything is in place.
+//  permission gates into a single "setup" surface that hides the rest of the
+//  panel until everything is in place.
 //
 
 import AVFoundation
@@ -48,8 +48,6 @@ struct CompanionPanelPrerequisitesView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.bottom, 6)
 
-            piRuntimeRow
-
             microphonePermissionRow
 
             accessibilityPermissionRow
@@ -61,81 +59,6 @@ struct CompanionPanelPrerequisitesView: View {
             }
 
         }
-    }
-
-    /// Pi installation gate. Distinct from the macOS-permission rows because
-    /// Pi is a separate CLI/SDK install rather than a system-granted permission,
-    /// but rendered in the same list so the panel keeps a single "things Picky
-    /// depends on" surface. "Install" opens https://pi.dev; "Recheck" reruns
-    /// the local filesystem probe instead of waiting for the 1.5s poll.
-    private var piRuntimeRow: some View {
-        let isReady = companionManager.hasPiRuntime
-        return HStack {
-            HStack(spacing: 8) {
-                Image(systemName: "shippingbox")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(isReady ? DS.Colors.textTertiary : DS.Colors.warning)
-                    .frame(width: 16)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("prereq.pi.title")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(DS.Colors.textSecondary)
-
-                    Text(isReady ? "prereq.pi.detail.ready" : "prereq.pi.detail.missing")
-                        .font(.system(size: 10))
-                        .foregroundColor(DS.Colors.textTertiary)
-                }
-            }
-
-            Spacer()
-
-            if isReady {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(DS.Colors.success)
-                        .frame(width: 6, height: 6)
-                    Text("common.ready")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(DS.Colors.success)
-                }
-            } else {
-                HStack(spacing: 6) {
-                    Button(action: {
-                        if let url = URL(string: "https://pi.dev") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }) {
-                        Text("common.install")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(DS.Colors.textOnAccent)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(
-                                Capsule()
-                                    .fill(DS.Colors.accent)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .pointerCursor()
-
-                    Button(action: { companionManager.recheckPiRuntime() }) {
-                        Text("common.recheck")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(DS.Colors.textSecondary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(
-                                Capsule()
-                                    .stroke(DS.Colors.borderSubtle, lineWidth: 0.8)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .pointerCursor()
-                }
-            }
-        }
-        .padding(.vertical, 6)
     }
 
     private var accessibilityPermissionRow: some View {

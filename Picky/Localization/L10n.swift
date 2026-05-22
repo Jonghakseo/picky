@@ -8,8 +8,8 @@
 //  via `.environment(\.locale, ...)` so it doesn't need this helper at all.
 //
 //  Keys live in `Localizable.xcstrings`. Use the same dot-path convention
-//  everywhere (`onboarding.bubble.preWelcome`, `prereq.pi.title`, etc.) so
-//  the catalog stays scannable as it grows.
+//  everywhere (`onboarding.bubble.preWelcome`, `prereq.microphone.title`, etc.)
+//  so the catalog stays scannable as it grows.
 //
 
 import Foundation

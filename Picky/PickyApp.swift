@@ -246,9 +246,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             self?.menuBarPanelManager?.present(deepLink: link)
         }
         companionManager.start()
-        // Auto-open the panel only when the user still needs to finish setup
-        // (macOS permissions or local Pi runtime). Mirrors what the prerequisites
-        // surface gates on so launch matches the panel's own visibility logic.
+        // Auto-open the panel only when the user still needs to finish macOS
+        // permissions setup. Mirrors what the prerequisites surface gates on so
+        // launch matches the panel's own visibility logic.
         if !companionManager.allPrerequisitesMet {
             menuBarPanelManager?.showPanelOnLaunch()
         }

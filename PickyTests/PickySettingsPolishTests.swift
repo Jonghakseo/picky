@@ -929,57 +929,6 @@ struct PickySettingsPolishTests {
         #expect(viewModel.searchSessions(query: "final").map(\.id) == ["archive-me"])
     }
 
-    @Test func friendlyMissingPiErrorsAreActionable() {
-        let checker = PickyRuntimeDependencyChecker(pathEnvironment: "/tmp", additionalProbePaths: [])
-
-        #expect(checker.missingPiExecutableErrorIfNeeded() == .missingPiExecutable)
-        #expect(PickyFriendlyRuntimeError.permissionDenied("Screen Recording").localizedDescription.contains("reduced context"))
-    }
-
-    @Test func piExecutableCheckProbesPathThenWellKnownFallbacks() throws {
-        // Pi can land in many places (Homebrew, asdf, nvm, ~/.pi/agent/bin…)
-        // and macOS apps launched via Launch Services often see a stripped PATH.
-        // The checker satisfies as long as `pi` is executable in any inherited
-        // PATH directory OR any explicit fallback we probe, mirroring what a
-        // shell would resolve via `which pi`.
-        let pathOnlyRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-pi-path-\(UUID().uuidString)", isDirectory: true)
-        let fallbackRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-pi-fallback-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: pathOnlyRoot, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: fallbackRoot, withIntermediateDirectories: true)
-
-        // Pi present only via inherited PATH.
-        let inheritedPiPath = pathOnlyRoot.appendingPathComponent("pi").path
-        FileManager.default.createFile(atPath: inheritedPiPath, contents: Data(), attributes: [.posixPermissions: 0o755])
-        let pathOnly = PickyRuntimeDependencyChecker(pathEnvironment: pathOnlyRoot.path, additionalProbePaths: [])
-        #expect(pathOnly.missingPiExecutableErrorIfNeeded() == nil)
-
-        // Pi present only via well-known fallback (simulates the Launch Services
-        // case where PATH is reduced to `/usr/bin:/bin:/usr/sbin:/sbin`).
-        let fallbackPiPath = fallbackRoot.appendingPathComponent("pi").path
-        FileManager.default.createFile(atPath: fallbackPiPath, contents: Data(), attributes: [.posixPermissions: 0o755])
-        let fallbackOnly = PickyRuntimeDependencyChecker(pathEnvironment: "/tmp", additionalProbePaths: [fallbackRoot.path])
-        #expect(fallbackOnly.missingPiExecutableErrorIfNeeded() == nil)
-
-        // Neither in PATH nor in any fallback -> still missing.
-        let neither = PickyRuntimeDependencyChecker(pathEnvironment: "/tmp", additionalProbePaths: ["/no/such/dir"])
-        #expect(neither.missingPiExecutableErrorIfNeeded() == .missingPiExecutable)
-    }
-
-    @Test func forcePiMissingOverrideMakesEvenAValidInstallReportAsMissing() throws {
-        // Simulates `PICKY_FORCE_PI_MISSING=1`. Wire up a real `pi` so the
-        // non-forced branch would otherwise return nil, then flip the override.
-        let binRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-fake-bin-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: binRoot, withIntermediateDirectories: true)
-        let piPath = binRoot.appendingPathComponent("pi").path
-        FileManager.default.createFile(atPath: piPath, contents: Data(), attributes: [.posixPermissions: 0o755])
-
-        var checker = PickyRuntimeDependencyChecker(pathEnvironment: binRoot.path, additionalProbePaths: [])
-        #expect(checker.missingPiExecutableErrorIfNeeded() == nil)
-
-        checker.forceMissing = true
-        #expect(checker.missingPiExecutableErrorIfNeeded() == .missingPiExecutable)
-    }
-
     private func session(id: String, title: String, status: PickySessionStatus, cwd: String, summary: String, artifacts: [PickyArtifact]) -> PickyAgentSession {
         PickyAgentSession(
             id: id,

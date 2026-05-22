@@ -7,6 +7,7 @@ import Foundation
 import Testing
 @testable import Picky
 
+@Suite(.serialized)
 struct PickyGitDiffReviewProviderTests {
     @Test func loadCapturesBranchAndWorktreeSnapshotChanges() async throws {
         let directory = try makeTemporaryDirectory()

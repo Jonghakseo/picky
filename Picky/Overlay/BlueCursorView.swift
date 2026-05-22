@@ -42,9 +42,9 @@ func systemMouseCursorIsVisible() -> Bool {
 // Runtime-tweakable style values for the Pi-shaped cursor buddy icon.
 private struct PickyCursorStyle: Codable, Equatable {
     var colorHex = "#3380FF"
-    var listeningColorHex = "#22C2C7"
-    var processingColorHex = "#F0B440"
-    var respondingColorHex = "#9F77E8"
+    var listeningColorHex = "#F0B440"
+    var processingColorHex = "#9F77E8"
+    var respondingColorHex = "#3380FF"
     var frameSize = 39.0
     var glowOpacity = 0.3
     var glowBlur = 0.3
@@ -221,11 +221,12 @@ private struct PickyCursorMascotView: View {
                 mascotBody(
                     expression: expression(at: time),
                     scale: internalScale(at: time),
-                    rotation: internalRotation(at: time)
+                    rotation: internalRotation(at: time),
+                    respondingPulse: respondingPulse(at: time)
                 )
             }
         } else {
-            mascotBody(expression: isStartled ? .startled : .normal, scale: 1.0, rotation: 0)
+            mascotBody(expression: isStartled ? .startled : .normal, scale: 1.0, rotation: 0, respondingPulse: 0)
         }
     }
 
@@ -241,7 +242,8 @@ private struct PickyCursorMascotView: View {
     private func mascotBody(
         expression: PickyCursorMascotExpression,
         scale: CGFloat,
-        rotation: Double
+        rotation: Double,
+        respondingPulse: Double
     ) -> some View {
         let assetName = assetName(for: expression)
 
@@ -256,6 +258,19 @@ private struct PickyCursorMascotView: View {
                 .scaleEffect(scale)
                 .rotationEffect(.degrees(rotation))
 
+            // Responding pulse: while Picky is speaking, fade a white copy of
+            // the mascot in and out on top of the tinted body so the cursor
+            // cycles blue -> white -> blue. The pulse opacity is computed from
+            // the timeline so the effect runs at 60fps without disturbing the
+            // tint state machine.
+            if respondingPulse > 0 {
+                cursorAsset(named: assetName, tint: .white)
+                    .frame(width: CGFloat(style.mascotSize), height: CGFloat(style.mascotSize))
+                    .scaleEffect(scale)
+                    .rotationEffect(.degrees(rotation))
+                    .opacity(respondingPulse)
+            }
+
             cursorAsset(named: assetName, tint: .white.opacity(style.highlightOpacity))
                 .frame(width: CGFloat(style.mascotSize), height: CGFloat(style.mascotSize))
                 .scaleEffect(scale)
@@ -263,6 +278,14 @@ private struct PickyCursorMascotView: View {
                 .offset(x: CGFloat(style.highlightOffsetX), y: CGFloat(style.highlightOffsetY))
         }
         .frame(width: CGFloat(style.frameSize), height: CGFloat(style.frameSize))
+    }
+
+    private func respondingPulse(at time: TimeInterval) -> Double {
+        guard voiceState == .responding else { return 0 }
+        // 1.3s breathing period feels like a calm loading indicator without
+        // distracting from the response stream.
+        let cycle = (sin(time * (2.0 * .pi / 1.3)) + 1.0) * 0.5  // 0...1
+        return cycle * 0.85
     }
 
     private func cursorAsset(named assetName: String, tint: Color) -> some View {

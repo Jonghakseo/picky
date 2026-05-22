@@ -53,6 +53,20 @@ struct PickyGitDiffFile: Identifiable, Equatable, Codable, Sendable {
     let deletions: Int
 }
 
+enum PickyGitDiffCommitKind: String, Codable, Sendable {
+    case commit
+    case workingTree
+}
+
+struct PickyGitDiffCommitInfo: Equatable, Codable, Sendable {
+    let sha: String
+    let shortSha: String
+    let subject: String
+    let authorName: String
+    let authorDate: String
+    let kind: PickyGitDiffCommitKind
+}
+
 struct PickyGitDiffScopeData: Equatable, Codable, Sendable {
     let scope: PickyGitDiffViewerScope
     let baseLabel: String
@@ -73,6 +87,27 @@ struct PickyGitDiffViewerData: Equatable, Codable, Sendable {
     let branchMergeBaseSha: String?
     let repositoryHasHead: Bool
     let scopes: [PickyGitDiffScopeData]
+    let commits: [PickyGitDiffCommitInfo]
+
+    init(
+        repoRoot: String,
+        repositoryName: String,
+        branchName: String,
+        branchBaseRef: String?,
+        branchMergeBaseSha: String?,
+        repositoryHasHead: Bool,
+        scopes: [PickyGitDiffScopeData],
+        commits: [PickyGitDiffCommitInfo] = []
+    ) {
+        self.repoRoot = repoRoot
+        self.repositoryName = repositoryName
+        self.branchName = branchName
+        self.branchBaseRef = branchBaseRef
+        self.branchMergeBaseSha = branchMergeBaseSha
+        self.repositoryHasHead = repositoryHasHead
+        self.scopes = scopes
+        self.commits = commits
+    }
 
     func scopeData(_ scope: PickyGitDiffViewerScope) -> PickyGitDiffScopeData? {
         scopes.first { $0.scope == scope }
@@ -102,12 +137,36 @@ enum PickyGitDiffReviewProviderError: LocalizedError, Equatable {
 protocol PickyGitDiffReviewProviding {
     func load(cwd: String) async throws -> PickyGitDiffViewerData
     func loadDiff(cwd: String, scope: PickyGitDiffViewerScope, fileID: String) async throws -> String
+    func loadCommitFiles(cwd: String, commitSha: String) async throws -> [PickyGitDiffFile]
+    func loadCommitDiff(cwd: String, commitSha: String, fileID: String) async throws -> String
+}
+
+extension PickyGitDiffReviewProviding {
+    func loadCommitFiles(cwd: String, commitSha: String) async throws -> [PickyGitDiffFile] {
+        throw PickyGitDiffReviewProviderError.missingFile(commitSha)
+    }
+
+    func loadCommitDiff(cwd: String, commitSha: String, fileID: String) async throws -> String {
+        throw PickyGitDiffReviewProviderError.missingFile(fileID)
+    }
 }
 
 protocol PickyGitDiffReviewSessioning: AnyObject {
     func load(cwd: String) async throws -> PickyGitDiffViewerData
     func loadDiff(scope: PickyGitDiffViewerScope, fileID: String) async throws -> String
+    func loadCommitFiles(commitSha: String) async throws -> [PickyGitDiffFile]
+    func loadCommitDiff(commitSha: String, fileID: String) async throws -> String
     func close() async
+}
+
+extension PickyGitDiffReviewSessioning {
+    func loadCommitFiles(commitSha: String) async throws -> [PickyGitDiffFile] {
+        throw PickyGitDiffReviewProviderError.missingFile(commitSha)
+    }
+
+    func loadCommitDiff(commitSha: String, fileID: String) async throws -> String {
+        throw PickyGitDiffReviewProviderError.missingFile(fileID)
+    }
 }
 
 protocol PickyGitDiffReviewSessionFactory {
@@ -146,6 +205,32 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding, PickyG
         }
     }
 
+    func loadCommitFiles(cwd: String, commitSha: String) async throws -> [PickyGitDiffFile] {
+        let session = Session()
+        do {
+            _ = try await session.load(cwd: cwd)
+            let files = try await session.loadCommitFiles(commitSha: commitSha)
+            await session.close()
+            return files
+        } catch {
+            await session.close()
+            throw error
+        }
+    }
+
+    func loadCommitDiff(cwd: String, commitSha: String, fileID: String) async throws -> String {
+        let session = Session()
+        do {
+            _ = try await session.load(cwd: cwd)
+            let diff = try await session.loadCommitDiff(commitSha: commitSha, fileID: fileID)
+            await session.close()
+            return diff
+        } catch {
+            await session.close()
+            throw error
+        }
+    }
+
     final class Session: @unchecked Sendable, PickyGitDiffReviewSessioning {
         private struct LoadedState {
             let data: PickyGitDiffViewerData
@@ -155,6 +240,7 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding, PickyG
 
         private let lock = NSLock()
         private var state: LoadedState?
+        private var commitFilesCache: [String: [PickyGitDiffFile]] = [:]
         private var isClosed = false
 
         func load(cwd: String) async throws -> PickyGitDiffViewerData {
@@ -166,6 +252,18 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding, PickyG
         func loadDiff(scope: PickyGitDiffViewerScope, fileID: String) async throws -> String {
             try await Task.detached(priority: .utility) {
                 try self.diffSynchronously(scope: scope, fileID: fileID)
+            }.value
+        }
+
+        func loadCommitFiles(commitSha: String) async throws -> [PickyGitDiffFile] {
+            try await Task.detached(priority: .utility) {
+                try self.commitFilesSynchronously(commitSha: commitSha)
+            }.value
+        }
+
+        func loadCommitDiff(commitSha: String, fileID: String) async throws -> String {
+            try await Task.detached(priority: .utility) {
+                try self.commitDiffSynchronously(commitSha: commitSha, fileID: fileID)
             }.value
         }
 
@@ -207,6 +305,13 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding, PickyG
                     targetLabel: "Working tree"
                 )
 
+                let commits = listOverviewCommits(
+                    repoRoot: repoRoot,
+                    repositoryHasHead: repositoryHasHead,
+                    branchMergeBaseSha: reviewBase?.mergeBase,
+                    branchScope: branchScope,
+                    worktreeScope: worktreeScope
+                )
                 let data = PickyGitDiffViewerData(
                     repoRoot: repoRoot,
                     repositoryName: repositoryName,
@@ -214,7 +319,8 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding, PickyG
                     branchBaseRef: reviewBase?.baseRef,
                     branchMergeBaseSha: branchComparisonBase,
                     repositoryHasHead: repositoryHasHead,
-                    scopes: [branchScope, worktreeScope]
+                    scopes: [branchScope, worktreeScope],
+                    commits: commits
                 )
                 let filesByScope = Dictionary(uniqueKeysWithValues: data.scopes.map { scopeData in
                     (scopeData.scope, Dictionary(uniqueKeysWithValues: scopeData.files.map { ($0.id, $0) }))
@@ -224,6 +330,7 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding, PickyG
                 lock.lock()
                 let oldState = state
                 state = newState
+                commitFilesCache.removeAll()
                 isClosed = false
                 lock.unlock()
                 oldState?.snapshots.values.forEach { $0.cleanup() }
@@ -243,10 +350,58 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding, PickyG
             return try snapshot.run(mode: .unifiedDiff(paths: diffPathspecs(for: file)))
         }
 
+        private func commitFilesSynchronously(commitSha: String) throws -> [PickyGitDiffFile] {
+            if commitSha == workingTreeCommitSha {
+                lock.lock()
+                defer { lock.unlock() }
+                guard !isClosed, let state else { throw PickyGitDiffReviewProviderError.missingScope(.worktree) }
+                return state.data.scopeData(.worktree)?.files ?? []
+            }
+
+            lock.lock()
+            if let cached = commitFilesCache[commitSha] {
+                lock.unlock()
+                return cached
+            }
+            guard !isClosed, let state else {
+                lock.unlock()
+                throw PickyGitDiffReviewProviderError.missingFile(commitSha)
+            }
+            let repoRoot = state.data.repoRoot
+            lock.unlock()
+
+            let files = try makeCommitFiles(repoRoot: repoRoot, commitSha: commitSha)
+
+            lock.lock()
+            if !isClosed {
+                commitFilesCache[commitSha] = files
+            }
+            lock.unlock()
+            return files
+        }
+
+        private func commitDiffSynchronously(commitSha: String, fileID: String) throws -> String {
+            if commitSha == workingTreeCommitSha {
+                return try diffSynchronously(scope: .worktree, fileID: fileID)
+            }
+
+            let files = try commitFilesSynchronously(commitSha: commitSha)
+            guard let file = files.first(where: { $0.id == fileID }) else { throw PickyGitDiffReviewProviderError.missingFile(fileID) }
+            lock.lock()
+            guard !isClosed, let state else {
+                lock.unlock()
+                throw PickyGitDiffReviewProviderError.missingFile(fileID)
+            }
+            let repoRoot = state.data.repoRoot
+            lock.unlock()
+            return try runCommitDiff(repoRoot: repoRoot, commitSha: commitSha, file: file)
+        }
+
         private func closeSynchronously() {
             lock.lock()
             let oldState = state
             state = nil
+            commitFilesCache.removeAll()
             isClosed = true
             lock.unlock()
             oldState?.snapshots.values.forEach { $0.cleanup() }
@@ -278,6 +433,14 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding, PickyG
             targetLabel: "Working tree"
         )
 
+        let commits = listOverviewCommits(
+            repoRoot: repoRoot,
+            repositoryHasHead: repositoryHasHead,
+            branchMergeBaseSha: reviewBase?.mergeBase,
+            branchScope: branchScope,
+            worktreeScope: worktreeScope
+        )
+
         return PickyGitDiffViewerData(
             repoRoot: repoRoot,
             repositoryName: repositoryName,
@@ -285,7 +448,8 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding, PickyG
             branchBaseRef: reviewBase?.baseRef,
             branchMergeBaseSha: branchComparisonBase,
             repositoryHasHead: repositoryHasHead,
-            scopes: [branchScope, worktreeScope]
+            scopes: [branchScope, worktreeScope],
+            commits: commits
         )
     }
 
@@ -305,6 +469,8 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding, PickyG
         let paths = diffPathspecs(for: file)
         return try runSnapshotDiff(repoRoot: data.repoRoot, baseRevision: baseRevision, mode: .unifiedDiff(paths: paths))
     }
+
+    private static let workingTreeCommitSha = "__pi_working_tree__"
 
     private struct ReviewBaseInfo: Equatable {
         let mergeBase: String
@@ -469,6 +635,97 @@ struct PickyGitDiffReviewProvider: Sendable, PickyGitDiffReviewProviding, PickyG
             insertions: totals.insertions,
             deletions: totals.deletions
         )
+    }
+
+    private static func listOverviewCommits(
+        repoRoot: String,
+        repositoryHasHead: Bool,
+        branchMergeBaseSha: String?,
+        branchScope: PickyGitDiffScopeData,
+        worktreeScope: PickyGitDiffScopeData
+    ) -> [PickyGitDiffCommitInfo] {
+        guard repositoryHasHead else { return [] }
+
+        var commits: [PickyGitDiffCommitInfo] = []
+        if worktreeScope.hasChanges {
+            commits.append(PickyGitDiffCommitInfo(
+                sha: workingTreeCommitSha,
+                shortSha: "WT",
+                subject: "Uncommitted changes",
+                authorName: "",
+                authorDate: "",
+                kind: .workingTree
+            ))
+        }
+
+        var rangeCommits: [PickyGitDiffCommitInfo] = []
+        if let branchMergeBaseSha, !branchMergeBaseSha.isEmpty {
+            rangeCommits = listCommits(repoRoot: repoRoot, revision: "\(branchMergeBaseSha)..HEAD", limit: 100)
+        }
+        if branchScope.files.isEmpty && rangeCommits.isEmpty && !worktreeScope.hasChanges {
+            rangeCommits = listCommits(repoRoot: repoRoot, revision: "HEAD", limit: 20)
+        }
+        commits.append(contentsOf: rangeCommits)
+        return commits
+    }
+
+    private static func listCommits(repoRoot: String, revision: String, limit: Int) -> [PickyGitDiffCommitInfo] {
+        let format = "%H%x1f%h%x1f%s%x1f%an%x1f%aI"
+        let result = runGit(["log", "-\(limit)", "--format=format:\(format)", revision], cwd: repoRoot)
+        guard result.exitCode == 0 else { return [] }
+        return result.stdout.split(whereSeparator: { $0.isNewline }).compactMap { rawLine in
+            let fields = rawLine.split(separator: "\u{1F}", omittingEmptySubsequences: false).map(String.init)
+            guard fields.count >= 5 else { return nil }
+            return PickyGitDiffCommitInfo(
+                sha: fields[0],
+                shortSha: fields[1],
+                subject: fields[2],
+                authorName: fields[3],
+                authorDate: fields[4],
+                kind: .commit
+            )
+        }
+    }
+
+    private static func makeCommitFiles(repoRoot: String, commitSha: String) throws -> [PickyGitDiffFile] {
+        let nameStatus = try runGitChecked(["diff-tree", "--root", "--find-renames", "-M", "--name-status", "--no-commit-id", "-r", commitSha], cwd: repoRoot).stdout
+        let numstat = try runGitChecked(["diff-tree", "--root", "-M", "--numstat", "--no-commit-id", "-r", commitSha], cwd: repoRoot).stdout
+        let statsByPath = parseNumstatByPath(numstat)
+        return parseNameStatus(nameStatus)
+            .filter { isIncludedReviewPath($0.primaryPath) }
+            .map { change in
+                let stats = statsByPath[change.primaryPath] ?? statsByPath[change.displayPath] ?? Numstat(insertions: 0, deletions: 0)
+                return PickyGitDiffFile(
+                    id: "commit::\(commitSha)::\(change.status.rawValue)::\(change.displayPath)",
+                    path: change.primaryPath,
+                    oldPath: change.oldPath,
+                    newPath: change.newPath,
+                    displayPath: change.displayPath,
+                    status: change.status,
+                    insertions: stats.insertions,
+                    deletions: stats.deletions
+                )
+            }
+            .sorted { (lhs: PickyGitDiffFile, rhs: PickyGitDiffFile) in lhs.displayPath.localizedStandardCompare(rhs.displayPath) == .orderedAscending }
+    }
+
+    private static func runCommitDiff(repoRoot: String, commitSha: String, file: PickyGitDiffFile) throws -> String {
+        try runGitChecked(
+            ["diff-tree", "--root", "-p", "--find-renames", "-M", "--no-commit-id", "--no-color", "--unified=80", commitSha, "--"] + diffPathspecs(for: file),
+            cwd: repoRoot
+        ).stdout
+    }
+
+    private static func runGitChecked(_ arguments: [String], cwd: String) throws -> ProcessResult {
+        let result = runGit(arguments, cwd: cwd)
+        guard result.exitCode == 0 else {
+            let message = [result.stderr, result.stdout]
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+            throw PickyGitDiffReviewProviderError.gitFailed(message.isEmpty ? "git failed" : message)
+        }
+        return result
     }
 
     private static func getRepoRoot(cwd: String) throws -> String {

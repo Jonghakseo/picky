@@ -175,6 +175,107 @@ struct PickyGitDiffReviewProviderTests {
         #expect(!diff.contains("+changed after load"))
     }
 
+    @Test func loadIncludesBranchRangeCommitsAndWorkingTreePseudoCommit() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try initializeRepository(at: directory)
+        try "base\n".write(to: directory.appendingPathComponent("base.txt"), atomically: true, encoding: .utf8)
+        try runGit(["add", "base.txt"], cwd: directory)
+        try runGit(["commit", "-m", "initial"], cwd: directory)
+        try runGit(["checkout", "-b", "feature/commits"], cwd: directory)
+        try "feature\n".write(to: directory.appendingPathComponent("feature.txt"), atomically: true, encoding: .utf8)
+        try runGit(["add", "feature.txt"], cwd: directory)
+        try runGit(["commit", "-m", "feature commit"], cwd: directory)
+        try "dirty\n".write(to: directory.appendingPathComponent("dirty.txt"), atomically: true, encoding: .utf8)
+
+        let data = try await PickyGitDiffReviewProvider().load(cwd: directory.path)
+
+        #expect(data.commits.first?.sha == "__pi_working_tree__")
+        #expect(data.commits.first?.shortSha == "WT")
+        #expect(data.commits.first?.subject == "Uncommitted changes")
+        #expect(data.commits.first?.kind == .workingTree)
+        #expect(data.commits.contains { $0.subject == "feature commit" && $0.kind == .commit })
+    }
+
+    @Test func sessionLoadsCommitFilesAndDiffForSelectedCommit() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try initializeRepository(at: directory)
+        try "base\n".write(to: directory.appendingPathComponent("tracked.txt"), atomically: true, encoding: .utf8)
+        try runGit(["add", "tracked.txt"], cwd: directory)
+        try runGit(["commit", "-m", "initial"], cwd: directory)
+        try "base\ncommit\n".write(to: directory.appendingPathComponent("tracked.txt"), atomically: true, encoding: .utf8)
+        try "new\n".write(to: directory.appendingPathComponent("added.txt"), atomically: true, encoding: .utf8)
+        try runGit(["add", "tracked.txt", "added.txt"], cwd: directory)
+        try runGit(["commit", "-m", "second commit"], cwd: directory)
+        let commitSha = try gitOutput(["rev-parse", "HEAD"], cwd: directory)
+
+        let session = PickyGitDiffReviewProvider().makeSession()
+        _ = try await session.load(cwd: directory.path)
+        let files = try await session.loadCommitFiles(commitSha: commitSha)
+        let tracked = try #require(files.first { $0.displayPath == "tracked.txt" })
+        let added = try #require(files.first { $0.displayPath == "added.txt" })
+        let diff = try await session.loadCommitDiff(commitSha: commitSha, fileID: tracked.id)
+        await session.close()
+
+        #expect(files.map(\.displayPath) == ["added.txt", "tracked.txt"])
+        #expect(added.status == .added)
+        #expect(added.insertions == 1)
+        #expect(tracked.status == .modified)
+        #expect(tracked.insertions == 1)
+        #expect(diff.contains("diff --git a/tracked.txt b/tracked.txt"))
+        #expect(diff.contains("+commit"))
+        #expect(!diff.contains("added.txt"))
+    }
+
+    @Test func sessionLoadsWorkingTreePseudoCommitFromSnapshot() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try initializeRepository(at: directory)
+        try "base\n".write(to: directory.appendingPathComponent("tracked.txt"), atomically: true, encoding: .utf8)
+        try runGit(["add", "tracked.txt"], cwd: directory)
+        try runGit(["commit", "-m", "initial"], cwd: directory)
+        try "base\ndirty snapshot\n".write(to: directory.appendingPathComponent("tracked.txt"), atomically: true, encoding: .utf8)
+
+        let session = PickyGitDiffReviewProvider().makeSession()
+        let data = try await session.load(cwd: directory.path)
+        try "base\nchanged after load\n".write(to: directory.appendingPathComponent("tracked.txt"), atomically: true, encoding: .utf8)
+        let files = try await session.loadCommitFiles(commitSha: "__pi_working_tree__")
+        let file = try #require(files.first { $0.displayPath == "tracked.txt" })
+        let diff = try await session.loadCommitDiff(commitSha: "__pi_working_tree__", fileID: file.id)
+        await session.close()
+
+        #expect(data.commits.first?.kind == .workingTree)
+        #expect(diff.contains("+dirty snapshot"))
+        #expect(!diff.contains("+changed after load"))
+    }
+
+    @Test func sessionLoadsRootCommitFilesAndDiff() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try initializeRepository(at: directory)
+        try "root\n".write(to: directory.appendingPathComponent("root.txt"), atomically: true, encoding: .utf8)
+        try runGit(["add", "root.txt"], cwd: directory)
+        try runGit(["commit", "-m", "root commit"], cwd: directory)
+        let rootSha = try gitOutput(["rev-list", "--max-parents=0", "HEAD"], cwd: directory)
+
+        let session = PickyGitDiffReviewProvider().makeSession()
+        _ = try await session.load(cwd: directory.path)
+        let files = try await session.loadCommitFiles(commitSha: rootSha)
+        let file = try #require(files.first { $0.displayPath == "root.txt" })
+        let diff = try await session.loadCommitDiff(commitSha: rootSha, fileID: file.id)
+        await session.close()
+
+        #expect(file.status == .added)
+        #expect(file.insertions == 1)
+        #expect(diff.contains("diff --git a/root.txt b/root.txt"))
+        #expect(diff.contains("+root"))
+    }
+
     @Test func loadThrowsOutsideGitRepository() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -199,14 +300,21 @@ struct PickyGitDiffReviewProviderTests {
     }
 
     private func runGit(_ arguments: [String], cwd: URL) throws {
+        _ = try gitOutput(arguments, cwd: cwd)
+    }
+
+    private func gitOutput(_ arguments: [String], cwd: URL) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["git"] + arguments
         process.currentDirectoryURL = cwd
-        process.standardOutput = Pipe()
+        let output = Pipe()
+        process.standardOutput = output
         process.standardError = Pipe()
         try process.run()
         process.waitUntilExit()
         #expect(process.terminationStatus == 0)
+        return String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 }

@@ -717,6 +717,8 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     private var restartTask: Task<Void, Never>?
     private var attempts = 0
     private var intentionallyStopped = false
+    private var terminalLaunchFailureMessage: String?
+    private var stderrDiagnosticBuffer = ""
     /// Wallclock instant of the most recent `.running` transition. Persisted
     /// into the on-disk status snapshot so diagnostics can spot a daemon that
     /// started successfully but stalled before the handshake.
@@ -727,6 +729,8 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     private static let legacyStatusSnapshotFileName = "agentd.status.json"
     private static let nodePreflightSnapshotFileName = "agentd.node-preflight.json"
     private static let minimumSupportedNodeVersion = "22.19.0"
+    private static let unsupportedNodeToken = "PICKY_UNSUPPORTED_NODE"
+    private static let stderrDiagnosticBufferLimit = 8_192
 
     init(
         configuration: PickyAgentDaemonConfiguration,
@@ -757,6 +761,8 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         guard state == .stopped else { return }
         pickyDaemonLog("start requested port=\(configuration.port) cwd=\(configuration.defaultCwd)")
         intentionallyStopped = false
+        terminalLaunchFailureMessage = nil
+        stderrDiagnosticBuffer = ""
         purgeStaleChildSessionStatusFiles()
         launch()
     }
@@ -779,8 +785,12 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             try runner.launch(
                 configuration: configuration,
                 stdout: { [weak self] data in self?.appendStdout(data) },
-                stderr: { [weak self] data in self?.append(data, to: "agentd.stderr.log") }
+                stderr: { [weak self] data in self?.appendStderr(data) }
             )
+            if let terminalLaunchFailureMessage {
+                updateState(.failedToStart(terminalLaunchFailureMessage))
+                return
+            }
             attempts = 0
             lastRunningAt = Date()
             updateState(.running)
@@ -844,6 +854,11 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     private func processTerminated(exitCode: Int32) {
         guard !intentionallyStopped else { return }
         pickyDaemonLog("terminated exitCode=\(exitCode)")
+        if let terminalLaunchFailureMessage {
+            pickyDaemonLog("terminal launch failure detected error=\(terminalLaunchFailureMessage)")
+            updateState(.failedToStart(terminalLaunchFailureMessage))
+            return
+        }
         updateState(.crashed(exitCode: exitCode))
         // Per-Pickle child daemons must not auto-restart: the pool resolved an endpoint pinned
         // to the previous port=0 bind, so a fresh restart would come back on a different port
@@ -864,6 +879,32 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             guard !Task.isCancelled else { return }
             await MainActor.run { self?.launch() }
         }
+    }
+
+    private func appendStderr(_ data: Data) {
+        append(data, to: "agentd.stderr.log")
+        guard terminalLaunchFailureMessage == nil,
+              let text = String(data: data, encoding: .utf8),
+              !text.isEmpty else { return }
+        stderrDiagnosticBuffer.append(text)
+        if stderrDiagnosticBuffer.count > Self.stderrDiagnosticBufferLimit {
+            stderrDiagnosticBuffer = String(stderrDiagnosticBuffer.suffix(Self.stderrDiagnosticBufferLimit))
+        }
+        guard let message = Self.unsupportedNodeFailureMessage(from: stderrDiagnosticBuffer) else { return }
+        terminalLaunchFailureMessage = message
+        updateState(.failedToStart(message))
+    }
+
+    private static func unsupportedNodeFailureMessage(from stderr: String) -> String? {
+        for line in stderr.split(whereSeparator: \.isNewline) {
+            guard line.contains(Self.unsupportedNodeToken) else { continue }
+            let parts = line.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)
+            let installed = parts.count > 1 ? String(parts[1]) : "unknown"
+            let requiredPart = parts.count > 2 ? String(parts[2]) : "required=\(Self.minimumSupportedNodeVersion)"
+            let required = requiredPart.replacingOccurrences(of: "required=", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return "Node \(installed) is too old for picky-agentd. Install Node \(required.isEmpty ? Self.minimumSupportedNodeVersion : required) or newer and relaunch Picky."
+        }
+        return nil
     }
 
     private func appendStdout(_ data: Data) {

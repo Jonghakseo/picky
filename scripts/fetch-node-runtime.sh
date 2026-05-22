@@ -33,6 +33,25 @@ is_exact_version() {
   [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 }
 
+VALIDATION_ACTUAL=""
+validate_node_binary() {
+  local node_path="$1"
+  local actual=""
+
+  if [[ ! -x "${node_path}" ]]; then
+    VALIDATION_ACTUAL="not executable"
+    return 1
+  fi
+
+  if ! actual="$(${node_path} --version 2>&1)"; then
+    VALIDATION_ACTUAL="${actual:-command failed with no output}"
+    return 1
+  fi
+
+  VALIDATION_ACTUAL="${actual}"
+  [[ "${actual}" == "v${VERSION}" ]]
+}
+
 if [[ -n "${PICKY_NODE_VERSION:-}" ]]; then
   VERSION="${PICKY_NODE_VERSION}"
   if ! is_exact_version "${VERSION}"; then
@@ -63,9 +82,14 @@ TARGET_DIR="${CACHE_DIR_ABS}/${VERSION}-arm64"
 NODE_BIN="${TARGET_DIR}/bin/node"
 
 if [[ -x "${NODE_BIN}" ]]; then
-  log "✅ Using cached Node v${VERSION} darwin-arm64 at ${NODE_BIN}"
-  printf '%s\n' "${NODE_BIN}"
-  exit 0
+  if validate_node_binary "${NODE_BIN}"; then
+    log "✅ Using cached Node v${VERSION} darwin-arm64 at ${NODE_BIN}"
+    printf '%s\n' "${NODE_BIN}"
+    exit 0
+  fi
+
+  log "⚠️  Cached Node at ${NODE_BIN} failed validation (expected v${VERSION}, got ${VALIDATION_ACTUAL}). Refetching."
+  rm -rf "${TARGET_DIR}"
 fi
 
 TARBALL="node-v${VERSION}-darwin-arm64.tar.gz"
@@ -109,10 +133,9 @@ mkdir -p "${STAGING_DIR}/bin"
 cp "${EXTRACTED_NODE}" "${STAGING_DIR}/bin/node"
 chmod +x "${STAGING_DIR}/bin/node"
 
-CACHED_VERSION="$(${STAGING_DIR}/bin/node --version)"
-if [[ "${CACHED_VERSION}" != "v${VERSION}" ]]; then
+if ! validate_node_binary "${STAGING_DIR}/bin/node"; then
   rm -f "${STAGING_DIR}/bin/node"
-  error "Cached node version mismatch: expected v${VERSION}, got ${CACHED_VERSION}"
+  error "Cached node version mismatch: expected v${VERSION}, got ${VALIDATION_ACTUAL}"
   exit 1
 fi
 

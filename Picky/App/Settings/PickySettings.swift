@@ -1101,13 +1101,12 @@ struct PickySettings: Codable, Equatable {
             readOnlyInvestigationPreference: true,
             daemonPath: "bundled picky-agentd or local development agentd",
             logPath: appSupportRoot.appendingPathComponent("Logs", isDirectory: true).path,
-            // Fresh installs default to OpenAI Realtime STT: agentd holds the
-            // Codex/ChatGPT OAuth bearer and the Realtime transcription session
-            // gives streaming partial transcripts without a separate API key.
-            // Existing users keep whatever they previously chose because
-            // settings.json is restored from disk and only overrides explicit
-            // keys, not these defaults.
-            sttProvider: .openaiRealtime,
+            // Fresh installs default to Apple Speech so push-to-talk works
+            // without requiring Codex/ChatGPT OAuth, OpenAI API keys, or Azure
+            // credentials. Existing users keep whatever they previously chose
+            // because settings.json is restored from disk and only overrides
+            // explicit keys, not these defaults.
+            sttProvider: .local,
             ttsProvider: .local,
             ttsEnabled: true,
             narrationEnabled: true,

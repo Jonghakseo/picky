@@ -135,13 +135,10 @@ struct AzureOpenAIAudioConfigurationTests {
     }
 
     @Test func localSTTDoesNotUseEnvironmentToSelectAzure() throws {
-        // The test name pins the contract: even with Azure ENV vars set, an
-        // explicit .local sttProvider must NOT be overridden by environment
-        // sniffing. PickySettings.defaults() now ships .openaiRealtime as the
-        // baseline (Codex OAuth realtime STT), so this test sets .local
-        // explicitly to scope the assertion to that scenario.
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
-        settings.sttProvider = .local
+        // The test name pins the contract: even with Azure ENV vars set, the
+        // default .local sttProvider must NOT be overridden by environment
+        // sniffing.
+        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
             settings: settings,

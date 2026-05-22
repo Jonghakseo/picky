@@ -124,10 +124,8 @@ struct ElevenLabsTranscriptionProviderTests {
     @Test func envPickySTTProviderNoLongerRoutesToElevenLabsAutomatically() {
         // The factory must not infer a provider from ENV alone — the user's
         // settings.sttProvider is the source of truth. PickySettings.defaults()
-        // now baselines to .openaiRealtime (Codex OAuth realtime STT), so this
-        // test pins .local explicitly to keep the original contract testable.
-        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
-        settings.sttProvider = .local
+        // baselines to .local (Apple Speech).
+        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
 
         let provider = BuddyTranscriptionProviderFactory.makeDefaultProvider(
             settings: settings,

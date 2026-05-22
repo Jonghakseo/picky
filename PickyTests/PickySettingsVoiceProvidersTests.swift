@@ -33,6 +33,11 @@ struct PickySettingsVoiceProvidersTests {
         #expect(PickyVoiceProviderSelection.openai.displayName(for: .speechPlayback) == "OpenAI")
     }
 
+    @Test func freshInstallDefaultsToAppleSpeechTranscription() {
+        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        #expect(settings.sttProvider == .local)
+    }
+
     @Test func newOpenAIAndElevenLabsFieldsDefaultToEmpty() {
         let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
         #expect(settings.openAITTSAPIKey == "")

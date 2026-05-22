@@ -50,7 +50,10 @@ final class PickyDiffReviewRepoWatcher {
             guard let contextInfo else { return }
             let watcher = Unmanaged<PickyDiffReviewRepoWatcher>.fromOpaque(contextInfo).takeUnretainedValue()
             guard !watcher.disposed else { return }
-            let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] ?? []
+            // FSEvents passes a CFArrayRef of CFStrings only when kFSEventStreamCreateFlagUseCFTypes
+            // is set; the flag is added in the FSEventStreamCreate call below. Without it the
+            // pointer is `const char **` and bridging through NSArray crashes objc_msgSend.
+            let paths = Unmanaged<NSArray>.fromOpaque(eventPaths).takeUnretainedValue() as? [String] ?? []
             let hasRelevantChange = paths.prefix(eventCount).contains { absolutePath in
                 let pathForIgnoreCheck = PickyDiffReviewRepoWatcher.relativizeForIgnoreCheck(
                     absolutePath: absolutePath,
@@ -76,7 +79,7 @@ final class PickyDiffReviewRepoWatcher {
             paths,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
             CFTimeInterval(Double(debounceMs) / 1000.0),
-            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)
+            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagUseCFTypes)
         ) else {
             onError?(PickyDiffReviewRepoWatcherError.creationFailed(repoRoot.standardizedFileURL.path))
             return

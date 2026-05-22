@@ -103,6 +103,29 @@ struct PickyGitDiffReviewProviderTests {
         #expect(renamed.deletions == 0)
     }
 
+    @Test func loadDiffReturnsLargeUnifiedDiffWithoutPipeDeadlock() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try initializeRepository(at: directory)
+        let original = (0..<1_200).map { "original line \($0)" }.joined(separator: "\n") + "\n"
+        let modified = (0..<1_200).map { "modified line \($0) with enough content to exceed the default pipe buffer" }.joined(separator: "\n") + "\n"
+        try original.write(to: directory.appendingPathComponent("large.txt"), atomically: true, encoding: .utf8)
+        try runGit(["add", "large.txt"], cwd: directory)
+        try runGit(["commit", "-m", "initial"], cwd: directory)
+        try modified.write(to: directory.appendingPathComponent("large.txt"), atomically: true, encoding: .utf8)
+
+        let data = try await PickyGitDiffReviewProvider().load(cwd: directory.path)
+        let worktree = try #require(data.scopeData(.worktree))
+        let file = try #require(worktree.files.first { $0.displayPath == "large.txt" })
+
+        let diff = try await PickyGitDiffReviewProvider().loadDiff(cwd: directory.path, scope: .worktree, fileID: file.id)
+
+        #expect(diff.utf8.count > 65_536)
+        #expect(diff.contains("-original line 0"))
+        #expect(diff.contains("+modified line 1199"))
+    }
+
     @Test func loadThrowsOutsideGitRepository() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

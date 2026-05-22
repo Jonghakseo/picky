@@ -439,6 +439,25 @@ struct PickyGitDiffReviewProvider: Sendable {
         runProcess(executable: "/bin/bash", arguments: ["-lc", script], cwd: cwd)
     }
 
+    private final class PipeDataCollector: @unchecked Sendable {
+        private let lock = NSLock()
+        private var data = Data()
+
+        func append(_ chunk: Data) {
+            guard !chunk.isEmpty else { return }
+            lock.lock()
+            data.append(chunk)
+            lock.unlock()
+        }
+
+        func stringValue() -> String {
+            lock.lock()
+            let snapshot = data
+            lock.unlock()
+            return String(data: snapshot, encoding: .utf8) ?? ""
+        }
+    }
+
     private static func runProcess(executable: String, arguments: [String], cwd: String?) -> ProcessResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
@@ -447,19 +466,37 @@ struct PickyGitDiffReviewProvider: Sendable {
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()
+        let stdoutCollector = PipeDataCollector()
+        let stderrCollector = PipeDataCollector()
         process.standardOutput = outputPipe
         process.standardError = errorPipe
+
+        outputPipe.fileHandleForReading.readabilityHandler = { handle in
+            stdoutCollector.append(handle.availableData)
+        }
+        errorPipe.fileHandleForReading.readabilityHandler = { handle in
+            stderrCollector.append(handle.availableData)
+        }
 
         do {
             try process.run()
             process.waitUntilExit()
         } catch {
+            outputPipe.fileHandleForReading.readabilityHandler = nil
+            errorPipe.fileHandleForReading.readabilityHandler = nil
             return ProcessResult(exitCode: -1, stdout: "", stderr: error.localizedDescription)
         }
 
-        let stdout = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let stderr = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        return ProcessResult(exitCode: process.terminationStatus, stdout: stdout, stderr: stderr)
+        outputPipe.fileHandleForReading.readabilityHandler = nil
+        errorPipe.fileHandleForReading.readabilityHandler = nil
+        stdoutCollector.append(outputPipe.fileHandleForReading.readDataToEndOfFile())
+        stderrCollector.append(errorPipe.fileHandleForReading.readDataToEndOfFile())
+
+        return ProcessResult(
+            exitCode: process.terminationStatus,
+            stdout: stdoutCollector.stringValue(),
+            stderr: stderrCollector.stringValue()
+        )
     }
 
     private static func shellQuote(_ value: String) -> String {

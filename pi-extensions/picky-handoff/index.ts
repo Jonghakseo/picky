@@ -99,9 +99,24 @@ function registerHandoffCommand(pi: PiExtensionAPI, name: string): void {
 
 async function readConnectionInfo(): Promise<PickyAgentdConnectionInfo> {
   const path = process.env.PICKY_AGENTD_CONNECTION_FILE || DEFAULT_CONNECTION_FILE;
-  const raw = JSON.parse(await readFile(path, "utf8")) as Partial<PickyAgentdConnectionInfo>;
+  let contents: string;
+  try {
+    contents = await readFile(path, "utf8");
+  } catch (error) {
+    if (isMissingConnectionFileError(error)) {
+      throw new Error(
+        `Picky 연결 파일이 없습니다: ${path}. Picky 앱이 실행 중이고 agentd가 시작됐는지 확인하세요. 진단 로그에 PICKY_UNSUPPORTED_NODE가 보이면 Node 22.19.0 이상 설치 후 Picky를 재실행하세요.`,
+      );
+    }
+    throw error;
+  }
+  const raw = JSON.parse(contents) as Partial<PickyAgentdConnectionInfo>;
   if (!raw.url || !raw.token) throw new Error(`Invalid Picky connection file: ${path}`);
   return { protocolVersion: raw.protocolVersion, url: raw.url, token: raw.token, defaultCwd: raw.defaultCwd };
+}
+
+function isMissingConnectionFileError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT";
 }
 
 async function pinPickyPickleSession(connection: PickyAgentdConnectionInfo, title: string, context: PickyContextPacket): Promise<PickyAgentSessionSummary> {

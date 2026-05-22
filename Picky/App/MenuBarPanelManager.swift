@@ -175,7 +175,13 @@ final class MenuBarPanelManager: NSObject {
 
         positionPanelBelowStatusItem()
 
-        panel?.makeKeyAndOrderFront(nil)
+        // Use orderFront (not makeKeyAndOrderFront) so the panel doesn't
+        // steal key status from whatever app was active. Combined with
+        // becomesKeyOnlyIfNeeded below, the panel only becomes key when a
+        // subview that needs keyboard focus (e.g. a text field) is clicked.
+        // This avoids the "need to click twice to focus another app"
+        // issue after the panel is dismissed.
+        panel?.orderFront(nil)
         panel?.orderFrontRegardless()
         installClickOutsideMonitor()
     }
@@ -205,6 +211,12 @@ final class MenuBarPanelManager: NSObject {
         )
 
         menuBarPanel.isFloatingPanel = true
+        // Only become key when a subview (text field, etc.) actually needs
+        // keyboard focus. Buttons and other controls still receive mouse
+        // events without the panel taking key status, so clicking outside
+        // the panel doesn't require an extra activation click on the
+        // destination app.
+        menuBarPanel.becomesKeyOnlyIfNeeded = true
         // Keep the menu bar companion panel above Picky's HUD dock (raw level 19)
         // and other app floating panels while it is open from the status item.
         menuBarPanel.level = .statusBar

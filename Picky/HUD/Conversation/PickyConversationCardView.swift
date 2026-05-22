@@ -83,7 +83,7 @@ struct PickyConversationCardView: View {
                 onArchiveSession: onArchiveSession,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible
             )
-            PickyConversationContextLineView(session: session)
+            PickyConversationContextLineView(viewModel: viewModel, session: session)
             PickyConversationListView(
                 session: session,
                 viewModel: viewModel,

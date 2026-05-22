@@ -384,6 +384,36 @@ struct PickyAgentDaemonLauncherTests {
         #expect(resolved == .viaEnv)
     }
 
+    @Test func resolveNodeExecutableRejectsDirectoryOverride() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+
+        // A bare directory is searchable/executable per POSIX, so FileManager.isExecutableFile
+        // would otherwise accept it. We must reject it so we don't try to spawn a directory.
+        let resolved = PickyAgentDaemonConfiguration.resolveNodeExecutable(
+            bundleResourceURL: nil,
+            environment: ["PICKY_NODE_PATH": temp.path]
+        )
+
+        #expect(resolved == .viaEnv)
+    }
+
+    @Test func resolveNodeExecutableRejectsBundledDirectory() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let resources = temp.appendingPathComponent("Resources", isDirectory: true)
+        let bundledNodeDir = resources.appendingPathComponent("agentd-runtime/bin/node", isDirectory: true)
+        try FileManager.default.createDirectory(at: bundledNodeDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+
+        let resolved = PickyAgentDaemonConfiguration.resolveNodeExecutable(
+            bundleResourceURL: resources,
+            environment: [:]
+        )
+
+        #expect(resolved == .viaEnv)
+    }
+
     @Test func configurationExternalCompiledWithBundledNodeUsesAbsolutePath() throws {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
         let resources = temp.appendingPathComponent("Resources", isDirectory: true)

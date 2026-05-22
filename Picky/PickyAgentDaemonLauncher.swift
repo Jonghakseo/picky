@@ -374,7 +374,7 @@ struct PickyAgentDaemonConfiguration: Equatable {
     ) -> PickyResolvedNodeExecutable {
         if let raw = environment["PICKY_NODE_PATH"], !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let url = URL(fileURLWithPath: NSString(string: raw).expandingTildeInPath)
-            if fileManager.isExecutableFile(atPath: url.path) {
+            if isExecutableRegularFile(atPath: url.path, fileManager: fileManager) {
                 return .absolute(url, source: .override)
             }
             pickyDaemonLog("PICKY_NODE_PATH=\(raw) is not an executable file; falling back to bundled/PATH lookup.")
@@ -385,12 +385,23 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 .appendingPathComponent("agentd-runtime")
                 .appendingPathComponent("bin")
                 .appendingPathComponent("node")
-            if fileManager.isExecutableFile(atPath: bundled.path) {
+            if isExecutableRegularFile(atPath: bundled.path, fileManager: fileManager) {
                 return .absolute(bundled, source: .bundled)
             }
         }
 
         return .viaEnv
+    }
+
+    /// `FileManager.isExecutableFile(atPath:)` returns true for searchable directories on macOS,
+    /// so any directory at the candidate path would be mistakenly accepted as a Node binary.
+    /// Require a regular file in addition to the executable bit.
+    static func isExecutableRegularFile(atPath path: String, fileManager: FileManager = .default) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+            return false
+        }
+        return fileManager.isExecutableFile(atPath: path)
     }
 
     static func augmentedExecutablePATH(from environment: [String: String]) -> String {
@@ -894,7 +905,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             }
         }
         if configuration.executableURL.path != "/usr/bin/env" {
-            guard fileManager.isExecutableFile(atPath: configuration.executableURL.path) else {
+            guard PickyAgentDaemonConfiguration.isExecutableRegularFile(atPath: configuration.executableURL.path, fileManager: fileManager) else {
                 throw PickyDaemonLaunchPreflightError.missingExecutableAtPath(
                     "Bundled node at \(configuration.executableURL.path) is missing or not executable. Reinstall Picky."
                 )

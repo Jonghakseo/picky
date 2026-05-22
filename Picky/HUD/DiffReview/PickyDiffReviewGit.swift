@@ -10,13 +10,11 @@ import Foundation
 enum PickyDiffReviewGitError: LocalizedError, Equatable {
     case notAGitRepository(String)
     case gitFailure(message: String)
-    case decodingFailure(message: String)
 
     var errorDescription: String? {
         switch self {
         case .notAGitRepository(let message): message
         case .gitFailure(let message): message
-        case .decodingFailure(let message): message
         }
     }
 }
@@ -705,7 +703,7 @@ enum PickyDiffReviewGit {
         case .failure:
             return nil
         case .success(let exitCode, let stdout, _):
-            guard exitCode == 0 || allowsFailure else { return nil }
+            guard exitCode == 0 else { return allowsFailure ? "" : nil }
             return stdout
         }
     }

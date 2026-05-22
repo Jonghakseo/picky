@@ -808,7 +808,12 @@ const SNAPSHOT_TOOL_PREVIEW_CHAR_LIMIT = 240;
 const SNAPSHOT_THINKING_PREVIEW_CHAR_LIMIT = 240;
 const SNAPSHOT_CHANGED_FILE_LIMIT = 20;
 const SNAPSHOT_CHANGED_FILE_SUMMARY_CHAR_LIMIT = 240;
-const SNAPSHOT_MESSAGE_LIMIT = 12;
+// Keep in sync with `visibleMessages` in Picky/HUD/Conversation/PickyConversationListView.swift:
+// the HUD renders "from the 5th-last user_text message onward", so the initial
+// snapshot must include at least that window. Otherwise the snapshot lands with
+// fewer turns than the next sessionUpdated, and the conversation list visibly
+// reflows once the full session arrives.
+const SNAPSHOT_VISIBLE_USER_TURN_COUNT = 5;
 const SNAPSHOT_FINAL_ANSWER_CHAR_LIMIT = 1_500;
 const SNAPSHOT_LAST_SUMMARY_CHAR_LIMIT = 700;
 
@@ -825,12 +830,20 @@ export function compactSessionsForSnapshot(sessions: PickyAgentSession[]): Picky
   }));
 }
 
-// Snapshot only caps the message count, not the body of any individual message.
-// User-visible fields (text/errorContext/errorMessage/question.prompt/question.description)
-// must be sent in full so the report viewer doesn't render a truncated copy that lingers
-// between the initial sessionSnapshot and the next sessionUpdated/messageReplaced event.
+// Snapshot mirrors the HUD's visible window so the initial snapshot and the next
+// full `sessionUpdated` render the same set of messages — no layout shift when
+// the full session arrives. Per-message bodies are still sent in full so the
+// report viewer never shows a truncated copy that lingers between the initial
+// sessionSnapshot and the next sessionUpdated/messageReplaced event.
 function compactSnapshotMessages(messages: PickyAgentSession["messages"]): PickyAgentSession["messages"] {
-  return messages?.slice(-SNAPSHOT_MESSAGE_LIMIT);
+  if (!messages || messages.length === 0) return messages;
+  const userTurnIndices: number[] = [];
+  for (let index = 0; index < messages.length; index += 1) {
+    if (messages[index]!.kind === "user_text") userTurnIndices.push(index);
+  }
+  if (userTurnIndices.length <= SNAPSHOT_VISIBLE_USER_TURN_COUNT) return messages;
+  const firstVisibleUserIndex = userTurnIndices[userTurnIndices.length - SNAPSHOT_VISIBLE_USER_TURN_COUNT]!;
+  return messages.slice(firstVisibleUserIndex);
 }
 
 function compactSnapshotLogs(logs: string[]): string[] {

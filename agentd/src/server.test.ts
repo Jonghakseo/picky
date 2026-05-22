@@ -530,9 +530,12 @@ describe("AgentdServer", () => {
         summary: "large summary ".repeat(1_000),
       })),
       finalAnswer: "large final answer ".repeat(1_000),
+      // 8 user_text turns, each followed by 9 assistant messages (thinking + activity + text).
+      // The snapshot must slice from the 5th-last user turn onward to match the HUD's
+      // visibleMessages window so the first sessionUpdated arrives without a layout shift.
       messages: Array.from({ length: 80 }, (_, index) => ({
         id: `msg-${index}`,
-        kind: "agent_text" as const,
+        kind: (index % 10 === 0 ? "user_text" : "agent_text") as "user_text" | "agent_text",
         createdAt: "2026-05-03T00:00:00.000Z",
         text: `message ${index} ${"large text ".repeat(1_000)}`,
       })),
@@ -551,14 +554,36 @@ describe("AgentdServer", () => {
     expect(compact.changedFiles.length).toBeLessThanOrEqual(20);
     expect(compact.changedFiles.at(-1)?.summary?.length).toBeLessThanOrEqual(241);
     expect(compact.finalAnswer?.length).toBeLessThanOrEqual(1_501);
-    expect(compact.messages?.length).toBeLessThanOrEqual(12);
-    expect(compact.messages?.[0]?.id).toBe("msg-68");
-    // User-visible message text is sent in full — the snapshot caps the message count, not
-    // each message's body, so the report viewer cannot show a truncated copy that lingers
-    // between the initial sessionSnapshot and the next sessionUpdated event.
+    // 8 user turns total → snapshot keeps the last 5 user turns and everything after
+    // (msg-30 onward = 50 messages). Earlier history is dropped.
+    expect(compact.messages?.length).toBe(50);
+    expect(compact.messages?.[0]?.id).toBe("msg-30");
+    expect(compact.messages?.[0]?.kind).toBe("user_text");
+    expect(compact.messages?.filter((m) => m.kind === "user_text").length).toBe(5);
+    // User-visible message text is sent in full — the snapshot only trims the message
+    // window, never per-message bodies, so the report viewer cannot show a truncated
+    // copy that lingers between the initial sessionSnapshot and the next sessionUpdated event.
     const lastMessageText = compact.messages?.at(-1)?.text ?? "";
     expect(lastMessageText.endsWith("…")).toBe(false);
     expect(lastMessageText.length).toBeGreaterThan(10_000);
+  });
+
+  it("returns all messages when fewer than the user-turn window exists", () => {
+    const session = makeSession({
+      messages: [
+        { id: "m1", kind: "system", createdAt: "2026-05-03T00:00:00.000Z", text: "hello" },
+        { id: "m2", kind: "user_text", createdAt: "2026-05-03T00:00:00.000Z", text: "first" },
+        { id: "m3", kind: "agent_text", createdAt: "2026-05-03T00:00:00.000Z", text: "reply" },
+        { id: "m4", kind: "user_text", createdAt: "2026-05-03T00:00:00.000Z", text: "second" },
+        { id: "m5", kind: "agent_text", createdAt: "2026-05-03T00:00:00.000Z", text: "reply" },
+      ],
+    });
+
+    const [compact] = compactSessionsForSnapshot([session]);
+
+    // Only 2 user turns (< window of 5) → snapshot keeps everything, including the
+    // leading system message, so the HUD's visibleMessages fallback path matches.
+    expect(compact.messages?.map((m) => m.id)).toEqual(["m1", "m2", "m3", "m4", "m5"]);
   });
 });
 

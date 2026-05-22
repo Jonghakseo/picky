@@ -44,6 +44,18 @@ struct PickyDiffReviewWebHostTests {
         #expect(jsonBlock.contains(#"\u003c\/script\u003e"#))
     }
 
+    @Test func renderHTML_emitsLoadingSentinelWhenInitialDataIsNil() throws {
+        let rendered = try PickyDiffReviewWebHost.renderHTML(
+            template: #"<script id="diff-review-data" type="application/json">"__INLINE_DATA__"</script>"#,
+            appJs: "",
+            initialData: nil
+        )
+        let jsonBlock = try #require(rendered.slice(between: #"<script id="diff-review-data" type="application/json">"#, and: "</script>"))
+
+        #expect(jsonBlock.contains(#""loading":true"#))
+        #expect(!jsonBlock.contains("repoRoot"))
+    }
+
     private func reviewData(repoRoot: String = "/tmp/repo") -> ReviewWindowData {
         ReviewWindowData(
             repoRoot: repoRoot,

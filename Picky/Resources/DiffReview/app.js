@@ -1,6 +1,14 @@
 let suppressAutoSubmitOnClose = false;
 
-const reviewData = JSON.parse(document.getElementById("diff-review-data").textContent || "{}");
+// The host may inline `{"loading":true}` to indicate the window was opened
+// before git data was ready (lazy load path). When we see that sentinel we
+// treat the page as in an initial-loading state and immediately request the
+// real data once the JS finishes booting.
+const inlineReviewPayload = JSON.parse(document.getElementById("diff-review-data").textContent || "{}");
+const isInitialReviewDataPending = inlineReviewPayload && inlineReviewPayload.loading === true;
+const reviewData = isInitialReviewDataPending
+	? { files: [], commits: [], branchBaseRef: null, branchMergeBaseSha: null, repositoryHasHead: false }
+	: inlineReviewPayload;
 if (!Array.isArray(reviewData.files)) reviewData.files = [];
 if (!Array.isArray(reviewData.commits)) reviewData.commits = [];
 
@@ -13,6 +21,7 @@ const defaultScope = reviewData.files.some((file) => file.inGitDiff)
 const state = {
 	activeFileId: null,
 	currentScope: defaultScope,
+	isInitialReviewDataPending: isInitialReviewDataPending,
 	selectedCommitSha: reviewData.commits[0]?.sha ?? null,
 	commitFilesBySha: {}, // sha -> ReviewFile[]
 	commitRequestIds: {}, // sha -> requestId (in-flight)
@@ -947,7 +956,8 @@ function renderCommitList() {
 	if (!commitListEl) return;
 	commitListEl.innerHTML = "";
 	if (reviewData.commits.length === 0) {
-		commitListEl.innerHTML = '<div class="px-3 py-2 text-[11px] text-review-muted">No commits to review.</div>';
+		const message = state.isInitialReviewDataPending ? "Loading commits…" : "No commits to review.";
+		commitListEl.innerHTML = `<div class="px-3 py-2 text-[11px] text-review-muted">${message}</div>`;
 		updateReviewRefreshButton();
 		return;
 	}
@@ -1063,9 +1073,11 @@ function renderTree() {
 	const visibleFiles = getFilteredFiles();
 
 	if (visibleFiles.length === 0) {
-		const message = state.fileFilter.trim()
-			? `No files match <span class="text-review-text">${escapeHtml(state.fileFilter.trim())}</span>.`
-			: `No files in <span class="text-review-text">${escapeHtml(scopeLabel(state.currentScope).toLowerCase())}</span>.`;
+		const message = state.isInitialReviewDataPending
+			? `<span class="text-review-text">Loading review data…</span>`
+			: state.fileFilter.trim()
+				? `No files match <span class="text-review-text">${escapeHtml(state.fileFilter.trim())}</span>.`
+				: `No files in <span class="text-review-text">${escapeHtml(scopeLabel(state.currentScope).toLowerCase())}</span>.`;
 		fileTreeEl.innerHTML = `
       <div class="px-3 py-4 text-sm text-review-muted">
         ${message}
@@ -1783,6 +1795,18 @@ window.__reviewReceive = (message) => {
 			state.lastLocalChangeDetectedAt = null;
 			state.lastLocalChangeObservedAt = null;
 		}
+		// Lazy-load path: window opened with placeholder data and JS auto-requested
+		// the real review data. After the first response arrives, recompute the
+		// default scope (branch vs commits vs all) and clear the pending flag so
+		// the empty-state UI returns to its normal messages.
+		if (state.isInitialReviewDataPending) {
+			state.isInitialReviewDataPending = false;
+			state.currentScope = reviewData.files.some((file) => file.inGitDiff)
+				? "branch"
+				: reviewData.commits.length > 0
+					? "commits"
+					: "all";
+		}
 		if (!reviewData.commits.some((commit) => commit.sha === state.selectedCommitSha)) {
 			state.selectedCommitSha = reviewData.commits[0]?.sha ?? null;
 		}
@@ -2087,3 +2111,9 @@ renderCommitList();
 renderFileComments();
 updateSidebarLayout();
 setupMonaco();
+// Lazy-load path: if the host inlined the loading sentinel, kick off the real
+// review data fetch now that JS has booted. The matching review-data response
+// will arrive via window.__reviewReceive and populate the UI.
+if (state.isInitialReviewDataPending) {
+	requestLatestReviewData();
+}

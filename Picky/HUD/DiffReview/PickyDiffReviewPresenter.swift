@@ -85,26 +85,18 @@ final class PickyDiffReviewPresenter {
                 return
             }
 
-            let reviewData: ReviewWindowData
-            do {
-                reviewData = try await PickyDiffReviewGit.loadReviewWindowData(cwd: cwdURL)
-            } catch {
-                notify(title: "Review failed", body: error.localizedDescription)
-                onCancel()
+            // A second window for the same session may have been opened while
+            // we were resolving the repo root. Defer to the existing one.
+            if let existing = records[sessionID] {
+                focus(existing)
                 return
             }
 
-            guard !reviewData.files.isEmpty || !reviewData.commits.isEmpty else {
-                notify(title: "No reviewable files found", body: repoRoot.path)
-                onCancel()
-                return
-            }
-
-            guard records[sessionID] == nil else {
-                focus(records[sessionID]!)
-                return
-            }
-
+            // Present the window IMMEDIATELY without waiting for git data. The
+            // page loads with a sentinel `{"loading":true}` inline payload and
+            // the JS layer pulls fresh review data via `request-review-data` as
+            // soon as it boots. This collapses ~1–2 s of "clicked but nothing
+            // happened" perception for users on larger repos.
             let host = PickyDiffReviewWebHost(
                 onMessage: { [weak self] message in
                     guard let self, let record = self.records[sessionID] else { return }
@@ -127,15 +119,26 @@ final class PickyDiffReviewPresenter {
                 }
             )
 
+            let placeholderData = ReviewWindowData(
+                repoRoot: repoRoot.path,
+                files: [],
+                commits: [],
+                branchBaseRef: nil,
+                branchMergeBaseSha: nil,
+                repositoryHasHead: false
+            )
             let createdRecord = ReviewRecord(
                 sessionID: sessionID,
                 repoRoot: repoRoot,
                 host: host,
                 controller: controller,
-                data: reviewData,
+                data: placeholderData,
                 onCancel: onCancel
             )
-            createdRecord.didServeInitialData = true
+            // Initial inline payload is the loading sentinel — JS will fetch
+            // real data once it boots, so the first request-review-data must
+            // perform an actual git read rather than echo placeholderData.
+            createdRecord.didServeInitialData = false
             records[sessionID] = createdRecord
 
             createdRecord.watcher = PickyDiffReviewRepoWatcher(
@@ -153,7 +156,7 @@ final class PickyDiffReviewPresenter {
             )
 
             do {
-                try host.loadInitialPage(initialData: reviewData)
+                try host.loadInitialPage(initialData: nil)
             } catch {
                 host.dispose()
                 records.removeValue(forKey: sessionID)
@@ -205,16 +208,11 @@ final class PickyDiffReviewPresenter {
     }
 
     private func handleRequestReviewData(requestId: String, record: ReviewRecord) async {
-        if !record.didServeInitialData {
-            record.didServeInitialData = true
-            sendReviewData(record.data, requestId: requestId, host: record.host)
-            return
-        }
-
         do {
             let data = try await PickyDiffReviewGit.loadReviewWindowData(cwd: record.repoRoot)
             record.clearRefreshableCaches()
             record.data = data
+            record.didServeInitialData = true
             for file in data.files {
                 record.fileMap[file.id] = file
             }

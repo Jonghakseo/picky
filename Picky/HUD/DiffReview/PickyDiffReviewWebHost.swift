@@ -47,7 +47,10 @@ final class PickyDiffReviewWebHost: NSObject, WKScriptMessageHandler {
         userContentController.add(self, name: "glimpse")
     }
 
-    func loadInitialPage(initialData: ReviewWindowData) throws {
+    /// Loads the review page. Pass `nil` for `initialData` to render the page
+    /// before git data is ready; the JS layer will pull data via
+    /// `request-review-data` once it observes the `{"loading":true}` sentinel.
+    func loadInitialPage(initialData: ReviewWindowData?) throws {
         guard let resourceURL = Bundle.main.url(forResource: "DiffReview", withExtension: nil) else {
             throw PickyDiffReviewWebHostError.missingResourceDirectory
         }
@@ -57,10 +60,17 @@ final class PickyDiffReviewWebHost: NSObject, WKScriptMessageHandler {
         webView.load(URLRequest(url: PickyDiffReviewURLSchemeHandler.indexURL))
     }
 
-    nonisolated static func renderHTML(template: String, appJs: String, initialData: ReviewWindowData) throws -> String {
-        let raw = try JSONEncoder.diffReview.encode(initialData)
-        let json = String(data: raw, encoding: .utf8) ?? "{}"
-        let escaped = json
+    nonisolated static func renderHTML(template: String, appJs: String, initialData: ReviewWindowData?) throws -> String {
+        let inlineJSON: String
+        if let initialData {
+            let raw = try JSONEncoder.diffReview.encode(initialData)
+            inlineJSON = String(data: raw, encoding: .utf8) ?? "{}"
+        } else {
+            // Sentinel: JS treats this as "data not yet loaded; show loading state
+            // and immediately request fresh data".
+            inlineJSON = "{\"loading\":true}"
+        }
+        let escaped = inlineJSON
             .replacingOccurrences(of: "<", with: "\\u003c")
             .replacingOccurrences(of: ">", with: "\\u003e")
             .replacingOccurrences(of: "&", with: "\\u0026")

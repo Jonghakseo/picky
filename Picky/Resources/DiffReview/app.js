@@ -1024,7 +1024,9 @@ function applyEditorOptions() {
 	editorContainerEl.dataset.addedOnly = addedOnly ? "true" : "false";
 	diffEditor.updateOptions({
 		renderSideBySide: showDiff,
-		diffWordWrap: state.wrapLines ? "on" : "off",
+		// See createDiffEditor: keep `diffWordWrap` on "inherit" and drive wrapping via
+		// each editor's own `wordWrap` setting below for symmetric left/right behavior.
+		diffWordWrap: "inherit",
 		hideUnchangedRegions: {
 			enabled: showDiff && state.hideUnchanged,
 			contextLineCount: 4,
@@ -1892,7 +1894,12 @@ function setupMonaco() {
 			minimap: { enabled: false },
 			renderOverviewRuler: false,
 			overviewRulerLanes: 0,
-			diffWordWrap: "on",
+			// `diffWordWrap: "on"` mis-syncs between the original (read-only) and modified
+			// editors when `originalEditable: false` + `hideUnchangedRegions` are combined:
+			// the original side stops wrapping while the modified side keeps wrapping.
+			// Using `inherit` defers wrapping to each side's own `wordWrap` setting,
+			// which `applyEditorOptions` keeps in lockstep on both editors.
+			diffWordWrap: "inherit",
 			scrollBeyondLastLine: false,
 			lineNumbersMinChars: 4,
 			glyphMargin: true,

@@ -43,7 +43,7 @@ func systemMouseCursorIsVisible() -> Bool {
 private struct PickyCursorStyle: Codable, Equatable {
     var colorHex = "#3380FF"
     var listeningColorHex = "#F0B440"
-    var processingColorHex = "#3380FF"
+    var processingColorHex = "#FFB224"
     var respondingColorHex = "#3380FF"
     var frameSize = 39.0
     var glowOpacity = 0.3
@@ -258,11 +258,12 @@ private struct PickyCursorMascotView: View {
                 .scaleEffect(scale)
                 .rotationEffect(.degrees(rotation))
 
-            // Processing pulse: while Picky is thinking, fade a white copy of
-            // the mascot in and out on top of the tinted body so the cursor
-            // cycles blue -> white -> blue. The pulse opacity is computed from
-            // the timeline so the effect runs at 60fps without disturbing the
-            // tint state machine.
+            // Processing pulse: while Picky is thinking, fade a white copy
+            // of the mascot in and out on top of the amber body so the
+            // cursor cycles amber -> white -> amber as a calm loading
+            // indicator. The pulse opacity is computed from the timeline so
+            // the effect runs at 60fps without disturbing the tint state
+            // machine.
             if processingPulse > 0 {
                 cursorAsset(named: assetName, tint: .white)
                     .frame(width: CGFloat(style.mascotSize), height: CGFloat(style.mascotSize))

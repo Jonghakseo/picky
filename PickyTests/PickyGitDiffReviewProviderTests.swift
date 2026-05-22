@@ -103,6 +103,32 @@ struct PickyGitDiffReviewProviderTests {
         #expect(renamed.deletions == 0)
     }
 
+    @Test func loadDiffPreservesRenameMetadataAndEditHunk() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try initializeRepository(at: directory)
+        try FileManager.default.createDirectory(at: directory.appendingPathComponent("Sources"), withIntermediateDirectories: true)
+        let original = (0..<20).map { "line \($0)" }.joined(separator: "\n") + "\n"
+        let modified = (0..<20).map { $0 == 10 ? "line 10 changed" : "line \($0)" }.joined(separator: "\n") + "\n"
+        try original.write(to: directory.appendingPathComponent("Sources/OldName.swift"), atomically: true, encoding: .utf8)
+        try runGit(["add", "Sources/OldName.swift"], cwd: directory)
+        try runGit(["commit", "-m", "initial"], cwd: directory)
+        try runGit(["mv", "Sources/OldName.swift", "Sources/NewName.swift"], cwd: directory)
+        try modified.write(to: directory.appendingPathComponent("Sources/NewName.swift"), atomically: true, encoding: .utf8)
+
+        let data = try await PickyGitDiffReviewProvider().load(cwd: directory.path)
+        let worktree = try #require(data.scopeData(.worktree))
+        let renamed = try #require(worktree.files.first { $0.status == .renamed })
+
+        let diff = try await PickyGitDiffReviewProvider().loadDiff(cwd: directory.path, scope: .worktree, fileID: renamed.id)
+
+        #expect(diff.contains("rename from Sources/OldName.swift"))
+        #expect(diff.contains("rename to Sources/NewName.swift"))
+        #expect(diff.contains("-line 10"))
+        #expect(diff.contains("+line 10 changed"))
+    }
+
     @Test func loadDiffReturnsLargeUnifiedDiffWithoutPipeDeadlock() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

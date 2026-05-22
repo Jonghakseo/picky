@@ -164,8 +164,8 @@ struct PickyGitDiffReviewProvider: Sendable {
         case .worktree:
             baseRevision = data.repositoryHasHead ? "HEAD" : nil
         }
-        let path = file.newPath ?? file.oldPath ?? file.path
-        return try runSnapshotDiff(repoRoot: data.repoRoot, baseRevision: baseRevision, mode: .unifiedDiff(path: path))
+        let paths = diffPathspecs(for: file)
+        return try runSnapshotDiff(repoRoot: data.repoRoot, baseRevision: baseRevision, mode: .unifiedDiff(paths: paths))
     }
 
     private struct ReviewBaseInfo: Equatable {
@@ -176,7 +176,7 @@ struct PickyGitDiffReviewProvider: Sendable {
     private enum SnapshotDiffMode {
         case nameStatus
         case numstat
-        case unifiedDiff(path: String)
+        case unifiedDiff(paths: [String])
     }
 
     private struct ChangedPath: Equatable {
@@ -199,6 +199,15 @@ struct PickyGitDiffReviewProvider: Sendable {
     private struct Numstat: Equatable {
         let insertions: Int
         let deletions: Int
+    }
+
+    private static func diffPathspecs(for file: PickyGitDiffFile) -> [String] {
+        var paths: [String] = []
+        var seen = Set<String>()
+        for path in [file.oldPath, file.newPath, file.path].compactMap({ $0 }) where seen.insert(path).inserted {
+            paths.append(path)
+        }
+        return paths
     }
 
     private static func makeScopeData(
@@ -335,12 +344,12 @@ struct PickyGitDiffReviewProvider: Sendable {
             } else {
                 lines.append("git diff --cached --numstat --root --")
             }
-        case .unifiedDiff(let path):
-            let pathArgument = shellQuote(path)
+        case .unifiedDiff(let paths):
+            let pathArguments = paths.map(shellQuote).joined(separator: " ")
             if let baseArgument {
-                lines.append("git diff --cached --find-renames -M --no-color --unified=80 \(baseArgument) -- \(pathArgument)")
+                lines.append("git diff --cached --find-renames -M --no-color --unified=80 \(baseArgument) -- \(pathArguments)")
             } else {
-                lines.append("git diff --cached --find-renames -M --no-color --unified=80 --root -- \(pathArgument)")
+                lines.append("git diff --cached --find-renames -M --no-color --unified=80 --root -- \(pathArguments)")
             }
         }
         let result = runBash(lines.joined(separator: "\n"), cwd: repoRoot)

@@ -61,49 +61,11 @@ final class PickyUserDefaultsComposerDraftStore: PickyComposerDraftStoring {
     }
 }
 
-protocol PickySessionNoteStoring: AnyObject {
-    func note(for sessionID: String) -> String?
-    func setNote(_ note: String?, for sessionID: String)
-}
-
-final class PickyUserDefaultsSessionNoteStore: PickySessionNoteStoring {
-    static let shared = PickyUserDefaultsSessionNoteStore()
+enum PickyLegacySessionNoteData {
     static let key = "PickySessionNotesBySessionID"
 
-    private let defaults: UserDefaults
-
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-    }
-
-    func note(for sessionID: String) -> String? {
-        guard !sessionID.isEmpty else { return nil }
-        let notes = defaults.dictionary(forKey: Self.key) as? [String: String]
-        guard let note = notes?[sessionID], !note.isEmpty else { return nil }
-        return note
-    }
-
-    func setNote(_ note: String?, for sessionID: String) {
-        guard !sessionID.isEmpty else { return }
-        var notes = defaults.dictionary(forKey: Self.key) as? [String: String] ?? [:]
-        if let note, !note.isEmpty {
-            notes[sessionID] = note
-        } else {
-            notes.removeValue(forKey: sessionID)
-        }
-        persist(notes)
-    }
-
-    private func persist(_ notes: [String: String]) {
-        if notes.isEmpty {
-            defaults.removeObject(forKey: Self.key)
-        } else {
-            defaults.set(notes, forKey: Self.key)
-        }
-        // Notes are user-authored content rather than disposable UI cache. Force
-        // the defaults domain to disk after each edit so quitting Picky right
-        // after typing cannot leave the latest note in an unwritten buffer.
-        defaults.synchronize()
+    static func remove(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: key)
     }
 }
 

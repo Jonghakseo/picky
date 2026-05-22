@@ -24,8 +24,8 @@ struct PickyConversationCardView: View {
     var isPreviewMode = false
     var focusRequestID = 0
     var isCommandShortcutHintVisible = false
-    var isNoteOpen = false
-    var onToggleNote: () -> Void = { }
+    var isTerminalAddonOpen = false
+    var onToggleTerminalAddon: () -> Void = { }
     @State private var droppedFilePaths: [String] = []
     @State private var isFileDropTargeted = false
 
@@ -95,9 +95,9 @@ struct PickyConversationCardView: View {
                 droppedFilePaths: $droppedFilePaths,
                 isFileDropTargeted: isFileDropTargeted,
                 focusRequestID: focusRequestID,
-                isNoteOpen: isNoteOpen,
+                isTerminalAddonOpen: isTerminalAddonOpen,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-                onToggleNote: onToggleNote
+                onToggleTerminalAddon: onToggleTerminalAddon
             )
         }
     }

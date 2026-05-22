@@ -41,7 +41,7 @@ struct PickyHUDView: View {
     @State private var modifierFlagsMonitor: Any?
     @State private var isCommandShortcutHintVisible = false
     @State private var composerFocusRequestID = 0
-    @State private var noteOpenSessionIDs: Set<String> = []
+    @State private var terminalAddonOpenSessionIDs: Set<String> = []
     @State private var isDockAddSlotExpanded = false
     @State private var cardResizeInteraction = PickyHUDCardResizeInteractionState()
     @State private var sizeReporter = PickyHUDSizeReporter()
@@ -255,20 +255,21 @@ struct PickyHUDView: View {
     @ViewBuilder
     private var conversationCard: some View {
         if let activeSession {
-            let noteIsOpen = isNoteOpen(sessionID: activeSession.id)
+            let terminalAddonIsOpen = isTerminalAddonOpen(sessionID: activeSession.id)
+                && !viewModel.isInlineTerminalMode(sessionID: activeSession.id)
             VStack(alignment: .leading, spacing: 8) {
                 PickyConversationCardView(
                     viewModel: viewModel,
                     session: activeSession,
                     onArchiveSession: archiveSession,
-                    maxHeight: conversationCardMaxHeight(isNoteOpen: noteIsOpen),
+                    maxHeight: conversationCardMaxHeight(isTerminalAddonOpen: terminalAddonIsOpen),
                     width: placement.cardWidth,
                     fixedHeight: placement.fixedCardHeight,
                     isPreviewMode: false,
                     focusRequestID: composerFocusRequestID,
                     isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-                    isNoteOpen: noteIsOpen,
-                    onToggleNote: { toggleNote(sessionID: activeSession.id) }
+                    isTerminalAddonOpen: terminalAddonIsOpen,
+                    onToggleTerminalAddon: { toggleTerminalAddon(sessionID: activeSession.id) }
                 )
                 .background(PickyHUDCardSizeReader())
                 .overlay(alignment: resizeHandleAlignment) {
@@ -293,8 +294,8 @@ struct PickyHUDView: View {
                 }
                 .accessibilityHint("Drag the corner to resize this Pickle card. Double-click to reset the size.")
 
-                if noteIsOpen {
-                    noteAddon(for: activeSession.id)
+                if terminalAddonIsOpen {
+                    terminalAddon(for: activeSession)
                 }
             }
             .environment(\.pickyHUDDetailWidth, placement.cardWidth)
@@ -354,16 +355,16 @@ struct PickyHUDView: View {
         }
     }
 
-    private func conversationCardMaxHeight(isNoteOpen: Bool) -> CGFloat {
-        guard isNoteOpen else { return placement.availableCardMaxHeight }
+    private func conversationCardMaxHeight(isTerminalAddonOpen: Bool) -> CGFloat {
+        guard isTerminalAddonOpen else { return placement.availableCardMaxHeight }
         return max(
             320,
-            placement.availableCardMaxHeight - PickyHUDDockLayout.noteAddonHeight - 8
+            placement.availableCardMaxHeight - PickyHUDDockLayout.terminalAddonHeight - 8
         )
     }
 
-    private func noteAddon(for sessionID: String) -> some View {
-        PickySessionNoteAddonView(sessionID: sessionID, viewModel: viewModel)
+    private func terminalAddon(for session: PickySessionListViewModel.SessionCard) -> some View {
+        PickySessionTerminalAddonView(session: session, viewModel: viewModel)
             .transition(.opacity)
     }
 
@@ -637,7 +638,7 @@ struct PickyHUDView: View {
         cancelPendingClose()
         let title = (visibleSessions + viewModel.sessions).first(where: { $0.id == sessionID })?.title ?? "Pickle"
         viewModel.archive(sessionID: sessionID)
-        noteOpenSessionIDs.remove(sessionID)
+        terminalAddonOpenSessionIDs.remove(sessionID)
         if heldSession?.sessionID == sessionID { heldSession = nil }
         if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
         if suppressedHoverSessionID == sessionID { suppressedHoverSessionID = nil }
@@ -774,12 +775,13 @@ struct PickyHUDView: View {
             return true
         }
 
-        if PickyHUDKeyboardShortcutPolicy.isSessionNoteShortcut(
+        if PickyHUDKeyboardShortcutPolicy.isTerminalAddonShortcut(
             keyCode: event.keyCode,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
             modifiers: flags
-        ), let activeSession {
-            toggleNote(sessionID: activeSession.id)
+        ), let activeSession,
+           !viewModel.isInlineTerminalMode(sessionID: activeSession.id) {
+            toggleTerminalAddon(sessionID: activeSession.id)
             return true
         }
 
@@ -841,16 +843,16 @@ struct PickyHUDView: View {
         composerFocusRequestID &+= 1
     }
 
-    private func isNoteOpen(sessionID: String) -> Bool {
-        noteOpenSessionIDs.contains(sessionID)
+    private func isTerminalAddonOpen(sessionID: String) -> Bool {
+        terminalAddonOpenSessionIDs.contains(sessionID)
     }
 
-    private func toggleNote(sessionID: String) {
+    private func toggleTerminalAddon(sessionID: String) {
         cancelPendingClose()
-        if noteOpenSessionIDs.contains(sessionID) {
-            noteOpenSessionIDs.remove(sessionID)
+        if terminalAddonOpenSessionIDs.contains(sessionID) {
+            terminalAddonOpenSessionIDs.remove(sessionID)
         } else {
-            noteOpenSessionIDs.insert(sessionID)
+            terminalAddonOpenSessionIDs.insert(sessionID)
             viewModel.markSessionRead(sessionID: sessionID)
         }
     }
@@ -1004,7 +1006,7 @@ enum PickyHUDKeyboardShortcutPolicy {
         return charactersIgnoringModifiers?.lowercased() == "n"
     }
 
-    static func isSessionNoteShortcut(
+    static func isTerminalAddonShortcut(
         keyCode: UInt16,
         charactersIgnoringModifiers: String?,
         modifiers: NSEvent.ModifierFlags

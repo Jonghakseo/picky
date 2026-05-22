@@ -149,6 +149,11 @@ private struct PickyInlineTerminalAttachment: Equatable {
     let attachmentID: String
 }
 
+private struct PickyShellTerminalAttachment: Equatable {
+    let sessionID: String
+    let attachmentID: String
+}
+
 @MainActor
 final class PickySessionListViewModel: ObservableObject {
     struct SessionCard: Equatable, Identifiable {
@@ -364,6 +369,16 @@ final class PickySessionListViewModel: ObservableObject {
     /// This mirrors the separate terminal overlay, which retains its model until
     /// the post-close sync callback fires.
     private var closingInlineTerminalSessionsByCloseID: [UUID: PickyInlineTerminalSession] = [:]
+    /// The one local shell terminal add-on attachment that may render its AppKit
+    /// terminal view. Multiple HUD panels can exist, but a single NSView cannot be
+    /// attached to multiple parents at the same time.
+    @Published private(set) var activeShellTerminalAttachmentSessionID: String?
+    private var activeShellTerminalAttachmentID: String?
+    private var visibleShellTerminalAttachments: [PickyShellTerminalAttachment] = []
+    /// Long-lived local shell terminals keyed by Pickle session ID. Hiding the
+    /// add-on intentionally keeps the shell process alive so reopening resumes the
+    /// same terminal session.
+    private var shellTerminalSessionsBySessionID: [String: PickyShellTerminalSession] = [:]
     /// Sessions that finished or are waiting for input but have not been opened
     /// by the user yet. Lives on the view model (single source of truth) so all
     /// dock instances render the indicator in sync.
@@ -402,7 +417,6 @@ final class PickySessionListViewModel: ObservableObject {
     private var manualOrder: [String] = []
     private let composerDraftStore: PickyComposerDraftStoring
     private let composerAttachmentDraftStore: PickyComposerAttachmentDraftStoring
-    private let sessionNoteStore: PickySessionNoteStoring
     private let recentPickleFolderStore: PickyRecentPickleFolderStoring
     private let artifactPathValidator: PickyArtifactPathValidator
     private let clipboardWriter: PickyClipboardWriting
@@ -454,7 +468,6 @@ final class PickySessionListViewModel: ObservableObject {
         manualOrderStore: PickySessionManualOrderStoring = PickyUserDefaultsSessionManualOrderStore.shared,
         composerDraftStore: PickyComposerDraftStoring = PickyUserDefaultsComposerDraftStore.shared,
         composerAttachmentDraftStore: PickyComposerAttachmentDraftStoring = PickyUserDefaultsComposerAttachmentDraftStore.shared,
-        sessionNoteStore: PickySessionNoteStoring = PickyUserDefaultsSessionNoteStore.shared,
         recentPickleFolderStore: PickyRecentPickleFolderStoring = PickyNoopRecentPickleFolderStore(),
         artifactPathValidator: PickyArtifactPathValidator = PickyArtifactPathValidator(appSupportRoot: PickyAppSupport.defaultRoot()),
         clipboardWriter: PickyClipboardWriting = PickyPasteboardClipboardWriter(),
@@ -477,7 +490,7 @@ final class PickySessionListViewModel: ObservableObject {
         self.manualOrder = manualOrderStore.manualOrder
         self.composerDraftStore = composerDraftStore
         self.composerAttachmentDraftStore = composerAttachmentDraftStore
-        self.sessionNoteStore = sessionNoteStore
+        PickyLegacySessionNoteData.remove()
         self.recentPickleFolderStore = recentPickleFolderStore
         self.recentPickleCwds = recentPickleFolderStore.recentPickleCwds
         self.artifactPathValidator = artifactPathValidator
@@ -803,14 +816,6 @@ final class PickySessionListViewModel: ObservableObject {
 
     func updateComposerAttachmentPaths(_ paths: [String], sessionID: String) {
         composerAttachmentDraftStore.setAttachmentPaths(paths, for: sessionID)
-    }
-
-    func persistedSessionNote(for sessionID: String) -> String {
-        sessionNoteStore.note(for: sessionID) ?? ""
-    }
-
-    func updateSessionNote(_ note: String, sessionID: String) {
-        sessionNoteStore.setNote(note, for: sessionID)
     }
 
     func appendComposerDraftText(_ text: String, sessionID: String) {
@@ -1278,6 +1283,66 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
+    func shellTerminalSession(for session: SessionCard) -> PickyShellTerminalSession {
+        if let existing = shellTerminalSessionsBySessionID[session.id] {
+            return existing
+        }
+        let shellSession = PickyShellTerminalSession(
+            sessionID: session.id,
+            title: session.title,
+            cwd: session.cwd,
+            fontScalePersister: PickyTerminalFontScalePersister.defaultSettings()
+        )
+        shellTerminalSessionsBySessionID[session.id] = shellSession
+        return shellSession
+    }
+
+    func isShellTerminalAttachmentActive(sessionID: String, attachmentID: String) -> Bool {
+        activeShellTerminalAttachmentSessionID == sessionID && activeShellTerminalAttachmentID == attachmentID
+    }
+
+    func activateShellTerminalAttachment(sessionID: String, attachmentID: String) {
+        guard (sessions + archivedSessions).contains(where: { $0.id == sessionID }) else { return }
+        let attachment = PickyShellTerminalAttachment(sessionID: sessionID, attachmentID: attachmentID)
+        visibleShellTerminalAttachments.removeAll { $0 == attachment }
+        visibleShellTerminalAttachments.append(attachment)
+        activeShellTerminalAttachmentSessionID = sessionID
+        activeShellTerminalAttachmentID = attachmentID
+    }
+
+    func releaseShellTerminalAttachment(sessionID: String, attachmentID: String) {
+        let releasedActiveAttachment = activeShellTerminalAttachmentSessionID == sessionID && activeShellTerminalAttachmentID == attachmentID
+        visibleShellTerminalAttachments.removeAll { $0.sessionID == sessionID && $0.attachmentID == attachmentID }
+        guard releasedActiveAttachment else { return }
+        promoteLastVisibleShellTerminalAttachment()
+    }
+
+    private func removeVisibleShellTerminalAttachments(sessionID: String) {
+        let removedActiveSession = activeShellTerminalAttachmentSessionID == sessionID
+        visibleShellTerminalAttachments.removeAll { $0.sessionID == sessionID }
+        if removedActiveSession {
+            promoteLastVisibleShellTerminalAttachment()
+        }
+    }
+
+    private func promoteLastVisibleShellTerminalAttachment() {
+        while let next = visibleShellTerminalAttachments.last {
+            if (sessions + archivedSessions).contains(where: { $0.id == next.sessionID }) {
+                activeShellTerminalAttachmentSessionID = next.sessionID
+                activeShellTerminalAttachmentID = next.attachmentID
+                return
+            }
+            visibleShellTerminalAttachments.removeLast()
+        }
+        activeShellTerminalAttachmentSessionID = nil
+        activeShellTerminalAttachmentID = nil
+    }
+
+    private func closeShellTerminalSession(sessionID: String) {
+        removeVisibleShellTerminalAttachments(sessionID: sessionID)
+        shellTerminalSessionsBySessionID.removeValue(forKey: sessionID)?.close()
+    }
+
     func openTerminalOverlay(sessionID: String) {
         pickySessionLog("open terminal overlay session=\(sessionID)")
         guard let session = (sessions + archivedSessions).first(where: { $0.id == sessionID }),
@@ -1339,6 +1404,7 @@ final class PickySessionListViewModel: ObservableObject {
         if isInlineTerminalMode(sessionID: sessionID) {
             disableInlineTerminalMode(sessionID: sessionID)
         }
+        closeShellTerminalSession(sessionID: sessionID)
         releasedArchivedChildSessionIDs.remove(sessionID)
         var archivedIDs = archiveStore.archivedSessionIDs
         archivedIDs.insert(sessionID)
@@ -1839,6 +1905,10 @@ final class PickySessionListViewModel: ObservableObject {
         for sessionID in removedInlineTerminalIDs {
             removeVisibleInlineTerminalAttachments(sessionID: sessionID)
             closeInlineTerminalSession(sessionID: sessionID)
+        }
+        let removedShellTerminalIDs = Set(shellTerminalSessionsBySessionID.keys).subtracting(knownSessionIDs)
+        for sessionID in removedShellTerminalIDs {
+            closeShellTerminalSession(sessionID: sessionID)
         }
         if let screenContextTargetSessionID, !knownSessionIDs.contains(screenContextTargetSessionID) {
             clearScreenContextTarget(sessionID: screenContextTargetSessionID)

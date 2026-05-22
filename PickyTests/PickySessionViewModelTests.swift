@@ -126,22 +126,6 @@ private final class FakeComposerDraftStore: PickyComposerDraftStoring {
     }
 }
 
-private final class FakeSessionNoteStore: PickySessionNoteStoring {
-    var notes: [String: String] = [:]
-
-    func note(for sessionID: String) -> String? {
-        notes[sessionID]
-    }
-
-    func setNote(_ note: String?, for sessionID: String) {
-        if let note, !note.isEmpty {
-            notes[sessionID] = note
-        } else {
-            notes.removeValue(forKey: sessionID)
-        }
-    }
-}
-
 private final class FakeClipboardWriter: PickyClipboardWriting {
     private(set) var copied: [String] = []
 
@@ -608,37 +592,6 @@ struct PickySessionViewModelTests {
 
         #expect(draftStore.prunedKnownSessionIDs == ["session-1"])
         #expect(draftStore.drafts == ["session-1": "keep me"])
-    }
-
-    @MainActor @Test func sessionSnapshotKeepsPersistedSessionNotesForAbsentSessions() {
-        let noteStore = FakeSessionNoteStore()
-        noteStore.notes = ["session-1": "keep me", "missing-session": "keep me too"]
-        let viewModel = PickySessionListViewModel(
-            client: FakePickyAgentClient(),
-            notificationCenter: PickyNoopNotificationCenter(),
-            sessionNoteStore: noteStore
-        )
-
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionSnapshot(id: "session-1", status: "running"))))
-
-        #expect(noteStore.notes == ["session-1": "keep me", "missing-session": "keep me too"])
-    }
-
-    @Test func sessionNotesPersistThroughViewModelStore() {
-        let noteStore = FakeSessionNoteStore()
-        let viewModel = PickySessionListViewModel(
-            client: FakePickyAgentClient(),
-            notificationCenter: PickyNoopNotificationCenter(),
-            sessionNoteStore: noteStore
-        )
-
-        viewModel.updateSessionNote("check alerts", sessionID: "session-1")
-
-        #expect(viewModel.persistedSessionNote(for: "session-1") == "check alerts")
-        #expect(noteStore.notes["session-1"] == "check alerts")
-
-        viewModel.updateSessionNote("", sessionID: "session-1")
-        #expect(viewModel.persistedSessionNote(for: "session-1") == "")
     }
 
     @MainActor @Test func askUserQuestionRequestStoresQuestionsAndSendsCompositeAnswer() async throws {
@@ -1119,9 +1072,9 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDKeyboardShortcutPolicy.isNotifyOnCompletionShortcut(keyCode: 45, charactersIgnoringModifiers: "n", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.isNotifyOnCompletionShortcut(keyCode: 45, charactersIgnoringModifiers: "n", modifiers: .control) == false)
         #expect(PickyHUDKeyboardShortcutPolicy.isNotifyOnCompletionShortcut(keyCode: 0, charactersIgnoringModifiers: "N", modifiers: .command) == true)
-        #expect(PickyHUDKeyboardShortcutPolicy.isSessionNoteShortcut(keyCode: 14, charactersIgnoringModifiers: "e", modifiers: .command) == true)
-        #expect(PickyHUDKeyboardShortcutPolicy.isSessionNoteShortcut(keyCode: 14, charactersIgnoringModifiers: "e", modifiers: .control) == false)
-        #expect(PickyHUDKeyboardShortcutPolicy.isSessionNoteShortcut(keyCode: 0, charactersIgnoringModifiers: "E", modifiers: .command) == true)
+        #expect(PickyHUDKeyboardShortcutPolicy.isTerminalAddonShortcut(keyCode: 14, charactersIgnoringModifiers: "e", modifiers: .command) == true)
+        #expect(PickyHUDKeyboardShortcutPolicy.isTerminalAddonShortcut(keyCode: 14, charactersIgnoringModifiers: "e", modifiers: .control) == false)
+        #expect(PickyHUDKeyboardShortcutPolicy.isTerminalAddonShortcut(keyCode: 0, charactersIgnoringModifiers: "E", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.isScreenContextTargetShortcut(keyCode: 40, charactersIgnoringModifiers: "k", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.isScreenContextTargetShortcut(keyCode: 40, charactersIgnoringModifiers: "k", modifiers: .control) == false)
         #expect(PickyHUDKeyboardShortcutPolicy.isScreenContextTargetShortcut(keyCode: 0, charactersIgnoringModifiers: "K", modifiers: .command) == true)
@@ -2990,6 +2943,30 @@ struct PickySessionViewModelTests {
 
     @Test func terminalCommandDefaultsBlankCwdToHomeDirectory() throws {
         #expect(PickyPiTerminalCommand.workingDirectory(from: "  ") == FileManager.default.homeDirectoryForCurrentUser.path)
+    }
+
+    @Test func shellTerminalCommandResolvesShellAndWorkingDirectory() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("picky-shell-terminal-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        #expect(PickyShellTerminalCommand.resolvedShell(environment: ["SHELL": "/bin/sh"]) == "/bin/sh")
+        #expect(PickyShellTerminalCommand.resolvedShell(environment: ["SHELL": "/definitely/missing-shell"]) == "/bin/bash")
+        #expect(PickyShellTerminalCommand.workingDirectory(from: directory.path) == directory.path)
+        #expect(PickyShellTerminalCommand.workingDirectory(from: directory.appendingPathComponent("missing").path) == FileManager.default.homeDirectoryForCurrentUser.path)
+    }
+
+    @Test func shellTerminalEnvironmentPrependsFinderSafePath() throws {
+        let environment = PickyShellTerminalCommand.makeEnvironment([
+            "PATH": "/custom/bin",
+            "LANG": "ko_KR.UTF-8",
+        ])
+
+        #expect(environment.contains("PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/custom/bin"))
+        #expect(environment.contains("TERM=xterm-256color"))
+        #expect(environment.contains("COLORTERM=truecolor"))
+        #expect(environment.contains("LANG=ko_KR.UTF-8"))
+        #expect(environment.contains("LC_CTYPE=en_US.UTF-8"))
     }
 
     @Test func terminalCommandEnvironmentPrependsFinderSafePath() throws {

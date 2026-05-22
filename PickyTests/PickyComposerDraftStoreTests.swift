@@ -31,22 +31,16 @@ struct PickyComposerDraftStoreTests {
         #expect(reloaded.draft(for: "session-1") == nil)
     }
 
-    @Test func sessionNoteStorePersistsAndClearsNotesBySessionID() throws {
-        let suiteName = "PickySessionNoteStoreTests.\(UUID().uuidString)"
+    @Test func legacySessionNoteDataRemovesOldUserDefaultsKey() throws {
+        let suiteName = "PickyLegacySessionNoteDataTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        let store = PickyUserDefaultsSessionNoteStore(defaults: defaults)
-        store.setNote("release checklist", for: "session-1")
-        store.setNote("qa notes", for: "session-2")
+        defaults.set(["session-1": "release checklist"], forKey: PickyLegacySessionNoteData.key)
 
-        let reloaded = PickyUserDefaultsSessionNoteStore(defaults: defaults)
-        #expect(reloaded.note(for: "session-1") == "release checklist")
-        #expect(reloaded.note(for: "session-2") == "qa notes")
+        PickyLegacySessionNoteData.remove(defaults: defaults)
 
-        reloaded.setNote("", for: "session-2")
-        #expect(reloaded.note(for: "session-2") == nil)
-        #expect(reloaded.note(for: "session-1") == "release checklist")
+        #expect(defaults.object(forKey: PickyLegacySessionNoteData.key) == nil)
     }
 
     @Test func attachmentStorePersistsClearsAndPrunesPathsBySessionID() throws {

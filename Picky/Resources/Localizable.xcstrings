@@ -957,22 +957,6 @@
         }
       }
     },
-    "hud.sessionNote.placeholder": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Private notes for you only — not shared with pi…"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "나만 볼 수 있는 메모 — pi에게 전달되지 않아요…"
-          }
-        }
-      }
-    },
     "hud.toolHistory.empty": {
       "localizations": {
         "en": {

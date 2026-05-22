@@ -43,9 +43,9 @@ struct PickyConversationComposerView: View {
     @Binding private var droppedFilePaths: [String]
     let isFileDropTargeted: Bool
     let focusRequestID: Int
-    let isNoteOpen: Bool
+    let isTerminalAddonOpen: Bool
     let isCommandShortcutHintVisible: Bool
-    var onToggleNote: () -> Void
+    var onToggleTerminalAddon: () -> Void
     @State private var draft: String = ""
     @State private var attachments: [PickyComposerAttachment] = []
     @State private var attachmentContentWidth: CGFloat = 0
@@ -65,18 +65,18 @@ struct PickyConversationComposerView: View {
         droppedFilePaths: Binding<[String]> = .constant([]),
         isFileDropTargeted: Bool = false,
         focusRequestID: Int = 0,
-        isNoteOpen: Bool = false,
+        isTerminalAddonOpen: Bool = false,
         isCommandShortcutHintVisible: Bool = false,
-        onToggleNote: @escaping () -> Void = { }
+        onToggleTerminalAddon: @escaping () -> Void = { }
     ) {
         self.session = session
         self.viewModel = viewModel
         self._droppedFilePaths = droppedFilePaths
         self.isFileDropTargeted = isFileDropTargeted
         self.focusRequestID = focusRequestID
-        self.isNoteOpen = isNoteOpen
+        self.isTerminalAddonOpen = isTerminalAddonOpen
         self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
-        self.onToggleNote = onToggleNote
+        self.onToggleTerminalAddon = onToggleTerminalAddon
     }
 
     var body: some View {
@@ -173,14 +173,14 @@ struct PickyConversationComposerView: View {
         } else {
             VStack(spacing: 4) {
                 notifyOrDropButton
-                noteButton
+                terminalButton
             }
             .frame(width: 24)
         }
     }
 
-    /// Replaces the notify/note column when the draft is in bash-execution
-    /// mode. The notify/note shortcuts (⌘N / ⌘E) still work from the
+    /// Replaces the notify/terminal column when the draft is in bash-execution
+    /// mode. The notify/terminal shortcuts (⌘N / ⌘E) still work from the
     /// keyboard — they're just out of sight while the user is composing a
     /// shell command, which is itself a short-lived state.
     private var bashModeBadge: some View {
@@ -236,14 +236,14 @@ struct PickyConversationComposerView: View {
         }
     }
 
-    private var noteButton: some View {
-        Button(action: onToggleNote) {
-            Image(systemName: "note.text")
+    private var terminalButton: some View {
+        Button(action: onToggleTerminalAddon) {
+            Image(systemName: "terminal.fill")
                 .font(.system(size: 10.5, weight: .semibold))
-                .foregroundColor(isNoteOpen ? DS.Colors.accentText : DS.Colors.textTertiary)
+                .foregroundColor(isTerminalAddonOpen ? DS.Colors.accentText : DS.Colors.textTertiary)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
-                .background(noteButtonBackground)
+                .background(terminalButtonBackground)
         }
         .buttonStyle(.plain)
         .pointerCursor()
@@ -256,9 +256,9 @@ struct PickyConversationComposerView: View {
                 .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
                 .allowsHitTesting(false)
         }
-        .help("Pickle Note (⌘E)")
-        .accessibilityLabel("Pickle Note")
-        .accessibilityValue(isNoteOpen ? "Open" : "Closed")
+        .help("Pickle Terminal (⌘E)")
+        .accessibilityLabel("Pickle Terminal")
+        .accessibilityValue(isTerminalAddonOpen ? "Open" : "Closed")
     }
 
     private func shortcutBadge(_ letter: String) -> some View {
@@ -278,12 +278,12 @@ struct PickyConversationComposerView: View {
         .accessibilityHidden(true)
     }
 
-    private var noteButtonBackground: some View {
+    private var terminalButtonBackground: some View {
         RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .fill(isNoteOpen ? DS.Colors.accentSubtle.opacity(0.24) : Color.clear)
+            .fill(isTerminalAddonOpen ? DS.Colors.accentSubtle.opacity(0.24) : Color.clear)
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(isNoteOpen ? DS.Colors.accentText.opacity(0.28) : Color.clear, lineWidth: 0.5)
+                    .stroke(isTerminalAddonOpen ? DS.Colors.accentText.opacity(0.28) : Color.clear, lineWidth: 0.5)
             )
     }
 

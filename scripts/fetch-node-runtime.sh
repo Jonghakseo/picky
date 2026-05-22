@@ -43,7 +43,7 @@ validate_node_binary() {
     return 1
   fi
 
-  if ! actual="$(${node_path} --version 2>&1)"; then
+  if ! actual="$("${node_path}" --version 2>&1)"; then
     VALIDATION_ACTUAL="${actual:-command failed with no output}"
     return 1
   fi

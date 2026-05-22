@@ -95,26 +95,25 @@ struct CompanionPanelView: View {
                         .padding(.top, 14)
                         .padding(.bottom, 12)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                case .status, .settings:
-                    ScrollView(.vertical, showsIndicators: selectedTab == .settings) {
-                        Group {
-                            switch selectedTab {
-                            case .status:
-                                CompanionPanelStatusView(
-                                    companionManager: companionManager,
-                                    settingsViewModel: settingsViewModel,
-                                    route: statusRouteBinding
-                                )
-                            case .messages:
-                                EmptyView()
-                            case .settings:
-                                CompanionPanelSettingsView(
-                                    viewModel: settingsViewModel,
-                                    companionManager: companionManager,
-                                    route: settingsRouteBinding
-                                )
-                            }
-                        }
+                case .status:
+                    ScrollView(.vertical, showsIndicators: false) {
+                        CompanionPanelStatusView(
+                            companionManager: companionManager,
+                            settingsViewModel: settingsViewModel,
+                            route: statusRouteBinding
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+                        .padding(.bottom, 12)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                case .settings:
+                    ScrollView(.vertical, showsIndicators: true) {
+                        CompanionPanelSettingsView(
+                            viewModel: settingsViewModel,
+                            companionManager: companionManager,
+                            route: settingsRouteBinding
+                        )
                         .padding(.horizontal, 16)
                         .padding(.top, 14)
                         .padding(.bottom, 12)

@@ -91,25 +91,46 @@ enum CompanionPanelSettingsRoute: Hashable {
     }
 }
 
-/// Order of the categories shown on the Settings index. Kept separate from
-/// the enum so we can rearrange without disturbing the type.
-private let companionPanelSettingsRouteOrder: [CompanionPanelSettingsRoute] = [
-    .general,
-    .mainAgent,
-    .pickle,
-    .notification,
-    .cursorBubbles,
-    .voice,
-    .shortcuts,
-    .builtinTools
-    // `.onboarding` is intentionally hidden from the user-visible index. The
-    // route/section/view still exist so the takeover overlay (later phases) can
-    // mark completion through the same plumbing, and so dev builds can re-enable
-    // the Replay entry with a single-line edit. Don't remove the case.
-    //
-    // Feedback is not a Settings sub-page anymore — it renders as a
-    // panel-level overlay reached from the Status tab’s entry row.
+/// Visual grouping for the Settings index. Each group renders as a small
+/// uppercase header followed by its leaf rows. Order inside the file is the
+/// order the user sees — rearrange here, not by editing the enum.
+///
+/// `.onboarding` is intentionally absent from every group. The route/section/
+/// view still exist so the takeover overlay (later phases) can mark completion
+/// through the same plumbing, and so dev builds can re-enable the Replay entry
+/// with a single-line edit. Don't remove the case.
+///
+/// Feedback is not a Settings sub-page anymore — it renders as a panel-level
+/// overlay reached from the Status tab’s entry row.
+struct CompanionPanelSettingsGroup: Identifiable {
+    let id: String
+    let titleKey: LocalizedStringKey
+    let routes: [CompanionPanelSettingsRoute]
+}
+
+private let companionPanelSettingsGroups: [CompanionPanelSettingsGroup] = [
+    CompanionPanelSettingsGroup(
+        id: "general",
+        titleKey: "settings.group.general.title",
+        routes: [.general, .shortcuts]
+    ),
+    CompanionPanelSettingsGroup(
+        id: "agents",
+        titleKey: "settings.group.agents.title",
+        routes: [.mainAgent, .pickle, .builtinTools]
+    ),
+    CompanionPanelSettingsGroup(
+        id: "surface",
+        titleKey: "settings.group.surface.title",
+        routes: [.voice, .notification, .cursorBubbles]
+    )
 ]
+
+/// Flat order of every user-visible route, derived from the groups. Kept as a
+/// computed convenience for any caller that just needs to iterate every leaf.
+private var companionPanelSettingsRouteOrder: [CompanionPanelSettingsRoute] {
+    companionPanelSettingsGroups.flatMap(\.routes)
+}
 
 enum CompanionPanelSettingsSaveStatus: Equatable {
     case idle
@@ -264,40 +285,127 @@ struct CompanionPanelSettingsView: View {
 
     private var indexView: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(companionPanelSettingsRouteOrder.enumerated()), id: \.element) { index, item in
-                Button(action: { route = item }) {
-                    HStack(alignment: .center, spacing: 10) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.title)
-                                .font(.system(size: 12.5, weight: .semibold))
-                                .foregroundColor(DS.Colors.textPrimary)
-                            if let subtitle = item.subtitle {
-                                Text(subtitle)
-                                    .font(.system(size: 10.5, weight: .medium))
-                                    .foregroundColor(DS.Colors.textTertiary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        Spacer(minLength: 8)
-                        if let section = item.section {
-                            statusIndicator(for: section)
-                        }
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(DS.Colors.textTertiary)
+            ForEach(companionPanelSettingsGroups) { group in
+                indexGroupHeader(group)
+                ForEach(Array(group.routes.enumerated()), id: \.element) { rowIndex, item in
+                    indexRow(for: item)
+                    if rowIndex < group.routes.count - 1 {
+                        Divider()
+                            .background(DS.Colors.borderSubtle.opacity(0.3))
                     }
-                    .padding(.vertical, 9)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .pointerCursor()
-
-                if index < companionPanelSettingsRouteOrder.count - 1 {
-                    Divider()
-                        .background(DS.Colors.borderSubtle.opacity(0.3))
                 }
             }
         }
+    }
+
+    private func indexGroupHeader(_ group: CompanionPanelSettingsGroup) -> some View {
+        Text(group.titleKey)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundColor(DS.Colors.textTertiary)
+            .textCase(.uppercase)
+            .tracking(0.6)
+            .padding(.top, 12)
+            .padding(.bottom, 2)
+            .padding(.leading, 2)
+    }
+
+    /// Single tappable row on the Settings index. Subtitle prefers the live
+    /// summary built from the current settings (so the user can recognise the
+    /// state without drilling in) and falls back to the route's static blurb
+    /// when no summary is meaningful (e.g. the hidden onboarding route).
+    private func indexRow(for item: CompanionPanelSettingsRoute) -> some View {
+        Button(action: { route = item }) {
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundColor(DS.Colors.textPrimary)
+                    if let subtitle = indexSubtitle(for: item) {
+                        Text(subtitle)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(DS.Colors.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 8)
+                if let section = item.section {
+                    statusIndicator(for: section)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(DS.Colors.textTertiary)
+            }
+            .padding(.vertical, 9)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
+    }
+
+    /// Resolves the subtitle text shown under each index row. Live summaries
+    /// win over the static description so the index always reflects the
+    /// user's current configuration.
+    private func indexSubtitle(for route: CompanionPanelSettingsRoute) -> String? {
+        if let summary = indexSummary(for: route), !summary.isEmpty {
+            return summary
+        }
+        return route.subtitle
+    }
+
+    /// Short value-summary for each route, built from the live view-model so
+    /// the index doubles as a status overview. Returns `nil` for routes where
+    /// no compact summary exists (e.g. the hidden onboarding entry); the
+    /// caller then falls back to the static subtitle.
+    private func indexSummary(for route: CompanionPanelSettingsRoute) -> String? {
+        let settings = viewModel.settings
+        switch route {
+        case .index, .onboarding:
+            return nil
+        case .general:
+            return String(localized: settings.appLanguage.displayKey)
+        case .shortcuts:
+            let ptt = settings.pushToTalkShortcut.summaryString
+            let qi = settings.quickInputShortcut.summaryString
+            return L10n.t("settings.summary.shortcuts", ptt, qi)
+        case .mainAgent:
+            let runtime = settings.mainAgentRuntimeMode.displayName
+            let model = indexModelLabel(settings.mainAgentModelPattern)
+            return "\(runtime) \u{00B7} \(model)"
+        case .pickle:
+            let model = indexModelLabel(settings.pickleAgentModelPattern)
+            let dock = settings.hudDockSizePreset.displayName
+            return L10n.t("settings.summary.pickle", model, dock)
+        case .builtinTools:
+            let total = PickyBuiltinTool.allCases.count
+            let enabled = total - settings.disabledBuiltinTools.count
+            return L10n.t("settings.summary.tools", enabled, total)
+        case .voice:
+            let stt = settings.sttProvider.displayName(for: .transcription)
+            let tts: String = settings.ttsEnabled
+                ? settings.ttsProvider.displayName(for: .speechPlayback)
+                : L10n.t("settings.summary.off")
+            return L10n.t("settings.summary.voice", stt, tts)
+        case .notification:
+            let n = settings.notifications
+            let enabled = [n.notifyOnCompleted, n.notifyOnFailed, n.notifyOnWaitingForInput]
+                .filter { $0 }
+                .count
+            return L10n.t("settings.summary.alerts", enabled, 3)
+        case .cursorBubbles:
+            let cursor = settings.cursor.showPiCursor
+                ? L10n.t("settings.summary.cursorOn")
+                : L10n.t("settings.summary.cursorOff")
+            let bubbles = [
+                settings.overlayBubbles.showUserSpeechRecognitionBubble,
+                settings.overlayBubbles.showPickyResponseBubble
+            ].filter { $0 }.count
+            return L10n.t("settings.summary.cursorBubbles", cursor, bubbles, 2)
+        }
+    }
+
+    private func indexModelLabel(_ pattern: String) -> String {
+        let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? L10n.t("settings.summary.auto") : trimmed
     }
 
     private var pickleSection: some View {

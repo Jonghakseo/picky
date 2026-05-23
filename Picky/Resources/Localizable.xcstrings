@@ -5013,6 +5013,227 @@
           }
         }
       }
+    },
+    "settings.group.general.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "General"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일반"
+          }
+        }
+      },
+      "comment": "Settings index group header: general/system-wide settings."
+    },
+    "settings.group.agents.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agents"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트"
+          }
+        }
+      },
+      "comment": "Settings index group header: Picky/Pickle/Tools — the agent identities and what they can do."
+    },
+    "settings.group.surface.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Surface"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표시"
+          }
+        }
+      },
+      "comment": "Settings index group header: Voice / Notifications / Cursor — what Picky surfaces back to the user."
+    },
+    "settings.summary.shortcuts": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PTT %@ · Quick Input %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PTT %@ · 퀵 입력 %@"
+          }
+        }
+      },
+      "comment": "Settings index subtitle for Shortcuts. Args: 1=push-to-talk glyph, 2=quick input glyph."
+    },
+    "settings.summary.pickle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · Dock %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 독 %@"
+          }
+        }
+      },
+      "comment": "Settings index subtitle for Pickle. Args: 1=model label or 'Auto', 2=dock size short name."
+    },
+    "settings.summary.tools": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld enabled"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld개 사용"
+          }
+        }
+      },
+      "comment": "Settings index subtitle for built-in tools. Args: 1=enabled count, 2=total count."
+    },
+    "settings.summary.voice": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "STT %@ · TTS %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "STT %@ · TTS %@"
+          }
+        }
+      },
+      "comment": "Settings index subtitle for Voice. Args: 1=STT provider, 2=TTS provider or 'off'."
+    },
+    "settings.summary.alerts": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld alerts"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "알림 %lld / %lld개"
+          }
+        }
+      },
+      "comment": "Settings index subtitle for Notifications. Args: 1=enabled count, 2=total count."
+    },
+    "settings.summary.cursorBubbles": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %lld / %lld bubbles"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 버블 %lld / %lld개"
+          }
+        }
+      },
+      "comment": "Settings index subtitle for Cursor & Bubbles. Args: 1=cursor on/off phrase, 2=enabled bubble count, 3=total bubble count."
+    },
+    "settings.summary.off": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "off"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "끔"
+          }
+        }
+      },
+      "comment": "Inline 'off' token used inside summary strings (e.g. 'TTS off')."
+    },
+    "settings.summary.cursorOn": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cursor on"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "커서 켬"
+          }
+        }
+      },
+      "comment": "Cursor on phrase used inside the Cursor & Bubbles index summary."
+    },
+    "settings.summary.cursorOff": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cursor off"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "커서 끔"
+          }
+        }
+      },
+      "comment": "Cursor off phrase used inside the Cursor & Bubbles index summary."
+    },
+    "settings.summary.auto": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자동"
+          }
+        }
+      },
+      "comment": "Model picker fallback label shown on the index when no model is pinned."
     }
   },
   "version": "1.0"

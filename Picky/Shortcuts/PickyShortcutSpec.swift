@@ -49,6 +49,27 @@ enum PickyShortcutSpec: Codable, Equatable {
         }
     }
 
+    /// Compact text form for inline summaries (Settings index subtitle, etc.).
+    /// Uses standard macOS modifier glyphs (⌃⌥⇧⌘) so the spec collapses to one
+    /// short string without the chip-row chrome the full key-cap view needs.
+    /// A double-tap of a single modifier renders as the glyph repeated twice.
+    var summaryString: String {
+        switch self {
+        case .modifierCombo(let modifiers, let keyCode):
+            var parts: [String] = PickyShortcutKeyCap.orderedSingleModifiers.compactMap { modifier in
+                guard modifiers.contains(modifier) else { return nil }
+                return PickyShortcutKeyCap.modifierGlyph(for: modifier)
+            }
+            if let keyCode, let label = PickyShortcutKeyCodeMap.label(for: keyCode) {
+                parts.append(label)
+            }
+            return parts.joined()
+        case .doubleTapModifier(let modifier):
+            guard let glyph = PickyShortcutKeyCap.modifierGlyph(for: modifier) else { return "" }
+            return glyph + glyph
+        }
+    }
+
     /// Sequence of key caps to render in the UI, left-to-right.
     var keyCaps: [PickyShortcutKeyCap] {
         switch self {
@@ -183,10 +204,24 @@ struct PickyShortcutKeyCap: Equatable, Identifiable {
     // MARK: - Internals
 
     /// Modifier ordering used in the key-cap row; matches the layout shown in
-    /// macOS System Settings → Keyboard → Shortcuts.
-    private static let orderedSingleModifiers: [NSEvent.ModifierFlags] = [
+    /// macOS System Settings → Keyboard → Shortcuts. Internal so `summaryString`
+    /// on `PickyShortcutSpec` can reuse the same canonical order.
+    static let orderedSingleModifiers: [NSEvent.ModifierFlags] = [
         .function, .control, .option, .shift, .command
     ]
+
+    /// Unicode glyph for a single modifier flag, used by compact summaries.
+    /// Returns `nil` for unrecognised flags so callers can skip them silently.
+    static func modifierGlyph(for modifier: NSEvent.ModifierFlags) -> String? {
+        switch modifier {
+        case .function: return "fn"
+        case .control: return "\u{2303}"
+        case .option: return "\u{2325}"
+        case .shift: return "\u{21E7}"
+        case .command: return "\u{2318}"
+        default: return nil
+        }
+    }
 
     private static func modifierCap(_ modifier: NSEvent.ModifierFlags) -> PickyShortcutKeyCap {
         switch modifier {

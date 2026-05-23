@@ -957,18 +957,6 @@ struct PickySettings: Codable, Equatable {
     static let maxStoredRecentPickleCwds = 8
     static let maxVisibleRecentPickleCwds = 5
 
-    /// Drop empty drafts before persisting so settings.json never carries
-    /// `{kind: .pi, command: ""}` placeholders that would still report as
-    /// "configured" to the chip click handler.
-    mutating func normalizeGitChipActions() {
-        if gitChipActions.diffAction?.isConfigured == false {
-            gitChipActions.diffAction = nil
-        }
-        if gitChipActions.branchAction?.isConfigured == false {
-            gitChipActions.branchAction = nil
-        }
-    }
-
     /// Clamp any incoming value (slider, persisted file, programmatic) to the supported
     /// range. Out-of-range values can come from corrupted settings files or a future
     /// version that widens the range; clamping keeps the runtime in a known-good zone.
@@ -1218,7 +1206,6 @@ struct PickySettings: Codable, Equatable {
         copy.pickleAgentModelPattern = pickleAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.hudCardSizes = hudCardSizes.mapValues { $0.clamped() }
         copy.recentPickleCwds = Self.normalizedRecentPickleCwds(recentPickleCwds)
-        copy.normalizeGitChipActions()
         return copy
     }
 

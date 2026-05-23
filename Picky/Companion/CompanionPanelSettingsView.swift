@@ -438,18 +438,16 @@ struct CompanionPanelSettingsView: View {
         )
     }
 
-    /// Command field writes through to the slot binding. Empty/whitespace text
-    /// clears the slot back to nil so it is treated as "not configured" by
-    /// the chip click handler and the JSON normalizer.
+    /// Command field writes through to the slot binding. Empty text leaves
+    /// the slot in place with whatever kind was selected so the picker does
+    /// not flicker back to ".pi" while the user is still editing. The chip
+    /// click handler treats empty `command` as "not configured" via
+    /// `PickyGitChipAction.isConfigured`, so persisting `{kind, command: ""}`
+    /// is safe.
     private func gitChipCommandBinding(_ action: Binding<PickyGitChipAction?>) -> Binding<String> {
         Binding(
             get: { action.wrappedValue?.command ?? "" },
             set: { newValue in
-                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.isEmpty {
-                    action.wrappedValue = nil
-                    return
-                }
                 if var current = action.wrappedValue {
                     current.command = newValue
                     action.wrappedValue = current

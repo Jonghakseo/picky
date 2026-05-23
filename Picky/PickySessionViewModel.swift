@@ -1510,6 +1510,23 @@ final class PickySessionListViewModel: ObservableObject {
         syncActiveVoiceFollowUpAfterSessionListChange()
     }
 
+    /// Permanently delete every archived Pickle in one shot from the
+    /// Settings → Pickle list header. Snapshots the current archived IDs
+    /// up-front so concurrent restores/incoming events do not slip a row out
+    /// from under the iteration, then funnels each ID through the existing
+    /// single-row delete path so daemon validation, archive-store cleanup,
+    /// and per-session map pruning all stay consistent. No-op when the
+    /// archive is empty so a misrouted call (deep link, test, programmatic)
+    /// never sends spurious deleteSession envelopes.
+    func deleteAllArchivedSessions() {
+        let ids = archivedSessions.map(\.id)
+        guard !ids.isEmpty else { return }
+        pickySessionLog("delete all archived sessions count=\(ids.count)")
+        for sessionID in ids {
+            deleteArchivedSession(sessionID: sessionID)
+        }
+    }
+
     /// Permanently delete an archived Pickle from both the local view model and the
     /// daemon's persisted session store. Triggered from Settings → Pickle. The
     /// daemon validates that the session is archived AND terminal AND has no live

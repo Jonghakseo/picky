@@ -305,6 +305,11 @@ Restore paths after archiving:
 - The card header menu's **Show archived list…** popover (any time the dock has at least one open Pickle card).
 - Asking the Picky main agent to bring it back (e.g. "되살려", "restore that pickle").
 
+Permanently deleting archives:
+
+- Each row in the archived list has its own **Delete** button with a 4-second confirm.
+- The list header also has a **Delete all** button (visible only when the archive is non-empty) that opens a confirmation alert and purges every archived Pickle from both Picky and the local agent's session store in one shot. The action cannot be undone.
+
 ## 8. Pickle conversation card
 
 Click a Pickle dock icon to open its card.

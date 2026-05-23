@@ -829,6 +829,86 @@
         }
       }
     },
+    "hud.archivedList.deleteAll": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete all"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전체 삭제"
+          }
+        }
+      }
+    },
+    "hud.archivedList.confirmDeleteAllTitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permanently delete %lld archived Pickles?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아카이브된 피클 %lld개를 영구 삭제할까요?"
+          }
+        }
+      }
+    },
+    "hud.archivedList.confirmDeleteAllMessage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This action cannot be undone. Every archived Pickle is removed from Picky and from the local agent's session store."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 작업은 되돌릴 수 없어요. 모든 아카이브 피클이 Picky와 로컬 에이전트 세션 저장소에서 함께 제거돼요."
+          }
+        }
+      }
+    },
+    "hud.archivedList.confirmDeleteAllConfirm": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete all"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전체 삭제"
+          }
+        }
+      }
+    },
+    "hud.archivedList.confirmDeleteAllCancel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소"
+          }
+        }
+      }
+    },
     "hud.menu.archive": {
       "localizations": {
         "en": {

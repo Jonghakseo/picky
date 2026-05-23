@@ -2458,6 +2458,57 @@ struct PickySessionViewModelTests {
         #expect(deleteCommand.sessionId == "pickle-1")
     }
 
+    @Test func deleteAllArchivedSessionsPurgesEveryArchivedRowAndSendsDaemonCommands() async throws {
+        let client = FakePickyAgentClient()
+        let archiveStore = FakeArchiveStore()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: archiveStore
+        )
+        viewModel.start()
+        for id in ["pickle-1", "pickle-2", "pickle-3"] {
+            client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: id, title: id, status: "completed"))))
+            try await settle()
+            viewModel.archive(sessionID: id)
+            try await settle()
+        }
+        #expect(Set(viewModel.archivedSessions.map(\.id)) == ["pickle-1", "pickle-2", "pickle-3"])
+
+        viewModel.deleteAllArchivedSessions()
+        try await settle()
+
+        #expect(viewModel.archivedSessions.isEmpty)
+        #expect(viewModel.sessions.isEmpty)
+        #expect(archiveStore.archivedSessionIDs.isEmpty)
+        #expect(archiveStore.manuallyArchivedSessionIDs.isEmpty)
+        let deleteCommandIDs = Set(client.sentCommands.filter { $0.type == .deleteSession }.compactMap(\.sessionId))
+        #expect(deleteCommandIDs == ["pickle-1", "pickle-2", "pickle-3"])
+    }
+
+    @Test func deleteAllArchivedSessionsIsSafeNoOpWhenArchiveIsEmpty() async throws {
+        // Header-level "Delete all" should not fire envelopes or mutate state
+        // when there are no archived rows — the button is hidden in that
+        // case but a misroute (deep link, programmatic call, race) must
+        // remain harmless.
+        let client = FakePickyAgentClient()
+        let archiveStore = FakeArchiveStore()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: archiveStore
+        )
+        viewModel.start()
+        try await settle()
+        #expect(viewModel.archivedSessions.isEmpty)
+
+        viewModel.deleteAllArchivedSessions()
+        try await settle()
+
+        #expect(viewModel.archivedSessions.isEmpty)
+        #expect(!client.sentCommands.contains { $0.type == .deleteSession })
+    }
+
     // MARK: - Manual dock reorder
 
     @MainActor @Test func moveSessionSeedsManualOrderAndReorders() {

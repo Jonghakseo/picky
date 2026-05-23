@@ -17,6 +17,7 @@ struct PickyHUDArchivedSessionsListView: View {
 
     @State private var pendingDeleteSessionID: String?
     @State private var pendingDeleteResetTask: Task<Void, Never>?
+    @State private var isDeleteAllConfirmationPresented = false
 
     /// Time window the two-step delete confirmation stays armed. After this we
     /// snap the row back to the neutral "Delete" label so a stale red state
@@ -48,6 +49,22 @@ struct PickyHUDArchivedSessionsListView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // SwiftUI .alert renders as a native NSAlert-backed modal on macOS,
+        // which is what we want here — "Delete all" is a destructive,
+        // unrecoverable action and the per-row 4-second arm/confirm pattern
+        // is too easy to misfire when many rows could disappear in one shot.
+        .alert(
+            Text(deleteAllConfirmationTitle),
+            isPresented: $isDeleteAllConfirmationPresented
+        ) {
+            Button("hud.archivedList.confirmDeleteAllCancel", role: .cancel) {}
+            Button("hud.archivedList.confirmDeleteAllConfirm", role: .destructive) {
+                resetPendingDelete()
+                viewModel.deleteAllArchivedSessions()
+            }
+        } message: {
+            Text("hud.archivedList.confirmDeleteAllMessage")
+        }
         .onChange(of: archivedSessions.map(\.id)) { _, ids in
             // If the row currently waiting on confirmation disappears (restored,
             // deleted from another surface, etc.) drop the pending state so a
@@ -71,7 +88,38 @@ struct PickyHUDArchivedSessionsListView: View {
                     .foregroundColor(DS.Colors.textTertiary)
             }
             Spacer(minLength: 4)
+            if !archivedSessions.isEmpty {
+                deleteAllButton
+            }
         }
+    }
+
+    private var deleteAllButton: some View {
+        Button {
+            resetPendingDelete()
+            isDeleteAllConfirmationPresented = true
+        } label: {
+            Text("hud.archivedList.deleteAll")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(DS.Colors.destructiveText)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(DS.Colors.destructiveText.opacity(0.10))
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Delete all archived Pickles")
+    }
+
+    /// Localized alert title pre-formatted with the current archived count so
+    /// the SwiftUI alert can be rendered with a plain `Text` (`.alert` does
+    /// not interpolate LocalizedStringKey arguments on macOS the way Text
+    /// initializers do).
+    private var deleteAllConfirmationTitle: String {
+        let format = L10n.t("hud.archivedList.confirmDeleteAllTitle")
+        return String.localizedStringWithFormat(format, archivedSessions.count)
     }
 
     private var emptyState: some View {

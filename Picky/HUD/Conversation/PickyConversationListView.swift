@@ -15,6 +15,14 @@ struct PickyConversationListView: View {
     @State private var delayedQuestionCollapseScrollTask: Task<Void, Never>?
 
     var body: some View {
+        // Compute the per-render slices once and thread them into helpers so a
+        // single body evaluation doesn't fan back out into N+1 repeat calls of
+        // `turnGroups` / `visibleMessages` (each of which walks `session.messages`).
+        // The computed `var`s are preserved for test access — see
+        // PickyConversationCardViewTests.
+        let messages = visibleMessages
+        let groups = turnGroups
+        let hiddenCount = max(0, session.messages.count - messages.count)
         ScrollViewReader { proxy in
             ZStack {
                 ScrollView(.vertical, showsIndicators: false) {
@@ -35,16 +43,16 @@ struct PickyConversationListView: View {
                                 viewModel.dismissTerminalSyncOutcome(sessionID: session.id)
                             }
                         }
-                        if hiddenHistoryCount > 0 {
-                            moreHistoryButton
+                        if hiddenCount > 0 {
+                            moreHistoryButton(hiddenCount: hiddenCount)
                         }
-                        if visibleMessages.isEmpty && !hasQueueOrActivity {
+                        if messages.isEmpty && !hasQueueOrActivity {
                             Color.clear
                                 .frame(height: 24)
                         } else {
-                            ForEach(Array(turnGroups.enumerated()), id: \.element.id) { index, group in
-                                if shouldShowTurnSeparator(before: index) {
-                                    PickyConversationTimeSeparatorView(text: turnSeparatorText(before: index))
+                            ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+                                if shouldShowTurnSeparator(before: index, groups: groups) {
+                                    PickyConversationTimeSeparatorView(text: turnSeparatorText(before: index, groups: groups))
                                 }
                                 turnGroupView(group)
                             }
@@ -384,14 +392,14 @@ struct PickyConversationListView: View {
         max(0, session.messages.count - visibleMessages.count)
     }
 
-    private var moreHistoryButton: some View {
+    private func moreHistoryButton(hiddenCount: Int) -> some View {
         Button(action: {
             viewModel.openTerminalOverlay(sessionID: session.id)
         }) {
             HStack(spacing: 5) {
                 Image(systemName: "terminal.fill")
                     .pickyFont(size: 8.5, weight: .semibold)
-                Text(L10n.t("hud.conversation.viewAsTui", Int64(hiddenHistoryCount)))
+                Text(L10n.t("hud.conversation.viewAsTui", Int64(hiddenCount)))
                     .font(PickyHUDTypography.statusMedium)
             }
             .foregroundColor(DS.Colors.textTertiary)
@@ -437,9 +445,10 @@ struct PickyConversationListView: View {
     /// Time separator between two adjacent turn cards. Inside a turn card,
     /// individual message timing is summarized by the chip in the header so
     /// per-message separators inside the body would be redundant.
-    private func shouldShowTurnSeparator(before index: Int) -> Bool {
+    /// `groups` is threaded in from `body` so the ForEach iteration does not
+    /// re-walk `session.messages` for every turn separator decision.
+    private func shouldShowTurnSeparator(before index: Int, groups: [PickyTurnGroup]) -> Bool {
         guard index > 0 else { return false }
-        let groups = turnGroups
         guard let previous = groups[index - 1].bodyMessages.last?.createdAt
             ?? groups[index - 1].userMessage?.createdAt else { return false }
         guard let current = groups[index].userMessage?.createdAt
@@ -447,9 +456,8 @@ struct PickyConversationListView: View {
         return current.timeIntervalSince(previous) >= 60
     }
 
-    private func turnSeparatorText(before index: Int) -> String {
+    private func turnSeparatorText(before index: Int, groups: [PickyTurnGroup]) -> String {
         guard index > 0 else { return "now" }
-        let groups = turnGroups
         guard let previous = groups[index - 1].bodyMessages.last?.createdAt
             ?? groups[index - 1].userMessage?.createdAt,
             let current = groups[index].userMessage?.createdAt

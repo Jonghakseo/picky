@@ -64,6 +64,7 @@ final class PickyBubbleMarkdownContentView: NSView {
         onCopyText: (() -> Void)?,
         onEditText: (() -> Void)?
     ) {
+        PickyPerf.interval("bubble_configure") {
         let currentScale = PickyAppFontScaleStore.staticCGScale
         let markdownDidChange = markdown != lastMarkdown
         let scaleDidChange = currentScale != cachedFontScale
@@ -76,12 +77,19 @@ final class PickyBubbleMarkdownContentView: NSView {
         // re-invokes SwiftUI's `updateNSView` for this bubble now costs only
         // three property assignments instead of a full cmark parse.
         if markdownDidChange || scaleDidChange {
-            let blocks = renderBlocks(from: markdown)
+            let blocks = PickyPerf.interval("render_blocks") { renderBlocks(from: markdown) }
             if blocks != cachedBlocks || scaleDidChange {
-                blockViews.forEach { $0.removeFromSuperview() }
-                blockViews = blocks.map { makeBlockView(for: $0) }
-                blockViews.forEach { addSubview($0) }
-                cachedBlocks = blocks
+                PickyPerf.interval("rebuild_block_views") {
+                    blockViews.forEach { $0.removeFromSuperview() }
+                    blockViews = blocks.map { makeBlockView(for: $0) }
+                    blockViews.forEach { addSubview($0) }
+                    cachedBlocks = blocks
+                }
+                // Block-view set just changed; stale (width, size) pairs no
+                // longer match the new content. The font-scale-only branch
+                // also lands here (inner `if` guard) so a ⌘+/⌘- rebuild
+                // flushes the cache too.
+                invalidateMeasuredSizeCache()
             }
             // Record the scale even when blocks are unchanged: otherwise
             // every subsequent configure call with the same markdown would
@@ -96,23 +104,50 @@ final class PickyBubbleMarkdownContentView: NSView {
         self.onOpenAsReport = onOpenAsReport
         self.onCopyText = onCopyText
         self.onEditText = onEditText
+        }
     }
 
-    func measuredSize(forWidth width: CGFloat) -> NSSize {
-        let width = max(0, width)
-        guard width > 0, !blockViews.isEmpty else { return .zero }
+    /// Single-slot cache keyed on the requested width. AppKit's layout cycle
+    /// invokes `measuredSize(forWidth:)` many times for the same view at the
+    /// same width during a single pass (the bubble surface needs it to size
+    /// the rounded rect, then `layout()` needs it again to position the
+    /// internal frame). Measurement is deterministic for a fixed block-view
+    /// set so we keep the most recent (width, size) pair and short-circuit
+    /// repeat queries. Profiling showed this single function dominated HUD
+    /// activation time (~83% of hud-perf signpost time) before this cache.
+    private var lastMeasuredWidth: CGFloat?
+    private var lastMeasuredSize: NSSize = .zero
 
-        var measuredWidth: CGFloat = 0
-        var measuredHeight: CGFloat = 0
-        for (index, blockView) in blockViews.enumerated() {
-            let size = blockView.measuredSize(forWidth: width)
-            measuredWidth = max(measuredWidth, size.width)
-            measuredHeight += ceil(size.height)
-            if index < blockViews.count - 1 {
-                measuredHeight += Metrics.blockSpacing
-            }
+    func measuredSize(forWidth width: CGFloat) -> NSSize {
+        if let cachedWidth = lastMeasuredWidth, cachedWidth == width {
+            return lastMeasuredSize
         }
-        return NSSize(width: min(width, ceil(measuredWidth)), height: ceil(measuredHeight))
+        let measured: NSSize = PickyPerf.interval("bubble_measured_size") {
+            let clamped = max(0, width)
+            guard clamped > 0, !blockViews.isEmpty else { return .zero }
+
+            var measuredWidth: CGFloat = 0
+            var measuredHeight: CGFloat = 0
+            for (index, blockView) in blockViews.enumerated() {
+                let size = blockView.measuredSize(forWidth: clamped)
+                measuredWidth = max(measuredWidth, size.width)
+                measuredHeight += ceil(size.height)
+                if index < blockViews.count - 1 {
+                    measuredHeight += Metrics.blockSpacing
+                }
+            }
+            return NSSize(width: min(clamped, ceil(measuredWidth)), height: ceil(measuredHeight))
+        }
+        lastMeasuredWidth = width
+        lastMeasuredSize = measured
+        return measured
+    }
+
+    /// Invalidate the measured-size cache. Called whenever the underlying
+    /// `blockViews` are rebuilt so the next layout pass measures fresh.
+    private func invalidateMeasuredSizeCache() {
+        lastMeasuredWidth = nil
+        lastMeasuredSize = .zero
     }
 
     override func layout() {
@@ -198,7 +233,29 @@ class PickyMarkdownBlockNSView: NSView {
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
 
-    func measuredSize(forWidth width: CGFloat) -> NSSize { .zero }
+    /// Single-slot (width, size) cache. Every concrete subclass holds
+    /// immutable rendered content (NSAttributedString set once in init), so
+    /// measurement is deterministic for a given width across the view's
+    /// lifetime. AppKit calls `measuredSize(forWidth:)` repeatedly for the
+    /// same view at the same width during a single layout pass; caching
+    /// here cuts the bubble-content view's measuredSize cost dramatically.
+    private var lastMeasuredWidth: CGFloat?
+    private var lastMeasuredSize: NSSize = .zero
+
+    final func measuredSize(forWidth width: CGFloat) -> NSSize {
+        if let cachedWidth = lastMeasuredWidth, cachedWidth == width {
+            return lastMeasuredSize
+        }
+        let size = computeMeasuredSize(forWidth: width)
+        lastMeasuredWidth = width
+        lastMeasuredSize = size
+        return size
+    }
+
+    /// Subclasses override this to perform the actual measurement. The base
+    /// class wraps the call in the cache; do not call this directly from
+    /// outside the subclass override — use `measuredSize(forWidth:)`.
+    func computeMeasuredSize(forWidth width: CGFloat) -> NSSize { .zero }
 }
 
 private final class PickyInlineMarkdownBlockView: PickyMarkdownBlockNSView {
@@ -227,7 +284,7 @@ private final class PickyInlineMarkdownBlockView: PickyMarkdownBlockNSView {
         didSet { textView.onEditText = onEditText }
     }
 
-    override func measuredSize(forWidth width: CGFloat) -> NSSize {
+    override func computeMeasuredSize(forWidth width: CGFloat) -> NSSize {
         let width = max(0, width)
         let attributed = textView.attributedString()
         guard width > 0, attributed.length > 0 else { return .zero }
@@ -302,7 +359,7 @@ private final class PickyCodeMarkdownBlockView: PickyMarkdownBlockNSView {
         didSet { textView.onEditText = onEditText }
     }
 
-    override func measuredSize(forWidth width: CGFloat) -> NSSize {
+    override func computeMeasuredSize(forWidth width: CGFloat) -> NSSize {
         let cap = max(0, width)
         guard cap > 0 else { return .zero }
         let textCap = max(0, cap - 2 * Metrics.padding)
@@ -374,7 +431,7 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    override func measuredSize(forWidth width: CGFloat) -> NSSize {
+    override func computeMeasuredSize(forWidth width: CGFloat) -> NSSize {
         let cap = max(0, width)
         guard cap > 0 else { return .zero }
         let textCap = max(0, cap - 2 * Metrics.padding)

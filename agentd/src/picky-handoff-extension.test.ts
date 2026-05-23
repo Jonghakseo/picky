@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 describe("picky-handoff extension protocol contract", () => {
-  it("sends an agentd-compatible pinPickleSession command when the connection file has no protocolVersion", async () => {
+  it("sends an agentd-compatible createPickleFromHandoff command when the connection file has no protocolVersion", async () => {
     const temp = await mkdtemp(join(tmpdir(), "picky-handoff-extension-"));
     process.env.PICKY_AGENTD_CONNECTION_FILE = join(temp, "agentd-connection.json");
     await writeFile(
@@ -31,25 +31,72 @@ describe("picky-handoff extension protocol contract", () => {
     const openedUrls: string[] = [];
     installFakeWebSocket(sentPayloads, openedUrls);
     const registered = await registerExtensionCommand();
+    let abortCalled = 0;
+    let waitForIdleCalled = 0;
 
-    await registered.handler("Pin the idle task", {
+    await registered.handler("keep digging into the failing test", {
       cwd: undefined,
       ui: { notify: () => undefined },
       isIdle: () => true,
+      abort: () => { abortCalled += 1; },
+      waitForIdle: async () => { waitForIdleCalled += 1; },
       sessionManager: {
         getSessionFile: () => "/tmp/pi-session.jsonl",
         getBranch: () => [],
       },
     });
 
+    expect(abortCalled).toBe(0);
+    expect(waitForIdleCalled).toBe(0);
     expect(openedUrls).toEqual(["ws://127.0.0.1:17631/?token=test-token"]);
     expect(sentPayloads).toHaveLength(1);
     const parsed = CommandEnvelopeSchema.parse(sentPayloads[0]);
-    expect(parsed.type).toBe("pinPickleSession");
+    expect(parsed.type).toBe("createPickleFromHandoff");
     expect(parsed.protocolVersion).toBe(PROTOCOL_VERSION);
-    if (parsed.type === "pinPickleSession") {
+    if (parsed.type === "createPickleFromHandoff") {
+      expect(parsed.instructions).toBe("keep digging into the failing test");
+      expect(parsed.title.length).toBeGreaterThan(0);
       expect(parsed.context.cwd).toBe("/tmp/default-cwd");
       expect(parsed.context.activeApp?.name).toBe("Pi");
+      expect(parsed.cwd).toBeUndefined();
+    }
+  });
+
+  it("aborts the current turn, waits for idle, and defaults the kickoff to 'continue' when args are empty", async () => {
+    const temp = await mkdtemp(join(tmpdir(), "picky-handoff-extension-"));
+    process.env.PICKY_AGENTD_CONNECTION_FILE = join(temp, "agentd-connection.json");
+    await writeFile(
+      process.env.PICKY_AGENTD_CONNECTION_FILE,
+      JSON.stringify({ url: "ws://127.0.0.1:17631", token: "test-token" }),
+      "utf8",
+    );
+
+    const sentPayloads: unknown[] = [];
+    const openedUrls: string[] = [];
+    installFakeWebSocket(sentPayloads, openedUrls);
+    const registered = await registerExtensionCommand();
+    const callOrder: string[] = [];
+
+    await registered.handler("   ", {
+      cwd: "/Users/me/repo",
+      ui: { notify: () => undefined },
+      isIdle: () => false,
+      abort: () => { callOrder.push("abort"); },
+      waitForIdle: async () => { callOrder.push("waitForIdle"); },
+      sessionManager: {
+        getSessionFile: () => "/tmp/pi-session.jsonl",
+        getBranch: () => [],
+      },
+    });
+
+    expect(callOrder).toEqual(["abort", "waitForIdle"]);
+    expect(sentPayloads).toHaveLength(1);
+    const parsed = CommandEnvelopeSchema.parse(sentPayloads[0]);
+    expect(parsed.type).toBe("createPickleFromHandoff");
+    if (parsed.type === "createPickleFromHandoff") {
+      expect(parsed.instructions).toBe("continue");
+      expect(parsed.cwd).toBe("/Users/me/repo");
+      expect(parsed.context.cwd).toBe("/Users/me/repo");
     }
   });
 });
@@ -103,6 +150,8 @@ interface FakeCommandContext {
   cwd?: string;
   ui: { notify(message: string, level?: "info" | "warning" | "error" | "success"): void };
   isIdle(): boolean;
+  abort(): void;
+  waitForIdle(): Promise<void>;
   sessionManager: {
     getSessionFile(): string | undefined;
     getBranch(): unknown[];

@@ -1,10 +1,10 @@
 # Picky Pi handoff extension
 
-This Pi extension adds a slash command that pins the current idle Pi session context to Picky as a completed Pickle card.
+This Pi extension adds a slash command that interrupts the current Pi session and hands the work off to Picky as a brand-new Pickle that auto-runs from a kickoff message.
 
 Command:
 
-- `/handoff-to-picky [handoff request]`
+- `/handoff-to-picky [kickoff instruction]`
 
 The command reads Picky's local daemon capability file:
 
@@ -33,4 +33,4 @@ Then restart Pi or run `/reload` in an existing Pi session.
 /handoff-to-picky continue this investigation in Picky and produce a final report
 ```
 
-The command is allowed only while Pi is idle. It does not start a new Pickle run; it creates a completed Pickle card in Picky using the current Pi session file, cwd, and recent branch excerpt as context for future follow-up.
+If the current Pi turn is still streaming, the command first calls `ctx.abort()` and waits for the turn to settle. It then creates a new visible Pickle session in Picky, seeds it with the current Pi session file, cwd, and recent branch excerpt as context, and sends the kickoff instruction as the first user message so the Pickle resumes the work automatically. When you omit the kickoff text, the default instruction is `continue`.

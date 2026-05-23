@@ -59,7 +59,7 @@ After restarting Pi or running `/reload`, use:
 /handoff-to-picky continue this investigation in Picky and produce a final report
 ```
 
-This is allowed only while Pi is idle. It creates a completed Pickle card in Picky using the current Pi session file, cwd, and recent branch excerpt as neutral context; it does not start a new Pickle run.
+If Pi is mid-turn, the command first aborts the current turn and waits for it to settle. It then creates a new visible Pickle in Picky seeded with the current Pi session file, cwd, and recent branch excerpt as neutral context, and sends the kickoff instruction (defaults to `continue` when no argument is given) as the first user message so the Pickle resumes the work automatically.
 
 ## Code navigation index
 

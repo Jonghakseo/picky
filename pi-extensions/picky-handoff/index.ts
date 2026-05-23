@@ -43,6 +43,8 @@ interface PiCommandContext {
   cwd?: string;
   ui: { notify(message: string, level?: "info" | "warning" | "error" | "success"): void };
   isIdle(): boolean;
+  abort(): void;
+  waitForIdle(): Promise<void>;
   sessionManager: {
     getSessionFile(): string | undefined;
     getBranch(): unknown[];
@@ -60,18 +62,18 @@ export default function pickyHandoffExtension(pi: PiExtensionAPI) {
 
 function registerHandoffCommand(pi: PiExtensionAPI, name: string): void {
   pi.registerCommand(name, {
-    description: "Pin the current idle Pi context to Picky as a completed Pickle card",
+    description: "Hand off the current Pi work to Picky as a new auto-running Pickle session",
     handler: async (args, ctx) => {
       try {
         if (!ctx.isIdle()) {
-          ctx.ui.notify("Picky 핸드오프는 Pi가 대기 중일 때만 가능합니다. 현재 실행 중인 응답이 끝난 뒤 다시 시도하세요.", "warning");
-          return;
+          ctx.abort();
+          await ctx.waitForIdle();
         }
-        const goal = args.trim() || "Pin the current completed Pi task in Picky as a Pickle.";
-        const title = makeTitle(goal, pi.getSessionName(), ctx.cwd);
+        const instructions = args.trim() || "continue";
+        const title = makeTitle(instructions, pi.getSessionName(), ctx.cwd);
         const connection = await readConnectionInfo();
         const transcript = buildTranscript({
-          goal,
+          instructions,
           title,
           cwd: ctx.cwd,
           sessionName: pi.getSessionName(),
@@ -88,10 +90,10 @@ function registerHandoffCommand(pi: PiExtensionAPI, name: string): void {
           screenshots: [],
           warnings: ["Started from a Pi extension command; no desktop screenshots were captured for this handoff."],
         };
-        const session = await pinPickyPickleSession(connection, title, context);
-        ctx.ui.notify(`Picky에 완료 상태로 pin 했습니다: ${session.title}`, "info");
+        const session = await createPickyPickleSession(connection, { title, instructions, cwd: ctx.cwd, context });
+        ctx.ui.notify(`Picky Pickle started: ${session.title}`, "info");
       } catch (error) {
-        ctx.ui.notify(`Picky 핸드오프 실패: ${messageOf(error)}`, "error");
+        ctx.ui.notify(`Picky handoff failed: ${messageOf(error)}`, "error");
       }
     },
   });
@@ -105,7 +107,7 @@ async function readConnectionInfo(): Promise<PickyAgentdConnectionInfo> {
   } catch (error) {
     if (isMissingConnectionFileError(error)) {
       throw new Error(
-        `Picky 연결 파일이 없습니다: ${path}. Picky 앱이 실행 중이고 agentd가 시작됐는지 확인하세요. 진단 로그에 PICKY_UNSUPPORTED_NODE가 보이면 Node 22.19.0 이상 설치 후 Picky를 재실행하세요.`,
+        `Picky connection file not found: ${path}. Make sure the Picky app is running and that picky-agentd has started. If the diagnostic log shows PICKY_UNSUPPORTED_NODE, install Node 22.19.0 or newer and relaunch Picky.`,
       );
     }
     throw error;
@@ -119,7 +121,10 @@ function isMissingConnectionFileError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT";
 }
 
-async function pinPickyPickleSession(connection: PickyAgentdConnectionInfo, title: string, context: PickyContextPacket): Promise<PickyAgentSessionSummary> {
+async function createPickyPickleSession(
+  connection: PickyAgentdConnectionInfo,
+  handoff: { title: string; instructions: string; cwd?: string; context: PickyContextPacket },
+): Promise<PickyAgentSessionSummary> {
   const WebSocketCtor = (globalThis as unknown as { WebSocket?: MinimalWebSocketConstructor }).WebSocket;
   if (!WebSocketCtor) throw new Error("This Node.js runtime does not expose global WebSocket.");
 
@@ -136,11 +141,13 @@ async function pinPickyPickleSession(connection: PickyAgentdConnectionInfo, titl
     ws.addEventListener("open", () => {
       ws.send(
         JSON.stringify({
-          id: `cmd-${context.id}`,
+          id: `cmd-${handoff.context.id}`,
           protocolVersion: connection.protocolVersion || DEFAULT_PROTOCOL_VERSION,
-          type: "pinPickleSession",
-          title,
-          context,
+          type: "createPickleFromHandoff",
+          title: handoff.title,
+          instructions: handoff.instructions,
+          ...(handoff.cwd ? { cwd: handoff.cwd } : {}),
+          context: handoff.context,
         }),
       );
     });
@@ -170,15 +177,15 @@ async function pinPickyPickleSession(connection: PickyAgentdConnectionInfo, titl
   });
 }
 
-function buildTranscript(input: { goal: string; title: string; cwd?: string; sessionName?: string; sessionFile?: string; branch: unknown[] }): string {
+function buildTranscript(input: { instructions: string; title: string; cwd?: string; sessionName?: string; sessionFile?: string; branch: unknown[] }): string {
   const lines = [
     input.title,
     "",
-    "A Pi extension command pinned this idle/completed task to Picky as a completed Pickle card in the Picky dock.",
-    "No new Pickle run has been started by this handoff. Treat the source Pi session as context for a future follow-up, not as an instruction to skip verification.",
+    "A Pi extension command interrupted the source Pi session and spawned this new Pickle in Picky to continue the work.",
+    "The kickoff instruction below has been sent as the first user message of this Pickle. Treat the branch excerpt as the state of the source session at the moment of handoff.",
     "",
-    "## User handoff request",
-    input.goal,
+    "## Kickoff instruction",
+    input.instructions,
     "",
     "## Source Pi session",
     `- CWD: ${input.cwd || "(unknown)"}`,

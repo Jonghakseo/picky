@@ -273,8 +273,13 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         path.lineWidth = 0.6
         path.stroke()
         let text = "⌘R"
+        // Badge glyph is decorative, but still scales with the global app font
+        // scale so users who pump the body text larger can still read the
+        // shortcut hint. Floored to 9pt so the badge does not collapse below
+        // legibility at the lower end of the 0.9...1.3 range.
+        let badgeSize = max(9, 9 * PickyAppFontScaleStore.staticCGScale)
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9, weight: .semibold),
+            .font: NSFont.systemFont(ofSize: badgeSize, weight: .semibold),
             .foregroundColor: NSColor(DS.Colors.textSecondary),
             .kern: 0.4
         ]

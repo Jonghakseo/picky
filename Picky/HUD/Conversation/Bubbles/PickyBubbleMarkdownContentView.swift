@@ -28,6 +28,13 @@ final class PickyBubbleMarkdownContentView: NSView {
     private let linkDelegate = PickyMarkdownLinkTextViewDelegate()
     private var blockViews: [PickyMarkdownBlockNSView] = []
     private var cachedBlocks: [RenderBlock] = []
+    /// Last global app font scale this view rendered with. When the user hits
+    /// ⌘+ / ⌘-, `PickyAppFontScaleStore.staticScale` changes and the cached
+    /// `RenderBlock` array would otherwise short-circuit the rebuild because
+    /// the markdown text itself didn't change. Tracking the build scale here
+    /// forces a rebuild on the next `configure(...)` call so the block subviews
+    /// (and their NSAttributedString font attributes) come up at the new size.
+    private var cachedFontScale: CGFloat = 0
 
     var onOpenAsReport: (() -> Void)? {
         didSet { blockViews.forEach { $0.onOpenAsReport = onOpenAsReport } }
@@ -49,11 +56,13 @@ final class PickyBubbleMarkdownContentView: NSView {
         onEditText: (() -> Void)?
     ) {
         let blocks = renderBlocks(from: markdown)
-        if blocks != cachedBlocks {
+        let currentScale = PickyAppFontScaleStore.staticCGScale
+        if blocks != cachedBlocks || currentScale != cachedFontScale {
             blockViews.forEach { $0.removeFromSuperview() }
             blockViews = blocks.map { makeBlockView(for: $0) }
             blockViews.forEach { addSubview($0) }
             cachedBlocks = blocks
+            cachedFontScale = currentScale
         }
         self.onOpenAsReport = onOpenAsReport
         self.onCopyText = onCopyText

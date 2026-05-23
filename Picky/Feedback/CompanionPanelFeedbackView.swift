@@ -161,7 +161,7 @@ struct CompanionPanelFeedbackView: View {
                 PickyIMETextView(
                     text: $message,
                     isEditable: status != .sending,
-                    font: NSFont.systemFont(ofSize: 12),
+                    font: NSFont.systemFont(ofSize: PickyHUDTypography.Size.supporting),
                     textColor: status == .sending ? .secondaryLabelColor : NSColor(DS.Colors.textPrimary)
                 )
                 .frame(minHeight: 96, maxHeight: 160)

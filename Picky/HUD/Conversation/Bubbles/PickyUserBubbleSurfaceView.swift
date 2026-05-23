@@ -117,6 +117,12 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         self.onEditText = onEditText
         self.onOpenAsReport = onOpenAsReport
 
+        // Refresh label fonts on every configure() pass so a global app font
+        // scale change (⌘+ / ⌘-) flows through to the meta labels too. The
+        // markdown body is already rebuilt via PickyBubbleMarkdownContentView's
+        // cachedFontScale check.
+        configureLabel(attachedImagesField)
+        configureLabel(originField)
         setLabel(attachedImagesField, text: attachedImagesLabel)
         setLabel(originField, text: originLabel)
         needsLayout = true

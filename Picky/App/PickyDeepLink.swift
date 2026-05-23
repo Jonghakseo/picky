@@ -71,6 +71,7 @@ extension CompanionPanelSettingsRoute {
         case "notification", "cursorBubbles": return .overlayAndNotifications
         case "voice": return .voice
         case "shortcuts": return .shortcuts
+        case "tools", "builtinTools": return .builtinTools
         case "onboarding": return .onboarding
         case "index", "": return .index
         default: return nil

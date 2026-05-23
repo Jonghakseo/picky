@@ -3367,13 +3367,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Built-in tools"
+            "value": "Tools"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "내장 도구 설정"
+            "value": "도구"
           }
         }
       }
@@ -3383,13 +3383,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Enable or disable individual Picky built-in tools."
+            "value": "Built-in tools the agents can call."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Picky의 내장 도구를 개별로 켜고/끌 수 있어요."
+            "value": "에이전트가 호출하는 내장 도구."
           }
         }
       }

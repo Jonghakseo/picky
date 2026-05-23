@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 describe("picky-handoff extension protocol contract", () => {
-  it("sends an agentd-compatible createPickleFromHandoff command when the connection file has no protocolVersion", async () => {
+  it("pins a completed Pickle card when Pi is idle (no abort, no kickoff)", async () => {
     const temp = await mkdtemp(join(tmpdir(), "picky-handoff-extension-"));
     process.env.PICKY_AGENTD_CONNECTION_FILE = join(temp, "agentd-connection.json");
     await writeFile(
@@ -34,7 +34,7 @@ describe("picky-handoff extension protocol contract", () => {
     let abortCalled = 0;
     let waitForIdleCalled = 0;
 
-    await registered.handler("keep digging into the failing test", {
+    await registered.handler("Pin the idle task", {
       cwd: undefined,
       ui: { notify: () => undefined },
       isIdle: () => true,
@@ -51,18 +51,15 @@ describe("picky-handoff extension protocol contract", () => {
     expect(openedUrls).toEqual(["ws://127.0.0.1:17631/?token=test-token"]);
     expect(sentPayloads).toHaveLength(1);
     const parsed = CommandEnvelopeSchema.parse(sentPayloads[0]);
-    expect(parsed.type).toBe("createPickleFromHandoff");
+    expect(parsed.type).toBe("pinPickleSession");
     expect(parsed.protocolVersion).toBe(PROTOCOL_VERSION);
-    if (parsed.type === "createPickleFromHandoff") {
-      expect(parsed.instructions).toBe("keep digging into the failing test");
-      expect(parsed.title.length).toBeGreaterThan(0);
+    if (parsed.type === "pinPickleSession") {
       expect(parsed.context.cwd).toBe("/tmp/default-cwd");
       expect(parsed.context.activeApp?.name).toBe("Pi");
-      expect(parsed.cwd).toBeUndefined();
     }
   });
 
-  it("aborts the current turn, waits for idle, and defaults the kickoff to 'continue' when args are empty", async () => {
+  it("aborts the current turn and spawns an auto-running Pickle with kickoff 'continue' when Pi is busy and args are empty", async () => {
     const temp = await mkdtemp(join(tmpdir(), "picky-handoff-extension-"));
     process.env.PICKY_AGENTD_CONNECTION_FILE = join(temp, "agentd-connection.json");
     await writeFile(

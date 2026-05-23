@@ -1,10 +1,13 @@
 # Picky Pi handoff extension
 
-This Pi extension adds a slash command that interrupts the current Pi session and hands the work off to Picky as a brand-new Pickle that auto-runs from a kickoff message.
+This Pi extension adds a slash command that hands the current Pi session context off to Picky. The behavior depends on whether Pi is idle:
+
+- **Idle**: pins a completed Pickle card in the Picky dock using the current session as neutral context. No new Pickle run is started.
+- **Busy (mid-turn)**: calls `ctx.abort()`, waits for the turn to settle, then creates a brand-new visible Pickle that auto-runs from a kickoff message so the work continues in Picky.
 
 Command:
 
-- `/handoff-to-picky [kickoff instruction]`
+- `/handoff-to-picky [text]` — when idle, `text` is recorded as the handoff request on the pinned card; when busy, `text` is sent as the kickoff instruction (defaults to `continue` if omitted).
 
 The command reads Picky's local daemon capability file:
 
@@ -33,4 +36,4 @@ Then restart Pi or run `/reload` in an existing Pi session.
 /handoff-to-picky continue this investigation in Picky and produce a final report
 ```
 
-If the current Pi turn is still streaming, the command first calls `ctx.abort()` and waits for the turn to settle. It then creates a new visible Pickle session in Picky, seeds it with the current Pi session file, cwd, and recent branch excerpt as context, and sends the kickoff instruction as the first user message so the Pickle resumes the work automatically. When you omit the kickoff text, the default instruction is `continue`.
+Both branches seed the new Pickle with the current Pi session file, cwd, and recent branch excerpt. The busy branch additionally sends the kickoff instruction as the first user message of the new Pickle so it resumes the work without further input; omitting the argument defaults the kickoff to `continue`.

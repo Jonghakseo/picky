@@ -62,35 +62,60 @@ export default function pickyHandoffExtension(pi: PiExtensionAPI) {
 
 function registerHandoffCommand(pi: PiExtensionAPI, name: string): void {
   pi.registerCommand(name, {
-    description: "Hand off the current Pi work to Picky as a new auto-running Pickle session",
+    description: "Hand off this Pi session to Picky (idle: move as-is; busy: stop and auto-resume)",
     handler: async (args, ctx) => {
       try {
-        if (!ctx.isIdle()) {
+        const wasIdle = ctx.isIdle();
+        if (!wasIdle) {
           ctx.abort();
           await ctx.waitForIdle();
         }
-        const instructions = args.trim() || "continue";
-        const title = makeTitle(instructions, pi.getSessionName(), ctx.cwd);
+        const sessionName = pi.getSessionName();
+        const cwd = ctx.cwd;
+        const sessionFile = ctx.sessionManager.getSessionFile();
+        const branch = ctx.sessionManager.getBranch() as unknown[];
         const connection = await readConnectionInfo();
-        const transcript = buildTranscript({
-          instructions,
-          title,
-          cwd: ctx.cwd,
-          sessionName: pi.getSessionName(),
-          sessionFile: ctx.sessionManager.getSessionFile(),
-          branch: ctx.sessionManager.getBranch() as unknown[],
-        });
-        const context: PickyContextPacket = {
-          id: `pi-handoff-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          source: "text",
+        const protocolVersion = connection.protocolVersion || DEFAULT_PROTOCOL_VERSION;
+        const id = `pi-handoff-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const baseContext = {
+          id,
+          source: "text" as const,
           capturedAt: new Date().toISOString(),
-          transcript,
-          cwd: ctx.cwd || connection.defaultCwd,
+          cwd: cwd || connection.defaultCwd,
           activeApp: { name: "Pi", bundleId: "dev.pi.local" },
-          screenshots: [],
+          screenshots: [] as [],
           warnings: ["Started from a Pi extension command; no desktop screenshots were captured for this handoff."],
         };
-        const session = await createPickyPickleSession(connection, { title, instructions, cwd: ctx.cwd, context });
+
+        if (wasIdle) {
+          const goal = args.trim() || "Pin the current completed Pi task in Picky as a Pickle.";
+          const title = makeTitle(goal, sessionName, cwd);
+          const transcript = buildPinTranscript({ goal, title, cwd, sessionName, sessionFile, branch });
+          const context: PickyContextPacket = { ...baseContext, transcript };
+          const session = await sendPickyCommand(connection, {
+            id: `cmd-${id}`,
+            protocolVersion,
+            type: "pinPickleSession",
+            title,
+            context,
+          });
+          ctx.ui.notify(`Picky Pickle pinned: ${session.title}`, "info");
+          return;
+        }
+
+        const instructions = args.trim() || "continue";
+        const title = makeTitle(instructions, sessionName, cwd);
+        const transcript = buildContinueTranscript({ instructions, title, cwd, sessionName, sessionFile, branch });
+        const context: PickyContextPacket = { ...baseContext, transcript };
+        const session = await sendPickyCommand(connection, {
+          id: `cmd-${id}`,
+          protocolVersion,
+          type: "createPickleFromHandoff",
+          title,
+          instructions,
+          ...(cwd ? { cwd } : {}),
+          context,
+        });
         ctx.ui.notify(`Picky Pickle started: ${session.title}`, "info");
       } catch (error) {
         ctx.ui.notify(`Picky handoff failed: ${messageOf(error)}`, "error");
@@ -121,9 +146,9 @@ function isMissingConnectionFileError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT";
 }
 
-async function createPickyPickleSession(
+async function sendPickyCommand(
   connection: PickyAgentdConnectionInfo,
-  handoff: { title: string; instructions: string; cwd?: string; context: PickyContextPacket },
+  payload: Record<string, unknown>,
 ): Promise<PickyAgentSessionSummary> {
   const WebSocketCtor = (globalThis as unknown as { WebSocket?: MinimalWebSocketConstructor }).WebSocket;
   if (!WebSocketCtor) throw new Error("This Node.js runtime does not expose global WebSocket.");
@@ -139,17 +164,7 @@ async function createPickyPickleSession(
     }, 10_000);
 
     ws.addEventListener("open", () => {
-      ws.send(
-        JSON.stringify({
-          id: `cmd-${handoff.context.id}`,
-          protocolVersion: connection.protocolVersion || DEFAULT_PROTOCOL_VERSION,
-          type: "createPickleFromHandoff",
-          title: handoff.title,
-          instructions: handoff.instructions,
-          ...(handoff.cwd ? { cwd: handoff.cwd } : {}),
-          context: handoff.context,
-        }),
-      );
+      ws.send(JSON.stringify(payload));
     });
 
     ws.addEventListener("message", (event) => {
@@ -177,7 +192,28 @@ async function createPickyPickleSession(
   });
 }
 
-function buildTranscript(input: { instructions: string; title: string; cwd?: string; sessionName?: string; sessionFile?: string; branch: unknown[] }): string {
+function buildPinTranscript(input: { goal: string; title: string; cwd?: string; sessionName?: string; sessionFile?: string; branch: unknown[] }): string {
+  const lines = [
+    input.title,
+    "",
+    "A Pi extension command pinned this idle/completed task to Picky as a completed Pickle card in the Picky dock.",
+    "No new Pickle run has been started by this handoff. Treat the source Pi session as context for a future follow-up, not as an instruction to skip verification.",
+    "",
+    "## User handoff request",
+    input.goal,
+    "",
+    "## Source Pi session",
+    `- CWD: ${input.cwd || "(unknown)"}`,
+    `- Session name: ${input.sessionName || "(not set)"}`,
+    `- Session file: ${input.sessionFile || "(ephemeral or unavailable)"}`,
+    "",
+    "## Recent source-session branch excerpt",
+    summarizeBranch(input.branch),
+  ];
+  return lines.join("\n");
+}
+
+function buildContinueTranscript(input: { instructions: string; title: string; cwd?: string; sessionName?: string; sessionFile?: string; branch: unknown[] }): string {
   const lines = [
     input.title,
     "",

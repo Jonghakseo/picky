@@ -57,14 +57,18 @@ struct PickyDeepLink: Equatable {
 
 extension CompanionPanelSettingsRoute {
     /// Path component used in `picky://settings/<path>`. Mirrors the enum
-    /// case name 1:1 so the registry stays trivial to audit.
+    /// case name 1:1 so the registry stays trivial to audit, except for the
+    /// two legacy paths (`cursorBubbles`, `notification`) that were merged
+    /// into `.overlayAndNotifications` — they alias to the new route so
+    /// previously-emitted assistant links and any external bookmarks keep
+    /// working.
     static func fromDeepLinkPath(_ path: String) -> CompanionPanelSettingsRoute? {
         switch path {
         case "general": return .general
         case "mainAgent": return .mainAgent
         case "pickle": return .pickle
-        case "notification": return .notification
-        case "cursorBubbles": return .cursorBubbles
+        case "overlayAndNotifications": return .overlayAndNotifications
+        case "notification", "cursorBubbles": return .overlayAndNotifications
         case "voice": return .voice
         case "shortcuts": return .shortcuts
         case "onboarding": return .onboarding

@@ -5234,6 +5234,108 @@
         }
       },
       "comment": "Model picker fallback label shown on the index when no model is pinned."
+    },
+    "settings.section.overlayAndNotifications.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Overlay & Notifications"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오버레이 및 알림"
+          }
+        }
+      },
+      "comment": "Settings leaf title: combined cursor / speech bubbles / macOS banner page."
+    },
+    "settings.section.overlayAndNotifications.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cursor, speech bubbles, and macOS banners."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "커서, 음성 버블, macOS 배너 알림."
+          }
+        }
+      },
+      "comment": "Static fallback subtitle for the Overlay & Notifications leaf (shown when no live summary applies)."
+    },
+    "settings.overlayAndNotifications.subgroup.cursor": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cursor"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "커서"
+          }
+        }
+      },
+      "comment": "Subgroup header inside Overlay & Notifications: cursor visuals (show, smooth follow, idle)."
+    },
+    "settings.overlayAndNotifications.subgroup.bubbles": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bubbles"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "버블"
+          }
+        }
+      },
+      "comment": "Subgroup header inside Overlay & Notifications: speech bubbles (user STT, Picky reply)."
+    },
+    "settings.overlayAndNotifications.subgroup.alerts": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alerts"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "알림"
+          }
+        }
+      },
+      "comment": "Subgroup header inside Overlay & Notifications: macOS notification banners."
+    },
+    "settings.summary.overlayAndNotifications": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %lld / %lld alerts"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 알림 %lld / %lld개"
+          }
+        }
+      },
+      "comment": "Settings index subtitle for Overlay & Notifications. Args: 1=cursor on/off phrase, 2=enabled alert count, 3=total alert count."
     }
   },
   "version": "1.0"

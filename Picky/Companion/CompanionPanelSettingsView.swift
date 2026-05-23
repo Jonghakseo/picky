@@ -18,8 +18,7 @@ enum CompanionPanelSettingsSection: CaseIterable, Hashable {
     case general
     case mainAgent
     case pickle
-    case notification
-    case cursorBubbles
+    case overlayAndNotifications
     case voice
     case shortcuts
     case builtinTools
@@ -35,8 +34,10 @@ enum CompanionPanelSettingsRoute: Hashable {
     case general
     case mainAgent
     case pickle
-    case notification
-    case cursorBubbles
+    /// Combined page that used to live as two separate routes (`.cursorBubbles`
+    /// and `.notification`). Old `picky://` URLs still resolve here through
+    /// `PickyDeepLink.fromDeepLinkPath` aliases.
+    case overlayAndNotifications
     case voice
     case shortcuts
     case builtinTools
@@ -48,8 +49,7 @@ enum CompanionPanelSettingsRoute: Hashable {
         case .general: .general
         case .mainAgent: .mainAgent
         case .pickle: .pickle
-        case .notification: .notification
-        case .cursorBubbles: .cursorBubbles
+        case .overlayAndNotifications: .overlayAndNotifications
         case .voice: .voice
         case .shortcuts: .shortcuts
         case .builtinTools: .builtinTools
@@ -66,8 +66,7 @@ enum CompanionPanelSettingsRoute: Hashable {
         case .general: L10n.t("settings.general.title")
         case .mainAgent: L10n.t("settings.section.picky.title")
         case .pickle: L10n.t("settings.section.pickle.title")
-        case .notification: L10n.t("settings.section.notification.title")
-        case .cursorBubbles: L10n.t("settings.section.cursorBubbles.title")
+        case .overlayAndNotifications: L10n.t("settings.section.overlayAndNotifications.title")
         case .voice: L10n.t("settings.section.voice.title")
         case .shortcuts: L10n.t("settings.section.shortcuts.title")
         case .builtinTools: L10n.t("settings.section.builtinTools.title")
@@ -81,8 +80,7 @@ enum CompanionPanelSettingsRoute: Hashable {
         case .general: L10n.t("settings.general.subtitle.index")
         case .mainAgent: L10n.t("settings.section.picky.subtitle")
         case .pickle: L10n.t("settings.section.pickle.subtitle")
-        case .notification: L10n.t("settings.section.notification.subtitle")
-        case .cursorBubbles: L10n.t("settings.section.cursorBubbles.subtitle")
+        case .overlayAndNotifications: L10n.t("settings.section.overlayAndNotifications.subtitle")
         case .voice: L10n.t("settings.section.voice.subtitle")
         case .shortcuts: L10n.t("settings.section.shortcuts.subtitle")
         case .builtinTools: L10n.t("settings.section.builtinTools.subtitle")
@@ -122,7 +120,7 @@ private let companionPanelSettingsGroups: [CompanionPanelSettingsGroup] = [
     CompanionPanelSettingsGroup(
         id: "surface",
         titleKey: "settings.group.surface.title",
-        routes: [.voice, .notification, .cursorBubbles]
+        routes: [.voice, .overlayAndNotifications]
     )
 ]
 
@@ -223,15 +221,16 @@ struct CompanionPanelSettingsView: View {
         }
         .onChange(of: viewModel.settings.notifications) { _, _ in
             // Toggles only flip booleans, so they cannot fail directory validation.
-            // Persist immediately and flash the saved indicator next to the changed
-            // section only. Draft text in other sections remains untouched.
-            saveImmediately(for: .notification)
+            // Persist immediately and flash the saved indicator on the unified
+            // Overlay & Notifications section. Draft text in other sections
+            // remains untouched.
+            saveImmediately(for: .overlayAndNotifications)
         }
         .onChange(of: viewModel.settings.cursor) { _, _ in
-            saveImmediately(for: .cursorBubbles)
+            saveImmediately(for: .overlayAndNotifications)
         }
         .onChange(of: viewModel.settings.overlayBubbles) { _, _ in
-            saveImmediately(for: .cursorBubbles)
+            saveImmediately(for: .overlayAndNotifications)
         }
         .onChange(of: viewModel.settings.ttsEnabled) { _, _ in
             // Fold voice text drafts into settings before saving so an
@@ -251,8 +250,7 @@ struct CompanionPanelSettingsView: View {
         case .general: generalSection
         case .mainAgent: mainAgentSection
         case .pickle: pickleSection
-        case .notification: notificationSection
-        case .cursorBubbles: cursorBubblesSection
+        case .overlayAndNotifications: overlayAndNotificationsSection
         case .voice: voiceSection
         case .shortcuts: shortcutsSection
         case .builtinTools: builtinToolsSection
@@ -385,21 +383,15 @@ struct CompanionPanelSettingsView: View {
                 ? settings.ttsProvider.displayName(for: .speechPlayback)
                 : L10n.t("settings.summary.off")
             return L10n.t("settings.summary.voice", stt, tts)
-        case .notification:
-            let n = settings.notifications
-            let enabled = [n.notifyOnCompleted, n.notifyOnFailed, n.notifyOnWaitingForInput]
-                .filter { $0 }
-                .count
-            return L10n.t("settings.summary.alerts", enabled, 3)
-        case .cursorBubbles:
+        case .overlayAndNotifications:
             let cursor = settings.cursor.showPiCursor
                 ? L10n.t("settings.summary.cursorOn")
                 : L10n.t("settings.summary.cursorOff")
-            let bubbles = [
-                settings.overlayBubbles.showUserSpeechRecognitionBubble,
-                settings.overlayBubbles.showPickyResponseBubble
-            ].filter { $0 }.count
-            return L10n.t("settings.summary.cursorBubbles", cursor, bubbles, 2)
+            let n = settings.notifications
+            let alertsOn = [n.notifyOnCompleted, n.notifyOnFailed, n.notifyOnWaitingForInput]
+                .filter { $0 }
+                .count
+            return L10n.t("settings.summary.overlayAndNotifications", cursor, alertsOn, 3)
         }
     }
 
@@ -566,57 +558,65 @@ struct CompanionPanelSettingsView: View {
         )
     }
 
-    private var notificationSection: some View {
+    /// Combined page that replaced the standalone `cursorBubblesSection` and
+    /// `notificationSection`. The three logical buckets (cursor visuals,
+    /// speech bubbles, macOS banners) stay distinguishable through small
+    /// subgroup headers — reusing the same style the Voice section uses for
+    /// STT vs TTS so the panel feels consistent.
+    private var overlayAndNotificationsSection: some View {
         sectionHeader(
-            section: .notification,
-            title: L10n.t("settings.section.notification.title"),
-            subtitle: L10n.t("settings.section.notification.subtitle")
+            section: .overlayAndNotifications,
+            title: L10n.t("settings.section.overlayAndNotifications.title"),
+            subtitle: L10n.t("settings.section.overlayAndNotifications.subtitle")
         ) {
-            VStack(alignment: .leading, spacing: 0) {
-                toggleRow("settings.notification.toggle.onSuccess", isOn: $viewModel.settings.notifications.notifyOnCompleted, divider: true)
-                toggleRow("settings.notification.toggle.onFailure", isOn: $viewModel.settings.notifications.notifyOnFailed, divider: true)
-                toggleRow("settings.notification.toggle.onInputRequest", isOn: $viewModel.settings.notifications.notifyOnWaitingForInput, divider: false)
-            }
-        }
-    }
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 0) {
+                    voiceSubgroupHeader("settings.overlayAndNotifications.subgroup.cursor")
+                    toggleRow("settings.cursorBubbles.toggle.showCursor", isOn: $viewModel.settings.cursor.showPiCursor, divider: true)
+                    toggleRow(
+                        "settings.cursorBubbles.toggle.smoothFollow",
+                        isOn: $viewModel.settings.cursor.enableFollowSpringAnimation,
+                        divider: true,
+                        isEnabled: viewModel.settings.cursor.showPiCursor
+                    )
+                    toggleRow(
+                        "settings.cursorBubbles.toggle.idleAnimations",
+                        isOn: $viewModel.settings.cursor.enableIdleAnimations,
+                        divider: false,
+                        isEnabled: viewModel.settings.cursor.showPiCursor
+                    )
+                    if !viewModel.settings.cursor.showPiCursor {
+                        Text("settings.cursor.disabledNote")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(DS.Colors.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 7)
+                    }
+                }
 
-    private var cursorBubblesSection: some View {
-        sectionHeader(
-            section: .cursorBubbles,
-            title: L10n.t("settings.section.cursorBubbles.title"),
-            subtitle: L10n.t("settings.section.cursorBubbles.subtitle")
-        ) {
-            VStack(alignment: .leading, spacing: 0) {
-                toggleRow("settings.cursorBubbles.toggle.showCursor", isOn: $viewModel.settings.cursor.showPiCursor, divider: true)
-                toggleRow(
-                    "settings.cursorBubbles.toggle.smoothFollow",
-                    isOn: $viewModel.settings.cursor.enableFollowSpringAnimation,
-                    divider: true,
-                    isEnabled: viewModel.settings.cursor.showPiCursor
-                )
-                toggleRow(
-                    "settings.cursorBubbles.toggle.idleAnimations",
-                    isOn: $viewModel.settings.cursor.enableIdleAnimations,
-                    divider: true,
-                    isEnabled: viewModel.settings.cursor.showPiCursor
-                )
-                toggleRow(
-                    "settings.cursorBubbles.toggle.userSTT",
-                    isOn: $viewModel.settings.overlayBubbles.showUserSpeechRecognitionBubble,
-                    divider: true
-                )
-                toggleRow(
-                    "settings.cursorBubbles.toggle.pickyReply",
-                    isOn: $viewModel.settings.overlayBubbles.showPickyResponseBubble,
-                    divider: false
-                )
+                voiceGroupDivider()
 
-                if !viewModel.settings.cursor.showPiCursor {
-                    Text("settings.cursor.disabledNote")
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 7)
+                VStack(alignment: .leading, spacing: 0) {
+                    voiceSubgroupHeader("settings.overlayAndNotifications.subgroup.bubbles")
+                    toggleRow(
+                        "settings.cursorBubbles.toggle.userSTT",
+                        isOn: $viewModel.settings.overlayBubbles.showUserSpeechRecognitionBubble,
+                        divider: true
+                    )
+                    toggleRow(
+                        "settings.cursorBubbles.toggle.pickyReply",
+                        isOn: $viewModel.settings.overlayBubbles.showPickyResponseBubble,
+                        divider: false
+                    )
+                }
+
+                voiceGroupDivider()
+
+                VStack(alignment: .leading, spacing: 0) {
+                    voiceSubgroupHeader("settings.overlayAndNotifications.subgroup.alerts")
+                    toggleRow("settings.notification.toggle.onSuccess", isOn: $viewModel.settings.notifications.notifyOnCompleted, divider: true)
+                    toggleRow("settings.notification.toggle.onFailure", isOn: $viewModel.settings.notifications.notifyOnFailed, divider: true)
+                    toggleRow("settings.notification.toggle.onInputRequest", isOn: $viewModel.settings.notifications.notifyOnWaitingForInput, divider: false)
                 }
             }
         }
@@ -1710,10 +1710,8 @@ struct CompanionPanelSettingsView: View {
             commitMainAgentCwdField()
         case .pickle:
             commitPickleCwdField()
-        case .notification:
-            saveImmediately(for: .notification)
-        case .cursorBubbles:
-            saveImmediately(for: .cursorBubbles)
+        case .overlayAndNotifications:
+            saveImmediately(for: .overlayAndNotifications)
         case .voice:
             commitVoiceField()
         case .shortcuts:
@@ -1858,7 +1856,7 @@ struct CompanionPanelSettingsView: View {
             mainAgentCwdDraft = viewModel.settings.mainAgentCwd
         case .pickle:
             pickleCwdDraft = viewModel.settings.defaultCwd
-        case .general, .notification, .cursorBubbles, .shortcuts, .builtinTools, .onboarding:
+        case .general, .overlayAndNotifications, .shortcuts, .builtinTools, .onboarding:
             break
         case .voice:
             syncVoiceDrafts()

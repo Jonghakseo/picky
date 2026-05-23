@@ -19,12 +19,20 @@ struct PickyUserBubbleSurfaceView: NSViewRepresentable {
     let onOpenAsReport: (() -> Void)?
     let onCopyText: (() -> Void)?
     let onEditText: (() -> Void)?
+    /// See `PickyAgentBubbleSurfaceView.appFontScale` — declaring the env
+    /// dependency forces SwiftUI to call `updateNSView` whenever the global
+    /// app font scale changes, which lets the underlying markdown view's
+    /// `cachedFontScale` gate rebuild its block subviews at the new size.
+    @Environment(\.pickyAppFontScale) private var appFontScale
 
     func makeNSView(context: Context) -> PickyUserBubbleSurfaceNSView {
-        PickyUserBubbleSurfaceNSView()
+        PickyPerf.event("user_bubble_make_nsview")
+        return PickyUserBubbleSurfaceNSView()
     }
 
     func updateNSView(_ view: PickyUserBubbleSurfaceNSView, context: Context) {
+        PickyPerf.event("user_bubble_update_nsview")
+        _ = appFontScale
         view.configure(
             markdown: markdown,
             attachedImagesLabel: attachedImagesLabel,

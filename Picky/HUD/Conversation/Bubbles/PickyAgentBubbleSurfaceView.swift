@@ -16,12 +16,22 @@ struct PickyAgentBubbleSurfaceView: NSViewRepresentable {
     let showsShortcutBadge: Bool
     let onOpenAsReport: (() -> Void)?
     let onCopyText: (() -> Void)?
+    /// Declared so SwiftUI knows this representable depends on the global app
+    /// font scale. Without this, when only the env value changes (no other
+    /// input changes), SwiftUI short-circuits and never calls `updateNSView`,
+    /// leaving the bubble at its old scale. The value itself is unused inside
+    /// the body — the rebuild happens inside `PickyBubbleMarkdownContentView`
+    /// via its own `cachedFontScale` gate.
+    @Environment(\.pickyAppFontScale) private var appFontScale
 
     func makeNSView(context: Context) -> PickyAgentBubbleSurfaceNSView {
-        PickyAgentBubbleSurfaceNSView()
+        PickyPerf.event("agent_bubble_make_nsview")
+        return PickyAgentBubbleSurfaceNSView()
     }
 
     func updateNSView(_ view: PickyAgentBubbleSurfaceNSView, context: Context) {
+        PickyPerf.event("agent_bubble_update_nsview")
+        _ = appFontScale
         view.configure(
             markdown: markdown,
             maxBubbleWidth: maxBubbleWidth,

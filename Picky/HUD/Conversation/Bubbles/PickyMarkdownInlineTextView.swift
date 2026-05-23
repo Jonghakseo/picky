@@ -53,6 +53,12 @@ struct PickyMarkdownInlineTextView: NSViewRepresentable {
     var onCopyText: (() -> Void)?
     var onEditText: (() -> Void)?
 
+    /// Global app font scale. Both declared so SwiftUI re-invokes
+    /// `updateNSView` on ⌘+ / ⌘- and threaded into the cache key /
+    /// attributed-string builder so the rebuilt NSTextView storage actually
+    /// reflects the new scale.
+    @Environment(\.pickyAppFontScale) private var appFontScale
+
     /// Vertical gap appended after every block except the last. Matches the
     /// `VStack(spacing: 5)` used by the previous SwiftUI composition so the
     /// migration is pixel-stable.
@@ -67,9 +73,9 @@ struct PickyMarkdownInlineTextView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: SelfSizingMarkdownTextView, context: Context) {
-        let key = Self.cacheKey(blocks)
+        let key = Self.cacheKey(blocks, scale: appFontScale)
         if context.coordinator.lastCacheKey != key {
-            let attributed = Self.buildAttributedString(from: blocks)
+            let attributed = Self.buildAttributedString(from: blocks, scale: appFontScale)
             view.textStorage?.setAttributedString(attributed)
             context.coordinator.lastCacheKey = key
             view.invalidateIntrinsicContentSize()
@@ -151,27 +157,42 @@ struct PickyMarkdownInlineTextView: NSViewRepresentable {
 // MARK: - NSAttributedString builder
 
 extension PickyMarkdownInlineTextView {
-    /// Public so unit tests can assert the produced string layout.
-    static func buildAttributedString(from blocks: [InlineBlock]) -> NSAttributedString {
-        let key = cacheKey(blocks) as NSString
+    /// Public so unit tests can assert the produced string layout. The scale
+    /// argument is forwarded into the rendered attributed string so a
+    /// ⌘+ / ⌘- triggered rebuild produces fonts at the new size; if scale
+    /// is omitted (call sites that predate the global app font scale, or
+    /// previews), the live `PickyAppFontScaleStore.staticCGScale` is used.
+    static func buildAttributedString(
+        from blocks: [InlineBlock],
+        scale: CGFloat? = nil
+    ) -> NSAttributedString {
+        let effectiveScale = scale ?? PickyAppFontScaleStore.staticCGScale
+        let key = cacheKey(blocks, scale: effectiveScale) as NSString
         if let cached = attributedCache.object(forKey: key) {
             return cached
         }
+        // computeAttributedString reads `PickyHUDTypography.Size.*` which is
+        // already derived from the live `PickyAppFontScaleStore.staticScale`,
+        // so we don't need to thread the scale argument through; the
+        // attributed string it returns is already sized at `effectiveScale`.
         let built = computeAttributedString(from: blocks)
         attributedCache.setObject(built, forKey: key, cost: built.length)
         return built
     }
 
-    /// Joined per-block representation. Stable across runs of the same
-    /// markdown so the NSCache hit-rate matches the renderer's block cache.
-    fileprivate static func cacheKey(_ blocks: [InlineBlock]) -> String {
-        blocks.map { block in
+    /// Joined per-block representation plus the live font scale. The scale
+    /// component is critical — without it the NSCache would return a stale
+    /// pre-scale attributed string when the user hits ⌘+ / ⌘- and the
+    /// `updateNSView` rebuild would silently skip the new size.
+    fileprivate static func cacheKey(_ blocks: [InlineBlock], scale: CGFloat) -> String {
+        let body = blocks.map { block in
             switch block {
             case .heading(let level, let text): return "h\(level)\u{1F}\(text)"
             case .paragraph(let text): return "p\u{1F}\(text)"
             case .bullet(let text): return "b\u{1F}\(text)"
             }
         }.joined(separator: "\n")
+        return "\(body)\u{1E}s\(scale)"
     }
 
     private static func computeAttributedString(from blocks: [InlineBlock]) -> NSAttributedString {

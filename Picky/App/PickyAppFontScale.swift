@@ -40,8 +40,12 @@ final class PickyAppFontScaleStore: ObservableObject {
     func setScale(_ newValue: Double) {
         let clamped = PickyFontScales.clampedApp(newValue)
         guard clamped != scale else { return }
-        scale = clamped
+        // Update the static accessor BEFORE publishing the change so any
+        // SwiftUI observer that re-evaluates its body in response to the
+        // @Published mutation reads the new value out of
+        // `PickyHUDTypography.Size.*` / `staticCGScale` on the same pass.
         Self.staticScale = clamped
+        scale = clamped
         persist(clamped)
         NotificationCenter.default.post(name: .pickyAppFontScaleDidChange, object: nil)
     }

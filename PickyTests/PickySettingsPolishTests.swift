@@ -11,9 +11,9 @@ struct PickySettingsPolishTests {
     @Test func companionSettingsSaveStatusIsSectionScoped() {
         var statuses = CompanionPanelSettingsSaveStatuses()
 
-        statuses.markSaved(.notification)
+        statuses.markSaved(.overlayAndNotifications)
 
-        #expect(statuses[.notification] == .saved)
+        #expect(statuses[.overlayAndNotifications] == .saved)
         #expect(statuses[.pickle] == .idle)
         #expect(statuses[.voice] == .idle)
     }

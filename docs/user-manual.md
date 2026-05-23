@@ -619,13 +619,33 @@ Settings are stored at:
 ~/Library/Application Support/Picky/Settings/settings.json
 ```
 
+The Settings tab groups every leaf under one of three headers so the index reads as a short, scannable list rather than a flat menu. Each row also shows a one-line summary built from your current configuration (model, dock size, STT/TTS provider, enabled alert count, etc.) so the index doubles as a status overview.
+
+| Group | Leaves |
+| --- | --- |
+| General | General, Shortcuts |
+| Agents | Picky, Pickle, Tools |
+| Surface | Voice, Overlay & Notifications |
+
+The subsections below describe each leaf in the order it appears on the index.
+
 ### 13.1 General
 
 | Setting | Values | Notes |
 | --- | --- | --- |
 | App language | System default, English, 한국어 | Most UI retranslates immediately. Some macOS-owned surfaces require relaunch. |
+| Install `picky` shell command | Button | Installs or uninstalls the `picky` launcher in `/usr/local/bin` (or the closest writable directory). Useful because Picky is an `LSUIElement` app whose panels never activate the macOS top menu bar, so a normal "Install Shell Command…" menu item would never be visible. |
 
-### 13.2 Picky
+### 13.2 Shortcuts
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| Push to Talk | Control + Option | Hold to start voice; release to send. |
+| Quick Input | Double-tap Control | Opens quick text composer near cursor. |
+
+Use **Change**, then **Save** or **Cancel**. Conflicts are rejected. **Reset to defaults** restores both defaults.
+
+### 13.3 Picky
 
 | Setting | Values / behavior |
 | --- | --- |
@@ -674,7 +694,7 @@ Realtime-specific settings, when enabled:
 | Voice | Realtime voice for direct OpenAI. |
 | Realtime effort | Low, Medium, High. |
 
-### 13.3 Pickle
+### 13.4 Pickle
 
 | Setting | Values / behavior |
 | --- | --- |
@@ -682,28 +702,16 @@ Realtime-specific settings, when enabled:
 | Pickle model | Automatic or pinned initial model for newly-created Pickles. |
 | Reasoning level | Automatic, Off, Minimal, Low, Medium, High, Extra High. Applies as initial setting for new Pickles. |
 | Dock size | S, M, L. |
+| Git chip actions | Optional command bound to the diff and branch chips on each Pickle card. Each slot picks a kind (Pi or shell) and a command string; empty commands leave the chip unconfigured. |
+| Archived sessions | Footer disclosure (hidden when empty). Expands to the same restore/delete list available from the HUD, so you can manage archives without leaving Settings. |
 
 Running Pickles can still cycle model/thinking independently from these defaults.
 
-### 13.4 Notification
+### 13.5 Tools
 
-| Setting | Default | Meaning |
-| --- | --- | --- |
-| On success | Off | Show macOS banner when a session completes. |
-| On failure | On | Show banner when a session fails. |
-| On input request | On | Show banner when a session waits for user input. |
+Built-in tools that the agents can call. Each row is an individual toggle; turning a tool off removes it from the agent's tool list entirely so it cannot be called.
 
-### 13.5 Cursor & Bubbles
-
-| Setting | Default | Meaning |
-| --- | --- | --- |
-| Show Picky Cursor | On | Shows the cursor buddy overlay. |
-| Smooth cursor follow | On | Enables springy cursor-follow animation. |
-| Idle animations | On | Enables idle cursor animations. |
-| User STT recognition | On | Shows recognized speech bubble. |
-| Picky reply text | On | Shows Picky reply bubble. |
-
-If **Show Picky Cursor** is off, smooth follow and idle animations are disabled.
+Changes apply to the main agent immediately and interrupt any in-progress turn. Pickles that started before the change keep their existing tool list until the next turn.
 
 ### 13.6 Voice (STT & TTS)
 
@@ -759,14 +767,34 @@ ElevenLabs TTS uses environment variables (`ELEVENLABS_API_KEY`, `ELEVENLABS_VOI
 > and point Picky at it via the OpenAI base URL override. Picky speaks only the
 > standard OpenAI Audio protocol — proxy maintenance is the user's responsibility.
 
-### 13.7 Shortcuts
+### 13.7 Overlay & Notifications
 
-| Setting | Default | Notes |
+Combined page for everything Picky surfaces back to you — cursor overlay, speech bubbles, and macOS notification banners. Inside the page, the three groups are separated by small `Cursor` / `Bubbles` / `Alerts` subgroup headers.
+
+**Cursor**
+
+| Setting | Default | Meaning |
 | --- | --- | --- |
-| Push to Talk | Control + Option | Hold to start voice; release to send. |
-| Quick Input | Double-tap Control | Opens quick text composer near cursor. |
+| Show Picky Cursor | On | Shows the cursor buddy overlay. |
+| Smooth cursor follow | On | Enables springy cursor-follow animation. |
+| Idle animations | On | Enables idle cursor animations. |
 
-Use **Change**, then **Save** or **Cancel**. Conflicts are rejected. **Reset to defaults** restores both defaults.
+If **Show Picky Cursor** is off, smooth follow and idle animations are disabled.
+
+**Bubbles**
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| User STT recognition | On | Shows recognized speech bubble. |
+| Picky reply text | On | Shows Picky reply bubble. |
+
+**Alerts**
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| On success | Off | Show macOS banner when a session completes. |
+| On failure | On | Show banner when a session fails. |
+| On input request | On | Show banner when a session waits for user input. |
 
 ### 13.8 Updates
 

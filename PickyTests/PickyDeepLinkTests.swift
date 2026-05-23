@@ -37,14 +37,15 @@ struct PickyDeepLinkTests {
     }
 
     @Test func settingsHostMapsEveryRouteListedInDeepLinkTable() {
+        // Current canonical paths exposed through PICKY_DEEP_LINK_ROUTES.
         let expected: [(String, CompanionPanelSettingsRoute)] = [
             ("general", .general),
+            ("shortcuts", .shortcuts),
             ("mainAgent", .mainAgent),
             ("pickle", .pickle),
-            ("notification", .notification),
-            ("cursorBubbles", .cursorBubbles),
+            ("tools", .builtinTools),
             ("voice", .voice),
-            ("shortcuts", .shortcuts),
+            ("overlayAndNotifications", .overlayAndNotifications),
             ("onboarding", .onboarding),
             ("index", .index),
         ]
@@ -54,16 +55,27 @@ struct PickyDeepLinkTests {
         }
     }
 
+    @Test func settingsHostKeepsLegacyAliasesForRouteReorg() {
+        // Pre-reorg paths the assistant may have already emitted and external
+        // bookmarks may still point at. They redirect into the new combined
+        // routes so existing links keep working without surfacing a 404.
+        let aliases: [(String, CompanionPanelSettingsRoute)] = [
+            ("notification", .overlayAndNotifications),
+            ("cursorBubbles", .overlayAndNotifications),
+            ("builtinTools", .builtinTools),
+        ]
+        for (path, route) in aliases {
+            let link = PickyDeepLink(url: URL(string: "picky://settings/\(path)")!)
+            #expect(link == PickyDeepLink(tab: .settings, settingsRoute: route), "picky://settings/\(path) should alias to \(route)")
+        }
+    }
+
     @Test func settingsHostWithoutPathFallsBackToIndex() {
         #expect(PickyDeepLink(url: URL(string: "picky://settings")!) == PickyDeepLink(tab: .settings, settingsRoute: .index))
         #expect(PickyDeepLink(url: URL(string: "picky://settings/")!) == PickyDeepLink(tab: .settings, settingsRoute: .index))
     }
 
-    @Test func settingsHostRejectsRoutesNotExposedInDeepLinkTable() {
-        // `builtinTools` exists on CompanionPanelSettingsRoute but is intentionally
-        // not exported through the deep link table. If it ever becomes routable,
-        // this test should flip — and so should the agentd-side route table.
-        #expect(PickyDeepLink(url: URL(string: "picky://settings/builtinTools")!) == nil)
+    @Test func settingsHostRejectsUnknownRoutes() {
         #expect(PickyDeepLink(url: URL(string: "picky://settings/totally-unknown")!) == nil)
     }
 
@@ -71,9 +83,9 @@ struct PickyDeepLinkTests {
         // Scheme + host go through `.lowercased()`.
         #expect(PickyDeepLink(url: URL(string: "PICKY://Panel/status")!) == PickyDeepLink(tab: .status))
         #expect(PickyDeepLink(url: URL(string: "picky://SETTINGS/general")!) == PickyDeepLink(tab: .settings, settingsRoute: .general))
-        // Path components are matched verbatim — `CursorBubbles` !== `cursorBubbles`.
+        // Path components are matched verbatim — `OverlayAndNotifications` !== `overlayAndNotifications`.
         // This locks down the casing contract so the LLM-emitted table stays in sync.
-        #expect(PickyDeepLink(url: URL(string: "picky://settings/CursorBubbles")!) == nil)
+        #expect(PickyDeepLink(url: URL(string: "picky://settings/OverlayAndNotifications")!) == nil)
         #expect(PickyDeepLink(url: URL(string: "picky://panel/STATUS")!) == nil)
     }
 

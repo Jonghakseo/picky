@@ -22,9 +22,9 @@ struct CompanionPanelFooterView: View {
             }) {
                 HStack(spacing: 6) {
                     Image(systemName: "power")
-                        .font(.system(size: 11, weight: .medium))
+                        .pickyFont(size: 11, weight: .medium)
                     Text("common.quit")
-                        .font(.system(size: 12, weight: .medium))
+                        .pickyFont(size: 12, weight: .medium)
                 }
                 .foregroundColor(DS.Colors.destructiveText.opacity(0.82))
             }
@@ -81,7 +81,7 @@ struct CompanionPanelAppearanceToggle: View {
             appearanceStore.setMode(target)
         } label: {
             Image(systemName: systemName)
-                .font(.system(size: 10.5, weight: .semibold))
+                .pickyFont(size: 10.5, weight: .semibold)
                 .foregroundColor(appearanceStore.mode == target ? DS.Colors.textPrimary : DS.Colors.textTertiary)
                 .frame(width: 14, height: 14)
         }

@@ -19,11 +19,11 @@ struct ShortcutKeyCapView: View {
         HStack(spacing: 4) {
             if let glyph = cap.glyph {
                 Image(systemName: glyph)
-                    .font(.system(size: 9, weight: .semibold))
+                    .pickyFont(size: 9, weight: .semibold)
                     .foregroundColor(DS.Colors.textSecondary)
             }
             Text(cap.label)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .pickyFont(size: 11, weight: .semibold, design: .monospaced)
                 .foregroundColor(DS.Colors.textPrimary)
         }
         .padding(.horizontal, 8)
@@ -71,12 +71,12 @@ struct ShortcutSettingsRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .pickyFont(size: 11, weight: .semibold)
                 .foregroundColor(DS.Colors.textSecondary)
                 .textCase(.uppercase)
                 .tracking(0.4)
             Text(subtitle)
-                .font(.system(size: 10.5, weight: .medium))
+                .pickyFont(size: 10.5, weight: .medium)
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -100,7 +100,7 @@ struct ShortcutSettingsRow: View {
 
             if recorder.isCapturing, let message = recorder.statusMessage {
                 Text(message)
-                    .font(.system(size: 10, weight: .medium))
+                    .pickyFont(size: 10, weight: .medium)
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -113,7 +113,7 @@ struct ShortcutSettingsRow: View {
         let caps = displayedSpec.keyCaps
         if caps.isEmpty {
             Text("shortcuts.row.notSet")
-                .font(.system(size: 10.5, weight: .medium))
+                .pickyFont(size: 10.5, weight: .medium)
                 .foregroundColor(DS.Colors.textTertiary)
         } else {
             HStack(spacing: 6) {
@@ -157,7 +157,7 @@ struct ShortcutChipButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 11, weight: .semibold))
+            .pickyFont(size: 11, weight: .semibold)
             .foregroundColor(textColor(for: configuration))
             .padding(.horizontal, 12)
             .padding(.vertical, 5)

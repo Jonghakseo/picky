@@ -27,7 +27,7 @@ struct CompanionPanelHeaderView: View {
                 NotificationCenter.default.post(name: .pickyDismissPanel, object: nil)
             }) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
+                    .pickyFont(size: 11, weight: .semibold)
                     .foregroundColor(DS.Colors.textTertiary)
                     .frame(width: 20, height: 20, alignment: .center)
                     .contentShape(Rectangle())

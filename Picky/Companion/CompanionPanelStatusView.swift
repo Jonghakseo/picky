@@ -91,9 +91,9 @@ struct CompanionPanelStatusView: View {
             Button(action: popToIndex) {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 11, weight: .semibold))
+                        .pickyFont(size: 11, weight: .semibold)
                     Text("tab.status")
-                        .font(.system(size: 11.5, weight: .medium))
+                        .pickyFont(size: 11.5, weight: .medium)
                 }
                 .foregroundColor(DS.Colors.textTertiary)
                 .contentShape(Rectangle())
@@ -104,12 +104,12 @@ struct CompanionPanelStatusView: View {
 
             VStack(alignment: .leading, spacing: 9) {
                 Text("settings.section.feedback.title")
-                    .font(.system(size: 11, weight: .semibold))
+                    .pickyFont(size: 11, weight: .semibold)
                     .foregroundColor(DS.Colors.textSecondary)
                     .textCase(.uppercase)
                     .tracking(0.4)
                 Text("settings.section.feedback.subtitle")
-                    .font(.system(size: 10.5, weight: .medium))
+                    .pickyFont(size: 10.5, weight: .medium)
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -134,16 +134,16 @@ struct CompanionPanelStatusView: View {
         if case .installedStale = shellCommandStatus {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 11, weight: .semibold))
+                    .pickyFont(size: 11, weight: .semibold)
                     .foregroundColor(DS.Colors.warning)
                     .frame(width: 14, alignment: .center)
                     .padding(.top, 1)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("status.shellCommand.stale.title")
-                        .font(.system(size: 12, weight: .semibold))
+                        .pickyFont(size: 12, weight: .semibold)
                         .foregroundColor(DS.Colors.textPrimary)
                     Text("status.shellCommand.stale.subtitle")
-                        .font(.system(size: 10.5, weight: .medium))
+                        .pickyFont(size: 10.5, weight: .medium)
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -179,16 +179,16 @@ struct CompanionPanelStatusView: View {
             HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("status.feedback.title")
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .pickyFont(size: 12.5, weight: .semibold)
                         .foregroundColor(DS.Colors.textPrimary)
                     Text("status.feedback.subtitle")
-                        .font(.system(size: 10.5, weight: .medium))
+                        .pickyFont(size: 10.5, weight: .medium)
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
+                    .pickyFont(size: 10, weight: .semibold)
                     .foregroundColor(DS.Colors.textTertiary)
             }
             .contentShape(Rectangle())
@@ -203,17 +203,17 @@ struct CompanionPanelStatusView: View {
     private var readyRow: some View {
         HStack(alignment: .top, spacing: 11) {
             Image(systemName: "mic.fill")
-                .font(.system(size: 14, weight: .semibold))
+                .pickyFont(size: 14, weight: .semibold)
                 .foregroundColor(DS.Colors.success)
                 .frame(width: 18, alignment: .center)
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(primaryStatusTitle)
-                    .font(.system(size: 13.5, weight: .semibold))
+                    .pickyFont(size: 13.5, weight: .semibold)
                     .foregroundColor(DS.Colors.textPrimary)
                 Text(primaryStatusSubtitle)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .pickyFont(size: 11.5, weight: .medium)
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -227,7 +227,7 @@ struct CompanionPanelStatusView: View {
     private var contextSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("status.capturedHeading")
-                .font(.system(size: 11, weight: .semibold))
+                .pickyFont(size: 11, weight: .semibold)
                 .foregroundColor(DS.Colors.textSecondary)
                 .textCase(.uppercase)
                 .tracking(0.4)
@@ -269,11 +269,11 @@ struct CompanionPanelStatusView: View {
     private func contextLine(icon: String, text: LocalizedStringKey) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 9) {
             Image(systemName: icon)
-                .font(.system(size: 10.5, weight: .medium))
+                .pickyFont(size: 10.5, weight: .medium)
                 .foregroundColor(DS.Colors.textTertiary)
                 .frame(width: 14, alignment: .center)
             Text(text)
-                .font(.system(size: 11.5, weight: .medium))
+                .pickyFont(size: 11.5, weight: .medium)
                 .foregroundColor(DS.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -309,18 +309,18 @@ private struct CompanionPanelUpdateSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("status.updates.heading")
-                .font(.system(size: 11, weight: .semibold))
+                .pickyFont(size: 11, weight: .semibold)
                 .foregroundColor(DS.Colors.textSecondary)
                 .textCase(.uppercase)
                 .tracking(0.4)
 
             HStack(alignment: .firstTextBaseline, spacing: 9) {
                 Image(systemName: "app.badge")
-                    .font(.system(size: 10.5, weight: .medium))
+                    .pickyFont(size: 10.5, weight: .medium)
                     .foregroundColor(DS.Colors.textTertiary)
                     .frame(width: 14, alignment: .center)
                 Text(L10n.t("status.updates.buildLine", buildLabel, channelLabel))
-                    .font(.system(size: 11.5, weight: .medium))
+                    .pickyFont(size: 11.5, weight: .medium)
                     .foregroundColor(DS.Colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -328,17 +328,17 @@ private struct CompanionPanelUpdateSection: View {
             if updaterController.isAvailable {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(L10n.t("status.updates.channelLabel"))
-                        .font(.system(size: 11.5, weight: .medium))
+                        .pickyFont(size: 11.5, weight: .medium)
                         .foregroundColor(DS.Colors.textTertiary)
                     Text(updaterController.updateChannelDisplayName)
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .pickyFont(size: 11.5, weight: .semibold)
                         .foregroundColor(DS.Colors.textSecondary)
                 }
 
                 Toggle("status.updates.autoCheck", isOn: automaticChecksBinding)
                     .toggleStyle(.switch)
                     .tint(DS.Colors.accent)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .pickyFont(size: 11.5, weight: .medium)
                     .foregroundColor(DS.Colors.textSecondary)
 
                 HStack(spacing: 8) {
@@ -351,13 +351,13 @@ private struct CompanionPanelUpdateSection: View {
 
                     if let last = updaterController.lastUpdateCheckDate {
                         Text(L10n.t("status.updates.lastChecked", Self.lastCheckFormatter.string(from: last)))
-                            .font(.system(size: 10.5, weight: .medium))
+                            .pickyFont(size: 10.5, weight: .medium)
                             .foregroundColor(DS.Colors.textTertiary)
                     }
                 }
             } else {
                 Text("status.updates.alphaNotice")
-                    .font(.system(size: 11, weight: .medium))
+                    .pickyFont(size: 11, weight: .medium)
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }

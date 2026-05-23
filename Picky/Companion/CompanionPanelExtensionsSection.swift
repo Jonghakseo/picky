@@ -94,7 +94,7 @@ struct CompanionPanelExtensionsSection: View {
         if !visibleRows.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text("status.extensions.heading")
-                    .font(.system(size: 11, weight: .semibold))
+                    .pickyFont(size: 11, weight: .semibold)
                     .foregroundColor(DS.Colors.textSecondary)
                     .textCase(.uppercase)
                     .tracking(0.4)
@@ -107,7 +107,7 @@ struct CompanionPanelExtensionsSection: View {
 
                 if let lastError = viewModel.lastError {
                     Text(lastError)
-                        .font(.system(size: 10.5, weight: .medium))
+                        .pickyFont(size: 10.5, weight: .medium)
                         .foregroundColor(DS.Colors.destructiveText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -121,16 +121,16 @@ struct CompanionPanelExtensionsSection: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 9) {
                 Image(systemName: "puzzlepiece.extension")
-                    .font(.system(size: 10.5, weight: .medium))
+                    .pickyFont(size: 10.5, weight: .medium)
                     .foregroundColor(DS.Colors.textTertiary)
                     .frame(width: 14, alignment: .center)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(displayName(for: row.name))
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .pickyFont(size: 11.5, weight: .semibold)
                         .foregroundColor(DS.Colors.textSecondary)
                     Text(row.description)
-                        .font(.system(size: 10.5, weight: .medium))
+                        .pickyFont(size: 10.5, weight: .medium)
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                     statusLine(for: row)
@@ -188,29 +188,29 @@ struct CompanionPanelExtensionsSection: View {
         switch row.status {
         case .installed:
             Text("status.extensions.state.installed")
-                .font(.system(size: 10, weight: .medium))
+                .pickyFont(size: 10, weight: .medium)
                 .foregroundColor(DS.Colors.success)
         case .outdated:
             Text("status.extensions.state.outdated")
-                .font(.system(size: 10, weight: .medium))
+                .pickyFont(size: 10, weight: .medium)
                 .foregroundColor(DS.Colors.textSecondary)
         case .legacySymlink:
             Text("status.extensions.state.legacySymlink")
-                .font(.system(size: 10, weight: .medium))
+                .pickyFont(size: 10, weight: .medium)
                 .foregroundColor(DS.Colors.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         case .developerOverride(let target):
             Text(L10n.t("status.extensions.state.developerOverride", target))
-                .font(.system(size: 10, weight: .medium))
+                .pickyFont(size: 10, weight: .medium)
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         case .notInstalled:
             Text("status.extensions.state.notInstalled")
-                .font(.system(size: 10, weight: .medium))
+                .pickyFont(size: 10, weight: .medium)
                 .foregroundColor(DS.Colors.textTertiary)
         case .conflict(let reason):
             Text(L10n.t("status.extensions.state.conflict", reason))
-                .font(.system(size: 10, weight: .medium))
+                .pickyFont(size: 10, weight: .medium)
                 .foregroundColor(DS.Colors.destructiveText)
                 .fixedSize(horizontal: false, vertical: true)
         case .bundleMissing:

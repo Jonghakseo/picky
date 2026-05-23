@@ -89,10 +89,10 @@ struct CompanionPanelMessagesView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("messages.title")
-                        .font(.system(size: 12, weight: .semibold))
+                        .pickyFont(size: 12, weight: .semibold)
                         .foregroundColor(DS.Colors.textPrimary)
                     Text("messages.subtitle")
-                        .font(.system(size: 10.5, weight: .medium))
+                        .pickyFont(size: 10.5, weight: .medium)
                         .foregroundColor(DS.Colors.textTertiary)
                 }
 
@@ -108,10 +108,10 @@ struct CompanionPanelMessagesView: View {
                                 .frame(width: 10, height: 10)
                         } else {
                             Image(systemName: "arrow.counterclockwise")
-                                .font(.system(size: 9.5, weight: .semibold))
+                                .pickyFont(size: 9.5, weight: .semibold)
                         }
                         Text("messages.newSession")
-                            .font(.system(size: 11, weight: .medium))
+                            .pickyFont(size: 11, weight: .medium)
                     }
                     .foregroundColor(companionManager.isResettingMainAgentSession ? DS.Colors.textTertiary : DS.Colors.textSecondary)
                 }
@@ -135,7 +135,7 @@ struct CompanionPanelMessagesView: View {
         HStack(spacing: 12) {
             Button(action: openMainAgentInPi) {
                 Label("messages.mainAgent.openInPi", systemImage: "terminal")
-                    .font(.system(size: 10.5, weight: .medium))
+                    .pickyFont(size: 10.5, weight: .medium)
                     .foregroundColor(DS.Colors.textSecondary)
             }
             .buttonStyle(.plain)
@@ -143,7 +143,7 @@ struct CompanionPanelMessagesView: View {
 
             Button(action: copyMainAgentResumeCommand) {
                 Label(copyButtonLabelKey, systemImage: copyButtonIconName)
-                    .font(.system(size: 10.5, weight: .medium))
+                    .pickyFont(size: 10.5, weight: .medium)
                     .foregroundColor(DS.Colors.textSecondary)
             }
             .buttonStyle(.plain)
@@ -164,10 +164,10 @@ struct CompanionPanelMessagesView: View {
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("messages.empty.title")
-                .font(.system(size: 12, weight: .semibold))
+                .pickyFont(size: 12, weight: .semibold)
                 .foregroundColor(DS.Colors.textSecondary)
             Text("messages.empty.body")
-                .font(.system(size: 11, weight: .medium))
+                .pickyFont(size: 11, weight: .medium)
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -183,7 +183,7 @@ struct CompanionPanelMessagesView: View {
             HStack(alignment: .bottom, spacing: 8) {
                 TextField("Message Picky…", text: $draftMessage, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .pickyFont(size: 11.5, weight: .medium)
                     .foregroundColor(DS.Colors.textPrimary)
                     .lineLimit(1...3)
                     .padding(.horizontal, 11)
@@ -201,7 +201,7 @@ struct CompanionPanelMessagesView: View {
                                 .controlSize(.small)
                         } else {
                             Image(systemName: "paperplane.fill")
-                                .font(.system(size: 12, weight: .semibold))
+                                .pickyFont(size: 12, weight: .semibold)
                         }
                     }
                     .frame(width: 28, height: 28)
@@ -214,7 +214,7 @@ struct CompanionPanelMessagesView: View {
 
             if let error = companionManager.directMessageError {
                 Text(error)
-                    .font(.system(size: 10.5, weight: .medium))
+                    .pickyFont(size: 10.5, weight: .medium)
                     .foregroundColor(DS.Colors.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -282,11 +282,11 @@ private struct CompanionPanelMessageRow: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(message.role == .user ? "You" : "Picky")
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .pickyFont(size: 10.5, weight: .semibold)
                     .foregroundColor(message.role == .user ? DS.Colors.accentText : DS.Colors.textSecondary)
                 Spacer(minLength: 8)
                 Text(message.createdAt, formatter: Self.timeFormatter)
-                    .font(.system(size: 9.5, weight: .medium))
+                    .pickyFont(size: 9.5, weight: .medium)
                     .foregroundColor(DS.Colors.textTertiary)
             }
 
@@ -299,7 +299,7 @@ private struct CompanionPanelMessageRow: View {
                     .textSelection(.enabled)
             } else {
                 Text(message.text)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .pickyFont(size: 11.5, weight: .medium)
                     .foregroundColor(DS.Colors.textPrimary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
@@ -350,27 +350,27 @@ private struct CompanionPanelMarkdownText: View {
                 .fixedSize(horizontal: false, vertical: true)
         case .paragraph(let text):
             Text(renderer.inlineAttributedString(for: text))
-                .font(.system(size: 11.5, weight: .medium))
+                .pickyFont(size: 11.5, weight: .medium)
                 .foregroundStyle(DS.Colors.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
         case .bullet(let text):
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("•")
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .pickyFont(size: 11.5, weight: .semibold)
                     .foregroundStyle(DS.Colors.textSecondary)
                 Text(renderer.inlineAttributedString(for: text))
-                    .font(.system(size: 11.5, weight: .medium))
+                    .pickyFont(size: 11.5, weight: .medium)
                     .foregroundStyle(DS.Colors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         case .table(let headers, let rows):
             VStack(alignment: .leading, spacing: 4) {
                 Text(headers.joined(separator: " · "))
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .pickyFont(size: 10.5, weight: .semibold)
                     .foregroundStyle(DS.Colors.textPrimary)
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     Text(row.joined(separator: " · "))
-                        .font(.system(size: 10.5, weight: .medium))
+                        .pickyFont(size: 10.5, weight: .medium)
                         .foregroundStyle(DS.Colors.textPrimary.opacity(0.92))
                 }
             }
@@ -379,7 +379,7 @@ private struct CompanionPanelMarkdownText: View {
         case .codeBlock(let text):
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(text.isEmpty ? " " : text)
-                    .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                    .pickyFont(size: 10.5, weight: .regular, design: .monospaced)
                     .foregroundStyle(DS.Colors.codeText)
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)

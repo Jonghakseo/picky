@@ -20,16 +20,16 @@ struct CompanionPanelPrerequisitesCopyView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("prereq.copy.runsLocally")
-                .font(.system(size: 12, weight: .bold))
+                .pickyFont(size: 12, weight: .bold)
                 .foregroundColor(DS.Colors.textSecondary)
 
             Text("prereq.copy.contextHandoff")
-                .font(.system(size: 11))
+                .pickyFont(size: 11)
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text("prereq.copy.noAccount")
-                .font(.system(size: 11))
+                .pickyFont(size: 11)
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -43,7 +43,7 @@ struct CompanionPanelPrerequisitesView: View {
     var body: some View {
         VStack(spacing: 2) {
             Text("prereq.heading")
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .pickyFont(size: 10, weight: .semibold, design: .rounded)
                 .foregroundColor(DS.Colors.textTertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.bottom, 6)
@@ -66,12 +66,12 @@ struct CompanionPanelPrerequisitesView: View {
         return HStack {
             HStack(spacing: 8) {
                 Image(systemName: "hand.raised")
-                    .font(.system(size: 12, weight: .medium))
+                    .pickyFont(size: 12, weight: .medium)
                     .foregroundColor(isGranted ? DS.Colors.textTertiary : DS.Colors.warning)
                     .frame(width: 16)
 
                 Text("prereq.accessibility.title")
-                    .font(.system(size: 13, weight: .medium))
+                    .pickyFont(size: 13, weight: .medium)
                     .foregroundColor(DS.Colors.textSecondary)
             }
 
@@ -83,7 +83,7 @@ struct CompanionPanelPrerequisitesView: View {
                         .fill(DS.Colors.success)
                         .frame(width: 6, height: 6)
                     Text("common.granted")
-                        .font(.system(size: 11, weight: .medium))
+                        .pickyFont(size: 11, weight: .medium)
                         .foregroundColor(DS.Colors.success)
                 }
             } else {
@@ -94,7 +94,7 @@ struct CompanionPanelPrerequisitesView: View {
                         WindowPositionManager.requestAccessibilityPermission()
                     }) {
                         Text("common.grant")
-                            .font(.system(size: 11, weight: .semibold))
+                            .pickyFont(size: 11, weight: .semibold)
                             .foregroundColor(DS.Colors.textOnAccent)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
@@ -114,7 +114,7 @@ struct CompanionPanelPrerequisitesView: View {
                         WindowPositionManager.openAccessibilitySettings()
                     }) {
                         Text("common.findApp")
-                            .font(.system(size: 11, weight: .semibold))
+                            .pickyFont(size: 11, weight: .semibold)
                             .foregroundColor(DS.Colors.textSecondary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
@@ -136,17 +136,17 @@ struct CompanionPanelPrerequisitesView: View {
         return HStack {
             HStack(spacing: 8) {
                 Image(systemName: "rectangle.dashed.badge.record")
-                    .font(.system(size: 12, weight: .medium))
+                    .pickyFont(size: 12, weight: .medium)
                     .foregroundColor(isGranted ? DS.Colors.textTertiary : DS.Colors.warning)
                     .frame(width: 16)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text("prereq.screenRecording.title")
-                        .font(.system(size: 13, weight: .medium))
+                        .pickyFont(size: 13, weight: .medium)
                         .foregroundColor(DS.Colors.textSecondary)
 
                     Text(isGranted ? "prereq.screenRecording.detail.granted" : "prereq.screenRecording.detail.missing")
-                        .font(.system(size: 10))
+                        .pickyFont(size: 10)
                         .foregroundColor(DS.Colors.textTertiary)
                 }
             }
@@ -159,7 +159,7 @@ struct CompanionPanelPrerequisitesView: View {
                         .fill(DS.Colors.success)
                         .frame(width: 6, height: 6)
                     Text("common.granted")
-                        .font(.system(size: 11, weight: .medium))
+                        .pickyFont(size: 11, weight: .medium)
                         .foregroundColor(DS.Colors.success)
                 }
             } else {
@@ -170,7 +170,7 @@ struct CompanionPanelPrerequisitesView: View {
                     WindowPositionManager.requestScreenRecordingPermission()
                 }) {
                     Text("common.grant")
-                        .font(.system(size: 11, weight: .semibold))
+                        .pickyFont(size: 11, weight: .semibold)
                         .foregroundColor(DS.Colors.textOnAccent)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
@@ -191,12 +191,12 @@ struct CompanionPanelPrerequisitesView: View {
         return HStack {
             HStack(spacing: 8) {
                 Image(systemName: "eye")
-                    .font(.system(size: 12, weight: .medium))
+                    .pickyFont(size: 12, weight: .medium)
                     .foregroundColor(isGranted ? DS.Colors.textTertiary : DS.Colors.warning)
                     .frame(width: 16)
 
                 Text("prereq.screenContent.title")
-                    .font(.system(size: 13, weight: .medium))
+                    .pickyFont(size: 13, weight: .medium)
                     .foregroundColor(DS.Colors.textSecondary)
             }
 
@@ -208,7 +208,7 @@ struct CompanionPanelPrerequisitesView: View {
                         .fill(DS.Colors.success)
                         .frame(width: 6, height: 6)
                     Text("common.granted")
-                        .font(.system(size: 11, weight: .medium))
+                        .pickyFont(size: 11, weight: .medium)
                         .foregroundColor(DS.Colors.success)
                 }
             } else {
@@ -216,7 +216,7 @@ struct CompanionPanelPrerequisitesView: View {
                     companionManager.requestScreenContentPermission()
                 }) {
                     Text("common.grant")
-                        .font(.system(size: 11, weight: .semibold))
+                        .pickyFont(size: 11, weight: .semibold)
                         .foregroundColor(DS.Colors.textOnAccent)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
@@ -237,12 +237,12 @@ struct CompanionPanelPrerequisitesView: View {
         return HStack {
             HStack(spacing: 8) {
                 Image(systemName: "mic")
-                    .font(.system(size: 12, weight: .medium))
+                    .pickyFont(size: 12, weight: .medium)
                     .foregroundColor(isGranted ? DS.Colors.textTertiary : DS.Colors.warning)
                     .frame(width: 16)
 
                 Text("prereq.microphone.title")
-                    .font(.system(size: 13, weight: .medium))
+                    .pickyFont(size: 13, weight: .medium)
                     .foregroundColor(DS.Colors.textSecondary)
             }
 
@@ -254,7 +254,7 @@ struct CompanionPanelPrerequisitesView: View {
                         .fill(DS.Colors.success)
                         .frame(width: 6, height: 6)
                     Text("common.granted")
-                        .font(.system(size: 11, weight: .medium))
+                        .pickyFont(size: 11, weight: .medium)
                         .foregroundColor(DS.Colors.success)
                 }
             } else {
@@ -271,7 +271,7 @@ struct CompanionPanelPrerequisitesView: View {
                     }
                 }) {
                     Text("common.grant")
-                        .font(.system(size: 11, weight: .semibold))
+                        .pickyFont(size: 11, weight: .semibold)
                         .foregroundColor(DS.Colors.textOnAccent)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
@@ -296,12 +296,12 @@ struct CompanionPanelPrerequisitesView: View {
         HStack {
             HStack(spacing: 8) {
                 Image(systemName: iconName)
-                    .font(.system(size: 12, weight: .medium))
+                    .pickyFont(size: 12, weight: .medium)
                     .foregroundColor(isGranted ? DS.Colors.textTertiary : DS.Colors.warning)
                     .frame(width: 16)
 
                 Text(label)
-                    .font(.system(size: 13, weight: .medium))
+                    .pickyFont(size: 13, weight: .medium)
                     .foregroundColor(DS.Colors.textSecondary)
             }
 
@@ -313,7 +313,7 @@ struct CompanionPanelPrerequisitesView: View {
                         .fill(DS.Colors.success)
                         .frame(width: 6, height: 6)
                     Text("common.granted")
-                        .font(.system(size: 11, weight: .medium))
+                        .pickyFont(size: 11, weight: .medium)
                         .foregroundColor(DS.Colors.success)
                 }
             } else {
@@ -323,7 +323,7 @@ struct CompanionPanelPrerequisitesView: View {
                     }
                 }) {
                     Text("common.grant")
-                        .font(.system(size: 11, weight: .semibold))
+                        .pickyFont(size: 11, weight: .semibold)
                         .foregroundColor(DS.Colors.textOnAccent)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)

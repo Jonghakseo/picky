@@ -170,9 +170,9 @@ private struct OnboardingSkipButtonView: View {
         Button(action: onSkip) {
             HStack(spacing: 6) {
                 Text("onboarding.skip.button")
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .pickyFont(size: 12.5, weight: .semibold)
                 Text("onboarding.skip.shortcut")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .pickyFont(size: 10, weight: .semibold, design: .rounded)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1.5)
                     .background(

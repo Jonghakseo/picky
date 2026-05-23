@@ -237,7 +237,7 @@ private struct CompanionPanelTabBar: View {
                     }
                 } label: {
                     Text(tab.labelKey)
-                        .font(.system(size: 12, weight: .semibold))
+                        .pickyFont(size: 12, weight: .semibold)
                         .foregroundColor(selectedTab == tab ? DS.Colors.textPrimary : DS.Colors.textTertiary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)

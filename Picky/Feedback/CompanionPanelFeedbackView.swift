@@ -118,14 +118,14 @@ struct CompanionPanelFeedbackView: View {
 
             if case .failed(let reason) = status {
                 Text(reason)
-                    .font(.system(size: 10.5, weight: .medium))
+                    .pickyFont(size: 10.5, weight: .medium)
                     .foregroundColor(DS.Colors.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             if !isConfigured {
                 Text("feedback.notConfigured")
-                    .font(.system(size: 10.5, weight: .medium))
+                    .pickyFont(size: 10.5, weight: .medium)
                     .foregroundColor(DS.Colors.textTertiary)
             }
 
@@ -177,7 +177,7 @@ struct CompanionPanelFeedbackView: View {
 
                 if message.isEmpty {
                     Text("feedback.placeholder")
-                        .font(.system(size: 12))
+                        .pickyFont(size: 12)
                         .foregroundColor(DS.Colors.textTertiary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 12)
@@ -195,9 +195,9 @@ struct CompanionPanelFeedbackView: View {
                 Button(action: chooseMediaAttachments) {
                     HStack(spacing: 5) {
                         Image(systemName: "paperclip")
-                            .font(.system(size: 10, weight: .semibold))
+                            .pickyFont(size: 10, weight: .semibold)
                         Text("feedback.addFiles")
-                            .font(.system(size: 10.5, weight: .semibold))
+                            .pickyFont(size: 10.5, weight: .semibold)
                     }
                     .foregroundColor(DS.Colors.accentText)
                 }
@@ -208,7 +208,7 @@ struct CompanionPanelFeedbackView: View {
 
             if selectedMediaAttachments.isEmpty {
                 Text(L10n.t("feedback.attachmentsHint", Int64(MediaAttachmentPolicy.maxCount), Self.formatBytes(MediaAttachmentPolicy.maxFileBytes), Self.formatBytes(MediaAttachmentPolicy.maxTotalBytes)))
-                    .font(.system(size: 10.5, weight: .medium))
+                    .pickyFont(size: 10.5, weight: .medium)
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
@@ -221,7 +221,7 @@ struct CompanionPanelFeedbackView: View {
 
             if let mediaAttachmentNotice {
                 Text(mediaAttachmentNotice)
-                    .font(.system(size: 10.5, weight: .medium))
+                    .pickyFont(size: 10.5, weight: .medium)
                     .foregroundColor(DS.Colors.warningText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -231,17 +231,17 @@ struct CompanionPanelFeedbackView: View {
     private func mediaAttachmentRow(_ attachment: SelectedMediaAttachment) -> some View {
         HStack(spacing: 8) {
             Image(systemName: attachment.kind.iconName)
-                .font(.system(size: 11, weight: .semibold))
+                .pickyFont(size: 11, weight: .semibold)
                 .foregroundColor(DS.Colors.accentText)
                 .frame(width: 14)
             VStack(alignment: .leading, spacing: 1) {
                 Text(attachment.filename)
-                    .font(.system(size: 11, weight: .medium))
+                    .pickyFont(size: 11, weight: .medium)
                     .foregroundColor(DS.Colors.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(Self.formatBytes(attachment.byteCount))
-                    .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                    .pickyFont(size: 9.5, weight: .medium, design: .monospaced)
                     .foregroundColor(DS.Colors.textTertiary)
             }
             Spacer(minLength: 6)
@@ -249,7 +249,7 @@ struct CompanionPanelFeedbackView: View {
                 removeMediaAttachment(attachment)
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
+                    .pickyFont(size: 9, weight: .bold)
                     .foregroundColor(DS.Colors.textTertiary)
                     .frame(width: 18, height: 18)
                     .background(Circle().fill(DS.Colors.surface2.opacity(0.75)))
@@ -283,7 +283,7 @@ struct CompanionPanelFeedbackView: View {
             .controlSize(.small)
             .disabled(status == .sending)
             Text(attachmentScopeHint)
-                .font(.system(size: 10.5, weight: .medium))
+                .pickyFont(size: 10.5, weight: .medium)
                 .foregroundColor(DS.Colors.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -302,7 +302,7 @@ struct CompanionPanelFeedbackView: View {
 
     private var metadataFooter: some View {
         Text(metadataLine)
-            .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+            .pickyFont(size: 10.5, weight: .medium, design: .monospaced)
             .foregroundColor(DS.Colors.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -312,10 +312,10 @@ struct CompanionPanelFeedbackView: View {
             if status == .sent {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 10, weight: .semibold))
+                        .pickyFont(size: 10, weight: .semibold)
                         .foregroundColor(DS.Colors.success)
                     Text("feedback.sent")
-                        .font(.system(size: 11, weight: .medium))
+                        .pickyFont(size: 11, weight: .medium)
                         .foregroundColor(DS.Colors.success)
                 }
             }
@@ -328,7 +328,7 @@ struct CompanionPanelFeedbackView: View {
                             .scaleEffect(0.7)
                     }
                     Text(status == .sending ? "feedback.sending" : "feedback.send")
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .pickyFont(size: 11.5, weight: .semibold)
                 }
                 .foregroundColor(DS.Colors.accentText)
                 .padding(.horizontal, 12)
@@ -358,7 +358,7 @@ struct CompanionPanelFeedbackView: View {
 
     private func fieldLabel(_ text: LocalizedStringKey) -> some View {
         Text(text)
-            .font(.system(size: 10.5, weight: .semibold))
+            .pickyFont(size: 10.5, weight: .semibold)
             .foregroundColor(DS.Colors.textTertiary)
     }
 

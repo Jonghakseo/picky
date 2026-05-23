@@ -330,6 +330,7 @@ extension PickyMarkdownInlineTextView {
         style.headIndent = leaderIndent
         style.tabStops = [NSTextTab(textAlignment: .left, location: leaderIndent)]
         style.defaultTabInterval = leaderIndent
+        style.lineHeightMultiple = bubbleLineHeightMultiple
         leader.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: leader.length))
         return leader
     }
@@ -398,8 +399,19 @@ extension PickyMarkdownInlineTextView {
         style.paragraphSpacing = isLast ? 0 : paragraphSpacing
         style.firstLineHeadIndent = headIndent
         style.headIndent = headIndent
+        style.lineHeightMultiple = bubbleLineHeightMultiple
         attr.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: attr.length))
     }
+
+    /// Multiplier applied to the natural NSLayoutManager line height inside
+    /// every bubble paragraph style. NSLayoutManager already scales the
+    /// per-line leading from the font's natural metrics, but at SF Pro's
+    /// tight default ratio (~1.18× font size) bubbles still read cramped
+    /// once the user pumps the app font scale to the upper end of the 0.9...1.3
+    /// range. A flat 1.1× multiplier composes on top of that natural scaling
+    /// for an effective ~1.30× ratio, which matches the macOS Notes / Reader
+    /// line rhythm without compressing anything at smaller scales.
+    private static let bubbleLineHeightMultiple: CGFloat = 1.1
 
     private static let attributedCache: NSCache<NSString, NSAttributedString> = {
         let cache = NSCache<NSString, NSAttributedString>()

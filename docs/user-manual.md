@@ -593,6 +593,11 @@ Report viewer features:
 - Copy Markdown to clipboard.
 - Persistent zoom.
 
+Where reports live and when they go away:
+
+- Every time you open a report, Picky writes a Markdown copy under `~/Library/Application Support/Picky/GeneratedReports/` named after the source message ID. Opening the same message again overwrites the same file rather than creating a new one.
+- On each app launch Picky sweeps that folder and deletes Markdown files older than **30 days** (last modified). Non-`.md` files and subfolders are never touched, so anything you drop in there by hand stays put. The sweep runs in the background and silently no-ops on a fresh install or after a permissions hiccup.
+
 Report zoom shortcuts:
 
 | Shortcut | Action |

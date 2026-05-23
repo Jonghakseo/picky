@@ -214,6 +214,15 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             // Bundled pi-extensions install is opt-in via the Status tab so
             // Picky never modifies `~/.pi/agent` on launch without consent.
             daemonLauncher.start()
+            // GeneratedReports/ accumulates a markdown file per opened
+            // session message and is never written back to disk after
+            // first render. Sweep entries older than 30 days off the main
+            // thread so it doesn't grow unboundedly across long-running
+            // installs. Errors are swallowed inside the pruner so a
+            // filesystem hiccup never blocks app launch.
+            Task.detached(priority: .background) {
+                PickyGeneratedReportsPruner().prune()
+            }
             hudOverlayManager.start()
             // Best-effort install of /usr/local/bin/picky when we can do it
             // without prompting for credentials. Anything that would require

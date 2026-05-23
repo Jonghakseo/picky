@@ -715,12 +715,13 @@ struct PickySettingsPolishTests {
         var settings = PickySettings.defaults(appSupportRoot: root)
         settings.defaultCwd = project.path
         settings.worktreeParent = project.path
-        settings.fontScales = PickyFontScales(markdownReport: 1.4, terminal: 1.8)
+        settings.fontScales = PickyFontScales(markdownReport: 1.4, terminal: 1.8, app: 1.2)
         try store.save(settings)
 
         let reloaded = store.load().fontScales
         #expect(reloaded.markdownReport == 1.4)
         #expect(reloaded.terminal == 1.8)
+        #expect(reloaded.app == 1.2)
 
         // Out-of-range values stored by an older or corrupted client get clamped on load
         // so the UI never starts in a 0.1× or 10× broken state.
@@ -731,6 +732,14 @@ struct PickySettingsPolishTests {
         let clamped = store.load().fontScales
         #expect(clamped.markdownReport == PickyFontScales.maximum)
         #expect(clamped.terminal == 1.8)
+        #expect(clamped.app == 1.2)
+
+        // Out-of-range app scale clamps to the narrower 0.9...1.3 band.
+        let raw2 = try String(contentsOf: url)
+        let mutated2 = raw2.replacingOccurrences(of: "\"app\" : 1.2", with: "\"app\" : 5.0")
+        try mutated2.data(using: .utf8)!.write(to: url)
+        let clampedApp = store.load().fontScales.app
+        #expect(clampedApp == PickyFontScales.appMaximum)
     }
 
     @Test func settingsRoundTripPreservesOnboardingCompletedVersion() throws {

@@ -205,7 +205,7 @@ struct PickyConversationHeaderView: View {
             )
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: 12, weight: .semibold))
+                .pickyFont(size: 12, weight: .semibold)
                 .foregroundColor(DS.Colors.textTertiary)
                 .frame(width: 18, height: 18)
                 .contentShape(Rectangle())
@@ -290,7 +290,7 @@ struct PickyConversationHeaderView: View {
 
     private var stickyArmLockBadge: some View {
         Image(systemName: "lock.fill")
-            .font(.system(size: 6.8, weight: .bold))
+            .pickyFont(size: 6.8, weight: .bold)
             .foregroundColor(DS.Colors.accentText)
             .frame(width: 11, height: 11)
             .background(Circle().fill(DS.Colors.surface1))
@@ -364,9 +364,9 @@ struct PickyConversationHeaderView: View {
     private var screenContextShortcutBadge: some View {
         HStack(spacing: 1.5) {
             Image(systemName: "command")
-                .font(.system(size: 6.5, weight: .bold))
+                .pickyFont(size: 6.5, weight: .bold)
             Text("K")
-                .font(.system(size: 7.5, weight: .bold, design: .rounded))
+                .pickyFont(size: 7.5, weight: .bold, design: .rounded)
         }
         .foregroundColor(DS.Colors.textPrimary)
         .padding(.horizontal, 4.5)
@@ -389,7 +389,7 @@ struct PickyConversationHeaderView: View {
 
     private var voiceTargetMicBadge: some View {
         Image(systemName: "mic.fill")
-            .font(.system(size: 6.8, weight: .bold))
+            .pickyFont(size: 6.8, weight: .bold)
             .foregroundColor(DS.Colors.accentText)
             .frame(width: 11, height: 11)
             .background(Circle().fill(DS.Colors.surface1))
@@ -448,7 +448,7 @@ struct PickyConversationHeaderView: View {
 
     private func attentionIndicator(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 7.2, weight: .bold, design: .monospaced))
+            .pickyFont(size: 7.2, weight: .bold, design: .monospaced)
             .foregroundColor(.white)
             .frame(width: 10, height: 10)
             .background(Circle().fill(statusColor))

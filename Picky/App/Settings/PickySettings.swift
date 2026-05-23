@@ -695,24 +695,38 @@ struct PickyDetachedPanelFrame: Codable, Equatable {
     }
 }
 
-/// User zoom level for the markdown report viewer and the Pi terminal overlay.
-/// Each surface keeps its own multiplier so increasing terminal cell density does not
-/// also blow up the markdown body. Bounded by `PickyFontScales.minimum`/`.maximum`
-/// before persisting so a corrupted settings file can't push the UI into an unusable
-/// scale on next launch.
+/// User zoom level for the markdown report viewer, Pi terminal overlay, and the
+/// global app surface (HUD/Conversation/Companion/Settings/Feedback). Each surface
+/// keeps its own multiplier so increasing terminal cell density does not also blow up
+/// the markdown body. Bounded by `PickyFontScales.minimum`/`.maximum` (or the
+/// narrower app range) before persisting so a corrupted settings file can't push the
+/// UI into an unusable scale on next launch.
 struct PickyFontScales: Codable, Equatable {
     var markdownReport: Double
     var terminal: Double
+    /// Global app font scale. Narrower range than report/terminal because the app
+    /// surface has fixed-width controls that can't absorb arbitrary zoom.
+    var app: Double
 
     static let minimum: Double = 0.7
     static let maximum: Double = 2.5
     static let step: Double = 0.1
-    static let defaults = PickyFontScales(markdownReport: 1.0, terminal: 1.0)
+    /// App-wide scale stays within 0.9...1.3 (10% steps) — outside this band the
+    /// Companion/Settings forms truncate fixed-width controls.
+    static let appMinimum: Double = 0.9
+    static let appMaximum: Double = 1.3
+    static let appStep: Double = 0.1
+    static let defaults = PickyFontScales(markdownReport: 1.0, terminal: 1.0, app: 1.0)
 
     static func clamped(_ value: Double) -> Double {
         // Round to one decimal to avoid floating-point drift accumulating across `+0.1` taps.
         let rounded = (value * 10).rounded() / 10
         return min(max(rounded, minimum), maximum)
+    }
+
+    static func clampedApp(_ value: Double) -> Double {
+        let rounded = (value * 10).rounded() / 10
+        return min(max(rounded, appMinimum), appMaximum)
     }
 }
 
@@ -1379,7 +1393,8 @@ struct PickySettings: Codable, Equatable {
         if let storedScales = try container.decodeIfPresent(PickyFontScales.self, forKey: .fontScales) {
             fontScales = PickyFontScales(
                 markdownReport: PickyFontScales.clamped(storedScales.markdownReport),
-                terminal: PickyFontScales.clamped(storedScales.terminal)
+                terminal: PickyFontScales.clamped(storedScales.terminal),
+                app: PickyFontScales.clampedApp(storedScales.app)
             )
         } else {
             fontScales = defaults.fontScales

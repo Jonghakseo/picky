@@ -23,7 +23,7 @@ struct PickyOpenAsReportHoverIcon: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "arrow.up.right.square")
-                .font(.system(size: 11, weight: .semibold))
+                .pickyFont(size: 11, weight: .semibold)
                 .foregroundColor(DS.Colors.accentText.opacity(0.95))
                 .frame(width: 20, height: 20)
                 .background(

@@ -210,6 +210,12 @@ struct PickyMarkdownReportView: View {
     /// readable defaults; ⌘+ / ⌘- on the report panel update the model and re-render
     /// this view at the new scale.
     var fontScale: Double = 1.0
+    /// Global app font scale (⌘+ / ⌘- when no detached panel has focus). Composed
+    /// multiplicatively with the per-panel `fontScale` so a user who set the app
+    /// to 110% and the panel to 130% sees 143% on the report body. Declared as an
+    /// `@Environment` value so the view re-renders the moment the root container
+    /// publishes a new app scale.
+    @Environment(\.pickyAppFontScale) private var appFontScale
     private let renderer = PickyReportMarkdownRenderer()
 
     /// Body copy size at scale 1.0. Bumped from the original 13.5pt because users
@@ -363,7 +369,7 @@ struct PickyMarkdownReportView: View {
     }
 
     private func scaled(_ size: CGFloat) -> CGFloat {
-        size * CGFloat(fontScale)
+        size * CGFloat(fontScale) * appFontScale
     }
 }
 
@@ -401,6 +407,11 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
     /// runs from `CompanionAppDelegate`. The fallback default keeps unit tests and
     /// previews working without crashing if `configure` was never called.
     private var appearanceStore = PickyAppearanceStore()
+    /// Global app font scale shared with the rest of the UI surface so the report
+    /// header chrome (header buttons, title) scales together with the HUD/Companion
+    /// when the user hits ⌘+ / ⌘-. The per-panel `fontScale` on `PickyReportViewerModel`
+    /// still layers on top for fine-grained zoom of the markdown body.
+    private var fontScaleStore = PickyAppFontScaleStore()
     /// Shared settings store used to load/persist the markdown report zoom level.
     /// Falls back to the default settings location for tests and previews.
     private var settingsStore = PickySettingsStore()
@@ -409,8 +420,13 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
 
     /// Wires the live appearance store so the report panel flips with the rest of
     /// the app. Called once from `CompanionAppDelegate` at startup.
-    func configure(appearanceStore: PickyAppearanceStore, settingsStore: PickySettingsStore = PickySettingsStore()) {
+    func configure(
+        appearanceStore: PickyAppearanceStore,
+        fontScaleStore: PickyAppFontScaleStore,
+        settingsStore: PickySettingsStore = PickySettingsStore()
+    ) {
         self.appearanceStore = appearanceStore
+        self.fontScaleStore = fontScaleStore
         self.settingsStore = settingsStore
     }
 
@@ -456,9 +472,11 @@ final class PickyReportViewerPresenter: PickyReportPresenting {
             persister: PickyDetachedPanelFramePersister.backed(by: settingsStore, kind: .reportViewer)
         )
 
-        let rootView = PickyReportViewerWindowView(model: model)
-            .environmentObject(appearanceStore)
-            .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
+        let rootView = PickyAppFontScaleRoot(store: fontScaleStore) {
+            PickyReportViewerWindowView(model: model)
+                .environmentObject(self.appearanceStore)
+                .modifier(PickyPreferredColorSchemeModifier(store: self.appearanceStore))
+        }
         let hostingView = NSHostingView(rootView: LocalizedHostingRoot { rootView })
         hostingView.frame = NSRect(origin: .zero, size: panel.frame.size)
         hostingView.autoresizingMask = [.width, .height]
@@ -596,16 +614,16 @@ struct PickyReportViewerWindowView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 18, weight: .semibold))
+                .pickyFont(size: 18, weight: .semibold)
                 .foregroundStyle(DS.Colors.accentText)
             VStack(alignment: .leading, spacing: 3) {
                 Text(model.title)
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .pickyFont(size: 15, weight: .semibold, design: .rounded)
                     .foregroundStyle(DS.Colors.textPrimary)
                     .lineLimit(1)
                 Button(action: openReportFile) {
                     Text(model.fileURL.lastPathComponent)
-                        .font(.system(size: 11.5, weight: .regular, design: .monospaced))
+                        .pickyFont(size: 11.5, weight: .regular, design: .monospaced)
                         .foregroundStyle(DS.Colors.textTertiary)
                         .underline()
                         .lineLimit(1)
@@ -657,7 +675,7 @@ struct PickyReportViewerWindowView: View {
 
     private func emptyState(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 13.5, weight: .regular, design: .default))
+            .pickyFont(size: 13.5, weight: .regular, design: .default)
             .foregroundStyle(DS.Colors.textTertiary)
             .frame(maxWidth: .infinity, minHeight: 240, alignment: .center)
     }

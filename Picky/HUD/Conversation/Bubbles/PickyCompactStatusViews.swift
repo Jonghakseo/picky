@@ -43,7 +43,7 @@ struct PickyCompactCompletionBubbleView: View {
                     Circle()
                         .stroke(DS.Colors.info.opacity(0.34), lineWidth: 0.8)
                     Image(systemName: "checkmark")
-                        .font(.system(size: 8.5, weight: .bold))
+                        .pickyFont(size: 8.5, weight: .bold)
                         .foregroundColor(DS.Colors.info)
                 }
                 .frame(width: 18, height: 18)
@@ -81,7 +81,7 @@ struct PickyCompactFailureBubbleView: View {
                     Circle()
                         .stroke(DS.Colors.destructiveText.opacity(0.42), lineWidth: 0.8)
                     Image(systemName: "exclamationmark")
-                        .font(.system(size: 9, weight: .bold))
+                        .pickyFont(size: 9, weight: .bold)
                         .foregroundColor(DS.Colors.destructiveText)
                 }
                 .frame(width: 18, height: 18)

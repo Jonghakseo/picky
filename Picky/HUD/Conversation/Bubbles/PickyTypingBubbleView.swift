@@ -27,7 +27,7 @@ struct PickyTypingBubbleView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 5) {
                         Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                            .font(.system(size: 8.5, weight: .bold))
+                            .pickyFont(size: 8.5, weight: .bold)
                         Text("⌁ thinking")
                             .font(PickyHUDTypography.metaSemibold)
                     }

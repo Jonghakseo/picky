@@ -27,22 +27,22 @@ struct PickyTerminalSyncBanner: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: severity.iconName)
-                .font(.system(size: 12, weight: .semibold))
+                .pickyFont(size: 12, weight: .semibold)
                 .foregroundColor(severity.tint)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 2) {
                 Text(severity.title)
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .pickyFont(size: 11.5, weight: .semibold)
                     .foregroundColor(DS.Colors.textPrimary)
                 Text(detail)
-                    .font(.system(size: 11))
+                    .pickyFont(size: 11)
                     .foregroundColor(DS.Colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 4)
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .semibold))
+                    .pickyFont(size: 9, weight: .semibold)
                     .foregroundColor(DS.Colors.textTertiary)
                     .padding(4)
                     .contentShape(Rectangle())

@@ -41,6 +41,7 @@ final class MenuBarPanelManager: NSObject {
     private let companionManager: CompanionManager
     private let sessionListViewModel: PickySessionListViewModel
     private let appearanceStore: PickyAppearanceStore
+    private let fontScaleStore: PickyAppFontScaleStore
     private let updaterController: PickyUpdaterController
     /// Lives on the manager so the panel's tab/route selection survives
     /// panel teardown (hidePanel only orderOuts; the hosting view is kept).
@@ -54,12 +55,14 @@ final class MenuBarPanelManager: NSObject {
         companionManager: CompanionManager,
         sessionListViewModel: PickySessionListViewModel,
         appearanceStore: PickyAppearanceStore,
+        fontScaleStore: PickyAppFontScaleStore,
         updaterController: PickyUpdaterController,
         navigator: PickyPanelNavigator
     ) {
         self.companionManager = companionManager
         self.sessionListViewModel = sessionListViewModel
         self.appearanceStore = appearanceStore
+        self.fontScaleStore = fontScaleStore
         self.updaterController = updaterController
         self.navigator = navigator
         super.init()
@@ -195,15 +198,17 @@ final class MenuBarPanelManager: NSObject {
     }
 
     private func createPanel() {
-        let companionPanelView = CompanionPanelView(
-            companionManager: companionManager,
-            sessionListViewModel: sessionListViewModel,
-            navigator: navigator
-        )
-            .frame(width: panelWidth, height: panelHeight)
-            .environmentObject(appearanceStore)
-            .environmentObject(updaterController)
-            .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
+        let companionPanelView = PickyAppFontScaleRoot(store: fontScaleStore) {
+            CompanionPanelView(
+                companionManager: self.companionManager,
+                sessionListViewModel: self.sessionListViewModel,
+                navigator: self.navigator
+            )
+            .frame(width: self.panelWidth, height: self.panelHeight)
+            .environmentObject(self.appearanceStore)
+            .environmentObject(self.updaterController)
+            .modifier(PickyPreferredColorSchemeModifier(store: self.appearanceStore))
+        }
 
         let hostingView = NSHostingView(rootView: LocalizedHostingRoot { companionPanelView })
         hostingView.frame = NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight)

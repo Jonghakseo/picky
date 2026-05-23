@@ -87,11 +87,11 @@ struct PickyHUDArchivedSessionsListView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text("hud.archivedList.title")
-                .font(.system(size: 12, weight: .semibold))
+                .pickyFont(size: 12, weight: .semibold)
                 .foregroundColor(DS.Colors.textPrimary)
             if !archivedSessions.isEmpty {
                 Text("\(archivedSessions.count)")
-                    .font(.system(size: 11, weight: .medium))
+                    .pickyFont(size: 11, weight: .medium)
                     .foregroundColor(DS.Colors.textTertiary)
             }
             Spacer(minLength: 4)
@@ -107,7 +107,7 @@ struct PickyHUDArchivedSessionsListView: View {
             isDeleteAllConfirmationPresented = true
         } label: {
             Text("hud.archivedList.deleteAll")
-                .font(.system(size: 11, weight: .semibold))
+                .pickyFont(size: 11, weight: .semibold)
                 .foregroundColor(DS.Colors.destructiveText)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
@@ -131,7 +131,7 @@ struct PickyHUDArchivedSessionsListView: View {
 
     private var emptyState: some View {
         Text("hud.archivedList.empty")
-            .font(.system(size: 11))
+            .pickyFont(size: 11)
             .foregroundColor(DS.Colors.textTertiary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 6)
@@ -142,13 +142,13 @@ struct PickyHUDArchivedSessionsListView: View {
         HStack(alignment: .center, spacing: 6) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.title)
-                    .font(.system(size: 12, weight: .medium))
+                    .pickyFont(size: 12, weight: .medium)
                     .foregroundColor(DS.Colors.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 if let cwd = session.compactCwdDescription {
                     Text(cwd)
-                        .font(.system(size: 10))
+                        .pickyFont(size: 10)
                         .foregroundColor(DS.Colors.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -173,7 +173,7 @@ struct PickyHUDArchivedSessionsListView: View {
             viewModel.unarchive(sessionID: session.id)
         } label: {
             Text("hud.archivedList.restore")
-                .font(.system(size: 11, weight: .semibold))
+                .pickyFont(size: 11, weight: .semibold)
                 .foregroundColor(DS.Colors.accentText)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
@@ -200,7 +200,7 @@ struct PickyHUDArchivedSessionsListView: View {
             }
         } label: {
             Text(isArmed ? "hud.archivedList.confirmDelete" : "hud.archivedList.delete")
-                .font(.system(size: 11, weight: .semibold))
+                .pickyFont(size: 11, weight: .semibold)
                 .foregroundColor(isArmed ? DS.Colors.destructiveText : DS.Colors.textTertiary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)

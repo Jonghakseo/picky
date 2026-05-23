@@ -102,10 +102,10 @@ struct PickyInlineTerminalCardView: View {
     private var missingSessionView: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("hud.inlineTerminal.unavailable.title")
-                .font(.system(size: 12, weight: .semibold))
+                .pickyFont(size: 12, weight: .semibold)
                 .foregroundColor(DS.Colors.textPrimary)
             Text("hud.inlineTerminal.unavailable.body")
-                .font(.system(size: 11))
+                .pickyFont(size: 11)
                 .foregroundColor(DS.Colors.textSecondary)
             Button("Back to Chat") {
                 viewModel.disableInlineTerminalMode(sessionID: session.id)
@@ -145,7 +145,7 @@ private struct PickyInlineTerminalSessionView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: "terminal.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .pickyFont(size: 13, weight: .semibold)
                 .foregroundColor(DS.Colors.success)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -154,7 +154,7 @@ private struct PickyInlineTerminalSessionView: View {
                         .foregroundColor(DS.Colors.textPrimary)
                         .lineLimit(1)
                     Text("hud.inlineTerminal.tab.tui")
-                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .pickyFont(size: 9, weight: .bold, design: .rounded)
                         .foregroundColor(DS.Colors.success)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1.5)
@@ -178,7 +178,7 @@ private struct PickyInlineTerminalSessionView: View {
                 }
                 .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
             }
-            .font(.system(size: 11, weight: .semibold))
+            .pickyFont(size: 11, weight: .semibold)
             .buttonStyle(.borderless)
             .help("Return to the SwiftUI chat and composer (⌘T)")
 
@@ -190,7 +190,7 @@ private struct PickyInlineTerminalSessionView: View {
                 )
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 12, weight: .semibold))
+                    .pickyFont(size: 12, weight: .semibold)
                     .foregroundColor(DS.Colors.textTertiary)
                     .frame(width: 18, height: 18)
                     .contentShape(Rectangle())
@@ -206,9 +206,9 @@ private struct PickyInlineTerminalSessionView: View {
     private func shortcutBadge(_ letter: String) -> some View {
         HStack(spacing: 1.5) {
             Image(systemName: "command")
-                .font(.system(size: 6.5, weight: .bold))
+                .pickyFont(size: 6.5, weight: .bold)
             Text(letter)
-                .font(.system(size: 7.5, weight: .bold, design: .rounded))
+                .pickyFont(size: 7.5, weight: .bold, design: .rounded)
         }
         .foregroundColor(DS.Colors.textPrimary)
         .padding(.horizontal, 4.5)
@@ -227,10 +227,10 @@ private struct PickyInlineTerminalSessionView: View {
         } else if let prepareError = terminalSession.prepareError {
             VStack(alignment: .leading, spacing: 8) {
                 Text("hud.inlineTerminal.failed.title")
-                    .font(.system(size: 12, weight: .semibold))
+                    .pickyFont(size: 12, weight: .semibold)
                     .foregroundColor(DS.Colors.textPrimary)
                 Text(prepareError)
-                    .font(.system(size: 11, design: .monospaced))
+                    .pickyFont(size: 11, design: .monospaced)
                     .foregroundColor(DS.Colors.textSecondary)
                     .textSelection(.enabled)
                 Button("Back to Chat") {
@@ -255,20 +255,20 @@ private struct PickyInlineTerminalSessionView: View {
     private var inactiveTerminalPlaceholder: some View {
         VStack(alignment: .center, spacing: 10) {
             Image(systemName: "rectangle.on.rectangle.slash")
-                .font(.system(size: 22, weight: .semibold))
+                .pickyFont(size: 22, weight: .semibold)
                 .foregroundColor(DS.Colors.textTertiary)
             Text("hud.inlineTerminal.singleton.title")
-                .font(.system(size: 12.5, weight: .semibold))
+                .pickyFont(size: 12.5, weight: .semibold)
                 .foregroundColor(DS.Colors.textPrimary)
                 .multilineTextAlignment(.center)
             Text("hud.inlineTerminal.singleton.body")
-                .font(.system(size: 11))
+                .pickyFont(size: 11)
                 .foregroundColor(DS.Colors.textSecondary)
                 .multilineTextAlignment(.center)
             Button("Show This TUI") {
                 viewModel.activateInlineTerminalAttachment(sessionID: session.id, attachmentID: attachmentID)
             }
-            .font(.system(size: 11, weight: .semibold))
+            .pickyFont(size: 11, weight: .semibold)
             .buttonStyle(.borderless)
         }
         .padding(18)
@@ -294,7 +294,7 @@ private struct PickyInlineTerminalStatusLine: View {
 
     var body: some View {
         Text(prepareError ?? model.statusText)
-            .font(.system(size: 10.5, design: .monospaced))
+            .pickyFont(size: 10.5, design: .monospaced)
             .foregroundColor(prepareError == nil ? DS.Colors.textSecondary : DS.Colors.destructiveText)
             .lineLimit(1)
             .truncationMode(.middle)

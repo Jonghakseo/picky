@@ -217,19 +217,19 @@ private struct PickySessionTerminalAddonContentView: View {
     private var header: some View {
         HStack(spacing: 7) {
             Image(systemName: "terminal.fill")
-                .font(.system(size: 11.5, weight: .semibold))
+                .pickyFont(size: 11.5, weight: .semibold)
                 .foregroundColor(DS.Colors.success)
             Text(verbatim: "Local Terminal")
-                .font(.system(size: 11.5, weight: .semibold))
+                .pickyFont(size: 11.5, weight: .semibold)
                 .foregroundColor(DS.Colors.textPrimary)
             Text(terminalSession.model.statusText)
-                .font(.system(size: 9.5, design: .monospaced))
+                .pickyFont(size: 9.5, design: .monospaced)
                 .foregroundColor(DS.Colors.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 6)
             Text(verbatim: "⌘E hide")
-                .font(.system(size: 9.5, weight: .medium))
+                .pickyFont(size: 9.5, weight: .medium)
                 .foregroundColor(DS.Colors.textTertiary)
         }
         .frame(height: 16, alignment: .center)
@@ -252,16 +252,16 @@ private struct PickySessionTerminalAddonContentView: View {
     private var inactiveTerminalPlaceholder: some View {
         VStack(alignment: .center, spacing: 8) {
             Image(systemName: "rectangle.on.rectangle.slash")
-                .font(.system(size: 19, weight: .semibold))
+                .pickyFont(size: 19, weight: .semibold)
                 .foregroundColor(DS.Colors.textTertiary)
             Text(verbatim: "Terminal is already visible in another HUD panel")
-                .font(.system(size: 11.5, weight: .semibold))
+                .pickyFont(size: 11.5, weight: .semibold)
                 .foregroundColor(DS.Colors.textPrimary)
                 .multilineTextAlignment(.center)
             Button("Show This Terminal") {
                 viewModel.activateShellTerminalAttachment(sessionID: session.id, attachmentID: attachmentID)
             }
-            .font(.system(size: 11, weight: .semibold))
+            .pickyFont(size: 11, weight: .semibold)
             .buttonStyle(.borderless)
         }
         .padding(18)

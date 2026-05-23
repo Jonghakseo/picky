@@ -30,14 +30,20 @@ final class PickyToolHistoryPresenter: PickyToolHistoryPresenting {
 
     private var records: [String: HistoryRecord] = [:]
     private var appearanceStore = PickyAppearanceStore()
+    private var fontScaleStore = PickyAppFontScaleStore()
     /// Shared settings store used to persist the tool history panel frame.
     /// Falls back to the default settings location for tests and previews.
     private var settingsStore = PickySettingsStore()
 
     private init() {}
 
-    func configure(appearanceStore: PickyAppearanceStore, settingsStore: PickySettingsStore = PickySettingsStore()) {
+    func configure(
+        appearanceStore: PickyAppearanceStore,
+        fontScaleStore: PickyAppFontScaleStore,
+        settingsStore: PickySettingsStore = PickySettingsStore()
+    ) {
         self.appearanceStore = appearanceStore
+        self.fontScaleStore = fontScaleStore
         self.settingsStore = settingsStore
     }
 
@@ -76,9 +82,11 @@ final class PickyToolHistoryPresenter: PickyToolHistoryPresenting {
             persister: PickyDetachedPanelFramePersister.backed(by: settingsStore, kind: .toolHistoryViewer)
         )
 
-        let rootView = PickyToolHistoryViewerWindowView(model: model)
-            .environmentObject(appearanceStore)
-            .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
+        let rootView = PickyAppFontScaleRoot(store: fontScaleStore) {
+            PickyToolHistoryViewerWindowView(model: model)
+                .environmentObject(self.appearanceStore)
+                .modifier(PickyPreferredColorSchemeModifier(store: self.appearanceStore))
+        }
         let hostingView = NSHostingView(rootView: LocalizedHostingRoot { rootView })
         hostingView.frame = NSRect(origin: .zero, size: panel.frame.size)
         hostingView.autoresizingMask = [.width, .height]
@@ -182,11 +190,11 @@ struct PickyToolHistoryViewerWindowView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: "wrench.and.screwdriver")
-                .font(.system(size: 16, weight: .semibold))
+                .pickyFont(size: 16, weight: .semibold)
                 .foregroundStyle(DS.Colors.accentText)
             VStack(alignment: .leading, spacing: 3) {
                 Text(model.title)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .pickyFont(size: 14, weight: .semibold, design: .rounded)
                     .foregroundStyle(DS.Colors.textPrimary)
                     .lineLimit(1)
                 summaryStrip
@@ -197,7 +205,7 @@ struct PickyToolHistoryViewerWindowView: View {
                 model.reload()
             } label: {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .medium))
+                    .pickyFont(size: 12, weight: .medium)
             }
             .buttonStyle(.plain)
             .foregroundStyle(DS.Colors.textSecondary)
@@ -229,7 +237,7 @@ struct PickyToolHistoryViewerWindowView: View {
     private func scopeButton(label: String, isActive: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 11, weight: isActive ? .semibold : .medium))
+                .pickyFont(size: 11, weight: isActive ? .semibold : .medium)
                 .foregroundStyle(isActive ? DS.Colors.textPrimary : DS.Colors.textSecondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
@@ -262,10 +270,10 @@ struct PickyToolHistoryViewerWindowView: View {
     private var emptyState: some View {
         VStack(spacing: 6) {
             Image(systemName: "tray")
-                .font(.system(size: 24, weight: .light))
+                .pickyFont(size: 24, weight: .light)
                 .foregroundStyle(DS.Colors.textTertiary)
             Text("hud.toolHistory.empty")
-                .font(.system(size: 13, weight: .medium))
+                .pickyFont(size: 13, weight: .medium)
                 .foregroundStyle(DS.Colors.textSecondary)
         }
         .frame(maxWidth: .infinity, minHeight: 240)
@@ -301,7 +309,7 @@ struct PickyToolHistoryEntryView: View {
                 .frame(minWidth: 22, alignment: .leading)
             categoryChip
             Text(entry.name)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .pickyFont(size: 12, weight: .medium, design: .monospaced)
                 .foregroundStyle(DS.Colors.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: 6)
@@ -336,7 +344,7 @@ struct PickyToolHistoryEntryView: View {
             }
         }()
         return Text(text)
-            .font(.system(size: 10.5, weight: .semibold))
+            .pickyFont(size: 10.5, weight: .semibold)
             .foregroundStyle(color)
     }
 
@@ -382,14 +390,14 @@ struct PickyToolHistoryEntryView: View {
     private func keyValueRow(_ key: String, value: AnyView?) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(key)
-                .font(.system(size: 10.5))
+                .pickyFont(size: 10.5)
                 .foregroundStyle(DS.Colors.textTertiary)
                 .frame(width: 60, alignment: .leading)
             if let value {
                 value
             } else {
                 Text("(unknown)")
-                    .font(.system(size: 11))
+                    .pickyFont(size: 11)
                     .foregroundStyle(DS.Colors.textTertiary)
             }
             Spacer(minLength: 0)
@@ -399,7 +407,7 @@ struct PickyToolHistoryEntryView: View {
     private func keyValueBlock<Content: View>(_ key: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(key)
-                .font(.system(size: 10.5))
+                .pickyFont(size: 10.5)
                 .foregroundStyle(DS.Colors.textTertiary)
             content()
         }
@@ -407,27 +415,27 @@ struct PickyToolHistoryEntryView: View {
 
     private func monospaceLink(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11.5, design: .monospaced))
+            .pickyFont(size: 11.5, design: .monospaced)
             .foregroundStyle(DS.Colors.accentText)
             .textSelection(.enabled)
     }
 
     private func monospaceText(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11, design: .monospaced))
+            .pickyFont(size: 11, design: .monospaced)
             .foregroundStyle(DS.Colors.textSecondary)
             .textSelection(.enabled)
     }
 
     private func secondaryText(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11.5))
+            .pickyFont(size: 11.5)
             .foregroundStyle(DS.Colors.textSecondary)
     }
 
     private func codeBlock(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11.5, design: .monospaced))
+            .pickyFont(size: 11.5, design: .monospaced)
             .foregroundStyle(DS.Colors.textPrimary)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -439,7 +447,7 @@ struct PickyToolHistoryEntryView: View {
     private func outputBlock(_ text: String) -> some View {
         ScrollView(.vertical, showsIndicators: true) {
             Text(text)
-                .font(.system(size: 11, design: .monospaced))
+                .pickyFont(size: 11, design: .monospaced)
                 .foregroundStyle(DS.Colors.textSecondary)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -466,10 +474,10 @@ struct PickyToolHistoryEntryView: View {
     private func diffLine(prefix: String, text: String, color: Color, background: Color) -> some View {
         HStack(alignment: .top, spacing: 6) {
             Text(prefix)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .pickyFont(size: 11, weight: .semibold, design: .monospaced)
                 .foregroundStyle(color.opacity(0.7))
             Text(text)
-                .font(.system(size: 11, design: .monospaced))
+                .pickyFont(size: 11, design: .monospaced)
                 .foregroundStyle(color)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -486,12 +494,12 @@ struct PickyToolHistoryEntryView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: isResultExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
+                        .pickyFont(size: 9, weight: .semibold)
                     Text("result")
-                        .font(.system(size: 11, weight: .medium))
+                        .pickyFont(size: 11, weight: .medium)
                     Spacer()
                     Text(isResultExpanded ? "expanded" : "collapsed · \(result.count) chars")
-                        .font(.system(size: 10.5, design: .monospaced))
+                        .pickyFont(size: 10.5, design: .monospaced)
                         .foregroundStyle(DS.Colors.textTertiary)
                 }
                 .foregroundStyle(DS.Colors.textSecondary)

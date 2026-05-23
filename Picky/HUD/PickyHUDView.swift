@@ -342,7 +342,7 @@ struct PickyHUDView: View {
 
     private var resizeHandleGlyph: some View {
         Image(systemName: "arrow.up.left.and.arrow.down.right")
-            .font(.system(size: 10.5, weight: .semibold))
+            .pickyFont(size: 10.5, weight: .semibold)
             .foregroundColor(DS.Colors.info)
             .rotationEffect(resizeHandleGlyphRotation)
     }
@@ -1917,18 +1917,18 @@ private struct PickyRecentPickleFolderPickerView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             Text("Recent folders")
-                .font(.system(size: 14, weight: .medium))
+                .pickyFont(size: 14, weight: .medium)
                 .foregroundStyle(DS.Colors.textPrimary)
             Spacer()
             Text("Start Pickle")
-                .font(.system(size: 11, weight: .medium))
+                .pickyFont(size: 11, weight: .medium)
                 .foregroundStyle(DS.Colors.textTertiary)
         }
     }
 
     private var emptyState: some View {
         Text("No recent folders yet. Choose a working folder to start your first Pickle.")
-            .font(.system(size: 12))
+            .pickyFont(size: 12)
             .foregroundStyle(DS.Colors.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.vertical, 8)
@@ -1946,16 +1946,16 @@ private struct PickyRecentPickleFolderRow: View {
             Button(action: onCreate) {
                 HStack(spacing: 9) {
                     Image(systemName: "folder")
-                        .font(.system(size: 14, weight: .medium))
+                        .pickyFont(size: 14, weight: .medium)
                         .foregroundStyle(DS.Colors.accentText)
                         .frame(width: 22, height: 22)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(displayName)
-                            .font(.system(size: 13, weight: .medium))
+                            .pickyFont(size: 13, weight: .medium)
                             .foregroundStyle(DS.Colors.textPrimary)
                             .lineLimit(1)
                         Text(compactPath)
-                            .font(.system(size: 11))
+                            .pickyFont(size: 11)
                             .foregroundStyle(DS.Colors.textSecondary)
                             .lineLimit(1)
                     }
@@ -1971,7 +1971,7 @@ private struct PickyRecentPickleFolderRow: View {
 
             Button(action: onRemove) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .medium))
+                    .pickyFont(size: 10, weight: .medium)
                     .foregroundStyle(DS.Colors.textTertiary)
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
@@ -2203,9 +2203,9 @@ private struct PickyHUDDockIconView: View {
     private func commandShortcutBadge(label: String) -> some View {
         HStack(spacing: 1.5) {
             Image(systemName: "command")
-                .font(.system(size: 6.5, weight: .bold))
+                .pickyFont(size: 6.5, weight: .bold)
             Text(label)
-                .font(.system(size: 7.5, weight: .bold, design: .rounded))
+                .pickyFont(size: 7.5, weight: .bold, design: .rounded)
                 .monospacedDigit()
         }
         .foregroundColor(DS.Colors.textPrimary)

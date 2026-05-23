@@ -390,7 +390,7 @@ struct PickyConversationListView: View {
         }) {
             HStack(spacing: 5) {
                 Image(systemName: "terminal.fill")
-                    .font(.system(size: 8.5, weight: .semibold))
+                    .pickyFont(size: 8.5, weight: .semibold)
                 Text(L10n.t("hud.conversation.viewAsTui", Int64(hiddenHistoryCount)))
                     .font(PickyHUDTypography.statusMedium)
             }
@@ -418,11 +418,11 @@ struct PickyConversationListView: View {
     private var terminalShortcutBadge: some View {
         HStack(spacing: 1.5) {
             Image(systemName: "command")
-                .font(.system(size: 6.5, weight: .bold))
+                .pickyFont(size: 6.5, weight: .bold)
             Image(systemName: "shift")
-                .font(.system(size: 6.5, weight: .bold))
+                .pickyFont(size: 6.5, weight: .bold)
             Text("T")
-                .font(.system(size: 7.5, weight: .bold, design: .rounded))
+                .pickyFont(size: 7.5, weight: .bold, design: .rounded)
         }
         .foregroundColor(DS.Colors.textPrimary)
         .padding(.horizontal, 4.5)

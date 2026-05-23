@@ -56,17 +56,17 @@ struct PickyHUDArchiveUndoToastView: View {
     var body: some View {
         HStack(spacing: 9) {
             Image(systemName: "archivebox.fill")
-                .font(.system(size: 11, weight: .semibold))
+                .pickyFont(size: 11, weight: .semibold)
                 .foregroundColor(DS.Colors.warningText)
                 .frame(width: 22, height: 22)
                 .background(Circle().fill(DS.Colors.warning.opacity(0.15)))
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("hud.archiveToast.title")
-                    .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                    .pickyFont(size: 11.5, weight: .semibold, design: .rounded)
                     .foregroundColor(DS.Colors.textPrimary)
                 Text(toast.title)
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .pickyFont(size: 10, weight: .medium, design: .rounded)
                     .foregroundColor(DS.Colors.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -75,7 +75,7 @@ struct PickyHUDArchiveUndoToastView: View {
 
             Button("hud.archiveToast.undo", action: onUndo)
                 .buttonStyle(.plain)
-                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                .pickyFont(size: 10.5, weight: .semibold, design: .rounded)
                 .foregroundColor(DS.Colors.accentText)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)

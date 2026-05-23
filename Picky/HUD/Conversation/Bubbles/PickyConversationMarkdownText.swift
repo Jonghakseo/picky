@@ -187,7 +187,7 @@ struct PickyConversationMarkdownText: View {
             if omittedCount > 0 {
                 HStack(spacing: 4) {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 8, weight: .bold))
+                        .pickyFont(size: 8, weight: .bold)
                     Text("+\(omittedCount) more line\(omittedCount == 1 ? "" : "s")")
                         .font(PickyHUDTypography.metaMedium)
                 }

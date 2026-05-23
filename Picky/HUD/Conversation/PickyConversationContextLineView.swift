@@ -79,7 +79,7 @@ struct PickyConversationContextLineView: View {
                 linkContextLine
             }
         }
-        .font(.system(size: 10.5, weight: .medium))
+        .pickyFont(size: 10.5, weight: .medium)
         .foregroundColor(DS.Colors.textTertiary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: contextRefreshKey) {
@@ -134,7 +134,7 @@ struct PickyConversationContextLineView: View {
     private var linkContextLine: some View {
         HStack(spacing: 6) {
             Image(systemName: "link")
-                .font(.system(size: 10.5, weight: .medium))
+                .pickyFont(size: 10.5, weight: .medium)
                 .foregroundColor(DS.Colors.textTertiary.opacity(0.85))
                 .accessibilityLabel("Links")
             linkBadges
@@ -382,7 +382,7 @@ struct PickyConversationContextLineView: View {
             officialLinkLogo("google-drive-logo", side: googleWorkspaceLogoSide, plate: googleWorkspaceLogoPlate)
         case nil:
             Image(systemName: "link")
-                .font(.system(size: 9.5, weight: .semibold))
+                .pickyFont(size: 9.5, weight: .semibold)
                 .accessibilityHidden(true)
         }
     }

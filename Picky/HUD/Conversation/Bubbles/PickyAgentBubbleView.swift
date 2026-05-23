@@ -73,7 +73,7 @@ struct PickyNotifyBubbleView: View {
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 6) {
                     Image(systemName: notifyType.iconName)
-                        .font(.system(size: 10.5, weight: .semibold))
+                        .pickyFont(size: 10.5, weight: .semibold)
                         .foregroundColor(notifyType.tintColor)
                     Text("Pi extension")
                         .font(PickyHUDTypography.minimumSemibold)

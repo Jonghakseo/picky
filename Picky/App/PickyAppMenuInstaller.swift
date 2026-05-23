@@ -29,8 +29,48 @@ enum PickyAppMenuInstaller {
         // companion footer confirmation instead of becoming an accidental global shortcut.
         mainMenu.addTopLevelMenu(title: appName, submenu: makeAppMenu(updaterController: updaterController))
         mainMenu.addTopLevelMenu(title: "Edit", submenu: makeEditMenu())
+        mainMenu.addTopLevelMenu(title: "View", submenu: makeViewMenu())
         mainMenu.addTopLevelMenu(title: "Window", submenu: makeWindowMenu())
         return mainMenu
+    }
+
+    /// View > Font Size submenu binds ⌘+ / ⌘- / ⌘0 to the global app font
+    /// scale via the responder chain so any key panel (HUD, Companion, etc.)
+    /// without its own local zoom shortcut routes to `CompanionAppDelegate`.
+    /// Report/terminal panels intentionally claim the same shortcuts from
+    /// within their SwiftUI view tree so detached panels keep their per-panel
+    /// zoom — the responder chain only reaches here when no panel handles it.
+    private static func makeViewMenu() -> NSMenu {
+        let menu = NSMenu(title: "View")
+        let fontSizeItem = NSMenuItem(title: "Font Size", action: nil, keyEquivalent: "")
+        let fontSizeMenu = NSMenu(title: "Font Size")
+        fontSizeMenu.addItem(
+            menuItem(
+                title: "Increase",
+                action: Selector(("pickyIncreaseAppFontScale:")),
+                keyEquivalent: "=",
+                modifiers: .command
+            )
+        )
+        fontSizeMenu.addItem(
+            menuItem(
+                title: "Decrease",
+                action: Selector(("pickyDecreaseAppFontScale:")),
+                keyEquivalent: "-",
+                modifiers: .command
+            )
+        )
+        fontSizeMenu.addItem(
+            menuItem(
+                title: "Actual Size",
+                action: Selector(("pickyResetAppFontScale:")),
+                keyEquivalent: "0",
+                modifiers: .command
+            )
+        )
+        fontSizeItem.submenu = fontSizeMenu
+        menu.addItem(fontSizeItem)
+        return menu
     }
 
     private static func makeAppMenu(updaterController: SPUStandardUpdaterController?) -> NSMenu {

@@ -124,6 +124,7 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
     /// runs from `CompanionAppDelegate`. The fallback default keeps unit tests and
     /// previews working without crashing if `configure` was never called.
     private var appearanceStore = PickyAppearanceStore()
+    private var fontScaleStore = PickyAppFontScaleStore()
     /// Shared settings store used to load/persist the terminal zoom level.
     /// Falls back to the default settings location for tests and previews.
     private var settingsStore = PickySettingsStore()
@@ -132,8 +133,13 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
 
     /// Wires the live appearance store so the terminal panel flips with the rest of
     /// the app. Called once from `CompanionAppDelegate` at startup.
-    func configure(appearanceStore: PickyAppearanceStore, settingsStore: PickySettingsStore = PickySettingsStore()) {
+    func configure(
+        appearanceStore: PickyAppearanceStore,
+        fontScaleStore: PickyAppFontScaleStore,
+        settingsStore: PickySettingsStore = PickySettingsStore()
+    ) {
         self.appearanceStore = appearanceStore
+        self.fontScaleStore = fontScaleStore
         self.settingsStore = settingsStore
     }
 
@@ -183,9 +189,11 @@ final class PickyTerminalOverlayPresenter: PickyTerminalOverlayPresenting {
             persister: PickyDetachedPanelFramePersister.backed(by: settingsStore, kind: .terminalOverlay)
         )
 
-        let rootView = PickyTerminalOverlayView(model: model)
-            .environmentObject(appearanceStore)
-            .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
+        let rootView = PickyAppFontScaleRoot(store: fontScaleStore) {
+            PickyTerminalOverlayView(model: model)
+                .environmentObject(self.appearanceStore)
+                .modifier(PickyPreferredColorSchemeModifier(store: self.appearanceStore))
+        }
         let hostingView = NSHostingView(rootView: LocalizedHostingRoot { rootView })
         hostingView.frame = NSRect(origin: .zero, size: panel.frame.size)
         hostingView.autoresizingMask = [.width, .height]

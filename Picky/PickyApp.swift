@@ -45,6 +45,12 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     /// companion panel and the HUD overlay observe this object so flipping the toggle
     /// in the companion footer flips the entire UI surface.
     let appearanceStore: PickyAppearanceStore
+    /// Single source of truth for the global app font scale (⌘+ / ⌘- / ⌘0).
+    /// Injected at every NSPanel hosting root so the HUD, Conversation, Companion,
+    /// Settings, and Feedback surfaces all scale together. Detached report and
+    /// terminal panels still keep their own per-panel zoom, multiplied on top of
+    /// this global scale.
+    let fontScaleStore: PickyAppFontScaleStore
     private lazy var daemonConfiguration: PickyAgentDaemonConfiguration = {
         let settings = settingsStore.load().normalizedPaths()
         let effectiveRuntimeMode = AppBundleConfiguration.effectiveRuntimeMode
@@ -121,6 +127,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private lazy var hudOverlayManager = PickyHUDOverlayManager(
         viewModel: hudSessionViewModel,
         appearanceStore: appearanceStore,
+        fontScaleStore: fontScaleStore,
         settingsStore: settingsStore
     )
     /// Persistent activator that decides whether the takeover overlay should
@@ -149,6 +156,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
 
     override init() {
         self.appearanceStore = PickyAppearanceStore(settingsStore: settingsStore)
+        self.fontScaleStore = PickyAppFontScaleStore(settingsStore: settingsStore)
         self.onboardingActivator = PickyOnboardingActivator(settingsStore: settingsStore)
         super.init()
     }
@@ -236,13 +244,14 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         // outside the SwiftUI tree (markdown report viewer / terminal overlay) so every
         // secondary NSPanel flips with the rest of the app and the user's per-panel zoom
         // level (⌘+ / ⌘- / ⌘0) round-trips through the same settings file.
-        PickyReportViewerPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
-        PickyToolHistoryPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
-        PickyTerminalOverlayPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
+        PickyReportViewerPresenter.shared.configure(appearanceStore: appearanceStore, fontScaleStore: fontScaleStore, settingsStore: settingsStore)
+        PickyToolHistoryPresenter.shared.configure(appearanceStore: appearanceStore, fontScaleStore: fontScaleStore, settingsStore: settingsStore)
+        PickyTerminalOverlayPresenter.shared.configure(appearanceStore: appearanceStore, fontScaleStore: fontScaleStore, settingsStore: settingsStore)
         menuBarPanelManager = MenuBarPanelManager(
             companionManager: companionManager,
             sessionListViewModel: hudSessionViewModel,
             appearanceStore: appearanceStore,
+            fontScaleStore: fontScaleStore,
             updaterController: updaterController,
             navigator: panelNavigator
         )
@@ -417,6 +426,26 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
                 print("⚠️ Picky: Failed to register as login item: \(error)")
             }
         }
+    }
+
+    // MARK: - Global app font scale (View > Font Size menu, ⌘+ / ⌘- / ⌘0)
+    //
+    // Wired via the responder chain by `PickyAppMenuInstaller`. Any key panel
+    // without its own local zoom shortcut routes the keyEquivalent up to NSApp,
+    // which walks the chain to the delegate. Report / terminal panels claim
+    // the same shortcuts from inside their SwiftUI view tree, so detached
+    // panels keep their per-panel zoom and only the global menu falls through.
+
+    @objc func pickyIncreaseAppFontScale(_ sender: Any?) {
+        fontScaleStore.increase()
+    }
+
+    @objc func pickyDecreaseAppFontScale(_ sender: Any?) {
+        fontScaleStore.decrease()
+    }
+
+    @objc func pickyResetAppFontScale(_ sender: Any?) {
+        fontScaleStore.reset()
     }
 }
 

@@ -106,7 +106,7 @@ struct PickyQuestionBubbleView: View {
         let label = HStack(spacing: 6) {
             if isClosed {
                 Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                    .font(.system(size: 8.5, weight: .bold))
+                    .pickyFont(size: 8.5, weight: .bold)
                     .foregroundColor(DS.Colors.textTertiary)
             }
             Text("⌑ \(statusLabel) · \(request.method)")

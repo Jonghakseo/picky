@@ -413,7 +413,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
+                    .pickyFont(size: 9, weight: .bold)
                     .foregroundColor(headerForegroundColor)
                 if group.isCurrent {
                     Circle()

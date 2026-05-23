@@ -22,7 +22,7 @@ struct PickyToolCallInlineRow: View {
         Button(action: onTap) {
             HStack(spacing: 6) {
                 Text(icon)
-                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .pickyFont(size: 10.5, weight: .medium, design: .monospaced)
                     .foregroundColor(categoryColor)
                     .frame(width: 12, alignment: .center)
                 Text(tool.name)
@@ -66,7 +66,7 @@ struct PickyToolCallInlineRow: View {
             // call settled even while the same row keeps occupying the live
             // indicator slot during a thinking/streaming gap.
             Image(systemName: "checkmark")
-                .font(.system(size: 9, weight: .bold))
+                .pickyFont(size: 9, weight: .bold)
                 .foregroundColor(DS.Colors.success)
                 .accessibilityLabel("Completed")
         }

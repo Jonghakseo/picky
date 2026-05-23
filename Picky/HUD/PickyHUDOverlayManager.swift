@@ -53,6 +53,7 @@ final class PickyHUDPanel: NSPanel, PickyScreenCaptureExcludedWindow {
 final class PickyHUDOverlayManager {
     private let viewModel: PickySessionListViewModel
     private let appearanceStore: PickyAppearanceStore
+    private let fontScaleStore: PickyAppFontScaleStore
     private let settingsStore: PickySettingsStore
     private let collapsedHeight: CGFloat = 180
     private let minimumHeight: CGFloat = 48
@@ -94,10 +95,12 @@ final class PickyHUDOverlayManager {
     init(
         viewModel: PickySessionListViewModel,
         appearanceStore: PickyAppearanceStore,
+        fontScaleStore: PickyAppFontScaleStore,
         settingsStore: PickySettingsStore
     ) {
         self.viewModel = viewModel
         self.appearanceStore = appearanceStore
+        self.fontScaleStore = fontScaleStore
         self.settingsStore = settingsStore
         let settings = settingsStore.load()
         self.currentPositionsByDisplayID = settings.hudDockPositions
@@ -280,7 +283,8 @@ final class PickyHUDOverlayManager {
         )
             .environmentObject(appearanceStore)
             .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
-        let hostingView = NSHostingView(rootView: LocalizedHostingRoot { hudRoot })
+        let scaledHudRoot = PickyAppFontScaleRoot(store: fontScaleStore) { hudRoot }
+        let hostingView = NSHostingView(rootView: LocalizedHostingRoot { scaledHudRoot })
         hostingView.frame = NSRect(x: 0, y: 0, width: initialPanelWidth, height: collapsedHeight)
         hostingView.autoresizingMask = [.width, .height]
         hudPanel.contentView = hostingView
@@ -560,14 +564,16 @@ final class PickyHUDOverlayManager {
     }
 
     private func makeArchiveUndoToastHostingView(displayID: CGDirectDisplayID, toast: PickyHUDArchiveUndoToast) -> NSView {
-        let root = PickyHUDArchiveUndoToastPanelRoot(
-            toast: toast,
-            onUndo: { [weak self] in
-                self?.undoArchiveFromToast(displayID: displayID, toast: toast)
-            }
-        )
-        .environmentObject(appearanceStore)
-        .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
+        let root = PickyAppFontScaleRoot(store: fontScaleStore) {
+            PickyHUDArchiveUndoToastPanelRoot(
+                toast: toast,
+                onUndo: { [weak self] in
+                    self?.undoArchiveFromToast(displayID: displayID, toast: toast)
+                }
+            )
+            .environmentObject(self.appearanceStore)
+            .modifier(PickyPreferredColorSchemeModifier(store: self.appearanceStore))
+        }
         let hostingView = NSHostingView(rootView: LocalizedHostingRoot { root })
         hostingView.frame = NSRect(origin: .zero, size: PickyHUDArchiveUndoToastPolicy.panelSize)
         hostingView.autoresizingMask = [.width, .height]

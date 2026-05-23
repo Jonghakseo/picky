@@ -38,7 +38,7 @@ struct PickyActivitySummaryView: View {
     private func activityChip(_ icon: String, label: String, count: Int, color: Color) -> some View {
         HStack(spacing: 3) {
             Text(icon)
-                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                .pickyFont(size: 10.5, weight: .medium, design: .monospaced)
             Text(label)
                 .font(PickyHUDTypography.labelMonospacedMedium)
             Text("\(count)")

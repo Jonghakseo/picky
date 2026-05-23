@@ -186,10 +186,10 @@ struct PickyConversationComposerView: View {
     private var bashModeBadge: some View {
         VStack(spacing: 2) {
             Image(systemName: "terminal.fill")
-                .font(.system(size: 12, weight: .bold))
+                .pickyFont(size: 12, weight: .bold)
                 .foregroundColor(bashAccentColor)
             Text(effectiveBashMode == .private ? "PRIVATE" : "BASH")
-                .font(.system(size: 7, weight: .heavy, design: .monospaced))
+                .pickyFont(size: 7, weight: .heavy, design: .monospaced)
                 .foregroundColor(bashAccentColor)
                 .fixedSize()
         }
@@ -204,7 +204,7 @@ struct PickyConversationComposerView: View {
     private var notifyOrDropButton: some View {
         if isFileDropTargeted {
             Image(systemName: "doc.badge.plus")
-                .font(.system(size: 10.5, weight: .medium))
+                .pickyFont(size: 10.5, weight: .medium)
                 .foregroundColor(DS.Colors.accentText)
                 .frame(width: 22, height: 22)
                 .help("Drop files or screenshots anywhere to insert paths")
@@ -214,7 +214,7 @@ struct PickyConversationComposerView: View {
                 toggleNotifyOnCompletion()
             } label: {
                 Image(systemName: notifyOnCompletionIconName)
-                    .font(.system(size: 10.5, weight: .semibold))
+                    .pickyFont(size: 10.5, weight: .semibold)
                     .foregroundColor(notifyOnCompletionColor)
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
@@ -239,7 +239,7 @@ struct PickyConversationComposerView: View {
     private var terminalButton: some View {
         Button(action: onToggleTerminalAddon) {
             Image(systemName: "terminal.fill")
-                .font(.system(size: 10.5, weight: .semibold))
+                .pickyFont(size: 10.5, weight: .semibold)
                 .foregroundColor(isTerminalAddonOpen ? DS.Colors.accentText : DS.Colors.textTertiary)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
@@ -264,9 +264,9 @@ struct PickyConversationComposerView: View {
     private func shortcutBadge(_ letter: String) -> some View {
         HStack(spacing: 1.5) {
             Image(systemName: "command")
-                .font(.system(size: 6.5, weight: .bold))
+                .pickyFont(size: 6.5, weight: .bold)
             Text(letter)
-                .font(.system(size: 7.5, weight: .bold, design: .rounded))
+                .pickyFont(size: 7.5, weight: .bold, design: .rounded)
         }
         .foregroundColor(DS.Colors.textPrimary)
         .padding(.horizontal, 4.5)
@@ -344,7 +344,7 @@ struct PickyConversationComposerView: View {
         if isScreenContextArmed {
             HStack(spacing: 6) {
                 Image(systemName: "camera.viewfinder")
-                    .font(.system(size: 10, weight: .semibold))
+                    .pickyFont(size: 10, weight: .semibold)
                 Text("hud.composer.steerTarget")
                     .font(PickyHUDTypography.status)
                     .lineLimit(1)
@@ -353,7 +353,7 @@ struct PickyConversationComposerView: View {
                     viewModel.clearScreenContextTarget(sessionID: session.id)
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 8.5, weight: .bold))
+                        .pickyFont(size: 8.5, weight: .bold)
                         .frame(width: 14, height: 14)
                 }
                 .buttonStyle(.plain)
@@ -487,7 +487,7 @@ struct PickyConversationComposerView: View {
     private func fileMentionRow(_ suggestion: PickyFileMentionAutocompletePolicy.Suggestion, isSelected: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: suggestion.isDirectory ? "folder.fill" : "doc.text")
-                .font(.system(size: 10, weight: .semibold))
+                .pickyFont(size: 10, weight: .semibold)
                 .foregroundColor(suggestion.isDirectory ? DS.Colors.accentText : DS.Colors.textTertiary)
                 .frame(width: 14)
             Text(suggestion.label)
@@ -736,7 +736,7 @@ struct PickyConversationComposerView: View {
     private var sendButton: some View {
         Button(action: submitDefault) {
             Image(systemName: sendButtonIconName)
-                .font(.system(size: 11, weight: .semibold))
+                .pickyFont(size: 11, weight: .semibold)
                 .foregroundColor(isSendDisabled ? DS.Colors.textTertiary : sendColor)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
@@ -750,7 +750,7 @@ struct PickyConversationComposerView: View {
     private var stopButton: some View {
         Button(action: stopIfPossible) {
             Image(systemName: "stop.fill")
-                .font(.system(size: 10.5, weight: .semibold))
+                .pickyFont(size: 10.5, weight: .semibold)
                 .foregroundColor(DS.Colors.destructiveText)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
@@ -1242,7 +1242,7 @@ private struct PickyComposerAttachmentChipView: View {
                 .frame(maxWidth: 140)
             Button(action: onRemove) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
+                    .pickyFont(size: 8, weight: .bold)
                     .foregroundColor(DS.Colors.textTertiary)
                     .frame(width: 14, height: 14)
                     .contentShape(Rectangle())
@@ -1271,7 +1271,7 @@ private struct PickyComposerAttachmentChipView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
         } else {
             Image(systemName: attachment.isImage ? "photo" : "doc.text")
-                .font(.system(size: 10, weight: .semibold))
+                .pickyFont(size: 10, weight: .semibold)
                 .foregroundColor(DS.Colors.textSecondary)
                 .frame(width: 16, height: 16)
         }

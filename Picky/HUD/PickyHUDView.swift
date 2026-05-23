@@ -2815,7 +2815,6 @@ private final class PickyHUDDockIconClickNSView: NSView {
             return
         }
         guard !completedArchive else { return }
-        guard event.clickCount < 2 else { return }
         coordinator?.onOpen?()
     }
 

@@ -12,6 +12,11 @@ import SwiftUI
 
 struct PickyHUDArchivedSessionsListView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
+    /// When `false`, the list's own "Archived sessions" header (title + count
+    /// + delete-all) is suppressed so a parent disclosure row can own the
+    /// labelling. Defaults to `true` to preserve the HUD-side rendering that
+    /// has no outer chrome.
+    var showsHeader: Bool = true
 
     private static let listMaxHeight: CGFloat = 280
 
@@ -30,8 +35,10 @@ struct PickyHUDArchivedSessionsListView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            header
-            Divider().opacity(0.5)
+            if showsHeader {
+                header
+                Divider().opacity(0.5)
+            }
             if archivedSessions.isEmpty {
                 emptyState
             } else {

@@ -5336,6 +5336,23 @@
         }
       },
       "comment": "Settings index subtitle for Overlay & Notifications. Args: 1=cursor on/off phrase, 2=enabled alert count, 3=total alert count."
+    },
+    "settings.pickle.archive.toggle": {
+      "comment": "Pickle settings: collapsible footer that reveals the archived sessions list. Row is hidden entirely when there are no archived sessions.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archived sessions"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보관된 세션"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

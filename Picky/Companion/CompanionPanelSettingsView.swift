@@ -198,6 +198,10 @@ struct CompanionPanelSettingsView: View {
     @State private var elevenLabsSTTLanguageDraft: String = ""
     @State private var saveStatuses = CompanionPanelSettingsSaveStatuses()
     @State private var saveStatusResets: [CompanionPanelSettingsSection: AnyCancellable] = [:]
+    /// Whether the archived-Pickle list at the bottom of the Pickle page is
+    /// expanded. Lives as @State so re-opening the panel collapses it again —
+    /// archive management is an occasional task, not a persistent setting.
+    @State private var isArchivedSessionsExpanded: Bool = false
     @Binding var route: CompanionPanelSettingsRoute
 
     var body: some View {
@@ -452,10 +456,52 @@ struct CompanionPanelSettingsView: View {
 
                 gitChipActionsGroup
 
-                Divider()
-                    .background(DS.Colors.borderSubtle.opacity(0.3))
+                if !sessionListViewModel.archivedSessions.isEmpty {
+                    Divider()
+                        .background(DS.Colors.borderSubtle.opacity(0.3))
 
-                PickyHUDArchivedSessionsListView(viewModel: sessionListViewModel)
+                    archivedSessionsDisclosure
+                }
+            }
+        }
+    }
+
+    /// Footer disclosure on the Pickle settings page. Collapsed by default so
+    /// the page reads as settings; the archive list only renders when the user
+    /// asks for it. Hidden entirely when there is nothing to manage so the
+    /// settings page does not carry an empty data section.
+    private var archivedSessionsDisclosure: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: {
+                withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) {
+                    isArchivedSessionsExpanded.toggle()
+                }
+            }) {
+                HStack(alignment: .center, spacing: 8) {
+                    Image(systemName: isArchivedSessionsExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .frame(width: 12)
+                    Text("settings.pickle.archive.toggle")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundColor(DS.Colors.textPrimary)
+                    Text("\(sessionListViewModel.archivedSessions.count)")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundColor(DS.Colors.textTertiary)
+                    Spacer(minLength: 4)
+                }
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .pointerCursor()
+
+            if isArchivedSessionsExpanded {
+                PickyHUDArchivedSessionsListView(
+                    viewModel: sessionListViewModel,
+                    showsHeader: false
+                )
+                .padding(.top, 4)
             }
         }
     }

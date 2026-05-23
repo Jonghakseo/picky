@@ -25,9 +25,30 @@ enum PickyConversationStickyArmHoldPolicy {
 
 struct PickyConversationHeaderView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
+    /// Observed separately from `viewModel` so cursor enter/exit on the
+    /// conversation card only invalidates this header (which reads the value
+    /// for the pi-badge active-voice highlight) rather than every conversation
+    /// subview observing the viewModel. Defaults to the viewModel's own store
+    /// via the explicit init below so existing call sites (and tests) keep
+    /// working without passing the parameter explicitly.
+    @ObservedObject var voiceFollowUpHoverState: PickyVoiceFollowUpHoverState
     let session: PickySessionListViewModel.SessionCard
     var onArchiveSession: (String) -> Void = { _ in }
     var isCommandShortcutHintVisible = false
+
+    init(
+        viewModel: PickySessionListViewModel,
+        session: PickySessionListViewModel.SessionCard,
+        onArchiveSession: @escaping (String) -> Void = { _ in },
+        isCommandShortcutHintVisible: Bool = false,
+        voiceFollowUpHoverState: PickyVoiceFollowUpHoverState? = nil
+    ) {
+        self.viewModel = viewModel
+        self.voiceFollowUpHoverState = voiceFollowUpHoverState ?? viewModel.voiceFollowUpHoverState
+        self.session = session
+        self.onArchiveSession = onArchiveSession
+        self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
+    }
 
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
     @State private var isEditingTitle = false
@@ -43,7 +64,7 @@ struct PickyConversationHeaderView: View {
         if let activeVoiceFollowUpSessionID = viewModel.activeVoiceFollowUpSessionID {
             return activeVoiceFollowUpSessionID == session.id
         }
-        return viewModel.hoveredVoiceFollowUpSessionID == session.id
+        return voiceFollowUpHoverState.sessionID == session.id
     }
 
     private var isScreenContextArmed: Bool {

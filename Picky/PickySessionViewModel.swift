@@ -154,6 +154,19 @@ private struct PickyShellTerminalAttachment: Equatable {
     let attachmentID: String
 }
 
+/// Owns the "which Pickle is the cursor hovering over for voice follow-up"
+/// flag in its own ObservableObject so the SwiftUI subscription is scoped to
+/// the one view that actually reads it (the conversation header's pi-badge).
+/// When this flag lived on `PickySessionListViewModel.@Published` directly,
+/// every conversation subview observing the viewModel re-evaluated its body
+/// on every cursor enter/exit of the card, which cascaded into per-bubble
+/// markdown re-parsing and TextKit re-measurement and showed up as visible
+/// hover lag.
+@MainActor
+final class PickyVoiceFollowUpHoverState: ObservableObject {
+    @Published var sessionID: String?
+}
+
 @MainActor
 final class PickySessionListViewModel: ObservableObject {
     struct SessionCard: Equatable, Identifiable {
@@ -331,7 +344,13 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var sessions: [SessionCard] = []
     @Published private(set) var archivedSessions: [SessionCard] = []
     @Published private(set) var selectedSessionID: String?
-    @Published private(set) var hoveredVoiceFollowUpSessionID: String?
+    /// Voice-follow-up hover state lives in its own ObservableObject so views
+    /// that don't read it (every conversation subview except the header) do
+    /// not invalidate on cursor enter/exit of the card. Read-only forwarding
+    /// getter `hoveredVoiceFollowUpSessionID` below keeps existing callers and
+    /// tests working unchanged.
+    let voiceFollowUpHoverState = PickyVoiceFollowUpHoverState()
+    var hoveredVoiceFollowUpSessionID: String? { voiceFollowUpHoverState.sessionID }
     @Published private(set) var activeVoiceFollowUpSessionID: String?
     @Published private(set) var screenContextTargetSessionID: String?
     /// `true` when the armed Pickle should keep receiving Picky inputs until
@@ -505,7 +524,7 @@ final class PickySessionListViewModel: ObservableObject {
         self.archiveCommitDelayNanoseconds = archiveCommitDelayNanoseconds
         self.manualPickleSessionIdFactory = manualPickleSessionIdFactory
         self.selectedSessionID = selectionStore.selectedSessionID
-        self.hoveredVoiceFollowUpSessionID = selectionStore.hoveredVoiceFollowUpSessionID
+        self.voiceFollowUpHoverState.sessionID = selectionStore.hoveredVoiceFollowUpSessionID
         self.screenContextTargetSessionID = selectionStore.screenContextTargetSessionID
         self.screenContextTargetSticky = selectionStore.screenContextTargetSticky
         self.hasExplicitSelection = self.selectedSessionID != nil
@@ -673,15 +692,24 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func beginHoveredVoiceFollowUp(sessionID: String) {
+        // Dedup before mutating @Published — SwiftUI onHover can fire repeated
+        // hovering=true callbacks (e.g. on scroll or layout updates), and any
+        // assignment to a @Published republishes regardless of equality. The
+        // resulting objectWillChange cascade re-evaluates every HUD view that
+        // observes the viewModel (conversation card/list/header/composer/etc.),
+        // which in turn re-parses markdown for each bubble's isTruncated check
+        // and re-measures TextKit. Guarding with a same-value early return
+        // keeps the hover-driven cascade to one event per real state change.
+        guard hoveredVoiceFollowUpSessionID != sessionID else { return }
         guard sessions.contains(where: { $0.id == sessionID }) else { return }
-        hoveredVoiceFollowUpSessionID = sessionID
+        voiceFollowUpHoverState.sessionID = sessionID
         selectionStore.hoveredVoiceFollowUpSessionID = sessionID
         pickySessionLog("voice follow-up hovered session=\(sessionID)")
     }
 
     func endHoveredVoiceFollowUp(sessionID: String) {
         guard hoveredVoiceFollowUpSessionID == sessionID else { return }
-        hoveredVoiceFollowUpSessionID = nil
+        voiceFollowUpHoverState.sessionID = nil
         selectionStore.hoveredVoiceFollowUpSessionID = nil
         pickySessionLog("voice follow-up hover cleared session=\(sessionID)")
     }
@@ -1434,7 +1462,7 @@ final class PickySessionListViewModel: ObservableObject {
             selectionStore.selectedSessionID = nil
         }
         if hoveredVoiceFollowUpSessionID == sessionID {
-            hoveredVoiceFollowUpSessionID = nil
+            voiceFollowUpHoverState.sessionID = nil
             selectionStore.hoveredVoiceFollowUpSessionID = nil
         }
         if activeVoiceFollowUpSessionID == sessionID {
@@ -1570,7 +1598,7 @@ final class PickySessionListViewModel: ObservableObject {
             clearScreenContextTargetState()
         }
         if hoveredVoiceFollowUpSessionID == sessionID {
-            hoveredVoiceFollowUpSessionID = nil
+            voiceFollowUpHoverState.sessionID = nil
             selectionStore.hoveredVoiceFollowUpSessionID = nil
         }
         if activeVoiceFollowUpSessionID == sessionID {
@@ -2221,7 +2249,7 @@ final class PickySessionListViewModel: ObservableObject {
         if let hoveredVoiceFollowUpSessionID, sessions.contains(where: { $0.id == hoveredVoiceFollowUpSessionID }) {
             selectionStore.hoveredVoiceFollowUpSessionID = hoveredVoiceFollowUpSessionID
         } else {
-            hoveredVoiceFollowUpSessionID = nil
+            voiceFollowUpHoverState.sessionID = nil
             selectionStore.hoveredVoiceFollowUpSessionID = nil
         }
     }

@@ -214,6 +214,7 @@ private struct CompanionResponseOverlayView: View {
                 .foregroundColor(DS.Colors.textPrimary)
                 .lineSpacing(3)
                 .multilineTextAlignment(.leading)
+                .lineLimit(8)
                 .frame(width: textWidth, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 14)

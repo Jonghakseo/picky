@@ -227,7 +227,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "선택한 Pickle에 스티어링 메시지를 전달했어요."
+            "value": "선택한 Pickle에 메시지를 전달했어요."
           }
         }
       }
@@ -243,7 +243,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "메시지를 전송하지 못했어요: 컨텍스트 캐프쳐가 비어있어요."
+            "value": "메시지를 전송하지 못했어요: 캡처된 컨텍스트가 비어있어요."
           }
         }
       }
@@ -760,7 +760,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "아카이브된 피클이 없어요."
+            "value": "아카이브된 Pickle이 없어요."
           }
         }
       }
@@ -824,7 +824,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "아카이브된 피클"
+            "value": "아카이브된 Pickle"
           }
         }
       }
@@ -856,7 +856,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "아카이브된 피클 %lld개를 영구 삭제할까요?"
+            "value": "아카이브된 Pickle %lld개를 영구 삭제할까요?"
           }
         }
       }
@@ -872,7 +872,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 작업은 되돌릴 수 없어요. 모든 아카이브 피클이 Picky와 로컬 에이전트 세션 저장소에서 함께 제거돼요."
+            "value": "이 작업은 되돌릴 수 없어요. 모든 아카이브 Pickle이 Picky와 로컬 에이전트 세션 저장소에서 함께 제거돼요."
           }
         }
       }
@@ -1274,7 +1274,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이제 데모 피클을 **길게 눌러** 아카이브해 보세요."
+            "value": "이제 데모 Pickle을 **길게 눌러** 아카이브해 보세요."
           }
         }
       }
@@ -1291,7 +1291,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "**도크의 피클을 열어** 서 계속 진행해 주세요."
+            "value": "**도크의 Pickle을 열어** 서 계속 진행해 주세요."
           }
         }
       }
@@ -1410,7 +1410,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이제 **도크의 피클을 다시 클릭** 해서 닫아주세요."
+            "value": "이제 **도크의 Pickle을 다시 클릭** 해서 닫아주세요."
           }
         }
       }
@@ -1478,7 +1478,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "좋아요. Picky 사용법이 궁금하면 언제든 저에게 물어보세요. Picky의 내장 가이드를 바탕으로 알려드릴게요. **눌러서 말하기(Control+Option)** 또는 **퀵 인풋(Control + Control)** 으로 저를 불러주세요."
+            "value": "좋아요. Picky 사용법이 궁금하면 언제든 저에게 물어보세요. Picky의 내장 가이드를 바탕으로 알려드릴게요. **눌러서 말하기(Control+Option)** 또는 **퀵 인풋(Control 더블탭)** 으로 저를 불러주세요."
           }
         }
       }
@@ -1495,7 +1495,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pickle이 끝났어요! 도크에서 **피클을 클릭** 해서 결과를 확인해 보세요."
+            "value": "Pickle이 끝났어요! 도크에서 **Pickle을 클릭** 해서 결과를 확인해 보세요."
           }
         }
       }
@@ -1974,7 +1974,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "`/usr/local/bin/picky` 래퍼를 설치해 터미널/Raycast/Hammerspoon/cron 에서 Picky 를 호출할 수 있게 합니다. Picky.app 을 이동한 뒤엔 다시 실행하세요."
+            "value": "`/usr/local/bin/picky` 래퍼를 설치해 터미널/Raycast/Hammerspoon/cron에서 Picky를 호출할 수 있게 해요. Picky.app을 이동한 뒤에는 다시 실행해주세요."
           }
         }
       }
@@ -2006,7 +2006,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "현재 Picky.app 을 가리키도록 재설치하세요."
+            "value": "현재 Picky.app을 가리키도록 재설치해주세요."
           }
         }
       }
@@ -2282,7 +2282,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "캘쳐되는 Picky 컨텍스트와 다음 Picky 세션에 적용돼요."
+            "value": "캡처되는 Picky 컨텍스트와 다음 Picky 세션에 적용돼요."
           }
         }
       }
@@ -2298,7 +2298,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Picky의 기본 실행 경로에는 Picky가 알아야 하는 지침들이 `AGENTS.md`로 작성되어 있어요. cwd를 옮길 경우 해당 지침도 함께 옮기시는 것을 권장드려요. Picky가 가진 도구들을 제대로 호출하지 못할 수 있어요."
+            "value": "Picky의 기본 작업 폴더에는 Picky가 알아야 하는 지침들이 `AGENTS.md`로 작성되어 있어요. 작업 폴더를 옮길 경우 해당 지침도 함께 옮기시는 것을 권장드려요. Picky가 가진 도구들을 제대로 호출하지 못할 수 있어요."
           }
         }
       }
@@ -2557,7 +2557,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "켜면 클릭&드래그로 화면에 표시한 부분이 있을 때만 스크린샷을 모델로 전달해요. 화면 캡쳐 자체는 잉크 오버레이 때문에 계속 동작하고, 모델로 보내는 단계만 건너뛰어요."
+            "value": "켜면 클릭&드래그로 화면에 표시한 부분이 있을 때만 스크린샷을 모델로 전달해요. 화면 캡처 자체는 잉크 오버레이 때문에 계속 동작하고, 모델로 보내는 단계만 건너뛰어요."
           }
         }
       }
@@ -2621,7 +2621,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "메인 에이전트 실행 경로의 AGENTS.md를 직접 편집해서 Picky 페르소나와 Pickle 라우팅 규칙을 바꿔요. Pi가 매 턴마다 이 파일을 읽으며, 세션 중에 적용하려면 Picky를 초기화하거나 재시작해주세요."
+            "value": "메인 에이전트 작업 폴더의 AGENTS.md를 직접 편집해서 Picky 페르소나와 Pickle 라우팅 규칙을 바꿔요. Pi가 매 턴마다 이 파일을 읽으며, 세션 중에 적용하려면 Picky를 초기화하거나 재시작해주세요."
           }
         }
       }
@@ -3197,7 +3197,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "디프 (+N / -N)"
+            "value": "Diff (+N / -N)"
           }
         }
       }
@@ -3261,7 +3261,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "기본 폴더, 모델, 추론, 도크 크기."
+            "value": "기본 작업 폴더, 모델, 추론, 도크 크기."
           }
         }
       }
@@ -3293,7 +3293,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "런타임, 작업 디렉터리, 추론, 캡처 컨텍스트."
+            "value": "런타임, 작업 폴더, 추론, 캡처 컨텍스트."
           }
         }
       }
@@ -3405,7 +3405,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "변경 증시 메인 에이전트에 적용되며, 진행 중이던 turn은 중단돼요. 도구를 끄면 에이전트의 도구 목록에서 완전히 제거되어 호출할 수 없어요."
+            "value": "변경 즉시 메인 에이전트에 적용되며, 진행 중이던 turn은 중단돼요. 도구를 끄면 에이전트의 도구 목록에서 완전히 제거되어 호출할 수 없어요."
           }
         }
       }
@@ -3421,7 +3421,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "피클 시작"
+            "value": "Pickle 시작"
           }
         }
       }
@@ -3437,7 +3437,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "독에서 새 피클에게 작업을 위임해요. Picky의 위임 UX의 핵심으로, 끄면 메인 에이전트에서 피클을 생성할 수 없어요."
+            "value": "도크에서 새 Pickle에게 작업을 위임해요. Picky의 위임 UX의 핵심으로, 끄면 메인 에이전트에서 Pickle을 생성할 수 없어요."
           }
         }
       }
@@ -3453,7 +3453,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "피클 목록 조회"
+            "value": "Pickle 목록 조회"
           }
         }
       }
@@ -3469,7 +3469,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "메인 에이전트가 현재/최근 피클 목록을 조회해 기존 피클을 조종할 수 있게 해요. 끄면 피클 재사용이 어려워져요."
+            "value": "메인 에이전트가 현재/최근 Pickle 목록을 조회해 기존 Pickle을 조종할 수 있게 해요. 끄면 Pickle 재사용이 어려워져요."
           }
         }
       }
@@ -3485,7 +3485,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "피클 조종"
+            "value": "Pickle 조종"
           }
         }
       }
@@ -3501,7 +3501,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "실행 중인 피클에 추가 지시를 보내요. 끄면 수정이 필요할 때마다 새 피클을 만들게 돼요."
+            "value": "실행 중인 Pickle에 추가 지시를 보내요. 끄면 수정이 필요할 때마다 새 Pickle을 만들게 돼요."
           }
         }
       }
@@ -3517,7 +3517,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "피클 중단"
+            "value": "Pickle 중단"
           }
         }
       }
@@ -3533,7 +3533,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "사용자 요청으로 에이전트가 실행 중인 피클을 멈추게 해요. 끄면 독에서 직접 중단해야 해요."
+            "value": "사용자 요청으로 에이전트가 실행 중인 Pickle을 멈추게 해요. 끄면 도크에서 직접 중단해야 해요."
           }
         }
       }
@@ -4289,7 +4289,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Picky 음성은 OpenAI/Azure Realtime 오디오를 사용합니다. Pickle 위에서의 음성 후속 입력은 여전히 Pickle로 직접 전달됩니다."
+            "value": "Picky 음성은 OpenAI/Azure Realtime 오디오를 사용해요. Pickle 위에서의 음성 후속 입력은 여전히 Pickle로 직접 전달돼요."
           }
         }
       }
@@ -4305,7 +4305,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "기본 로컬 Pi Picky 흐름입니다. 기존 STT/TTS 제공자가 그대로 사용됩니다."
+            "value": "기본 로컬 Pi Picky 흐름이에요. 기존 STT/TTS 제공자가 그대로 사용돼요."
           }
         }
       }
@@ -4337,7 +4337,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "새로 생성되는 Pickle의 초기 모델로만 사용됩니다. 실행 중인 Pickle은 별도로 모델을 변경할 수 있습니다."
+            "value": "새로 생성되는 Pickle의 초기 모델로만 사용돼요. 실행 중인 Pickle은 별도로 모델을 변경할 수 있어요."
           }
         }
       }
@@ -4481,7 +4481,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "OpenAI 호환 base URL을 사용하면 로컬 프록시(LocalAI, openai-edge-tts, Together 등)로 Picky를 연결할 수 있습니다. Picky는 표준 /v1/audio/transcriptions 프로토콜을 사용하며, 프록시 안정성은 사용자 책임입니다."
+            "value": "OpenAI 호환 base URL을 사용하면 로컬 프록시(LocalAI, openai-edge-tts, Together 등)로 Picky를 연결할 수 있어요. Picky는 표준 /v1/audio/transcriptions 프로토콜을 사용하며, 프록시 안정성은 사용자가 책임져야 해요."
           }
         }
       }
@@ -4721,7 +4721,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "scribe_v2 (기본값; scribe_v1 은 더 이상 권장되지 않음)"
+            "value": "scribe_v2 (기본값; scribe_v1은 더 이상 권장되지 않아요)"
           }
         }
       }
@@ -4929,7 +4929,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Push to Talk"
+            "value": "눌러서 말하기"
           }
         }
       }
@@ -4945,7 +4945,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "누르고 있으면 음성 세션이 시작되고, 떼면 전송됩니다."
+            "value": "누르고 있으면 음성 세션이 시작되고, 떼면 전송돼요."
           }
         }
       }
@@ -4961,7 +4961,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quick Input"
+            "value": "퀵 인풋"
           }
         }
       }
@@ -4977,7 +4977,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "누르면 텍스트 입력 창이 열립니다."
+            "value": "누르면 텍스트 입력 창이 열려요."
           }
         }
       }
@@ -5009,7 +5009,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "시스템 설정 → 손쉬운 사용 → 콘텐츠 말하기에서 Picky 로컬 TTS가 사용하는 시스템 음성을 선택하세요."
+            "value": "시스템 설정 → 손쉬운 사용 → 콘텐츠 말하기에서 Picky 로컬 TTS가 사용하는 시스템 음성을 선택해주세요."
           }
         }
       }

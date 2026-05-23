@@ -15,6 +15,7 @@ struct PickyConversationListView: View {
     @State private var delayedQuestionCollapseScrollTask: Task<Void, Never>?
 
     var body: some View {
+        let _ = PickyPerf.event("conversation_list_body")
         // Compute the per-render slices once and thread them into helpers so a
         // single body evaluation doesn't fan back out into N+1 repeat calls of
         // `turnGroups` / `visibleMessages` (each of which walks `session.messages`).

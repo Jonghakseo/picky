@@ -30,6 +30,7 @@ struct PickyConversationCardView: View {
     @State private var isFileDropTargeted = false
 
     var body: some View {
+        let _ = PickyPerf.event("conversation_card_body")
         let effectiveMaxHeight = max(Self.minimumHeight, maxHeight)
         let resolvedHeight = fixedHeight.map { min(max($0, Self.minimumHeight), effectiveMaxHeight) }
         let resolvedTerminalHeight = terminalModeHeight(resolvedHeight: resolvedHeight, maxHeight: effectiveMaxHeight)

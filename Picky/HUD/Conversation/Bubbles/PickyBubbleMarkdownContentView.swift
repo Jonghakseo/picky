@@ -35,6 +35,15 @@ final class PickyBubbleMarkdownContentView: NSView {
     /// forces a rebuild on the next `configure(...)` call so the block subviews
     /// (and their NSAttributedString font attributes) come up at the new size.
     private var cachedFontScale: CGFloat = 0
+    /// Last markdown string this view configured with. Used to short-circuit
+    /// `renderBlocks(...)` + the block-diff scan + `needsLayout` /
+    /// `invalidateIntrinsicContentSize` when the parent re-invokes
+    /// `configure(...)` with an unchanged markdown payload (e.g., during
+    /// streaming when an unrelated session republish triggers SwiftUI to
+    /// re-evaluate the bubble surface). Optional so the first call always
+    /// performs a real render — markdown is arbitrary input so we cannot
+    /// pick a sentinel value safely.
+    private var lastMarkdown: String?
 
     var onOpenAsReport: (() -> Void)? {
         didSet { blockViews.forEach { $0.onOpenAsReport = onOpenAsReport } }
@@ -55,20 +64,38 @@ final class PickyBubbleMarkdownContentView: NSView {
         onCopyText: (() -> Void)?,
         onEditText: (() -> Void)?
     ) {
-        let blocks = renderBlocks(from: markdown)
         let currentScale = PickyAppFontScaleStore.staticCGScale
-        if blocks != cachedBlocks || currentScale != cachedFontScale {
-            blockViews.forEach { $0.removeFromSuperview() }
-            blockViews = blocks.map { makeBlockView(for: $0) }
-            blockViews.forEach { addSubview($0) }
-            cachedBlocks = blocks
+        let markdownDidChange = markdown != lastMarkdown
+        let scaleDidChange = currentScale != cachedFontScale
+
+        // Short-circuit when both the markdown payload and the global font
+        // scale are unchanged from the last configure call. Callback setters
+        // still run below so hover/copy actions stay current. Skipping
+        // `renderBlocks` + `needsLayout` + `invalidateIntrinsicContentSize`
+        // is the streaming hot-path win: an unrelated session republish that
+        // re-invokes SwiftUI's `updateNSView` for this bubble now costs only
+        // three property assignments instead of a full cmark parse.
+        if markdownDidChange || scaleDidChange {
+            let blocks = renderBlocks(from: markdown)
+            if blocks != cachedBlocks || scaleDidChange {
+                blockViews.forEach { $0.removeFromSuperview() }
+                blockViews = blocks.map { makeBlockView(for: $0) }
+                blockViews.forEach { addSubview($0) }
+                cachedBlocks = blocks
+            }
+            // Record the scale even when blocks are unchanged: otherwise
+            // every subsequent configure call with the same markdown would
+            // re-enter this branch and re-parse markdown until the next
+            // mutation, defeating the short-circuit.
             cachedFontScale = currentScale
+            lastMarkdown = markdown
+            needsLayout = true
+            invalidateIntrinsicContentSize()
         }
+
         self.onOpenAsReport = onOpenAsReport
         self.onCopyText = onCopyText
         self.onEditText = onEditText
-        needsLayout = true
-        invalidateIntrinsicContentSize()
     }
 
     func measuredSize(forWidth width: CGFloat) -> NSSize {

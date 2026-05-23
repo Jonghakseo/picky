@@ -266,22 +266,10 @@ struct PickyConversationContextLineView: View {
     @ViewBuilder
     private func gitMetrics(status: PickyGitRepositoryStatus) -> some View {
         if status.insertions > 0 {
-            Button(action: { openDiffReview() }) {
-                gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Open diff review (\(status.insertions + status.deletions) lines)")
-            .pointerCursor()
+            gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
         }
         if status.deletions > 0 {
-            Button(action: { openDiffReview() }) {
-                gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Open diff review (\(status.insertions + status.deletions) lines)")
-            .pointerCursor()
+            gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
         }
         if status.aheadCount > 0 {
             Button(action: { runRemoteAction(.push) }) {
@@ -312,19 +300,13 @@ struct PickyConversationContextLineView: View {
     }
 
     private func branchLabel(status: PickyGitRepositoryStatus) -> some View {
-        Button(action: { openDiffReview() }) {
-            HStack(spacing: 4) {
-                Image(systemName: "point.3.connected.trianglepath.dotted")
-                Text(status.branchDisplayName)
-                    .font(PickyHUDTypography.labelMonospacedMedium)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .contentShape(Rectangle())
+        HStack(spacing: 4) {
+            Image(systemName: "point.3.connected.trianglepath.dotted")
+            Text(status.branchDisplayName)
+                .font(PickyHUDTypography.labelMonospacedMedium)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
-        .buttonStyle(.plain)
-        .help("Open diff review for branch \(status.branchName)")
-        .pointerCursor()
     }
 
     private func linkBadge(_ artifact: PickyArtifact) -> some View {
@@ -440,26 +422,6 @@ struct PickyConversationContextLineView: View {
             .foregroundColor(color.opacity(0.92))
     }
 
-    private func openDiffReview() {
-        guard let cwd = session.cwd?.trimmingCharacters(in: .whitespacesAndNewlines), !cwd.isEmpty else { return }
-        PickyDiffReviewPresenter.shared.open(
-            sessionID: session.id,
-            cwd: cwd,
-            onSubmit: { [weak viewModel] prompt in
-                Task {
-                    do {
-                        try await viewModel?.followUp(text: prompt, sessionID: session.id)
-                    } catch {
-                        await MainActor.run {
-                            deliverFollowUpFailureNotification(error: error)
-                        }
-                    }
-                }
-            },
-            onCancel: {}
-        )
-    }
-
     private func runRemoteAction(_ action: GitRemoteAction) {
         guard inFlightGitAction == nil else { return }
         guard let cwd = session.cwd?.trimmingCharacters(in: .whitespacesAndNewlines), !cwd.isEmpty else { return }
@@ -475,15 +437,6 @@ struct PickyConversationContextLineView: View {
                 }
             }
         }
-    }
-
-    private func deliverFollowUpFailureNotification(error: Error) {
-        let content = UNMutableNotificationContent()
-        content.title = "Diff review follow-up failed"
-        content.body = String(error.localizedDescription.prefix(280))
-        content.sound = nil
-        let request = UNNotificationRequest(identifier: "picky-diff-review-follow-up-\(UUID().uuidString)", content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request) { _ in }
     }
 
     private func deliverGitFailureNotification(action: GitRemoteAction, outcome: PickyGitRepositoryStatus.GitCommandOutcome) {

@@ -237,12 +237,6 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         // secondary NSPanel flips with the rest of the app and the user's per-panel zoom
         // level (⌘+ / ⌘- / ⌘0) round-trips through the same settings file.
         PickyReportViewerPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
-        PickyDiffReviewPresenter.shared.configure(settingsStore: settingsStore)
-        // Pre-load the diff review WebView in the background so the first user
-        // click can adopt an already-initialized Monaco editor instead of
-        // paying ~1.5 s of JS parse + module evaluation cost on the hot path.
-        // The warmup window lives off-screen and never appears to the user.
-        PickyDiffReviewWarmup.shared.prepare()
         PickyToolHistoryPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
         PickyTerminalOverlayPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
         menuBarPanelManager = MenuBarPanelManager(

@@ -266,10 +266,22 @@ struct PickyConversationContextLineView: View {
     @ViewBuilder
     private func gitMetrics(status: PickyGitRepositoryStatus) -> some View {
         if status.insertions > 0 {
-            gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
+            Button(action: { runDiffChipAction() }) {
+                gitMetricPill("+\(status.insertions)", color: DS.Colors.success)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(diffChipHelp(lines: status.insertions + status.deletions))
+            .pointerCursor()
         }
         if status.deletions > 0 {
-            gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
+            Button(action: { runDiffChipAction() }) {
+                gitMetricPill("-\(status.deletions)", color: DS.Colors.destructiveText)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(diffChipHelp(lines: status.insertions + status.deletions))
+            .pointerCursor()
         }
         if status.aheadCount > 0 {
             Button(action: { runRemoteAction(.push) }) {
@@ -300,13 +312,19 @@ struct PickyConversationContextLineView: View {
     }
 
     private func branchLabel(status: PickyGitRepositoryStatus) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: "point.3.connected.trianglepath.dotted")
-            Text(status.branchDisplayName)
-                .font(PickyHUDTypography.labelMonospacedMedium)
-                .lineLimit(1)
-                .truncationMode(.middle)
+        Button(action: { runBranchChipAction() }) {
+            HStack(spacing: 4) {
+                Image(systemName: "point.3.connected.trianglepath.dotted")
+                Text(status.branchDisplayName)
+                    .font(PickyHUDTypography.labelMonospacedMedium)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .help(branchChipHelp(branch: status.branchName))
+        .pointerCursor()
     }
 
     private func linkBadge(_ artifact: PickyArtifact) -> some View {
@@ -420,6 +438,67 @@ struct PickyConversationContextLineView: View {
         Text(text)
             .font(PickyHUDTypography.statusMonospacedMedium)
             .foregroundColor(color.opacity(0.92))
+    }
+
+    /// Click handler for the `+N` / `-N` chips. Reads the latest settings on
+    /// every click so changes made in Settings → Pickle take effect without
+    /// a relaunch.
+    private func runDiffChipAction() {
+        runChipAction(
+            slot: PickySettingsStore().load().gitChipActions.diffAction,
+            kindFallback: .pi
+        )
+    }
+
+    /// Click handler for the branch label.
+    private func runBranchChipAction() {
+        runChipAction(
+            slot: PickySettingsStore().load().gitChipActions.branchAction,
+            kindFallback: .pi
+        )
+    }
+
+    private func runChipAction(slot: PickyGitChipAction?, kindFallback: PickyGitChipActionKind) {
+        guard let action = slot, action.isConfigured else {
+            // Unconfigured chip — surface the Pickle settings so the user can
+            // wire up the click. Mirrors how `picky://` markdown links route
+            // through the same dispatcher.
+            if let url = URL(string: "picky://settings/pickle") {
+                PickyDeepLinkDispatcher.shared.handle(url)
+            }
+            return
+        }
+        let sessionID = session.id
+        let status = session.status
+        let cwd = session.cwd
+        let viewModel = viewModel
+        Task { @MainActor in
+            await PickyGitChipActionRunner.run(
+                action: action,
+                sessionID: sessionID,
+                status: status,
+                cwd: cwd,
+                viewModel: viewModel
+            )
+        }
+    }
+
+    private func diffChipHelp(lines: Int) -> String {
+        let configured = PickySettingsStore().load().gitChipActions.diffAction?.command
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if configured.isEmpty {
+            return "Click to configure the diff chip action in Settings → Pickle (\(lines) lines)."
+        }
+        return "\(configured)  —  (\(lines) lines)"
+    }
+
+    private func branchChipHelp(branch: String) -> String {
+        let configured = PickySettingsStore().load().gitChipActions.branchAction?.command
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if configured.isEmpty {
+            return "Click to configure the branch chip action in Settings → Pickle (branch \(branch))."
+        }
+        return "\(configured)  —  (branch \(branch))"
     }
 
     private func runRemoteAction(_ action: GitRemoteAction) {

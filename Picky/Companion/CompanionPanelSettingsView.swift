@@ -350,9 +350,114 @@ struct CompanionPanelSettingsView: View {
                 Divider()
                     .background(DS.Colors.borderSubtle.opacity(0.3))
 
+                gitChipActionsGroup
+
+                Divider()
+                    .background(DS.Colors.borderSubtle.opacity(0.3))
+
                 PickyHUDArchivedSessionsListView(viewModel: sessionListViewModel)
             }
         }
+    }
+
+    private var gitChipActionsGroup: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            fieldLabel("settings.pickle.gitChipActions.title")
+            gitChipActionEditor(
+                label: "settings.pickle.gitChipActions.diffLabel",
+                action: gitChipDiffBinding
+            )
+            gitChipActionEditor(
+                label: "settings.pickle.gitChipActions.branchLabel",
+                action: gitChipBranchBinding
+            )
+        }
+    }
+
+    /// Single slot editor: kind picker + command text field. Empty command
+    /// stays as `nil` in the source-of-truth binding so the chip click handler
+    /// can tell "unconfigured" from "empty draft about to be filled".
+    @ViewBuilder
+    private func gitChipActionEditor(
+        label: LocalizedStringKey,
+        action: Binding<PickyGitChipAction?>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            fieldLabel(label)
+            Picker(label, selection: gitChipKindBinding(action)) {
+                Text("settings.pickle.gitChipActions.kindPi").tag(PickyGitChipActionKind.pi)
+                Text("settings.pickle.gitChipActions.kindShell").tag(PickyGitChipActionKind.shell)
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+            TextField(
+                "settings.pickle.gitChipActions.commandPlaceholder",
+                text: gitChipCommandBinding(action)
+            )
+            .textFieldStyle(.roundedBorder)
+            .controlSize(.small)
+            .onSubmit { saveImmediately(for: .pickle) }
+        }
+    }
+
+    private var gitChipDiffBinding: Binding<PickyGitChipAction?> {
+        Binding(
+            get: { viewModel.settings.gitChipActions.diffAction },
+            set: { newValue in
+                viewModel.settings.gitChipActions.diffAction = newValue
+                saveImmediately(for: .pickle)
+            }
+        )
+    }
+
+    private var gitChipBranchBinding: Binding<PickyGitChipAction?> {
+        Binding(
+            get: { viewModel.settings.gitChipActions.branchAction },
+            set: { newValue in
+                viewModel.settings.gitChipActions.branchAction = newValue
+                saveImmediately(for: .pickle)
+            }
+        )
+    }
+
+    /// Kind picker writes through to the slot binding, defaulting to `.pi`
+    /// when the slot was previously nil (the user is starting to configure a
+    /// brand new action).
+    private func gitChipKindBinding(_ action: Binding<PickyGitChipAction?>) -> Binding<PickyGitChipActionKind> {
+        Binding(
+            get: { action.wrappedValue?.kind ?? .pi },
+            set: { newKind in
+                if var current = action.wrappedValue {
+                    current.kind = newKind
+                    action.wrappedValue = current
+                } else {
+                    action.wrappedValue = PickyGitChipAction(kind: newKind, command: "")
+                }
+            }
+        )
+    }
+
+    /// Command field writes through to the slot binding. Empty/whitespace text
+    /// clears the slot back to nil so it is treated as "not configured" by
+    /// the chip click handler and the JSON normalizer.
+    private func gitChipCommandBinding(_ action: Binding<PickyGitChipAction?>) -> Binding<String> {
+        Binding(
+            get: { action.wrappedValue?.command ?? "" },
+            set: { newValue in
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    action.wrappedValue = nil
+                    return
+                }
+                if var current = action.wrappedValue {
+                    current.command = newValue
+                    action.wrappedValue = current
+                } else {
+                    action.wrappedValue = PickyGitChipAction(kind: .pi, command: newValue)
+                }
+            }
+        )
     }
 
     private var notificationSection: some View {

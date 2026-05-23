@@ -3154,6 +3154,102 @@
         }
       }
     },
+    "settings.pickle.gitChipActions.branchLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Branch label"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "브랜치 라벨"
+          }
+        }
+      }
+    },
+    "settings.pickle.gitChipActions.commandPlaceholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "e.g. /diff-review  or  open -a Cursor ."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예: /diff-review  또는  open -a Cursor ."
+          }
+        }
+      }
+    },
+    "settings.pickle.gitChipActions.diffLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diff (+N / -N)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디프 (+N / -N)"
+          }
+        }
+      }
+    },
+    "settings.pickle.gitChipActions.kindPi": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi"
+          }
+        }
+      }
+    },
+    "settings.pickle.gitChipActions.kindShell": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shell"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shell"
+          }
+        }
+      }
+    },
+    "settings.pickle.gitChipActions.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git chip actions"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Git 칩 액션"
+          }
+        }
+      }
+    },
     "settings.section.pickle.subtitle": {
       "localizations": {
         "en": {

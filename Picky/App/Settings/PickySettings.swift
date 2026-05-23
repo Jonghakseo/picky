@@ -946,11 +946,28 @@ struct PickySettings: Codable, Equatable {
     /// `PickyDetachedPanelKind.rawValue`. Empty/missing entries fall back to
     /// the panel's built-in `targetFrame()`.
     var detachedPanelFrames: [String: PickyDetachedPanelFrame]
+    /// User-configured click actions for the git chips (insertions/deletions
+    /// and branch label) rendered on the Pickle conversation card. Empty
+    /// actions mean "no action wired yet"; the chip click handler deep-links
+    /// to Settings → Pickle for configuration.
+    var gitChipActions: PickyGitChipActions
 
     static let dockTopAnchorPercentRange: ClosedRange<Double> = 2.0...70.0
     static let defaultDockTopAnchorPercent: Double = 22.0
     static let maxStoredRecentPickleCwds = 8
     static let maxVisibleRecentPickleCwds = 5
+
+    /// Drop empty drafts before persisting so settings.json never carries
+    /// `{kind: .pi, command: ""}` placeholders that would still report as
+    /// "configured" to the chip click handler.
+    mutating func normalizeGitChipActions() {
+        if gitChipActions.diffAction?.isConfigured == false {
+            gitChipActions.diffAction = nil
+        }
+        if gitChipActions.branchAction?.isConfigured == false {
+            gitChipActions.branchAction = nil
+        }
+    }
 
     /// Clamp any incoming value (slider, persisted file, programmatic) to the supported
     /// range. Out-of-range values can come from corrupted settings files or a future
@@ -1018,7 +1035,8 @@ struct PickySettings: Codable, Equatable {
         mainThreadWatchdogEnabled: Bool = true,
         appLanguage: PickyLanguage = .system,
         recentPickleCwds: [String] = [],
-        detachedPanelFrames: [String: PickyDetachedPanelFrame] = [:]
+        detachedPanelFrames: [String: PickyDetachedPanelFrame] = [:],
+        gitChipActions: PickyGitChipActions = .empty
     ) {
         self.defaultCwd = defaultCwd
         self.mainAgentCwd = mainAgentCwd ?? defaultCwd
@@ -1078,6 +1096,7 @@ struct PickySettings: Codable, Equatable {
         self.appLanguage = appLanguage
         self.recentPickleCwds = PickySettings.normalizedRecentPickleCwds(recentPickleCwds)
         self.detachedPanelFrames = detachedPanelFrames
+        self.gitChipActions = gitChipActions
     }
 
     static func defaultUpdateChannel(forReleaseChannel releaseChannel: String) -> PickyUpdateChannel {
@@ -1165,7 +1184,8 @@ struct PickySettings: Codable, Equatable {
             mainThreadWatchdogEnabled: true,
             appLanguage: .system,
             recentPickleCwds: [],
-            detachedPanelFrames: [:]
+            detachedPanelFrames: [:],
+            gitChipActions: .empty
         )
     }
 
@@ -1198,6 +1218,7 @@ struct PickySettings: Codable, Equatable {
         copy.pickleAgentModelPattern = pickleAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.hudCardSizes = hudCardSizes.mapValues { $0.clamped() }
         copy.recentPickleCwds = Self.normalizedRecentPickleCwds(recentPickleCwds)
+        copy.normalizeGitChipActions()
         return copy
     }
 
@@ -1288,6 +1309,7 @@ struct PickySettings: Codable, Equatable {
         case appLanguage
         case recentPickleCwds
         case detachedPanelFrames
+        case gitChipActions
     }
 
     init(from decoder: Decoder) throws {
@@ -1366,6 +1388,7 @@ struct PickySettings: Codable, Equatable {
         appLanguage = try container.decodeIfPresent(PickyLanguage.self, forKey: .appLanguage) ?? defaults.appLanguage
         recentPickleCwds = Self.normalizedRecentPickleCwds(try container.decodeIfPresent([String].self, forKey: .recentPickleCwds) ?? defaults.recentPickleCwds)
         detachedPanelFrames = try container.decodeIfPresent([String: PickyDetachedPanelFrame].self, forKey: .detachedPanelFrames) ?? defaults.detachedPanelFrames
+        gitChipActions = try container.decodeIfPresent(PickyGitChipActions.self, forKey: .gitChipActions) ?? defaults.gitChipActions
         if let storedScales = try container.decodeIfPresent(PickyFontScales.self, forKey: .fontScales) {
             fontScales = PickyFontScales(
                 markdownReport: PickyFontScales.clamped(storedScales.markdownReport),

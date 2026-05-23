@@ -113,17 +113,35 @@ struct CompanionPanelView: View {
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
                 case .settings:
-                    ScrollView(.vertical, showsIndicators: true) {
-                        CompanionPanelSettingsView(
-                            viewModel: settingsViewModel,
-                            companionManager: companionManager,
-                            sessionListViewModel: sessionListViewModel,
-                            route: settingsRouteBinding
-                        )
-                        .padding(.horizontal, 16)
-                        .padding(.top, 14)
-                        .padding(.bottom, 12)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    // ScrollViewReader so navigating into a leaf (or back to
+                    // the index) snaps the scroll position back to the top.
+                    // The wrapped ScrollView stays the same instance across
+                    // route changes, which is what preserves @State on the
+                    // settings drafts — we only reset the offset, never the
+                    // view tree.
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical, showsIndicators: true) {
+                            VStack(spacing: 0) {
+                                // Sentinel anchor scrolled to whenever the
+                                // settings route changes.
+                                Color.clear
+                                    .frame(height: 0)
+                                    .id("settingsScrollAnchor")
+                                CompanionPanelSettingsView(
+                                    viewModel: settingsViewModel,
+                                    companionManager: companionManager,
+                                    sessionListViewModel: sessionListViewModel,
+                                    route: settingsRouteBinding
+                                )
+                                .padding(.horizontal, 16)
+                                .padding(.top, 14)
+                                .padding(.bottom, 12)
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                            }
+                        }
+                        .onChange(of: navigator.settingsRoute) { _, _ in
+                            proxy.scrollTo("settingsScrollAnchor", anchor: .top)
+                        }
                     }
                 }
             }

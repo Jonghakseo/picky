@@ -97,16 +97,29 @@ final class PickyDiffReviewPresenter {
             // the JS layer pulls fresh review data via `request-review-data` as
             // soon as it boots. This collapses ~1–2 s of "clicked but nothing
             // happened" perception for users on larger repos.
-            let host = PickyDiffReviewWebHost(
-                onMessage: { [weak self] message in
-                    guard let self, let record = self.records[sessionID] else { return }
-                    self.handle(message, record: record, onSubmit: onSubmit)
-                },
-                onClose: { [weak self] in
-                    guard let self, let record = self.records[sessionID] else { return }
-                    self.scheduleCloseGrace(record: record)
-                }
-            )
+            let onMessageHandler: PickyDiffReviewWebHost.MessageHandler = { [weak self] message in
+                guard let self, let record = self.records[sessionID] else { return }
+                self.handle(message, record: record, onSubmit: onSubmit)
+            }
+            let onCloseHandler: () -> Void = { [weak self] in
+                guard let self, let record = self.records[sessionID] else { return }
+                self.scheduleCloseGrace(record: record)
+            }
+
+            // Adopt a warmed-up host if available so Monaco doesn't have to
+            // load again. The warmup web view already finished parsing the
+            // ~14 MB Monaco bundle in the background and has the JS chrome
+            // (file tree, commit list, etc.) ready to render. We just swap in
+            // the live handlers, which also flushes any messages JS issued
+            // during preload (typically the initial `request-review-data`).
+            let reusedWarmedHost = PickyDiffReviewWarmup.shared.consume()
+            let host: PickyDiffReviewWebHost
+            if let warmed = reusedWarmedHost {
+                host = warmed
+                host.attachLiveHandlers(onMessage: onMessageHandler, onClose: onCloseHandler)
+            } else {
+                host = PickyDiffReviewWebHost(onMessage: onMessageHandler, onClose: onCloseHandler)
+            }
             let title = "Pickle review — \(repoRoot.lastPathComponent)"
             let controller = PickyDiffReviewWindowController(
                 host: host,
@@ -155,16 +168,21 @@ final class PickyDiffReviewPresenter {
                 }
             )
 
-            do {
-                try host.loadInitialPage(initialData: nil)
-            } catch {
-                host.dispose()
-                records.removeValue(forKey: sessionID)
-                createdRecord.watcher?.dispose()
-                createdRecord.watcher = nil
-                notify(title: "Review failed", body: error.localizedDescription)
-                onCancel()
-                return
+            // The warmed-up host already loaded the page; only fresh hosts
+            // need to issue loadInitialPage. Loading twice would discard the
+            // Monaco init we just paid for.
+            if reusedWarmedHost == nil {
+                do {
+                    try host.loadInitialPage(initialData: nil)
+                } catch {
+                    host.dispose()
+                    records.removeValue(forKey: sessionID)
+                    createdRecord.watcher?.dispose()
+                    createdRecord.watcher = nil
+                    notify(title: "Review failed", body: error.localizedDescription)
+                    onCancel()
+                    return
+                }
             }
             focus(createdRecord)
         }
@@ -307,6 +325,9 @@ final class PickyDiffReviewPresenter {
         if record.controller.window?.isVisible == true {
             record.controller.close()
         }
+        // Prime the next diff viewer click — a fresh warmup host loads Monaco
+        // in the background so the next open() can adopt it instantly.
+        PickyDiffReviewWarmup.shared.prepare()
     }
 
     private func focus(_ record: ReviewRecord) {

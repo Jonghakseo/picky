@@ -13,12 +13,25 @@ final class PickyDiffReviewWebHost: NSObject, WKScriptMessageHandler {
     let webView: WKWebView
 
     private let schemeHandler = PickyDiffReviewURLSchemeHandler()
-    private let onMessage: MessageHandler
-    private let onClose: () -> Void
+    private var onMessage: MessageHandler
+    private var onClose: () -> Void
 
-    init(onMessage: @escaping MessageHandler, onClose: @escaping () -> Void) {
+    // Warmup support: when true, messages received from the JS side (including
+    // close) are queued instead of being delivered to onMessage/onClose. The
+    // presenter calls `attachLiveHandlers` once it adopts a warmed-up host,
+    // which swaps in the real handlers and flushes the queue.
+    private var queueIncomingMessages: Bool
+    private var pendingMessages: [PickyDiffReviewWebHostMessage] = []
+    private var pendingClose = false
+
+    init(
+        queueIncomingMessages: Bool = false,
+        onMessage: @escaping MessageHandler,
+        onClose: @escaping () -> Void
+    ) {
         self.onMessage = onMessage
         self.onClose = onClose
+        self.queueIncomingMessages = queueIncomingMessages
 
         let userContentController = WKUserContentController()
         let bridgeScript = """
@@ -45,6 +58,41 @@ final class PickyDiffReviewWebHost: NSObject, WKScriptMessageHandler {
         super.init()
 
         userContentController.add(self, name: "glimpse")
+    }
+
+    /// Swap in the live message/close handlers for a host that was created in
+    /// warmup mode, then drain any queued messages so the presenter can react
+    /// to whatever JS sent during preload (typically the initial
+    /// `request-review-data`).
+    func attachLiveHandlers(onMessage: @escaping MessageHandler, onClose: @escaping () -> Void) {
+        self.onMessage = onMessage
+        self.onClose = onClose
+        queueIncomingMessages = false
+        let queued = pendingMessages
+        pendingMessages.removeAll()
+        for message in queued {
+            onMessage(message)
+        }
+        if pendingClose {
+            pendingClose = false
+            onClose()
+        }
+    }
+
+    private func dispatch(_ message: PickyDiffReviewWebHostMessage) {
+        if queueIncomingMessages {
+            pendingMessages.append(message)
+        } else {
+            onMessage(message)
+        }
+    }
+
+    private func dispatchClose() {
+        if queueIncomingMessages {
+            pendingClose = true
+        } else {
+            onClose()
+        }
     }
 
     /// Loads the review page. Pass `nil` for `initialData` to render the page
@@ -100,7 +148,7 @@ final class PickyDiffReviewWebHost: NSObject, WKScriptMessageHandler {
               let type = body["type"] as? String else { return }
 
         if type == "__close__" {
-            onClose()
+            dispatchClose()
             return
         }
 
@@ -110,24 +158,24 @@ final class PickyDiffReviewWebHost: NSObject, WKScriptMessageHandler {
         switch type {
         case "request-review-data":
             guard let payload = try? decoder.decode(RequestReviewDataPayload.self, from: data) else { return }
-            onMessage(.requestReviewData(requestId: payload.requestId))
+            dispatch(.requestReviewData(requestId: payload.requestId))
         case "request-commit":
             guard let payload = try? decoder.decode(RequestCommitPayload.self, from: data) else { return }
-            onMessage(.requestCommit(requestId: payload.requestId, sha: payload.sha))
+            dispatch(.requestCommit(requestId: payload.requestId, sha: payload.sha))
         case "request-file":
             guard let payload = try? decoder.decode(RequestFilePayload.self, from: data) else { return }
-            onMessage(.requestFile(requestId: payload.requestId, fileId: payload.fileId, scope: payload.scope, commitSha: payload.commitSha))
+            dispatch(.requestFile(requestId: payload.requestId, fileId: payload.fileId, scope: payload.scope, commitSha: payload.commitSha))
         case "clipboard-read":
             guard let payload = try? decoder.decode(ClipboardReadPayload.self, from: data) else { return }
-            onMessage(.clipboardRead(requestId: payload.requestId))
+            dispatch(.clipboardRead(requestId: payload.requestId))
         case "clipboard-write":
             guard let payload = try? decoder.decode(ClipboardWritePayload.self, from: data) else { return }
-            onMessage(.clipboardWrite(text: payload.text))
+            dispatch(.clipboardWrite(text: payload.text))
         case "submit":
             guard let payload = try? decoder.decode(PickyDiffReviewPrompt.SubmitPayload.self, from: data) else { return }
-            onMessage(.submit(payload: payload))
+            dispatch(.submit(payload: payload))
         case "cancel":
-            onMessage(.cancel)
+            dispatch(.cancel)
         default:
             return
         }

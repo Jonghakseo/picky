@@ -211,12 +211,19 @@ final class MenuBarPanelManager: NSObject {
         )
 
         menuBarPanel.isFloatingPanel = true
-        // Only become key when a subview (text field, etc.) actually needs
-        // keyboard focus. Buttons and other controls still receive mouse
-        // events without the panel taking key status, so clicking outside
-        // the panel doesn't require an extra activation click on the
-        // destination app.
-        menuBarPanel.becomesKeyOnlyIfNeeded = true
+        // Take key status on any interaction — not just text-input subviews.
+        // With `true`, SwiftUI controls that don't need first-responder
+        // status (toggles, pickers, plain buttons) leave the panel non-key,
+        // so `NSApp.isActive` stays false and AppKit renders every control
+        // in its inactive (desaturated) appearance even while the user is
+        // clearly interacting with the panel. Setting this to `false` makes
+        // the panel become key on first mouse-down, so toggle/picker
+        // accents and other active-state visuals match the user's mental
+        // model. The companion still uses `orderFront` (not
+        // `makeKeyAndOrderFront`) when opening, so simply revealing the
+        // panel does not steal focus from the previously active app — only
+        // an actual interaction does.
+        menuBarPanel.becomesKeyOnlyIfNeeded = false
         // Keep the menu bar companion panel above Picky's HUD dock (raw level 19)
         // and other app floating panels while it is open from the status item.
         menuBarPanel.level = .statusBar

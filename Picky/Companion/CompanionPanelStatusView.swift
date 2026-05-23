@@ -337,6 +337,7 @@ private struct CompanionPanelUpdateSection: View {
 
                 Toggle("status.updates.autoCheck", isOn: automaticChecksBinding)
                     .toggleStyle(.switch)
+                    .tint(DS.Colors.accent)
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundColor(DS.Colors.textSecondary)
 

@@ -478,6 +478,7 @@ struct CompanionPanelSettingsView: View {
                                isOn: $viewModel.settings.attachScreenshotsOnlyWhenInked)
                             .labelsHidden()
                             .toggleStyle(.switch)
+                            .tint(DS.Colors.accent)
                             .controlSize(.small)
                             .onChange(of: viewModel.settings.attachScreenshotsOnlyWhenInked) { _, _ in
                                 saveImmediately(for: .mainAgent)
@@ -917,6 +918,7 @@ struct CompanionPanelSettingsView: View {
                 Toggle("", isOn: binding)
                     .labelsHidden()
                     .toggleStyle(.switch)
+                    .tint(DS.Colors.accent)
                     .controlSize(.small)
             }
             .padding(.vertical, 8)
@@ -1350,6 +1352,7 @@ struct CompanionPanelSettingsView: View {
                 Toggle(title, isOn: isOn)
                     .labelsHidden()
                     .toggleStyle(.switch)
+                    .tint(DS.Colors.accent)
                     .controlSize(.small)
                     .disabled(!isEnabled)
             }

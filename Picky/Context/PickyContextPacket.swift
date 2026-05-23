@@ -71,6 +71,27 @@ struct PickyContextPacket: Codable, Equatable, Identifiable {
         inkMarks = try container.decodeIfPresent([PickyInkMarkContext].self, forKey: .inkMarks) ?? []
         warnings = try container.decodeIfPresent([String].self, forKey: .warnings) ?? []
     }
+
+    /// Returns a copy with both `screenshots` and `inkMarks` emptied. Used by
+    /// the ink-only attachment gate to drop visual context from the
+    /// model-bound payload while keeping everything else (transcript, app,
+    /// browser, selected text, cwd, warnings) intact.
+    func withScreenshotsCleared() -> PickyContextPacket {
+        PickyContextPacket(
+            id: id,
+            source: source,
+            capturedAt: capturedAt,
+            transcript: transcript,
+            selectedText: selectedText,
+            cwd: cwd,
+            activeApp: activeApp,
+            activeWindow: activeWindow,
+            browser: browser,
+            screenshots: [],
+            inkMarks: [],
+            warnings: warnings
+        )
+    }
 }
 
 struct PickyApplicationContext: Codable, Equatable {

@@ -60,8 +60,22 @@ struct PickyVoiceContextCaptureCoordinator {
         )
         guard !Task.isCancelled else { return nil }
 
-        let contextPacket = try contextAssembler(screenCaptures, source, transcript, inkCapture)
-        return PickyVoiceContextCaptureResult(contextPacket: contextPacket, source: source)
+        let assembled = try contextAssembler(screenCaptures, source, transcript, inkCapture)
+        let gated = Self.applyInkOnlyAttachmentGate(assembled, settings: settings)
+        return PickyVoiceContextCaptureResult(contextPacket: gated, source: source)
+    }
+
+    /// Honors `PickySettings.attachScreenshotsOnlyWhenInked` by stripping
+    /// screenshots/ink from the model-bound packet when the user did not draw
+    /// during this turn. Screen capture and on-disk persistence have already
+    /// happened by this point — only the model payload is gated.
+    static func applyInkOnlyAttachmentGate(
+        _ packet: PickyContextPacket,
+        settings: PickySettings
+    ) -> PickyContextPacket {
+        guard settings.attachScreenshotsOnlyWhenInked else { return packet }
+        guard packet.inkMarks.isEmpty else { return packet }
+        return packet.withScreenshotsCleared()
     }
 
     private static func assembleContextPacket(

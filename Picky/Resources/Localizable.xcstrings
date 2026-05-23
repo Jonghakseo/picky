@@ -2434,6 +2434,38 @@
         }
       }
     },
+    "settings.field.attachScreenshotsOnlyWhenInked": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send screenshots only when drawn"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "그렸을 때만 화면 첨부"
+          }
+        }
+      }
+    },
+    "settings.field.attachScreenshotsOnlyWhenInked.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When on, Picky attaches a screenshot only if you marked the screen with click and drag. Screen capture still runs locally for the ink overlay; only the model handoff is skipped."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "켜면 클릭&드래그로 화면에 표시한 부분이 있을 때만 스크린샷을 모델로 전달해요. 화면 캡쳐 자체는 잉크 오버레이 때문에 계속 동작하고, 모델로 보내는 단계만 건너뛰어요."
+          }
+        }
+      }
+    },
     "settings.field.screenshotQuality": {
       "localizations": {
         "en": {

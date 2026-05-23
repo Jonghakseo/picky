@@ -46,6 +46,26 @@ struct PickySettingsPolishTests {
         #expect(settings.mainAgentThinkingLevel == .off)
     }
 
+    @Test func settingsLoadDefaultsAttachScreenshotsOnlyWhenInkedToFalseWhenLegacyFileLacksField() throws {
+        // Existing installs that predate the ink-only screenshot toggle must
+        // keep the always-attach behavior so users don't suddenly stop seeing
+        // screen context after an update.
+        let legacyJSON = """
+        {
+          "defaultCwd": "/tmp",
+          "worktreeParent": "",
+          "preferredToolVisibility": "visible in context only",
+          "readOnlyInvestigationPreference": true,
+          "daemonPath": "/tmp/agentd",
+          "logPath": "/tmp/logs"
+        }
+        """.data(using: .utf8)!
+
+        let settings = try JSONDecoder().decode(PickySettings.self, from: legacyJSON)
+
+        #expect(settings.attachScreenshotsOnlyWhenInked == false)
+    }
+
     @Test func updateChannelDefaultsFollowBuildReleaseChannel() {
         #expect(PickySettings.defaultUpdateChannel(forReleaseChannel: "beta") == .beta)
         #expect(PickySettings.defaultUpdateChannel(forReleaseChannel: " Beta ") == .beta)

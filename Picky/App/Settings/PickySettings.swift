@@ -888,6 +888,13 @@ struct PickySettings: Codable, Equatable {
     var pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel
     var screenContextScope: PickyScreenContextScope
     var screenshotQuality: PickyScreenshotQuality
+    /// When `true`, Picky drops the captured screenshots (and the otherwise
+    /// empty `inkMarks`) from the context packet sent to the model unless the
+    /// user actually drew a freehand mark during this turn. Screen capture
+    /// itself still runs locally so the ink overlay can render on top — only
+    /// the model-bound payload is gated. Default is `false` for parity with
+    /// the long-standing always-attach behavior.
+    var attachScreenshotsOnlyWhenInked: Bool
     var useConversationCard: Bool
     var pushToTalkShortcut: PickyShortcutSpec
     var quickInputShortcut: PickyShortcutSpec
@@ -997,6 +1004,7 @@ struct PickySettings: Codable, Equatable {
         pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel = .automatic,
         screenContextScope: PickyScreenContextScope = .focusedScreen,
         screenshotQuality: PickyScreenshotQuality = .onePointFive,
+        attachScreenshotsOnlyWhenInked: Bool = false,
         useConversationCard: Bool = true,
         pushToTalkShortcut: PickyShortcutSpec = .defaultPushToTalk,
         quickInputShortcut: PickyShortcutSpec = .defaultQuickInput,
@@ -1055,6 +1063,7 @@ struct PickySettings: Codable, Equatable {
         self.pickleAgentThinkingLevel = pickleAgentThinkingLevel
         self.screenContextScope = screenContextScope
         self.screenshotQuality = screenshotQuality
+        self.attachScreenshotsOnlyWhenInked = attachScreenshotsOnlyWhenInked
         self.useConversationCard = useConversationCard
         self.pushToTalkShortcut = pushToTalkShortcut
         self.quickInputShortcut = quickInputShortcut
@@ -1142,6 +1151,7 @@ struct PickySettings: Codable, Equatable {
             pickleAgentThinkingLevel: .automatic,
             screenContextScope: .focusedScreen,
             screenshotQuality: .onePointFive,
+            attachScreenshotsOnlyWhenInked: false,
             useConversationCard: true,
             pushToTalkShortcut: .defaultPushToTalk,
             quickInputShortcut: .defaultQuickInput,
@@ -1263,6 +1273,7 @@ struct PickySettings: Codable, Equatable {
         case pickleAgentThinkingLevel
         case screenContextScope
         case screenshotQuality
+        case attachScreenshotsOnlyWhenInked
         case useConversationCard
         case pushToTalkShortcut
         case quickInputShortcut
@@ -1326,6 +1337,10 @@ struct PickySettings: Codable, Equatable {
         pickleAgentThinkingLevel = try container.decodeIfPresent(PickyPickleAgentThinkingLevel.self, forKey: .pickleAgentThinkingLevel) ?? defaults.pickleAgentThinkingLevel
         screenContextScope = try container.decodeIfPresent(PickyScreenContextScope.self, forKey: .screenContextScope) ?? defaults.screenContextScope
         screenshotQuality = try container.decodeIfPresent(PickyScreenshotQuality.self, forKey: .screenshotQuality) ?? defaults.screenshotQuality
+        // Missing key on an existing settings file means the user updated in
+        // place from a build that predates this toggle — preserve always-attach
+        // behavior so screenshots do not silently disappear after the update.
+        attachScreenshotsOnlyWhenInked = try container.decodeIfPresent(Bool.self, forKey: .attachScreenshotsOnlyWhenInked) ?? defaults.attachScreenshotsOnlyWhenInked
         useConversationCard = try container.decodeIfPresent(Bool.self, forKey: .useConversationCard) ?? defaults.useConversationCard
         hudDockSizePreset = try container.decodeIfPresent(PickyHUDDockSizePreset.self, forKey: .hudDockSizePreset) ?? defaults.hudDockSizePreset
         hudCardSizes = (try container.decodeIfPresent([String: PickyHUDCardSize].self, forKey: .hudCardSizes) ?? defaults.hudCardSizes)

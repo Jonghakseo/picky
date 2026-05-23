@@ -469,6 +469,27 @@ struct CompanionPanelSettingsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
+                    HStack {
+                        Text("settings.field.attachScreenshotsOnlyWhenInked")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundColor(DS.Colors.textPrimary)
+                        Spacer(minLength: 8)
+                        Toggle("settings.field.attachScreenshotsOnlyWhenInked",
+                               isOn: $viewModel.settings.attachScreenshotsOnlyWhenInked)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .onChange(of: viewModel.settings.attachScreenshotsOnlyWhenInked) { _, _ in
+                                saveImmediately(for: .mainAgent)
+                            }
+                    }
+                    Text("settings.field.attachScreenshotsOnlyWhenInked.note")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
                     fieldLabel("settings.field.screenshotQuality")
                     Picker("settings.field.screenshotQuality", selection: $viewModel.settings.screenshotQuality) {
                         ForEach(PickyScreenshotQuality.allCases) { quality in

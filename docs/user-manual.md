@@ -237,6 +237,7 @@ Details:
 - A drag must cross the threshold before becoming a visible mark.
 - The app underneath does not receive mouse events while Picky owns ink capture, except for pass-through cases inside Picky UI.
 - Marks are neutral context; Picky does not infer workflows from them.
+- If **Send screenshots only when drawn** (Settings → Picky) is enabled, the screenshot is sent to the model only after you actually draw a mark. Without a mark, only the transcript and non-visual context fields are sent; the screen capture itself still runs locally so the ink overlay can render.
 
 ## 7. Pickle HUD and dock
 
@@ -623,6 +624,7 @@ Settings are stored at:
 | Pi model | Automatic or a pinned model pattern. |
 | Reasoning level | Off, Minimal, Low, Medium, High, Extra High. |
 | Screen context | All screens or Focused screen only. Default is **Focused screen only** so Picky captures only the display the cursor is on. |
+| Send screenshots only when drawn | Off (default) or On. When **On**, Picky attaches a screenshot to the model turn only if you marked the screen with click and drag during Push-to-Talk or Quick Input. Screen capture still runs locally so the ink overlay can render on top, but the screenshot is omitted from what the model sees. Off keeps the always-attach behavior. |
 | Screenshot quality | 1× 1280 px, 1.5× 1920 px, 2× 2560 px longest edge. Captured screenshots are written to the per-user temporary directory (`FileManager.default.temporaryDirectory/Picky/Screenshots`), not the durable Application Support tree. |
 | Additional instructions | Extra standing instructions baked into the Picky bootstrap; apply on next Picky session/relaunch. |
 

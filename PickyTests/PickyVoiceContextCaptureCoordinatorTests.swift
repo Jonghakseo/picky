@@ -79,4 +79,103 @@ struct PickyVoiceContextCaptureCoordinatorTests {
         #expect(capturedScope == .focusedScreen)
         #expect(capturedMaximumDimension == 1920)
     }
+
+    // MARK: - attachScreenshotsOnlyWhenInked gate
+
+    @Test func attachScreenshotsOnlyWhenInked_offByDefault_keepsScreenshots() async throws {
+        let settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        // Sanity: feature is opt-in. If the default flips, this test must be
+        // updated together with the matching user manual entry.
+        #expect(settings.attachScreenshotsOnlyWhenInked == false)
+
+        let coordinator = PickyVoiceContextCaptureCoordinator(
+            screenCapture: { _, _ in [] },
+            settingsProvider: { settings },
+            contextAssembler: { _, source, transcript, _ in
+                Self.stubPacket(source: source, transcript: transcript, screenshotPaths: ["/tmp/shot-1.jpg"], inkMarks: [])
+            }
+        )
+
+        let result = try await coordinator.captureContext(transcript: "with image", voiceFollowUpSessionID: nil)
+
+        #expect(result?.contextPacket.screenshots.count == 1)
+    }
+
+    @Test func attachScreenshotsOnlyWhenInked_onWithoutInk_dropsScreenshots() async throws {
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        settings.attachScreenshotsOnlyWhenInked = true
+
+        let coordinator = PickyVoiceContextCaptureCoordinator(
+            screenCapture: { _, _ in [] },
+            settingsProvider: { settings },
+            contextAssembler: { _, source, transcript, _ in
+                Self.stubPacket(source: source, transcript: transcript, screenshotPaths: ["/tmp/shot-1.jpg"], inkMarks: [])
+            }
+        )
+
+        let result = try await coordinator.captureContext(transcript: "no ink", voiceFollowUpSessionID: nil)
+
+        #expect(result?.contextPacket.screenshots.isEmpty == true)
+        #expect(result?.contextPacket.inkMarks.isEmpty == true)
+        // Non-visual fields are untouched.
+        #expect(result?.contextPacket.transcript ?? "" == "no ink")
+    }
+
+    @Test func attachScreenshotsOnlyWhenInked_onWithInk_keepsScreenshots() async throws {
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        settings.attachScreenshotsOnlyWhenInked = true
+
+        let inkMark = PickyInkMarkContext(
+            id: "ink-1",
+            source: .text,
+            screenId: "screen1",
+            points: [PickyCGPoint(x: 10, y: 10), PickyCGPoint(x: 20, y: 20)],
+            bounds: PickyCGRect(x: 10, y: 10, width: 10, height: 10),
+            strokeWidth: 6,
+            opacity: 0.5
+        )
+
+        let coordinator = PickyVoiceContextCaptureCoordinator(
+            screenCapture: { _, _ in [] },
+            settingsProvider: { settings },
+            contextAssembler: { _, source, transcript, _ in
+                Self.stubPacket(source: source, transcript: transcript, screenshotPaths: ["/tmp/shot-1.jpg"], inkMarks: [inkMark])
+            }
+        )
+
+        let result = try await coordinator.captureContext(transcript: "with ink", voiceFollowUpSessionID: nil)
+
+        #expect(result?.contextPacket.screenshots.count == 1)
+        #expect(result?.contextPacket.inkMarks.count == 1)
+    }
+
+    private static func stubPacket(
+        source: String,
+        transcript: String,
+        screenshotPaths: [String],
+        inkMarks: [PickyInkMarkContext]
+    ) -> PickyContextPacket {
+        PickyContextPacket(
+            id: "context-test",
+            source: source,
+            capturedAt: Date(timeIntervalSince1970: 1_800_000_000),
+            transcript: transcript,
+            selectedText: nil,
+            cwd: nil,
+            activeApp: nil,
+            activeWindow: nil,
+            browser: nil,
+            screenshots: screenshotPaths.enumerated().map { index, path in
+                PickyScreenshotContext(
+                    id: "shot-\(index)",
+                    label: "Screen \(index + 1)",
+                    path: path,
+                    screenId: "screen\(index + 1)",
+                    bounds: nil
+                )
+            },
+            inkMarks: inkMarks,
+            warnings: []
+        )
+    }
 }

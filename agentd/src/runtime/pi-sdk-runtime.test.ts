@@ -93,6 +93,10 @@ class FakeSession extends EventEmitter {
 
   async compact(instructions?: string): Promise<void> {
     this.compactCalls.push(instructions);
+    // Real Pi SDK emits compaction_start *and* compaction_end around `session.compact()`; mirror
+    // both here so the runtime-event handler sees the same lifecycle and the recovery handler
+    // owns the compactionCompleted emission (no manual duplicate from the /compact slash handler).
+    this.emit("event", { type: "compaction_start", reason: "manual" });
     this.emit("event", { type: "compaction_end", reason: "manual", willRetry: false, aborted: false, result: { summary: "요약" } });
   }
 
@@ -1111,8 +1115,8 @@ describe("PiSdkRuntime", () => {
     const fakeSession = new FakeSession();
     (fakeSession as unknown as { getContextUsage: () => { tokens: number; contextWindow: number; percent: number } }).getContextUsage = () => ({ tokens: 123_456, contextWindow: 200_000, percent: 62 });
     const handle = await makeRuntime(fakeSession).prewarm({ cwd: "/tmp/project", sessionId: "session-compact" });
-    const events: Array<{ type: string; status?: string; noTurnRan?: boolean; usage?: unknown }> = [];
-    handle.subscribe((event) => events.push(event as { type: string; status?: string; noTurnRan?: boolean; usage?: unknown }));
+    const events: Array<{ type: string; status?: string; noTurnRan?: boolean; usage?: unknown; compactionStarted?: boolean; compactionCompleted?: boolean }> = [];
+    handle.subscribe((event) => events.push(event as { type: string; status?: string; noTurnRan?: boolean; usage?: unknown; compactionStarted?: boolean; compactionCompleted?: boolean }));
 
     await handle.followUp({ text: "/compact focus on bug area", imagePaths: [] });
 
@@ -1122,6 +1126,14 @@ describe("PiSdkRuntime", () => {
     const statuses = events.filter((event) => event.type === "status").map((event) => event.status);
     expect(statuses).toContain("running");
     expect(statuses).toContain("completed");
+    // The /compact slash handler must rely on Pi's own compaction_start/end events; emitting a
+    // second compactionCompleted from the handler would make `runtime-event-handler` record a
+    // duplicate "Session compacted" system message whenever an `agent_activity` snapshot lands
+    // between Pi's compaction_end and the manual emit (regression: two HUD compaction bubbles).
+    const compactionStarted = events.filter((event) => event.type === "status" && event.compactionStarted === true);
+    const compactionCompleted = events.filter((event) => event.type === "status" && event.compactionCompleted === true);
+    expect(compactionStarted).toHaveLength(1);
+    expect(compactionCompleted).toHaveLength(1);
     expect(events).toContainEqual({ type: "context_usage", usage: { tokens: null, contextWindow: 200_000, percent: null } });
   });
 

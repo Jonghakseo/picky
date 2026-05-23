@@ -5454,6 +5454,74 @@ describe("SessionSupervisor archived session purge", () => {
   });
 });
 
+describe("SessionSupervisor deleteSession", () => {
+  const baseDeleteSession = (overrides: Partial<PickyAgentSession>): PickyAgentSession => ({
+    id: "s",
+    title: "t",
+    status: "completed",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    logs: [], tools: [], artifacts: [], changedFiles: [],
+    queuedSteers: [], queuedFollowUps: [],
+    steeringMode: "one-at-a-time", followUpMode: "one-at-a-time",
+    activitySummary: { read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 },
+    ...overrides,
+  });
+
+  it("removes an archived terminal session from disk and the in-memory map", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-delete-test-"));
+    const store = new SessionStore(dir);
+    await store.save(baseDeleteSession({
+      id: "delete-me",
+      archived: true,
+      archivedAt: "2026-01-02T00:00:00.000Z",
+    }));
+    const supervisor = new SessionSupervisor(new MockRuntime(), store);
+    await supervisor.load();
+
+    await supervisor.deleteSession("delete-me");
+
+    expect(supervisor.get("delete-me")).toBeUndefined();
+    const reloaded = await store.loadAll();
+    expect(reloaded.find((s) => s.id === "delete-me")).toBeUndefined();
+  });
+
+  it("is a no-op for unknown ids", async () => {
+    const supervisor = await makeSupervisor();
+    await expect(supervisor.deleteSession("never-existed")).resolves.toBeUndefined();
+  });
+
+  it("refuses to delete a session that is not archived", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-delete-test-"));
+    const store = new SessionStore(dir);
+    await store.save(baseDeleteSession({ id: "unarchived", archived: false }));
+    const supervisor = new SessionSupervisor(new MockRuntime(), store);
+    await supervisor.load();
+
+    await expect(supervisor.deleteSession("unarchived")).rejects.toThrow(/not archived/);
+    expect(supervisor.get("unarchived")).toBeDefined();
+  });
+
+  it("refuses to delete a session that is not in a terminal state", async () => {
+    const supervisor = await makeSupervisor();
+    // Inject a running session directly into the in-memory map. We bypass
+    // store.save + load because load() rewrites archived+non-terminal sessions
+    // to `cancelled` for crash recovery, which would mask the running case we
+    // want to assert here.
+    (supervisor as unknown as { sessions: Map<string, PickyAgentSession> }).sessions.set(
+      "running",
+      baseDeleteSession({
+        id: "running",
+        status: "running",
+        archived: true,
+        archivedAt: "2026-01-02T00:00:00.000Z",
+      }),
+    );
+    await expect(supervisor.deleteSession("running")).rejects.toThrow(/terminal state/);
+    expect(supervisor.get("running")).toBeDefined();
+  });
+});
+
 class ThrowingRuntime implements AgentRuntime {
   async create(): Promise<never> {
     throw new Error("runtime unavailable");

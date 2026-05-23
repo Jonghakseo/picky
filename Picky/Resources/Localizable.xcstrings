@@ -765,6 +765,38 @@
         }
       }
     },
+    "hud.archivedList.delete": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "삭제"
+          }
+        }
+      }
+    },
+    "hud.archivedList.confirmDelete": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap again to delete"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한 번 더 누르면 삭제"
+          }
+        }
+      }
+    },
     "hud.archivedList.restore": {
       "localizations": {
         "en": {
@@ -857,22 +889,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pi 터미널 열기"
-          }
-        }
-      }
-    },
-    "hud.menu.showArchivedList": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show archived list…"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "아카이브 목록 보기…"
           }
         }
       }

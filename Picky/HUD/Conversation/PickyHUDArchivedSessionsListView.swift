@@ -2,19 +2,26 @@
 //  PickyHUDArchivedSessionsListView.swift
 //  Picky
 //
-//  Popover content that lists archived Pickles and lets the user restore them
-//  back into the dock. Reaches the same code path as the in-toast Undo and the
-//  realtime `picky_unarchive_pickle` tool: `PickySessionListViewModel.unarchive`.
+//  List of archived Pickles shown inside Settings → Pickle. Reaches the same
+//  code path as the in-toast Undo and the realtime `picky_unarchive_pickle`
+//  tool (`PickySessionListViewModel.unarchive`) for restore, and the new
+//  `deleteArchivedSession` for permanent purge.
 //
 
 import SwiftUI
 
 struct PickyHUDArchivedSessionsListView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
-    var onClose: () -> Void = {}
 
-    private static let contentWidth: CGFloat = 320
-    private static let listMaxHeight: CGFloat = 320
+    private static let listMaxHeight: CGFloat = 280
+
+    @State private var pendingDeleteSessionID: String?
+    @State private var pendingDeleteResetTask: Task<Void, Never>?
+
+    /// Time window the two-step delete confirmation stays armed. After this we
+    /// snap the row back to the neutral "Delete" label so a stale red state
+    /// can't be triggered hours later.
+    private static let pendingDeleteWindow: Duration = .seconds(4)
 
     private var archivedSessions: [PickySessionListViewModel.SessionCard] {
         viewModel.archivedSessions
@@ -40,8 +47,17 @@ struct PickyHUDArchivedSessionsListView: View {
                 .frame(maxHeight: Self.listMaxHeight)
             }
         }
-        .padding(12)
-        .frame(width: Self.contentWidth, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: archivedSessions.map(\.id)) { _, ids in
+            // If the row currently waiting on confirmation disappears (restored,
+            // deleted from another surface, etc.) drop the pending state so a
+            // future row at the same index doesn't appear pre-armed.
+            if let pending = pendingDeleteSessionID, !ids.contains(pending) {
+                pendingDeleteSessionID = nil
+                pendingDeleteResetTask?.cancel()
+                pendingDeleteResetTask = nil
+            }
+        }
     }
 
     private var header: some View {
@@ -68,7 +84,7 @@ struct PickyHUDArchivedSessionsListView: View {
 
     @ViewBuilder
     private func row(for session: PickySessionListViewModel.SessionCard) -> some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .center, spacing: 6) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.title)
                     .font(.system(size: 12, weight: .medium))
@@ -85,26 +101,79 @@ struct PickyHUDArchivedSessionsListView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button {
-                viewModel.unarchive(sessionID: session.id)
-                if viewModel.archivedSessions.isEmpty {
-                    onClose()
-                }
-            } label: {
-                Text("hud.archivedList.restore")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(DS.Colors.accentText)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(DS.Colors.surface2)
-                    )
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Restore Pickle")
+            restoreButton(for: session)
+            deleteButton(for: session)
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+        // Tapping anywhere outside the delete button on a row cancels the
+        // pending confirmation for any *other* row. The delete button itself
+        // owns its own arm/confirm transitions.
+        .onTapGesture { resetPendingDelete(except: session.id) }
+    }
+
+    private func restoreButton(for session: PickySessionListViewModel.SessionCard) -> some View {
+        Button {
+            resetPendingDelete()
+            viewModel.unarchive(sessionID: session.id)
+        } label: {
+            Text("hud.archivedList.restore")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(DS.Colors.accentText)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(DS.Colors.surface2)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Restore Pickle")
+    }
+
+    @ViewBuilder
+    private func deleteButton(for session: PickySessionListViewModel.SessionCard) -> some View {
+        let isArmed = pendingDeleteSessionID == session.id
+        Button {
+            if isArmed {
+                pendingDeleteSessionID = nil
+                pendingDeleteResetTask?.cancel()
+                pendingDeleteResetTask = nil
+                viewModel.deleteArchivedSession(sessionID: session.id)
+            } else {
+                armPendingDelete(for: session.id)
+            }
+        } label: {
+            Text(isArmed ? "hud.archivedList.confirmDelete" : "hud.archivedList.delete")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(isArmed ? DS.Colors.destructiveText : DS.Colors.textTertiary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(isArmed ? DS.Colors.destructiveText.opacity(0.12) : DS.Colors.surface2.opacity(0.6))
+                )
+                .animation(.easeOut(duration: 0.12), value: isArmed)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isArmed ? "Confirm delete Pickle" : "Delete Pickle")
+    }
+
+    private func armPendingDelete(for sessionID: String) {
+        pendingDeleteSessionID = sessionID
+        pendingDeleteResetTask?.cancel()
+        pendingDeleteResetTask = Task { @MainActor in
+            try? await Task.sleep(for: Self.pendingDeleteWindow)
+            guard !Task.isCancelled, pendingDeleteSessionID == sessionID else { return }
+            pendingDeleteSessionID = nil
+            pendingDeleteResetTask = nil
+        }
+    }
+
+    private func resetPendingDelete(except keep: String? = nil) {
+        guard let pending = pendingDeleteSessionID, pending != keep else { return }
+        pendingDeleteSessionID = nil
+        pendingDeleteResetTask?.cancel()
+        pendingDeleteResetTask = nil
     }
 }

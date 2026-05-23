@@ -152,6 +152,10 @@ struct CompanionPanelSettingsSaveStatuses: Equatable {
 struct CompanionPanelSettingsView: View {
     @ObservedObject var viewModel: PickySettingsViewModel
     @ObservedObject var companionManager: CompanionManager
+    /// Shared HUD session list. The Pickle settings section renders the
+    /// archived-Pickle list (restore + permanent delete) directly off this
+    /// view model so the menu bar panel and the HUD see the same data.
+    @ObservedObject var sessionListViewModel: PickySessionListViewModel
     @State private var mainAgentCwdDraft: String = ""
     @State private var pickleCwdDraft: String = ""
     @State private var azureSTTEndpointDraft: String = ""
@@ -342,6 +346,11 @@ struct CompanionPanelSettingsView: View {
                     .background(DS.Colors.borderSubtle.opacity(0.3))
 
                 dockSizePresetPicker
+
+                Divider()
+                    .background(DS.Colors.borderSubtle.opacity(0.3))
+
+                PickyHUDArchivedSessionsListView(viewModel: sessionListViewModel)
             }
         }
     }

@@ -1510,6 +1510,63 @@ final class PickySessionListViewModel: ObservableObject {
         syncActiveVoiceFollowUpAfterSessionListChange()
     }
 
+    /// Permanently delete an archived Pickle from both the local view model and the
+    /// daemon's persisted session store. Triggered from Settings → Pickle. The
+    /// daemon validates that the session is archived AND terminal AND has no live
+    /// runtime handle; the UI only exposes the affordance for archived rows so a
+    /// successful path is the only path the user ever sees.
+    func deleteArchivedSession(sessionID: String) {
+        pickySessionLog("delete archived session=\(sessionID)")
+        archiveCommitTasks.removeValue(forKey: sessionID)?.cancel()
+        releasedArchivedChildSessionIDs.remove(sessionID)
+
+        var archivedIDs = archiveStore.archivedSessionIDs
+        archivedIDs.remove(sessionID)
+        archiveStore.archivedSessionIDs = archivedIDs
+
+        var manuallyArchivedIDs = archiveStore.manuallyArchivedSessionIDs
+        manuallyArchivedIDs.remove(sessionID)
+        archiveStore.manuallyArchivedSessionIDs = manuallyArchivedIDs
+
+        Task { try? await client.send(PickyCommandEnvelope(type: .deleteSession, sessionId: sessionID)) }
+
+        // Mirror removeOnboardingDemoSession's cleanup: prune every per-session
+        // map so a future incoming sessionUpdated for an unrelated session id
+        // doesn't accidentally revive stale state for the deleted one.
+        sessions.removeAll { $0.id == sessionID }
+        archivedSessions.removeAll { $0.id == sessionID }
+        unreadSessionIDs.remove(sessionID)
+        pendingDoneFlashSessionIDs.remove(sessionID)
+        deliveredNotificationKeys.remove("\(sessionID):completed")
+        deliveredNotificationKeys.remove("\(sessionID):failed")
+        thinkingBlocksHiddenBySessionID.removeValue(forKey: sessionID)
+        slashCommandsBySessionID.removeValue(forKey: sessionID)
+        slashCommandRequestedSessionIDs.remove(sessionID)
+        slashCommandsEpochBySessionID.removeValue(forKey: sessionID)
+        let removedRequestIDs = slashCommandRequestSessionByID.filter { $0.value == sessionID }.map(\.key)
+        for requestID in removedRequestIDs {
+            slashCommandRequestSessionByID.removeValue(forKey: requestID)
+            slashCommandRequestEpochByID.removeValue(forKey: requestID)
+        }
+        lastIncrementalSeqBySessionID.removeValue(forKey: sessionID)
+        if screenContextTargetSessionID == sessionID {
+            clearScreenContextTargetState()
+        }
+        if hoveredVoiceFollowUpSessionID == sessionID {
+            hoveredVoiceFollowUpSessionID = nil
+            selectionStore.hoveredVoiceFollowUpSessionID = nil
+        }
+        if activeVoiceFollowUpSessionID == sessionID {
+            activeVoiceFollowUpSessionID = nil
+        }
+        if selectedSessionID == sessionID {
+            hasExplicitSelection = false
+            selectedSessionID = defaultSelectionID()
+            selectionStore.selectedSessionID = nil
+        }
+        applyManualOrderToActiveSessions()
+    }
+
     func searchSessions(query: String) -> [SessionCard] {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let all = sessions + archivedSessions

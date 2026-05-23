@@ -33,7 +33,6 @@ struct PickyConversationHeaderView: View {
     @State private var isEditingTitle = false
     @State private var titleDraft = ""
     @State private var isTitleHovered = false
-    @State private var isShowingArchivedList = false
     @State private var stickyHoldFeedbackStartTask: Task<Void, Never>?
     @State private var isStickyHolding = false
     @State private var stickyHoldProgress: Double = 0
@@ -202,8 +201,7 @@ struct PickyConversationHeaderView: View {
             PickyConversationMenu(
                 session: session,
                 viewModel: viewModel,
-                onArchive: { onArchiveSession(session.id) },
-                onShowArchivedList: { isShowingArchivedList = true }
+                onArchive: { onArchiveSession(session.id) }
             )
         } label: {
             Image(systemName: "ellipsis")
@@ -216,12 +214,6 @@ struct PickyConversationHeaderView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .accessibilityLabel("Conversation menu")
-        .popover(isPresented: $isShowingArchivedList, arrowEdge: .top) {
-            PickyHUDArchivedSessionsListView(
-                viewModel: viewModel,
-                onClose: { isShowingArchivedList = false }
-            )
-        }
     }
 
     private var piBadgeSlot: some View {

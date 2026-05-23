@@ -1773,6 +1773,50 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(sessionId);
   }
 
+  /**
+   * Permanent purge of a single archived session triggered by the user from
+   * Settings → Pickle. Mirrors the inner body of `purgeStaleArchivedSessions`
+   * but operates on one session id and refuses to act on anything still
+   * running so the user cannot accidentally rip a live runtime handle out
+   * from under itself. Caller is expected to broadcast a fresh
+   * `sessionSnapshot` so clients prune their local arrays.
+   */
+  async deleteSession(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      logAgentd("deleteSession skipped: unknown session", { sessionId });
+      return;
+    }
+    if (this.runtimeHandles.has(sessionId)) {
+      throw new Error(`Cannot delete session with an attached runtime handle: ${sessionId}`);
+    }
+    if (!isTerminalStatus(session.status)) {
+      throw new Error(`Cannot delete a session that is not in a terminal state: ${sessionId} (${session.status})`);
+    }
+    if (session.archived !== true) {
+      throw new Error(`Cannot delete a session that is not archived: ${sessionId}`);
+    }
+    await this.store.deleteSession(sessionId);
+    this.sessions.delete(sessionId);
+    this.messageBuilder.onSessionRemoved(sessionId);
+    this.pickleSessionIds.delete(sessionId);
+    this.sessionContexts.delete(sessionId);
+    this.sessionSeq.delete(sessionId);
+    this.pendingQueueDeliveries.delete(sessionId);
+    this.materializedQueueDeliveries.delete(sessionId);
+    this.turnActivity.delete(sessionId);
+    this.noTurnRanSessionStateRestores.delete(sessionId);
+    this.pendingResourceReloadSessionIDs.delete(sessionId);
+    this.lastEmittedSteeringMode.delete(sessionId);
+    this.lastEmittedFollowUpMode.delete(sessionId);
+    this.pickleCompletionNotified.delete(sessionId);
+    this.pickleCompletionInFlight.delete(sessionId);
+    const pendingIndex = this.pendingPickleCompletions.indexOf(sessionId);
+    if (pendingIndex >= 0) this.pendingPickleCompletions.splice(pendingIndex, 1);
+    this.externalPickleReplyContexts.delete(sessionId);
+    logAgentd("session deleted", { sessionId });
+  }
+
   async setSessionArchived(sessionId: string, archived: boolean): Promise<PickyAgentSession> {
     const patch: Partial<PickyAgentSession> = archived
       ? { archived: true, archivedAt: new Date().toISOString() }

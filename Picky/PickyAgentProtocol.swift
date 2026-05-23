@@ -246,6 +246,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case answerExtensionUi
     case setNotifyMainOnCompletion
     case setSessionArchived
+    case deleteSession
     case notifyMainOfPickleCompletion
     case setDisabledBuiltinTools
     case setMainAgentNarrationEnabled

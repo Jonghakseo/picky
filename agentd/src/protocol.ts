@@ -336,6 +336,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("pinPickleSession"), context: PickyContextPacketSchema, title: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("setNotifyMainOnCompletion"), sessionId: z.string(), enabled: z.boolean() }),
   CommandBaseSchema.extend({ type: z.literal("setSessionArchived"), sessionId: z.string(), archived: z.boolean() }),
+  CommandBaseSchema.extend({ type: z.literal("deleteSession"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("cycleSessionThinkingLevel"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("cycleSessionModel"), sessionId: z.string(), direction: ModelCycleDirectionSchema.default("forward") }),
   CommandBaseSchema.extend({ type: z.literal("clearQueue"), sessionId: z.string(), kind: z.enum(["steering", "followUp", "all"]) }),

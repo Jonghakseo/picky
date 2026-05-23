@@ -2431,6 +2431,33 @@ struct PickySessionViewModelTests {
         #expect(unarchiveCommand.archived == false)
     }
 
+    @Test func deleteArchivedSessionPurgesLocallyAndSendsDaemonCommand() async throws {
+        let client = FakePickyAgentClient()
+        let archiveStore = FakeArchiveStore()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: archiveStore
+        )
+        viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "pickle-1", title: "Pickle", status: "completed"))))
+        try await settle()
+
+        viewModel.archive(sessionID: "pickle-1")
+        try await settle()
+        #expect(viewModel.archivedSessions.map(\.id) == ["pickle-1"])
+
+        viewModel.deleteArchivedSession(sessionID: "pickle-1")
+        try await settle()
+
+        #expect(viewModel.archivedSessions.isEmpty)
+        #expect(viewModel.sessions.isEmpty)
+        #expect(archiveStore.archivedSessionIDs.isEmpty)
+        #expect(archiveStore.manuallyArchivedSessionIDs.isEmpty)
+        let deleteCommand = try #require(client.sentCommands.last { $0.type == .deleteSession })
+        #expect(deleteCommand.sessionId == "pickle-1")
+    }
+
     // MARK: - Manual dock reorder
 
     @MainActor @Test func moveSessionSeedsManualOrderAndReorders() {

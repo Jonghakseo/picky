@@ -11,9 +11,6 @@ struct PickyConversationMenu: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
     var onArchive: (() -> Void)?
-    /// Asks the host card to present the archived-Pickles popover. The card owns the
-    /// presentation state because SwiftUI `Menu` dismisses itself on selection — we cannot
-    /// drive `.popover(isPresented:)` from inside this Section.
 
     var canOpenPiTerminal: Bool { session.piSessionFilePath != nil }
     var canShowInlinePiTerminal: Bool { session.piSessionFilePath != nil }
@@ -26,7 +23,6 @@ struct PickyConversationMenu: View {
     var canSyncFromPiSession: Bool { session.piSessionFilePath != nil }
     var canDuplicate: Bool { session.piSessionFilePath != nil }
     var canStop: Bool { !session.status.isTerminal }
-    var onShowArchivedList: (() -> Void)?
 
     var body: some View {
         Section("QUICK") {
@@ -79,11 +75,6 @@ struct PickyConversationMenu: View {
                     viewModel.archive(sessionID: session.id)
                 }
             }
-
-            Button("hud.menu.showArchivedList") {
-                onShowArchivedList?()
-            }
-            .disabled(onShowArchivedList == nil)
         }
     }
 

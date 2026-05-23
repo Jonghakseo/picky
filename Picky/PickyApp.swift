@@ -238,6 +238,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         PickyTerminalOverlayPresenter.shared.configure(appearanceStore: appearanceStore, settingsStore: settingsStore)
         menuBarPanelManager = MenuBarPanelManager(
             companionManager: companionManager,
+            sessionListViewModel: hudSessionViewModel,
             appearanceStore: appearanceStore,
             updaterController: updaterController,
             navigator: panelNavigator

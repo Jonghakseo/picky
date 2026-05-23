@@ -315,6 +315,13 @@ export class AgentdServer {
       setNotifyMainOnCompletion: (cmd) => this.options.supervisor.setNotifyMainOnCompletion(cmd.sessionId, cmd.enabled),
       notifyMainOfPickleCompletion: (cmd) => this.options.supervisor.deliverMainAgentPickleCompletion(cmd.sessionId, cmd.prompt, cmd.cwd),
       setSessionArchived: (cmd) => this.options.supervisor.setSessionArchived(cmd.sessionId, cmd.archived),
+      deleteSession: async (cmd) => {
+        await this.options.supervisor.deleteSession(cmd.sessionId);
+        this.broadcast({
+          type: "sessionSnapshot",
+          sessions: compactSessionsForSnapshot(this.options.supervisor.list()).map(protocolSession),
+        });
+      },
       cycleSessionThinkingLevel: (cmd) => this.options.supervisor.cycleSessionThinkingLevel(cmd.sessionId),
       cycleSessionModel: (cmd) => this.options.supervisor.cycleSessionModel(cmd.sessionId, cmd.direction),
       clearQueue: (cmd) => this.options.supervisor.clearQueue(cmd.sessionId, cmd.kind),
@@ -641,6 +648,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, enabled: command.enabled ? 1 : 0 };
     case "setSessionArchived":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, archived: command.archived ? 1 : 0 };
+    case "deleteSession":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId };
     case "cycleSessionThinkingLevel":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId };
     case "cycleSessionModel":

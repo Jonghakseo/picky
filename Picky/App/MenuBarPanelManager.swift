@@ -39,6 +39,7 @@ final class MenuBarPanelManager: NSObject {
     private var isAutoDismissSuspended = false
 
     private let companionManager: CompanionManager
+    private let sessionListViewModel: PickySessionListViewModel
     private let appearanceStore: PickyAppearanceStore
     private let updaterController: PickyUpdaterController
     /// Lives on the manager so the panel's tab/route selection survives
@@ -51,11 +52,13 @@ final class MenuBarPanelManager: NSObject {
 
     init(
         companionManager: CompanionManager,
+        sessionListViewModel: PickySessionListViewModel,
         appearanceStore: PickyAppearanceStore,
         updaterController: PickyUpdaterController,
         navigator: PickyPanelNavigator
     ) {
         self.companionManager = companionManager
+        self.sessionListViewModel = sessionListViewModel
         self.appearanceStore = appearanceStore
         self.updaterController = updaterController
         self.navigator = navigator
@@ -192,7 +195,11 @@ final class MenuBarPanelManager: NSObject {
     }
 
     private func createPanel() {
-        let companionPanelView = CompanionPanelView(companionManager: companionManager, navigator: navigator)
+        let companionPanelView = CompanionPanelView(
+            companionManager: companionManager,
+            sessionListViewModel: sessionListViewModel,
+            navigator: navigator
+        )
             .frame(width: panelWidth, height: panelHeight)
             .environmentObject(appearanceStore)
             .environmentObject(updaterController)

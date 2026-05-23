@@ -126,7 +126,6 @@ private struct PickyInlineTerminalSessionView: View {
     let isCommandShortcutHintVisible: Bool
     var onArchiveSession: (String) -> Void = { _ in }
     @State private var attachmentID = UUID().uuidString
-    @State private var isShowingArchivedList = false
 
     private var isActiveAttachment: Bool {
         viewModel.isInlineTerminalAttachmentActive(sessionID: session.id, attachmentID: attachmentID)
@@ -187,8 +186,7 @@ private struct PickyInlineTerminalSessionView: View {
                 PickyConversationMenu(
                     session: session,
                     viewModel: viewModel,
-                    onArchive: { onArchiveSession(session.id) },
-                    onShowArchivedList: { isShowingArchivedList = true }
+                    onArchive: { onArchiveSession(session.id) }
                 )
             } label: {
                 Image(systemName: "ellipsis")
@@ -201,12 +199,6 @@ private struct PickyInlineTerminalSessionView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .accessibilityLabel("Terminal mode menu")
-            .popover(isPresented: $isShowingArchivedList, arrowEdge: .top) {
-                PickyHUDArchivedSessionsListView(
-                    viewModel: viewModel,
-                    onClose: { isShowingArchivedList = false }
-                )
-            }
         }
         .frame(minHeight: 26, alignment: .center)
     }

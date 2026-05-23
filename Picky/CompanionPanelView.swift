@@ -50,6 +50,11 @@ enum CompanionPanelTab: String, CaseIterable, Identifiable {
 
 struct CompanionPanelView: View {
     @ObservedObject var companionManager: CompanionManager
+    /// Shared with the HUD dock. The Settings → Pickle screen renders the
+    /// archived-Pickle list (with restore/delete affordances) directly off
+    /// this view model, so the menu bar panel needs the same instance the HUD
+    /// uses instead of a stub.
+    @ObservedObject var sessionListViewModel: PickySessionListViewModel
     /// Owns tab + settings-route selection. Hoisted out of `@State` so
     /// `MenuBarPanelManager` (and, by extension, `picky://` deep links from
     /// the conversation) can drive the panel from outside the view.
@@ -112,6 +117,7 @@ struct CompanionPanelView: View {
                         CompanionPanelSettingsView(
                             viewModel: settingsViewModel,
                             companionManager: companionManager,
+                            sessionListViewModel: sessionListViewModel,
                             route: settingsRouteBinding
                         )
                         .padding(.horizontal, 16)

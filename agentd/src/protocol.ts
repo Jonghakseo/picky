@@ -282,9 +282,9 @@ export const PickyAgentSessionSchema = z.object({
   followUpMode: PickyQueueModeSchema.default("one-at-a-time"),
   activitySummary: PickyActivitySummarySchema.default({ read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 }),
   contextUsage: z.object({
-    tokens: z.number().nullish(),
+    tokens: z.number().nullable(),
     contextWindow: z.number(),
-    percent: z.number().nullish(),
+    percent: z.number().nullable(),
   }).optional(),
   currentAssistantRun: PickyAssistantRunMetadataSchema.optional(),
   pendingExtensionUiRequest: PickyExtensionUiRequestSchema.optional(),

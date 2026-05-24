@@ -697,17 +697,32 @@ struct BlueCursorView: View {
                let responseText = companionManager.latestAgentSessionSummary,
                !responseText.isEmpty,
                companionManager.onboardingBubbleText == nil {
+                // The voice-response cursor bubble uses the same 8-line visible cap as the
+                // longer-running CompanionResponseOverlay so multi-paragraph TTS replies do
+                // not balloon the bubble past the cursor area. SwiftUI's `.lineLimit` alone
+                // does not constrain `fixedSize(vertical: true)` bubbles either, so we
+                // pre-truncate the AttributedString through CoreText with the same helper.
+                let bubbleFont = NSFont.systemFont(ofSize: 11, weight: .medium)
                 let renderedText = PickyBubbleMarkdown.displayString(for: responseText)
-                let attributedText = PickyBubbleMarkdown.attributedText(for: responseText)
+                let rawAttributed = PickyBubbleMarkdown.attributedText(for: responseText)
                 let textWidth = PickyBubbleLayout.textWidth(
                     for: renderedText,
-                    font: .systemFont(ofSize: 11, weight: .medium),
+                    font: bubbleFont,
                     maxWidth: 302
+                )
+                let attributedText = PickyBubbleLayout.truncatedAttributedText(
+                    rawAttributed,
+                    font: bubbleFont,
+                    lineSpacing: 0,
+                    width: textWidth,
+                    maxLines: 8
                 )
                 Text(attributedText)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.leading)
+                    .lineLimit(8)
+                    .truncationMode(.tail)
                     .frame(width: textWidth, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 9)

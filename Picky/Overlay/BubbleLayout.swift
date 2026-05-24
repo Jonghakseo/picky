@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import CoreText
 import SwiftUI
 
 struct NavigationBubbleSizePreferenceKey: PreferenceKey {
@@ -50,6 +51,143 @@ enum PickyBubbleLayout {
             NSAttributedString(string: line.isEmpty ? " " : line, attributes: [.font: font]).size().width
         }.max() ?? 1
         return ceil(min(max(widestLine, 1), maxWidth))
+    }
+
+    /// Truncate an attributed string so it wraps to at most `maxLines` visual lines at the
+    /// given width, appending an ellipsis when content was dropped. CoreText is the source
+    /// of truth for visual line counting so the result matches what the SwiftUI Text view
+    /// will render with the same font and lineSpacing.
+    ///
+    /// SwiftUI's `.lineLimit(N)` alone is unreliable when the containing view uses
+    /// `fixedSize(vertical: true)` and the host panel sizes itself from
+    /// `NSHostingView.fittingSize`: the ideal size measurement can ignore the line cap and
+    /// the panel grows to fit every paragraph. Pre-truncating the AttributedString here
+    /// keeps `fittingSize` and the visible text aligned with the intended cap.
+    static func truncatedAttributedText(
+        _ source: AttributedString,
+        font: NSFont,
+        lineSpacing: CGFloat,
+        width: CGFloat,
+        maxLines: Int
+    ) -> AttributedString {
+        guard maxLines > 0, width > 0 else { return source }
+
+        let nsAttr = NSAttributedString(source)
+        guard nsAttr.length > 0 else { return source }
+
+        let mutable = NSMutableAttributedString(attributedString: nsAttr)
+        let fullRange = NSRange(location: 0, length: mutable.length)
+        // Mirror the SwiftUI lineSpacing modifier so CoreText's wrap calculations match.
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = lineSpacing
+        paragraph.lineBreakMode = .byWordWrapping
+        mutable.addAttribute(.paragraphStyle, value: paragraph, range: fullRange)
+        // Runs created by AttributedString(markdown:) may not carry an NSFont attribute;
+        // CoreText falls back to a system default in that case, which over- or under-counts
+        // lines vs. SwiftUI's rendering. Stamp the bubble font on any unfontless run.
+        mutable.enumerateAttribute(.font, in: fullRange) { value, range, _ in
+            if value == nil {
+                mutable.addAttribute(.font, value: font, range: range)
+            }
+        }
+
+        // First check whether the *original* source already fits within `maxLines` at the
+        // full width. If it does, return it unchanged so short replies don't pay an ellipsis.
+        let fullFramesetter = CTFramesetterCreateWithAttributedString(mutable)
+        let fullPath = CGPath(
+            rect: CGRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude),
+            transform: nil
+        )
+        let fullFrame = CTFramesetterCreateFrame(fullFramesetter, CFRange(location: 0, length: 0), fullPath, nil)
+        let fullLines = (CTFrameGetLines(fullFrame) as? [CTLine]) ?? []
+        guard fullLines.count > maxLines else { return source }
+
+        // Lay the source out again at a slightly narrower width that reserves room for the
+        // ellipsis on the last visible line. Without this reservation, cutting at the end of
+        // line N and then appending "…" re-wraps to N+1 lines whenever the original line N
+        // already filled the width budget — a regression caught by the wrapped-paragraph
+        // truncation test.
+        let ellipsisWidth = ceil(NSAttributedString(string: "\u{2026}", attributes: [.font: font]).size().width)
+        let measureWidth = max(1, width - ellipsisWidth)
+        let framesetter = CTFramesetterCreateWithAttributedString(mutable)
+        let path = CGPath(
+            rect: CGRect(x: 0, y: 0, width: measureWidth, height: .greatestFiniteMagnitude),
+            transform: nil
+        )
+        let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: 0, length: 0), path, nil)
+        let lines = (CTFrameGetLines(frame) as? [CTLine]) ?? []
+        guard lines.count > maxLines else { return source }
+
+        let lastVisibleLine = lines[maxLines - 1]
+        let range = CTLineGetStringRange(lastVisibleLine)
+        let cutoff = min(Int(range.location + range.length), mutable.length)
+        guard cutoff > 0 else { return source }
+        let truncated = NSMutableAttributedString(
+            attributedString: mutable.attributedSubstring(from: NSRange(location: 0, length: cutoff))
+        )
+        // Trim trailing whitespace/newlines so the ellipsis attaches to the last word
+        // instead of dangling on its own line.
+        while truncated.length > 0,
+              let last = truncated.string.unicodeScalars.last,
+              CharacterSet.whitespacesAndNewlines.contains(last) {
+            truncated.deleteCharacters(in: NSRange(location: truncated.length - 1, length: 1))
+        }
+        let inheritedAttributes: [NSAttributedString.Key: Any] = truncated.length > 0
+            ? truncated.attributes(at: truncated.length - 1, effectiveRange: nil)
+            : [.font: font]
+        truncated.append(NSAttributedString(string: "\u{2026}", attributes: inheritedAttributes))
+        return AttributedString(truncated)
+    }
+
+    /// Maximum bubble height in points for the given font/lineSpacing/lineLimit combination,
+    /// including symmetric vertical padding. Used to cap `NSHostingView.fittingSize` so the
+    /// panel never grows beyond the visible-line budget even when the SwiftUI Text's line
+    /// limit is bypassed by the ideal-size measurement.
+    static func maxBubbleHeight(
+        font: NSFont,
+        lineSpacing: CGFloat,
+        maxLines: Int,
+        verticalPadding: CGFloat
+    ) -> CGFloat {
+        guard maxLines > 0 else { return verticalPadding * 2 }
+        let lineHeight = font.ascender + abs(font.descender) + font.leading
+        let totalLineHeight = lineHeight * CGFloat(maxLines) + lineSpacing * CGFloat(max(0, maxLines - 1))
+        return ceil(totalLineHeight + verticalPadding * 2)
+    }
+
+    /// Number of visual lines the attributed string would wrap to at the given width with
+    /// the bubble font/lineSpacing. Exposed for tests so we can assert truncation results
+    /// without spinning up a real SwiftUI scene.
+    static func visualLineCount(
+        _ source: AttributedString,
+        font: NSFont,
+        lineSpacing: CGFloat,
+        width: CGFloat
+    ) -> Int {
+        guard width > 0 else { return 0 }
+        let nsAttr = NSAttributedString(source)
+        guard nsAttr.length > 0 else { return 0 }
+
+        let mutable = NSMutableAttributedString(attributedString: nsAttr)
+        let fullRange = NSRange(location: 0, length: mutable.length)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = lineSpacing
+        paragraph.lineBreakMode = .byWordWrapping
+        mutable.addAttribute(.paragraphStyle, value: paragraph, range: fullRange)
+        mutable.enumerateAttribute(.font, in: fullRange) { value, range, _ in
+            if value == nil {
+                mutable.addAttribute(.font, value: font, range: range)
+            }
+        }
+
+        let framesetter = CTFramesetterCreateWithAttributedString(mutable)
+        let path = CGPath(
+            rect: CGRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude),
+            transform: nil
+        )
+        let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: 0, length: 0), path, nil)
+        let lines = (CTFrameGetLines(frame) as? [CTLine]) ?? []
+        return lines.count
     }
 }
 

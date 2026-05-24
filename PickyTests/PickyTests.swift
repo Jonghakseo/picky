@@ -95,6 +95,110 @@ struct PickyTests {
         })
     }
 
+    // MARK: - Cursor response bubble truncation
+    //
+    // Regression coverage for the cursor-following companion response bubble. The previous
+    // implementation declared `.lineLimit(8)` on the SwiftUI Text, but the host panel sized
+    // itself from `NSHostingView.fittingSize`, which ignored that cap on multi-paragraph
+    // AttributedStrings and let the bubble grow to 30+ lines (user-reported regression on
+    // 2026-05-24). The pre-truncation + `maxBubbleHeight()` cap below is the source of truth
+    // both the SwiftUI view and the panel sizing path consult, so we lock down both helpers.
+
+    @Test func truncatedAttributedTextLeavesShortContentUntouched() throws {
+        let font = NSFont.systemFont(ofSize: 13, weight: .regular)
+        let source = PickyBubbleMarkdown.attributedText(for: "짧은 응답입니다.")
+        let truncated = PickyBubbleLayout.truncatedAttributedText(
+            source,
+            font: font,
+            lineSpacing: 3,
+            width: 300,
+            maxLines: 8
+        )
+
+        // Single-line content fits well within the budget, so the helper must round-trip
+        // the AttributedString unchanged — no trailing ellipsis, no character loss.
+        #expect(String(truncated.characters) == "짧은 응답입니다.")
+        #expect(!String(truncated.characters).hasSuffix("\u{2026}"))
+    }
+
+    @Test func truncatedAttributedTextCapsLongContentAtVisibleLineBudget() throws {
+        let font = NSFont.systemFont(ofSize: 13, weight: .regular)
+        let lineSpacing: CGFloat = 3
+        let width: CGFloat = 300
+        // 30 short paragraphs separated by blank lines — mirrors the user-reported scenario
+        // where the bubble swelled to dozens of lines despite `.lineLimit(8)`.
+        let paragraphs = (1...30).map { "단락 \($0): 이것은 몇 줄 이상이 될 수 있는 긴 한국어 문장입니다." }
+        let longText = paragraphs.joined(separator: "\n\n")
+        let source = PickyBubbleMarkdown.attributedText(for: longText)
+
+        let truncated = PickyBubbleLayout.truncatedAttributedText(
+            source,
+            font: font,
+            lineSpacing: lineSpacing,
+            width: width,
+            maxLines: 8
+        )
+
+        // The truncated text must end in an ellipsis to signal that content was dropped.
+        #expect(String(truncated.characters).hasSuffix("\u{2026}"))
+        // It must also be strictly shorter than the source so we know content was actually
+        // removed (not just the ellipsis appended).
+        #expect(truncated.characters.count < source.characters.count)
+        // And the visible-line count for the truncated string must respect the 8-line cap.
+        let visibleLines = PickyBubbleLayout.visualLineCount(
+            truncated,
+            font: font,
+            lineSpacing: lineSpacing,
+            width: width
+        )
+        #expect(visibleLines <= 8)
+    }
+
+    @Test func truncatedAttributedTextHandlesWrappedSingleParagraph() throws {
+        let font = NSFont.systemFont(ofSize: 13, weight: .regular)
+        let lineSpacing: CGFloat = 3
+        let width: CGFloat = 300
+        // A single long paragraph that wraps many times — confirms the cap is measured
+        // against visual (wrapped) lines, not logical newlines.
+        let longParagraph = String(repeating: "단어 ", count: 400)
+        let source = PickyBubbleMarkdown.attributedText(for: longParagraph)
+
+        let truncated = PickyBubbleLayout.truncatedAttributedText(
+            source,
+            font: font,
+            lineSpacing: lineSpacing,
+            width: width,
+            maxLines: 8
+        )
+
+        let visibleLines = PickyBubbleLayout.visualLineCount(
+            truncated,
+            font: font,
+            lineSpacing: lineSpacing,
+            width: width
+        )
+        #expect(visibleLines <= 8)
+        #expect(String(truncated.characters).hasSuffix("\u{2026}"))
+    }
+
+    @Test func maxBubbleHeightScalesWithLineLimit() throws {
+        let font = NSFont.systemFont(ofSize: 13, weight: .regular)
+        let oneLine = PickyBubbleLayout.maxBubbleHeight(font: font, lineSpacing: 3, maxLines: 1, verticalPadding: 10)
+        let eightLines = PickyBubbleLayout.maxBubbleHeight(font: font, lineSpacing: 3, maxLines: 8, verticalPadding: 10)
+        let sixteenLines = PickyBubbleLayout.maxBubbleHeight(font: font, lineSpacing: 3, maxLines: 16, verticalPadding: 10)
+
+        // Adding lines must monotonically grow the budget so the panel-sizing cap stays
+        // consistent with the line-limit knob.
+        #expect(oneLine < eightLines)
+        #expect(eightLines < sixteenLines)
+        // The cap is symmetric padding plus N line heights plus (N-1) line gaps; the
+        // delta between 8 and 16 lines must equal the delta between 1 and 9 lines.
+        let nineLines = PickyBubbleLayout.maxBubbleHeight(font: font, lineSpacing: 3, maxLines: 9, verticalPadding: 10)
+        let deltaEightToSixteen = sixteenLines - eightLines
+        let deltaOneToNine = nineLines - oneLine
+        #expect(abs(deltaEightToSixteen - deltaOneToNine) <= 1)
+    }
+
     @Test func hudExpansionPolicyKeepsCollapseAndMeasuredExpansionSemantics() throws {
         #expect(PickyHUDExpansion.contentFrameHeight(isExpanded: false, measuredHeight: 72) == 0)
         #expect(PickyHUDExpansion.contentFrameHeight(isExpanded: true, measuredHeight: 72) == 72)

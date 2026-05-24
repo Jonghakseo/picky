@@ -81,12 +81,19 @@ struct OnboardingAgentClientTests {
                 OnboardingScenario.Beat(delayMs: 100_000, event: .sessionLogAppended(sessionId: "cancel-me", line: "second"))
             ]
         )
-        let didStartSecondSleep = LockedFlag()
+        // Explicit handshake: the sleeper signals when it has actually entered
+        // the second-beat sleep so the test can disconnect *after* the playback
+        // task has progressed past its pre-sleep cancel-check. Without this
+        // signal we race: collectEvents wakes on the first beat's emit, but the
+        // playback task may not have reached the second beat's
+        // `await beatSleeper(...)` yet, and `disconnect()` then cancels at the
+        // pre-sleep `Task.isCancelled` check before the sleeper ever runs.
+        let sleeperEntered = AsyncStream<Void>.makeStream()
         let client = OnboardingAgentClient(
             scenarioFactory: { scenario },
             beatSleeper: { nanoseconds in
                 if nanoseconds > 0 {
-                    didStartSecondSleep.set(true)
+                    sleeperEntered.continuation.yield()
                     // Yield so the cancel can land before this sleep completes.
                     try? await Task.sleep(nanoseconds: 50_000_000_000)
                 }
@@ -99,6 +106,9 @@ struct OnboardingAgentClientTests {
         // First beat (no sleep) must land before disconnect runs.
         _ = try await collectEvents(from: client, count: 1)
 
+        var sleeperIterator = sleeperEntered.stream.makeAsyncIterator()
+        _ = await sleeperIterator.next()
+
         client.disconnect()
         // Drain whatever the stream emits before closing. We expect at most a
         // .disconnected event \u2014 the second beat must not have made it through.
@@ -110,7 +120,6 @@ struct OnboardingAgentClientTests {
             return line
         }
         #expect(!logEvents.contains("second"))
-        #expect(didStartSecondSleep.value == true)
     }
 
     // MARK: - Helpers
@@ -123,13 +132,6 @@ struct OnboardingAgentClientTests {
         }
         return collected
     }
-}
-
-private final class LockedFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var _value = false
-    var value: Bool { lock.withLock { _value } }
-    func set(_ newValue: Bool) { lock.withLock { _value = newValue } }
 }
 
 private extension PickyContextPacket {

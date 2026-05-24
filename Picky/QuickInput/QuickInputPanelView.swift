@@ -27,14 +27,14 @@ enum QuickInputPanelLayout {
     static let estimatedPanelHeight: CGFloat = capsuleHeight + shadowOutset * 2
 }
 
-/// Whether (and how) the current Quick Input submission will carry a
-/// screenshot of the user's screen. Driven by `CompanionManager` based on
-/// live ink state plus `PickySettings.attachScreenshotsOnlyWhenInked`.
+/// Whether the current Quick Input submission will carry a screenshot.
+/// Driven by `CompanionManager` from `PickySettings.attachScreenshotsOnlyWhenInked`
+/// combined with live ink state. Ink-drawn turns are surfaced as plain
+/// `.attached` on purpose — the pill stays quiet, ink visibility is already
+/// communicated by the on-screen overlay itself.
 enum QuickInputScreenshotState: Equatable {
-    /// Screenshot will be attached as-is (no ink marks drawn yet).
+    /// Screenshot will be attached (with or without ink marks).
     case attached
-    /// User drew at least one ink stroke — screenshot + marks will be attached.
-    case annotated
     /// `attachScreenshotsOnlyWhenInked` is on and no ink was drawn, so the
     /// model payload will not include a screenshot.
     case gated
@@ -166,22 +166,17 @@ struct QuickInputPanelView: View {
     }
 
     private var screenshotIndicator: some View {
-        // 22pt circle matching the trailing close-button rhythm. Color-only
-        // differentiation by design — no icon swap, no count badge.
-        let tint: Color
-        switch viewModel.screenshotState {
-        case .attached:
-            tint = DS.Colors.textSecondary
-        case .annotated:
-            tint = DS.Colors.accent
-        case .gated:
-            tint = DS.Colors.textTertiary
-        }
+        // 22pt circle matching the trailing close-button rhythm. Two states
+        // only: neutral camera when a screenshot will be attached, muted
+        // camera with diagonal strike when the ink-only attachment gate is
+        // suppressing it.
+        let isGated = viewModel.screenshotState == .gated
+        let tint: Color = isGated ? DS.Colors.textTertiary : DS.Colors.textSecondary
         return ZStack {
             Image(systemName: "camera")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(tint)
-            if viewModel.screenshotState == .gated {
+            if isGated {
                 // Diagonal strike to read as "no screenshot" without an extra
                 // SF Symbol that ships differently across macOS versions.
                 Rectangle()
@@ -199,7 +194,6 @@ struct QuickInputPanelView: View {
     private var screenshotIndicatorHelpKey: String {
         switch viewModel.screenshotState {
         case .attached: "quickInput.screenshot.attached"
-        case .annotated: "quickInput.screenshot.annotated"
         case .gated: "quickInput.screenshot.gated"
         }
     }

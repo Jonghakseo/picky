@@ -4950,22 +4950,6 @@
         }
       }
     },
-    "quickInput.screenshot.annotated": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Screenshot + ink marks will be attached"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "스크린샷과 그린 마크가 함께 전송돼요"
-          }
-        }
-      }
-    },
     "quickInput.screenshot.attached": {
       "localizations": {
         "en": {

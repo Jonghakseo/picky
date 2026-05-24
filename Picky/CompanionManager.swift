@@ -1152,8 +1152,7 @@ final class CompanionManager: ObservableObject {
     ) -> QuickInputScreenshotState {
         let resolved = settings ?? PickySettingsStore().load()
         let hasInk = !inkOverlayState.strokes.isEmpty
-        if hasInk { return .annotated }
-        if resolved.attachScreenshotsOnlyWhenInked { return .gated }
+        if resolved.attachScreenshotsOnlyWhenInked, !hasInk { return .gated }
         return .attached
     }
 

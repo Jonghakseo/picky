@@ -22,9 +22,6 @@ struct QuickInputPanelViewModelTests {
     func screenshotStateUpdatesArePublished() {
         let viewModel = QuickInputPanelViewModel()
 
-        viewModel.screenshotState = .annotated
-        #expect(viewModel.screenshotState == .annotated)
-
         viewModel.screenshotState = .gated
         #expect(viewModel.screenshotState == .gated)
 
@@ -36,10 +33,10 @@ struct QuickInputPanelViewModelTests {
     func managerUpdateScreenshotStatePropagatesToViewModel() {
         let manager = QuickInputPanelManager()
 
-        manager.updateScreenshotState(.annotated)
-        #expect(manager.viewModelForTesting.screenshotState == .annotated)
-
         manager.updateScreenshotState(.gated)
         #expect(manager.viewModelForTesting.screenshotState == .gated)
+
+        manager.updateScreenshotState(.attached)
+        #expect(manager.viewModelForTesting.screenshotState == .attached)
     }
 }

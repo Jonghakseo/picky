@@ -314,6 +314,7 @@ final class CompanionManager: ObservableObject {
                 guard let self else { return }
                 self.inkOverlayState = state
                 self.setLocalOverlayReason(.activeInkCapture, visible: state.isActive)
+                self.pushQuickInputScreenshotStateIfPanelVisible()
             }
         }
         self.inkCaptureCoordinator.shouldPassThroughMouseEvent = { [weak self] point, source in
@@ -832,6 +833,7 @@ final class CompanionManager: ObservableObject {
                 self?.reloadVoiceProvidersFromSettings(settings)
                 self?.syncDaemonSettings(settings)
                 self?.applyShortcutSpecsFromSettings(settings)
+                self?.pushQuickInputScreenshotStateIfPanelVisible()
             }
     }
 
@@ -1137,7 +1139,27 @@ final class CompanionManager: ObservableObject {
         if !quickInputPanelManager.isPanelVisible {
             beginInkCapture(source: .text)
         }
+        quickInputPanelManager.updateScreenshotState(currentQuickInputScreenshotState())
         quickInputPanelManager.presentPanel(near: event.mouseLocation)
+    }
+
+    /// Recomputes the Quick Input screenshot-attachment state from live ink
+    /// state + persisted settings. Mirrors the gate applied later by
+    /// `PickyVoiceContextCaptureCoordinator.applyInkOnlyAttachmentGate` so the
+    /// pill indicator matches what the model actually receives.
+    private func currentQuickInputScreenshotState(
+        settings: PickySettings? = nil
+    ) -> QuickInputScreenshotState {
+        let resolved = settings ?? PickySettingsStore().load()
+        let hasInk = !inkOverlayState.strokes.isEmpty
+        if hasInk { return .annotated }
+        if resolved.attachScreenshotsOnlyWhenInked { return .gated }
+        return .attached
+    }
+
+    private func pushQuickInputScreenshotStateIfPanelVisible() {
+        guard quickInputPanelManager.isPanelVisible else { return }
+        quickInputPanelManager.updateScreenshotState(currentQuickInputScreenshotState())
     }
 
     /// Wires the global "is anyone currently rebinding a shortcut?" signal so

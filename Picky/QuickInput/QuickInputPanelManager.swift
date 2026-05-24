@@ -85,6 +85,18 @@ final class QuickInputPanelManager {
         onVisibilityChange(false)
     }
 
+    /// Pushes the live screenshot-attachment state into the pill so the
+    /// trailing camera indicator reflects the current ink/settings combo.
+    func updateScreenshotState(_ state: QuickInputScreenshotState) {
+        viewModel.screenshotState = state
+    }
+
+    #if DEBUG
+    /// Test-only accessor so unit tests can assert that public manager calls
+    /// land on the underlying view model. Not exposed in release builds.
+    var viewModelForTesting: QuickInputPanelViewModel { viewModel }
+    #endif
+
     /// Called by the host after the submission task finishes. On success the
     /// panel auto-closes; on failure the error stays visible inside the pill
     /// and the input is preserved so the user can retry.

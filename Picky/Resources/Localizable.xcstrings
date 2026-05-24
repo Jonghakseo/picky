@@ -4950,6 +4950,54 @@
         }
       }
     },
+    "quickInput.screenshot.annotated": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screenshot + ink marks will be attached"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스크린샷과 그린 마크가 함께 전송돼요"
+          }
+        }
+      }
+    },
+    "quickInput.screenshot.attached": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screenshot will be attached"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스크린샷이 함께 전송돼요"
+          }
+        }
+      }
+    },
+    "quickInput.screenshot.gated": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No screenshot — draw on screen to attach"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스크린샷 안 보냄 — 화면에 그린 다음 전송하면 돼요"
+          }
+        }
+      }
+    },
     "settings.shortcuts.quickInput.title": {
       "localizations": {
         "en": {

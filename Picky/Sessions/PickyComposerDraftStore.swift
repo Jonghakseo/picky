@@ -61,14 +61,6 @@ final class PickyUserDefaultsComposerDraftStore: PickyComposerDraftStoring {
     }
 }
 
-enum PickyLegacySessionNoteData {
-    static let key = "PickySessionNotesBySessionID"
-
-    static func remove(defaults: UserDefaults = .standard) {
-        defaults.removeObject(forKey: key)
-    }
-}
-
 /// Persists composer file attachments per session as a list of absolute paths.
 /// Kept separate from the text draft store so the on-disk schema stays simple
 /// (a String dict vs. an array dict) and either store can evolve independently.

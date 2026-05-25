@@ -509,7 +509,6 @@ final class PickySessionListViewModel: ObservableObject {
         self.manualOrder = manualOrderStore.manualOrder
         self.composerDraftStore = composerDraftStore
         self.composerAttachmentDraftStore = composerAttachmentDraftStore
-        PickyLegacySessionNoteData.remove()
         self.recentPickleFolderStore = recentPickleFolderStore
         self.recentPickleCwds = recentPickleFolderStore.recentPickleCwds
         self.artifactPathValidator = artifactPathValidator

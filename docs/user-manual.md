@@ -430,14 +430,9 @@ Behavior:
 - Chips can be removed before sending.
 - On submit, attachment paths are appended to the message.
 
-### 8.9 Notify on completion and notes
+### 8.9 Notify on completion
 
-The composer left column includes:
-
-- Bell button: toggles **Notify on completion** for the Pickle.
-- Note button: opens/closes a private Pickle note.
-
-The note is for the user only and is not shared with Pi.
+The composer left column includes a **Bell** button that toggles **Notify on completion** for the Pickle. When enabled, Picky surfaces a macOS banner (and the main agent picks up the completion event) the moment the Pickle finishes. The same toggle is exposed via `Cmd + N` on the HUD.
 
 ### 8.10 Inline questions and confirmations
 
@@ -613,6 +608,8 @@ Picky is local-first and keeps everything under one durable folder:
   Workspace/                — main agent cwd, seeded AGENTS.md, optional .pi/*
   sessions/                 — Pickle session history (active + archived)
   picky.json                — main agent runtime state (compaction summaries, user memories, etc.)
+  skills/                   — Picky-only skill catalog (<name>/SKILL.md, seeded once,
+                              freely hand-authored or deleted afterwards)
   GeneratedReports/         — Markdown copies of reports (swept after 30 days)
   RealtimeToolOutputs/      — OpenAI Realtime bash spillover files
   Logs/                     — picky-agentd stdout/stderr logs

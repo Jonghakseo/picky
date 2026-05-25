@@ -31,18 +31,6 @@ struct PickyComposerDraftStoreTests {
         #expect(reloaded.draft(for: "session-1") == nil)
     }
 
-    @Test func legacySessionNoteDataRemovesOldUserDefaultsKey() throws {
-        let suiteName = "PickyLegacySessionNoteDataTests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        defaults.set(["session-1": "release checklist"], forKey: PickyLegacySessionNoteData.key)
-
-        PickyLegacySessionNoteData.remove(defaults: defaults)
-
-        #expect(defaults.object(forKey: PickyLegacySessionNoteData.key) == nil)
-    }
-
     @Test func attachmentStorePersistsClearsAndPrunesPathsBySessionID() throws {
         let suiteName = "PickyComposerAttachmentDraftStoreTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))

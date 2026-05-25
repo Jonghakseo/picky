@@ -134,7 +134,6 @@ export class AgentdServer {
     this.options.supervisor.on("transcriptionStreamFailed", (streamId: string, message: string) => this.broadcast({ type: "transcriptionStreamFailed", streamId, message }));
     this.options.supervisor.on("transcriptionStreamClosed", (streamId: string) => this.broadcast({ type: "transcriptionStreamClosed", streamId }));
     this.options.supervisor.on("pointerOverlayRequested", (request) => this.broadcast({ type: "pointerOverlayRequested", request }));
-    this.options.supervisor.on("narrateProgressRequested", (payload: { text: string }) => this.broadcast({ type: "narrateProgressRequested", text: payload.text }));
     this.options.supervisor.on("artifact", (sessionId, artifact) => this.broadcast({ type: "artifactUpdated", sessionId, artifact }));
     this.options.supervisor.on("terminalSessionSyncOutcome", (sessionId, outcome) => this.broadcast({
       type: "terminalSessionSyncOutcome",
@@ -265,7 +264,7 @@ export class AgentdServer {
       setMainAgentModel: (cmd) => this.options.supervisor.setMainAgentModel(cmd.mainAgentModelPattern),
       setMainAgentRuntimeMode: (cmd) => this.options.supervisor.setMainAgentRuntimeMode(cmd.mode),
       setDisabledBuiltinTools: (cmd) => this.options.supervisor.setDisabledBuiltinTools(cmd.disabledBuiltinTools),
-      setMainAgentNarrationEnabled: (cmd) => this.options.supervisor.setNarrationEnabled(cmd.enabled),
+      setMainAgentTTSEnabled: (cmd) => this.options.supervisor.setTTSEnabled(cmd.enabled),
       configureMainRealtimeAuth: (cmd) => this.options.supervisor.configureMainRealtimeAuth(cmd),
       beginMainRealtimeVoiceTurn: (cmd) => this.options.supervisor.beginMainRealtimeVoiceTurn(cmd.inputId, cmd.context),
       appendMainRealtimeInputAudio: (cmd) => this.options.supervisor.appendMainRealtimeInputAudio(cmd.inputId, cmd.audioBase64),
@@ -684,7 +683,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, modelPatternChars: command.mainAgentModelPattern.length };
     case "setDisabledBuiltinTools":
       return { commandId: command.id, type: command.type, count: command.disabledBuiltinTools.length };
-    case "setMainAgentNarrationEnabled":
+    case "setMainAgentTTSEnabled":
       return { commandId: command.id, type: command.type, enabled: command.enabled ? 1 : 0 };
     case "configureMainRealtimeAuth":
       return { commandId: command.id, type: command.type, provider: command.provider, authMode: command.authMode ?? "apiKey", modelOrDeployment: command.modelOrDeployment, voice: command.voice, keyPresent: command.apiKey ? 1 : 0, endpointHost: endpointHostForLog(command.azure?.resourceEndpoint) };
@@ -794,8 +793,6 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, artifactId: event.artifact.id, kind: event.artifact.kind };
     case "pointerOverlayRequested":
       return { eventId: event.id, type: event.type, requestId: event.request.id, screenId: event.request.screenId };
-    case "narrateProgressRequested":
-      return { eventId: event.id, type: event.type, textChars: event.text.length };
     case "pickleHandoffRequested":
       return { eventId: event.id, type: event.type, requestId: event.requestId, contextId: event.context.id, titleChars: event.title.length, instructionChars: event.instructions.length, cwd: event.cwd };
     case "pickleBridgeRequested":

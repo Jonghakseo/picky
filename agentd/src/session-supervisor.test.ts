@@ -2866,18 +2866,18 @@ describe("SessionSupervisor", () => {
     expect(replies).toEqual([{ contextId: "context-마이크 테스트", text: "바로 답변" }]);
   });
 
-  it("forwards narration toggle changes to the main runtime so Realtime can switch response modality", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-narration-"));
+  it("forwards TTS toggle changes to the main runtime so Realtime can switch response modality", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-tts-"));
     const sideRuntime = new ManualRuntime();
     const mainRuntime = new ManualRuntime();
     const supervisor = new SessionSupervisor(sideRuntime, new SessionStore(dir), { mainRuntime });
     await supervisor.load();
 
-    supervisor.setNarrationEnabled(false);
-    supervisor.setNarrationEnabled(false); // idempotent: should not re-forward
-    supervisor.setNarrationEnabled(true);
+    supervisor.setTTSEnabled(false);
+    supervisor.setTTSEnabled(false); // idempotent: should not re-forward
+    supervisor.setTTSEnabled(true);
 
-    expect(mainRuntime.narrationEnabledCalls).toEqual([false, true]);
+    expect(mainRuntime.ttsEnabledCalls).toEqual([false, true]);
   });
 
   it("routes voice requests through Picky when configured", async () => {
@@ -3093,35 +3093,33 @@ describe("SessionSupervisor", () => {
     ]);
   });
 
-  // Picky's narrationEnabled setting (Voice tab) propagates to agentd so the seeded
-  // picky_tell_plan extension can hide its tool from the main agent when the user
-  // turns it off. The supervisor stores the current value (defaults to true), fires
-  // change listeners on every setNarrationEnabled call, and exposes a getter so the
-  // installPickyAgentdBridge in bootstrap.ts can surface it to extensions.
-  it("tracks narrationEnabled state and notifies listeners on every change", async () => {
+  // Picky's TTS setting (Voice tab) propagates to agentd so Realtime can switch
+  // response.create modality. The supervisor stores the current value
+  // (defaults to true) and fires change listeners on real transitions.
+  it("tracks ttsEnabled state and notifies listeners on every change", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
     const changes: boolean[] = [];
-    const unsubscribe = supervisor.onNarrationEnabledChange((enabled) => changes.push(enabled));
+    const unsubscribe = supervisor.onTTSEnabledChange((enabled) => changes.push(enabled));
 
-    // Default state is enabled so the tool stays exposed on a fresh install until
+    // Default state is enabled so fresh installs keep audio responses until
     // the user explicitly opts out.
-    expect(supervisor.getNarrationEnabled()).toBe(true);
+    expect(supervisor.getTTSEnabled()).toBe(true);
 
-    supervisor.setNarrationEnabled(false);
-    expect(supervisor.getNarrationEnabled()).toBe(false);
-    supervisor.setNarrationEnabled(true);
-    expect(supervisor.getNarrationEnabled()).toBe(true);
+    supervisor.setTTSEnabled(false);
+    expect(supervisor.getTTSEnabled()).toBe(false);
+    supervisor.setTTSEnabled(true);
+    expect(supervisor.getTTSEnabled()).toBe(true);
 
     // Idempotent: setting the same value again must NOT fire a listener again,
-    // otherwise downstream subscribers (the extension) would thrash setActiveTools
-    // on every settings broadcast even when nothing changed.
-    supervisor.setNarrationEnabled(true);
+    // otherwise downstream subscribers would thrash on every settings broadcast
+    // even when nothing changed.
+    supervisor.setTTSEnabled(true);
 
     expect(changes).toEqual([false, true]);
 
     unsubscribe();
-    supervisor.setNarrationEnabled(false);
+    supervisor.setTTSEnabled(false);
     expect(changes).toEqual([false, true]);
   });
 
@@ -5908,7 +5906,7 @@ class ManualRuntime implements AgentRuntime {
    * first message the runtime received before any follow-up calls. */
   createPrompts: BuiltPrompt[] = [];
   thinkingLevels: string[] = [];
-  narrationEnabledCalls: boolean[] = [];
+  ttsEnabledCalls: boolean[] = [];
   prewarmCalls = 0;
   prewarmOptions: Array<{ cwd?: string; sessionId?: string }> = [];
   prewarm?: (options: { cwd?: string; sessionId?: string }) => Promise<RuntimeSessionHandle>;
@@ -5939,8 +5937,8 @@ class ManualRuntime implements AgentRuntime {
     this.thinkingLevels.push(level);
   }
 
-  setMainAgentNarrationEnabled(enabled: boolean): void {
-    this.narrationEnabledCalls.push(enabled);
+  setMainAgentTTSEnabled(enabled: boolean): void {
+    this.ttsEnabledCalls.push(enabled);
   }
 }
 

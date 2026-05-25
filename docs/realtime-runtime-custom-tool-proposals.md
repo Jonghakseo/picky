@@ -250,7 +250,7 @@ Realtime 메인은 다음 네 가지 강점에서 Pi 메인과 다릅니다:
 **구현 노트**:
 
 - Realtime API 의 `response.modalities` 는 response 단위로 지정 가능
-- Picky 의 `setNarrationEnabled` 와 충돌하지 않도록 "이번 턴만" 은 영구 설정 변경 X
+- Picky 의 `setTTSEnabled` 와 충돌하지 않도록 "이번 턴만" 은 영구 설정 변경 X
 - 사용자가 명시적으로 요청한 경우만
 
 **위험**: 모델이 자기 판단으로 modality 바꾸기 시작하면 일관성 깨짐

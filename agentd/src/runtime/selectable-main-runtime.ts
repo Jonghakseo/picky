@@ -111,8 +111,8 @@ export class SelectableMainRuntime implements MainRealtimeRuntime {
     return this.options.realtimeRuntime.refreshCodexQuota?.() ?? Promise.resolve();
   }
 
-  setMainAgentNarrationEnabled(enabled: boolean): void {
-    this.options.realtimeRuntime.setMainAgentNarrationEnabled?.(enabled);
+  setMainAgentTTSEnabled(enabled: boolean): void {
+    this.options.realtimeRuntime.setMainAgentTTSEnabled?.(enabled);
   }
 
   private currentRuntime(): AgentRuntime {

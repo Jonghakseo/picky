@@ -34,31 +34,10 @@ struct PickyWorkspaceSeederTests {
         #expect(body.contains("picky_start_pickle"))
     }
 
-    @Test func seedCreatesPickyTellPlanExtension() throws {
-        let root = scratchRoot()
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let workspacePath = PickyWorkspaceSeeder.seedDefaultWorkspace(appSupportRoot: root, log: { _ in })
-        let extensionURL = URL(fileURLWithPath: workspacePath, isDirectory: true)
-            .appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath, isDirectory: true)
-            .appendingPathComponent(PickyWorkspaceSeeder.tellPlanExtensionFilename, isDirectory: false)
-
-        let body = try String(contentsOf: extensionURL, encoding: .utf8)
-        #expect(body.contains("picky_tell_plan"))
-        #expect(body.contains("__pickyAgentd"))
-        #expect(body.contains("export default function"))
-        #expect(body.contains("block: true"))
-    }
-
     @Test func seedSkipsPiPayloadsUnderOpenAIRealtimeMode() throws {
-        // AGENTS.md and picky-tell-plan.ts are read exclusively by the Pi SDK
-        // runtime (cwd-loaded standing prompt + tool_call gate). The OpenAI
+        // AGENTS.md is read exclusively by the Pi SDK runtime. The OpenAI
         // Realtime runtime carries its own instructions inline via
-        // session.update and never touches either file, so seeding them
-        // under the realtime workspace would leave dormant files behind that
-        // confuse anyone inspecting the directory. The workspace directory
-        // itself is still created because Pickle daemons may use it as a
-        // cwd.
+        // session.update, so only the workspace directory is created.
         let root = scratchRoot()
         defer { try? FileManager.default.removeItem(at: root) }
 
@@ -70,31 +49,38 @@ struct PickyWorkspaceSeederTests {
 
         let workspaceURL = URL(fileURLWithPath: workspacePath, isDirectory: true)
         let agentsURL = workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.agentsMarkdownFilename)
-        let extensionURL = workspaceURL
-            .appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath, isDirectory: true)
-            .appendingPathComponent(PickyWorkspaceSeeder.tellPlanExtensionFilename, isDirectory: false)
-
         var isDirectory: ObjCBool = false
         #expect(FileManager.default.fileExists(atPath: workspaceURL.path, isDirectory: &isDirectory))
         #expect(isDirectory.boolValue)
         #expect(!FileManager.default.fileExists(atPath: agentsURL.path))
-        #expect(!FileManager.default.fileExists(atPath: extensionURL.path))
     }
 
-    @Test func seedNeverOverwritesExistingTellPlanExtension() throws {
+
+    @Test func seedRemovesLegacyPickyTellPlanExtensionWhenPresent() throws {
         let root = scratchRoot()
         defer { try? FileManager.default.removeItem(at: root) }
 
         let workspaceURL = URL(fileURLWithPath: PickyWorkspaceSeeder.defaultWorkspacePath(appSupportRoot: root), isDirectory: true)
         let extensionsURL = workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath, isDirectory: true)
         try FileManager.default.createDirectory(at: extensionsURL, withIntermediateDirectories: true)
-        let extensionURL = extensionsURL.appendingPathComponent(PickyWorkspaceSeeder.tellPlanExtensionFilename)
-        try Data("// user customized extension\n".utf8).write(to: extensionURL)
+        let legacyURL = extensionsURL.appendingPathComponent("picky-tell-plan.ts", isDirectory: false)
+        try Data("// legacy\n".utf8).write(to: legacyURL)
 
         _ = PickyWorkspaceSeeder.seedDefaultWorkspace(appSupportRoot: root, log: { _ in })
 
-        let body = try String(contentsOf: extensionURL, encoding: .utf8)
-        #expect(body == "// user customized extension\n")
+        #expect(!FileManager.default.fileExists(atPath: legacyURL.path))
+    }
+
+    @Test func seedIsNoOpWhenLegacyPickyTellPlanExtensionDoesNotExist() throws {
+        let root = scratchRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let workspacePath = PickyWorkspaceSeeder.seedDefaultWorkspace(appSupportRoot: root, log: { _ in })
+        let legacyURL = URL(fileURLWithPath: workspacePath, isDirectory: true)
+            .appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath, isDirectory: true)
+            .appendingPathComponent("picky-tell-plan.ts", isDirectory: false)
+
+        #expect(!FileManager.default.fileExists(atPath: legacyURL.path))
     }
 
     @Test func seedNeverOverwritesExistingAgentsMarkdown() throws {

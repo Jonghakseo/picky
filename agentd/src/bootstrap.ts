@@ -203,13 +203,6 @@ export function composeAgentdServices(config: AgentdConfig, overrides: ComposeOv
   });
   supervisorRef.current = supervisor;
 
-  // Picky agentd extension bridge. Pi extensions loaded from the workspace's
-  // `.pi/extensions/` (notably `picky-narrate-progress`) run in this Node
-  // process and reach Picky's companion voice through this stable globalThis
-  // interface. Keep the shape narrow and additive so seeded extensions can
-  // depend on it.
-  installPickyAgentdBridge(supervisor);
-
   const server = new AgentdServer({
     port: config.port,
     token: config.token,
@@ -331,12 +324,8 @@ function buildPrimaryMainRuntime(
   // Picky built-in tools registered to the main agent. ask_user_question is
   // intentionally excluded — disableBlockingDialogs prevents it from working
   // on the main runtime and it is registered separately on Pickle child
-  // runtimes. Narration (`picky_narrate_progress`) used to live here, but is
-  // now provided by a Pi extension seeded into the workspace's
-  // `.pi/extensions/picky-narrate-progress.ts`, so it is scoped to the main
-  // agent's cwd and can enforce its own "narrate before any other tool" rule.
-  // The user can disable individual entries from the settings UI; `toolsBuilder`
-  // returns the subset that should be active given the current disabled set.
+  // runtimes. The user can disable individual entries from the settings UI;
+  // `toolsBuilder` returns the subset that should be active.
   const allBuiltinTools: import("@mariozechner/pi-coding-agent").ToolDefinition[] = [
     createPickyStartPickleTool(startPickleFromMainContext),
     createPickyPickleSessionsTool(listPickleSessions),
@@ -574,46 +563,4 @@ function buildPrimaryMainRuntime(
     realtimeRuntime: realtimeMainRuntime,
   });
   return { runtime, toolsBuilder };
-}
-
-/**
- * Stable in-process bridge that Pi extensions seeded into the workspace can
- * call to reach Picky's companion voice. Exposed on `globalThis.__pickyAgentd`
- * so the seeded `picky-tell-plan` extension (and any future extensions) can
- * depend on a narrow, documented surface without importing agentd internals.
- */
-export interface PickyAgentdBridge {
-  /** Speak a short filler line via Picky's companion voice. No-op if blank. */
-  narrate(text: string): void;
-  /**
-   * Current value of the Picky narrationEnabled toggle. The extension reads
-   * this at `session_start` to decide whether to register `picky_tell_plan`
-   * via `pi.setActiveTools` and whether to enforce the "announce the plan
-   * before any other tool" gate.
-   */
-  getNarrationEnabled(): boolean;
-  /**
-   * Subscribe to narration-toggle transitions. Returns an unsubscribe
-   * function the extension calls on `session_shutdown`. Listeners only fire
-   * on real value changes — idempotent settings rebroadcasts do not retrigger.
-   */
-  onNarrationEnabledChange(listener: (enabled: boolean) => void): () => void;
-}
-
-function installPickyAgentdBridge(supervisor: SessionSupervisor): void {
-  const bridge: PickyAgentdBridge = {
-    narrate(text: string): void {
-      const trimmed = (text ?? "").trim();
-      if (!trimmed) return;
-      logAgentd("narrate progress requested", { textChars: trimmed.length, via: "extension-bridge" });
-      supervisor.requestNarrateProgress({ text: trimmed });
-    },
-    getNarrationEnabled(): boolean {
-      return supervisor.getNarrationEnabled();
-    },
-    onNarrationEnabledChange(listener: (enabled: boolean) => void): () => void {
-      return supervisor.onNarrationEnabledChange(listener);
-    },
-  };
-  (globalThis as unknown as { __pickyAgentd?: PickyAgentdBridge }).__pickyAgentd = bridge;
 }

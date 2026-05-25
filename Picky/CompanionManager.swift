@@ -119,15 +119,6 @@ final class CompanionManager: ObservableObject {
     private static let recognizedTranscriptVisibleDuration: TimeInterval = 3.0
     private static let deferredSpeechRetryInterval: TimeInterval = 0.05
     private static let deferredSpeechMaximumWait: TimeInterval = 2.0
-    /// Upper bound for how long an interaction speech (handoffAck / regular
-    /// final reply) can defer behind an in-flight narration (the spoken plan
-    /// from `picky_tell_plan`). Sized to cover the longest plan narration we
-    /// expect (~100 chars guidance → roughly 8–10 seconds of audio) plus a
-    /// margin. If a narration somehow stalls longer than this, the queued
-    /// interaction speech falls back to the normal speechFailed path so the
-    /// UI never wedges silent forever.
-    private static let deferredSpeechMaximumWaitForNarration: TimeInterval = 15.0
-
     @Published private(set) var voiceState: CompanionVoiceState = .idle
     @Published private(set) var lastTranscript: String?
     @Published private(set) var currentVoicePromptPreview: String?
@@ -267,7 +258,6 @@ final class CompanionManager: ObservableObject {
     private let selectionStore: PickySessionSelectionStoring
     private var speechPlaybackProvider: any PickySpeechPlaybackProvider
     private var ttsPlaybackEnabled: Bool
-    private var narrationEnabled: Bool
     private let speechWatchdogTimeoutOverride: TimeInterval?
     private let voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator
     private let realtimeVoiceInputManager = OpenAIRealtimeVoiceInputManager()
@@ -302,7 +292,6 @@ final class CompanionManager: ObservableObject {
         )
         self.speechPlaybackProvider = speechPlaybackProvider ?? PickySpeechPlaybackProviderFactory.makeDefaultProvider(settings: initialSettings)
         self.ttsPlaybackEnabled = speechPlaybackProvider == nil ? initialSettings.ttsEnabled : true
-        self.narrationEnabled = initialSettings.narrationEnabled
         self.speechWatchdogTimeoutOverride = speechWatchdogTimeout
         self.voiceContextCaptureCoordinator = voiceContextCaptureCoordinator ?? PickyVoiceContextCaptureCoordinator()
         self.realtimeAudioPlaybackEngine = realtimeAudioPlaybackEngine ?? OpenAIRealtimeAudioPlaybackEngine()
@@ -370,13 +359,6 @@ final class CompanionManager: ObservableObject {
     private var voicePromptBubbleAutoHideTask: Task<Void, Never>?
     private var voiceInteractionState = PickyVoiceInteractionState()
     private var activeSpeechID: UUID?
-    /// Set whenever an in-flight system speech represents a narration (today
-    /// only `picky_tell_plan`'s spoken plan). Kept separate from
-    /// `activeSpeechID` because the interaction-speech path needs to know
-    /// the active speech is a narration so it can queue itself behind the
-    /// narration instead of cutting it off via `stopCurrentSpeech()`.
-    /// Cleared on narration finish, refusal, or `stopCurrentSpeech()`.
-    private var activeNarrationSpeechID: UUID?
     private var lastQuickReplyTTSDedupKey: String?
     private var lastQuickReplyTTSDedupAt: Date?
     private var interactionSpeechID: UUID?
@@ -855,7 +837,6 @@ final class CompanionManager: ObservableObject {
             )
         )
         ttsPlaybackEnabled = settings.ttsEnabled
-        narrationEnabled = settings.narrationEnabled
         if speechPlaybackProvider.isSpeaking {
             stopCurrentSpeech()
         }
@@ -916,18 +897,15 @@ final class CompanionManager: ObservableObject {
                 print("⚠️ Failed to apply disabled built-in tools: \(error.localizedDescription)")
             }
             do {
-                // Sync the narration toggle to agentd so the seeded
-                // picky_tell_plan extension can hide its tool via
-                // pi.setActiveTools and skip the enforcement gate when the
-                // user opts out. Picky still gates TTS playback on the same
-                // value locally; the daemon path only controls tool exposure.
+                // Forward TTS toggle so the Realtime runtime can switch its
+                // response.create modality (audio vs text) accordingly.
                 try await agentClient.send(PickyCommandEnvelope(
-                    type: .setMainAgentNarrationEnabled,
-                    enabled: settings.narrationEnabled
+                    type: .setMainAgentTTSEnabled,
+                    enabled: settings.ttsEnabled
                 ))
-                print("🔊 Picky narration enabled applied — \(settings.narrationEnabled)")
+                print("🔊 Picky tts enabled applied — \(settings.ttsEnabled)")
             } catch {
-                print("⚠️ Failed to apply Picky narration enabled: \(error.localizedDescription)")
+                print("⚠️ Failed to apply Picky tts enabled: \(error.localizedDescription)")
             }
             if AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime {
                 await configureRealtimeMainAgent(settings: settings)
@@ -2107,42 +2085,6 @@ final class CompanionManager: ObservableObject {
             logSpeech("interaction start skipped stale projection speechID=\(speechID) context=\(contextID ?? "none")")
             return
         }
-        // Defer when a narration (picky_tell_plan) is in flight so the spoken
-        // plan is not cut off ~70ms in by the next quickReply (handoffAck,
-        // final reply, etc.). The deferred task polls and retries; the
-        // narration's finish callback clears `activeNarrationSpeechID`, which
-        // lets the next poll start the interaction speech for real.
-        if let narrationSpeechID = activeNarrationSpeechID,
-           narrationSpeechID != speechID,
-           speechPlaybackProvider.isSpeaking {
-            let elapsed = Date().timeIntervalSince(requestedAt)
-            guard elapsed < Self.deferredSpeechMaximumWaitForNarration else {
-                logSpeech("interaction start failed deferred narration timeout speechID=\(speechID) elapsedMs=\(Int(elapsed * 1000)) context=\(contextID ?? "none") narration=\(narrationSpeechID)")
-                // Clear the deferred task handle on the timeout path. The
-                // polling Task body completes after this return, but the
-                // property still held a non-nil reference, which made
-                // `handleSpeechFinished` treat the (already-failed) queued
-                // speech as still pending and kept voiceState stuck in
-                // `.processing` while no follow-up TTS would ever land.
-                deferredInteractionSpeechTask = nil
-                interactionCoordinator.effectCompleted(
-                    .speechFailed(speechID: speechID),
-                    correlation: PickyInteractionCorrelation(contextID: contextID, speechID: speechID, source: .system)
-                )
-                return
-            }
-
-            logSpeech("interaction start deferred by active narration speechID=\(speechID) elapsedMs=\(Int(elapsed * 1000)) context=\(contextID ?? "none") narration=\(narrationSpeechID)")
-            deferredInteractionSpeechTask?.cancel()
-            deferredInteractionSpeechTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(Self.deferredSpeechRetryInterval * 1_000_000_000))
-                guard !Task.isCancelled else { return }
-                await MainActor.run { [weak self] in
-                    self?.startOrDeferInteractionSpeech(speechID: speechID, text: text, contextID: contextID, requestedAt: requestedAt)
-                }
-            }
-            return
-        }
         guard !shouldSuppressSpokenAudioForVoiceInput else {
             let elapsed = Date().timeIntervalSince(requestedAt)
             guard elapsed < Self.deferredSpeechMaximumWait else {
@@ -2449,8 +2391,6 @@ final class CompanionManager: ObservableObject {
             NotificationCenter.default.post(name: .pickyTranscriptionStreamClosed, object: nil, userInfo: ["streamId": streamId])
         case .pointerOverlayRequested(let request):
             applyPointerOverlayRequest(request)
-        case .narrateProgressRequested(let request):
-            handleNarrateProgressRequest(request)
         case .error(let error):
             finishAwaitingAgentResponse(visibleText: error.message, spokenText: nil)
         case .hello, .sessionSnapshot, .artifactUpdated, .slashCommandsSnapshot, .unknown,
@@ -2614,10 +2554,7 @@ final class CompanionManager: ObservableObject {
         // Voice input (PTT) means the user is taking over: drop any active
         // agent state so the UI flips off the yellow loading / blue speaking
         // indicator immediately and the STT subsystem can promote to
-        // `.listening` on its own. Previously only `.responding` was reset,
-        // but `.processing` now appears after a narration finishes (see
-        // `handleSpeechFinished`), so it must clear here too — otherwise PTT
-        // mid-narration left the dot stuck in the yellow processing color.
+        // `.listening` on its own.
         if voiceState == .responding || voiceState == .processing {
             voiceState = .idle
         }
@@ -2629,10 +2566,7 @@ final class CompanionManager: ObservableObject {
         reduceVoiceInteraction(.abort)
         // Clear the pending timing marker AFTER `abortMainAgentForVoiceInput`
         // has read it to decide whether to also dispatch a session-scoped
-        // abort for the in-flight Pickle. Without this, the post-narration
-        // `.processing` state introduced by `handleSpeechFinished` would
-        // outlive the abort because no terminal status/quickReply path
-        // would land to call `finishAwaitingAgentResponse`.
+        // abort for the in-flight Pickle.
         pendingAgentResponseStartedAt = nil
     }
 
@@ -2809,33 +2743,8 @@ final class CompanionManager: ObservableObject {
         speakSystemMessage(textToSpeak)
     }
 
-    private func handleNarrateProgressRequest(_ request: PickyNarrateProgressRequest) {
-        let utterance = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !utterance.isEmpty else { return }
-        guard narrationEnabled else {
-            #if DEBUG
-            print("🔕 Picky narration suppressed — narrationEnabled=false, chars: \(utterance.count)")
-            #endif
-            return
-        }
-        guard ttsPlaybackEnabled else {
-            #if DEBUG
-            print("🔕 Picky narration suppressed — ttsEnabled=false, chars: \(utterance.count)")
-            #endif
-            return
-        }
-        latestAgentSessionSummary = utterance
-        speakSystemMessage(utterance, isNarration: true)
-    }
-
     /// Speaks a short local status message through macOS system speech.
-    ///
-    /// Pass `isNarration: true` for the `picky_tell_plan` spoken plan so the
-    /// interaction-speech path knows it must defer behind the narration
-    /// instead of cutting it off via `stopCurrentSpeech()`. Defaults to
-    /// `false` for the legacy quick-reply callers so their behavior is
-    /// unchanged.
-    private func speakSystemMessage(_ utterance: String, isNarration: Bool = false) {
+    private func speakSystemMessage(_ utterance: String) {
         guard !shouldSuppressSpokenAudioForVoiceInput else {
             stopCurrentSpeech()
             return
@@ -2844,13 +2753,9 @@ final class CompanionManager: ObservableObject {
 
         let speechID = UUID()
         activeSpeechID = speechID
-        if isNarration {
-            activeNarrationSpeechID = speechID
-        }
-
         reduceVoiceInteraction(.agentReply(text: utterance, shouldSpeak: true, speechID: speechID, timerID: speechID, inputID: interactionVoiceInputID, now: Date()))
 
-        logSpeech("system start speechID=\(speechID) provider=\(speechPlaybackProvider.displayName) chars=\(utterance.count) isNarration=\(isNarration)")
+        logSpeech("system start speechID=\(speechID) provider=\(speechPlaybackProvider.displayName) chars=\(utterance.count)")
         guard speechPlaybackProvider.speak(utterance, onFinish: { [weak self] didFinish in
             Task { @MainActor [weak self] in
                 self?.logSpeech("system provider callback speechID=\(speechID) didFinish=\(didFinish)")
@@ -2912,10 +2817,9 @@ final class CompanionManager: ObservableObject {
     }
 
     fileprivate func stopCurrentSpeech() {
-        logSpeech("stop current speech active=\(activeSpeechID?.uuidString ?? "none") interaction=\(interactionSpeechID?.uuidString ?? "none") narration=\(activeNarrationSpeechID?.uuidString ?? "none") providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
+        logSpeech("stop current speech active=\(activeSpeechID?.uuidString ?? "none") interaction=\(interactionSpeechID?.uuidString ?? "none") providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
         reduceVoiceInteraction(.reset)
         activeSpeechID = nil
-        activeNarrationSpeechID = nil
         deferredInteractionSpeechTask?.cancel()
         deferredInteractionSpeechTask = nil
         responseStateTask?.cancel()
@@ -2943,51 +2847,13 @@ final class CompanionManager: ObservableObject {
             logSpeech("system finish ignored stale speechID=\(speechID) active=\(activeSpeechID?.uuidString ?? "none") didFinish=\(didFinish) providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
             return
         }
-        // A finishing narration (picky_tell_plan TTS) does NOT mean the agent
-        // run is over — the LLM is usually still mid-tool-call when the plan
-        // wraps up. Restore `.processing` so the yellow loading indicator
-        // keeps showing until the actual final reply lands, instead of
-        // flipping to `.idle` and pretending the response is complete.
-        //
-        // Three signals say "agent is still going to speak":
-        //  1. `pendingAgentResponseStartedAt` — voice input is still awaiting the
-        //     agent's reply event (no quickReply has arrived yet).
-        //  2. `deferredInteractionSpeechTask` — a quickReply has already
-        //     arrived and is queued behind this narration (the interaction
-        //     coordinator's `.speaking` projection clears `pending` on
-        //     projection entry, even when the actual speech is deferred).
-        //  3. `interactionCoordinator.projection.isWaitingForCursorResponse` —
-        //     quick input / CLI submissions do not use `pendingAgentResponseStartedAt`,
-        //     but their canonical interaction output is still `.waitingForAgent`.
-        // Any signal means we should hold `.processing` so the yellow loading
-        // does not flicker off in the brief gap before the queued interaction
-        // speech promotes to `.responding`.
-        let wasNarration = activeNarrationSpeechID == speechID
-        if wasNarration {
-            activeNarrationSpeechID = nil
-        }
-        let agentStillResponding = pendingAgentResponseStartedAt != nil
-        let hasQueuedInteractionSpeech = deferredInteractionSpeechTask != nil
-        let interactionStillWaitingForCursorResponse: Bool
-        if case .waitingForAgent = interactionCoordinator.projection.state.output {
-            interactionStillWaitingForCursorResponse = interactionCoordinator.projection.isWaitingForCursorResponse
-        } else {
-            interactionStillWaitingForCursorResponse = false
-        }
-        let keepProcessing = wasNarration && (agentStillResponding || hasQueuedInteractionSpeech || interactionStillWaitingForCursorResponse)
-        logSpeech("system finish accepted speechID=\(speechID) didFinish=\(didFinish) providerSpeaking=\(speechPlaybackProvider.isSpeaking) wasNarration=\(wasNarration) agentStillResponding=\(agentStillResponding) hasQueuedInteractionSpeech=\(hasQueuedInteractionSpeech) interactionStillWaitingForCursorResponse=\(interactionStillWaitingForCursorResponse) keepProcessing=\(keepProcessing)")
+        logSpeech("system finish accepted speechID=\(speechID) didFinish=\(didFinish) providerSpeaking=\(speechPlaybackProvider.isSpeaking)")
         let machineCompletionTime = Date().addingTimeInterval(PickyVoiceInteractionMachine.minimumDisplayDuration + 0.01)
         reduceVoiceInteraction(didFinish ? .speechFinished(speechID: speechID, now: machineCompletionTime) : .speechFailed(speechID: speechID, now: machineCompletionTime))
         activeSpeechID = nil
         responseStateTask?.cancel()
         responseStateTask = nil
-        if keepProcessing {
-            // After plan narration, stay in loading but let the voice state
-            // machine hide the already-shown STT prompt bubble.
-            reduceVoiceInteraction(.loadingStarted(inputID: interactionVoiceInputID, transcript: currentVoicePromptPreview, targetSessionID: voiceFollowUpSessionIDForCurrentUtterance, mode: currentVoiceInteractionMode(), now: Date(), promptBubbleVisibility: .hidden))
-        } else {
-            scheduleTransientHideIfNeeded()
-        }
+        scheduleTransientHideIfNeeded()
     }
 
     /// Scans an assistant reply for the first `[label](picky://...)` link

@@ -177,11 +177,10 @@ export interface AgentRuntime {
   setMainAgentRuntimeMode?(mode: MainAgentRuntimeMode): boolean;
   getMainAgentRuntimeMode?(): MainAgentRuntimeMode;
   /**
-   * When the host disables narration, runtimes that produce audio output
-   * (Realtime) should switch their output modality to text-only. Pi ignores
-   * this; the existing extension hook still gates Pi-side TTS playback.
+   * When the host disables TTS, runtimes that produce audio output (Realtime)
+   * should switch their output modality to text-only.
    */
-  setMainAgentNarrationEnabled?(enabled: boolean): void;
+  setMainAgentTTSEnabled?(enabled: boolean): void;
 }
 
 export interface MainRealtimeHistoryMessage {

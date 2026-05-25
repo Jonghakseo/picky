@@ -425,8 +425,6 @@ private extension PickyEventEnvelope {
             return "type=artifactUpdated id=\(id) session=\(sessionId) artifact=\(artifact.id) kind=\(artifact.kind)"
         case .pointerOverlayRequested(let request):
             return "type=pointerOverlayRequested id=\(id) request=\(request.id) screen=\(request.screenId ?? "primary")"
-        case .narrateProgressRequested(let request):
-            return "type=narrateProgressRequested id=\(id) session=\(request.sessionId ?? "none") chars=\(request.text.count)"
         case .pickleHandoffRequested(let request):
             return "type=pickleHandoffRequested id=\(id) request=\(request.requestId) context=\(request.context.id) titleChars=\(request.title.count) cwd=\(request.cwd)"
         case .pickleBridgeRequested(let request):

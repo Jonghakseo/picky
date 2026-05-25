@@ -23,11 +23,6 @@ enum PickyWorkspaceSeeder {
     /// when running in this cwd. See `docs/extensions.md` in the Pi package.
     static let extensionsDirectoryRelativePath = ".pi/extensions"
 
-    /// Filename of the seeded plan-announcement extension that scopes
-    /// `picky_tell_plan` to this workspace's cwd and enforces the "announce
-    /// the plan before any other tool" policy via `tool_call` blocking.
-    static let tellPlanExtensionFilename = "picky-tell-plan.ts"
-
     /// Path of the default workspace. Does not check whether the directory or
     /// the seeded `AGENTS.md` actually exist; use `seedDefaultWorkspace` to
     /// create both before pointing Pi at the path.
@@ -56,15 +51,10 @@ enum PickyWorkspaceSeeder {
     /// migrations / tests can target a different root without hard-coding the
     /// AppSupport URL.
     ///
-    /// `mainAgentRuntimeMode` gates the Pi-specific payloads under the
-    /// workspace. Both `AGENTS.md` (Pi's cwd-loaded standing prompt) and
-    /// `.pi/extensions/picky-tell-plan.ts` (Pi's tool_call gate) are only
-    /// read by the Pi SDK runtime - the OpenAI Realtime runtime carries its
-    /// own instructions in `session.update` and never opens the workspace
-    /// AGENTS.md or invokes the tell-plan extension. Seeding them under the
-    /// realtime runtime would leave dormant files behind that confuse
-    /// anyone inspecting the workspace, so the workspace directory itself
-    /// is still created (Pickle daemons may use it as a cwd) but no Pi
+    /// `mainAgentRuntimeMode` gates the Pi-specific `AGENTS.md` payload. The
+    /// OpenAI Realtime runtime carries its own instructions in `session.update`
+    /// and never opens the workspace AGENTS.md, so the workspace directory
+    /// itself is still created (Pickle daemons may use it as a cwd) but no Pi
     /// payload is written.
     static func seed(
         workspacePath: String,
@@ -79,6 +69,7 @@ enum PickyWorkspaceSeeder {
             log("⚠️ Picky: Failed to create workspace at \(workspaceURL.path): \(error.localizedDescription)")
             return
         }
+        cleanupLegacyTellPlanExtension(workspaceURL: workspaceURL, fileManager: fileManager, log: log)
         guard mainAgentRuntimeMode == .pi else { return }
         let agentsURL = workspaceURL.appendingPathComponent(agentsMarkdownFilename, isDirectory: false)
         if !fileManager.fileExists(atPath: agentsURL.path) {
@@ -89,31 +80,25 @@ enum PickyWorkspaceSeeder {
                 log("⚠️ Picky: Failed to seed \(agentsURL.path): \(error.localizedDescription)")
             }
         }
-        seedExtensions(workspaceURL: workspaceURL, fileManager: fileManager, log: log)
     }
 
-    /// Creates `.pi/extensions/` under the workspace and drops bundled Picky
-    /// extensions (currently only `picky-tell-plan.ts`) when missing. User
-    /// edits are preserved — existing files are never overwritten.
-    private static func seedExtensions(
+    private static func cleanupLegacyTellPlanExtension(
         workspaceURL: URL,
         fileManager: FileManager,
         log: (String) -> Void
     ) {
-        let extensionsURL = workspaceURL.appendingPathComponent(extensionsDirectoryRelativePath, isDirectory: true)
+        // One-shot cleanup of the previously seeded picky-tell-plan.ts. Without
+        // this, old installs would keep loading the dead extension and expose a
+        // tool that can no longer reach Picky.
+        let legacyTellPlanURL = workspaceURL
+            .appendingPathComponent(extensionsDirectoryRelativePath, isDirectory: true)
+            .appendingPathComponent("picky-tell-plan.ts", isDirectory: false)
+        guard fileManager.fileExists(atPath: legacyTellPlanURL.path) else { return }
         do {
-            try fileManager.createDirectory(at: extensionsURL, withIntermediateDirectories: true)
+            try fileManager.removeItem(at: legacyTellPlanURL)
+            log("🧹 Picky: Removed legacy \(legacyTellPlanURL.path)")
         } catch {
-            log("⚠️ Picky: Failed to create extensions dir at \(extensionsURL.path): \(error.localizedDescription)")
-            return
-        }
-        let tellPlanURL = extensionsURL.appendingPathComponent(tellPlanExtensionFilename, isDirectory: false)
-        guard !fileManager.fileExists(atPath: tellPlanURL.path) else { return }
-        do {
-            try defaultTellPlanExtensionSource.write(to: tellPlanURL, atomically: true, encoding: .utf8)
-            log("🧩 Picky: Seeded \(tellPlanExtensionFilename) at \(tellPlanURL.path)")
-        } catch {
-            log("⚠️ Picky: Failed to seed \(tellPlanURL.path): \(error.localizedDescription)")
+            log("⚠️ Picky: Failed to remove legacy \(legacyTellPlanURL.path): \(error.localizedDescription)")
         }
     }
 
@@ -190,19 +175,6 @@ enum PickyWorkspaceSeeder {
     - Do not expose internal tool logs. Do not hard-code workflows from
       URLs or app names; use the user's intent and context.
 
-    ## Announce the plan before tool calls
-
-    - Before the first tool call in an agent run, call `picky_tell_plan`
-      once to announce the work plan for the user prompt, unless you have
-      already produced user-visible assistant text in this run. Mandatory
-      for tool-first runs; one plan covers the whole agent run.
-    - Speak the plan, not progress: intended approach and rough order of
-      steps. Do not narrate what just happened.
-    - One or two short sentences in the user's language (target ~40 chars,
-      max ~100, guidance only). Never include final answers, code, paths,
-      or sensitive identifiers.
-    - If narration is disabled the tool returns silently — do not retry.
-
     ## Self-update
 
     - When the user gives a persistent rule, preference, or workflow change
@@ -231,193 +203,4 @@ enum PickyWorkspaceSeeder {
       here pointing to that file's path so future sessions can find it.
       Keep `AGENTS.md` itself focused on persistent persona/rules/policy.
     """
-
-    /// Default content for `.pi/extensions/picky-tell-plan.ts`. The
-    /// extension is the canonical home for the `picky_tell_plan` tool (the
-    /// agentd main runtime never registers it) so the tool is only visible
-    /// to the main agent running in this workspace cwd. The tool announces
-    /// a short work plan (not progress chatter): before a tool-first agent
-    /// run executes its first tool, the agent must call `picky_tell_plan`
-    /// once and describe what it intends to do, roughly in what order. Runs
-    /// that already produced assistant text may continue without a plan call.
-    /// The per-run flags reset on `agent_start`, so one plan announcement
-    /// covers the entire multi-turn agent run for that user prompt. The character cap
-    /// inside the extension is guidance only — the tool does not truncate or
-    /// reject input by length.
-    ///
-    /// Picky's TTS is reached through `globalThis.__pickyAgentd.narrate(text)`,
-    /// installed by agentd at startup. See `PickyAgentdBridge` in
-    /// `agentd/src/bootstrap.ts` for the interface contract.
-    static let defaultTellPlanExtensionSource: String = #"""
-    // Auto-seeded by Picky. Registers `picky_tell_plan` for the main agent
-    // running in this workspace cwd and enforces that tool-first runs call it
-    // before the first non-plan tool in the same agent run.
-    //
-    // Delete this file and relaunch Picky to reseed the default.
-
-    import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-    import { Type } from "typebox";
-
-    const TOOL_NAME = "picky_tell_plan";
-    // Soft target only; no programmatic truncation. Used in guidance text.
-    const TARGET_CHARS = 40;
-    const MAX_CHARS = 100;
-
-    interface PickyAgentdBridge {
-      narrate?: (text: string) => void;
-      getNarrationEnabled?: () => boolean;
-      onNarrationEnabledChange?: (listener: (enabled: boolean) => void) => () => void;
-    }
-
-    function bridge(): PickyAgentdBridge | undefined {
-      return (globalThis as unknown as { __pickyAgentd?: PickyAgentdBridge }).__pickyAgentd;
-    }
-
-    function isNarrationEnabled(): boolean {
-      // Default true so a missing or pre-rename bridge does not silently
-      // hide the tool from the LLM.
-      return bridge()?.getNarrationEnabled?.() ?? true;
-    }
-
-    export default function (pi: ExtensionAPI) {
-      // Per-agent-run flags. Reset at agent_start. Tool-first runs must call
-      // picky_tell_plan before the first non-plan tool. If the assistant has
-      // already produced user-visible text, the plan has effectively been
-      // spoken inline and the first tool can proceed without narration.
-      let narrationDone = false;
-      let previousNonPlanToolCall = false;
-      let assistantProducedText = false;
-      let unsubscribe: (() => void) | undefined;
-
-      function assistantMessageHasText(message: { role?: string; content?: unknown }): boolean {
-        if (message.role !== "assistant" || !Array.isArray(message.content)) return false;
-        return message.content.some((part) => {
-          if (!part || typeof part !== "object") return false;
-          const candidate = part as { type?: unknown; text?: unknown };
-          return candidate.type === "text" && typeof candidate.text === "string" && candidate.text.trim().length > 0;
-        });
-      }
-
-      function syncActiveTools(enabled: boolean): void {
-        const active = pi.getActiveTools();
-        const has = active.includes(TOOL_NAME);
-        if (enabled && !has) {
-          pi.setActiveTools([...active, TOOL_NAME]);
-        } else if (!enabled && has) {
-          pi.setActiveTools(active.filter((name) => name !== TOOL_NAME));
-        }
-      }
-
-      pi.on("session_start", async () => {
-        syncActiveTools(isNarrationEnabled());
-        unsubscribe?.();
-        unsubscribe = bridge()?.onNarrationEnabledChange?.((enabled) => {
-          syncActiveTools(enabled);
-        });
-      });
-
-      pi.on("session_shutdown", async () => {
-        unsubscribe?.();
-        unsubscribe = undefined;
-      });
-
-      pi.on("agent_start", async () => {
-        narrationDone = false;
-        previousNonPlanToolCall = false;
-        assistantProducedText = false;
-      });
-
-      pi.on("message_update", async (event) => {
-        const streamEvent = event.assistantMessageEvent;
-        if (streamEvent.type === "text_delta" && streamEvent.delta.trim().length > 0) {
-          assistantProducedText = true;
-          return;
-        }
-        if (streamEvent.type === "text_end" && streamEvent.content.trim().length > 0) {
-          assistantProducedText = true;
-          return;
-        }
-        if (assistantMessageHasText(event.message)) {
-          assistantProducedText = true;
-        }
-      });
-
-      pi.on("message_end", async (event) => {
-        if (assistantMessageHasText(event.message)) {
-          assistantProducedText = true;
-        }
-      });
-
-      pi.on("tool_call", async (event) => {
-        // When the user has narration off, the tool is not in the active set
-        // and the LLM cannot see it, so the gate must not block other tools.
-        if (!isNarrationEnabled()) return;
-        if (event.toolName === TOOL_NAME) {
-          // Mark immediately so sibling tool_call events in the same parallel
-          // batch see the flag and are not blocked.
-          narrationDone = true;
-          return;
-        }
-        if (!narrationDone && !previousNonPlanToolCall && !assistantProducedText) {
-          return {
-            block: true,
-            reason: `Call ${TOOL_NAME} first to announce the plan for this tool-first user prompt (~${TARGET_CHARS} chars, max ${MAX_CHARS}), or answer with text before using tools. One plan covers the whole agent run.`,
-          };
-        }
-        previousNonPlanToolCall = true;
-      });
-
-      pi.registerTool({
-        name: TOOL_NAME,
-        label: "Picky tell plan",
-        description:
-          "Announce the work plan via Picky's companion voice before a tool-first agent run uses tools.",
-        promptSnippet: `${TOOL_NAME}: speak the plan (intended approach + rough order) before the first tool in a tool-first agent run.`,
-        promptGuidelines: [
-          `Mandatory for tool-first runs: call ${TOOL_NAME} once before the first non-plan tool if you have not already produced user-visible assistant text in this agent run; one plan covers the whole prompt.`,
-          `Speak the plan, not progress: intended approach and rough order of steps (e.g. "Read the failing test, trace the recent diff, propose a fix."). Do not narrate what just happened.`,
-          `One or two short sentences in the user's language, target ~${TARGET_CHARS} chars, max ${MAX_CHARS} (guidance only). Never include final answers, code, paths, or sensitive identifiers.`,
-          `If narration is disabled the tool returns silently — do not retry.`,
-        ],
-        parameters: Type.Object({
-          text: Type.String({
-            description:
-              "Short work-plan announcement in the user's language: intended approach + rough order. Target ~40 chars, max ~100 (guidance only, not enforced).",
-          }),
-        }),
-        async execute(_toolCallId, params) {
-          const raw = typeof params.text === "string" ? params.text.trim() : "";
-          if (!raw) throw new Error("text must not be empty");
-          if (assistantProducedText) {
-            narrationDone = true;
-            return {
-              content: [
-                { type: "text", text: "Plan narration skipped because assistant text was already produced in this agent run." },
-              ],
-              details: { text: raw, delivered: false, skipped: true, skipReason: "assistantTextAlreadyProduced" },
-            };
-          }
-          const api = bridge();
-          if (!api?.narrate) {
-            return {
-              content: [
-                { type: "text", text: "Narration bridge unavailable; continue without retrying." },
-              ],
-              details: { text: raw, delivered: false, skipped: false, skipReason: "bridgeUnavailable" },
-            };
-          }
-          api.narrate(raw);
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Plan dispatched (${raw.length} chars). Continue the work; do not narrate again in this agent run.`,
-              },
-            ],
-            details: { text: raw, delivered: true, skipped: false, skipReason: "" },
-          };
-        },
-      });
-    }
-    """#
 }

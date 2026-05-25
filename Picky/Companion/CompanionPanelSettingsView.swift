@@ -1327,19 +1327,7 @@ struct CompanionPanelSettingsView: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         toggleRow("settings.voice.toggle.ttsEnabled", isOn: $viewModel.settings.ttsEnabled, divider: false)
-                        // On the Realtime runtime the model voices every
-                        // assistant turn; `ttsEnabled` only gates onboarding
-                        // narration there. The localized copy already
-                        // describes the toggle generically.
                         Text("settings.tts.disabledNote")
-                            .pickyFont(size: 10.5, weight: .medium)
-                            .foregroundColor(DS.Colors.textTertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        toggleRow("settings.voice.toggle.narrationEnabled", isOn: $viewModel.settings.narrationEnabled, divider: false)
-                        Text("settings.narration.disabledNote")
                             .pickyFont(size: 10.5, weight: .medium)
                             .foregroundColor(DS.Colors.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)

@@ -2723,38 +2723,6 @@
         }
       }
     },
-    "settings.narration.disabledNote": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Turn this off to hide the picky_tell_plan tool from the agent and skip the spoken plan before tool calls. Other companion replies still play when TTS is on."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이 옵션을 끄면 도구 호출 전 들려주는 작업 계획 음성과 함께 picky_tell_plan 도구 자체가 에이전트에게 숨겨져요. 일반 음성 응답은 TTS가 켜져 있을 때 그대로 들려요."
-          }
-        }
-      }
-    },
-    "settings.voice.toggle.narrationEnabled": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enable plan narration"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "작업 계획 음성 안내 활성화"
-          }
-        }
-      }
-    },
     "settings.azure.realtimeUrlNote": {
       "localizations": {
         "en": {

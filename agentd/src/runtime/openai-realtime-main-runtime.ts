@@ -211,7 +211,7 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
   private thinkingLevel: ThinkingLevel = "medium";
   private historyProvider?: MainRealtimeHistoryProvider;
   private userMemoryProvider?: MainRealtimeUserMemoryProvider;
-  private narrationEnabled = true;
+  private ttsEnabled = true;
 
   constructor(private readonly options: OpenAIRealtimeMainRuntimeOptions) {
     this.config = options.defaultConfig;
@@ -253,9 +253,9 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
     return this.handle?.isMainRealtimeSpeaking() ?? false;
   }
 
-  setMainAgentNarrationEnabled(enabled: boolean): void {
-    this.narrationEnabled = enabled;
-    this.handle?.setNarrationEnabled(enabled);
+  setMainAgentTTSEnabled(enabled: boolean): void {
+    this.ttsEnabled = enabled;
+    this.handle?.setTTSEnabled(enabled);
   }
 
   async refreshCodexQuota(): Promise<void> {
@@ -301,12 +301,12 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
         codexQuotaFetcher: this.options.codexQuotaFetcher,
         historyProvider: this.historyProvider,
         userMemoryProvider: this.userMemoryProvider,
-        narrationEnabled: this.narrationEnabled,
+        ttsEnabled: this.ttsEnabled,
         now: this.options.now,
       });
     } else {
       this.handle.setCwd(options.cwd);
-      this.handle.setNarrationEnabled(this.narrationEnabled);
+      this.handle.setTTSEnabled(this.ttsEnabled);
     }
     if (this.config) this.handle.configure(this.config);
     return this.handle;
@@ -345,7 +345,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   private cwd?: string;
   private historyProvider?: MainRealtimeHistoryProvider;
   private userMemoryProvider?: MainRealtimeUserMemoryProvider;
-  private narrationEnabled: boolean;
+  private ttsEnabled: boolean;
   private codexAuth?: ResolvedCodexOAuth;
   // Snapshot of the user's Picky-only skill catalog, captured once per
   // `connect()` so the realtime instructions stay stable across the
@@ -370,7 +370,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     codexQuotaFetcher?: CodexQuotaFetcher;
     historyProvider?: MainRealtimeHistoryProvider;
     userMemoryProvider?: MainRealtimeUserMemoryProvider;
-    narrationEnabled?: boolean;
+    ttsEnabled?: boolean;
     now?: () => number;
   }) {
     this.id = options.id;
@@ -379,7 +379,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     this.cwd = options.cwd;
     this.historyProvider = options.historyProvider;
     this.userMemoryProvider = options.userMemoryProvider;
-    this.narrationEnabled = options.narrationEnabled ?? true;
+    this.ttsEnabled = options.ttsEnabled ?? true;
     this.now = options.now ?? (() => Date.now());
   }
 
@@ -428,8 +428,8 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
     return this.activeInputId !== undefined;
   }
 
-  setNarrationEnabled(enabled: boolean): void {
-    this.narrationEnabled = enabled;
+  setTTSEnabled(enabled: boolean): void {
+    this.ttsEnabled = enabled;
   }
 
   setCwd(cwd: string | undefined): void {
@@ -863,7 +863,7 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   }
 
   private sendResponseCreate(): void {
-    const audio = this.narrationEnabled;
+    const audio = this.ttsEnabled;
     this.sendClientEvent({
       type: "response.create",
       response: this.usesAzurePreviewProtocol()

@@ -335,14 +335,14 @@ struct PickySettingsPolishTests {
         let workspaceURL = root.appendingPathComponent("Workspace", isDirectory: true)
         #expect(FileManager.default.fileExists(atPath: workspaceURL.path))
         #expect(!FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.agentsMarkdownFilename).path))
-        #expect(!FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath).appendingPathComponent(PickyWorkspaceSeeder.tellPlanExtensionFilename).path))
+        #expect(!FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath).appendingPathComponent("picky-tell-plan.ts").path))
 
         _ = AppBundleConfiguration.$testRealtimeOptInOverride.withValue(true) {
             store.load()
         }
 
         #expect(!FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.agentsMarkdownFilename).path))
-        #expect(!FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath).appendingPathComponent(PickyWorkspaceSeeder.tellPlanExtensionFilename).path))
+        #expect(!FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath).appendingPathComponent("picky-tell-plan.ts").path))
     }
 
     @Test func realtimeOptInDoesNotOverwriteCorruptExistingSettings() throws {
@@ -377,7 +377,7 @@ struct PickySettingsPolishTests {
         #expect(!loaded.mainAgentRuntimeModeRealtimeOptInMigrationApplied)
         let workspaceURL = root.appendingPathComponent("Workspace", isDirectory: true)
         #expect(FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.agentsMarkdownFilename).path))
-        #expect(FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath).appendingPathComponent(PickyWorkspaceSeeder.tellPlanExtensionFilename).path))
+        #expect(!FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath).appendingPathComponent("picky-tell-plan.ts").path))
     }
 
     @Test func settingsRoundTripPreservesOpenAIRealtimeSettings() throws {

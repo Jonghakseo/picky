@@ -1914,7 +1914,7 @@ final class PickySessionListViewModel: ObservableObject {
              .transcriptionStreamStarted, .transcriptionDelta, .transcriptionCompleted,
              .transcriptionStreamFailed, .transcriptionStreamClosed,
              .pointerOverlayRequested, .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested,
-             .pushToTalkControlRequested, .narrateProgressRequested, .hello, .pluginsReloaded, .unknown:
+             .pushToTalkControlRequested, .hello, .pluginsReloaded, .unknown:
             break
         }
     }

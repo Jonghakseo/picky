@@ -74,15 +74,11 @@ export class SessionSupervisor extends EventEmitter {
   private sessions = new Map<string, PickyAgentSession>();
   private runtimeHandles = new Map<string, RuntimeSessionHandle>();
   private disabledBuiltinTools: Set<string> = new Set();
-  // Mirrors the Picky settings toggle that controls whether the seeded
-  // `picky_tell_plan` extension exposes its tool and enforces the
-  // "announce the plan before any other tool" gate. Defaults to true so a
-  // fresh install keeps the planning announcement until the user opts out.
-  // Listeners get the new value on every actual change (idempotent set is
-  // a no-op) and the bootstrap bridge surfaces both the getter and the
-  // subscription to the extension.
-  private narrationEnabled = true;
-  private readonly narrationEnabledListeners = new Set<(enabled: boolean) => void>();
+  // Mirrors Picky's TTS setting for main-agent runtimes. Realtime uses this
+  // to switch response.create modalities between audio+text and text-only.
+  // Defaults to true so fresh installs keep audio responses enabled.
+  private ttsEnabled = true;
+  private readonly ttsEnabledListeners = new Set<(enabled: boolean) => void>();
   private readonly artifactMaterializer: ArtifactMaterializer;
   private readonly runtimeEventHandler: RuntimeEventHandler;
   private mainHandle?: RuntimeSessionHandle;
@@ -407,13 +403,6 @@ export class SessionSupervisor extends EventEmitter {
     return { request: overlayRequest };
   }
 
-  requestNarrateProgress(request: { text: string }): void {
-    const trimmed = request.text.trim();
-    if (!trimmed) return;
-    this.emit("narrateProgressRequested", { text: trimmed });
-    logAgentd("narrate progress dispatched", { textChars: trimmed.length });
-  }
-
   private contextForPointerRequest(): PickyContextPacket | undefined {
     return this.mainContext ?? [...this.sessionContexts.values()].at(-1);
   }
@@ -588,45 +577,34 @@ export class SessionSupervisor extends EventEmitter {
     return this.disabledBuiltinTools;
   }
 
-  /**
-   * Current value of the Picky narration toggle. The seeded `picky_tell_plan`
-   * extension reads this through the bootstrap bridge to decide whether to
-   * expose its tool (`pi.setActiveTools`) and enforce the "announce the plan
-   * before any other tool" gate.
-   */
-  getNarrationEnabled(): boolean {
-    return this.narrationEnabled;
+  /** Current value of Picky's TTS toggle for main-agent audio-producing runtimes. */
+  getTTSEnabled(): boolean {
+    return this.ttsEnabled;
   }
 
   /**
-   * Update the narration toggle. Idempotent: setting the same value does not
-   * fire change listeners again, so downstream subscribers (the extension)
-   * do not thrash `setActiveTools` whenever Picky rebroadcasts settings.
+   * Update the TTS toggle. Idempotent: setting the same value does not fire
+   * change listeners again. Realtime translates this into response modality:
+   * TTS on means audio+text, TTS off means text-only.
    */
-  setNarrationEnabled(enabled: boolean): void {
-    if (this.narrationEnabled === enabled) return;
-    this.narrationEnabled = enabled;
-    logAgentd("narration enabled changed", { enabled });
-    // Realtime translates the host narration toggle into modality: when
-    // narration is off, response.create emits text-only and the WS does not
-    // stream TTS audio at all. Idempotent on Pi-mode runtimes.
-    this.options.mainRuntime?.setMainAgentNarrationEnabled?.(enabled);
-    for (const listener of this.narrationEnabledListeners) {
+  setTTSEnabled(enabled: boolean): void {
+    if (this.ttsEnabled === enabled) return;
+    this.ttsEnabled = enabled;
+    logAgentd("tts enabled changed", { enabled });
+    this.options.mainRuntime?.setMainAgentTTSEnabled?.(enabled);
+    for (const listener of this.ttsEnabledListeners) {
       try {
         listener(enabled);
       } catch (error) {
-        logAgentd("narration enabled listener error", { error: error instanceof Error ? error.message : String(error) });
+        logAgentd("tts enabled listener error", { error: error instanceof Error ? error.message : String(error) });
       }
     }
   }
 
-  /**
-   * Subscribe to narration toggle changes. Returns an unsubscribe function.
-   * Listeners only fire on actual transitions, not on idempotent sets.
-   */
-  onNarrationEnabledChange(listener: (enabled: boolean) => void): () => void {
-    this.narrationEnabledListeners.add(listener);
-    return () => this.narrationEnabledListeners.delete(listener);
+  /** Subscribe to TTS toggle changes. Returns an unsubscribe function. */
+  onTTSEnabledChange(listener: (enabled: boolean) => void): () => void {
+    this.ttsEnabledListeners.add(listener);
+    return () => this.ttsEnabledListeners.delete(listener);
   }
 
   async setMainAgentRuntimeMode(mode: MainAgentRuntimeMode): Promise<void> {

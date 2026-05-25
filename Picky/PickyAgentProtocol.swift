@@ -249,7 +249,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case deleteSession
     case notifyMainOfPickleCompletion
     case setDisabledBuiltinTools
-    case setMainAgentNarrationEnabled
+    case setMainAgentTTSEnabled
     case reloadPlugins
 
 }
@@ -318,7 +318,6 @@ enum PickyEvent: Equatable {
     case artifactUpdated(sessionId: String, artifact: PickyArtifact)
     case pointerOverlayRequested(PickyPointerOverlayRequest)
     case pickleHandoffRequested(PickyPickleHandoffRequest)
-    case narrateProgressRequested(PickyNarrateProgressRequest)
     case pickleBridgeRequested(PickyPickleBridgeRequest)
     case externalEntryRequested(PickyExternalEntryRequest)
     case pushToTalkControlRequested(PickyPushToTalkControlRequest)
@@ -416,8 +415,6 @@ enum PickyEvent: Equatable {
         case "pointerOverlayRequested":
             let payload = try PickyPointerOverlayRequestedPayload(from: decoder)
             self = .pointerOverlayRequested(payload.request)
-        case "narrateProgressRequested":
-            self = .narrateProgressRequested(try PickyNarrateProgressRequest(from: decoder))
         case "pickleHandoffRequested":
             self = .pickleHandoffRequested(try PickyPickleHandoffRequest(from: decoder))
         case "pickleBridgeRequested":
@@ -568,11 +565,6 @@ struct PickyErrorEvent: Decodable, Equatable {
     let code: String
     let message: String
     let commandId: String?
-}
-
-struct PickyNarrateProgressRequest: Decodable, Equatable {
-    let text: String
-    let sessionId: String?
 }
 
 struct PickyPickleHandoffRequest: Decodable, Equatable {

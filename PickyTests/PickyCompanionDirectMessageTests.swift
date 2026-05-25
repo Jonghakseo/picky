@@ -128,40 +128,6 @@ struct PickyCompanionDirectMessageTests {
         #expect(manager.voiceState == .responding)
     }
 
-    @Test func quickInputPlanNarrationReturnsToLoadingUntilFinalReply() async throws {
-        let client = FakeDirectMessageClient()
-        let speechProvider = FakeDirectMessageSpeechPlaybackProvider()
-        let manager = CompanionManager(
-            agentClient: client,
-            speechPlaybackProvider: speechProvider,
-            voiceContextCaptureCoordinator: fakeDirectMessageContextCaptureCoordinator()
-        )
-
-        let didSend = await manager.sendDirectMessage("  hello from cursor  ", source: .quickInput)
-
-        #expect(didSend)
-        #expect(manager.voiceState == .processing)
-
-        manager.applyAgentEvent(.narrateProgressRequested(PickyNarrateProgressRequest(
-            text: "작업 계획을 말할게요.",
-            sessionId: nil
-        )))
-
-        #expect(manager.voiceState == .responding)
-        #expect(speechProvider.spokenUtterances == ["작업 계획을 말할게요."])
-
-        speechProvider.finishSpeaking()
-
-        try await waitUntil { manager.voiceState == .processing }
-        #expect(manager.overlayVisibilityReasons.contains(.waitingForVoiceResponse))
-
-        manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(contextId: "typed-context", text: "cursor reply")))
-        try await waitUntil { speechProvider.spokenUtterances == ["작업 계획을 말할게요.", "cursor reply"] }
-
-        #expect(manager.latestAgentSessionSummary == "cursor reply")
-        #expect(manager.voiceState == .responding)
-    }
-
     private func waitUntil(_ predicate: @escaping @MainActor () -> Bool) async throws {
         for _ in 0..<50 {
             if predicate() { return }

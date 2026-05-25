@@ -834,12 +834,6 @@ struct PickySettings: Codable, Equatable {
     var ttsProvider: PickyVoiceProviderSelection
     /// When false, Picky still shows text replies but skips spoken TTS playback.
     var ttsEnabled: Bool
-    /// When false, agentd hides the seeded `picky_tell_plan` extension's tool
-    /// from the main agent via `pi.setActiveTools`, and Picky silently drops
-    /// any narration request that still arrives. Independent from `ttsEnabled`
-    /// so users can keep companion replies spoken while opting out of the
-    /// spoken work plan.
-    var narrationEnabled: Bool
     /// Names of Picky built-in tools the user has explicitly disabled. Empty by
     /// default; the daemon filters these out of the main agent runtime on next
     /// reset. Unknown names are tolerated so older clients survive new tool
@@ -997,7 +991,6 @@ struct PickySettings: Codable, Equatable {
         sttProvider: PickyVoiceProviderSelection = .local,
         ttsProvider: PickyVoiceProviderSelection = .local,
         ttsEnabled: Bool = true,
-        narrationEnabled: Bool = true,
         disabledBuiltinTools: Set<PickyBuiltinTool> = [],
         azureOpenAIEndpoint: String = "",
         azureOpenAIAPIKey: String = "",
@@ -1062,7 +1055,6 @@ struct PickySettings: Codable, Equatable {
         self.sttProvider = sttProvider
         self.ttsProvider = ttsProvider
         self.ttsEnabled = ttsEnabled
-        self.narrationEnabled = narrationEnabled
         self.disabledBuiltinTools = disabledBuiltinTools
         self.azureOpenAIEndpoint = azureOpenAIEndpoint
         self.azureOpenAIAPIKey = azureOpenAIAPIKey
@@ -1156,7 +1148,6 @@ struct PickySettings: Codable, Equatable {
             sttProvider: .local,
             ttsProvider: .local,
             ttsEnabled: true,
-            narrationEnabled: true,
             disabledBuiltinTools: [],
             azureOpenAIEndpoint: "",
             azureOpenAIAPIKey: "",
@@ -1289,7 +1280,6 @@ struct PickySettings: Codable, Equatable {
         case sttProvider
         case ttsProvider
         case ttsEnabled
-        case narrationEnabled
         case disabledBuiltinTools
         case azureOpenAIEndpoint
         case azureOpenAIAPIKey
@@ -1359,7 +1349,6 @@ struct PickySettings: Codable, Equatable {
         sttProvider = try container.decodeIfPresent(PickyVoiceProviderSelection.self, forKey: .sttProvider) ?? defaults.sttProvider
         ttsProvider = try container.decodeIfPresent(PickyVoiceProviderSelection.self, forKey: .ttsProvider) ?? defaults.ttsProvider
         ttsEnabled = try container.decodeIfPresent(Bool.self, forKey: .ttsEnabled) ?? defaults.ttsEnabled
-        narrationEnabled = try container.decodeIfPresent(Bool.self, forKey: .narrationEnabled) ?? defaults.narrationEnabled
         let rawDisabled = try container.decodeIfPresent([String].self, forKey: .disabledBuiltinTools) ?? []
         disabledBuiltinTools = Set(rawDisabled.compactMap(PickyBuiltinTool.init(rawValue:)))
         azureOpenAIEndpoint = try container.decodeIfPresent(String.self, forKey: .azureOpenAIEndpoint) ?? defaults.azureOpenAIEndpoint

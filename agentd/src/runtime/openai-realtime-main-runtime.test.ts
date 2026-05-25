@@ -944,7 +944,7 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
     expect(stateEvents.some((e) => e.state === "failed")).toBe(false);
   });
 
-  it("sends audio modality by default and switches to text when narration is disabled", async () => {
+  it("sends audio modality by default and switches to text when TTS is disabled", async () => {
     const socket = new FakeRealtimeSocket();
     const runtime = new OpenAIRealtimeMainRuntime({
       toolHandlers: fakeToolHandlers(),
@@ -964,7 +964,7 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
       .find((event) => event.type === "response.create");
     expect(firstCreate?.response).toEqual({ output_modalities: ["audio"] });
 
-    runtime.setMainAgentNarrationEnabled(false);
+    runtime.setMainAgentTTSEnabled(false);
     socket.sent.length = 0;
     await handle.followUp({ text: "text-only please", imagePaths: [] });
 

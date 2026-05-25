@@ -9,12 +9,111 @@
 //  when the daemon confirms via the `pluginsReloaded` broadcast.
 //
 
+import Combine
 import SwiftUI
+
+private struct PickyCuratedPlugin: Identifiable {
+    let id: String
+    let titleKey: LocalizedStringKey
+    let descriptionKey: LocalizedStringKey
+    let commandName: String
+    let source: String
+
+    static let diffReview = PickyCuratedPlugin(
+        id: "diff-review",
+        titleKey: "extensions.curated.diffReview.title",
+        descriptionKey: "extensions.curated.diffReview.description",
+        commandName: "/diff-review",
+        source: "npm:@ryan_nookpi/pi-extension-diff-review"
+    )
+}
+
+@MainActor
+private final class PickyCuratedPluginsViewModel: ObservableObject {
+    struct Row: Identifiable {
+        let plugin: PickyCuratedPlugin
+        var status: PickyCuratedPluginInstaller.Status
+        var isBusy: Bool
+
+        var id: String { plugin.id }
+    }
+
+    @Published private(set) var rows: [Row] = []
+    @Published private(set) var lastError: String?
+
+    private let plugins: [PickyCuratedPlugin]
+    var onPluginStateChanged: (() -> Void)?
+
+    init(plugins: [PickyCuratedPlugin] = [.diffReview]) {
+        self.plugins = plugins
+        refresh()
+    }
+
+    func refresh() {
+        rows = plugins.map { plugin in
+            Row(
+                plugin: plugin,
+                status: PickyCuratedPluginInstaller.status(source: plugin.source),
+                isBusy: false
+            )
+        }
+    }
+
+    func install(_ plugin: PickyCuratedPlugin) {
+        mutate(plugin, operation: .install)
+    }
+
+    func remove(_ plugin: PickyCuratedPlugin) {
+        mutate(plugin, operation: .remove)
+    }
+
+    private enum Operation {
+        case install
+        case remove
+    }
+
+    private func mutate(_ plugin: PickyCuratedPlugin, operation: Operation) {
+        let pluginID = plugin.id
+        let source = plugin.source
+        guard let index = rows.firstIndex(where: { $0.plugin.id == pluginID }) else { return }
+        rows[index].isBusy = true
+        lastError = nil
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result: Result<Void, PickyCuratedPluginInstaller.CommandError>
+            switch operation {
+            case .install:
+                result = PickyCuratedPluginInstaller.install(source: source)
+            case .remove:
+                result = PickyCuratedPluginInstaller.remove(source: source)
+            }
+
+            DispatchQueue.main.async { [weak self] in
+                self?.applyMutationResult(pluginID: pluginID, source: source, result: result)
+            }
+        }
+    }
+
+    private func applyMutationResult(pluginID: String, source: String, result: Result<Void, PickyCuratedPluginInstaller.CommandError>) {
+        switch result {
+        case .success:
+            lastError = nil
+            onPluginStateChanged?()
+        case .failure(let error):
+            lastError = error.localizedDescription
+        }
+        if let index = rows.firstIndex(where: { $0.plugin.id == pluginID }) {
+            rows[index].isBusy = false
+            rows[index].status = PickyCuratedPluginInstaller.status(source: source)
+        }
+    }
+}
 
 struct CompanionPanelExtensionsView: View {
     @ObservedObject var companionManager: CompanionManager
     @ObservedObject var sessionListViewModel: PickySessionListViewModel
     @EnvironmentObject private var pluginReloadController: PickyPluginReloadController
+    @StateObject private var curatedViewModel = PickyCuratedPluginsViewModel()
     @State private var confirmPresented = false
     @State private var pendingBusySnapshot: BusySnapshot = .empty
 
@@ -192,10 +291,9 @@ struct CompanionPanelExtensionsView: View {
         }
     }
 
-    /// Placeholder for the curated third-party plugin list. Same section
-    /// header style as the rest of the panel so it doesn't read as a separate
-    /// component; the body text is the only signal that nothing is actionable
-    /// here yet.
+    /// Curated third-party Pi packages. These are installed through the Pi CLI
+    /// rather than copied from the app bundle, so Pi remains the source of truth
+    /// for package resolution and settings updates.
     private var curatedSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("extensions.curated.heading")
@@ -204,17 +302,117 @@ struct CompanionPanelExtensionsView: View {
                 .textCase(.uppercase)
                 .tracking(0.4)
 
-            HStack(alignment: .firstTextBaseline, spacing: 9) {
-                Image(systemName: "sparkles")
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(curatedViewModel.rows) { row in
+                    curatedPluginRow(row)
+                }
+            }
+
+            if let lastError = curatedViewModel.lastError {
+                Text(lastError)
                     .pickyFont(size: 10.5, weight: .medium)
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .frame(width: 14, alignment: .center)
-                Text("extensions.curated.comingSoon")
-                    .pickyFont(size: 11, weight: .medium)
-                    .foregroundColor(DS.Colors.textTertiary)
+                    .foregroundColor(DS.Colors.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .onAppear {
+            curatedViewModel.refresh()
+            curatedViewModel.onPluginStateChanged = { [weak controller = pluginReloadController] in
+                controller?.notePluginsChanged()
+            }
+        }
+    }
+
+    private func curatedPluginRow(_ row: PickyCuratedPluginsViewModel.Row) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: "sparkles")
+                .pickyFont(size: 10.5, weight: .medium)
+                .foregroundColor(DS.Colors.textTertiary)
+                .frame(width: 14, alignment: .center)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .center, spacing: 6) {
+                    Text(row.plugin.titleKey)
+                        .pickyFont(size: 11.5, weight: .semibold)
+                        .foregroundColor(DS.Colors.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Text(row.plugin.commandName)
+                        .pickyFont(size: 10, weight: .medium)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1.5)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(DS.Colors.textTertiary.opacity(0.12))
+                        )
+                        .fixedSize()
+                }
+
+                Text(row.plugin.descriptionKey)
+                    .pickyFont(size: 10.5, weight: .medium)
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .layoutPriority(1)
+
+            Spacer(minLength: 6)
+
+            if row.status == .installed {
+                curatedBadgePill(
+                    text: L10n.t("status.extensions.state.installed"),
+                    foreground: DS.Colors.success,
+                    background: DS.Colors.success.opacity(0.18)
+                )
+            }
+
+            curatedActionButton(for: row)
+        }
+    }
+
+    @ViewBuilder
+    private func curatedActionButton(for row: PickyCuratedPluginsViewModel.Row) -> some View {
+        switch row.status {
+        case .installed:
+            Button(action: { curatedViewModel.remove(row.plugin) }) {
+                curatedButtonLabel(text: "status.extensions.action.remove", isBusy: row.isBusy)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(row.isBusy)
+        case .notInstalled:
+            Button(action: { curatedViewModel.install(row.plugin) }) {
+                curatedButtonLabel(text: "status.extensions.action.install", isBusy: row.isBusy)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(row.isBusy)
+        }
+    }
+
+    private func curatedButtonLabel(text: LocalizedStringKey, isBusy: Bool) -> some View {
+        HStack(spacing: 5) {
+            if isBusy {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 10, height: 10)
+            }
+            Text(text)
+        }
+    }
+
+    private func curatedBadgePill(text: String, foreground: Color, background: Color) -> some View {
+        Text(text)
+            .pickyFont(size: 9.5, weight: .medium)
+            .foregroundColor(foreground)
+            .lineLimit(1)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1.5)
+            .background(
+                Capsule(style: .continuous).fill(background)
+            )
+            .fixedSize()
     }
 
     struct BusySnapshot: Equatable {

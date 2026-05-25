@@ -4120,6 +4120,38 @@
         }
       }
     },
+    "extensions.curated.diffReview.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diff review"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diff review"
+          }
+        }
+      }
+    },
+    "extensions.curated.diffReview.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open a native review window for branch, commit, and file diffs, then send collected feedback back into Pi."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "브랜치·커밋·파일 diff를 네이티브 리뷰 창에서 확인하고, 남긴 피드백을 Pi로 다시 보낼 수 있어요."
+          }
+        }
+      }
+    },
     "status.updates.alphaNotice": {
       "localizations": {
         "en": {

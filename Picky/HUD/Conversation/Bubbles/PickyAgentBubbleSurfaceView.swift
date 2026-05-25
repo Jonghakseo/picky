@@ -101,10 +101,30 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         hoverButton.isHidden = true
         hoverButton.wantsLayer = true
         hoverButton.layer?.cornerRadius = Metrics.hoverIconCornerRadius
-        hoverButton.layer?.backgroundColor = NSColor(DS.Colors.surface1).withAlphaComponent(0.78).cgColor
         hoverButton.layer?.borderWidth = 0.5
-        hoverButton.layer?.borderColor = NSColor(DS.Colors.borderSubtle).withAlphaComponent(0.55).cgColor
         addSubview(hoverButton)
+        applyHoverButtonAppearance()
+    }
+
+    /// Layer-backed colors and `contentTintColor` are snapshotted as CGColors
+    /// or resolved NSColors when assigned outside a drawing pass, so the
+    /// dynamic `Color(light:dark:)` tokens flatten to whichever appearance
+    /// was current at init time. AppKit calls
+    /// `viewDidChangeEffectiveAppearance()` whenever SwiftUI's
+    /// `.preferredColorScheme(...)` (driven by `PickyAppearanceStore`) flips,
+    /// so we re-resolve the dynamic tokens against the new effective
+    /// appearance here. Mirrors `PickyTerminalOverlay`'s appearance refresh.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyHoverButtonAppearance()
+    }
+
+    private func applyHoverButtonAppearance() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            hoverButton.contentTintColor = NSColor(DS.Colors.textSecondary)
+            hoverButton.layer?.backgroundColor = NSColor(DS.Colors.surface1).withAlphaComponent(0.78).cgColor
+            hoverButton.layer?.borderColor = NSColor(DS.Colors.borderSubtle).withAlphaComponent(0.55).cgColor
+        }
     }
 
     @available(*, unavailable)

@@ -31,6 +31,22 @@ struct PickyTurnCardViewTests {
         #expect(groups[1].bodyMessages.map(\.id) == ["a2-act", "a2"])
     }
 
+    @Test func commandReceiptsStartTheirOwnGroup() {
+        let messages: [PickySessionMessage] = [
+            msg("u1", kind: .userText, secondsOffset: 0),
+            msg("a1", kind: .agentText, secondsOffset: 1),
+            msg("cmd", kind: .commandReceipt, secondsOffset: 2, text: "/c"),
+            msg("a2", kind: .agentText, secondsOffset: 3)
+        ]
+
+        let groups = PickyTurnGrouper.groups(from: messages, sessionStatus: .completed)
+
+        #expect(groups.map(\.id) == ["u1", "cmd"])
+        #expect(groups[0].bodyMessages.map(\.id) == ["a1"])
+        #expect(groups[1].userMessage?.kind == .commandReceipt)
+        #expect(groups[1].bodyMessages.map(\.id) == ["a2"])
+    }
+
     @Test func messagesBeforeFirstUserTextBecomePreTurnGroup() {
         let messages: [PickySessionMessage] = [
             msg("a0", kind: .agentText, secondsOffset: 0),

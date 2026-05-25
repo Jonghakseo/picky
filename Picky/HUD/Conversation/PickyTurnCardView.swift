@@ -5,7 +5,7 @@
 //  Turn-grouped collapsible container for conversation messages.
 //
 //  A "turn" is a slice of `session.messages` starting at a `userText`
-//  message and continuing until the next `userText` (or end of list).
+//  or `commandReceipt` message and continuing until the next boundary (or end of list).
 //  Each turn renders as a card whose body is the agent activity in
 //  response to that user input. The current turn (last group while the
 //  session is still active) defaults to expanded; older turns default
@@ -15,12 +15,12 @@
 import SwiftUI
 
 /// One turn worth of conversation messages, derived from `visibleMessages`
-/// in `PickyConversationListView`. The user message itself is held alongside
+/// in `PickyConversationListView`. The leading user/command message itself is held alongside
 /// (rendered above the card) while `bodyMessages` is the agent activity that
 /// the card actually wraps.
 struct PickyTurnGroup: Identifiable, Equatable {
-    /// Stable identifier — the leading `userText` message id when present.
-    /// Pre-turn slices (no leading user_text) use `Self.preTurnID` so list
+    /// Stable identifier — the leading `userText` or `commandReceipt` message id when present.
+    /// Pre-turn slices (no leading boundary) use `Self.preTurnID` so list
     /// `ForEach` stays stable across updates.
     let id: String
     let userMessage: PickySessionMessage?
@@ -274,7 +274,7 @@ enum PickyTurnGrouper {
         }
 
         for message in messages {
-            if message.kind == .userText {
+            if message.kind == .userText || message.kind == .commandReceipt {
                 if hasOpenedAnyGroup || currentUser != nil || !currentBody.isEmpty {
                     flush()
                 }

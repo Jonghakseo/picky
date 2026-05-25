@@ -231,6 +231,12 @@ export const PickyAssistantRunMetadataSchema = z.object({
   thinkingLevel: ThinkingLevelSchema.optional(),
 });
 export type PickyAssistantRunMetadata = z.infer<typeof PickyAssistantRunMetadataSchema>;
+export const PickyCommandReceiptSchema = z.object({
+  command: z.string().min(1),
+  status: z.enum(["submitted", "failed"]),
+  detail: z.string().optional(),
+});
+export type PickyCommandReceipt = z.infer<typeof PickyCommandReceiptSchema>;
 export const PickyMainAgentModelOptionSchema = z.object({
   provider: z.string().min(1),
   modelId: z.string().min(1),
@@ -240,7 +246,7 @@ export const PickyMainAgentModelOptionSchema = z.object({
 export type PickyMainAgentModelOption = z.infer<typeof PickyMainAgentModelOptionSchema>;
 export const PickySessionMessageSchema = z.object({
   id: z.string(),
-  kind: z.enum(["user_text", "agent_text", "agent_thinking", "agent_question", "agent_error", "agent_activity", "system"]),
+  kind: z.enum(["user_text", "agent_text", "agent_thinking", "agent_question", "agent_error", "agent_activity", "command_receipt", "system"]),
   createdAt: isoTimestamp,
   originatedBy: z.enum(["user", "main_agent", "pi_extension"]).optional(),
   text: z.string().optional(),
@@ -251,6 +257,7 @@ export const PickySessionMessageSchema = z.object({
   errorContext: z.string().optional(),
   errorMessage: z.string().optional(),
   notifyType: PickyExtensionNotifyTypeSchema.optional(),
+  commandReceipt: PickyCommandReceiptSchema.optional(),
   // Count of image attachments that travelled with this user_text via the
   // structured context channel (PTT / QuickInput screenshots). HUD renders a
   // small "\ud83d\uddbc N attached" affordance on the user bubble so the user

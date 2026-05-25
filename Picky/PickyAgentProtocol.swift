@@ -745,7 +745,19 @@ enum PickySessionMessageKind: String, Codable, Equatable {
     case agentQuestion = "agent_question"
     case agentError = "agent_error"
     case agentActivity = "agent_activity"
+    case commandReceipt = "command_receipt"
     case system
+}
+
+enum PickyCommandReceiptStatus: String, Codable, Equatable {
+    case submitted
+    case failed
+}
+
+struct PickyCommandReceipt: Codable, Equatable {
+    let command: String
+    let status: PickyCommandReceiptStatus
+    let detail: String?
 }
 
 enum PickyExtensionNotifyType: String, Codable, Equatable {
@@ -790,6 +802,7 @@ struct PickySessionMessage: Codable, Equatable, Identifiable {
     let errorContext: String?
     let errorMessage: String?
     var notifyType: PickyExtensionNotifyType? = nil
+    var commandReceipt: PickyCommandReceipt? = nil
     /// Count of image attachments that travelled with this user_text via the
     /// structured context channel (PTT / QuickInput screenshots). Nil for
     /// messages that have no attachments or for non-user kinds.

@@ -394,6 +394,28 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.compactCompletionBubbleCount == 1)
     }
 
+    @Test func commandReceiptRendersMinimalCommandBubble() {
+        let receipt = PickyCommandReceipt(command: "/c", status: .submitted, detail: nil)
+        let commandMessage = message("m-command", kind: .commandReceipt, text: "/c", commandReceipt: receipt)
+        let session = makeConversationSession(status: .completed, messages: [commandMessage])
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+        let bubble = PickyCommandReceiptBubbleView(message: commandMessage)
+
+        #expect(snapshot.commandReceiptBubbleCount == 1)
+        #expect(bubble.displayCommand == "/c")
+        #expect(!bubble.showsFailedLabel)
+    }
+
+    @Test func failedCommandReceiptShowsFailedLabel() {
+        let receipt = PickyCommandReceipt(command: "/c", status: .failed, detail: "unmerged paths")
+        let commandMessage = message("m-command", kind: .commandReceipt, text: "/c", commandReceipt: receipt)
+        let bubble = PickyCommandReceiptBubbleView(message: commandMessage)
+
+        #expect(bubble.displayCommand == "/c")
+        #expect(bubble.showsFailedLabel)
+    }
+
     @Test func extensionNotifySystemMessageRendersSeverityBubbleAndReportGate() {
         let longText = Array(repeating: "\u{001B}[38;5;214mPi extension produced a detailed warning.\u{001B}[39m", count: 30).joined(separator: "\n")
         let notifyMessage = message("m-notify", kind: .system, text: longText, notifyType: .warning)
@@ -1409,6 +1431,7 @@ private func message(
     errorContext: String? = nil,
     errorMessage: String? = nil,
     notifyType: PickyExtensionNotifyType? = nil,
+    commandReceipt: PickyCommandReceipt? = nil,
     attachedImagesCount: Int? = nil
 ) -> PickySessionMessage {
     PickySessionMessage(
@@ -1424,6 +1447,7 @@ private func message(
         errorContext: errorContext,
         errorMessage: errorMessage,
         notifyType: notifyType,
+        commandReceipt: commandReceipt,
         attachedImagesCount: attachedImagesCount
     )
 }

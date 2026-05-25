@@ -128,6 +128,8 @@ struct PickyConversationListView: View {
                 snapshot.questionBubbleCount += 1
             case .agentError:
                 snapshot.errorBubbleCount += 1
+            case .commandReceipt:
+                snapshot.commandReceiptBubbleCount += 1
             case .system where message.notifyType != nil:
                 snapshot.notifyBubbleCount += 1
             case .agentActivity where message.activitySnapshot?.visibleToolCallItems.isEmpty == false:
@@ -161,13 +163,8 @@ struct PickyConversationListView: View {
     @ViewBuilder
     private func turnGroupView(_ group: PickyTurnGroup) -> some View {
         if let user = group.userMessage {
-            PickyUserBubbleView(
-                message: user,
-                onOpenAsReport: openMessageReportAction(for: user),
-                onCopyText: { viewModel.copyMessageText($0) },
-                onEditText: { viewModel.replaceComposerDraftText($0, sessionID: session.id) }
-            )
-            .id(user.id)
+            leadingMessageView(user)
+                .id(user.id)
             // Render the turn card whenever there are body messages, or when the
             // current turn has an active/recent tool to surface — without this,
             // tool-only turns (no thinking, no agent_text, agent_activity not
@@ -207,6 +204,21 @@ struct PickyConversationListView: View {
     }
 
     @ViewBuilder
+    private func leadingMessageView(_ message: PickySessionMessage) -> some View {
+        switch message.kind {
+        case .commandReceipt:
+            PickyCommandReceiptBubbleView(message: message)
+        default:
+            PickyUserBubbleView(
+                message: message,
+                onOpenAsReport: openMessageReportAction(for: message),
+                onCopyText: { viewModel.copyMessageText($0) },
+                onEditText: { viewModel.replaceComposerDraftText($0, sessionID: session.id) }
+            )
+        }
+    }
+
+    @ViewBuilder
     private func messageView(_ message: PickySessionMessage, in group: PickyTurnGroup) -> some View {
         switch message.kind {
         case .userText:
@@ -216,6 +228,8 @@ struct PickyConversationListView: View {
                 onCopyText: { viewModel.copyMessageText($0) },
                 onEditText: { viewModel.replaceComposerDraftText($0, sessionID: session.id) }
             )
+        case .commandReceipt:
+            PickyCommandReceiptBubbleView(message: message)
         case .agentText:
             PickyAgentBubbleView(
                 message: message,
@@ -544,6 +558,7 @@ struct PickyConversationListRenderSnapshot: Equatable {
     var compactingOverlayCount = 0
     var compactCompletionBubbleCount = 0
     var compactFailureBubbleCount = 0
+    var commandReceiptBubbleCount = 0
     var turnCardCount = 0
     var showsActivitySummary = false
 }

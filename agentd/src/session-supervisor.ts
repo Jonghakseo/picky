@@ -1997,12 +1997,13 @@ export class SessionSupervisor extends EventEmitter {
     const prompt: BuiltPrompt = buildFollowUpPrompt(text, context);
     logAgentd("follow-up requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length });
     await this.appendLog(sessionId, `${FOLLOWUP_PREFIX}${text}`);
+    const commandReceiptId = await this.recordNonSkillSlashCommandReceipt(sessionId, text);
     await this.patch(sessionId, { status: "running", lastSummary: "Follow-up queued", finalAnswer: undefined, thinkingPreview: undefined });
     this.pushPendingQueueDelivery(sessionId, text, "user", {
       kind: "followUp",
       attachedImagesCount: prompt.imagePaths.length,
     });
-    this.queueFollowUpDelivery(sessionId, handle, prompt, text);
+    this.queueFollowUpDelivery(sessionId, handle, prompt, text, commandReceiptId);
     return this.mustGet(sessionId);
   }
 
@@ -2011,6 +2012,7 @@ export class SessionSupervisor extends EventEmitter {
     handle: RuntimeSessionHandle,
     prompt: BuiltPrompt,
     rawText: string,
+    commandReceiptId?: string,
   ): void {
     // Pi SDK followUp may resolve only after an idle session finishes its whole next turn.
     // Picky follow-ups are enqueue semantics, so do not hold the caller/Picky tool open.
@@ -2032,13 +2034,14 @@ export class SessionSupervisor extends EventEmitter {
           await this.drainPendingTextOnce(sessionId, rawText);
         }
       })
-      .catch((error) => void this.handleFollowUpDeliveryError(sessionId, rawText, error));
+      .catch((error) => void this.handleFollowUpDeliveryError(sessionId, rawText, error, commandReceiptId));
   }
 
-  private async handleFollowUpDeliveryError(sessionId: string, text: string, error: unknown): Promise<void> {
+  private async handleFollowUpDeliveryError(sessionId: string, text: string, error: unknown, commandReceiptId?: string): Promise<void> {
     this.discardPendingTextOnce(sessionId, text);
     const message = error instanceof Error ? error.message : String(error);
     logAgentd("follow-up delivery failed", { sessionId, error: message });
+    await this.messageBuilder.markCommandReceiptFailed(sessionId, commandReceiptId, message);
     await this.appendLog(sessionId, `follow-up failed: ${message}`);
     const current = this.sessions.get(sessionId);
     if (!current || ["completed", "cancelled"].includes(current.status)) return;
@@ -2156,6 +2159,11 @@ export class SessionSupervisor extends EventEmitter {
     // even when Pi enqueues an expanded form, which is the regression that previously caused
     // `drainPendingTextOnce` to fire prematurely and duplicate the user bubble.
     return handle.getFollowUpMessages().includes(text) || handle.getSteeringMessages().includes(text);
+  }
+
+  private async recordNonSkillSlashCommandReceipt(sessionId: string, text: string): Promise<string | undefined> {
+    if (!isNonSkillSlashCommand(text)) return undefined;
+    return this.messageBuilder.recordCommandReceipt(sessionId, text);
   }
 
   private async drainPendingTextOnce(sessionId: string, text: string): Promise<void> {
@@ -2510,6 +2518,7 @@ export class SessionSupervisor extends EventEmitter {
       await this.patch(sessionId, { status: "running", lastSummary: "Steering message sent", thinkingPreview: undefined });
     }
     logAgentd("steer requested", { sessionId, textChars: text.length, contextId: context?.id, images: prompt.imagePaths.length, isStreaming: handle.isStreaming });
+    const commandReceiptId = await this.recordNonSkillSlashCommandReceipt(sessionId, text);
     this.pushPendingQueueDelivery(sessionId, text, "user", {
       kind: "steering",
       attachedImagesCount: prompt.imagePaths.length,
@@ -2518,6 +2527,7 @@ export class SessionSupervisor extends EventEmitter {
     try {
       outcome = await handle.steer(prompt);
     } catch (error) {
+      await this.messageBuilder.markCommandReceiptFailed(sessionId, commandReceiptId, error instanceof Error ? error.message : String(error));
       this.discardPendingTextOnce(sessionId, text);
       if (revivedTerminalSession && this.mustGet(sessionId).status === "running") {
         await this.patch(sessionId, {

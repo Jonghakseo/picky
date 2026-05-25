@@ -4499,6 +4499,37 @@ describe("SessionSupervisor", () => {
     expect(userTexts(supervisor.get(session.id))).toEqual([]);
   });
 
+  it("records a command receipt instead of user_text for non-skill slash follow-ups", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-slash-receipt-followup-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("slash follow-up receipt"));
+
+    await supervisor.followUp(session.id, "/c");
+    await settle();
+
+    expect(userTexts(supervisor.get(session.id))).toEqual([]);
+    expect(commandReceipts(supervisor.get(session.id))).toEqual([{ command: "/c", status: "submitted", detail: undefined }]);
+  });
+
+  it("marks a non-skill slash command receipt as failed when delivery fails", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-slash-receipt-failed-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("slash receipt failure"));
+    runtime.handle!.onSteer = () => {
+      throw new Error("unmerged paths");
+    };
+
+    await expect(supervisor.steer(session.id, "/c")).rejects.toThrow("unmerged paths");
+    await settle();
+
+    expect(userTexts(supervisor.get(session.id))).toEqual([]);
+    expect(commandReceipts(supervisor.get(session.id))).toEqual([{ command: "/c", status: "failed", detail: "unmerged paths" }]);
+  });
+
   it("records exactly one raw user_text for a queued /skill: follow-up after the runtime adapter translates Pi's expansion", async () => {
     // Regression: before the runtime adapter translated Pi-side slash command expansions back to
     // the raw user text, this scenario produced THREE artifacts for one follow-up: a premature
@@ -5878,6 +5909,16 @@ class ManualHandle implements RuntimeSessionHandle {
 
 function userTexts(session: PickyAgentSession | undefined): string[] {
   return (session?.messages ?? []).filter((message) => message.kind === "user_text").map((message) => message.text ?? "");
+}
+
+function commandReceipts(session: PickyAgentSession | undefined): Array<{ command: string; status: string; detail: string | undefined }> {
+  return (session?.messages ?? [])
+    .filter((message) => message.kind === "command_receipt")
+    .map((message) => ({
+      command: message.commandReceipt?.command ?? "",
+      status: message.commandReceipt?.status ?? "",
+      detail: message.commandReceipt?.detail,
+    }));
 }
 
 async function settle(): Promise<void> {

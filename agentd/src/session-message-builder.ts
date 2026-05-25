@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { stripAnsiEscapeSequences } from "./domain/ansi.js";
-import type { PickyActivitySummary, PickyAssistantRunMetadata, PickyExtensionUiRequest, PickySessionMessage } from "./protocol.js";
+import type { PickyActivitySummary, PickyAssistantRunMetadata, PickyCommandReceipt, PickyExtensionUiRequest, PickySessionMessage } from "./protocol.js";
 
 type MessageOrigin = "user" | "main_agent" | "pi_extension";
 
@@ -134,6 +134,44 @@ export class SessionMessageBuilder {
       kind: "system",
       createdAt: this.deps.now(),
       text,
+    });
+  }
+
+  async recordCommandReceipt(sessionId: string, command: string): Promise<string> {
+    await this.flushAssistantText(sessionId);
+    await this.flushThinking(sessionId);
+    const trimmed = command.trim();
+    const messageId = `msg-command-${randomUUID()}`;
+    if (!trimmed) return messageId;
+    await this.appendInternal(sessionId, {
+      id: messageId,
+      kind: "command_receipt",
+      createdAt: this.deps.now(),
+      text: trimmed,
+      commandReceipt: { command: trimmed, status: "submitted" },
+    });
+    return messageId;
+  }
+
+  async markCommandReceiptFailed(sessionId: string, messageId: string | undefined, detail?: string): Promise<void> {
+    if (!messageId) return;
+    await this.enqueue(sessionId, async () => {
+      const state = this.states.get(sessionId);
+      const entry = state?.journal.find((candidate) => candidate.message.id === messageId);
+      if (!entry || entry.message.kind !== "command_receipt") return;
+      const previousReceipt = entry.message.commandReceipt;
+      const command = previousReceipt?.command ?? entry.message.text?.trim();
+      if (!command) return;
+      const nextReceipt: PickyCommandReceipt = {
+        command,
+        status: "failed",
+        ...(detail?.trim() ? { detail: detail.trim() } : {}),
+      };
+      await this.replaceInternal(sessionId, messageId, {
+        ...entry.message,
+        text: command,
+        commandReceipt: nextReceipt,
+      });
     });
   }
 

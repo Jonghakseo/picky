@@ -3968,6 +3968,17 @@ struct PickySessionViewModelTests {
         #expect(card.messages.isEmpty)
     }
 
+    @MainActor @Test func commandReceiptMessageDecodesAndAppends() throws {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "command-session"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.commandReceiptMessageAppended(sessionId: "command-session", messageId: "cmd-1", command: "/c", status: "failed", detail: "unmerged paths", seq: 1))))
+
+        let message = try #require(viewModel.sessions.first?.messages.first)
+        #expect(message.kind == .commandReceipt)
+        #expect(message.text == "/c")
+        #expect(message.commandReceipt == PickyCommandReceipt(command: "/c", status: .failed, detail: "unmerged paths"))
+    }
+
     @MainActor @Test func sessionSnapshotResetsIncrementalSeqAfterDaemonRestart() throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "restart-session", status: "running"))))
@@ -4300,6 +4311,14 @@ private enum EventJSON {
     static func sessionMessageRemoved(sessionId: String, messageId: String, seq: Int) -> String {
         """
         {"id":"event-message-remove-\(seq)","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionMessageRemoved","sessionId":"\(sessionId)","messageId":"\(messageId)","seq":\(seq)}
+        """
+    }
+
+    static func commandReceiptMessageAppended(sessionId: String, messageId: String, command: String, status: String, detail: String? = nil, seq: Int) -> String {
+        let encodedCommand = String(decoding: try! JSONEncoder().encode(command), as: UTF8.self)
+        let encodedDetail = detail.map { ",\"detail\":\(String(decoding: try! JSONEncoder().encode($0), as: UTF8.self))" } ?? ""
+        return """
+        {"id":"event-command-receipt-\(seq)","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionMessageAppended","sessionId":"\(sessionId)","message":{"id":"\(messageId)","kind":"command_receipt","createdAt":"2026-05-01T00:00:04.000Z","text":\(encodedCommand),"commandReceipt":{"command":\(encodedCommand),"status":"\(status)"\(encodedDetail)}},"seq":\(seq)}
         """
     }
 

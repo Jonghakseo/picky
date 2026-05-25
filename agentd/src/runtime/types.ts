@@ -152,6 +152,12 @@ export interface RuntimeSessionHandle {
    */
   readonly isStreaming: boolean;
   /**
+   * True when the underlying agent session is currently running a compaction.
+   * Optional capability: runtimes that cannot answer (mock, transcription-only)
+   * leave this undefined and the supervisor treats it as not-compacting.
+   */
+  readonly isCompacting?: boolean;
+  /**
    * Path to the on-disk Pi JSONL transcript backing this runtime session. Returns undefined
    * for runtimes that do not persist transcripts (e.g. mock). Callers use this to fork an
    * existing session before any diagnostic `pi session: <path>` log line has surfaced.
@@ -239,6 +245,22 @@ export interface MainRealtimeRuntime extends AgentRuntime {
    * connect path's session.update picks up the new snapshot anyway.
    */
   refreshConversationInstructions?(): void;
+  /**
+   * Ask the runtime to re-snapshot the local Picky skills directory and push a
+   * refreshed `session.update` so newly-installed plugins land in the model's
+   * instructions and tool list immediately. Called by the supervisor after the
+   * Picky plugin manager applies an install/uninstall. Implementations that
+   * cache skill lists should invalidate them inside this call. Fast-path no-ops
+   * when the runtime has no live socket; the next connect picks up the change.
+   */
+  refreshAfterPluginsChange?(): Promise<void> | void;
+  /**
+   * True when the realtime runtime currently has an in-flight voice turn the
+   * supervisor's plugin-reload flow should consider cancelling. Optional; runtimes
+   * that cannot answer treat the supervisor's reload as best-effort and skip the
+   * cancel step.
+   */
+  isMainRealtimeSpeaking?(): boolean;
   /**
    * Trigger a best-effort Codex quota refresh. Errors are swallowed; the
    * runtime emits a `main_realtime_quota` event on success or a quota=undefined

@@ -250,6 +250,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case notifyMainOfPickleCompletion
     case setDisabledBuiltinTools
     case setMainAgentNarrationEnabled
+    case reloadPlugins
 
 }
 
@@ -310,6 +311,7 @@ enum PickyEvent: Equatable {
     /// `picky_unarchive_pickle` realtime tool, etc.
     case sessionArchivedAuthoritative(sessionId: String, archived: Bool)
     case sessionResourcesReloaded(sessionId: String)
+    case pluginsReloaded(PickyPluginsReloadedEvent)
     case sessionLogAppended(sessionId: String, line: String)
     case toolActivityUpdated(sessionId: String, tool: PickyToolActivity)
     case extensionUiRequest(PickyExtensionUiRequest)
@@ -397,6 +399,8 @@ enum PickyEvent: Equatable {
         case "sessionResourcesReloaded":
             let payload = try PickySessionResourcesReloadedPayload(from: decoder)
             self = .sessionResourcesReloaded(sessionId: payload.sessionId)
+        case "pluginsReloaded":
+            self = .pluginsReloaded(try PickyPluginsReloadedEvent(from: decoder))
         case "sessionLogAppended":
             let payload = try PickySessionLogAppendedPayload(from: decoder)
             self = .sessionLogAppended(sessionId: payload.sessionId, line: payload.line)
@@ -473,6 +477,13 @@ private struct PickySessionSnapshotPayload: Decodable { let sessions: [PickyAgen
 private struct PickySessionUpdatedPayload: Decodable { let session: PickyAgentSession }
 private struct PickySessionArchivedAuthoritativePayload: Decodable { let sessionId: String; let archived: Bool }
 private struct PickySessionResourcesReloadedPayload: Decodable { let sessionId: String }
+
+struct PickyPluginsReloadedEvent: Decodable, Equatable {
+    let pickyReloaded: Bool
+    let pickleReloadedCount: Int
+    let pickleAbortedCount: Int
+    let pickleDeferredCount: Int
+}
 private struct PickySessionLogAppendedPayload: Decodable { let sessionId: String; let line: String }
 private struct PickyToolActivityUpdatedPayload: Decodable { let sessionId: String; let tool: PickyToolActivity }
 private struct PickyExtensionUiRequestPayload: Decodable { let request: PickyExtensionUiRequest }

@@ -3731,6 +3731,96 @@
         }
       }
     },
+    "status.extensions.reload.banner.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reload required" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Reload 필요" } }
+      }
+    },
+    "status.extensions.reload.banner.message": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Plugin changes apply after Reload." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Reload 후에 적용됩니다." } }
+      }
+    },
+    "status.extensions.reload.banner.button": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reload" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Reload" } }
+      }
+    },
+    "status.extensions.reload.confirm.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reload all sessions?" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "전체 세션을 Reload할까요?" } }
+      }
+    },
+    "status.extensions.reload.confirm.cancel": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Cancel" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "취소" } }
+      }
+    },
+    "status.extensions.reload.confirm.proceed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reload" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Reload" } }
+      }
+    },
+    "status.extensions.reload.confirm.message.both": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld running Pickle session(s) will be aborted and the current Picky voice response will be cut. Sessions in compaction will reload automatically when compaction completes." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "동작 중인 피클 %lld개가 중단되고, 발화 중인 메인 Picky 세션의 응답이 끊깁니다. 압축 중인 세션은 압축이 끝나면 자동으로 reload돼요." } }
+      }
+    },
+    "status.extensions.reload.confirm.message.pickles": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld running Pickle session(s) will be aborted. Sessions in compaction will reload automatically when compaction completes." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "동작 중인 피클 %lld개가 중단됩니다. 압축 중인 세션은 압축이 끝나면 자동으로 reload돼요." } }
+      }
+    },
+    "status.extensions.reload.confirm.message.main": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The current Picky voice response will be cut." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "발화 중인 메인 Picky 세션의 응답이 끊깁니다." } }
+      }
+    },
+    "status.extensions.reload.confirm.message.generic": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Proceed with reload?" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Reload 하시겠어요?" } }
+      }
+    },
+    "status.extensions.reload.result.picky": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "main Picky refreshed" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "메인 Picky 새로고침" } }
+      }
+    },
+    "status.extensions.reload.result.pickleReloaded": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld Pickle reloaded" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "피클 %lld개 reload" } }
+      }
+    },
+    "status.extensions.reload.result.pickleAborted": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld running aborted" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "동작 중 %lld개 중단" } }
+      }
+    },
+    "status.extensions.reload.result.pickleDeferred": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld awaiting compaction" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "압축 중 %lld개는 압축 뒤 reload 예정" } }
+      }
+    },
+    "status.extensions.reload.result.nothing": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Nothing to reload." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Reload할 항목이 없어요." } }
+      }
+    },
     "status.extensions.pickyHandoff.description": {
       "localizations": {
         "en": {

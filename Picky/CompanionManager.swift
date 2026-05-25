@@ -2330,10 +2330,12 @@ final class CompanionManager: ObservableObject {
         case .sessionUpdated(let session):
             handleSessionStatusTransition(session: session)
             updatePassiveAgentSummary(session.lastSummary ?? "\(session.title) · \(session.status.rawValue)")
-        case .sessionResourcesReloaded, .sessionLogAppended, .toolActivityUpdated, .sessionArchivedAuthoritative:
+        case .sessionResourcesReloaded, .sessionLogAppended, .toolActivityUpdated, .sessionArchivedAuthoritative, .pluginsReloaded:
             // Progress events are already represented in the HUD. They should not
             // replace a cursor bubble that is currently speaking/showing a real
             // response, otherwise generic text like "작업 진행 중…" hides the answer.
+            // pluginsReloaded is handled by the plugin manager controller in the
+            // panel; CompanionManager doesn't need to react.
             break
         case .extensionUiRequest(let request):
             latestAgentSessionSummary = request.prompt ?? request.title ?? "Agent is waiting for input"

@@ -330,6 +330,16 @@ export class AgentdServer {
       steer: (cmd) => this.options.supervisor.steer(cmd.sessionId, cmd.text, cmd.context),
       abort: (cmd) => this.options.supervisor.abort(cmd.sessionId),
       answerExtensionUi: (cmd) => this.options.supervisor.answerExtensionUi(cmd.sessionId, cmd.requestId, cmd.value),
+      reloadPlugins: async () => {
+        const summary = await this.options.supervisor.reloadPlugins();
+        this.broadcast({
+          type: "pluginsReloaded",
+          pickyReloaded: summary.pickyReloaded,
+          pickleReloadedCount: summary.pickleReloadedCount,
+          pickleAbortedCount: summary.pickleAbortedCount,
+          pickleDeferredCount: summary.pickleDeferredCount,
+        });
+      },
     };
 
     const handler = handlers[command.type] as (command: ParsedCommand) => unknown;
@@ -698,6 +708,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "listMainAgentModels":
     case "resetMainAgent":
     case "abortMainAgent":
+    case "reloadPlugins":
       return { commandId: command.id, type: command.type };
     case "setMainAgentThinkingLevel":
       return { commandId: command.id, type: command.type, mainAgentThinkingLevel: command.mainAgentThinkingLevel };
@@ -770,6 +781,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, archived: event.archived ? 1 : 0 };
     case "sessionResourcesReloaded":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId };
+    case "pluginsReloaded":
+      return { eventId: event.id, type: event.type, pickyReloaded: event.pickyReloaded ? 1 : 0, pickleReloadedCount: event.pickleReloadedCount, pickleAbortedCount: event.pickleAbortedCount, pickleDeferredCount: event.pickleDeferredCount };
     case "sessionLogAppended":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, lineChars: event.line.length };
     case "toolActivityUpdated":

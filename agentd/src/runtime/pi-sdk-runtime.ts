@@ -551,6 +551,10 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     return this.runtime.session.isStreaming;
   }
 
+  get isCompacting(): boolean {
+    return piIsCompacting(this.runtime.session);
+  }
+
   async injectInitialBootstrap(messages: { user: string; assistant: string }): Promise<void> {
     const session = this.runtime.session;
     const existing = (session.state.messages ?? []) as unknown[];

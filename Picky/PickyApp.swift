@@ -130,6 +130,10 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         fontScaleStore: fontScaleStore,
         settingsStore: settingsStore
     )
+    /// Shared with the plugin manager UI. Subscribes to the agent client for
+    /// `pluginsReloaded` broadcasts and exposes a single async `reload()` the
+    /// extensions section invokes after install/uninstall.
+    private lazy var pluginReloadController = PickyPluginReloadController(client: hudAgentClientRouter)
     /// Persistent activator that decides whether the takeover overlay should
     /// run on this launch (fresh install or explicit replay via Settings).
     /// Kept as a stored property so the coordinator can mark completion through
@@ -253,7 +257,8 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             appearanceStore: appearanceStore,
             fontScaleStore: fontScaleStore,
             updaterController: updaterController,
-            navigator: panelNavigator
+            navigator: panelNavigator,
+            pluginReloadController: pluginReloadController
         )
         // Wire the conversation-card `picky://` link handler to the panel
         // manager. The dispatcher is a singleton so any markdown surface

@@ -35,6 +35,13 @@ type PendingQueueDelivery = {
   attachedImagesCount?: number;
 };
 
+export interface ReloadPluginsSummary {
+  pickyReloaded: boolean;
+  pickleReloadedCount: number;
+  pickleAbortedCount: number;
+  pickleDeferredCount: number;
+}
+
 interface SessionSupervisorOptions {
   taskRouter?: TaskRouter;
   mainRuntime?: AgentRuntime;
@@ -144,6 +151,13 @@ export class SessionSupervisor extends EventEmitter {
   private readonly sessionIdFactory: () => string;
   private noTurnRanSessionStateRestores = new Map<string, Partial<PickyAgentSession>>();
   private pendingResourceReloadSessionIDs = new Set<string>();
+  /**
+   * Pickle sessions that were compacting when the user clicked Reload in
+   * Picky's plugin manager. The runtime event handler drains this set the
+   * moment a session leaves the compacting state, by dispatching `/reload`
+   * through the normal follow-up path. Cleared on session removal too.
+   */
+  private pendingPostCompactionReloadIds = new Set<string>();
   private lastEmittedSteeringMode = new Map<string, PickyQueueMode>();
   private lastEmittedFollowUpMode = new Map<string, PickyQueueMode>();
   // Track follow-up/steer prompts that Pi has queued but not yet started processing. We defer the
@@ -449,6 +463,70 @@ export class SessionSupervisor extends EventEmitter {
           logAgentd("main reset pending handle failed", { error: error instanceof Error ? error.message : String(error) });
         });
     }
+  }
+
+  async reloadPlugins(): Promise<ReloadPluginsSummary> {
+    let pickyReloaded = false;
+    let pickleReloadedCount = 0;
+    let pickleAbortedCount = 0;
+    let pickleDeferredCount = 0;
+
+    // 1) Main Picky (OpenAI Realtime). If a voice turn is in flight, cancel it
+    // so the user immediately sees a clean cutover; then re-snapshot Picky
+    // skills and resend session.update so the next turn sees the new plugins.
+    const mainRuntime = this.options.mainRuntime;
+    if (isMainRealtimeRuntime(mainRuntime)) {
+      try {
+        if (mainRuntime.isMainRealtimeSpeaking?.()) {
+          await mainRuntime.cancelMainRealtimeVoiceTurn();
+        }
+        await mainRuntime.refreshAfterPluginsChange?.();
+        pickyReloaded = true;
+        logAgentd("plugins reload main realtime refreshed", {});
+      } catch (error) {
+        logAgentd("plugins reload main realtime failed", { error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    // 2) Pickle sessions. Iterate a snapshot because abort() mutates session state.
+    const pickles = this.listPickleSessions();
+    for (const session of pickles) {
+      if (isTerminalStatus(session.status)) continue;
+      const handle = this.runtimeHandles.get(session.id);
+      if (!handle) continue;
+
+      if (handle.isCompacting === true) {
+        // Compaction can't be cleanly aborted on the Pi side. Defer the reload
+        // until the runtime emits the compaction-completed status; the runtime
+        // event handler drains `pendingPostCompactionReloadIds` at that point.
+        this.pendingPostCompactionReloadIds.add(session.id);
+        pickleDeferredCount += 1;
+        await this.appendLog(session.id, "plugins reload deferred until compaction completes");
+        continue;
+      }
+
+      if (handle.isStreaming) {
+        try { await this.abort(session.id); } catch (error) {
+          logAgentd("plugins reload pickle abort failed", { sessionId: session.id, error: error instanceof Error ? error.message : String(error) });
+        }
+        pickleAbortedCount += 1;
+        await this.appendLog(session.id, "plugins reload aborted streaming session; new plugins apply on next session");
+        continue;
+      }
+
+      // Idle: hand /reload to the runtime through the normal followUp path so
+      // the existing slash-command pipeline (receipt, resourcesReloaded emit,
+      // pendingResourceReloadSessionIDs) keeps working unchanged.
+      try {
+        await this.followUp(session.id, "/reload");
+        pickleReloadedCount += 1;
+      } catch (error) {
+        logAgentd("plugins reload pickle followUp failed", { sessionId: session.id, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    logAgentd("plugins reloaded", { pickyReloaded: pickyReloaded ? 1 : 0, pickleReloadedCount, pickleAbortedCount, pickleDeferredCount });
+    return { pickyReloaded, pickleReloadedCount, pickleAbortedCount, pickleDeferredCount };
   }
 
   async abortMainAgent(): Promise<void> {
@@ -1807,6 +1885,7 @@ export class SessionSupervisor extends EventEmitter {
     this.turnActivity.delete(sessionId);
     this.noTurnRanSessionStateRestores.delete(sessionId);
     this.pendingResourceReloadSessionIDs.delete(sessionId);
+    this.pendingPostCompactionReloadIds.delete(sessionId);
     this.lastEmittedSteeringMode.delete(sessionId);
     this.lastEmittedFollowUpMode.delete(sessionId);
     this.pickleCompletionNotified.delete(sessionId);
@@ -2641,6 +2720,7 @@ export class SessionSupervisor extends EventEmitter {
           this.emit("resourcesReloaded", sessionId);
         }
       }
+      this.maybeDrainPostCompactionReload(sessionId);
     });
     const tracked = next.catch(() => undefined);
     this.runtimeEventChains.set(sessionId, tracked);
@@ -2650,6 +2730,28 @@ export class SessionSupervisor extends EventEmitter {
 
   private async waitForRuntimeEvents(sessionId: string): Promise<void> {
     await (this.runtimeEventChains.get(sessionId) ?? Promise.resolve());
+  }
+
+  /**
+   * Drain a deferred plugin reload as soon as the session leaves the compacting
+   * state. Called on every runtime event so we react to the first event that
+   * lands after compaction settles, without polling. Idempotent: the followUp
+   * path silently no-ops if the session is terminal by the time we reach it.
+   */
+  private maybeDrainPostCompactionReload(sessionId: string): void {
+    if (!this.pendingPostCompactionReloadIds.has(sessionId)) return;
+    const handle = this.runtimeHandles.get(sessionId);
+    if (!handle) return;
+    if (handle.isCompacting === true) return;
+    const session = this.sessions.get(sessionId);
+    if (!session || isTerminalStatus(session.status)) {
+      this.pendingPostCompactionReloadIds.delete(sessionId);
+      return;
+    }
+    this.pendingPostCompactionReloadIds.delete(sessionId);
+    void this.followUp(sessionId, "/reload").catch((error) => {
+      logAgentd("plugins reload deferred followUp failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
+    });
   }
 
   private async applyRuntimeSessionReplacement(sessionId: string, event: Extract<RuntimeEvent, { type: "session_replaced" }>): Promise<void> {
@@ -2664,6 +2766,7 @@ export class SessionSupervisor extends EventEmitter {
     this.turnActivity.delete(sessionId);
     this.noTurnRanSessionStateRestores.delete(sessionId);
     this.pendingResourceReloadSessionIDs.delete(sessionId);
+    this.pendingPostCompactionReloadIds.delete(sessionId);
     this.runtimeEventHandler.resetAssistantDraft(sessionId);
     this.messageBuilder.onSessionRemoved(sessionId);
     if (this.isPickleSession(sessionId)) this.clearPickleCompletionTracking(sessionId);

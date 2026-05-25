@@ -380,6 +380,7 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("listSlashCommands"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("getSession"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("answerExtensionUi"), sessionId: z.string(), requestId: z.string(), value: z.unknown().optional() }),
+  CommandBaseSchema.extend({ type: z.literal("reloadPlugins") }),
 ]);
 
 type CommandEnvelope = z.infer<typeof CommandEnvelopeSchema>;
@@ -475,6 +476,13 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   // regardless of source (client command, picky_unarchive_pickle tool, ...).
   EventBaseSchema.extend({ type: z.literal("sessionArchivedAuthoritative"), sessionId: z.string(), archived: z.boolean() }),
   EventBaseSchema.extend({ type: z.literal("sessionResourcesReloaded"), sessionId: z.string() }),
+  EventBaseSchema.extend({
+    type: z.literal("pluginsReloaded"),
+    pickyReloaded: z.boolean(),
+    pickleReloadedCount: z.number().int().nonnegative(),
+    pickleAbortedCount: z.number().int().nonnegative(),
+    pickleDeferredCount: z.number().int().nonnegative(),
+  }),
   EventBaseSchema.extend({ type: z.literal("sessionLogAppended"), sessionId: z.string(), line: z.string() }),
   EventBaseSchema.extend({ type: z.literal("toolActivityUpdated"), sessionId: z.string(), tool: PickyToolActivitySchema }),
   EventBaseSchema.extend({ type: z.literal("extensionUiRequest"), request: PickyExtensionUiRequestSchema }),

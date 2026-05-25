@@ -96,7 +96,10 @@ struct CompanionPanelView: View {
                 switch selectedTab {
                 case .extensions:
                     ScrollView(.vertical, showsIndicators: false) {
-                        CompanionPanelExtensionsView()
+                        CompanionPanelExtensionsView(
+                            companionManager: companionManager,
+                            sessionListViewModel: sessionListViewModel
+                        )
                             .padding(.horizontal, 16)
                             .padding(.top, 14)
                             .padding(.bottom, 12)

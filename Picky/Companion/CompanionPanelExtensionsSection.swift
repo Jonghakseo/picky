@@ -39,6 +39,12 @@ final class PickyExtensionsSectionViewModel: ObservableObject {
         }
     }
 
+    /// Closure the section view installs at body time so install/uninstall
+    /// successes can flag a pending plugin reload on the page-level
+    /// `PickyPluginReloadController`. Injected via @EnvironmentObject from the
+    /// view since the view model has no access to SwiftUI environment.
+    var onPluginStateChanged: (() -> Void)?
+
     func install(named name: String) {
         guard let index = rows.firstIndex(where: { $0.id == name }) else { return }
         rows[index].isBusy = true
@@ -67,6 +73,7 @@ final class PickyExtensionsSectionViewModel: ObservableObject {
         switch result {
         case .success:
             lastError = nil
+            onPluginStateChanged?()
         case .failure(let error):
             lastError = error.localizedDescription
         }
@@ -88,6 +95,7 @@ final class PickyExtensionsSectionViewModel: ObservableObject {
 
 struct CompanionPanelExtensionsSection: View {
     @StateObject private var viewModel = PickyExtensionsSectionViewModel()
+    @EnvironmentObject private var pluginReloadController: PickyPluginReloadController
 
     var body: some View {
         let visibleRows = viewModel.rows.filter { $0.status != .bundleMissing }
@@ -112,7 +120,14 @@ struct CompanionPanelExtensionsSection: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .onAppear { viewModel.refresh() }
+            .onAppear {
+                viewModel.refresh()
+                // Forward install/uninstall completions to the page-level
+                // reload controller so the banner shows up immediately.
+                viewModel.onPluginStateChanged = { [weak controller = pluginReloadController] in
+                    controller?.notePluginsChanged()
+                }
+            }
         }
     }
 

@@ -245,6 +245,14 @@ export class OpenAIRealtimeMainRuntime implements MainRealtimeRuntime {
     this.handle?.refreshConversationInstructions();
   }
 
+  async refreshAfterPluginsChange(): Promise<void> {
+    await this.handle?.refreshAfterPluginsChange();
+  }
+
+  isMainRealtimeSpeaking(): boolean {
+    return this.handle?.isMainRealtimeSpeaking() ?? false;
+  }
+
   setMainAgentNarrationEnabled(enabled: boolean): void {
     this.narrationEnabled = enabled;
     this.handle?.setNarrationEnabled(enabled);
@@ -399,6 +407,25 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
   refreshConversationInstructions(): void {
     if (this.ws?.readyState !== OPENAI_WS_READY_STATE_OPEN) return;
     this.sendSessionUpdate();
+  }
+
+  /** Re-read Picky skills from disk and resend `session.update` so newly
+   * installed/uninstalled plugins land in the model's instructions and
+   * `picky_skills` tool output before the next turn. Called by the supervisor
+   * after Picky applies a plugin manager change. Fast-path no-op when the
+   * socket is not open; the next connect picks up the new set automatically
+   * via the regular `snapshotPickySkills` step. */
+  async refreshAfterPluginsChange(): Promise<void> {
+    await this.snapshotPickySkills();
+    if (this.ws?.readyState !== OPENAI_WS_READY_STATE_OPEN) return;
+    this.sendSessionUpdate();
+  }
+
+  /** True while the realtime runtime currently has an in-flight voice turn the
+   * plugin-reload flow should consider cancelling. Mirrors `activeInputId`
+   * which is set when a voice turn is in progress and cleared on done/error. */
+  isMainRealtimeSpeaking(): boolean {
+    return this.activeInputId !== undefined;
   }
 
   setNarrationEnabled(enabled: boolean): void {

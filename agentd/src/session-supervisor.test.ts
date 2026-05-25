@@ -5551,6 +5551,114 @@ describe("SessionSupervisor deleteSession", () => {
     await expect(supervisor.deleteSession("running")).rejects.toThrow(/terminal state/);
     expect(supervisor.get("running")).toBeDefined();
   });
+
+  describe("reloadPlugins", () => {
+    it("sends /reload via followUp to every idle Pickle session", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "picky-agentd-reload-idle-"));
+      const runtime = new ManualRuntime();
+      const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+      await supervisor.load();
+      const pickle = await supervisor.createPickleFromHandoff(context("idle pickle"), { title: "Idle", instructions: "Investigate idle" });
+      // Pickle starts as `running` after createPickleFromHandoff because the
+      // supervisor immediately delivers the seed prompt. Park it back at
+      // waiting_for_input so reloadPlugins treats it as idle and routes the
+      // request through the followUp path instead of the abort path.
+      runtime.handle!.isStreaming = false;
+      await (supervisor as unknown as { patch: (id: string, p: Partial<PickyAgentSession>) => Promise<void> }).patch(pickle.id, { status: "waiting_for_input" });
+
+      const summary = await supervisor.reloadPlugins();
+
+      expect(summary).toEqual({
+        pickyReloaded: false,
+        pickleReloadedCount: 1,
+        pickleAbortedCount: 0,
+        pickleDeferredCount: 0,
+      });
+      const reloadFollowUp = runtime.handle!.followUps.find((prompt) => prompt.text === "/reload");
+      expect(reloadFollowUp).toBeDefined();
+    });
+
+    it("aborts streaming Pickle sessions without sending /reload", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "picky-agentd-reload-streaming-"));
+      const runtime = new ManualRuntime();
+      const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+      await supervisor.load();
+      const pickle = await supervisor.createPickleFromHandoff(context("busy pickle"), { title: "Busy", instructions: "Investigate busy" });
+      runtime.handle!.isStreaming = true;
+      // Drop the createPickleFromHandoff seed follow-up so we can assert that
+      // reloadPlugins did NOT add a /reload follow-up.
+      runtime.handle!.followUps = [];
+
+      const summary = await supervisor.reloadPlugins();
+
+      expect(summary).toEqual({
+        pickyReloaded: false,
+        pickleReloadedCount: 0,
+        pickleAbortedCount: 1,
+        pickleDeferredCount: 0,
+      });
+      expect(runtime.handle!.aborts).toBe(1);
+      expect(runtime.handle!.followUps.find((prompt) => prompt.text === "/reload")).toBeUndefined();
+      expect(supervisor.get(pickle.id)?.status).toBe("cancelled");
+    });
+
+    it("defers reload for compacting Pickle sessions and drains after compaction", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "picky-agentd-reload-compacting-"));
+      const runtime = new ManualRuntime();
+      const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+      await supervisor.load();
+      const pickle = await supervisor.createPickleFromHandoff(context("compacting pickle"), { title: "Compacting", instructions: "Investigate compacting" });
+      // Compaction-in-progress: streaming false but compacting true. Park the
+      // session status away from `running` so the abort branch doesn't grab
+      // it before the compaction check.
+      runtime.handle!.isStreaming = false;
+      runtime.handle!.isCompacting = true;
+      await (supervisor as unknown as { patch: (id: string, p: Partial<PickyAgentSession>) => Promise<void> }).patch(pickle.id, { status: "waiting_for_input" });
+      runtime.handle!.followUps = [];
+
+      const summary = await supervisor.reloadPlugins();
+
+      expect(summary).toEqual({
+        pickyReloaded: false,
+        pickleReloadedCount: 0,
+        pickleAbortedCount: 0,
+        pickleDeferredCount: 1,
+      });
+      // No /reload yet — compaction is still in flight.
+      expect(runtime.handle!.followUps.find((prompt) => prompt.text === "/reload")).toBeUndefined();
+
+      // Compaction finishes; emit any runtime event so the supervisor's
+      // post-event drain runs and discovers the cleared compacting flag.
+      runtime.handle!.isCompacting = false;
+      runtime.handle!.emit({ type: "log", line: "compact completed" });
+      await settle();
+      await settle();
+
+      expect(runtime.handle!.followUps.find((prompt) => prompt.text === "/reload")).toBeDefined();
+    });
+
+    it("skips terminal Pickle sessions", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "picky-agentd-reload-terminal-"));
+      const runtime = new ManualRuntime();
+      const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+      await supervisor.load();
+      const pickle = await supervisor.createPickleFromHandoff(context("old pickle"), { title: "Old", instructions: "Done" });
+      await supervisor.abort(pickle.id);
+      runtime.handle!.followUps = [];
+      runtime.handle!.aborts = 0;
+
+      const summary = await supervisor.reloadPlugins();
+
+      expect(summary).toEqual({
+        pickyReloaded: false,
+        pickleReloadedCount: 0,
+        pickleAbortedCount: 0,
+        pickleDeferredCount: 0,
+      });
+      expect(runtime.handle!.aborts).toBe(0);
+      expect(runtime.handle!.followUps).toEqual([]);
+    });
+  });
 });
 
 class ThrowingRuntime implements AgentRuntime {
@@ -5892,6 +6000,9 @@ class ManualHandle implements RuntimeSessionHandle {
    * `false` to exercise the direct path (where Pi runs the prompt inline without enqueueing).
    */
   isStreaming = false;
+  /** Mirrors Pi's compacting flag so plugin-reload tests can simulate the
+   * supervisor's `pendingPostCompactionReloadIds` deferral path. */
+  isCompacting = false;
   listSlashCommands(): RuntimeSlashCommand[] {
     return this.slashCommands;
   }

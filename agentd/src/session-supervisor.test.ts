@@ -5637,6 +5637,57 @@ describe("SessionSupervisor deleteSession", () => {
       expect(runtime.handle!.followUps.find((prompt) => prompt.text === "/reload")).toBeDefined();
     });
 
+    it("retains deferred reload when compaction ends while streaming", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "picky-agentd-reload-compacting-streaming-"));
+      const runtime = new ManualRuntime();
+      const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+      await supervisor.load();
+      const pickle = await supervisor.createPickleFromHandoff(context("compacting streaming pickle"), { title: "Compacting Streaming", instructions: "Investigate compacting streaming" });
+      runtime.handle!.isStreaming = false;
+      runtime.handle!.isCompacting = true;
+      await (supervisor as unknown as { patch: (id: string, p: Partial<PickyAgentSession>) => Promise<void> }).patch(pickle.id, { status: "waiting_for_input" });
+      runtime.handle!.followUps = [];
+
+      const summary = await supervisor.reloadPlugins();
+
+      expect(summary.pickleDeferredCount).toBe(1);
+      runtime.handle!.isCompacting = false;
+      runtime.handle!.isStreaming = true;
+      runtime.handle!.emit({ type: "log", line: "compact completed but turn started" });
+      await settle();
+      await settle();
+      expect(runtime.handle!.followUps.find((prompt) => prompt.text === "/reload")).toBeUndefined();
+
+      runtime.handle!.isStreaming = false;
+      runtime.handle!.emit({ type: "log", line: "turn completed" });
+      await settle();
+      await settle();
+      expect(runtime.handle!.followUps.find((prompt) => prompt.text === "/reload")).toBeDefined();
+    });
+
+    it("clears pending post-compaction reload on abort", async () => {
+      const dir = await mkdtemp(join(tmpdir(), "picky-agentd-reload-compacting-abort-"));
+      const runtime = new ManualRuntime();
+      const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+      await supervisor.load();
+      const pickle = await supervisor.createPickleFromHandoff(context("aborted compacting pickle"), { title: "Aborted Compacting", instructions: "Investigate aborted compacting" });
+      runtime.handle!.isStreaming = false;
+      runtime.handle!.isCompacting = true;
+      await (supervisor as unknown as { patch: (id: string, p: Partial<PickyAgentSession>) => Promise<void> }).patch(pickle.id, { status: "waiting_for_input" });
+      runtime.handle!.followUps = [];
+
+      const summary = await supervisor.reloadPlugins();
+
+      expect(summary.pickleDeferredCount).toBe(1);
+      await supervisor.abort(pickle.id);
+      runtime.handle!.isCompacting = false;
+      runtime.handle!.emit({ type: "log", line: "compact completed after abort" });
+      await settle();
+      await settle();
+
+      expect(runtime.handle!.followUps.find((prompt) => prompt.text === "/reload")).toBeUndefined();
+    });
+
     it("skips terminal Pickle sessions", async () => {
       const dir = await mkdtemp(join(tmpdir(), "picky-agentd-reload-terminal-"));
       const runtime = new ManualRuntime();

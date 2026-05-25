@@ -17,6 +17,17 @@ protocol PickyAgentClient: AnyObject {
     func connect() async
     func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt
     func send(_ command: PickyCommandEnvelope) async throws
+    /// Number of daemons `broadcast(_:)` will attempt to deliver to. Read
+    /// synchronously before calling `broadcast` so the caller can set up
+    /// reply aggregation. Defaults to 1 (single-daemon clients); the router
+    /// overrides this to `1 + active child daemons`.
+    var broadcastTargetCount: Int { get }
+    /// Send the same sessionless command to every daemon backing this client.
+    /// Returns the number of daemons the command was successfully delivered to;
+    /// callers use this as the expected reply count for any per-daemon response
+    /// event. The default implementation just calls `send` and returns 1, so
+    /// single-daemon stubs (tests, local fallback) keep working unchanged.
+    func broadcast(_ command: PickyCommandEnvelope) async throws -> Int
     /// Sends `command` and waits up to `timeout` for a server-side
     /// `type="error"` event matching `command.id`. Returns that event when the
     /// daemon rejects the command (e.g. `Unknown session: …`) so the caller
@@ -40,6 +51,13 @@ extension PickyAgentClient {
     func sendAwaitingError(_ command: PickyCommandEnvelope, timeout: TimeInterval = 1.0) async throws -> PickyErrorEvent? {
         try await send(command)
         return nil
+    }
+
+    var broadcastTargetCount: Int { 1 }
+
+    func broadcast(_ command: PickyCommandEnvelope) async throws -> Int {
+        try await send(command)
+        return 1
     }
 }
 

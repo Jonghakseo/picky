@@ -1046,6 +1046,90 @@ struct PickyAgentClientRouterTests {
         let rejection = try await awaiter
         #expect(rejection == nil)
     }
+
+    // MARK: - broadcast
+
+    @Test func broadcastTargetCountIncludesPrimaryAndCachedChildren() async throws {
+        let setup = try await setUpRouterWithChildren(sessionIds: ["pickle-a", "pickle-b"])
+        #expect(setup.router.broadcastTargetCount == 3)
+    }
+
+    @Test func broadcastSendsCommandToPrimaryAndAllChildren() async throws {
+        let setup = try await setUpRouterWithChildren(sessionIds: ["pickle-a", "pickle-b"])
+        let command = PickyCommandEnvelope(type: .reloadPlugins)
+        let delivered = try await setup.router.broadcast(command)
+
+        #expect(delivered == 3)
+        #expect(setup.primary.sentCommands.contains { $0.id == command.id && $0.type == .reloadPlugins })
+        for child in setup.children {
+            #expect(child.sentCommands.contains { $0.id == command.id && $0.type == .reloadPlugins })
+        }
+    }
+
+    @Test func broadcastReportsActualDeliveryCountWhenChildFails() async throws {
+        let setup = try await setUpRouterWithChildren(sessionIds: ["pickle-good", "pickle-bad"])
+        if let badChild = setup.children.last {
+            badChild.sendShouldThrow = PickyAgentClientError.disconnected
+        }
+
+        let command = PickyCommandEnvelope(type: .reloadPlugins)
+        let delivered = try await setup.router.broadcast(command)
+
+        #expect(delivered == 2)
+    }
+
+    @Test func broadcastThrowsWhenEveryTargetFails() async throws {
+        let setup = try await setUpRouterWithChildren(sessionIds: ["pickle-x"])
+        setup.primary.sendShouldThrow = PickyAgentClientError.disconnected
+        for child in setup.children { child.sendShouldThrow = PickyAgentClientError.disconnected }
+
+        do {
+            _ = try await setup.router.broadcast(PickyCommandEnvelope(type: .reloadPlugins))
+            Issue.record("expected broadcast to throw when all targets fail")
+        } catch {
+            // Pass — first error propagated.
+        }
+    }
+}
+
+private struct RouterBroadcastSetup {
+    let router: PickyAgentClientRouter
+    let primary: StubAgentClient
+    let children: [StubAgentClient]
+}
+
+@MainActor
+private func setUpRouterWithChildren(sessionIds: [String]) async throws -> RouterBroadcastSetup {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+    let agentd = root.appendingPathComponent("agentd", isDirectory: true)
+    try makeStubAgentdPackage(at: agentd)
+    let primary = StubAgentClient(id: "primary")
+    let poolFactory = StubLauncherFactoryForRouter(agentdRoot: agentd)
+    let pool = PickyAgentDaemonPool(
+        configuration: PickyAgentDaemonPool.Configuration(
+            token: "tok",
+            appSupportRoot: root,
+            environment: ["PICKY_AGENTD_ROOT": agentd.path, "PATH": "/usr/bin"],
+            bundleResourceURL: nil
+        ),
+        factory: poolFactory
+    )
+    let clientFactory = StubClientFactory()
+    let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+    await router.connect()
+
+    var children: [StubAgentClient] = []
+    for sessionId in sessionIds {
+        async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: sessionId, cwd: "/tmp/ws")
+        _ = try await poolFactory.waitForRunner(sessionId: sessionId)
+        poolFactory.emitReady(for: sessionId)
+        let resolved = try await spawned
+        guard let stub = resolved as? StubAgentClient else {
+            throw PickyAgentClientError.disconnected
+        }
+        children.append(stub)
+    }
+    return RouterBroadcastSetup(router: router, primary: primary, children: children)
 }
 
 private func makeErrorEnvelope(commandId: String, code: String = "bad_message", message: String) -> PickyEventEnvelope {

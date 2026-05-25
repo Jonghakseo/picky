@@ -3791,6 +3791,12 @@
         "ko": { "stringUnit": { "state": "translated", "value": "Reload 하시겠어요?" } }
       }
     },
+    "status.extensions.reload.error.disconnected": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reload stopped because agentd disconnected." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "agentd 연결이 끊겨 Reload가 중단됐어요." } }
+      }
+    },
     "status.extensions.reload.result.picky": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "main Picky refreshed" } },

@@ -203,6 +203,52 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         try await connectedClient(for: command.sessionId).send(command)
     }
 
+    /// Primary + every currently cached child client. Children booting in the
+    /// queued-command path are intentionally excluded because they don't have
+    /// a live websocket yet; once they connect they'll receive a fresh
+    /// broadcast on the next Reload click.
+    var broadcastTargetCount: Int {
+        1 + childClients.count
+    }
+
+    /// Fan a sessionless command out to the primary daemon and every active
+    /// child daemon in parallel. Returns the count of clients that accepted
+    /// `send` without throwing. Throws only when every target failed so the
+    /// caller surfaces a real "could not deliver to any daemon" error instead
+    /// of a silent success.
+    func broadcast(_ command: PickyCommandEnvelope) async throws -> Int {
+        var targets: [PickyAgentClient] = [primaryClient]
+        targets.append(contentsOf: childClients.values)
+        guard !targets.isEmpty else { return 0 }
+        let results = await withTaskGroup(of: Result<Void, Error>.self, returning: [Result<Void, Error>].self) { group in
+            for client in targets {
+                group.addTask {
+                    do {
+                        try await client.send(command)
+                        return .success(())
+                    } catch {
+                        return .failure(error)
+                    }
+                }
+            }
+            var collected: [Result<Void, Error>] = []
+            for await result in group { collected.append(result) }
+            return collected
+        }
+        var successCount = 0
+        var firstError: Error?
+        for result in results {
+            switch result {
+            case .success: successCount += 1
+            case .failure(let error): firstError = firstError ?? error
+            }
+        }
+        if successCount == 0, let firstError {
+            throw firstError
+        }
+        return successCount
+    }
+
     /// Sends `command` through the right (primary or child) client and races
     /// the result against a `timeout` window during which the daemon may emit
     /// a `type="error"` event referencing `command.id`. agentd unicasts those

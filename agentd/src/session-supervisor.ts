@@ -506,11 +506,13 @@ export class SessionSupervisor extends EventEmitter {
       }
 
       if (handle.isStreaming) {
-        try { await this.abort(session.id); } catch (error) {
+        try {
+          await this.abort(session.id);
+          pickleAbortedCount += 1;
+          await this.appendLog(session.id, "plugins reload aborted streaming session; new plugins apply on next session");
+        } catch (error) {
           logAgentd("plugins reload pickle abort failed", { sessionId: session.id, error: error instanceof Error ? error.message : String(error) });
         }
-        pickleAbortedCount += 1;
-        await this.appendLog(session.id, "plugins reload aborted streaming session; new plugins apply on next session");
         continue;
       }
 
@@ -2653,6 +2655,8 @@ export class SessionSupervisor extends EventEmitter {
       await handle.abort();
       await this.waitForRuntimeEvents(sessionId);
     }
+    // Abort succeeded or no runtime handle remains, so no deferred plugin reload can drain later.
+    this.pendingPostCompactionReloadIds.delete(sessionId);
     if (beforeAbort.status !== "cancelled" && countSystemMessages(this.mustGet(sessionId), "Cancelled by user") === cancellationMessagesBefore) {
       await this.messageBuilder.recordSystemMessage(sessionId, "Cancelled by user");
     }
@@ -2743,6 +2747,7 @@ export class SessionSupervisor extends EventEmitter {
     const handle = this.runtimeHandles.get(sessionId);
     if (!handle) return;
     if (handle.isCompacting === true) return;
+    if (handle.isStreaming) return;
     const session = this.sessions.get(sessionId);
     if (!session || isTerminalStatus(session.status)) {
       this.pendingPostCompactionReloadIds.delete(sessionId);

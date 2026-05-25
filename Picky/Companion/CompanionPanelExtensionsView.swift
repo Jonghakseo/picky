@@ -73,6 +73,12 @@ struct CompanionPanelExtensionsView: View {
                     .pickyFont(size: 10.5, weight: .medium)
                     .foregroundColor(DS.Colors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let lastError = pluginReloadController.lastError {
+                    Text(lastError)
+                        .pickyFont(size: 10.5, weight: .medium)
+                        .foregroundColor(DS.Colors.destructiveText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Spacer(minLength: 8)

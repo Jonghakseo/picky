@@ -2190,7 +2190,24 @@
         }
       }
     },
+    "tab.extensions": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Extensions"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "익스텐션"
+          }
+        }
+      }
+    },
     "tab.messages": {
+      "comment": "Legacy label kept for the picky://panel/messages deep link. The actual user-facing tab moved into Status → Messages sub-page.",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3872,6 +3889,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "피드백 보내기"
+          }
+        }
+      }
+    },
+    "status.messages.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recent conversation"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최근 대화"
+          }
+        }
+      }
+    },
+    "status.messages.subtitle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Messages with Picky’s main agent. Open to read or send."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky 메인 에이전트와 주고받은 메시지를 읽거나 직접 보낼 수 있어요."
+          }
+        }
+      }
+    },
+    "footer.feedback.accessibilityLabel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send feedback"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피드백 보내기"
+          }
+        }
+      }
+    },
+    "extensions.curated.heading": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Curated extensions"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "큐레이션 익스텐션"
+          }
+        }
+      }
+    },
+    "extensions.curated.comingSoon": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coming soon — a curated list of useful Pi extensions will appear here."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "곧 추가돼요 — 유용한 Pi 익스텐션들을 큐레이션해서 소개할 예정이에요."
           }
         }
       }

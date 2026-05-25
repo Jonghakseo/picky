@@ -8,12 +8,13 @@
 import SwiftUI
 
 /// Inner navigation for the Status tab. Mirrors `CompanionPanelSettingsRoute`
-/// so the Feedback page renders as a Status sub-page rather than a
-/// panel-level overlay. Switching to Messages/Settings then back preserves
-/// the route, matching Settings sub-page behavior.
+/// so the Feedback and Messages pages render as Status sub-pages rather than
+/// panel-level overlays. Switching tabs then back preserves the route,
+/// matching Settings sub-page behavior.
 enum CompanionPanelStatusRoute: Hashable {
     case index
     case feedback
+    case messages
 }
 
 struct CompanionPanelStatusView: View {
@@ -33,6 +34,7 @@ struct CompanionPanelStatusView: View {
             switch route {
             case .index: indexContent
             case .feedback: feedbackContent
+            case .messages: messagesContent
             }
         }
         .animation(.easeOut(duration: 0.16), value: route)
@@ -54,30 +56,21 @@ struct CompanionPanelStatusView: View {
                 Divider()
                     .background(DS.Colors.borderSubtle.opacity(0.4))
                     .padding(.vertical, 14)
+                messagesRow
+                Divider()
+                    .background(DS.Colors.borderSubtle.opacity(0.4))
+                    .padding(.vertical, 14)
                 CompanionPanelUpdateSection(
                     settingsViewModel: settingsViewModel,
                     updaterController: updaterController
                 )
-                Divider()
-                    .background(DS.Colors.borderSubtle.opacity(0.4))
-                    .padding(.vertical, 14)
-                CompanionPanelExtensionsSection()
-                Divider()
-                    .background(DS.Colors.borderSubtle.opacity(0.4))
-                    .padding(.vertical, 14)
-                feedbackRow
             } else {
+                // Feedback affordance during onboarding lives in the footer
+                // bug glyph; the prerequisites surface no longer competes
+                // with it for attention here.
                 CompanionPanelPrerequisitesCopyView(companionManager: companionManager)
                     .padding(.bottom, 14)
                 CompanionPanelPrerequisitesView(companionManager: companionManager)
-                // Keep the feedback affordance reachable during setup/onboarding.
-                // Users hitting permission edge cases or a confusing Pi install
-                // step are exactly the people we want to hear from, and the tab
-                // bar is hidden in this state so there's no alternate route.
-                Divider()
-                    .background(DS.Colors.borderSubtle.opacity(0.4))
-                    .padding(.vertical, 14)
-                feedbackRow
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -88,19 +81,8 @@ struct CompanionPanelStatusView: View {
     /// keeps highlighting Status because route navigation never moves the tab.
     private var feedbackContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button(action: popToIndex) {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.left")
-                        .pickyFont(size: 11, weight: .semibold)
-                    Text("tab.status")
-                        .pickyFont(size: 11.5, weight: .medium)
-                }
-                .foregroundColor(DS.Colors.textTertiary)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .pointerCursor()
-            .padding(.bottom, 8)
+            backChevron
+                .padding(.bottom, 8)
 
             VStack(alignment: .leading, spacing: 9) {
                 Text("settings.section.feedback.title")
@@ -117,6 +99,38 @@ struct CompanionPanelStatusView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Messages sub-page. Hosts the existing main-agent chat view inside the
+    /// Status tab so the second tab can be dedicated to Pi extensions. The
+    /// back chevron above the chat header lets the user return to the Status
+    /// index without leaving the tab.
+    private var messagesContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            backChevron
+                .padding(.bottom, 8)
+
+            CompanionPanelMessagesView(companionManager: companionManager)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// Shared back-chevron used by every Status sub-page. Pops the route
+    /// back to `.index` with the same spring animation Settings uses.
+    private var backChevron: some View {
+        Button(action: popToIndex) {
+            HStack(spacing: 4) {
+                Image(systemName: "chevron.left")
+                    .pickyFont(size: 11, weight: .semibold)
+                Text("tab.status")
+                    .pickyFont(size: 11.5, weight: .medium)
+            }
+            .foregroundColor(DS.Colors.textTertiary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
     }
 
     private func popToIndex() {
@@ -172,16 +186,18 @@ struct CompanionPanelStatusView: View {
         shellCommandStatus = ShellCommandInstaller.currentStatus()
     }
 
-    /// Chevron entry that drills into the Status tab's feedback sub-page.
+    /// Chevron entry that drills into the Status tab's messages sub-page.
     /// Mirrors the Settings index row style (title + subtitle + chevron).
-    private var feedbackRow: some View {
-        Button(action: { withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) { route = .feedback } }) {
+    /// Replaces the legacy second top-level tab — chat with Picky now lives
+    /// inside Status so the second tab can host curated extensions.
+    private var messagesRow: some View {
+        Button(action: { withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) { route = .messages } }) {
             HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("status.feedback.title")
+                    Text("status.messages.title")
                         .pickyFont(size: 12.5, weight: .semibold)
                         .foregroundColor(DS.Colors.textPrimary)
-                    Text("status.feedback.subtitle")
+                    Text("status.messages.subtitle")
                         .pickyFont(size: 10.5, weight: .medium)
                         .foregroundColor(DS.Colors.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -281,8 +297,10 @@ struct CompanionPanelStatusView: View {
 }
 
 /// Auto-update controls inside the Status tab. Renders the current build,
-/// channel picker, automatic-checks toggle, and a manual "Check Now" button.
-/// Alpha builds (sideloaded testers) see a static notice instead of the
+/// channel name, automatic-checks toggle, and a manual "Check Now" button in
+/// a compact two-row layout: the build identity is the heading-adjacent
+/// inline line, and a single button row carries Check Now + last-checked.
+/// Alpha builds (sideloaded testers) see a one-line notice instead of the
 /// controls because Sparkle is not running. See docs/auto-update.md.
 private struct CompanionPanelUpdateSection: View {
     @ObservedObject var settingsViewModel: PickySettingsViewModel
@@ -307,7 +325,7 @@ private struct CompanionPanelUpdateSection: View {
     }()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("status.updates.heading")
                 .pickyFont(size: 11, weight: .semibold)
                 .foregroundColor(DS.Colors.textSecondary)
@@ -326,22 +344,10 @@ private struct CompanionPanelUpdateSection: View {
             }
 
             if updaterController.isAvailable {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(L10n.t("status.updates.channelLabel"))
-                        .pickyFont(size: 11.5, weight: .medium)
-                        .foregroundColor(DS.Colors.textTertiary)
-                    Text(updaterController.updateChannelDisplayName)
-                        .pickyFont(size: 11.5, weight: .semibold)
-                        .foregroundColor(DS.Colors.textSecondary)
-                }
-
-                Toggle("status.updates.autoCheck", isOn: automaticChecksBinding)
-                    .toggleStyle(.switch)
-                    .tint(DS.Colors.accent)
-                    .pickyFont(size: 11.5, weight: .medium)
-                    .foregroundColor(DS.Colors.textSecondary)
-
-                HStack(spacing: 8) {
+                // Toggle + manual check share one row. The auto-check label
+                // sits on the right of the switch so the row reads as
+                // "[Check Now]  [✓ auto]" instead of stacking three lines.
+                HStack(spacing: 10) {
                     Button("status.updates.checkNow") {
                         updaterController.checkForUpdates()
                     }
@@ -349,15 +355,26 @@ private struct CompanionPanelUpdateSection: View {
                     .controlSize(.small)
                     .disabled(!updaterController.canCheckForUpdates)
 
-                    if let last = updaterController.lastUpdateCheckDate {
-                        Text(L10n.t("status.updates.lastChecked", Self.lastCheckFormatter.string(from: last)))
-                            .pickyFont(size: 10.5, weight: .medium)
-                            .foregroundColor(DS.Colors.textTertiary)
-                    }
+                    Toggle("status.updates.autoCheck", isOn: automaticChecksBinding)
+                        .toggleStyle(.switch)
+                        .tint(DS.Colors.accent)
+                        .pickyFont(size: 11, weight: .medium)
+                        .foregroundColor(DS.Colors.textSecondary)
+                        .controlSize(.mini)
+                        .fixedSize()
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, 2)
+
+                if let last = updaterController.lastUpdateCheckDate {
+                    Text(L10n.t("status.updates.lastChecked", Self.lastCheckFormatter.string(from: last)))
+                        .pickyFont(size: 10, weight: .medium)
+                        .foregroundColor(DS.Colors.textTertiary)
                 }
             } else {
                 Text("status.updates.alphaNotice")
-                    .pickyFont(size: 11, weight: .medium)
+                    .pickyFont(size: 10.5, weight: .medium)
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }

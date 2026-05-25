@@ -40,9 +40,14 @@ final class PickyPanelNavigator: ObservableObject {
             settingsRoute = .index
             statusRoute = .index
         case .messages:
-            selectedTab = .messages
+            // Messages used to be a top-level tab but now lives as a
+            // sub-page under Status. The deep-link path stays valid so
+            // already-emitted `picky://panel/messages` links keep landing on
+            // the right surface — they just drill into the Status sub-page
+            // instead of switching tabs.
+            selectedTab = .status
             settingsRoute = .index
-            statusRoute = .index
+            statusRoute = .messages
         case .settings:
             selectedTab = .settings
             settingsRoute = deepLink.settingsRoute ?? .index

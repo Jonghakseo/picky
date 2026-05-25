@@ -22,7 +22,7 @@ enum CompanionPanelMetrics {
 /// silently breaking those callsites.
 enum CompanionPanelTab: String, CaseIterable, Identifiable {
     case status = "Status"
-    case messages = "Messages"
+    case extensions = "Extensions"
     case settings = "Settings"
 
     var id: String { rawValue }
@@ -34,7 +34,7 @@ enum CompanionPanelTab: String, CaseIterable, Identifiable {
     var labelKey: LocalizedStringKey {
         switch self {
         case .status: "tab.status"
-        case .messages: "tab.messages"
+        case .extensions: "tab.extensions"
         case .settings: "tab.settings"
         }
     }
@@ -42,7 +42,7 @@ enum CompanionPanelTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .status: "sparkles"
-        case .messages: "bubble.left.and.bubble.right"
+        case .extensions: "puzzlepiece.extension"
         case .settings: "slider.horizontal.3"
         }
     }
@@ -79,9 +79,9 @@ struct CompanionPanelView: View {
 
             // Hide the tab bar during setup so the prerequisites surface gets
             // the user's full attention. The Status tab content keeps rendering
-            // (with the prerequisites view inside) and the feedback overlay
-            // stays reachable through the Status entry row so the user never
-            // has to discover the tab bar to escape. Messages/Settings reappear
+            // (with the prerequisites view inside) and the feedback affordance
+            // stays reachable through the footer bug glyph so the user never
+            // has to discover the tab bar to escape. Extensions/Settings reappear
             // as soon as every prerequisite is satisfied.
             if companionManager.allPrerequisitesMet {
                 CompanionPanelTabBar(
@@ -94,55 +94,18 @@ struct CompanionPanelView: View {
 
             Group {
                 switch selectedTab {
-                case .messages:
-                    CompanionPanelMessagesView(companionManager: companionManager)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 14)
-                        .padding(.bottom, 12)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                case .status:
+                case .extensions:
                     ScrollView(.vertical, showsIndicators: false) {
-                        CompanionPanelStatusView(
-                            companionManager: companionManager,
-                            settingsViewModel: settingsViewModel,
-                            route: statusRouteBinding
-                        )
-                        .padding(.horizontal, 16)
-                        .padding(.top, 14)
-                        .padding(.bottom, 12)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        CompanionPanelExtensionsView()
+                            .padding(.horizontal, 16)
+                            .padding(.top, 14)
+                            .padding(.bottom, 12)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
+                case .status:
+                    statusTabContent
                 case .settings:
-                    // ScrollViewReader so navigating into a leaf (or back to
-                    // the index) snaps the scroll position back to the top.
-                    // The wrapped ScrollView stays the same instance across
-                    // route changes, which is what preserves @State on the
-                    // settings drafts — we only reset the offset, never the
-                    // view tree.
-                    ScrollViewReader { proxy in
-                        ScrollView(.vertical, showsIndicators: true) {
-                            VStack(spacing: 0) {
-                                // Sentinel anchor scrolled to whenever the
-                                // settings route changes.
-                                Color.clear
-                                    .frame(height: 0)
-                                    .id("settingsScrollAnchor")
-                                CompanionPanelSettingsView(
-                                    viewModel: settingsViewModel,
-                                    companionManager: companionManager,
-                                    sessionListViewModel: sessionListViewModel,
-                                    route: settingsRouteBinding
-                                )
-                                .padding(.horizontal, 16)
-                                .padding(.top, 14)
-                                .padding(.bottom, 12)
-                                .frame(maxWidth: .infinity, alignment: .topLeading)
-                            }
-                        }
-                        .onChange(of: navigator.settingsRoute) { _, _ in
-                            proxy.scrollTo("settingsScrollAnchor", anchor: .top)
-                        }
-                    }
+                    settingsTabContent
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -151,7 +114,7 @@ struct CompanionPanelView: View {
                 .background(DS.Colors.borderSubtle.opacity(0.5))
                 .padding(.horizontal, 16)
 
-            CompanionPanelFooterView()
+            CompanionPanelFooterView(onFeedbackTapped: openFeedback)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
         }
@@ -166,10 +129,85 @@ struct CompanionPanelView: View {
         }
     }
 
+    /// Status tab content. The messages sub-page is rendered by
+    /// `CompanionPanelStatusView` itself — the wrapping `ScrollView` only
+    /// matters for the index, but messages takes over the full height when
+    /// the route is `.messages` so the chat list and composer don't get a
+    /// secondary scroll layer.
+    @ViewBuilder
+    private var statusTabContent: some View {
+        if navigator.statusRoute == .messages {
+            CompanionPanelStatusView(
+                companionManager: companionManager,
+                settingsViewModel: settingsViewModel,
+                route: statusRouteBinding
+            )
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else {
+            ScrollView(.vertical, showsIndicators: false) {
+                CompanionPanelStatusView(
+                    companionManager: companionManager,
+                    settingsViewModel: settingsViewModel,
+                    route: statusRouteBinding
+                )
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 12)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var settingsTabContent: some View {
+        // ScrollViewReader so navigating into a leaf (or back to the index)
+        // snaps the scroll position back to the top. The wrapped ScrollView
+        // stays the same instance across route changes, which is what
+        // preserves @State on the settings drafts — we only reset the
+        // offset, never the view tree.
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(spacing: 0) {
+                    // Sentinel anchor scrolled to whenever the settings route
+                    // changes.
+                    Color.clear
+                        .frame(height: 0)
+                        .id("settingsScrollAnchor")
+                    CompanionPanelSettingsView(
+                        viewModel: settingsViewModel,
+                        companionManager: companionManager,
+                        sessionListViewModel: sessionListViewModel,
+                        route: settingsRouteBinding
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                    .padding(.bottom, 12)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+            }
+            .onChange(of: navigator.settingsRoute) { _, _ in
+                proxy.scrollTo("settingsScrollAnchor", anchor: .top)
+            }
+        }
+    }
+
+    /// Footer bug glyph routes the panel into the feedback form regardless of
+    /// which tab is currently active. Always lands on the Status tab so the
+    /// back-chevron lands the user on a familiar surface afterwards.
+    private func openFeedback() {
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.88)) {
+            navigator.selectedTab = .status
+            navigator.statusRoute = .feedback
+        }
+    }
+
     /// Re-tap of the already-active tab pops that tab back to its root view,
     /// matching the iOS-style "tap active tab to go home" gesture. Each tab
-    /// with an inner hierarchy resets its own route; Messages has none so it
-    /// is a no-op.
+    /// with an inner hierarchy resets its own route; Extensions has none so
+    /// it is a no-op.
     private func popActiveTabToRoot() {
         switch navigator.selectedTab {
         case .status:
@@ -184,7 +222,7 @@ struct CompanionPanelView: View {
                     navigator.settingsRoute = .index
                 }
             }
-        case .messages:
+        case .extensions:
             break
         }
     }

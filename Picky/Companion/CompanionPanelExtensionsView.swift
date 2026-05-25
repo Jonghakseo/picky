@@ -26,6 +26,46 @@ private struct PickyCuratedPlugin: Identifiable {
         commandName: "/diff-review",
         source: "npm:@ryan_nookpi/pi-extension-diff-review"
     )
+
+    static let askUserQuestion = PickyCuratedPlugin(
+        id: "ask-user-question",
+        titleKey: "extensions.curated.askUserQuestion.title",
+        descriptionKey: "extensions.curated.askUserQuestion.description",
+        commandName: "ask_user_question",
+        source: "npm:@ryan_nookpi/pi-extension-ask-user-question"
+    )
+
+    static let generativeUI = PickyCuratedPlugin(
+        id: "generative-ui",
+        titleKey: "extensions.curated.generativeUI.title",
+        descriptionKey: "extensions.curated.generativeUI.description",
+        commandName: "show_widget",
+        source: "npm:@ryan_nookpi/pi-extension-generative-ui"
+    )
+
+    static let autoName = PickyCuratedPlugin(
+        id: "auto-name",
+        titleKey: "extensions.curated.autoName.title",
+        descriptionKey: "extensions.curated.autoName.description",
+        commandName: "auto-name",
+        source: "npm:@ryan_nookpi/pi-extension-auto-name"
+    )
+
+    static let clipboard = PickyCuratedPlugin(
+        id: "clipboard",
+        titleKey: "extensions.curated.clipboard.title",
+        descriptionKey: "extensions.curated.clipboard.description",
+        commandName: "clipboard",
+        source: "npm:@ryan_nookpi/pi-extension-clipboard"
+    )
+
+    static let curatedDefaults: [PickyCuratedPlugin] = [
+        .diffReview,
+        .askUserQuestion,
+        .generativeUI,
+        .autoName,
+        .clipboard
+    ]
 }
 
 @MainActor
@@ -44,7 +84,7 @@ private final class PickyCuratedPluginsViewModel: ObservableObject {
     private let plugins: [PickyCuratedPlugin]
     var onPluginStateChanged: (() -> Void)?
 
-    init(plugins: [PickyCuratedPlugin] = [.diffReview]) {
+    init(plugins: [PickyCuratedPlugin] = PickyCuratedPlugin.curatedDefaults) {
         self.plugins = plugins
         refresh()
     }

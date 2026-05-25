@@ -99,7 +99,7 @@ struct CompanionPanelExtensionsSection: View {
                     .textCase(.uppercase)
                     .tracking(0.4)
 
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
                     ForEach(visibleRows) { row in
                         rowView(row)
                     }
@@ -118,29 +118,30 @@ struct CompanionPanelExtensionsSection: View {
 
     @ViewBuilder
     private func rowView(_ row: PickyExtensionsSectionViewModel.Row) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 9) {
-                Image(systemName: "puzzlepiece.extension")
-                    .pickyFont(size: 10.5, weight: .medium)
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .frame(width: 14, alignment: .center)
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: "puzzlepiece.extension")
+                .pickyFont(size: 10.5, weight: .medium)
+                .foregroundColor(DS.Colors.textTertiary)
+                .frame(width: 14, alignment: .center)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(displayName(for: row.name))
-                        .pickyFont(size: 11.5, weight: .semibold)
-                        .foregroundColor(DS.Colors.textSecondary)
-                    Text(row.description)
-                        .pickyFont(size: 10.5, weight: .medium)
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    statusLine(for: row)
-                }
+            Text(displayName(for: row.name))
+                .pickyFont(size: 11.5, weight: .semibold)
+                .foregroundColor(DS.Colors.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(1)
 
-                Spacer(minLength: 8)
+            Image(systemName: "info.circle")
+                .pickyFont(size: 10, weight: .medium)
+                .foregroundColor(DS.Colors.textTertiary)
 
-                actionButton(for: row)
-            }
+            statusBadge(for: row)
+
+            Spacer(minLength: 6)
+
+            actionButton(for: row)
         }
+        .help(tooltipText(for: row))
     }
 
     @ViewBuilder
@@ -184,37 +185,66 @@ struct CompanionPanelExtensionsSection: View {
     }
 
     @ViewBuilder
-    private func statusLine(for row: PickyExtensionsSectionViewModel.Row) -> some View {
+    private func statusBadge(for row: PickyExtensionsSectionViewModel.Row) -> some View {
         switch row.status {
         case .installed:
-            Text("status.extensions.state.installed")
-                .pickyFont(size: 10, weight: .medium)
-                .foregroundColor(DS.Colors.success)
+            badgePill(
+                text: L10n.t("status.extensions.state.installed"),
+                foreground: DS.Colors.success,
+                background: DS.Colors.success.opacity(0.18)
+            )
         case .outdated:
-            Text("status.extensions.state.outdated")
-                .pickyFont(size: 10, weight: .medium)
-                .foregroundColor(DS.Colors.textSecondary)
+            badgePill(
+                text: L10n.t("status.extensions.state.outdated"),
+                foreground: DS.Colors.warningText,
+                background: DS.Colors.warning.opacity(0.18)
+            )
         case .legacySymlink:
-            Text("status.extensions.state.legacySymlink")
-                .pickyFont(size: 10, weight: .medium)
-                .foregroundColor(DS.Colors.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        case .developerOverride(let target):
-            Text(L10n.t("status.extensions.state.developerOverride", target))
-                .pickyFont(size: 10, weight: .medium)
-                .foregroundColor(DS.Colors.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
-        case .notInstalled:
-            Text("status.extensions.state.notInstalled")
-                .pickyFont(size: 10, weight: .medium)
-                .foregroundColor(DS.Colors.textTertiary)
-        case .conflict(let reason):
-            Text(L10n.t("status.extensions.state.conflict", reason))
-                .pickyFont(size: 10, weight: .medium)
-                .foregroundColor(DS.Colors.destructiveText)
-                .fixedSize(horizontal: false, vertical: true)
-        case .bundleMissing:
+            badgePill(
+                text: L10n.t("status.extensions.badge.legacySymlink"),
+                foreground: DS.Colors.warningText,
+                background: DS.Colors.warning.opacity(0.18)
+            )
+        case .developerOverride:
+            badgePill(
+                text: L10n.t("status.extensions.badge.developerOverride"),
+                foreground: DS.Colors.textSecondary,
+                background: DS.Colors.textTertiary.opacity(0.16)
+            )
+        case .conflict:
+            badgePill(
+                text: L10n.t("status.extensions.badge.conflict"),
+                foreground: DS.Colors.destructiveText,
+                background: DS.Colors.destructive.opacity(0.15)
+            )
+        case .notInstalled, .bundleMissing:
             EmptyView()
+        }
+    }
+
+    private func badgePill(text: String, foreground: Color, background: Color) -> some View {
+        Text(text)
+            .pickyFont(size: 9.5, weight: .medium)
+            .foregroundColor(foreground)
+            .lineLimit(1)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1.5)
+            .background(
+                Capsule(style: .continuous).fill(background)
+            )
+            .fixedSize()
+    }
+
+    private func tooltipText(for row: PickyExtensionsSectionViewModel.Row) -> String {
+        switch row.status {
+        case .developerOverride(let target):
+            return row.description + "\n\n" + L10n.t("status.extensions.state.developerOverride", target)
+        case .conflict(let reason):
+            return row.description + "\n\n" + L10n.t("status.extensions.state.conflict", reason)
+        case .legacySymlink:
+            return row.description + "\n\n" + L10n.t("status.extensions.state.legacySymlink")
+        case .installed, .outdated, .notInstalled, .bundleMissing:
+            return row.description
         }
     }
 

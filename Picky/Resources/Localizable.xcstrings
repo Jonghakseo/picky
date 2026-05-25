@@ -2195,13 +2195,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Extensions"
+            "value": "Plugins"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "익스텐션"
+            "value": "플러그인"
           }
         }
       }
@@ -3720,13 +3720,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pi extensions"
+            "value": "Picky plugins"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pi 확장"
+            "value": "Picky 플러그인"
           }
         }
       }
@@ -3736,13 +3736,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Adds the /handoff-to-picky slash command to your local Pi. Lets you pin an idle Pi conversation to Picky as a completed Pickle card."
+            "value": "Adds the /handoff-to-picky slash command to your local Pi. Lets you pin a Pi conversation to Picky as a completed Pickle card."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "로컬 Pi에 /handoff-to-picky 명령을 추가해요. 대기 중인 Pi 세션을 Picky의 완료된 Pickle 카드로 옮길 수 있어요."
+            "value": "로컬 Pi에 /handoff-to-picky 명령을 추가해요. Pi 세션을 Picky의 완료된 Pickle 카드로 옮길 수 있어요."
           }
         }
       }
@@ -3759,6 +3759,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pi handoff 명령"
+          }
+        }
+      }
+    },
+    "status.extensions.badge.conflict": {
+      "comment": "Short badge label for the conflict state. Full reason appears in the row tooltip.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflict"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "충돌"
+          }
+        }
+      }
+    },
+    "status.extensions.badge.developerOverride": {
+      "comment": "Short badge label for the developer-override state. Target path appears in the row tooltip.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Developer override"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "개발자 오버라이드"
+          }
+        }
+      }
+    },
+    "status.extensions.badge.legacySymlink": {
+      "comment": "Short badge label for the legacy-symlink state. Migration guidance appears in the row tooltip.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Legacy"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 방식"
           }
         }
       }
@@ -3946,13 +3997,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Curated extensions"
+            "value": "Curated plugins"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "큐레이션 익스텐션"
+            "value": "큐레이션 플러그인"
           }
         }
       }
@@ -3962,13 +4013,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Coming soon — a curated list of useful Pi extensions will appear here."
+            "value": "Coming soon — a curated list of useful Picky plugins will appear here."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "곧 추가돼요 — 유용한 Pi 익스텐션들을 큐레이션해서 소개할 예정이에요."
+            "value": "곧 추가돼요 — 유용한 Picky 플러그인들을 큐레이션해서 소개할 예정이에요."
           }
         }
       }

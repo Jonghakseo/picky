@@ -2075,6 +2075,152 @@
         }
       }
     },
+    "settings.oauth.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use these buttons to start Pi OAuth in your browser. Picky stores nothing itself; credentials are written to Pi's local auth storage."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아래 버튼으로 브라우저에서 Pi OAuth 로그인을 시작해요. Picky는 자격 증명을 직접 저장하지 않고, Pi의 로컬 auth storage에 기록합니다."
+          }
+        }
+      }
+    },
+    "settings.oauth.cancel": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Cancel" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "취소" } }
+      }
+    },
+    "settings.oauth.fallback": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If the browser callback does not complete, run `pi /login` and choose the same provider for Pi's manual fallback."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "브라우저 콜백이 완료되지 않으면 `pi /login`을 실행한 뒤 같은 provider를 선택해 Pi의 수동 fallback을 사용하세요."
+          }
+        }
+      }
+    },
+    "settings.oauth.provider.anthropic.subtitle": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Claude Pro/Max OAuth provider for Anthropic models." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Anthropic 모델용 Claude Pro/Max OAuth provider." } }
+      }
+    },
+    "settings.oauth.provider.anthropic.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Anthropic / Claude" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Anthropic / Claude" } }
+      }
+    },
+    "settings.oauth.provider.openai.subtitle": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "ChatGPT Plus/Pro Codex subscription provider." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "ChatGPT Plus/Pro Codex 구독 provider." } }
+      }
+    },
+    "settings.oauth.provider.openai.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "ChatGPT / OpenAI Codex" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "ChatGPT / OpenAI Codex" } }
+      }
+    },
+    "settings.oauth.reconnect": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reconnect" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "다시 연결" } }
+      }
+    },
+    "settings.oauth.refresh": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Refresh status" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "상태 새로고침" } }
+      }
+    },
+    "settings.oauth.signIn": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sign in" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "로그인" } }
+      }
+    },
+    "settings.oauth.status.checking": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Checking…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "확인 중…" } }
+      }
+    },
+    "settings.oauth.status.configured": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Configured: %@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "연결됨: %@" } }
+      }
+    },
+    "settings.oauth.status.failed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Failed" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "실패" } }
+      }
+    },
+    "settings.oauth.status.notConfigured": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Not configured" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "미연결" } }
+      }
+    },
+    "settings.oauth.status.signingIn": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Waiting for browser…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "브라우저 대기 중…" } }
+      }
+    },
+    "settings.oauth.status.stored": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pi auth" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Pi auth" } }
+      }
+    },
+    "settings.oauth.subtitle.index": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sign in to Pi OAuth providers." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Pi OAuth provider에 로그인합니다." } }
+      }
+    },
+    "settings.oauth.subtitle.section": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Connect provider accounts used by Pi and Picky features." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Pi와 Picky 기능에서 사용하는 provider 계정을 연결합니다." } }
+      }
+    },
+    "settings.oauth.summary.configured": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%d of %d configured" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "%d/%d 연결됨" } }
+      }
+    },
+    "settings.oauth.summary.none": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No providers configured" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "연결된 provider 없음" } }
+      }
+    },
+    "settings.oauth.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "OAuth" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "OAuth" } }
+      }
+    },
     "settings.indexTitle": {
       "localizations": {
         "en": {

@@ -16,6 +16,7 @@ import SwiftUI
 
 enum CompanionPanelSettingsSection: CaseIterable, Hashable {
     case general
+    case oauth
     case mainAgent
     case pickle
     case overlayAndNotifications
@@ -32,6 +33,7 @@ enum CompanionPanelSettingsSection: CaseIterable, Hashable {
 enum CompanionPanelSettingsRoute: Hashable {
     case index
     case general
+    case oauth
     case mainAgent
     case pickle
     /// Combined page that used to live as two separate routes (`.cursorBubbles`
@@ -47,6 +49,7 @@ enum CompanionPanelSettingsRoute: Hashable {
         switch self {
         case .index: nil
         case .general: .general
+        case .oauth: .oauth
         case .mainAgent: .mainAgent
         case .pickle: .pickle
         case .overlayAndNotifications: .overlayAndNotifications
@@ -64,6 +67,7 @@ enum CompanionPanelSettingsRoute: Hashable {
         switch self {
         case .index: L10n.t("settings.indexTitle")
         case .general: L10n.t("settings.general.title")
+        case .oauth: L10n.t("settings.oauth.title")
         case .mainAgent: L10n.t("settings.section.picky.title")
         case .pickle: L10n.t("settings.section.pickle.title")
         case .overlayAndNotifications: L10n.t("settings.section.overlayAndNotifications.title")
@@ -78,6 +82,7 @@ enum CompanionPanelSettingsRoute: Hashable {
         switch self {
         case .index: nil
         case .general: L10n.t("settings.general.subtitle.index")
+        case .oauth: L10n.t("settings.oauth.subtitle.index")
         case .mainAgent: L10n.t("settings.section.picky.subtitle")
         case .pickle: L10n.t("settings.section.pickle.subtitle")
         case .overlayAndNotifications: L10n.t("settings.section.overlayAndNotifications.subtitle")
@@ -110,7 +115,7 @@ private let companionPanelSettingsGroups: [CompanionPanelSettingsGroup] = [
     CompanionPanelSettingsGroup(
         id: "general",
         titleKey: "settings.group.general.title",
-        routes: [.general, .shortcuts]
+        routes: [.general, .oauth, .shortcuts]
     ),
     CompanionPanelSettingsGroup(
         id: "agents",
@@ -201,6 +206,7 @@ struct CompanionPanelSettingsView: View {
     @State private var elevenLabsSTTAPIKeyDraft: String = ""
     @State private var elevenLabsSTTModelDraft: String = ""
     @State private var elevenLabsSTTLanguageDraft: String = ""
+    @StateObject private var oauthLoginController = PickyPiOAuthLoginController()
     @State private var saveStatuses = CompanionPanelSettingsSaveStatuses()
     @State private var saveStatusResets: [CompanionPanelSettingsSection: AnyCancellable] = [:]
     /// Whether the archived-Pickle list at the bottom of the Pickle page is
@@ -227,6 +233,7 @@ struct CompanionPanelSettingsView: View {
             mainAgentCwdDraft = viewModel.settings.mainAgentCwd
             pickleCwdDraft = viewModel.settings.defaultCwd
             syncVoiceDrafts()
+            oauthLoginController.refreshAll()
         }
         .onChange(of: viewModel.settings.notifications) { _, _ in
             // Toggles only flip booleans, so they cannot fail directory validation.
@@ -257,6 +264,7 @@ struct CompanionPanelSettingsView: View {
         switch route {
         case .index: indexView
         case .general: generalSection
+        case .oauth: oauthSection
         case .mainAgent: mainAgentSection
         case .pickle: pickleSection
         case .overlayAndNotifications: overlayAndNotificationsSection
@@ -370,6 +378,8 @@ struct CompanionPanelSettingsView: View {
             return nil
         case .general:
             return String(localized: settings.appLanguage.displayKey)
+        case .oauth:
+            return oauthLoginController.indexSummary
         case .shortcuts:
             let ptt = settings.pushToTalkShortcut.summaryString
             let qi = settings.quickInputShortcut.summaryString
@@ -1102,6 +1112,181 @@ struct CompanionPanelSettingsView: View {
         }
     }
 
+    private var oauthSection: some View {
+        sectionHeader(
+            section: .oauth,
+            title: L10n.t("settings.oauth.title"),
+            subtitle: L10n.t("settings.oauth.subtitle.section")
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("settings.oauth.body")
+                    .pickyFont(size: 11, weight: .medium)
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(PickyPiOAuthLoginProvider.allCases) { provider in
+                        oauthProviderRow(provider)
+                    }
+                }
+
+                Button(action: { oauthLoginController.refreshAll() }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.clockwise")
+                            .pickyFont(size: 10, weight: .semibold)
+                        Text("settings.oauth.refresh")
+                            .pickyFont(size: 11, weight: .semibold)
+                    }
+                    .foregroundColor(DS.Colors.textSecondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(DS.Colors.surface1.opacity(0.45))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(DS.Colors.borderSubtle.opacity(0.4), lineWidth: 0.5)
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+                .pointerCursor()
+
+                Text("settings.oauth.fallback")
+                    .pickyFont(size: 10.5, weight: .medium)
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func oauthProviderRow(_ provider: PickyPiOAuthLoginProvider) -> some View {
+        let status = oauthLoginController.status(for: provider)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: provider.iconName)
+                    .pickyFont(size: 13, weight: .semibold)
+                    .foregroundColor(DS.Colors.accentText)
+                    .frame(width: 18, height: 18)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L10n.t(provider.titleKey))
+                        .pickyFont(size: 12, weight: .semibold)
+                        .foregroundColor(DS.Colors.textPrimary)
+                    Text(L10n.t(provider.subtitleKey))
+                        .pickyFont(size: 10.5, weight: .medium)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                oauthStatusPill(status)
+            }
+
+            if case .failed(let message) = status {
+                Text(message)
+                    .pickyFont(size: 10.5, weight: .medium)
+                    .foregroundColor(DS.Colors.destructiveText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 8) {
+                Button(action: { oauthLoginController.signIn(provider: provider) }) {
+                    Text(oauthPrimaryButtonTitle(for: status))
+                        .pickyFont(size: 11, weight: .semibold)
+                        .foregroundColor(DS.Colors.accentText)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(DS.Colors.accentText.opacity(0.12))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(DS.Colors.accentText.opacity(0.26), lineWidth: 0.5)
+                                )
+                        )
+                }
+                .buttonStyle(.plain)
+                .pointerCursor()
+                .disabled(oauthIsBusy(status))
+                .opacity(oauthIsBusy(status) ? 0.55 : 1)
+
+                if case .signingIn = status {
+                    Button(action: { oauthLoginController.cancel(provider: provider) }) {
+                        Text("settings.oauth.cancel")
+                            .pickyFont(size: 11, weight: .semibold)
+                            .foregroundColor(DS.Colors.textSecondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.plain)
+                    .pointerCursor()
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(DS.Colors.surface1.opacity(0.55))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(DS.Colors.borderSubtle.opacity(0.45), lineWidth: 0.5)
+                )
+        )
+    }
+
+    private func oauthStatusPill(_ status: PickyPiOAuthLoginStatus) -> some View {
+        let display = oauthStatusDisplay(status)
+        return HStack(spacing: 4) {
+            Image(systemName: display.icon)
+                .pickyFont(size: 8.5, weight: .semibold)
+            Text(display.text)
+                .pickyFont(size: 10, weight: .semibold)
+                .lineLimit(1)
+        }
+        .foregroundColor(display.color)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(
+            Capsule(style: .continuous)
+                .fill(display.color.opacity(0.12))
+        )
+    }
+
+    private func oauthStatusDisplay(_ status: PickyPiOAuthLoginStatus) -> (text: String, icon: String, color: Color) {
+        switch status {
+        case .unknown, .checking:
+            return (L10n.t("settings.oauth.status.checking"), "clock", DS.Colors.textTertiary)
+        case .notConfigured:
+            return (L10n.t("settings.oauth.status.notConfigured"), "circle", DS.Colors.textTertiary)
+        case .configured(let source):
+            let sourceText = source?.isEmpty == false ? source! : L10n.t("settings.oauth.status.stored")
+            return (L10n.t("settings.oauth.status.configured", sourceText), "checkmark.circle.fill", DS.Colors.success)
+        case .signingIn:
+            return (L10n.t("settings.oauth.status.signingIn"), "arrow.triangle.2.circlepath", DS.Colors.accentText)
+        case .failed:
+            return (L10n.t("settings.oauth.status.failed"), "exclamationmark.triangle.fill", DS.Colors.destructiveText)
+        }
+    }
+
+    private func oauthPrimaryButtonTitle(for status: PickyPiOAuthLoginStatus) -> LocalizedStringKey {
+        switch status {
+        case .configured:
+            return "settings.oauth.reconnect"
+        default:
+            return "settings.oauth.signIn"
+        }
+    }
+
+    private func oauthIsBusy(_ status: PickyPiOAuthLoginStatus) -> Bool {
+        switch status {
+        case .checking, .signingIn:
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Settings entry that lets the user install or uninstall the `picky`
     /// shell command. Lives in General because Picky is an LSUIElement app
     /// whose panels never activate the macOS top menu bar, so a normal
@@ -1773,6 +1958,8 @@ struct CompanionPanelSettingsView: View {
         switch section {
         case .general:
             saveImmediately(for: .general)
+        case .oauth:
+            break
         case .mainAgent:
             commitMainAgentCwdField()
         case .pickle:
@@ -1928,7 +2115,7 @@ struct CompanionPanelSettingsView: View {
             mainAgentCwdDraft = viewModel.settings.mainAgentCwd
         case .pickle:
             pickleCwdDraft = viewModel.settings.defaultCwd
-        case .general, .overlayAndNotifications, .shortcuts, .builtinTools, .onboarding:
+        case .general, .oauth, .overlayAndNotifications, .shortcuts, .builtinTools, .onboarding:
             break
         case .voice:
             syncVoiceDrafts()

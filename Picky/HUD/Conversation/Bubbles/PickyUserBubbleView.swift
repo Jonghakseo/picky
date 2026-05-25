@@ -13,17 +13,21 @@ struct PickyUserBubbleView: View {
     var onCopyText: ((String) -> Void)? = nil
     var onEditText: ((String) -> Void)? = nil
 
+    @State private var isExpanded = false
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
     var body: some View {
         HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
             Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
             PickyUserBubbleSurfaceView(
-                markdown: displayedMarkdownPreview,
+                markdown: displayedMarkdown,
                 attachedImagesLabel: displayedAttachedImagesLabel,
                 originLabel: originLabel,
                 isPiExtensionMessage: isPiExtensionMessage,
                 maxBubbleWidth: bubbleMaxWidth,
+                expansionTitle: expansionTitle,
+                expansionSystemImageName: expansionSystemImageName,
+                onToggleExpansion: expansionAction,
                 onOpenAsReport: textViewOpenAsReportAction,
                 onCopyText: copyTextAction,
                 onEditText: editTextAction
@@ -31,11 +35,38 @@ struct PickyUserBubbleView: View {
             .frame(width: bubbleMaxWidth, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
+        .onChange(of: message.id) { _, _ in isExpanded = false }
     }
 
     var displayedOriginLabel: String? { originLabel }
     var displayedMarkdownPreview: String {
         PickyAgentResponsePreview.truncatedMarkdown(message.text ?? "")
+    }
+    var displayedMarkdown: String {
+        isExpanded ? message.text ?? "" : displayedMarkdownPreview
+    }
+
+    private var isTruncated: Bool {
+        PickyAgentResponsePreview.isTruncated(message.text ?? "")
+    }
+
+    private var expansionTitle: String? {
+        guard isTruncated else { return nil }
+        return isExpanded ? "접기" : "더 보기"
+    }
+
+    private var expansionSystemImageName: String? {
+        guard isTruncated else { return nil }
+        return isExpanded ? "chevron.up" : "chevron.down"
+    }
+
+    private var expansionAction: (() -> Void)? {
+        guard isTruncated else { return nil }
+        return {
+            withAnimation(.easeInOut(duration: 0.16)) {
+                isExpanded.toggle()
+            }
+        }
     }
 
     private var actionText: String? {

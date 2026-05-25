@@ -16,6 +16,9 @@ struct PickyUserBubbleSurfaceView: NSViewRepresentable {
     let originLabel: String?
     let isPiExtensionMessage: Bool
     let maxBubbleWidth: CGFloat
+    let expansionTitle: String?
+    let expansionSystemImageName: String?
+    let onToggleExpansion: (() -> Void)?
     let onOpenAsReport: (() -> Void)?
     let onCopyText: (() -> Void)?
     let onEditText: (() -> Void)?
@@ -39,6 +42,9 @@ struct PickyUserBubbleSurfaceView: NSViewRepresentable {
             originLabel: originLabel,
             isPiExtensionMessage: isPiExtensionMessage,
             maxBubbleWidth: maxBubbleWidth,
+            expansionTitle: expansionTitle,
+            expansionSystemImageName: expansionSystemImageName,
+            onToggleExpansion: onToggleExpansion,
             onOpenAsReport: onOpenAsReport,
             onCopyText: onCopyText,
             onEditText: onEditText
@@ -61,6 +67,8 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         static let horizontalPadding: CGFloat = 10
         static let verticalPadding: CGFloat = 8
         static let labelSpacing: CGFloat = 4
+        static let expansionSpacing: CGFloat = 7
+        static let expansionButtonHeight: CGFloat = 22
         static let maxBubbleWidthFallback: CGFloat = 320
         static let bubbleRadii = BubbleRadii(topLeft: 12, topRight: 12, bottomRight: 4, bottomLeft: 12)
     }
@@ -68,14 +76,17 @@ final class PickyUserBubbleSurfaceNSView: NSView {
     private let markdownView = PickyBubbleMarkdownContentView()
     private let attachedImagesField = NSTextField(labelWithString: "")
     private let originField = NSTextField(labelWithString: "")
+    private let expansionButton = NSButton(title: "", target: nil, action: nil)
 
     private var maxBubbleWidth: CGFloat = Metrics.maxBubbleWidthFallback
     private var attachedImagesLabel: String?
     private var originLabel: String?
     private var isPiExtensionMessage = false
+    private var expansionTitle: String?
     private var actionText: String?
     private var onCopyText: (() -> Void)?
     private var onEditText: (() -> Void)?
+    private var onToggleExpansion: (() -> Void)?
     private var onOpenAsReport: (() -> Void)?
 
     private(set) var lastBubbleRect: NSRect = .zero
@@ -92,6 +103,34 @@ final class PickyUserBubbleSurfaceNSView: NSView {
 
         configureLabel(attachedImagesField)
         configureLabel(originField)
+
+        expansionButton.isBordered = false
+        expansionButton.bezelStyle = .regularSquare
+        expansionButton.imagePosition = .imageTrailing
+        expansionButton.target = self
+        expansionButton.action = #selector(toggleExpansionClicked)
+        expansionButton.isHidden = true
+        expansionButton.setButtonType(.momentaryChange)
+        addSubview(expansionButton)
+        applyExpansionButtonAppearance()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyExpansionButtonAppearance()
+    }
+
+    private func applyExpansionButtonAppearance() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            expansionButton.contentTintColor = NSColor(DS.Colors.textSecondary)
+            expansionButton.attributedTitle = NSAttributedString(
+                string: expansionButton.title,
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: PickyHUDTypography.Size.supporting, weight: .medium),
+                    .foregroundColor: NSColor(DS.Colors.textSecondary)
+                ]
+            )
+        }
     }
 
     @available(*, unavailable)
@@ -105,6 +144,9 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         originLabel: String?,
         isPiExtensionMessage: Bool,
         maxBubbleWidth: CGFloat,
+        expansionTitle: String?,
+        expansionSystemImageName: String?,
+        onToggleExpansion: (() -> Void)?,
         onOpenAsReport: (() -> Void)?,
         onCopyText: (() -> Void)?,
         onEditText: (() -> Void)?
@@ -120,17 +162,16 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         self.originLabel = originLabel
         self.isPiExtensionMessage = isPiExtensionMessage
         self.maxBubbleWidth = max(0, maxBubbleWidth)
+        self.expansionTitle = expansionTitle
         self.actionText = markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : markdown
         self.onCopyText = onCopyText
         self.onEditText = onEditText
+        self.onToggleExpansion = onToggleExpansion
         self.onOpenAsReport = onOpenAsReport
 
-        // Refresh label fonts on every configure() pass so a global app font
-        // scale change (⌘+ / ⌘-) flows through to the meta labels too. The
-        // markdown body is already rebuilt via PickyBubbleMarkdownContentView's
-        // cachedFontScale check.
         configureLabel(attachedImagesField)
         configureLabel(originField)
+        configureExpansionButton(title: expansionTitle, systemImageName: expansionSystemImageName)
         setLabel(attachedImagesField, text: attachedImagesLabel)
         setLabel(originField, text: originLabel)
         needsLayout = true
@@ -170,6 +211,7 @@ final class PickyUserBubbleSurfaceNSView: NSView {
 
         layoutLabel(attachedImagesField, in: bubbleRect, y: &y, textWidth: textWidth)
         layoutLabel(originField, in: bubbleRect, y: &y, textWidth: textWidth)
+        layoutExpansionButton(in: bubbleRect, y: &y, textWidth: textWidth)
         needsDisplay = true
     }
 
@@ -210,7 +252,8 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         let interiorCap = max(0, bubbleCap - 2 * Metrics.horizontalPadding)
         let textSize = measuredTextContentSize(forWidth: interiorCap)
         let labelWidth = max(labelWidth(attachedImagesField), labelWidth(originField))
-        let contentWidth = min(interiorCap, ceil(max(textSize.width, labelWidth)))
+        let expansionWidth = expansionButtonWidth()
+        let contentWidth = min(interiorCap, ceil(max(textSize.width, labelWidth, expansionWidth)))
         return min(bubbleCap, contentWidth + 2 * Metrics.horizontalPadding)
     }
 
@@ -222,6 +265,9 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         }
         if originLabel != nil {
             height += Metrics.labelSpacing + ceil(originField.fittingSize.height)
+        }
+        if expansionTitle != nil {
+            height += Metrics.expansionSpacing + Metrics.expansionButtonHeight
         }
         height += Metrics.verticalPadding
         return height
@@ -249,8 +295,26 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         field.isHidden = text == nil
     }
 
+    private func configureExpansionButton(title: String?, systemImageName: String?) {
+        expansionButton.title = title ?? ""
+        if let systemImageName {
+            let symbolConfig = NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)
+            expansionButton.image = NSImage(systemSymbolName: systemImageName, accessibilityDescription: title)?
+                .withSymbolConfiguration(symbolConfig)
+        } else {
+            expansionButton.image = nil
+        }
+        expansionButton.isHidden = title == nil || onToggleExpansion == nil
+        expansionButton.toolTip = title
+        applyExpansionButtonAppearance()
+    }
+
     private func labelWidth(_ field: NSTextField) -> CGFloat {
         field.isHidden ? 0 : ceil(field.fittingSize.width)
+    }
+
+    private func expansionButtonWidth() -> CGFloat {
+        expansionButton.isHidden ? 0 : ceil(expansionButton.fittingSize.width)
     }
 
     private func layoutLabel(_ field: NSTextField, in bubbleRect: NSRect, y: inout CGFloat, textWidth: CGFloat) {
@@ -264,6 +328,19 @@ final class PickyUserBubbleSurfaceNSView: NSView {
             height: height
         )
         y += height
+    }
+
+    private func layoutExpansionButton(in bubbleRect: NSRect, y: inout CGFloat, textWidth: CGFloat) {
+        guard !expansionButton.isHidden else { return }
+        y += Metrics.expansionSpacing
+        let width = min(textWidth, max(52, expansionButtonWidth()))
+        expansionButton.frame = NSRect(
+            x: bubbleRect.minX + Metrics.horizontalPadding - 4,
+            y: y,
+            width: width,
+            height: Metrics.expansionButtonHeight
+        )
+        y += Metrics.expansionButtonHeight
     }
 
     private func bubblePath(in rect: NSRect) -> NSBezierPath {
@@ -310,6 +387,10 @@ final class PickyUserBubbleSurfaceNSView: NSView {
 
     @objc private func openAsReportClicked() {
         onOpenAsReport?()
+    }
+
+    @objc private func toggleExpansionClicked() {
+        onToggleExpansion?()
     }
 }
 

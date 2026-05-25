@@ -31,9 +31,19 @@ struct PickyGitHubPullRequestStatus: Equatable {
         }
     }
 
+    /// `gh pr view` may make a network call, so allow more headroom than the
+    /// pure-local git operations get.
+    static let subprocessTimeout: TimeInterval = 6.0
+
     private static let cacheLock = NSLock()
     private static var cache: [String: CachedEntry] = [:]
     private static var inFlightPrefetchKeys: Set<String> = []
+    /// Dedup for `prefetchIfNeeded(cwd:)`. The two-arg `(cwd, branch)` slot map
+    /// cannot guard the entry point because resolving the branch already requires
+    /// running the full `PickyGitRepositoryStatus.loadSynchronously` pipeline.
+    /// Without this cwd-level dedup, every `upsert(card)` would burn a fresh
+    /// git+gh pipeline even when an identical prefetch is already in flight.
+    private static var inFlightCwdPrefetchKeys: Set<String> = []
 
     static func cached(cwd: String?, branch: String?) -> CachedEntry? {
         guard let key = cacheKey(cwd: cwd, branch: branch) else { return nil }
@@ -44,9 +54,11 @@ struct PickyGitHubPullRequestStatus: Equatable {
 
     static func load(cwd: String?, branch: String?) async -> PickyGitHubPullRequestStatus? {
         let key = cacheKey(cwd: cwd, branch: branch)
-        let status = await Task.detached(priority: .utility) {
-            loadSynchronously(cwd: cwd)
-        }.value
+        let status = await withCheckedContinuation { continuation in
+            PickyGitRepositoryStatus.subprocessQueue.addOperation {
+                continuation.resume(returning: loadSynchronously(cwd: cwd))
+            }
+        }
         updateCache(status, for: key)
         return status
     }
@@ -107,7 +119,7 @@ struct PickyGitHubPullRequestStatus: Equatable {
         guard let key = cacheKey(cwd: cwd, branch: branch) else { return }
         guard claimPrefetchSlot(for: key) else { return }
 
-        Task.detached(priority: .utility) {
+        PickyGitRepositoryStatus.subprocessQueue.addOperation {
             let status = loadSynchronously(cwd: cwd)
             releasePrefetchSlot(for: key)
             updateCache(status, for: key)
@@ -120,10 +132,24 @@ struct PickyGitHubPullRequestStatus: Equatable {
     static func prefetchIfNeeded(cwd: String?) {
         let trimmedCwd = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !trimmedCwd.isEmpty else { return }
+        let cwdKey = URL(fileURLWithPath: trimmedCwd).standardizedFileURL.path
+        guard claimCwdPrefetchSlot(for: cwdKey) else { return }
 
-        Task.detached(priority: .utility) {
-            guard let git = PickyGitRepositoryStatus.loadSynchronously(cwd: trimmedCwd) else { return }
-            prefetchIfNeeded(cwd: trimmedCwd, branch: git.branchName)
+        PickyGitRepositoryStatus.subprocessQueue.addOperation {
+            defer { releaseCwdPrefetchSlot(for: cwdKey) }
+            let branch: String
+            if let cachedGit = PickyGitRepositoryStatus.cached(cwd: trimmedCwd) {
+                branch = cachedGit.branchName
+            } else if let git = PickyGitRepositoryStatus.loadSynchronously(cwd: trimmedCwd) {
+                branch = git.branchName
+            } else {
+                return
+            }
+            guard let key = cacheKey(cwd: trimmedCwd, branch: branch),
+                  claimPrefetchSlot(for: key) else { return }
+            let status = loadSynchronously(cwd: trimmedCwd)
+            releasePrefetchSlot(for: key)
+            updateCache(status, for: key)
         }
     }
 
@@ -149,12 +175,7 @@ struct PickyGitHubPullRequestStatus: Equatable {
         return "\(normalizedCwd)#\(trimmedBranch)"
     }
 
-    private enum GHProcessResult {
-        case success(exitCode: Int32, stdout: String, stderr: String)
-        case failure(message: String)
-    }
-
-    private static func runGHProcess(_ arguments: [String], cwd: String) -> GHProcessResult {
+    private static func runGHProcess(_ arguments: [String], cwd: String) -> PickyGitRepositoryStatus.GitProcessResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         // Extend PATH so the user's `gh` (typically /opt/homebrew/bin or /usr/local/bin) is reachable
@@ -172,16 +193,12 @@ struct PickyGitHubPullRequestStatus: Equatable {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return .failure(message: error.localizedDescription)
-        }
-
-        let stdout = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let stderr = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        return .success(exitCode: process.terminationStatus, stdout: stdout, stderr: stderr)
+        return PickyGitRepositoryStatus.runProcessWithTimeout(
+            process,
+            timeout: subprocessTimeout,
+            outputPipe: outputPipe,
+            errorPipe: errorPipe
+        )
     }
 
     private static func claimPrefetchSlot(for key: String) -> Bool {
@@ -198,5 +215,21 @@ struct PickyGitHubPullRequestStatus: Equatable {
         cacheLock.lock()
         defer { cacheLock.unlock() }
         inFlightPrefetchKeys.remove(key)
+    }
+
+    private static func claimCwdPrefetchSlot(for cwdKey: String) -> Bool {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        if inFlightCwdPrefetchKeys.contains(cwdKey) {
+            return false
+        }
+        inFlightCwdPrefetchKeys.insert(cwdKey)
+        return true
+    }
+
+    private static func releaseCwdPrefetchSlot(for cwdKey: String) {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        inFlightCwdPrefetchKeys.remove(cwdKey)
     }
 }

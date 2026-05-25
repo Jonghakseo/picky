@@ -12,6 +12,51 @@ struct PickyGitRepositoryStatus: Equatable {
     private static var statusCache: [String: PickyGitRepositoryStatus] = [:]
     private static var inFlightPrefetchKeys: Set<String> = []
 
+    /// Dedicated queue for blocking *background* git/gh subprocess invocations
+    /// (HUD status probes, prefetches). Keeping these off Swift's cooperative
+    /// pool prevents `Process.waitUntilExit()` from starving the global async
+    /// runtime when many Pickles refresh simultaneously. A 2025-05 spin sample
+    /// caught 10 cooperative-pool threads stuck in `waitUntilExit`, blocking
+    /// MainActor continuations and tripping the main-thread watchdog.
+    /// `maxConcurrentOperationCount = 2` lets two repos refresh in parallel
+    /// while leaving the cooperative pool free for SwiftUI and daemon I/O work;
+    /// `PickyGitHubPullRequestStatus` shares this queue so the cap covers both
+    /// `git` and `gh` metadata invocations.
+    static let subprocessQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "com.jonghakseo.picky.git-subprocess"
+        queue.qualityOfService = .utility
+        queue.maxConcurrentOperationCount = 2
+        return queue
+    }()
+
+    /// Dedicated queue for *user-initiated* git commands (push, pull, etc.).
+    /// Kept separate from `subprocessQueue` so a deep prefetch backlog cannot
+    /// delay something the user just clicked, and so the longer
+    /// `userInitiatedSubprocessTimeout` cannot stall background status work.
+    static let userInitiatedSubprocessQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "com.jonghakseo.picky.git-subprocess.user"
+        queue.qualityOfService = .userInitiated
+        queue.maxConcurrentOperationCount = 2
+        return queue
+    }()
+
+    /// Per-subprocess wall-clock budget for *background metadata probes*.
+    /// Anything longer is almost always a hung pre-commit hook, lfs lock, or
+    /// filter that we should not block on. 5s gives slow monorepos / cold
+    /// filesystem caches enough headroom to avoid false-negative HUD blanking
+    /// while still bounding the queue-slot hold time.
+    static let subprocessTimeout: TimeInterval = 5.0
+
+    /// Per-subprocess wall-clock budget for *user-initiated* git commands like
+    /// `git push` / `git pull`. These can legitimately take minutes on slow
+    /// networks, initial pushes, LFS uploads, or large pulls, so the
+    /// metadata-probe budget would falsely kill them. 5 minutes covers the
+    /// realistic worst case while still preventing an infinitely-stuck SSH
+    /// auth prompt or filter from pinning a queue slot forever.
+    static let userInitiatedSubprocessTimeout: TimeInterval = 300.0
+
     let repositoryName: String
     let branchName: String
     let hasUncommittedChanges: Bool
@@ -43,9 +88,11 @@ struct PickyGitRepositoryStatus: Equatable {
 
     static func load(cwd: String?) async -> PickyGitRepositoryStatus? {
         let cacheKey = cacheKey(cwd: cwd)
-        let status = await Task.detached(priority: .utility) {
-            loadSynchronously(cwd: cwd)
-        }.value
+        let status = await withCheckedContinuation { continuation in
+            subprocessQueue.addOperation {
+                continuation.resume(returning: loadSynchronously(cwd: cwd))
+            }
+        }
         updateCache(status, for: cacheKey)
         return status
     }
@@ -260,12 +307,12 @@ struct PickyGitRepositoryStatus: Equatable {
         }
     }
 
-    private enum GitProcessResult {
+    enum GitProcessResult {
         case success(exitCode: Int32, stdout: String, stderr: String)
         case failure(message: String)
     }
 
-    private static func runGitProcess(_ arguments: [String], cwd: String) -> GitProcessResult {
+    private static func runGitProcess(_ arguments: [String], cwd: String, timeout: TimeInterval = subprocessTimeout) -> GitProcessResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["git", "-C", cwd] + arguments
@@ -275,15 +322,78 @@ struct PickyGitRepositoryStatus: Equatable {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
+        return runProcessWithTimeout(process, timeout: timeout, outputPipe: outputPipe, errorPipe: errorPipe)
+    }
+
+    /// Runs `process` with `terminationHandler`-driven completion and a wall-clock
+    /// timeout. On timeout the child is sent `SIGTERM`, then `SIGKILL` if it does
+    /// not exit promptly, so a hung subprocess cannot pin a queue slot.
+    ///
+    /// Pipes are drained concurrently on background queues so a child that
+    /// produces more output than the pipe buffer (~64 KB) — e.g.
+    /// `git status --porcelain` in a repo with thousands of dirty files — does
+    /// not deadlock writing into a full buffer and falsely look like a timeout.
+    ///
+    /// Internal so `PickyGitHubPullRequestStatus.runGHProcess` can reuse the same
+    /// timeout + drain semantics for `gh`.
+    static func runProcessWithTimeout(_ process: Process, timeout: TimeInterval, outputPipe: Pipe, errorPipe: Pipe) -> GitProcessResult {
+        let semaphore = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in semaphore.signal() }
+
         do {
             try process.run()
-            process.waitUntilExit()
         } catch {
             return .failure(message: error.localizedDescription)
         }
 
-        let stdout = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let stderr = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        // Drain stdout/stderr on background queues so the child cannot block
+        // on a full pipe buffer waiting for us to read. Reads return EOF once
+        // the child exits (or is killed) and the kernel closes the write-end.
+        let drainGroup = DispatchGroup()
+        var stdoutData = Data()
+        var stderrData = Data()
+        let readQueue = DispatchQueue.global(qos: .utility)
+        drainGroup.enter()
+        readQueue.async {
+            stdoutData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            drainGroup.leave()
+        }
+        drainGroup.enter()
+        readQueue.async {
+            stderrData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            drainGroup.leave()
+        }
+
+        let waitResult = semaphore.wait(timeout: .now() + timeout)
+        if waitResult == .timedOut {
+            process.terminate()
+            if semaphore.wait(timeout: .now() + 0.5) == .timedOut {
+                kill(process.processIdentifier, SIGKILL)
+                _ = semaphore.wait(timeout: .now() + 0.5)
+            }
+            // Give the drain reads a moment to observe EOF naturally after the
+            // kernel closes the child's pipe write-end.
+            if drainGroup.wait(timeout: .now() + 0.5) == .timedOut {
+                // A grandchild (ssh helper, filter, hook daemon) may have
+                // inherited stdout/stderr and is holding the write-end open,
+                // so `readDataToEndOfFile` will never see EOF on its own.
+                // Force-close our read-end to interrupt the blocked reads;
+                // otherwise each timed-out subprocess leaks a GCD utility
+                // thread + Pipe/Data heap and we eventually reproduce the
+                // exact thread-exhaustion this patch is meant to prevent.
+                try? outputPipe.fileHandleForReading.close()
+                try? errorPipe.fileHandleForReading.close()
+                _ = drainGroup.wait(timeout: .now() + 0.1)
+            }
+            let argsForMessage = (process.arguments ?? []).joined(separator: " ")
+            return .failure(message: "subprocess timed out after \(timeout)s: \(argsForMessage)")
+        }
+
+        // Process exited cleanly — drain reads should resolve near-instantly
+        // because the kernel has closed the write-end of both pipes.
+        drainGroup.wait()
+        let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+        let stderr = String(data: stderrData, encoding: .utf8) ?? ""
         return .success(exitCode: process.terminationStatus, stdout: stdout, stderr: stderr)
     }
 
@@ -294,18 +404,22 @@ struct PickyGitRepositoryStatus: Equatable {
     }
 
     static func runCommand(_ arguments: [String], cwd: String) async -> GitCommandOutcome {
-        await Task.detached(priority: .userInitiated) {
-            switch runGitProcess(arguments, cwd: cwd) {
-            case .failure(let message):
-                return GitCommandOutcome(exitCode: -1, combinedOutput: message)
-            case .success(let exitCode, let stdout, let stderr):
-                let combined = [stderr, stdout]
-                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty }
-                    .joined(separator: "\n")
-                return GitCommandOutcome(exitCode: exitCode, combinedOutput: combined)
+        await withCheckedContinuation { continuation in
+            userInitiatedSubprocessQueue.addOperation {
+                let outcome: GitCommandOutcome
+                switch runGitProcess(arguments, cwd: cwd, timeout: userInitiatedSubprocessTimeout) {
+                case .failure(let message):
+                    outcome = GitCommandOutcome(exitCode: -1, combinedOutput: message)
+                case .success(let exitCode, let stdout, let stderr):
+                    let combined = [stderr, stdout]
+                        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                        .filter { !$0.isEmpty }
+                        .joined(separator: "\n")
+                    outcome = GitCommandOutcome(exitCode: exitCode, combinedOutput: combined)
+                }
+                continuation.resume(returning: outcome)
             }
-        }.value
+        }
     }
 
     /// Warm the cache for `cwd` so the HUD can render git context on the very first card paint.
@@ -314,7 +428,7 @@ struct PickyGitRepositoryStatus: Equatable {
         guard let cacheKey = cacheKey(cwd: cwd) else { return }
         guard claimPrefetchSlot(for: cacheKey) else { return }
 
-        Task.detached(priority: .utility) {
+        subprocessQueue.addOperation {
             let status = loadSynchronously(cwd: cwd)
             releasePrefetchSlot(for: cacheKey)
             updateCache(status, for: cacheKey)

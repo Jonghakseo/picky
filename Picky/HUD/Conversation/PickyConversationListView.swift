@@ -205,17 +205,12 @@ struct PickyConversationListView: View {
 
     @ViewBuilder
     private func leadingMessageView(_ message: PickySessionMessage) -> some View {
-        switch message.kind {
-        case .commandReceipt:
-            PickyCommandReceiptBubbleView(message: message)
-        default:
-            PickyUserBubbleView(
-                message: message,
-                onOpenAsReport: openMessageReportAction(for: message),
-                onCopyText: { viewModel.copyMessageText($0) },
-                onEditText: { viewModel.replaceComposerDraftText($0, sessionID: session.id) }
-            )
-        }
+        PickyUserBubbleView(
+            message: message,
+            onOpenAsReport: openMessageReportAction(for: message),
+            onCopyText: { viewModel.copyMessageText($0) },
+            onEditText: { viewModel.replaceComposerDraftText($0, sessionID: session.id) }
+        )
     }
 
     @ViewBuilder
@@ -229,7 +224,12 @@ struct PickyConversationListView: View {
                 onEditText: { viewModel.replaceComposerDraftText($0, sessionID: session.id) }
             )
         case .commandReceipt:
-            PickyCommandReceiptBubbleView(message: message)
+            PickyUserBubbleView(
+                message: message,
+                onOpenAsReport: openMessageReportAction(for: message),
+                onCopyText: { viewModel.copyMessageText($0) },
+                onEditText: { viewModel.replaceComposerDraftText($0, sessionID: session.id) }
+            )
         case .agentText:
             PickyAgentBubbleView(
                 message: message,

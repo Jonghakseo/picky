@@ -394,26 +394,26 @@ struct PickyConversationCardViewTests {
         #expect(snapshot.compactCompletionBubbleCount == 1)
     }
 
-    @Test func commandReceiptRendersMinimalCommandBubble() {
+    @Test func commandReceiptRendersThroughUserBubbleSurface() {
         let receipt = PickyCommandReceipt(command: "/c", status: .submitted, detail: nil)
         let commandMessage = message("m-command", kind: .commandReceipt, text: "/c", commandReceipt: receipt)
         let session = makeConversationSession(status: .completed, messages: [commandMessage])
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
-        let bubble = PickyCommandReceiptBubbleView(message: commandMessage)
+        let bubble = PickyUserBubbleView(message: commandMessage)
 
         #expect(snapshot.commandReceiptBubbleCount == 1)
-        #expect(bubble.displayCommand == "/c")
-        #expect(!bubble.showsFailedLabel)
+        #expect(bubble.displayedMarkdownPreview == "/c")
+        #expect(bubble.displayedOriginLabel == nil)
     }
 
-    @Test func failedCommandReceiptShowsFailedLabel() {
+    @Test func failedCommandReceiptStillUsesUserBubbleTextOnly() {
         let receipt = PickyCommandReceipt(command: "/c", status: .failed, detail: "unmerged paths")
         let commandMessage = message("m-command", kind: .commandReceipt, text: "/c", commandReceipt: receipt)
-        let bubble = PickyCommandReceiptBubbleView(message: commandMessage)
+        let bubble = PickyUserBubbleView(message: commandMessage)
 
-        #expect(bubble.displayCommand == "/c")
-        #expect(bubble.showsFailedLabel)
+        #expect(bubble.displayedMarkdownPreview == "/c")
+        #expect(bubble.displayedOriginLabel == nil)
     }
 
     @Test func extensionNotifySystemMessageRendersSeverityBubbleAndReportGate() {

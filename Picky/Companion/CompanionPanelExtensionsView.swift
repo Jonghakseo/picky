@@ -14,8 +14,8 @@ import SwiftUI
 
 private struct PickyCuratedPlugin: Identifiable {
     let id: String
-    let titleKey: LocalizedStringKey
-    let descriptionKey: LocalizedStringKey
+    let titleKey: String
+    let descriptionKey: String
     let commandName: String
     let source: String
 
@@ -114,6 +114,7 @@ struct CompanionPanelExtensionsView: View {
     @ObservedObject var sessionListViewModel: PickySessionListViewModel
     @EnvironmentObject private var pluginReloadController: PickyPluginReloadController
     @StateObject private var curatedViewModel = PickyCuratedPluginsViewModel()
+    @State private var curatedInfoPopoverPluginID: String?
     @State private var confirmPresented = false
     @State private var pendingBusySnapshot: BusySnapshot = .empty
 
@@ -330,34 +331,25 @@ struct CompanionPanelExtensionsView: View {
                 .foregroundColor(DS.Colors.textTertiary)
                 .frame(width: 14, alignment: .center)
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .center, spacing: 6) {
-                    Text(row.plugin.titleKey)
-                        .pickyFont(size: 11.5, weight: .semibold)
-                        .foregroundColor(DS.Colors.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+            Text(LocalizedStringKey(row.plugin.titleKey))
+                .pickyFont(size: 11.5, weight: .semibold)
+                .foregroundColor(DS.Colors.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(1)
 
-                    Text(row.plugin.commandName)
-                        .pickyFont(size: 10, weight: .medium)
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1.5)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(DS.Colors.textTertiary.opacity(0.12))
-                        )
-                        .fixedSize()
-                }
+            Text(row.plugin.commandName)
+                .pickyFont(size: 10, weight: .medium)
+                .foregroundColor(DS.Colors.textTertiary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1.5)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(DS.Colors.textTertiary.opacity(0.12))
+                )
+                .fixedSize()
 
-                Text(row.plugin.descriptionKey)
-                    .pickyFont(size: 10.5, weight: .medium)
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .layoutPriority(1)
-
-            Spacer(minLength: 6)
+            curatedInfoButton(for: row)
 
             if row.status == .installed {
                 curatedBadgePill(
@@ -367,7 +359,43 @@ struct CompanionPanelExtensionsView: View {
                 )
             }
 
+            Spacer(minLength: 6)
+
             curatedActionButton(for: row)
+                .fixedSize()
+        }
+    }
+
+    @ViewBuilder
+    private func curatedInfoButton(for row: PickyCuratedPluginsViewModel.Row) -> some View {
+        let isOpen = curatedInfoPopoverPluginID == row.plugin.id
+        let description = L10n.t(row.plugin.descriptionKey)
+        Button(action: {
+            curatedInfoPopoverPluginID = isOpen ? nil : row.plugin.id
+        }) {
+            Image(systemName: "info.circle")
+                .pickyFont(size: 10, weight: .medium)
+                .foregroundColor(DS.Colors.textTertiary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(description)
+        .popover(
+            isPresented: Binding(
+                get: { curatedInfoPopoverPluginID == row.plugin.id },
+                set: { presented in
+                    if !presented, curatedInfoPopoverPluginID == row.plugin.id { curatedInfoPopoverPluginID = nil }
+                }
+            ),
+            arrowEdge: .bottom
+        ) {
+            Text(description)
+                .pickyFont(size: 11.5, weight: .medium)
+                .foregroundColor(DS.Colors.textPrimary)
+                .multilineTextAlignment(.leading)
+                .padding(12)
+                .frame(width: 260, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -399,7 +427,9 @@ struct CompanionPanelExtensionsView: View {
                     .frame(width: 10, height: 10)
             }
             Text(text)
+                .fixedSize()
         }
+        .fixedSize()
     }
 
     private func curatedBadgePill(text: String, foreground: Color, background: Color) -> some View {

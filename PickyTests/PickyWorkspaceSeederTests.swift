@@ -83,6 +83,21 @@ struct PickyWorkspaceSeederTests {
         #expect(!FileManager.default.fileExists(atPath: legacyURL.path))
     }
 
+    @Test func seedWithArbitraryWorkspacePathDoesNotRemoveLegacyTellPlan() throws {
+        let root = scratchRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let workspaceURL = root.appendingPathComponent("CustomRepo", isDirectory: true)
+        let extensionsURL = workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.extensionsDirectoryRelativePath, isDirectory: true)
+        try FileManager.default.createDirectory(at: extensionsURL, withIntermediateDirectories: true)
+        let legacyURL = extensionsURL.appendingPathComponent("picky-tell-plan.ts", isDirectory: false)
+        try Data("// user-owned legacy extension\n".utf8).write(to: legacyURL)
+
+        PickyWorkspaceSeeder.seed(workspacePath: workspaceURL.path, log: { _ in })
+
+        #expect(FileManager.default.fileExists(atPath: legacyURL.path))
+    }
+
     @Test func seedMigratesLegacyAgentsMarkdownWhenContentMatches() throws {
         let root = scratchRoot()
         defer { try? FileManager.default.removeItem(at: root) }

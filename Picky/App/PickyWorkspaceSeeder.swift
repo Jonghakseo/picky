@@ -44,6 +44,12 @@ enum PickyWorkspaceSeeder {
     ) -> String {
         let path = defaultWorkspacePath(appSupportRoot: appSupportRoot)
         seed(workspacePath: path, mainAgentRuntimeMode: mainAgentRuntimeMode, fileManager: fileManager, log: log)
+        // Default workspace only — never delete files in user-chosen custom cwds.
+        cleanupLegacyTellPlanExtension(
+            workspaceURL: URL(fileURLWithPath: path, isDirectory: true),
+            fileManager: fileManager,
+            log: log
+        )
         return path
     }
 
@@ -69,7 +75,6 @@ enum PickyWorkspaceSeeder {
             log("⚠️ Picky: Failed to create workspace at \(workspaceURL.path): \(error.localizedDescription)")
             return
         }
-        cleanupLegacyTellPlanExtension(workspaceURL: workspaceURL, fileManager: fileManager, log: log)
         guard mainAgentRuntimeMode == .pi else { return }
         let agentsURL = workspaceURL.appendingPathComponent(agentsMarkdownFilename, isDirectory: false)
         if !fileManager.fileExists(atPath: agentsURL.path) {

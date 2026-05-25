@@ -83,6 +83,54 @@ struct PickyWorkspaceSeederTests {
         #expect(!FileManager.default.fileExists(atPath: legacyURL.path))
     }
 
+    @Test func seedMigratesLegacyAgentsMarkdownWhenContentMatches() throws {
+        let root = scratchRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let workspaceURL = URL(fileURLWithPath: PickyWorkspaceSeeder.defaultWorkspacePath(appSupportRoot: root), isDirectory: true)
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let agentsURL = workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.agentsMarkdownFilename)
+        try PickyWorkspaceSeeder.legacyAgentsMarkdownWithTellPlanForTesting.write(to: agentsURL, atomically: true, encoding: .utf8)
+
+        _ = PickyWorkspaceSeeder.seedDefaultWorkspace(appSupportRoot: root, log: { _ in })
+
+        let body = try String(contentsOf: agentsURL, encoding: .utf8)
+        #expect(body == PickyWorkspaceSeeder.defaultAgentsMarkdown)
+        #expect(!body.contains("Announce the plan before tool calls"))
+    }
+
+    @Test func seedPreservesAgentsMarkdownWhenUserModified() throws {
+        let root = scratchRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let workspaceURL = URL(fileURLWithPath: PickyWorkspaceSeeder.defaultWorkspacePath(appSupportRoot: root), isDirectory: true)
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let agentsURL = workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.agentsMarkdownFilename)
+        let customized = PickyWorkspaceSeeder.legacyAgentsMarkdownWithTellPlanForTesting + "\n# user customized\n"
+        try customized.write(to: agentsURL, atomically: true, encoding: .utf8)
+
+        _ = PickyWorkspaceSeeder.seedDefaultWorkspace(appSupportRoot: root, log: { _ in })
+
+        let body = try String(contentsOf: agentsURL, encoding: .utf8)
+        #expect(body == customized)
+    }
+
+    @Test func seedDoesNotMigrateUnrelatedAgentsMarkdown() throws {
+        let root = scratchRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let workspaceURL = URL(fileURLWithPath: PickyWorkspaceSeeder.defaultWorkspacePath(appSupportRoot: root), isDirectory: true)
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let agentsURL = workspaceURL.appendingPathComponent(PickyWorkspaceSeeder.agentsMarkdownFilename)
+        let unrelated = "# user customized\n"
+        try unrelated.write(to: agentsURL, atomically: true, encoding: .utf8)
+
+        _ = PickyWorkspaceSeeder.seedDefaultWorkspace(appSupportRoot: root, log: { _ in })
+
+        let body = try String(contentsOf: agentsURL, encoding: .utf8)
+        #expect(body == unrelated)
+    }
+
     @Test func seedNeverOverwritesExistingAgentsMarkdown() throws {
         let root = scratchRoot()
         defer { try? FileManager.default.removeItem(at: root) }

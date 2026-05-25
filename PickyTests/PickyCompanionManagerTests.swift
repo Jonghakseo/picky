@@ -330,6 +330,20 @@ struct PickyCompanionManagerTests {
         #expect(speechProvider.spokenUtterances == ["열어볼게요."])
     }
 
+    @Test @MainActor func realtimePlaybackStopBeforeFirstAudioIsSafe() {
+        let engine = OpenAIRealtimeAudioPlaybackEngine()
+
+        #expect(engine.stopAndReturnPlayedAudioMs() == 0)
+        #expect(engine.playedAudioMs == 0)
+    }
+
+    @Test @MainActor func realtimePlaybackEnqueuePCM16DataIsSafe() {
+        let engine = OpenAIRealtimeAudioPlaybackEngine()
+
+        engine.enqueuePCM16Data(Data(repeating: 0, count: PickyRealtimePCM16Audio.bytesPerSample * 24))
+        engine.stop()
+    }
+
     @Test func realtimePCM16AudioUsesFloatPlaybackBufferForAVAudioEngineCompatibility() {
         let samples: [Int16] = [-32768, 0, 32767]
         let data = Data(samples.flatMap { sample -> [UInt8] in

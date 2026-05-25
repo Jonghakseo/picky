@@ -109,19 +109,22 @@ Currently bundled:
 
 - **Pi handoff command** — adds a `/handoff-to-picky` slash command to local Pi so you can pin an idle Pi conversation to Picky as a completed Pickle card. After installing, restart Pi or run `/reload`.
 
-A **Curated extensions** section under the bundled list is a placeholder for a future shortlist of useful third-party Pi extensions; it currently shows a "Coming soon" note.
+A **Curated extensions** section under the bundled list lists a small set of useful third-party Pi extensions. Each row shows the extension name, a short description, and an install/remove control that installs the extension from npm into the local Pi setup.
 
 ### 2.3 Settings tab
 
 Settings are grouped into these sections:
 
 1. General
-2. Picky
-3. Pickle
-4. Notification
-5. Cursor & Bubbles
-6. Voice (STT & TTS)
-7. Shortcuts
+2. Pi login (OAuth)
+3. Picky
+4. Pickle
+5. Notification
+6. Cursor & Bubbles
+7. Voice (STT & TTS)
+8. Shortcuts
+
+The **Pi login** page lets you sign in to your Pi account from Picky. Use it to connect your local Pi to your Pi account so account-bound features stay in sync. The section header shows the current login status.
 
 Most toggles and pickers save immediately. Directory and provider text fields show a section-level **Save changes** / **Saved** indicator.
 

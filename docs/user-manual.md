@@ -617,7 +617,7 @@ Picky is local-first and keeps everything under one durable folder:
 
 Only **screenshots** are written outside this tree, to the per-user temporary directory (`FileManager.default.temporaryDirectory/Picky/Screenshots`), so capture bytes do not accumulate in the durable folder.
 
-**API keys typed into Settings are stored in plain JSON** inside `settings.json` (OpenAI/Azure/ElevenLabs keys, custom base URLs, Realtime credentials). When Picky needs a credential, it resolves it in this order: **(1) the matching `settings.json` field if non-empty, (2) the corresponding environment variable, (3) a consolidated Keychain entry at service `com.jonghakseo.picky.azure-openai` (account `AZURE_OPENAI_VOICE_CONFIG`)** — so env and Keychain are *fallbacks*, not overrides. If you want to keep secrets out of plain JSON, clear the Settings field first, then populate the env var or Keychain entry. ElevenLabs TTS is the one exception: it has no Settings UI yet, so it only reads `ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` / `ELEVENLABS_MODEL_ID` from the environment (see [§13.6](#136-voice-stt--tts)). Picky never writes to the Keychain itself; you populate the Azure entry by hand (for example with `security add-generic-password`). If you back up or share `settings.json`, scrub the secret fields first.
+**API keys typed into Settings are stored in plain JSON** inside `settings.json` (OpenAI/Azure/ElevenLabs keys, custom base URLs, Realtime credentials). When Picky needs a credential, it resolves it in this order: **(1) the matching `settings.json` field if non-empty, (2) the corresponding environment variable, (3) a consolidated Keychain entry at service `com.jonghakseo.picky.azure-openai` (account `AZURE_OPENAI_VOICE_CONFIG`)** — so env and Keychain are *fallbacks*, not overrides. If you want to keep secrets out of plain JSON, clear the Settings field first, then populate the env var or Keychain entry. Picky never writes to the Keychain itself; you populate the Azure entry by hand (for example with `security add-generic-password`). If you back up or share `settings.json`, scrub the secret fields first.
 
 **Reinstalling Picky.app keeps everything above.** macOS only replaces the bundle in `/Applications`; the Application Support tree and any Keychain entries you populated survive. The Alpha build's "reinstall the latest DMG" notice does not touch your settings, sessions, or workspace.
 
@@ -728,7 +728,7 @@ provider is selected.
 | --- | --- |
 | STT provider | Apple Speech (default), OpenAI, Azure OpenAI, ElevenLabs. Apple Speech uses the on-device `SFSpeechRecognizer` (offline). OpenAI uses `gpt-4o-transcribe` against `api.openai.com`. Azure OpenAI uses your deployment URL. ElevenLabs uses `scribe_v2` against `api.elevenlabs.io` (the legacy `scribe_v1` is deprecated as of 2026). |
 | Enable spoken replies (TTS) | On/off. When off, text replies still appear but audio playback is skipped. |
-| TTS provider | macOS Speech (default), OpenAI, Azure OpenAI, ElevenLabs. macOS Speech uses the system `NSSpeechSynthesizer` voice. OpenAI uses `gpt-4o-mini-tts` against `api.openai.com`. |
+| TTS provider | macOS Speech (default), OpenAI, Azure OpenAI, ElevenLabs. macOS Speech uses the system `NSSpeechSynthesizer` voice. OpenAI uses `gpt-4o-mini-tts` against `api.openai.com`. ElevenLabs uses `eleven_multilingual_v2` against `api.elevenlabs.io` by default. |
 | Open macOS Speech Settings | Opens the system Spoken Content settings for local TTS voice selection. |
 
 OpenAI STT fields (when STT provider = OpenAI):
@@ -763,13 +763,13 @@ ElevenLabs STT fields (when STT provider = ElevenLabs):
 - ElevenLabs STT model — `scribe_v2` (default); `scribe_v1` is deprecated
 - ElevenLabs STT language — ISO-639-1 or 639-3 code, or empty for auto detect
 
-ElevenLabs TTS does not have a Settings UI yet — it reads three environment variables instead:
+ElevenLabs TTS fields (when TTS provider = ElevenLabs):
 
-- `ELEVENLABS_API_KEY` — required.
-- `ELEVENLABS_VOICE_ID` — voice to speak with (no default; TTS stays silent without it).
-- `ELEVENLABS_MODEL_ID` — optional, defaults to `eleven_multilingual_v2`.
-
-Set them in your shell environment before launching Picky (for example, via your shell rc file, a wrapper script, or `launchctl setenv` for GUI launches). A proper Settings UI will be added in a later release.
+- ElevenLabs TTS API key — leave empty to reuse the STT key, then `ELEVENLABS_API_KEY` from the environment
+- ElevenLabs TTS voice ID — required unless `ELEVENLABS_VOICE_ID` is set in the environment
+- ElevenLabs TTS model — leave blank for `eleven_multilingual_v2`
+- ElevenLabs TTS output format — leave blank for `mp3_44100_128`
+- ElevenLabs TTS base URL — leave blank for `https://api.elevenlabs.io`
 
 > **Edge TTS / unofficial backends.** Picky does not bundle Microsoft Edge TTS,
 > Piper, or other non-public APIs. To use them, run an OpenAI-compatible proxy

@@ -927,6 +927,29 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
         this.emit({ type: "main_realtime_output_transcript_completed", inputId, transcript });
         break;
       }
+      // Text-only modality (ttsEnabled=false) emits these instead of the audio
+      // transcript events. Same downstream channel — Picky's HUD only cares
+      // about the assistant text, not whether it came from audio transcription.
+      // Do not emit `speaking`: this path has no audio output, and response
+      // modalities ensure text/audio transcript events are not duplicated.
+      case "response.output_text.delta":
+      case "response.text.delta": {
+        const delta = stringField(event, "delta");
+        if (!delta) return;
+        if (this.isCancelledResponseEvent(event)) return;
+        const inputId = this.inputIdForResponseEvent(event);
+        if (inputId) this.outputTranscriptByInputId.set(inputId, (this.outputTranscriptByInputId.get(inputId) ?? "") + delta);
+        this.emit({ type: "main_realtime_output_transcript_delta", inputId, delta });
+        break;
+      }
+      case "response.output_text.done":
+      case "response.text.done": {
+        if (this.isCancelledResponseEvent(event)) return;
+        const inputId = this.inputIdForResponseEvent(event);
+        const text = stringField(event, "text") ?? (inputId ? this.outputTranscriptByInputId.get(inputId) : undefined) ?? "";
+        this.emit({ type: "main_realtime_output_transcript_completed", inputId, transcript: text });
+        break;
+      }
       case "conversation.item.input_audio_transcription.delta": {
         const delta = stringField(event, "delta");
         if (!delta) return;
@@ -1078,6 +1101,28 @@ class OpenAIRealtimeSessionHandle implements RuntimeSessionHandle {
           chunks: this.outputTranscriptChunkCount.get(responseId) ?? 0,
           transcriptChars: transcript.length,
           transcript: summarizeTextForLog(transcript),
+        });
+        this.outputTranscriptChunkCount.delete(responseId);
+        break;
+      }
+      case "response.output_text.delta":
+      case "response.text.delta": {
+        const responseId = this.responseIdForEvent(event) ?? "unknown";
+        const next = (this.outputTranscriptChunkCount.get(responseId) ?? 0) + 1;
+        this.outputTranscriptChunkCount.set(responseId, next);
+        break;
+      }
+      case "response.output_text.done":
+      case "response.text.done": {
+        const responseId = this.responseIdForEvent(event) ?? "unknown";
+        const inputId = this.inputIdForResponseEvent(event);
+        const text = stringField(event, "text") ?? (inputId ? this.outputTranscriptByInputId.get(inputId) : undefined) ?? "";
+        logAgentd("main realtime recv output_text.done", {
+          responseId,
+          inputId,
+          chunks: this.outputTranscriptChunkCount.get(responseId) ?? 0,
+          transcriptChars: text.length,
+          transcript: summarizeTextForLog(text),
         });
         this.outputTranscriptChunkCount.delete(responseId);
         break;

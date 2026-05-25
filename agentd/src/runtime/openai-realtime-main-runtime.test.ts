@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { addUsage, buildRealtimeConnection, extractUsageSnapshot, normalizeAzureRealtimeHost, OpenAIRealtimeMainRuntime, parseAzureRealtimeEndpointUrl, toQuotaSnapshot, type RealtimeWebSocketLike } from "./openai-realtime-main-runtime.js";
 import type { CodexQuotaSnapshot } from "./codex-oauth.js";
 import { SelectableMainRuntime } from "./selectable-main-runtime.js";
-import type { AgentRuntime, MainRealtimeRuntime, RuntimeSessionHandle, ThinkingLevel } from "./types.js";
+import type { AgentRuntime, MainRealtimeRuntime, RuntimeEvent, RuntimeSessionHandle, ThinkingLevel } from "./types.js";
 import type { BuiltPrompt } from "../prompt-builder.js";
 import type { OpenAIRealtimeAuthConfig, PickyAgentSession, PickyContextPacket } from "../protocol.js";
 
@@ -972,6 +972,74 @@ describe("OpenAIRealtimeMainRuntime OpenAI GA protocol", () => {
       .map((raw) => JSON.parse(raw) as Record<string, any>)
       .find((event) => event.type === "response.create");
     expect(secondCreate?.response).toEqual({ output_modalities: ["text"] });
+  });
+
+  it("routes response.output_text events to the transcript channel when TTS is disabled", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "openai",
+        apiKey: "sk-test",
+        modelOrDeployment: "gpt-realtime-2",
+        voice: "marin",
+      },
+      webSocketFactory: () => socket,
+    });
+    runtime.setMainAgentTTSEnabled(false);
+
+    const events: RuntimeEvent[] = [];
+    const handle = await runtime.create({ text: "hi", imagePaths: [] }, { sessionId: "picky" });
+    handle.subscribe((event) => events.push(event));
+    await settle();
+
+    socket.serverEvent({ type: "response.created", response: { id: "response-1" } });
+    socket.serverEvent({ type: "response.output_text.delta", response_id: "response-1", delta: "Hello " });
+    socket.serverEvent({ type: "response.output_text.delta", response_id: "response-1", delta: "world." });
+    socket.serverEvent({ type: "response.output_text.done", response_id: "response-1", text: "Hello world." });
+    await settle();
+
+    const deltas = events.filter((event) => event.type === "main_realtime_output_transcript_delta") as Array<{ delta: string }>;
+    expect(deltas.map((event) => event.delta)).toEqual(["Hello ", "world."]);
+
+    const done = events.find((event) => event.type === "main_realtime_output_transcript_completed") as { transcript: string } | undefined;
+    expect(done?.transcript).toBe("Hello world.");
+  });
+
+  it("routes Azure response.text events to the transcript channel when TTS is disabled", async () => {
+    const socket = new FakeRealtimeSocket();
+    const runtime = new OpenAIRealtimeMainRuntime({
+      toolHandlers: fakeToolHandlers(),
+      defaultConfig: {
+        provider: "azure_openai",
+        apiKey: "azure-key",
+        modelOrDeployment: "gpt-realtime-1.5",
+        voice: "marin",
+        azure: {
+          resourceEndpoint: "https://x.openai.azure.com/openai/realtime?api-version=2024-10-01-preview&deployment=gpt-realtime-1.5",
+          apiShape: "preview",
+          apiVersion: "2024-10-01-preview",
+        },
+      },
+      webSocketFactory: () => socket,
+    });
+    runtime.setMainAgentTTSEnabled(false);
+
+    const events: RuntimeEvent[] = [];
+    const handle = await runtime.create({ text: "hi", imagePaths: [] }, { sessionId: "picky" });
+    handle.subscribe((event) => events.push(event));
+    await settle();
+
+    socket.serverEvent({ type: "response.created", response: { id: "response-1" } });
+    socket.serverEvent({ type: "response.text.delta", response_id: "response-1", delta: "안녕" });
+    socket.serverEvent({ type: "response.text.done", response_id: "response-1", text: "안녕" });
+    await settle();
+
+    const deltas = events.filter((event) => event.type === "main_realtime_output_transcript_delta") as Array<{ delta: string }>;
+    expect(deltas.map((event) => event.delta)).toEqual(["안녕"]);
+
+    const done = events.find((event) => event.type === "main_realtime_output_transcript_completed") as { transcript: string } | undefined;
+    expect(done?.transcript).toBe("안녕");
   });
 
   it("omits the TTS parenthesis hint from session.update instructions and the bootstrap user item", async () => {

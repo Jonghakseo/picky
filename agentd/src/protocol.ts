@@ -478,6 +478,7 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("sessionResourcesReloaded"), sessionId: z.string() }),
   EventBaseSchema.extend({
     type: z.literal("pluginsReloaded"),
+    requestId: z.string().optional(),
     pickyReloaded: z.boolean(),
     pickleReloadedCount: z.number().int().nonnegative(),
     pickleAbortedCount: z.number().int().nonnegative(),

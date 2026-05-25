@@ -201,6 +201,82 @@ struct PickyPluginReloadControllerTests {
         #expect(controller.lastResult?.pickyReloaded == true)
     }
 
+    @Test func reloadTimesOutWhenNoEventArrives() async throws {
+        let client = RecordingPickyAgentClient()
+        let controller = PickyPluginReloadController(client: client, reloadTimeoutSeconds: 0.05)
+        controller.notePluginsChanged()
+
+        await controller.reload()
+        try await waitUntil(timeoutMs: 2_000) { controller.isReloading == false }
+
+        #expect(controller.lastError == L10n.t("status.extensions.reload.error.timeout"))
+        #expect(controller.hasPendingChanges == true)
+    }
+
+    @Test func pluginsReloadedAfterTimeoutDoesNotOverrideError() async throws {
+        let client = RecordingPickyAgentClient()
+        let controller = PickyPluginReloadController(client: client, reloadTimeoutSeconds: 0.05)
+        controller.notePluginsChanged()
+        await controller.reload()
+        try await waitUntil(timeoutMs: 2_000) { controller.isReloading == false }
+
+        client.emit(makeReloadedEvent(picky: true, reloaded: 1, aborted: 0, deferred: 0, requestId: client.sentCommands[0].id))
+        try await Task.sleep(nanoseconds: 80_000_000)
+
+        #expect(controller.lastError == L10n.t("status.extensions.reload.error.timeout"))
+        #expect(controller.lastResult == nil)
+        #expect(controller.isReloading == false)
+    }
+
+    @Test func pluginsReloadedWithMismatchedRequestIdIsIgnored() async throws {
+        let client = RecordingPickyAgentClient()
+        let controller = PickyPluginReloadController(client: client, reloadTimeoutSeconds: 5)
+        controller.notePluginsChanged()
+        await controller.reload()
+
+        client.emit(makeReloadedEvent(picky: true, reloaded: 1, aborted: 0, deferred: 0, requestId: "cmd-other"))
+        try await Task.sleep(nanoseconds: 80_000_000)
+
+        #expect(controller.isReloading == true)
+        #expect(controller.lastResult == nil)
+
+        client.emit(makeReloadedEvent(picky: true, reloaded: 2, aborted: 0, deferred: 0, requestId: client.sentCommands[0].id))
+        try await waitUntil(timeoutMs: 2_000) { controller.isReloading == false }
+
+        #expect(controller.lastResult?.pickleReloadedCount == 2)
+        #expect(controller.lastError == nil)
+    }
+
+    @Test func watchdogCancelledOnSuccessfulReload() async throws {
+        let client = RecordingPickyAgentClient()
+        let controller = PickyPluginReloadController(client: client, reloadTimeoutSeconds: 0.2)
+        controller.notePluginsChanged()
+        await controller.reload()
+
+        client.emit(makeReloadedEvent(picky: true, reloaded: 1, aborted: 0, deferred: 0, requestId: client.sentCommands[0].id))
+        try await waitUntil(timeoutMs: 2_000) { controller.isReloading == false }
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        #expect(controller.lastError == nil)
+        #expect(controller.lastResult?.pickleReloadedCount == 1)
+    }
+
+    @Test func stalePluginsReloadedAfterCancelDoesNotMutateState() async throws {
+        let client = RecordingPickyAgentClient()
+        let controller = PickyPluginReloadController(client: client)
+        controller.notePluginsChanged()
+        await controller.reload()
+
+        client.emit(.disconnected)
+        try await waitUntil(timeoutMs: 2_000) { controller.isReloading == false }
+
+        client.emit(makeReloadedEvent(picky: true, reloaded: 1, aborted: 0, deferred: 0, requestId: client.sentCommands[0].id))
+        try await Task.sleep(nanoseconds: 80_000_000)
+
+        #expect(controller.lastResult == nil)
+        #expect(controller.lastError == L10n.t("status.extensions.reload.error.disconnected"))
+    }
+
     // MARK: - Helpers
 
     private func waitUntil(timeoutMs: Int, _ predicate: () -> Bool) async throws {
@@ -214,8 +290,9 @@ struct PickyPluginReloadControllerTests {
         }
     }
 
-    private func makeReloadedEvent(picky: Bool, reloaded: Int, aborted: Int, deferred: Int) -> PickyEventEnvelope {
+    private func makeReloadedEvent(picky: Bool, reloaded: Int, aborted: Int, deferred: Int, requestId: String? = nil) -> PickyEventEnvelope {
         let summary = PickyPluginsReloadedEvent(
+            requestId: requestId,
             pickyReloaded: picky,
             pickleReloadedCount: reloaded,
             pickleAbortedCount: aborted,

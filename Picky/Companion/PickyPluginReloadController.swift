@@ -37,6 +37,8 @@ final class PickyPluginReloadController: ObservableObject {
 
     private let client: any PickyAgentClient
     private var eventTask: Task<Void, Never>?
+    private var watchdogTask: Task<Void, Never>?
+    private let reloadTimeoutSeconds: TimeInterval
     private var changeGeneration = 0
     private var inFlightGeneration = 0
     private var inFlightCommandId: String?
@@ -59,8 +61,9 @@ final class PickyPluginReloadController: ObservableObject {
         var pickleDeferredCount: Int = 0
     }
 
-    init(client: any PickyAgentClient) {
+    init(client: any PickyAgentClient, reloadTimeoutSeconds: TimeInterval = 15) {
         self.client = client
+        self.reloadTimeoutSeconds = reloadTimeoutSeconds
         let stream = client.events
         eventTask = Task { [weak self] in
             for await event in stream {
@@ -73,6 +76,7 @@ final class PickyPluginReloadController: ObservableObject {
 
     deinit {
         eventTask?.cancel()
+        watchdogTask?.cancel()
     }
 
     /// Called by the plugin manager when an install/uninstall completes
@@ -93,21 +97,24 @@ final class PickyPluginReloadController: ObservableObject {
         inFlightGeneration = changeGeneration
         lastError = nil
         let command = PickyCommandEnvelope(type: .reloadPlugins)
-        inFlightCommandId = command.id
+        let myCommandId = command.id
+        inFlightCommandId = myCommandId
         // Capture the upper-bound target count BEFORE awaiting `broadcast` so a
         // fast daemon that replies before `broadcast` returns still finds the
         // aggregation slot ready and merges into it.
         aggregation = ReloadAggregation(
-            commandId: command.id,
+            commandId: myCommandId,
             generationAtStart: inFlightGeneration,
             expectedReplies: client.broadcastTargetCount
         )
+        startWatchdog(for: myCommandId)
         do {
             let deliveredCount = try await client.broadcast(command)
+            guard inFlightCommandId == myCommandId else { return }
             // Tighten the expected reply count down to what the router
             // actually delivered. If a child daemon's `send` failed, we
             // shouldn't wait forever for an event it never received.
-            if var agg = aggregation, agg.commandId == command.id {
+            if var agg = aggregation, agg.commandId == myCommandId {
                 agg.expectedReplies = deliveredCount
                 aggregation = agg
                 if deliveredCount == 0 || agg.receivedReplies >= deliveredCount {
@@ -118,6 +125,8 @@ final class PickyPluginReloadController: ObservableObject {
             // `pluginsReloaded`. If a daemon never answers (disconnect),
             // the .disconnected / .recoverableError handlers release it.
         } catch {
+            guard inFlightCommandId == myCommandId else { return }
+            cancelWatchdog()
             aggregation = nil
             isReloading = false
             inFlightCommandId = nil
@@ -125,12 +134,40 @@ final class PickyPluginReloadController: ObservableObject {
         }
     }
 
+    private func startWatchdog(for commandId: String) {
+        watchdogTask?.cancel()
+        let maxSeconds = Double(UInt64.max) / 1_000_000_000
+        let interval = min(max(0, reloadTimeoutSeconds), maxSeconds)
+        let nanos = UInt64(interval * 1_000_000_000)
+        watchdogTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: nanos)
+            guard !Task.isCancelled else { return }
+            await MainActor.run { self?.timeOutReload(for: commandId) }
+        }
+    }
+
+    private func cancelWatchdog() {
+        watchdogTask?.cancel()
+        watchdogTask = nil
+    }
+
+    private func timeOutReload(for commandId: String) {
+        guard isReloading, inFlightCommandId == commandId else { return }
+        aggregation = nil
+        isReloading = false
+        inFlightCommandId = nil
+        lastError = L10n.t("status.extensions.reload.error.timeout")
+        watchdogTask = nil
+    }
+
     /// Publish the aggregated summary and clear in-flight state. Called when
     /// every expected reply has arrived, or when the broadcast delivered to
     /// zero daemons (so there is nothing to wait for).
     private func finishReloadFromAggregation() {
+        cancelWatchdog()
         guard let agg = aggregation else { return }
         let summary = PickyPluginsReloadedEvent(
+            requestId: agg.commandId,
             pickyReloaded: agg.pickyReloaded,
             pickleReloadedCount: agg.pickleReloadedCount,
             pickleAbortedCount: agg.pickleAbortedCount,
@@ -150,11 +187,15 @@ final class PickyPluginReloadController: ObservableObject {
             handle(envelope.event)
         case .disconnected:
             guard isReloading else { return }
+            cancelWatchdog()
+            aggregation = nil
             isReloading = false
             inFlightCommandId = nil
             lastError = L10n.t("status.extensions.reload.error.disconnected")
         case .recoverableError(let message):
             guard isReloading else { return }
+            cancelWatchdog()
+            aggregation = nil
             isReloading = false
             inFlightCommandId = nil
             lastError = message
@@ -169,6 +210,7 @@ final class PickyPluginReloadController: ObservableObject {
             applyReloadedSummary(summary)
         case .error(let errorEvent):
             guard isReloading, errorEvent.commandId == inFlightCommandId else { return }
+            cancelWatchdog()
             aggregation = nil
             isReloading = false
             inFlightCommandId = nil
@@ -179,18 +221,9 @@ final class PickyPluginReloadController: ObservableObject {
     }
 
     /// Merge an incoming per-daemon summary into the in-flight aggregation.
-    /// When no aggregation is active (legacy path, out-of-band event after the
-    /// controller already settled) we fall back to publishing the summary as-is
-    /// so older tests and any future single-daemon clients keep their behavior.
     private func applyReloadedSummary(_ summary: PickyPluginsReloadedEvent) {
-        guard var agg = aggregation else {
-            hasPendingChanges = changeGeneration > inFlightGeneration
-            isReloading = false
-            inFlightCommandId = nil
-            lastResult = summary
-            lastError = nil
-            return
-        }
+        guard var agg = aggregation else { return }
+        if let requestId = summary.requestId, requestId != agg.commandId { return }
         agg.receivedReplies += 1
         if summary.pickyReloaded { agg.pickyReloaded = true }
         agg.pickleReloadedCount += summary.pickleReloadedCount

@@ -59,6 +59,14 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("includes the reloadPlugins command id on pluginsReloaded broadcasts", async () => {
+    const { ws } = await connectWithHello();
+    ws.send(JSON.stringify({ id: "cmd-reload-plugins", protocolVersion: PROTOCOL_VERSION, type: "reloadPlugins" }));
+    const reloaded = await waitForEvent(ws, "pluginsReloaded");
+    expect(reloaded).toMatchObject({ type: "pluginsReloaded", requestId: "cmd-reload-plugins" });
+    ws.close();
+  });
+
   it("broadcasts sessionArchivedAuthoritative when setSessionArchived runs (regression for picky_unarchive_pickle not reaching the dock)", async () => {
     const session = await supervisor.create(context("to be archived"));
     const { ws } = await connectWithHello();

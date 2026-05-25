@@ -330,10 +330,11 @@ export class AgentdServer {
       steer: (cmd) => this.options.supervisor.steer(cmd.sessionId, cmd.text, cmd.context),
       abort: (cmd) => this.options.supervisor.abort(cmd.sessionId),
       answerExtensionUi: (cmd) => this.options.supervisor.answerExtensionUi(cmd.sessionId, cmd.requestId, cmd.value),
-      reloadPlugins: async () => {
+      reloadPlugins: async (cmd) => {
         const summary = await this.options.supervisor.reloadPlugins();
         this.broadcast({
           type: "pluginsReloaded",
+          requestId: cmd.id,
           pickyReloaded: summary.pickyReloaded,
           pickleReloadedCount: summary.pickleReloadedCount,
           pickleAbortedCount: summary.pickleAbortedCount,
@@ -782,7 +783,7 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
     case "sessionResourcesReloaded":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId };
     case "pluginsReloaded":
-      return { eventId: event.id, type: event.type, pickyReloaded: event.pickyReloaded ? 1 : 0, pickleReloadedCount: event.pickleReloadedCount, pickleAbortedCount: event.pickleAbortedCount, pickleDeferredCount: event.pickleDeferredCount };
+      return { eventId: event.id, type: event.type, requestId: event.requestId, pickyReloaded: event.pickyReloaded ? 1 : 0, pickleReloadedCount: event.pickleReloadedCount, pickleAbortedCount: event.pickleAbortedCount, pickleDeferredCount: event.pickleDeferredCount };
     case "sessionLogAppended":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, lineChars: event.line.length };
     case "toolActivityUpdated":

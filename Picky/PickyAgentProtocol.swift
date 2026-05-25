@@ -479,6 +479,7 @@ private struct PickySessionArchivedAuthoritativePayload: Decodable { let session
 private struct PickySessionResourcesReloadedPayload: Decodable { let sessionId: String }
 
 struct PickyPluginsReloadedEvent: Decodable, Equatable {
+    let requestId: String?
     let pickyReloaded: Bool
     let pickleReloadedCount: Int
     let pickleAbortedCount: Int

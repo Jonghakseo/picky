@@ -414,7 +414,7 @@ private extension PickyEventEnvelope {
         case .sessionResourcesReloaded(let sessionId):
             return "type=sessionResourcesReloaded id=\(id) session=\(sessionId)"
         case .pluginsReloaded(let summary):
-            return "type=pluginsReloaded id=\(id) picky=\(summary.pickyReloaded ? 1 : 0) reloaded=\(summary.pickleReloadedCount) aborted=\(summary.pickleAbortedCount) deferred=\(summary.pickleDeferredCount)"
+            return "type=pluginsReloaded id=\(id) request=\(summary.requestId ?? "none") picky=\(summary.pickyReloaded ? 1 : 0) reloaded=\(summary.pickleReloadedCount) aborted=\(summary.pickleAbortedCount) deferred=\(summary.pickleDeferredCount)"
         case .sessionLogAppended(let sessionId, let line):
             return "type=sessionLogAppended id=\(id) session=\(sessionId) lineChars=\(line.count)"
         case .toolActivityUpdated(let sessionId, let tool):

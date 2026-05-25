@@ -146,7 +146,7 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var latestAgentSessionSummary: String?
     @Published private(set) var mainAgentMessages: [PickyMainAgentMessage] = []
     /// Most recent Picky main-agent Pi session location reported by
-    /// picky-agentd. Used by the Messages tab to expose "Open in Pi" / "Copy
+    /// picky-agentd. Used by the Status → Recent conversation sub-page to expose "Open in Pi" / "Copy
     /// resume command" affordances so users can drop into a real Pi TUI
     /// against the same session file the daemon is driving. Both fields can be
     /// nil before the daemon has started a real Pi session for the main agent.

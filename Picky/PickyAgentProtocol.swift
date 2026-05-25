@@ -664,7 +664,7 @@ struct PickyMainAgentModelOption: Codable, Equatable, Identifiable {
 /// Snapshot of where Picky's always-on main agent currently has its Pi
 /// session file and cwd. Both fields can be nil before agentd has prewarmed a
 /// real Pi session, after a `/new`, or while a runtime mode switch is in
-/// flight. Used by the Messages tab to expose `Open in Pi` / `Copy resume
+/// flight. Used by the Status → Recent conversation sub-page to expose `Open in Pi` / `Copy resume
 /// command` escape hatches.
 struct PickyMainAgentSessionInfo: Equatable {
     var sessionFilePath: String?

@@ -96,6 +96,11 @@ final class PickyExtensionsSectionViewModel: ObservableObject {
 struct CompanionPanelExtensionsSection: View {
     @StateObject private var viewModel = PickyExtensionsSectionViewModel()
     @EnvironmentObject private var pluginReloadController: PickyPluginReloadController
+    /// Name of the row whose info popover is currently open. macOS hover
+    /// tooltips are unreliable on translucent panels, so the info icon doubles
+    /// as a click-to-toggle popover; only one popover at a time so a single
+    /// optional name is enough.
+    @State private var infoPopoverRowName: String?
 
     var body: some View {
         let visibleRows = viewModel.rows.filter { $0.status != .bundleMissing }
@@ -146,9 +151,7 @@ struct CompanionPanelExtensionsSection: View {
                 .truncationMode(.tail)
                 .layoutPriority(1)
 
-            Image(systemName: "info.circle")
-                .pickyFont(size: 10, weight: .medium)
-                .foregroundColor(DS.Colors.textTertiary)
+            infoButton(for: row)
 
             statusBadge(for: row)
 
@@ -156,7 +159,38 @@ struct CompanionPanelExtensionsSection: View {
 
             actionButton(for: row)
         }
+    }
+
+    @ViewBuilder
+    private func infoButton(for row: PickyExtensionsSectionViewModel.Row) -> some View {
+        let isOpen = infoPopoverRowName == row.name
+        Button(action: {
+            infoPopoverRowName = isOpen ? nil : row.name
+        }) {
+            Image(systemName: "info.circle")
+                .pickyFont(size: 10, weight: .medium)
+                .foregroundColor(DS.Colors.textTertiary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
         .help(tooltipText(for: row))
+        .popover(
+            isPresented: Binding(
+                get: { infoPopoverRowName == row.name },
+                set: { presented in
+                    if !presented, infoPopoverRowName == row.name { infoPopoverRowName = nil }
+                }
+            ),
+            arrowEdge: .bottom
+        ) {
+            Text(tooltipText(for: row))
+                .pickyFont(size: 11.5, weight: .medium)
+                .foregroundColor(DS.Colors.textPrimary)
+                .multilineTextAlignment(.leading)
+                .padding(12)
+                .frame(width: 260, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     @ViewBuilder

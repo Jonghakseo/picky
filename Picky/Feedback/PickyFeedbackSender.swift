@@ -17,7 +17,7 @@
 
 import Foundation
 
-enum PickyFeedbackCategory: String, CaseIterable, Identifiable {
+enum PickyFeedbackCategory: String, CaseIterable, Identifiable, Sendable {
     case bug
     case idea
     case other
@@ -41,7 +41,7 @@ enum PickyFeedbackCategory: String, CaseIterable, Identifiable {
     }
 }
 
-struct PickyFeedbackPayload: Equatable {
+struct PickyFeedbackPayload: Equatable, Sendable {
     var category: PickyFeedbackCategory
     var message: String
     var appVersion: String
@@ -51,13 +51,13 @@ struct PickyFeedbackPayload: Equatable {
     var sentAt: Date
 }
 
-enum PickyFeedbackAttachmentKind: Equatable {
+enum PickyFeedbackAttachmentKind: Equatable, Sendable {
     case diagnostics
     case media
 }
 
-struct PickyFeedbackAttachment {
-    enum Storage {
+struct PickyFeedbackAttachment: Sendable {
+    enum Storage: Sendable {
         case data(Data)
         case file(URL, byteCount: Int)
     }
@@ -170,8 +170,6 @@ struct PickyFeedbackSender {
         }
     }
 
-    // MARK: - Plain message path
-
     private func postPlainMessage(messageText: String) async throws {
         var request = slackJSONRequest(path: "chat.postMessage")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
@@ -181,8 +179,6 @@ struct PickyFeedbackSender {
         ])
         _ = try await runSlackJSON(request: request)
     }
-
-    // MARK: - Attachment path
 
     private func sendWithAttachments(messageText: String, attachments: [PickyFeedbackAttachment]) async throws {
         var files: [[String: String]] = []
@@ -226,8 +222,6 @@ struct PickyFeedbackSender {
         ])
         _ = try await runSlackJSON(request: completeRequest)
     }
-
-    // MARK: - Slack helpers
 
     private func slackJSONRequest(path: String) -> URLRequest {
         var request = URLRequest(url: URL(string: "https://slack.com/api/\(path)")!)
@@ -280,8 +274,6 @@ struct PickyFeedbackSender {
         }
         return Data(pairs.joined(separator: "&").utf8)
     }
-
-    // MARK: - Message rendering
 
     static func renderSlackText(
         payload: PickyFeedbackPayload,

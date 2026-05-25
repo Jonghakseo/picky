@@ -11,6 +11,32 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+private enum PickyFeedbackSendErrorDescription {
+    static func describe(_ error: Error) -> String {
+        if let sendError = error as? PickyFeedbackSendError {
+            switch sendError {
+            case .notConfigured:
+                return "Feedback channel not configured."
+            case .emptyMessage:
+                return "Message is empty."
+            case .httpStatus(let code, let detail):
+                return "Couldn't send (HTTP \(code) at \(detail)). Try again."
+            case .slackError(let detail):
+                return "Slack rejected the request: \(detail)"
+            case .transport(let detail):
+                return "Couldn't send. \(detail)"
+            }
+        }
+        if let bundleError = error as? PickyDiagnosticsBundleError {
+            switch bundleError {
+            case .stagingFailed(let detail), .zipFailed(let detail):
+                return "Couldn't package diagnostics: \(detail)"
+            }
+        }
+        return "Couldn't send. \(error.localizedDescription)"
+    }
+}
+
 struct CompanionPanelFeedbackView: View {
     @ObservedObject var viewModel: PickySettingsViewModel
 
@@ -20,9 +46,8 @@ struct CompanionPanelFeedbackView: View {
     @State private var mediaAttachmentNotice: String?
     @State private var attachmentScope: AttachmentScope = .logsOnly
     @State private var status: SendStatus = .idle
-    @State private var sendTask: Task<Void, Never>?
+    @State private var statusResetTask: Task<Void, Never>?
 
-    private let sender = PickyFeedbackSender()
     private let isConfigured = PickyFeedbackConfiguration.isConfigured
 
     private enum MediaAttachmentPolicy {
@@ -31,7 +56,7 @@ struct CompanionPanelFeedbackView: View {
         static let maxTotalBytes = 250 * 1_024 * 1_024
     }
 
-    private enum MediaAttachmentKind: Equatable {
+    private enum MediaAttachmentKind: Equatable, Sendable {
         case image
         case video
         case file
@@ -45,7 +70,7 @@ struct CompanionPanelFeedbackView: View {
         }
     }
 
-    private struct SelectedMediaAttachment: Identifiable, Equatable {
+    private struct SelectedMediaAttachment: Identifiable, Equatable, Sendable {
         var url: URL
         var filename: String
         var byteCount: Int
@@ -78,7 +103,7 @@ struct CompanionPanelFeedbackView: View {
         }
     }
 
-    enum AttachmentScope: String, CaseIterable, Identifiable {
+    enum AttachmentScope: String, CaseIterable, Identifiable, Sendable {
         case off
         case logsOnly
         case full
@@ -132,12 +157,10 @@ struct CompanionPanelFeedbackView: View {
             sendRow
         }
         .onDisappear {
-            sendTask?.cancel()
-            sendTask = nil
+            statusResetTask?.cancel()
+            statusResetTask = nil
         }
     }
-
-    // MARK: - Sections
 
     private var categoryPicker: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -348,8 +371,6 @@ struct CompanionPanelFeedbackView: View {
         }
     }
 
-    // MARK: - Helpers
-
     private var isSendEnabled: Bool {
         guard isConfigured else { return false }
         guard status != .sending else { return false }
@@ -508,112 +529,116 @@ struct CompanionPanelFeedbackView: View {
         let scope = attachmentScope.bundleScope
         let mediaSelection = selectedMediaAttachments
 
-        status = .sending
-        sendTask?.cancel()
-        sendTask = Task { @MainActor in
+        status = .sent
+        message = ""
+        selectedMediaAttachments = []
+        mediaAttachmentNotice = nil
+
+        let job = FeedbackSendJob(payload: payload, diagnosticsScope: scope, mediaSelection: mediaSelection)
+        Task.detached(priority: .utility) {
+            await job.run()
+        }
+
+        statusResetTask?.cancel()
+        statusResetTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            if !Task.isCancelled, status == .sent {
+                status = .idle
+            }
+        }
+    }
+
+    private struct FeedbackSendJob: Sendable {
+        var payload: PickyFeedbackPayload
+        var diagnosticsScope: PickyDiagnosticsBundleScope?
+        var mediaSelection: [SelectedMediaAttachment]
+
+        func run() async {
             do {
                 var attachments: [PickyFeedbackAttachment] = []
-                if let diagnostics = scope.flatMap({ try? buildAttachment(scope: $0, payload: payload) }) {
-                    attachments.append(diagnostics)
-                    cleanupAttachment(named: diagnostics.filename)
+                if let diagnosticsScope {
+                    attachments.append(try buildAttachment(scope: diagnosticsScope, payload: payload))
                 }
                 attachments.append(contentsOf: try buildMediaAttachments(from: mediaSelection))
-
-                try await sender.send(payload, attachments: attachments)
-                guard !Task.isCancelled else { return }
-                message = ""
-                selectedMediaAttachments = []
-                mediaAttachmentNotice = nil
-                status = .sent
-                try? await Task.sleep(nanoseconds: 2_400_000_000)
-                if !Task.isCancelled, status == .sent {
-                    status = .idle
-                }
+                try await PickyFeedbackSender().send(payload, attachments: attachments)
             } catch {
-                guard !Task.isCancelled else { return }
-                status = .failed(reason(for: error))
+                NSLog("Picky feedback send failed: \(PickyFeedbackSendErrorDescription.describe(error))")
             }
         }
-    }
 
-    /// Builds the zip on disk and reads it back into memory so the staged
-    /// directory can be wiped right after. Diagnostics zips are small (tens
-    /// of KB to a few MB) so keeping the bytes in memory until upload finishes
-    /// is fine and avoids leaking temp files when the upload fails.
-    private func buildAttachment(
-        scope: PickyDiagnosticsBundleScope,
-        payload: PickyFeedbackPayload
-    ) throws -> PickyFeedbackAttachment {
-        let metadata = PickyDiagnosticsBundleMetadata(
-            appVersion: payload.appVersion,
-            appBuild: payload.appBuild,
-            osVersion: payload.osVersion,
-            runtimeMode: payload.runtimeMode,
-            generatedAt: payload.sentAt
-        )
-        let bundle = try PickyDiagnosticsBundleBuilder.build(scope: scope, metadata: metadata)
-        defer {
-            let parent = bundle.zipURL.deletingLastPathComponent()
-            try? FileManager.default.removeItem(at: parent)
-        }
-        let data = try Data(contentsOf: bundle.zipURL)
-        return PickyFeedbackAttachment(filename: bundle.filename, data: data, kind: .diagnostics)
-    }
-
-    private func buildMediaAttachments(from selection: [SelectedMediaAttachment]) throws -> [PickyFeedbackAttachment] {
-        guard selection.count <= MediaAttachmentPolicy.maxCount else {
-            throw MediaAttachmentError.tooMany
-        }
-
-        var totalBytes = 0
-        var attachments: [PickyFeedbackAttachment] = []
-        for selected in selection {
-            let refreshed = try selectedMediaAttachment(from: selected.url)
-            totalBytes += refreshed.byteCount
-            guard totalBytes <= MediaAttachmentPolicy.maxTotalBytes else {
-                throw MediaAttachmentError.totalTooLarge(totalBytes)
+        private func buildAttachment(
+            scope: PickyDiagnosticsBundleScope,
+            payload: PickyFeedbackPayload
+        ) throws -> PickyFeedbackAttachment {
+            let metadata = PickyDiagnosticsBundleMetadata(
+                appVersion: payload.appVersion,
+                appBuild: payload.appBuild,
+                osVersion: payload.osVersion,
+                runtimeMode: payload.runtimeMode,
+                generatedAt: payload.sentAt
+            )
+            let bundle = try PickyDiagnosticsBundleBuilder.build(scope: scope, metadata: metadata)
+            defer {
+                let parent = bundle.zipURL.deletingLastPathComponent()
+                try? FileManager.default.removeItem(at: parent)
             }
-            attachments.append(PickyFeedbackAttachment(
-                filename: refreshed.filename,
-                fileURL: refreshed.url,
-                byteCount: refreshed.byteCount,
-                kind: .media
-            ))
+            let data = try Data(contentsOf: bundle.zipURL)
+            return PickyFeedbackAttachment(filename: bundle.filename, data: data, kind: .diagnostics)
         }
-        return attachments
-    }
 
-    private func cleanupAttachment(named filename: String) {
-        // Parent directory was already removed in `buildAttachment`'s defer.
-        // This hook stays in place to make future caching/retry policies explicit.
-        _ = filename
-    }
+        private func buildMediaAttachments(from selection: [SelectedMediaAttachment]) throws -> [PickyFeedbackAttachment] {
+            guard selection.count <= MediaAttachmentPolicy.maxCount else {
+                throw MediaAttachmentError.tooMany
+            }
 
-    private func reason(for error: Error) -> String {
-        if let sendError = error as? PickyFeedbackSendError {
-            switch sendError {
-            case .notConfigured:
-                return "Feedback channel not configured."
-            case .emptyMessage:
-                return "Message is empty."
-            case .httpStatus(let code, let detail):
-                return "Couldn't send (HTTP \(code) at \(detail)). Try again."
-            case .slackError(let detail):
-                return "Slack rejected the request: \(detail)"
-            case .transport(let detail):
-                return "Couldn't send. \(detail)"
+            var totalBytes = 0
+            var attachments: [PickyFeedbackAttachment] = []
+            for selected in selection {
+                let refreshed = try selectedMediaAttachment(from: selected.url)
+                totalBytes += refreshed.byteCount
+                guard totalBytes <= MediaAttachmentPolicy.maxTotalBytes else {
+                    throw MediaAttachmentError.totalTooLarge(totalBytes)
+                }
+                attachments.append(PickyFeedbackAttachment(
+                    filename: refreshed.filename,
+                    fileURL: refreshed.url,
+                    byteCount: refreshed.byteCount,
+                    kind: .media
+                ))
             }
+            return attachments
         }
-        if let bundleError = error as? PickyDiagnosticsBundleError {
-            switch bundleError {
-            case .stagingFailed(let detail), .zipFailed(let detail):
-                return "Couldn't package diagnostics: \(detail)"
+
+        private func selectedMediaAttachment(from url: URL) throws -> SelectedMediaAttachment {
+            let standardizedURL = url.standardizedFileURL
+            let filename = standardizedURL.lastPathComponent
+            let values = try standardizedURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentTypeKey])
+            if values.isRegularFile == false {
+                throw MediaAttachmentError.notRegularFile(filename)
             }
+
+            let type = values.contentType ?? UTType(filenameExtension: standardizedURL.pathExtension)
+            let kind = type.map(mediaAttachmentKind(for:)) ?? .file
+
+            let byteCount = try fileByteCount(for: standardizedURL, resourceValues: values)
+            guard byteCount <= MediaAttachmentPolicy.maxFileBytes else {
+                throw MediaAttachmentError.fileTooLarge(filename, byteCount)
+            }
+
+            return SelectedMediaAttachment(url: standardizedURL, filename: filename, byteCount: byteCount, kind: kind)
         }
-        if let mediaError = error as? MediaAttachmentError {
-            return mediaError.localizedDescription
+
+        private func mediaAttachmentKind(for type: UTType) -> MediaAttachmentKind {
+            if type.conforms(to: .image) { return .image }
+            if type.conforms(to: .movie) || type.conforms(to: .video) { return .video }
+            return .file
         }
-        return "Couldn't send. \(error.localizedDescription)"
+
+        private func fileByteCount(for url: URL, resourceValues: URLResourceValues) throws -> Int {
+            if let fileSize = resourceValues.fileSize { return fileSize }
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            if let size = attributes[.size] as? NSNumber { return size.intValue }
+            return 0
+        }
     }
 }
-

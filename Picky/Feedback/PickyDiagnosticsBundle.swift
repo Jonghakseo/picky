@@ -10,7 +10,7 @@
 
 import Foundation
 
-enum PickyDiagnosticsBundleScope {
+enum PickyDiagnosticsBundleScope: Sendable {
     case logsOnly
     case full
 
@@ -165,8 +165,6 @@ enum PickyDiagnosticsBundleBuilder {
         try zipDirectory(at: stagingRoot, to: zipURL)
         return PickyDiagnosticsBundle(zipURL: zipURL, filename: zipURL.lastPathComponent)
     }
-
-    // MARK: - Staging
 
     private static func stageAlwaysOnFiles(
         stagingRoot: URL,
@@ -438,8 +436,6 @@ enum PickyDiagnosticsBundleBuilder {
             )
         }
     }
-
-    // MARK: - Zip
 
     /// Uses NSFileCoordinator's `.forUploading` option, which is Foundation's
     /// supported way to produce a zip of a directory. The coordinator hands us

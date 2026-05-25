@@ -5008,6 +5008,66 @@
         }
       }
     },
+    "settings.voice.elevenlabs.tts.apiKey": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "ElevenLabs TTS API key" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "ElevenLabs TTS API 키" } }
+      }
+    },
+    "settings.voice.elevenlabs.tts.voiceId": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "ElevenLabs TTS voice ID" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "ElevenLabs TTS 보이스 ID" } }
+      }
+    },
+    "settings.voice.elevenlabs.tts.model": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "ElevenLabs TTS model" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "ElevenLabs TTS 모델" } }
+      }
+    },
+    "settings.voice.elevenlabs.tts.outputFormat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "ElevenLabs TTS output format" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "ElevenLabs TTS 출력 포맷" } }
+      }
+    },
+    "settings.voice.elevenlabs.tts.baseUrl": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "ElevenLabs TTS base URL (optional)" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "ElevenLabs TTS base URL (선택)" } }
+      }
+    },
+    "settings.voice.elevenlabs.tts.apiKey.placeholder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "ELEVENLABS_API_KEY (leave empty to reuse the STT key)" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "ELEVENLABS_API_KEY (비워두면 STT 키를 재사용)" } }
+      }
+    },
+    "settings.voice.elevenlabs.tts.voiceId.placeholder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "21m00Tcm4TlvDq8ikWAM" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "21m00Tcm4TlvDq8ikWAM" } }
+      }
+    },
+    "settings.voice.elevenlabs.tts.model.placeholder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "eleven_multilingual_v2 (default)" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "eleven_multilingual_v2 (기본값)" } }
+      }
+    },
+    "settings.voice.elevenlabs.tts.outputFormat.placeholder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "mp3_44100_128 (default)" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "mp3_44100_128 (기본값)" } }
+      }
+    },
+    "settings.voice.elevenlabs.tts.baseUrl.placeholder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "https://api.elevenlabs.io" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "https://api.elevenlabs.io" } }
+      }
+    },
     "settings.voice.azure.tts.url": {
       "localizations": {
         "en": {

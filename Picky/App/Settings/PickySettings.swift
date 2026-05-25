@@ -874,10 +874,17 @@ struct PickySettings: Codable, Equatable {
     /// OpenAI STT base URL override. Same semantics as `openAITTSBaseURL` for
     /// the transcriptions endpoint.
     var openAISTTBaseURL: String
-    // ElevenLabs STT — playback uses ElevenLabsSpeechConfiguration.fromEnvironment
-    // which already exists. Only STT side needs new persisted fields.
-    // Empty `elevenLabsSTTModel` falls back to `ElevenLabsTranscriptionProvider.defaultModelID`
-    // (currently `scribe_v2`; the legacy `scribe_v1` is deprecated by ElevenLabs as of 2026).
+    // ElevenLabs TTS — empty values fall back to environment variables. The TTS
+    // API key also falls back to the STT key so one ElevenLabs token can power
+    // both directions when users leave the dedicated TTS field blank.
+    var elevenLabsTTSAPIKey: String
+    var elevenLabsTTSVoiceID: String
+    var elevenLabsTTSModel: String
+    var elevenLabsTTSOutputFormat: String
+    var elevenLabsTTSBaseURL: String
+    // ElevenLabs STT — empty `elevenLabsSTTModel` falls back to
+    // `ElevenLabsTranscriptionProvider.defaultModelID` (currently `scribe_v2`;
+    // the legacy `scribe_v1` is deprecated by ElevenLabs as of 2026).
     var elevenLabsSTTAPIKey: String
     var elevenLabsSTTModel: String
     var elevenLabsSTTLanguage: String
@@ -1006,6 +1013,11 @@ struct PickySettings: Codable, Equatable {
         openAISTTPreferredLanguage: String = "",
         openAITTSBaseURL: String = "",
         openAISTTBaseURL: String = "",
+        elevenLabsTTSAPIKey: String = "",
+        elevenLabsTTSVoiceID: String = "",
+        elevenLabsTTSModel: String = "",
+        elevenLabsTTSOutputFormat: String = "",
+        elevenLabsTTSBaseURL: String = "",
         elevenLabsSTTAPIKey: String = "",
         elevenLabsSTTModel: String = "",
         elevenLabsSTTLanguage: String = "",
@@ -1066,6 +1078,11 @@ struct PickySettings: Codable, Equatable {
         self.openAISTTPreferredLanguage = openAISTTPreferredLanguage
         self.openAITTSBaseURL = openAITTSBaseURL
         self.openAISTTBaseURL = openAISTTBaseURL
+        self.elevenLabsTTSAPIKey = elevenLabsTTSAPIKey
+        self.elevenLabsTTSVoiceID = elevenLabsTTSVoiceID
+        self.elevenLabsTTSModel = elevenLabsTTSModel
+        self.elevenLabsTTSOutputFormat = elevenLabsTTSOutputFormat
+        self.elevenLabsTTSBaseURL = elevenLabsTTSBaseURL
         self.elevenLabsSTTAPIKey = elevenLabsSTTAPIKey
         self.elevenLabsSTTModel = elevenLabsSTTModel
         self.elevenLabsSTTLanguage = elevenLabsSTTLanguage
@@ -1155,6 +1172,11 @@ struct PickySettings: Codable, Equatable {
             openAISTTPreferredLanguage: "",
             openAITTSBaseURL: "",
             openAISTTBaseURL: "",
+            elevenLabsTTSAPIKey: "",
+            elevenLabsTTSVoiceID: "",
+            elevenLabsTTSModel: "",
+            elevenLabsTTSOutputFormat: "",
+            elevenLabsTTSBaseURL: "",
             elevenLabsSTTAPIKey: "",
             elevenLabsSTTModel: "",
             elevenLabsSTTLanguage: "",
@@ -1212,6 +1234,11 @@ struct PickySettings: Codable, Equatable {
         copy.openAISTTPreferredLanguage = openAISTTPreferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.openAITTSBaseURL = openAITTSBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.openAISTTBaseURL = openAISTTBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.elevenLabsTTSAPIKey = elevenLabsTTSAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.elevenLabsTTSVoiceID = elevenLabsTTSVoiceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.elevenLabsTTSModel = elevenLabsTTSModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.elevenLabsTTSOutputFormat = elevenLabsTTSOutputFormat.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.elevenLabsTTSBaseURL = elevenLabsTTSBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.elevenLabsSTTAPIKey = elevenLabsSTTAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.elevenLabsSTTModel = elevenLabsSTTModel.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.elevenLabsSTTLanguage = elevenLabsSTTLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1278,6 +1305,11 @@ struct PickySettings: Codable, Equatable {
         case openAISTTPreferredLanguage
         case openAITTSBaseURL
         case openAISTTBaseURL
+        case elevenLabsTTSAPIKey
+        case elevenLabsTTSVoiceID
+        case elevenLabsTTSModel
+        case elevenLabsTTSOutputFormat
+        case elevenLabsTTSBaseURL
         case elevenLabsSTTAPIKey
         case elevenLabsSTTModel
         case elevenLabsSTTLanguage
@@ -1344,6 +1376,11 @@ struct PickySettings: Codable, Equatable {
         openAISTTPreferredLanguage = try container.decodeIfPresent(String.self, forKey: .openAISTTPreferredLanguage) ?? defaults.openAISTTPreferredLanguage
         openAITTSBaseURL = try container.decodeIfPresent(String.self, forKey: .openAITTSBaseURL) ?? defaults.openAITTSBaseURL
         openAISTTBaseURL = try container.decodeIfPresent(String.self, forKey: .openAISTTBaseURL) ?? defaults.openAISTTBaseURL
+        elevenLabsTTSAPIKey = try container.decodeIfPresent(String.self, forKey: .elevenLabsTTSAPIKey) ?? defaults.elevenLabsTTSAPIKey
+        elevenLabsTTSVoiceID = try container.decodeIfPresent(String.self, forKey: .elevenLabsTTSVoiceID) ?? defaults.elevenLabsTTSVoiceID
+        elevenLabsTTSModel = try container.decodeIfPresent(String.self, forKey: .elevenLabsTTSModel) ?? defaults.elevenLabsTTSModel
+        elevenLabsTTSOutputFormat = try container.decodeIfPresent(String.self, forKey: .elevenLabsTTSOutputFormat) ?? defaults.elevenLabsTTSOutputFormat
+        elevenLabsTTSBaseURL = try container.decodeIfPresent(String.self, forKey: .elevenLabsTTSBaseURL) ?? defaults.elevenLabsTTSBaseURL
         elevenLabsSTTAPIKey = try container.decodeIfPresent(String.self, forKey: .elevenLabsSTTAPIKey) ?? defaults.elevenLabsSTTAPIKey
         elevenLabsSTTModel = try container.decodeIfPresent(String.self, forKey: .elevenLabsSTTModel) ?? defaults.elevenLabsSTTModel
         elevenLabsSTTLanguage = try container.decodeIfPresent(String.self, forKey: .elevenLabsSTTLanguage) ?? defaults.elevenLabsSTTLanguage

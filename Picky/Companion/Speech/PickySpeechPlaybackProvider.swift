@@ -82,7 +82,7 @@ enum PickySpeechPlaybackProviderFactory {
 
         if requestedProvider == "elevenlabs" || requestedProvider == "eleven-labs" {
             let provider = ElevenLabsSpeechPlaybackProvider(
-                configuration: .fromEnvironment(environment: environment)
+                configuration: makeElevenLabsTTSConfiguration(settings: settings, environment: environment)
             )
             let fallback = PickyFallbackSpeechPlaybackProvider(
                 primary: provider,
@@ -169,6 +169,30 @@ enum PickySpeechPlaybackProviderFactory {
         trimmedNonEmpty(settings.openAITTSModel)
             ?? AzureOpenAIKeychainStore.value(for: "OPENAI_TTS_MODEL", environment: environment)
             ?? OpenAISpeechPlaybackProvider.defaultModelName
+    }
+
+    static func makeElevenLabsTTSConfiguration(
+        settings: PickySettings,
+        environment: [String: String]
+    ) -> ElevenLabsSpeechConfiguration {
+        let baseURLString = trimmedNonEmpty(settings.elevenLabsTTSBaseURL)
+            ?? AzureOpenAIKeychainStore.value(for: "ELEVENLABS_BASE_URL", environment: environment)
+        let baseURL = baseURLString.flatMap(URL.init(string:)) ?? URL(string: "https://api.elevenlabs.io")!
+
+        return ElevenLabsSpeechConfiguration(
+            apiKey: trimmedNonEmpty(settings.elevenLabsTTSAPIKey)
+                ?? trimmedNonEmpty(settings.elevenLabsSTTAPIKey)
+                ?? AzureOpenAIKeychainStore.value(for: "ELEVENLABS_API_KEY", environment: environment),
+            voiceID: trimmedNonEmpty(settings.elevenLabsTTSVoiceID)
+                ?? AzureOpenAIKeychainStore.value(for: "ELEVENLABS_VOICE_ID", environment: environment),
+            modelID: trimmedNonEmpty(settings.elevenLabsTTSModel)
+                ?? AzureOpenAIKeychainStore.value(for: "ELEVENLABS_MODEL_ID", environment: environment)
+                ?? ElevenLabsSpeechConfiguration.defaultModelID,
+            outputFormat: trimmedNonEmpty(settings.elevenLabsTTSOutputFormat)
+                ?? AzureOpenAIKeychainStore.value(for: "ELEVENLABS_OUTPUT_FORMAT", environment: environment)
+                ?? "mp3_44100_128",
+            baseURL: baseURL
+        )
     }
 
     private static func trimmedNonEmpty(_ value: String) -> String? {

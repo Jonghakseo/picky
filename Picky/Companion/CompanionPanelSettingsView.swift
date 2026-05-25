@@ -192,7 +192,12 @@ struct CompanionPanelSettingsView: View {
     @State private var openAISTTModelDraft: String = ""
     @State private var openAISTTLanguageDraft: String = ""
     @State private var openAISTTBaseURLDraft: String = ""
-    // ElevenLabs STT drafts (TTS reuses ELEVENLABS_API_KEY env var via the existing TTS provider).
+    // ElevenLabs provider drafts.
+    @State private var elevenLabsTTSAPIKeyDraft: String = ""
+    @State private var elevenLabsTTSVoiceIDDraft: String = ""
+    @State private var elevenLabsTTSModelDraft: String = ""
+    @State private var elevenLabsTTSOutputFormatDraft: String = ""
+    @State private var elevenLabsTTSBaseURLDraft: String = ""
     @State private var elevenLabsSTTAPIKeyDraft: String = ""
     @State private var elevenLabsSTTModelDraft: String = ""
     @State private var elevenLabsSTTLanguageDraft: String = ""
@@ -1402,6 +1407,34 @@ struct CompanionPanelSettingsView: View {
                             text: $openAITTSBaseURLDraft
                         )
                     }
+
+                    if viewModel.settings.ttsEnabled, viewModel.settings.ttsProvider == .elevenLabs {
+                        voiceSecureField(
+                            label: "settings.voice.elevenlabs.tts.apiKey",
+                            placeholder: L10n.t("settings.voice.elevenlabs.tts.apiKey.placeholder"),
+                            text: $elevenLabsTTSAPIKeyDraft
+                        )
+                        voiceTextField(
+                            label: "settings.voice.elevenlabs.tts.voiceId",
+                            placeholder: L10n.t("settings.voice.elevenlabs.tts.voiceId.placeholder"),
+                            text: $elevenLabsTTSVoiceIDDraft
+                        )
+                        voiceTextField(
+                            label: "settings.voice.elevenlabs.tts.model",
+                            placeholder: L10n.t("settings.voice.elevenlabs.tts.model.placeholder"),
+                            text: $elevenLabsTTSModelDraft
+                        )
+                        voiceTextField(
+                            label: "settings.voice.elevenlabs.tts.outputFormat",
+                            placeholder: L10n.t("settings.voice.elevenlabs.tts.outputFormat.placeholder"),
+                            text: $elevenLabsTTSOutputFormatDraft
+                        )
+                        voiceTextField(
+                            label: "settings.voice.elevenlabs.tts.baseUrl",
+                            placeholder: L10n.t("settings.voice.elevenlabs.tts.baseUrl.placeholder"),
+                            text: $elevenLabsTTSBaseURLDraft
+                        )
+                    }
                     }
                 }
             }
@@ -1839,6 +1872,11 @@ struct CompanionPanelSettingsView: View {
         viewModel.settings.openAISTTModel = openAISTTModelDraft
         viewModel.settings.openAISTTPreferredLanguage = openAISTTLanguageDraft
         viewModel.settings.openAISTTBaseURL = openAISTTBaseURLDraft
+        viewModel.settings.elevenLabsTTSAPIKey = elevenLabsTTSAPIKeyDraft
+        viewModel.settings.elevenLabsTTSVoiceID = elevenLabsTTSVoiceIDDraft
+        viewModel.settings.elevenLabsTTSModel = elevenLabsTTSModelDraft
+        viewModel.settings.elevenLabsTTSOutputFormat = elevenLabsTTSOutputFormatDraft
+        viewModel.settings.elevenLabsTTSBaseURL = elevenLabsTTSBaseURLDraft
         viewModel.settings.elevenLabsSTTAPIKey = elevenLabsSTTAPIKeyDraft
         viewModel.settings.elevenLabsSTTModel = elevenLabsSTTModelDraft
         viewModel.settings.elevenLabsSTTLanguage = elevenLabsSTTLanguageDraft
@@ -1924,6 +1962,11 @@ struct CompanionPanelSettingsView: View {
         openAISTTModelDraft = viewModel.settings.openAISTTModel
         openAISTTLanguageDraft = viewModel.settings.openAISTTPreferredLanguage
         openAISTTBaseURLDraft = viewModel.settings.openAISTTBaseURL
+        elevenLabsTTSAPIKeyDraft = viewModel.settings.elevenLabsTTSAPIKey
+        elevenLabsTTSVoiceIDDraft = viewModel.settings.elevenLabsTTSVoiceID
+        elevenLabsTTSModelDraft = viewModel.settings.elevenLabsTTSModel
+        elevenLabsTTSOutputFormatDraft = viewModel.settings.elevenLabsTTSOutputFormat
+        elevenLabsTTSBaseURLDraft = viewModel.settings.elevenLabsTTSBaseURL
         elevenLabsSTTAPIKeyDraft = viewModel.settings.elevenLabsSTTAPIKey
         elevenLabsSTTModelDraft = viewModel.settings.elevenLabsSTTModel
         elevenLabsSTTLanguageDraft = viewModel.settings.elevenLabsSTTLanguage
@@ -1944,6 +1987,11 @@ struct CompanionPanelSettingsView: View {
             || openAISTTModelDraft != viewModel.settings.openAISTTModel
             || openAISTTLanguageDraft != viewModel.settings.openAISTTPreferredLanguage
             || openAISTTBaseURLDraft != viewModel.settings.openAISTTBaseURL
+            || elevenLabsTTSAPIKeyDraft != viewModel.settings.elevenLabsTTSAPIKey
+            || elevenLabsTTSVoiceIDDraft != viewModel.settings.elevenLabsTTSVoiceID
+            || elevenLabsTTSModelDraft != viewModel.settings.elevenLabsTTSModel
+            || elevenLabsTTSOutputFormatDraft != viewModel.settings.elevenLabsTTSOutputFormat
+            || elevenLabsTTSBaseURLDraft != viewModel.settings.elevenLabsTTSBaseURL
             || elevenLabsSTTAPIKeyDraft != viewModel.settings.elevenLabsSTTAPIKey
             || elevenLabsSTTModelDraft != viewModel.settings.elevenLabsSTTModel
             || elevenLabsSTTLanguageDraft != viewModel.settings.elevenLabsSTTLanguage

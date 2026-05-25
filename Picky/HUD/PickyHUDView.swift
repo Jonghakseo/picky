@@ -41,7 +41,7 @@ struct PickyHUDView: View {
     @State private var modifierFlagsMonitor: Any?
     @State private var isCommandShortcutHintVisible = false
     @State private var composerFocusRequestID = 0
-    @State private var terminalAddonOpenSessionIDs: Set<String> = []
+    @State private var extendedTerminalOpenSessionIDs: Set<String> = []
     @State private var isDockAddSlotExpanded = false
     @State private var cardResizeInteraction = PickyHUDCardResizeInteractionState()
     @State private var sizeReporter = PickyHUDSizeReporter()
@@ -255,21 +255,21 @@ struct PickyHUDView: View {
     @ViewBuilder
     private var conversationCard: some View {
         if let activeSession {
-            let terminalAddonIsOpen = isTerminalAddonOpen(sessionID: activeSession.id)
+            let extendedTerminalIsOpen = isExtendedTerminalOpen(sessionID: activeSession.id)
                 && !viewModel.isInlineTerminalMode(sessionID: activeSession.id)
             VStack(alignment: .leading, spacing: 8) {
                 PickyConversationCardView(
                     viewModel: viewModel,
                     session: activeSession,
                     onArchiveSession: archiveSession,
-                    maxHeight: conversationCardMaxHeight(isTerminalAddonOpen: terminalAddonIsOpen),
+                    maxHeight: conversationCardMaxHeight(isExtendedTerminalOpen: extendedTerminalIsOpen),
                     width: placement.cardWidth,
                     fixedHeight: placement.fixedCardHeight,
                     isPreviewMode: false,
                     focusRequestID: composerFocusRequestID,
                     isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-                    isTerminalAddonOpen: terminalAddonIsOpen,
-                    onToggleTerminalAddon: { toggleTerminalAddon(sessionID: activeSession.id) }
+                    isExtendedTerminalOpen: extendedTerminalIsOpen,
+                    onToggleExtendedTerminal: { toggleExtendedTerminal(sessionID: activeSession.id) }
                 )
                 .background(PickyHUDCardSizeReader())
                 .overlay(alignment: resizeHandleAlignment) {
@@ -294,8 +294,8 @@ struct PickyHUDView: View {
                 }
                 .accessibilityHint("Drag the corner to resize this Pickle card. Double-click to reset the size.")
 
-                if terminalAddonIsOpen {
-                    terminalAddon(for: activeSession)
+                if extendedTerminalIsOpen {
+                    extendedTerminal(for: activeSession)
                 }
             }
             .environment(\.pickyHUDDetailWidth, placement.cardWidth)
@@ -355,16 +355,16 @@ struct PickyHUDView: View {
         }
     }
 
-    private func conversationCardMaxHeight(isTerminalAddonOpen: Bool) -> CGFloat {
-        guard isTerminalAddonOpen else { return placement.availableCardMaxHeight }
+    private func conversationCardMaxHeight(isExtendedTerminalOpen: Bool) -> CGFloat {
+        guard isExtendedTerminalOpen else { return placement.availableCardMaxHeight }
         return max(
             320,
-            placement.availableCardMaxHeight - PickyHUDDockLayout.terminalAddonHeight - 8
+            placement.availableCardMaxHeight - PickyHUDDockLayout.extendedTerminalHeight - 8
         )
     }
 
-    private func terminalAddon(for session: PickySessionListViewModel.SessionCard) -> some View {
-        PickySessionTerminalAddonView(session: session, viewModel: viewModel)
+    private func extendedTerminal(for session: PickySessionListViewModel.SessionCard) -> some View {
+        PickySessionExtendedTerminalView(session: session, viewModel: viewModel)
             .transition(.opacity)
     }
 
@@ -638,7 +638,7 @@ struct PickyHUDView: View {
         cancelPendingClose()
         let title = (visibleSessions + viewModel.sessions).first(where: { $0.id == sessionID })?.title ?? "Pickle"
         viewModel.archive(sessionID: sessionID)
-        terminalAddonOpenSessionIDs.remove(sessionID)
+        extendedTerminalOpenSessionIDs.remove(sessionID)
         if heldSession?.sessionID == sessionID { heldSession = nil }
         if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
         if suppressedHoverSessionID == sessionID { suppressedHoverSessionID = nil }
@@ -775,13 +775,13 @@ struct PickyHUDView: View {
             return true
         }
 
-        if PickyHUDKeyboardShortcutPolicy.isTerminalAddonShortcut(
+        if PickyHUDKeyboardShortcutPolicy.isExtendedTerminalShortcut(
             keyCode: event.keyCode,
             charactersIgnoringModifiers: event.charactersIgnoringModifiers,
             modifiers: flags
         ), let activeSession,
            !viewModel.isInlineTerminalMode(sessionID: activeSession.id) {
-            toggleTerminalAddon(sessionID: activeSession.id)
+            toggleExtendedTerminal(sessionID: activeSession.id)
             return true
         }
 
@@ -843,16 +843,16 @@ struct PickyHUDView: View {
         composerFocusRequestID &+= 1
     }
 
-    private func isTerminalAddonOpen(sessionID: String) -> Bool {
-        terminalAddonOpenSessionIDs.contains(sessionID)
+    private func isExtendedTerminalOpen(sessionID: String) -> Bool {
+        extendedTerminalOpenSessionIDs.contains(sessionID)
     }
 
-    private func toggleTerminalAddon(sessionID: String) {
+    private func toggleExtendedTerminal(sessionID: String) {
         cancelPendingClose()
-        if terminalAddonOpenSessionIDs.contains(sessionID) {
-            terminalAddonOpenSessionIDs.remove(sessionID)
+        if extendedTerminalOpenSessionIDs.contains(sessionID) {
+            extendedTerminalOpenSessionIDs.remove(sessionID)
         } else {
-            terminalAddonOpenSessionIDs.insert(sessionID)
+            extendedTerminalOpenSessionIDs.insert(sessionID)
             viewModel.markSessionRead(sessionID: sessionID)
         }
     }
@@ -1006,7 +1006,7 @@ enum PickyHUDKeyboardShortcutPolicy {
         return charactersIgnoringModifiers?.lowercased() == "n"
     }
 
-    static func isTerminalAddonShortcut(
+    static func isExtendedTerminalShortcut(
         keyCode: UInt16,
         charactersIgnoringModifiers: String?,
         modifiers: NSEvent.ModifierFlags

@@ -236,7 +236,7 @@ enum PickyHUDDockLayout {
     static func detailContentWidth(for detailWidth: CGFloat) -> CGFloat {
         max(0, detailWidth - (detailHorizontalPadding * 2))
     }
-    static let terminalAddonHeight: CGFloat = 240
+    static let extendedTerminalHeight: CGFloat = 240
     static let railWidth: CGFloat = 62
     static let panelGap: CGFloat = 10
     static let screenMargin: CGFloat = 8

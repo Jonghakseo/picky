@@ -1,8 +1,11 @@
 //
-//  PickySessionTerminalAddonView.swift
+//  PickySessionExtendedTerminalView.swift
 //  Picky
 //
-//  Local shell terminal panel attached below a Pickle HUD card.
+//  Local shell terminal panel attached below a Pickle HUD card. Branded as
+//  the "Extended terminal" in the UI and matched by the `Cmd + E` shortcut,
+//  to distinguish it from the inline terminal mode (`Cmd + T`) that swaps
+//  the card body itself into a Pi TUI.
 //
 
 import AppKit
@@ -175,13 +178,13 @@ final class PickyShellTerminalModel: ObservableObject {
     }
 }
 
-struct PickySessionTerminalAddonView: View {
+struct PickySessionExtendedTerminalView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
     var body: some View {
-        PickySessionTerminalAddonContentView(
+        PickySessionExtendedTerminalContentView(
             session: session,
             viewModel: viewModel,
             terminalSession: viewModel.shellTerminalSession(for: session),
@@ -190,7 +193,7 @@ struct PickySessionTerminalAddonView: View {
     }
 }
 
-private struct PickySessionTerminalAddonContentView: View {
+private struct PickySessionExtendedTerminalContentView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
     @ObservedObject var terminalSession: PickyShellTerminalSession
@@ -208,7 +211,7 @@ private struct PickySessionTerminalAddonContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(10)
-        .frame(width: width, height: PickyHUDDockLayout.terminalAddonHeight, alignment: .topLeading)
+        .frame(width: width, height: PickyHUDDockLayout.extendedTerminalHeight, alignment: .topLeading)
         .background(addonBackground)
         .onAppear(perform: handleAppear)
         .onDisappear(perform: handleDisappear)

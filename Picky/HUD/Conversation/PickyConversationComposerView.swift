@@ -43,9 +43,9 @@ struct PickyConversationComposerView: View {
     @Binding private var droppedFilePaths: [String]
     let isFileDropTargeted: Bool
     let focusRequestID: Int
-    let isTerminalAddonOpen: Bool
+    let isExtendedTerminalOpen: Bool
     let isCommandShortcutHintVisible: Bool
-    var onToggleTerminalAddon: () -> Void
+    var onToggleExtendedTerminal: () -> Void
     @State private var draft: String = ""
     @State private var attachments: [PickyComposerAttachment] = []
     @State private var attachmentContentWidth: CGFloat = 0
@@ -65,18 +65,18 @@ struct PickyConversationComposerView: View {
         droppedFilePaths: Binding<[String]> = .constant([]),
         isFileDropTargeted: Bool = false,
         focusRequestID: Int = 0,
-        isTerminalAddonOpen: Bool = false,
+        isExtendedTerminalOpen: Bool = false,
         isCommandShortcutHintVisible: Bool = false,
-        onToggleTerminalAddon: @escaping () -> Void = { }
+        onToggleExtendedTerminal: @escaping () -> Void = { }
     ) {
         self.session = session
         self.viewModel = viewModel
         self._droppedFilePaths = droppedFilePaths
         self.isFileDropTargeted = isFileDropTargeted
         self.focusRequestID = focusRequestID
-        self.isTerminalAddonOpen = isTerminalAddonOpen
+        self.isExtendedTerminalOpen = isExtendedTerminalOpen
         self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
-        self.onToggleTerminalAddon = onToggleTerminalAddon
+        self.onToggleExtendedTerminal = onToggleExtendedTerminal
     }
 
     var body: some View {
@@ -237,10 +237,10 @@ struct PickyConversationComposerView: View {
     }
 
     private var terminalButton: some View {
-        Button(action: onToggleTerminalAddon) {
+        Button(action: onToggleExtendedTerminal) {
             Image(systemName: "terminal.fill")
                 .pickyFont(size: 10.5, weight: .semibold)
-                .foregroundColor(isTerminalAddonOpen ? DS.Colors.accentText : DS.Colors.textTertiary)
+                .foregroundColor(isExtendedTerminalOpen ? DS.Colors.accentText : DS.Colors.textTertiary)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
                 .background(terminalButtonBackground)
@@ -256,9 +256,9 @@ struct PickyConversationComposerView: View {
                 .animation(.easeOut(duration: 0.12), value: isCommandShortcutHintVisible)
                 .allowsHitTesting(false)
         }
-        .help("Pickle Terminal (⌘E)")
-        .accessibilityLabel("Pickle Terminal")
-        .accessibilityValue(isTerminalAddonOpen ? "Open" : "Closed")
+        .help("Extended terminal (⌘E)")
+        .accessibilityLabel("Extended terminal")
+        .accessibilityValue(isExtendedTerminalOpen ? "Open" : "Closed")
     }
 
     private func shortcutBadge(_ letter: String) -> some View {
@@ -280,10 +280,10 @@ struct PickyConversationComposerView: View {
 
     private var terminalButtonBackground: some View {
         RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .fill(isTerminalAddonOpen ? DS.Colors.accentSubtle.opacity(0.24) : Color.clear)
+            .fill(isExtendedTerminalOpen ? DS.Colors.accentSubtle.opacity(0.24) : Color.clear)
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(isTerminalAddonOpen ? DS.Colors.accentText.opacity(0.28) : Color.clear, lineWidth: 0.5)
+                    .stroke(isExtendedTerminalOpen ? DS.Colors.accentText.opacity(0.28) : Color.clear, lineWidth: 0.5)
             )
     }
 

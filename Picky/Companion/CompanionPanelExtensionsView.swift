@@ -59,12 +59,39 @@ private struct PickyCuratedPlugin: Identifiable {
         source: "npm:@ryan_nookpi/pi-extension-clipboard"
     )
 
+    static let claudeMcpBridge = PickyCuratedPlugin(
+        id: "claude-mcp-bridge",
+        titleKey: "extensions.curated.claudeMcpBridge.title",
+        descriptionKey: "extensions.curated.claudeMcpBridge.description",
+        commandName: "/mcp-status",
+        source: "npm:@ryan_nookpi/pi-extension-claude-mcp-bridge"
+    )
+
+    static let crossAgent = PickyCuratedPlugin(
+        id: "cross-agent",
+        titleKey: "extensions.curated.crossAgent.title",
+        descriptionKey: "extensions.curated.crossAgent.description",
+        commandName: "cross-agent",
+        source: "npm:@ryan_nookpi/pi-extension-cross-agent"
+    )
+
+    static let claudeHooksBridge = PickyCuratedPlugin(
+        id: "claude-hooks-bridge",
+        titleKey: "extensions.curated.claudeHooksBridge.title",
+        descriptionKey: "extensions.curated.claudeHooksBridge.description",
+        commandName: "claude-hooks-bridge",
+        source: "npm:@ryan_nookpi/pi-extension-claude-hooks-bridge"
+    )
+
     static let curatedDefaults: [PickyCuratedPlugin] = [
         .diffReview,
         .askUserQuestion,
         .generativeUI,
         .autoName,
-        .clipboard
+        .clipboard,
+        .claudeMcpBridge,
+        .crossAgent,
+        .claudeHooksBridge
     ]
 }
 

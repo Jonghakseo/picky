@@ -4400,6 +4400,102 @@
         }
       }
     },
+    "extensions.curated.claudeMcpBridge.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude MCP bridge"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude MCP 브리지"
+          }
+        }
+      }
+    },
+    "extensions.curated.claudeMcpBridge.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-discover MCP servers from .mcp.json or ~/.claude.json and expose their tools inside Pi."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ".mcp.json·~/.claude.json에 설정된 MCP 서버를 자동으로 찾아 그 도구들을 Pi에서 그대로 쓸 수 있어요."
+          }
+        }
+      }
+    },
+    "extensions.curated.crossAgent.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cross-agent commands"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "타 에이전트 명령어"
+          }
+        }
+      }
+    },
+    "extensions.curated.crossAgent.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Load slash commands from other agents' .claude/, .gemini/, and .codex/ directories into Pi."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다른 코딩 에이전트(.claude·.gemini·.codex) 디렉토리의 슬래시 커맨드를 Pi에서도 그대로 쓸 수 있어요."
+          }
+        }
+      }
+    },
+    "extensions.curated.claudeHooksBridge.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude hooks bridge"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 훅 브리지"
+          }
+        }
+      }
+    },
+    "extensions.curated.claudeHooksBridge.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run Claude Code hooks from .claude/settings.json on Pi session events like PreToolUse and Stop."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code 훅(.claude/settings.json)을 Pi 세션 이벤트(PreToolUse·Stop 등)에서 그대로 실행해요."
+          }
+        }
+      }
+    },
     "status.updates.alphaNotice": {
       "localizations": {
         "en": {

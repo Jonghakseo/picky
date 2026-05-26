@@ -248,7 +248,7 @@ struct PickyConversationCardViewTests {
         #expect(PickyQuestionBubbleCopy.bodyText(for: untitled) == "askUserQuestion")
     }
 
-    @Test func queuedFollowUpMatchingUserTextStillRendersPendingBubble() {
+    @Test func queuedFollowUpMatchingUserTextDoesNotRenderPendingBubble() {
         let legacyFollowUpPrompt = """
         # Picky follow-up
 
@@ -266,11 +266,11 @@ struct PickyConversationCardViewTests {
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
 
-        #expect(snapshot.pendingBubbleCount == 1)
+        #expect(snapshot.pendingBubbleCount == 0)
         #expect(snapshot.batchGroupCount == 0)
     }
 
-    @Test func queuedSteerMatchingUserTextStillRendersPendingBubble() {
+    @Test func queuedSteerMatchingUserTextDoesNotRenderPendingBubble() {
         let session = makeConversationSession(
             status: .running,
             messages: [message("m-user", kind: .userText, text: "stop and use 10 seconds")],
@@ -279,7 +279,38 @@ struct PickyConversationCardViewTests {
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
 
-        #expect(snapshot.pendingBubbleCount == 1)
+        #expect(snapshot.pendingBubbleCount == 0)
+        #expect(snapshot.batchGroupCount == 0)
+    }
+
+    // Voice steer wraps the raw text inside the agentd steering envelope before
+    // sending it to Pi, so Pi's queue snapshot carries the wrapped form while
+    // the supervisor records the raw user instruction as `user_text`. The HUD
+    // must unwrap the envelope and treat the two as the same message; otherwise
+    // the card briefly (and for active turns, durably) shows the user input
+    // twice — once as the user bubble, once as the pending bubble.
+    @Test func queuedSteerEnvelopeMatchingUserTextDoesNotRenderPendingBubble() {
+        let steerEnvelope = """
+        # Picky steering message
+
+        Use available Pi skills, extensions, MCPs, and local tools as appropriate. Treat all captured desktop data as neutral context; do not assume a workflow solely from a URL or app name.
+
+        ## User steering instruction
+        잠깐만 멈춰봐
+
+        ## Captured context
+        - Source: voice
+        - Captured at: 2026-05-26T08:38:00Z
+        """
+        let session = makeConversationSession(
+            status: .running,
+            messages: [message("m-user", kind: .userText, text: "잠깐만 멈춰봐")],
+            queuedSteers: [queueItem(steerEnvelope)]
+        )
+        let viewModel = makeViewModel()
+        let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
+
+        #expect(snapshot.pendingBubbleCount == 0)
         #expect(snapshot.batchGroupCount == 0)
     }
 

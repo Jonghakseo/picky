@@ -384,11 +384,36 @@ struct PickyConversationListView: View {
     }
 
     private var visibleQueuedFollowUps: [PickyQueueItem] {
-        session.queuedFollowUps
+        visibleQueueItems(session.queuedFollowUps)
     }
 
     private var visibleQueuedSteers: [PickyQueueItem] {
-        session.queuedSteers
+        visibleQueueItems(session.queuedSteers)
+    }
+
+    /// Hide pending steer/follow-up bubbles once the matching `user_text` journal
+    /// entry has been rendered. The supervisor records a `user_text` for every
+    /// queued prompt as soon as Pi accepts it (often before Pi actually dequeues),
+    /// so without this filter the card briefly — and for active turns, durably —
+    /// shows the same instruction twice (once as the user bubble, once as the
+    /// pending bubble). `PickyQueuedInputText.normalized` strips the agentd
+    /// prompt envelope so wrapped queue snapshots still match the raw user text.
+    private func visibleQueueItems(_ items: [PickyQueueItem]) -> [PickyQueueItem] {
+        items.filter { item in
+            !recentUserTextMatchesQueuedItem(item)
+        }
+    }
+
+    private func recentUserTextMatchesQueuedItem(_ item: PickyQueueItem) -> Bool {
+        let queuedText = PickyQueuedInputText.normalized(item.text)
+        guard !queuedText.isEmpty else { return false }
+        return session.messages.contains { message in
+            guard message.kind == .userText,
+                  let text = message.text,
+                  abs(message.createdAt.timeIntervalSince(item.enqueuedAt)) <= 300
+            else { return false }
+            return PickyQueuedInputText.normalized(text) == queuedText
+        }
     }
 
     /// 카드 안에는 "마지막 user_text 다섯 개 → 끝" 범위를 노출 (최근 5턴이 함께 보이게).

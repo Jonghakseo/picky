@@ -5069,6 +5069,88 @@ describe("SessionSupervisor", () => {
     await supervisor.setTerminalSessionTailEnabled("terminal-tail-session", false);
   });
 
+  it("flips to waiting_for_input when an ask_user_question toolCall is open in the tailed transcript", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-tail-aw-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    await writeFile(piSessionFile, "");
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "terminal-tail-await",
+      title: "Terminal tail awaiting",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "prev",
+      logs: [`pi session: ${piSessionFile}`],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [],
+    });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store);
+    await supervisor.load();
+
+    await supervisor.setTerminalSessionTailEnabled("terminal-tail-await", true);
+
+    // User prompt -> running.
+    await appendFile(piSessionFile, JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-05-01T00:00:11.000Z", message: { role: "user", content: "please ask me", timestamp: 0 } }) + "\n");
+    await waitUntil(() => supervisor.get("terminal-tail-await")?.status === "running");
+
+    // Assistant opens ask_user_question (no toolResult yet) -> waiting_for_input.
+    await appendFile(piSessionFile, JSON.stringify({
+      type: "message", id: "a1", parentId: "u1", timestamp: "2026-05-01T00:00:12.000Z",
+      message: { role: "assistant", content: [{ type: "toolCall", name: "ask_user_question", arguments: {} }], timestamp: 0 },
+    }) + "\n");
+    await waitUntil(() => supervisor.get("terminal-tail-await")?.status === "waiting_for_input");
+
+    // User answers -> the tool resolves; next assistant entry with no open toolCall -> completed.
+    await appendFile(piSessionFile, JSON.stringify({
+      type: "message", id: "a2", parentId: "a1", timestamp: "2026-05-01T00:00:13.000Z",
+      message: { role: "assistant", content: [{ type: "text", text: "thanks!" }], timestamp: 0, stopReason: "stop" },
+    }) + "\n");
+    await waitUntil(() => supervisor.get("terminal-tail-await")?.status === "completed");
+
+    await supervisor.setTerminalSessionTailEnabled("terminal-tail-await", false);
+  });
+
+  it("stays in running when a non-blocking tool (bash) is the open toolCall in the tailed transcript", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-tail-bash-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    await writeFile(piSessionFile, "");
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "terminal-tail-bash",
+      title: "Terminal tail bash",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "prev",
+      logs: [`pi session: ${piSessionFile}`],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [],
+    });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store);
+    await supervisor.load();
+
+    await supervisor.setTerminalSessionTailEnabled("terminal-tail-bash", true);
+    await appendFile(piSessionFile, JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-05-01T00:00:11.000Z", message: { role: "user", content: "run a command", timestamp: 0 } }) + "\n");
+    await waitUntil(() => supervisor.get("terminal-tail-bash")?.status === "running");
+
+    await appendFile(piSessionFile, JSON.stringify({
+      type: "message", id: "a1", parentId: "u1", timestamp: "2026-05-01T00:00:12.000Z",
+      message: { role: "assistant", content: [{ type: "toolCall", name: "bash", arguments: { command: "ls" } }], timestamp: 0 },
+    }) + "\n");
+    // Give the watcher a couple of beats; status should remain running, NOT waiting_for_input.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(supervisor.get("terminal-tail-bash")?.status).toBe("running");
+
+    await supervisor.setTerminalSessionTailEnabled("terminal-tail-bash", false);
+  });
+
   it("keeps cancelled status sticky against tail-derived running transitions", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-tail-cancelled-"));
     const piSessionFile = join(dir, "pi-session.jsonl");

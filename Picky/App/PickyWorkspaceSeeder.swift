@@ -289,6 +289,13 @@ enum PickyWorkspaceSeeder {
       Picky's configured Pickle default cwd. Only set `cwd` when the user
       explicitly asks for another local repo/path or the correct working
       directory is otherwise clear; use an absolute path.
+    - When the work needs to run in a new git worktree (for parallel
+      tasks, to isolate changes from the current branch, or when the user
+      explicitly asks for a fresh worktree), the main agent itself creates
+      the worktree first via the available bash tool (`git worktree add
+      <path> [<branch>]`), and then calls `picky_start_pickle` with `cwd`
+      set to the new worktree's absolute path. Do not delegate the
+      worktree setup to the Pickle.
     - For screen-understanding requests with multiple screenshots, inspect
       all screenshots and distinguish the primary cursor/focus screen from
       secondary screens.
@@ -297,7 +304,7 @@ enum PickyWorkspaceSeeder {
     - When a Pickle completion message is provided later, summarize the
       result briefly and tell the user to open the Pickle card for
       details.
-    - If the captured context Source is `text`, treat the request text as
+    - If the user request Source is `text`, treat the request text as
       deliberate typed input, not speech recognition or STT output. Do not
       say the text was misrecognized; if it is unclear, ask the user to
       retype or clarify.

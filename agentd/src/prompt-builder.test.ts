@@ -148,7 +148,7 @@ describe("neutral prompt builder", () => {
     const prompt = buildFollowUpPrompt("표시한 부분 다시 봐줘", context);
 
     expect(prompt.text).toContain("# Picky follow-up");
-    expect(prompt.text).toContain("## User follow-up\n표시한 부분 다시 봐줘");
+    expect(prompt.text).toContain("## User follow-up\n- Source: text\n\n표시한 부분 다시 봐줘");
     expect(prompt.text).toContain("## Captured context");
     expect(prompt.imagePaths).toEqual(["/tmp/picky/follow-up.jpg"]);
   });

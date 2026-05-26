@@ -952,7 +952,7 @@ describe("SessionSupervisor", () => {
     expect(runtime.creates[1].prompt.text).not.toContain("sourceSessionId");
   });
 
-  it("uses the handoff cwd override for Pickle session metadata, prompt context, and runtime cwd", async () => {
+  it("uses the handoff cwd override for Pickle session metadata and runtime cwd", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new RecordingRuntime();
     const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
@@ -963,7 +963,6 @@ describe("SessionSupervisor", () => {
     expect(pickle.cwd).toBe("/tmp/override-project");
     expect(pickle.logs).toContain("Picky handoff cwd: /tmp/override-project");
     expect(runtime.creates[0].options.cwd).toBe("/tmp/override-project");
-    expect(runtime.creates[0].prompt.text).toContain("- CWD: /tmp/override-project");
   });
 
   it("routes Pickle-session follow-ups through the follow-up queue", async () => {
@@ -1146,7 +1145,7 @@ describe("SessionSupervisor", () => {
     await supervisor.followUp(session.id, "use this screenshot", followUpContext);
 
     expect(runtime.handle?.followUps).toHaveLength(1);
-    expect(runtime.handle?.followUps[0]?.text).toContain("## User follow-up\nuse this screenshot");
+    expect(runtime.handle?.followUps[0]?.text).toContain("## User follow-up\n- Source: text\n\nuse this screenshot");
     expect(runtime.handle?.followUps[0]?.text).toContain("## Captured context");
     expect(runtime.handle?.followUps[0]?.text).toContain("selected follow-up snippet");
     expect(runtime.handle?.followUps[0]?.imagePaths).toEqual(["/tmp/picky-follow-up.png"]);
@@ -1170,7 +1169,7 @@ describe("SessionSupervisor", () => {
     await supervisor.steer(session.id, "use this screenshot", steerContext);
 
     expect(runtime.handle?.steerPrompts).toHaveLength(1);
-    expect(runtime.handle?.steerPrompts[0]?.text).toContain("## User steering instruction\nuse this screenshot");
+    expect(runtime.handle?.steerPrompts[0]?.text).toContain("## User steering instruction\n- Source: text\n\nuse this screenshot");
     expect(runtime.handle?.steerPrompts[0]?.text).toContain("## Captured context");
     expect(runtime.handle?.steerPrompts[0]?.text).toContain("selected snippet");
     expect(runtime.handle?.steerPrompts[0]?.imagePaths).toEqual(["/tmp/picky-steer.png"]);

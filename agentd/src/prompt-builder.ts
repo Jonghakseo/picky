@@ -10,7 +10,7 @@ const neutralInstruction =
   "Use available Pi skills, extensions, MCPs, and local tools as appropriate. Treat all captured desktop data as neutral context; do not assume a workflow solely from a URL or app name.";
 
 export function buildInitialTaskPrompt(context: PickyContextPacket): BuiltPrompt {
-  const lines = ["# Picky task", "", neutralInstruction, "", "## User request"];
+  const lines = ["# Picky task", "", neutralInstruction, "", "## User request", `- Source: ${context.source}`, ""];
   lines.push(context.transcript?.trim() || "(no transcript provided)");
   appendContext(lines, context);
   return { text: lines.join("\n"), imagePaths: context.screenshots.map((s) => s.path) };
@@ -20,9 +20,9 @@ export function buildMainAgentPrompt(context: PickyContextPacket): BuiltPrompt {
   const lines = [
     "# Picky turn",
     "",
-    "Follow the standing Picky bootstrap instructions. Combine this turn's user request and captured desktop context with the Picky conversation memory you already have from earlier turns of this session (see the session-level instructions and the prior conversation items already in this transcript). Treat the captured desktop context below as fresh additional signal — never as a replacement for the prior conversation, and never as a reason to claim you cannot see earlier turns.",
-    "",
     "## User request",
+    `- Source: ${context.source}`,
+    "",
     context.transcript?.trim() || "(no transcript provided)",
   ];
   appendContext(lines, context);
@@ -31,14 +31,14 @@ export function buildMainAgentPrompt(context: PickyContextPacket): BuiltPrompt {
 
 export function buildSteerPrompt(text: string, context?: PickyContextPacket): BuiltPrompt {
   if (!context) return { text, imagePaths: [] };
-  const lines = ["# Picky steering message", "", neutralInstruction, "", "## User steering instruction", text];
+  const lines = ["# Picky steering message", "", neutralInstruction, "", "## User steering instruction", `- Source: ${context.source}`, "", text];
   appendContext(lines, context);
   return { text: lines.join("\n"), imagePaths: context.screenshots.map((s) => s.path) };
 }
 
 export function buildFollowUpPrompt(text: string, context?: PickyContextPacket): BuiltPrompt {
   if (!context || !hasVisualAttachmentContext(context)) return { text, imagePaths: [] };
-  const lines = ["# Picky follow-up", "", neutralInstruction, "", "## User follow-up", text];
+  const lines = ["# Picky follow-up", "", neutralInstruction, "", "## User follow-up", `- Source: ${context.source}`, "", text];
   appendContext(lines, context);
   return { text: lines.join("\n"), imagePaths: context.screenshots.map((s) => s.path) };
 }
@@ -58,6 +58,8 @@ export function buildPicklePrompt(context: PickyContextPacket, handoff: { title:
     handoff.instructions,
     "",
     "## Original user request",
+    `- Source: ${context.source}`,
+    "",
     context.transcript?.trim() || "(no transcript provided)",
   ];
   appendContext(lines, context);
@@ -151,7 +153,7 @@ export function buildMainAgentBootstrapPair(
     `- Available delegation tools: \`${PICKLE_TOOL_NAMES.start}\`, \`${PICKLE_TOOL_NAMES.sessions}\`, \`${PICKLE_TOOL_NAMES.steer}\`, \`${PICKLE_TOOL_NAMES.abort}\`. Only the picky_* tools surface Pickles in the Picky dock; never simulate them with bash or by editing session files.`,
     `- \`${PICKLE_TOOL_NAMES.abort}\` only runs when the user explicitly asks to stop, cancel, or kill a Pickle; if the target is ambiguous, resolve it with \`${PICKLE_TOOL_NAMES.sessions}\`.`,
     `- Pickle hover follow-ups bypass you and go directly to a Pickle. When reusing a running Pickle fits, prefer \`${PICKLE_TOOL_NAMES.steer}\`, identifying the target with \`${PICKLE_TOOL_NAMES.sessions}\` as needed.`,
-    "- If the captured context Source is `text`, treat the request text as deliberate typed input, not speech recognition output.",
+    "- If the user request Source is `text`, treat the request text as deliberate typed input, not speech recognition output.",
     "- Do not expose internal tool logs verbatim and do not hard-code workflows from URLs or app names.",
     "",
     ...replyStyleSection,
@@ -178,8 +180,7 @@ function hasVisualAttachmentContext(context: PickyContextPacket): boolean {
 }
 
 function appendContext(lines: string[], context: PickyContextPacket): void {
-  lines.push("", "## Captured context", `- Source: ${context.source}`, `- Captured at: ${context.capturedAt}`);
-  if (context.cwd) lines.push(`- CWD: ${context.cwd}`);
+  lines.push("", "## Captured context", `- Captured at: ${context.capturedAt}`);
   if (context.activeApp?.name) lines.push(`- Active app: ${context.activeApp.name}`);
   if (context.activeWindow?.title && !context.browser?.title) lines.push(`- Active window: ${context.activeWindow.title}`);
   if (context.browser?.title) lines.push(`- Browser title: ${context.browser.title}`);

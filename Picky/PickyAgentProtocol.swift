@@ -218,6 +218,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case pinPickleSession
     case clearQueue
     case syncTerminalSession
+    case setTerminalSessionTailEnabled
     case followUp
     case steer
     case abort

@@ -1217,15 +1217,40 @@ final class PickySessionListViewModel: ObservableObject {
         inlineTerminalSessionIDs.insert(sessionID)
         _ = inlineTerminalSession(for: session)
         endHoveredVoiceFollowUp(sessionID: sessionID)
+        setTerminalSessionTailEnabled(sessionID: sessionID, enabled: true)
         lastError = nil
     }
 
     func disableInlineTerminalMode(sessionID: String) {
         pickySessionLog("disable inline terminal session=\(sessionID)")
+        // Stop the daemon-side tail before draining the inline terminal so the final
+        // `syncTerminalSession` reconcile (scheduled inside `closeInlineTerminalSession`)
+        // doesn't race the tail watcher for the same JSONL entries.
+        setTerminalSessionTailEnabled(sessionID: sessionID, enabled: false)
         inlineTerminalSessionIDs.remove(sessionID)
         removeVisibleInlineTerminalAttachments(sessionID: sessionID)
         endHoveredVoiceFollowUp(sessionID: sessionID)
         closeInlineTerminalSession(sessionID: sessionID)
+    }
+
+    /// Asks the daemon to start/stop tailing the Pi JSONL file for `sessionID`. Called whenever
+    /// the user enters or leaves an inline TUI / Pi terminal overlay so the HUD dock icon keeps
+    /// transitioning (`running` -> `completed`) even though agentd's own runtime is idle. Fire and
+    /// forget: failures are logged at the daemon side and the HUD just degrades to the previous
+    /// "frozen status until overlay close" behaviour.
+    private func setTerminalSessionTailEnabled(sessionID: String, enabled: Bool) {
+        let command = PickyCommandEnvelope(
+            type: .setTerminalSessionTailEnabled,
+            sessionId: sessionID,
+            enabled: enabled
+        )
+        Task { [weak self] in
+            do {
+                try await self?.client.send(command)
+            } catch {
+                pickySessionLog("terminal tail toggle failed session=\(sessionID) enabled=\(enabled) error=\(error.localizedDescription)")
+            }
+        }
     }
 
     func toggleInlineTerminalMode(sessionID: String) {
@@ -1390,9 +1415,14 @@ final class PickySessionListViewModel: ObservableObject {
                 sessionFilePath: piSessionFilePath,
                 cwd: session.cwd,
                 onClose: { [weak self] in
-                    self?.syncTerminalSessionOnce(sessionID: session.id, baselineSnapshot: baselineSnapshot)
+                    guard let self else { return }
+                    // Stop the daemon-side tail BEFORE the reconcile so we don't race the
+                    // post-close `syncTerminalSession` for the same final JSONL entries.
+                    self.setTerminalSessionTailEnabled(sessionID: session.id, enabled: false)
+                    self.syncTerminalSessionOnce(sessionID: session.id, baselineSnapshot: baselineSnapshot)
                 }
             )
+            setTerminalSessionTailEnabled(sessionID: session.id, enabled: true)
             lastError = nil
         } catch {
             lastError = error.localizedDescription

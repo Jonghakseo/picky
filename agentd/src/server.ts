@@ -325,6 +325,7 @@ export class AgentdServer {
       cycleSessionModel: (cmd) => this.options.supervisor.cycleSessionModel(cmd.sessionId, cmd.direction),
       clearQueue: (cmd) => this.options.supervisor.clearQueue(cmd.sessionId, cmd.kind),
       syncTerminalSession: (cmd) => this.options.supervisor.syncTerminalSession(cmd.sessionId, cmd.baselinePiMessageId),
+      setTerminalSessionTailEnabled: (cmd) => this.options.supervisor.setTerminalSessionTailEnabled(cmd.sessionId, cmd.enabled),
       followUp: (cmd) => this.options.supervisor.followUp(cmd.sessionId, cmd.text, cmd.context),
       steer: (cmd) => this.options.supervisor.steer(cmd.sessionId, cmd.text, cmd.context),
       abort: (cmd) => this.options.supervisor.abort(cmd.sessionId),
@@ -668,6 +669,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, kind: command.kind };
     case "syncTerminalSession":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, baselinePiMessageId: command.baselinePiMessageId };
+    case "setTerminalSessionTailEnabled":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, enabled: command.enabled ? 1 : 0 };
     case "abort":
     case "getSession":
     case "listSlashCommands":

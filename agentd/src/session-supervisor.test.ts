@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -5026,6 +5026,77 @@ describe("SessionSupervisor", () => {
     expect(synced?.lastSummary).toBe("terminal recovery answer");
     expect(synced?.finalAnswer).toBe("terminal recovery answer");
     expect(synced?.messages?.map((message) => message.text).filter(Boolean)).toContain("terminal recovery request");
+  });
+
+  it("tails the Pi JSONL while a terminal session is active and patches status from user/assistant entries", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-tail-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    await writeFile(piSessionFile, [
+      JSON.stringify({ type: "session", version: 3, id: "pi-session", timestamp: "2026-05-01T00:00:00.000Z", cwd: "/tmp/project" }),
+      JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-05-01T00:00:01.000Z", message: { role: "user", content: "prior prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-05-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "prior answer" }], timestamp: 0, stopReason: "stop" } }),
+      "",
+    ].join("\n"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "terminal-tail-session",
+      title: "Terminal tail",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "prior answer",
+      finalAnswer: "prior answer",
+      logs: [`pi session: ${piSessionFile}`],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [],
+    });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store);
+    await supervisor.load();
+
+    await supervisor.setTerminalSessionTailEnabled("terminal-tail-session", true);
+
+    // User just typed a new prompt in the TUI; dock should flip to running.
+    await appendFile(piSessionFile, JSON.stringify({ type: "message", id: "u2", parentId: "a1", timestamp: "2026-05-01T00:00:03.000Z", message: { role: "user", content: "new TUI prompt", timestamp: 0 } }) + "\n");
+    await waitUntil(() => supervisor.get("terminal-tail-session")?.status === "running");
+
+    // Pi finishes the turn; dock should flip back to completed.
+    await appendFile(piSessionFile, JSON.stringify({ type: "message", id: "a2", parentId: "u2", timestamp: "2026-05-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: "TUI answer" }], timestamp: 0, stopReason: "stop" } }) + "\n");
+    await waitUntil(() => supervisor.get("terminal-tail-session")?.status === "completed");
+
+    await supervisor.setTerminalSessionTailEnabled("terminal-tail-session", false);
+  });
+
+  it("keeps cancelled status sticky against tail-derived running transitions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-tail-cancelled-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    await writeFile(piSessionFile, "");
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "terminal-tail-cancelled",
+      title: "Terminal tail cancelled",
+      status: "cancelled",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "Cancelled by user",
+      logs: [`pi session: ${piSessionFile}`],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [],
+    });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store);
+    await supervisor.load();
+
+    await supervisor.setTerminalSessionTailEnabled("terminal-tail-cancelled", true);
+    await appendFile(piSessionFile, JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-05-01T00:00:11.000Z", message: { role: "user", content: "hi", timestamp: 0 } }) + "\n");
+    // Give the tail watcher a couple of beats; status must not flip.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(supervisor.get("terminal-tail-cancelled")?.status).toBe("cancelled");
+    await supervisor.setTerminalSessionTailEnabled("terminal-tail-cancelled", false);
   });
 
   it("preserves persisted messages on daemon restart", async () => {

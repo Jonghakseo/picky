@@ -11,6 +11,7 @@ import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPai
 import type { EventEnvelope, MainAgentRuntimeMode, ModelCycleDirection, OpenAIRealtimeAuthConfig, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage, PickyUserMemory } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
+import { PiSessionTailWatcher, type PiSessionTailEntry } from "./application/pi-session-tail-watcher.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
 import { isMainRealtimeRuntime, type AgentRuntime, type RuntimeBashExecutionResult, type RuntimeEvent, type RuntimeSessionHandle, type RuntimeSlashCommand, type RuntimeSteerResult, type ThinkingLevel } from "./runtime/types.js";
@@ -168,6 +169,13 @@ export class SessionSupervisor extends EventEmitter {
   // observed to revert the session back to 'running' after a /name slash command.
   private patchChains = new Map<string, Promise<void>>();
   private mainStateWriteChain = Promise.resolve();
+  // Active JSONL tail watchers for Pickle sessions whose inline TUI / Pi terminal overlay is
+  // currently driving the conversation. The watcher emits new JSONL entries into
+  // `handleTerminalTailEntries`, which infers status transitions (running <-> completed) and
+  // patches the session so the HUD dock icon keeps animating even while the agentd-driven
+  // runtime is idle. Keyed by session id; entries are added/removed via
+  // `setTerminalSessionTailEnabled`.
+  private readonly terminalTailWatchers = new Map<string, PiSessionTailWatcher>();
 
   constructor(private readonly runtime: AgentRuntime, private readonly store: SessionStore, private readonly options: SessionSupervisorOptions = {}) {
     super();
@@ -1854,6 +1862,7 @@ export class SessionSupervisor extends EventEmitter {
     if (session.archived !== true) {
       throw new Error(`Cannot delete a session that is not archived: ${sessionId}`);
     }
+    await this.setTerminalSessionTailEnabled(sessionId, false);
     await this.store.deleteSession(sessionId);
     this.sessions.delete(sessionId);
     this.messageBuilder.onSessionRemoved(sessionId);
@@ -1941,6 +1950,61 @@ export class SessionSupervisor extends EventEmitter {
       this.pendingPickleCompletions.splice(queueIndex, 1);
       logAgentd("Pickle completion dequeued", { sessionId, queueLength: this.pendingPickleCompletions.length });
     }
+  }
+
+  /**
+   * Starts/stops a JSONL tail watcher for a Pickle whose Pi terminal overlay or inline TUI is
+   * driving the conversation. While enabled, new JSONL entries from the user-driven `pi --session`
+   * process are inspected to infer status transitions (running <-> completed) so the HUD dock icon
+   * keeps breathing/winking even though the agentd runtime is not the one producing turn events.
+   * Idempotent: enabling an already-watched session, or disabling an unwatched one, is a no-op.
+   */
+  async setTerminalSessionTailEnabled(sessionId: string, enabled: boolean): Promise<void> {
+    if (enabled) {
+      if (this.terminalTailWatchers.has(sessionId)) return;
+      const session = this.sessions.get(sessionId);
+      if (!session) {
+        logAgentd("terminal tail skipped", { sessionId, reason: "unknown session" });
+        return;
+      }
+      const sessionFilePath = piSessionFilePathForSession(session);
+      if (!sessionFilePath) {
+        logAgentd("terminal tail skipped", { sessionId, reason: "no pi session file" });
+        return;
+      }
+      const watcher = new PiSessionTailWatcher(
+        sessionFilePath,
+        (entries) => this.handleTerminalTailEntries(sessionId, entries),
+        (error) => logAgentd("terminal tail error", { sessionId, error: error instanceof Error ? error.message : String(error) }),
+      );
+      try {
+        await watcher.start();
+        this.terminalTailWatchers.set(sessionId, watcher);
+        logAgentd("terminal tail started", { sessionId, sessionFilePath });
+      } catch (error) {
+        logAgentd("terminal tail start failed", { sessionId, error: error instanceof Error ? error.message : String(error) });
+      }
+      return;
+    }
+    const watcher = this.terminalTailWatchers.get(sessionId);
+    if (!watcher) return;
+    this.terminalTailWatchers.delete(sessionId);
+    await watcher.stop().catch(() => undefined);
+    logAgentd("terminal tail stopped", { sessionId });
+  }
+
+  private async handleTerminalTailEntries(sessionId: string, entries: PiSessionTailEntry[]): Promise<void> {
+    if (!this.sessions.has(sessionId)) return;
+    const inferred = inferTerminalStatusFromEntries(entries);
+    if (!inferred) return;
+    const session = this.mustGet(sessionId);
+    if (session.status === inferred) return;
+    // Don't overwrite an explicit user-side cancellation. If the user clicked Stop while the
+    // TUI was open, the cancelled state should stick until the overlay close reconcile
+    // (`syncTerminalSession`) decides what to do with whatever Pi wrote after the cancel.
+    if (session.status === "cancelled" && inferred === "running") return;
+    logAgentd("terminal tail status patch", { sessionId, from: session.status, to: inferred });
+    await this.patch(sessionId, { status: inferred });
   }
 
   async syncTerminalSession(sessionId: string, baselinePiMessageId?: string): Promise<PickyAgentSession> {
@@ -3242,6 +3306,42 @@ function isNonSkillSlashCommand(text: string): boolean {
 
 function piSessionFilePathForSession(session: PickyAgentSession): string | undefined {
   return normalizeOptionalString(session.piSessionFilePath) ?? piSessionFilePathFromLogs(session.logs);
+}
+
+/**
+ * Walks newly-tailed JSONL entries in reverse and returns the most decisive
+ * status transition we can claim. Used by `handleTerminalTailEntries` to keep
+ * the HUD dock icon animating while the user is driving a Pickle through the
+ * Pi terminal overlay / inline TUI. We intentionally only emit `running` and
+ * `completed` here — `waiting_for_input` would require inspecting which tool
+ * block is open, which Pi's JSONL doesn't expose unambiguously in v1.
+ */
+function inferTerminalStatusFromEntries(entries: PiSessionTailEntry[]): PickyAgentSession["status"] | undefined {
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    const entry = entries[i];
+    if (!entry) continue;
+    if (entry.type === "session_info") continue;
+    const role = entry.message?.role;
+    if (role === "user") return "running";
+    if (role === "assistant") {
+      // Pi writes one entry per fully-formed assistant message. Tool-using turns land as a
+      // sequence of assistant entries (one per pre/post-tool segment); the LAST entry in the
+      // batch having an unsettled toolCall still means we're mid-turn, otherwise the turn is
+      // done from the dock-icon point of view. The next user/assistant entry will re-arm running.
+      return hasOpenToolCall(entry.message?.content) ? "running" : "completed";
+    }
+  }
+  return undefined;
+}
+
+function hasOpenToolCall(content: unknown): boolean {
+  if (!Array.isArray(content)) return false;
+  for (const block of content) {
+    if (!block || typeof block !== "object") continue;
+    const candidate = block as { type?: string; toolResult?: unknown };
+    if (candidate.type === "toolCall" && candidate.toolResult === undefined) return true;
+  }
+  return false;
 }
 
 function shouldReattachBlockedSessionOnStartup(session: PickyAgentSession): boolean {

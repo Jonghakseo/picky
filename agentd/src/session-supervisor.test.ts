@@ -3932,6 +3932,40 @@ describe("SessionSupervisor", () => {
     expect(appended).toContainEqual({ text: "Long extension update", notifyType: "warning" });
   });
 
+  it("keeps streamed assistant text in one bubble when notify fires mid-stream", async () => {
+    // Regression: an extension `notify` arriving while assistant deltas were still
+    // streaming used to flush the in-flight draft and force the remaining deltas
+    // into a fresh agent_text message, visibly cutting the response in half with
+    // the notify wedged in between (e.g. observational memory hooks bisecting an
+    // answer). The notify should record as its own message without splitting the
+    // surrounding assistant reply.
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    const session = await supervisor.create(context("notify mid-stream"));
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "PR 생성 완료. " });
+    runtime.handle?.emit({ type: "assistant_delta", delta: "본문 wrapper 는 flex-1..." });
+    runtime.handle?.emit({
+      type: "extension_ui",
+      waitsForInput: false,
+      request: { id: "notify-mid", sessionId: session.id, method: "notify", createdAt: "2026-05-01T00:00:00.000Z", prompt: "Observational memory: 3 observations recorded", notifyType: "info" },
+    });
+    runtime.handle?.emit({ type: "assistant_delta", delta: " 은 현상이 안 났는데, " });
+    runtime.handle?.emit({ type: "assistant_delta", delta: "Lexical 기본값 이후 회귀로 드러남." });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "done" });
+    await waitUntil(() => (supervisor.get(session.id)?.messages ?? []).some((message) => message.kind === "agent_text"));
+
+    const textBubbles = (supervisor.get(session.id)?.messages ?? []).filter((message) => message.kind === "agent_text");
+    expect(textBubbles).toHaveLength(1);
+    expect(textBubbles[0].text).toBe("PR 생성 완료. 본문 wrapper 는 flex-1... 은 현상이 안 났는데, Lexical 기본값 이후 회귀로 드러남.");
+    const visible = (supervisor.get(session.id)?.messages ?? []).filter((message) => message.kind === "agent_text" || message.id === "notify-mid");
+    expect(visible.map((message) => ({ id: message.id, kind: message.kind }))).toEqual([
+      { id: "notify-mid", kind: "system" },
+      { id: textBubbles[0].id, kind: "agent_text" },
+    ]);
+  });
+
   it("appends runtime logs without emitting full session updates", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

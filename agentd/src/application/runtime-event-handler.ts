@@ -344,8 +344,15 @@ export class RuntimeEventHandler {
       if (request.method === "setWidget") return;
       await this.dependencies.appendLog(sessionId, extensionUiLogLine(request));
       if (request.method === "notify") {
-        await this.dependencies.messageBuilder.flushAssistantText(sessionId);
-        await this.dependencies.messageBuilder.flushThinking(sessionId);
+        // Do NOT flush the in-flight assistant draft here. notify is a background
+        // extension event (e.g. observational memory hook) that runs in parallel
+        // with the streamed answer; flushing would commit whatever has streamed so
+        // far as an agent_text bubble and force the remaining deltas into a fresh
+        // bubble, visibly cutting the response in half (see Picky bug: notify
+        // bisects assistant reply). The notify message is appended at its own
+        // timestamp, and the assistant draft keeps accumulating until the next
+        // real boundary (tool call / terminal status) flushes it as a single
+        // agent_text bubble below the notification.
         await this.dependencies.messageBuilder.recordExtensionNotification(sessionId, request);
       }
       if (request.method === "set_editor_text") this.dependencies.emitExtensionUiRequest(request);

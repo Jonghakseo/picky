@@ -3984,13 +3984,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Adds a Picky CLI skill to Pi so explicit Picky CLI requests can use the right local command guidance."
+            "value": "Adds guidance for using the local Picky CLI to submit to Picky, create Pickles, and control push-to-talk."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "명시적인 Picky CLI 요청에서 올바른 로컬 명령 가이드를 참고할 수 있도록 Pi에 Picky CLI 스킬을 추가해요."
+            "value": "로컬 Picky CLI로 Picky에 메시지를 보내고, Pickle을 만들고, push-to-talk를 제어하는 가이드를 Pi에 추가해요."
           }
         }
       }

@@ -2088,6 +2088,7 @@ export class SessionSupervisor extends EventEmitter {
 
   async followUp(sessionId: string, text: string, context?: PickyContextPacket): Promise<PickyAgentSession> {
     const session = this.mustGet(sessionId);
+    if (session.archived === true) throw new Error("Cannot follow up an archived session");
     if (["failed", "cancelled"].includes(session.status)) throw new Error(`Cannot follow up ${session.status} session`);
 
     const userBash = parseUserBashInput(text);
@@ -2619,6 +2620,7 @@ export class SessionSupervisor extends EventEmitter {
     if (userBash) return this.executeUserBash(sessionId, userBash, context);
 
     const session = this.mustGet(sessionId);
+    if (session.archived === true) throw new Error("Cannot steer an archived session");
     await this.preparePickleSessionForUserInput(sessionId);
     const awaitedPendingHandle = this.pendingRuntimeHandles.has(sessionId);
     const handle = await this.runtimeHandleForUserInput(session, "steer");
@@ -2690,6 +2692,7 @@ export class SessionSupervisor extends EventEmitter {
 
   async abort(sessionId: string): Promise<PickyAgentSession> {
     const beforeAbort = this.mustGet(sessionId);
+    if (beforeAbort.archived === true) throw new Error("Cannot abort an archived session");
     const handle = this.runtimeHandles.get(sessionId);
     const cancellationMessagesBefore = countSystemMessages(beforeAbort, "Cancelled by user");
     logAgentd("abort requested", { sessionId, hasHandle: Boolean(handle) });

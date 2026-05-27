@@ -230,6 +230,9 @@ describe("picky cli", () => {
   });
 
   it("pickle-followup sends followUp command and prints queued message", async () => {
+    server.onCommand("listSessions", (_, send) => {
+      send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-1", title: "T", status: "running" })] });
+    });
     server.onCommand("followUp", (command, send) => {
       const cmd = command as { sessionId: string };
       send({
@@ -240,10 +243,33 @@ describe("picky cli", () => {
     const result = await runCli(["pickle-followup", "p-1", "more please"]);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("Queued follow-up for p-1");
-    expect(server.received[0]).toMatchObject({ type: "followUp", sessionId: "p-1", text: "more please" });
+    expect(server.received.find((command) => (command as { type?: string }).type === "followUp")).toMatchObject({ type: "followUp", sessionId: "p-1", text: "more please" });
+  });
+
+  it("pickle-followup refuses to steer an archived Pickle and never sends followUp", async () => {
+    server.onCommand("listSessions", (_, send) => {
+      send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-archived", title: "A", status: "completed", archived: true })] });
+    });
+    const result = await runCli(["pickle-followup", "p-archived", "hey"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("is archived");
+    expect(server.received.some((command) => (command as { type?: string }).type === "followUp")).toBe(false);
+  });
+
+  it("pickle-followup refuses an unknown session id and never sends followUp", async () => {
+    server.onCommand("listSessions", (_, send) => {
+      send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-1", title: "T", status: "running" })] });
+    });
+    const result = await runCli(["pickle-followup", "p-missing", "hey"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("Pickle session not found: p-missing");
+    expect(server.received.some((command) => (command as { type?: string }).type === "followUp")).toBe(false);
   });
 
   it("pickle-abort sends abort command and prints requested message", async () => {
+    server.onCommand("listSessions", (_, send) => {
+      send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-1", title: "T", status: "running" })] });
+    });
     server.onCommand("abort", (command, send) => {
       const cmd = command as { sessionId: string };
       send({
@@ -254,6 +280,16 @@ describe("picky cli", () => {
     const result = await runCli(["pickle-abort", "p-1"]);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("Abort requested for p-1");
+  });
+
+  it("pickle-abort refuses to abort an archived Pickle and never sends abort", async () => {
+    server.onCommand("listSessions", (_, send) => {
+      send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-archived", title: "A", status: "running", archived: true })] });
+    });
+    const result = await runCli(["pickle-abort", "p-archived"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("is archived");
+    expect(server.received.some((command) => (command as { type?: string }).type === "abort")).toBe(false);
   });
 
   it("ptt press and release send push-to-talk control commands", async () => {

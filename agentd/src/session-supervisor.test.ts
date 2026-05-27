@@ -64,6 +64,18 @@ describe("SessionSupervisor", () => {
     expect(unarchived.archivedAt).toBeUndefined();
   });
 
+  it("rejects followUp/steer/abort on an archived session so external callers (e.g. picky CLI) cannot steer hidden Pickles", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-archived-guard-"));
+    const supervisor = new SessionSupervisor(new MockRuntime(), new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("archived guard"));
+    await supervisor.setSessionArchived(session.id, true);
+
+    await expect(supervisor.followUp(session.id, "more please")).rejects.toThrow(/Cannot follow up an archived session/);
+    await expect(supervisor.steer(session.id, "please change direction")).rejects.toThrow(/Cannot steer an archived session/);
+    await expect(supervisor.abort(session.id)).rejects.toThrow(/Cannot abort an archived session/);
+  });
+
   it("keeps a session cancelled when abort happens while runtime create is pending", async () => {
     const runtime = new DeferredCreateRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-pending-create-abort-"));

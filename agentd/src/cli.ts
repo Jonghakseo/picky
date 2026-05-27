@@ -222,6 +222,7 @@ Examples:
   .action(async (sessionId: string, text: string, options: { context?: boolean }) => {
     await runWithErrorHandling(async () => {
       const connection = await loadCliConnection();
+      await ensureSessionIsSteerable(connection, sessionId, "follow-up");
       // No bespoke ack event yet — the daemon does not return a "followUp accepted"
       // event today. Use a short ack timeout and resolve as soon as a session update
       // tagged with the same session id arrives, which the supervisor emits when the
@@ -256,6 +257,7 @@ Examples:
   .action(async (sessionId: string) => {
     await runWithErrorHandling(async () => {
       const connection = await loadCliConnection();
+      await ensureSessionIsSteerable(connection, sessionId, "abort");
       await sendCommand(connection, { type: "abort", sessionId }, {
         matchEvent: (event) => (event.type === "sessionUpdated" && (event as { session: { id: string } }).session.id === sessionId ? event : null),
         timeoutMs: 4_000,
@@ -266,6 +268,28 @@ Examples:
       process.stdout.write(`Abort requested for ${sessionId}\n`);
     });
   });
+
+/**
+ * Sanity-check that the target Pickle exists and is not archived before we
+ * fire `followUp` / `abort` at the daemon. Archived Pickles are hidden from
+ * the Picky dock and the user has already opted out of touching them, so
+ * steering or aborting them from the CLI is almost always a mistake (e.g. a
+ * stale session id copy-pasted from an old `pickle-list --include-archived`
+ * dump). The daemon enforces the same rule, but doing it here gives the user
+ * a clear, non-generic error message and avoids issuing the side-effectful
+ * command at all.
+ */
+async function ensureSessionIsSteerable(connection: Awaited<ReturnType<typeof loadCliConnection>>, sessionId: string, action: "follow-up" | "abort"): Promise<void> {
+  const snapshot = await sendCommand(connection, { type: "listSessions" }, {
+    matchEvent: (event) => (event.type === "sessionSnapshot" ? event : null),
+  });
+  if (snapshot.type !== "sessionSnapshot") return;
+  const target = snapshot.sessions.find((session) => session.id === sessionId);
+  if (!target) fail(`Pickle session not found: ${sessionId}`, 1);
+  if (target.archived === true) {
+    fail(`Pickle session ${sessionId} is archived; un-archive it from the Picky dock before sending a ${action}.`, 1);
+  }
+}
 
 async function runWithErrorHandling(action: () => Promise<void>): Promise<void> {
   try {

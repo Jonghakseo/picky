@@ -11,7 +11,7 @@ import Testing
 
 private struct FakeAdvancedBrowserProvider: PickyAdvancedBrowserContextProviding {
     let result: PickyContextCaptureResult<PickyBrowserContext>
-    func browserContextResult() -> PickyContextCaptureResult<PickyBrowserContext> { result }
+    func browserContextResult() async -> PickyContextCaptureResult<PickyBrowserContext> { result }
 }
 
 private struct FakeSelectedTextProvider: PickySelectedTextProviding {
@@ -41,7 +41,7 @@ private struct MultiDisplayScreenProvider: PickyScreenContextProviding {
 }
 
 struct PickyAdvancedContextTests {
-    @Test func fakeBrowserAndSelectedTextProvidersAreIncludedWithWarnings() throws {
+    @Test func fakeBrowserAndSelectedTextProvidersAreIncludedWithWarnings() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-advanced-\(UUID().uuidString)", isDirectory: true)
         let assembler = PickyContextPacketAssembler(
             appProvider: AdvancedFakeAppProvider(),
@@ -53,7 +53,7 @@ struct PickyAdvancedContextTests {
             defaultCwd: "/tmp"
         )
 
-        let packet = try assembler.assemble(source: "voice", transcript: "help")
+        let packet = try await assembler.assemble(source: "voice", transcript: "help")
 
         #expect(packet.browser?.url?.absoluteString == "https://example.com/path")
         #expect(packet.browser?.title == "Example")
@@ -64,7 +64,7 @@ struct PickyAdvancedContextTests {
         #expect(packet.warnings.contains("selection warning"))
     }
 
-    @Test func browserPermissionFailureIsNonFatalWarning() throws {
+    @Test func browserPermissionFailureIsNonFatalWarning() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-browser-fail-\(UUID().uuidString)", isDirectory: true)
         let assembler = PickyContextPacketAssembler(
             appProvider: AdvancedFakeAppProvider(),
@@ -74,13 +74,13 @@ struct PickyAdvancedContextTests {
             defaultCwd: nil
         )
 
-        let packet = try assembler.assemble(source: "voice", transcript: "help")
+        let packet = try await assembler.assemble(source: "voice", transcript: "help")
 
         #expect(packet.browser == nil)
         #expect(packet.warnings == ["Browser context permission failure"])
     }
 
-    @Test func browserSelectedTextWinsOverClipboardFallback() throws {
+    @Test func browserSelectedTextWinsOverClipboardFallback() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-browser-selection-\(UUID().uuidString)", isDirectory: true)
         let assembler = PickyContextPacketAssembler(
             appProvider: AdvancedFakeAppProvider(),
@@ -91,7 +91,7 @@ struct PickyAdvancedContextTests {
             defaultCwd: nil
         )
 
-        let packet = try assembler.assemble(source: "text", transcript: "ask about this")
+        let packet = try await assembler.assemble(source: "text", transcript: "ask about this")
 
         #expect(packet.selectedText == "browser selection")
     }
@@ -172,7 +172,7 @@ struct PickyAdvancedContextTests {
 
     // MARK: - AppleScriptBrowserContextProvider gating
 
-    @Test func appleScriptProviderSkipsScriptWhenMultipleBrowserInstancesDetected() {
+    @Test func appleScriptProviderSkipsScriptWhenMultipleBrowserInstancesDetected() async {
         let scriptCalls = ScriptCallCounter()
         var provider = AppleScriptBrowserContextProvider()
         provider.frontmostBundleIdProvider = { "com.google.Chrome" }
@@ -183,14 +183,14 @@ struct PickyAdvancedContextTests {
             return ""
         }
 
-        let result = provider.browserContextResult()
+        let result = await provider.browserContextResult()
 
         #expect(result.value == nil)
         #expect(scriptCalls.count == 0)
         #expect(result.warnings.contains(where: { $0.contains("multiple Google Chrome instances") }))
     }
 
-    @Test func appleScriptProviderReturnsUnavailableWhenFrontmostWindowMissingFromAppleScriptList() {
+    @Test func appleScriptProviderReturnsUnavailableWhenFrontmostWindowMissingFromAppleScriptList() async {
         var provider = AppleScriptBrowserContextProvider()
         provider.frontmostBundleIdProvider = { "com.google.Chrome" }
         provider.instanceCountProvider = { _ in 1 }
@@ -199,13 +199,13 @@ struct PickyAdvancedContextTests {
             "http://localhost:5173/\nAdmin | Example\n1\nAdmin | Example\u{1F}"
         }
 
-        let result = provider.browserContextResult()
+        let result = await provider.browserContextResult()
 
         #expect(result.value == nil)
         #expect(result.warnings.contains(where: { $0.contains("not visible to AppleScript") }))
     }
 
-    @Test func appleScriptProviderReturnsValueWhenFrontmostTitleMatchesAppleScriptList() throws {
+    @Test func appleScriptProviderReturnsValueWhenFrontmostTitleMatchesAppleScriptList() async throws {
         var provider = AppleScriptBrowserContextProvider()
         provider.frontmostBundleIdProvider = { "com.google.Chrome" }
         provider.instanceCountProvider = { _ in 1 }
@@ -214,7 +214,7 @@ struct PickyAdvancedContextTests {
             "https://example.com/picky\nPicky Docs\n2\nPicky Docs\u{1F}Other Tab\u{1F}\nselected browser text"
         }
 
-        let result = provider.browserContextResult()
+        let result = await provider.browserContextResult()
         let context = try #require(result.value)
 
         #expect(context.url?.absoluteString == "https://example.com/picky")
@@ -223,7 +223,7 @@ struct PickyAdvancedContextTests {
         #expect(result.warnings.isEmpty)
     }
 
-    @Test func appleScriptProviderKeepsMultilineSelectedTextFromFifthField() throws {
+    @Test func appleScriptProviderKeepsMultilineSelectedTextFromFifthField() async throws {
         var provider = AppleScriptBrowserContextProvider()
         provider.frontmostBundleIdProvider = { "com.google.Chrome" }
         provider.instanceCountProvider = { _ in 1 }
@@ -232,13 +232,13 @@ struct PickyAdvancedContextTests {
             "https://example.com/picky\nPicky Docs\n1\nPicky Docs\u{1F}\nfirst line\nsecond line"
         }
 
-        let result = provider.browserContextResult()
+        let result = await provider.browserContextResult()
         let context = try #require(result.value)
 
         #expect(context.selectedText == "first line\nsecond line")
     }
 
-    @Test func appleScriptProviderWarnsWhenBrowserSelectedTextIsTruncated() throws {
+    @Test func appleScriptProviderWarnsWhenBrowserSelectedTextIsTruncated() async throws {
         var provider = AppleScriptBrowserContextProvider()
         provider.frontmostBundleIdProvider = { "com.google.Chrome" }
         provider.instanceCountProvider = { _ in 1 }
@@ -248,14 +248,14 @@ struct PickyAdvancedContextTests {
             "https://example.com/picky\nPicky Docs\n1\nPicky Docs\u{1F}\nabcdefg"
         }
 
-        let result = provider.browserContextResult()
+        let result = await provider.browserContextResult()
         let context = try #require(result.value)
 
         #expect(context.selectedText?.contains("[truncated by Picky]") == true)
         #expect(result.warnings.contains(where: { $0.contains("Selected text truncated") }))
     }
 
-    @Test func appleScriptProviderSkipsCrossCheckWhenFrontmostWindowTitleUnavailable() throws {
+    @Test func appleScriptProviderSkipsCrossCheckWhenFrontmostWindowTitleUnavailable() async throws {
         var provider = AppleScriptBrowserContextProvider()
         provider.frontmostBundleIdProvider = { "com.google.Chrome" }
         provider.instanceCountProvider = { _ in 1 }
@@ -264,34 +264,34 @@ struct PickyAdvancedContextTests {
             "https://example.com/path\nSome Title\n1\nSome Title\u{1F}"
         }
 
-        let result = provider.browserContextResult()
+        let result = await provider.browserContextResult()
         let context = try #require(result.value)
 
         #expect(context.url?.absoluteString == "https://example.com/path")
         #expect(context.title == "Some Title")
     }
 
-    @Test func appleScriptProviderTreatsZeroWindowCountAsUnavailable() {
+    @Test func appleScriptProviderTreatsZeroWindowCountAsUnavailable() async {
         var provider = AppleScriptBrowserContextProvider()
         provider.frontmostBundleIdProvider = { "com.google.Chrome" }
         provider.instanceCountProvider = { _ in 1 }
         provider.frontmostWindowTitleProvider = { nil }
         provider.scriptRunner = { _ in "\n\n0\n" }
 
-        let result = provider.browserContextResult()
+        let result = await provider.browserContextResult()
 
         #expect(result.value == nil)
         #expect(result.warnings.contains(where: { $0.contains("no active tab URL") }))
     }
 
-    @Test func appleScriptProviderReturnsUnavailableForUnsupportedFrontmostBundle() {
+    @Test func appleScriptProviderReturnsUnavailableForUnsupportedFrontmostBundle() async {
         var provider = AppleScriptBrowserContextProvider()
         provider.frontmostBundleIdProvider = { "com.example.NotABrowser" }
         provider.instanceCountProvider = { _ in 1 }
         provider.frontmostWindowTitleProvider = { "x" }
         provider.scriptRunner = { _ in "unused" }
 
-        let result = provider.browserContextResult()
+        let result = await provider.browserContextResult()
 
         #expect(result.value == nil)
         #expect(result.warnings.isEmpty)
@@ -317,6 +317,46 @@ struct PickyAdvancedContextTests {
         #expect(AppleScriptBrowserContextProvider.shouldCountBrowserInstance(arguments: arguments))
         #expect(AppleScriptBrowserContextProvider.shouldCountBrowserInstance(arguments: nil))
     }
+
+    /// Regression test for the "picky CLI freezes Picky.app" beachball: a hung
+    /// browser used to block the main actor on `NSAppleScript.executeAndReturnError`.
+    /// The provider must instead fall back to `.unavailable` once the wall-clock
+    /// `scriptExecutionTimeout` elapses, so the await on the main actor unblocks.
+    @Test func appleScriptProviderReturnsUnavailableWhenRunnerExceedsExecutionTimeout() async {
+        var provider = AppleScriptBrowserContextProvider()
+        provider.frontmostBundleIdProvider = { "com.google.Chrome" }
+        provider.instanceCountProvider = { _ in 1 }
+        provider.frontmostWindowTitleProvider = { "Picky Docs" }
+        provider.scriptExecutionTimeout = 0.1
+        provider.scriptRunner = { _ in
+            Thread.sleep(forTimeInterval: 1.0)
+            return "https://example.com/picky\nPicky Docs\n1\nPicky Docs\u{1F}\n"
+        }
+
+        let result = await provider.browserContextResult()
+
+        #expect(result.value == nil)
+        #expect(result.warnings.contains(where: { $0.contains("timed out") }))
+    }
+
+    @Test func appleScriptProviderDoesNotBlockTheMainActorWhileRunnerHangs() async {
+        var provider = AppleScriptBrowserContextProvider()
+        provider.frontmostBundleIdProvider = { "com.google.Chrome" }
+        provider.instanceCountProvider = { _ in 1 }
+        provider.frontmostWindowTitleProvider = { "Picky Docs" }
+        provider.scriptExecutionTimeout = 0.2
+        provider.scriptRunner = { _ in
+            Thread.sleep(forTimeInterval: 5.0) // would beachball the UI under the old sync path
+            return ""
+        }
+
+        let started = Date()
+        let result = await provider.browserContextResult()
+        let elapsed = Date().timeIntervalSince(started)
+
+        #expect(result.value == nil)
+        #expect(elapsed < 1.0, "browserContextResult must honor scriptExecutionTimeout instead of waiting for the runner")
+    }
 }
 
 private final class ScriptCallCounter: @unchecked Sendable {
@@ -327,17 +367,17 @@ private final class ScriptCallCounter: @unchecked Sendable {
 struct PickyChainedBrowserContextProviderTests {
     private struct Stub: PickyAdvancedBrowserContextProviding {
         let result: PickyContextCaptureResult<PickyBrowserContext>
-        func browserContextResult() -> PickyContextCaptureResult<PickyBrowserContext> { result }
+        func browserContextResult() async -> PickyContextCaptureResult<PickyBrowserContext> { result }
     }
 
-    @Test func chainReturnsFirstValueAndCarriesEarlierWarnings() throws {
+    @Test func chainReturnsFirstValueAndCarriesEarlierWarnings() async throws {
         let chain = ChainedBrowserContextProvider(providers: [
             Stub(result: .unavailable(warnings: ["first failed"])),
             Stub(result: .value(PickyBrowserContext(url: URL(string: "https://example.com"), title: "T", selectedText: nil), warnings: ["AX used"])),
             Stub(result: .value(PickyBrowserContext(url: URL(string: "https://other.com"), title: "X", selectedText: nil)))
         ])
 
-        let result = chain.browserContextResult()
+        let result = await chain.browserContextResult()
         let context = try #require(result.value)
 
         #expect(context.url?.absoluteString == "https://example.com")
@@ -345,13 +385,13 @@ struct PickyChainedBrowserContextProviderTests {
         #expect(result.warnings == ["first failed", "AX used"])
     }
 
-    @Test func chainReturnsUnavailableWithAllWarningsWhenEveryProviderFails() {
+    @Test func chainReturnsUnavailableWithAllWarningsWhenEveryProviderFails() async {
         let chain = ChainedBrowserContextProvider(providers: [
             Stub(result: .unavailable(warnings: ["a"])),
             Stub(result: .unavailable(warnings: ["b", "c"]))
         ])
 
-        let result = chain.browserContextResult()
+        let result = await chain.browserContextResult()
 
         #expect(result.value == nil)
         #expect(result.warnings == ["a", "b", "c"])
@@ -359,7 +399,7 @@ struct PickyChainedBrowserContextProviderTests {
 }
 
 struct PickyAccessibilityBrowserContextProviderTests {
-    @Test func accessibilityProviderReturnsTitleOnlyWhenURLLookupFails() throws {
+    @Test func accessibilityProviderReturnsTitleOnlyWhenURLLookupFails() async throws {
         var provider = AccessibilityBrowserContextProvider()
         provider.frontmostApplicationProvider = { NSRunningApplication.current }
         provider.axTrustChecker = { true }
@@ -367,14 +407,14 @@ struct PickyAccessibilityBrowserContextProviderTests {
         provider.titleExtractor = { _ in "  Personal Access Tokens (Classic)  " }
         provider.urlExtractor = { _, _ in nil }
 
-        let result = provider.browserContextResult()
+        let result = await provider.browserContextResult()
         let context = try #require(result.value)
 
         #expect(context.title == "Personal Access Tokens (Classic)")
         #expect(context.url == nil)
     }
 
-    @Test func accessibilityProviderReturnsURLAndTitleWhenBothPresent() throws {
+    @Test func accessibilityProviderReturnsURLAndTitleWhenBothPresent() async throws {
         var provider = AccessibilityBrowserContextProvider()
         provider.frontmostApplicationProvider = { NSRunningApplication.current }
         provider.axTrustChecker = { true }
@@ -382,14 +422,14 @@ struct PickyAccessibilityBrowserContextProviderTests {
         provider.titleExtractor = { _ in "GitHub" }
         provider.urlExtractor = { _, _ in "https://github.com/settings/tokens" }
 
-        let result = provider.browserContextResult()
+        let result = await provider.browserContextResult()
         let context = try #require(result.value)
 
         #expect(context.title == "GitHub")
         #expect(context.url?.absoluteString == "https://github.com/settings/tokens")
     }
 
-    @Test func accessibilityProviderPrependsHTTPSWhenURLLacksScheme() throws {
+    @Test func accessibilityProviderPrependsHTTPSWhenURLLacksScheme() async throws {
         var provider = AccessibilityBrowserContextProvider()
         provider.frontmostApplicationProvider = { NSRunningApplication.current }
         provider.axTrustChecker = { true }
@@ -397,33 +437,33 @@ struct PickyAccessibilityBrowserContextProviderTests {
         provider.titleExtractor = { _ in nil }
         provider.urlExtractor = { _, _ in "github.com/settings/tokens" }
 
-        let result = provider.browserContextResult()
+        let result = await provider.browserContextResult()
         let context = try #require(result.value)
 
         #expect(context.url?.absoluteString == "https://github.com/settings/tokens")
     }
 
-    @Test func accessibilityProviderReturnsUnavailableForUnsupportedBundle() {
+    @Test func accessibilityProviderReturnsUnavailableForUnsupportedBundle() async {
         var provider = AccessibilityBrowserContextProvider()
         provider.frontmostApplicationProvider = { NSRunningApplication.current }
         provider.axTrustChecker = { true }
         provider.supportedBundleIds = ["com.example.NotABrowser"]
         provider.titleExtractor = { _ in "X" }
 
-        let result = provider.browserContextResult()
+        let result = await provider.browserContextResult()
 
         #expect(result.value == nil)
         #expect(result.warnings.isEmpty)
     }
 
-    @Test func accessibilityProviderReturnsUnavailableWithWarningWhenAXNotTrusted() {
+    @Test func accessibilityProviderReturnsUnavailableWithWarningWhenAXNotTrusted() async {
         var provider = AccessibilityBrowserContextProvider()
         provider.frontmostApplicationProvider = { NSRunningApplication.current }
         provider.axTrustChecker = { false }
         provider.supportedBundleIds = [NSRunningApplication.current.bundleIdentifier ?? ""]
         provider.titleExtractor = { _ in "X" }
 
-        let result = provider.browserContextResult()
+        let result = await provider.browserContextResult()
 
         #expect(result.value == nil)
         #expect(result.warnings.contains(where: { $0.contains("Accessibility permission") }))
@@ -467,7 +507,7 @@ struct PickyAccessibilityBrowserContextProviderTests {
         #expect(!AccessibilityBrowserContextProvider.looksLikeBrowserURL("jonghak@example.com"))
     }
 
-    @Test func accessibilityProviderReturnsUnavailableWhenNoTitleAndNoURL() {
+    @Test func accessibilityProviderReturnsUnavailableWhenNoTitleAndNoURL() async {
         var provider = AccessibilityBrowserContextProvider()
         provider.frontmostApplicationProvider = { NSRunningApplication.current }
         provider.axTrustChecker = { true }
@@ -475,7 +515,7 @@ struct PickyAccessibilityBrowserContextProviderTests {
         provider.titleExtractor = { _ in nil }
         provider.urlExtractor = { _, _ in nil }
 
-        let result = provider.browserContextResult()
+        let result = await provider.browserContextResult()
 
         #expect(result.value == nil)
         #expect(result.warnings.contains(where: { $0.contains("no AX title/URL") }))

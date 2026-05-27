@@ -25,10 +25,7 @@ struct NullPickyBrowserContextProvider: PickyBrowserContextProviding {
     func browserContext() -> PickyBrowserContext? { nil }
 }
 
-struct AdvancedBrowserContextProviderAdapter: PickyBrowserContextProviding {
-    let provider: PickyAdvancedBrowserContextProviding
-    func browserContext() -> PickyBrowserContext? { provider.browserContextResult().value }
-}
+
 
 struct StaticPickyScreenContextProvider: PickyScreenContextProviding {
     let captures: [CompanionScreenCapture]
@@ -63,7 +60,7 @@ struct PickyContextPacketAssembler {
     var now: () -> Date = Date.init
     var idGenerator: () -> String = { "context-\(UUID().uuidString)" }
 
-    func assemble(source: String, transcript: String) throws -> PickyContextPacket {
+    func assemble(source: String, transcript: String) async throws -> PickyContextPacket {
         let contextID = idGenerator()
         let screens = screenProvider.screenContexts()
         let screenshots = try screens.enumerated().map { index, screen in
@@ -73,7 +70,7 @@ struct PickyContextPacketAssembler {
         var warnings: [String] = []
         let browser: PickyBrowserContext?
         if let advancedBrowserProvider {
-            let result = advancedBrowserProvider.browserContextResult()
+            let result = await advancedBrowserProvider.browserContextResult()
             browser = result.value
             warnings.append(contentsOf: result.warnings)
         } else {

@@ -112,7 +112,7 @@ struct PickyContextPacketTests {
         #expect(!CompanionScreenCaptureUtility.shouldExcludeWindowFromContextCapture(report))
     }
 
-    @Test func assemblesNeutralVoiceContextPacketAndStoresScreenshots() throws {
+    @Test func assemblesNeutralVoiceContextPacketAndStoresScreenshots() async throws {
         let screenshotsRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-context-\(UUID().uuidString)", isDirectory: true)
         let assembler = PickyContextPacketAssembler(
             appProvider: FakeAppProvider(),
@@ -125,7 +125,7 @@ struct PickyContextPacketTests {
             idGenerator: { "context-test-001" }
         )
 
-        let packet = try assembler.assemble(source: "voice", transcript: "이 화면 맥락으로 원인 분석해줘")
+        let packet = try await assembler.assemble(source: "voice", transcript: "이 화면 맥락으로 원인 분석해줘")
 
         #expect(packet.source == "voice")
         #expect(packet.transcript == "이 화면 맥락으로 원인 분석해줘")
@@ -145,7 +145,7 @@ struct PickyContextPacketTests {
         #expect(packet.cwd == "/Users/test/project")
     }
 
-    @Test func sentryAndSlackUrlsRemainDataFieldsOnly() throws {
+    @Test func sentryAndSlackUrlsRemainDataFieldsOnly() async throws {
         for url in ["https://example.sentry.io/issues/123456/", "https://example.slack.com/archives/C123/p123"] {
             let screenshotsRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-context-\(UUID().uuidString)", isDirectory: true)
             let assembler = PickyContextPacketAssembler(
@@ -157,7 +157,7 @@ struct PickyContextPacketTests {
                 idGenerator: { "context-url-001" }
             )
 
-            let packet = try assembler.assemble(source: "voice", transcript: "확인해줘")
+            let packet = try await assembler.assemble(source: "voice", transcript: "확인해줘")
 
             #expect(packet.browser?.url?.absoluteString == url)
             #expect(packet.warnings.isEmpty)
@@ -165,7 +165,7 @@ struct PickyContextPacketTests {
         }
     }
 
-    @Test func assemblesInkMarksIntoScreenshotPixelContext() throws {
+    @Test func assemblesInkMarksIntoScreenshotPixelContext() async throws {
         let screenshotsRoot = FileManager.default.temporaryDirectory.appendingPathComponent("picky-ink-context-\(UUID().uuidString)", isDirectory: true)
         let capture = CompanionScreenCapture(
             imageData: Data("jpeg".utf8),
@@ -201,7 +201,7 @@ struct PickyContextPacketTests {
             idGenerator: { "context-ink-001" }
         )
 
-        let packet = try assembler.assemble(source: "voice", transcript: "여기 봐줘")
+        let packet = try await assembler.assemble(source: "voice", transcript: "여기 봐줘")
 
         #expect(packet.inkMarks.count == 1)
         #expect(packet.inkMarks.first?.screenId == "screen1")

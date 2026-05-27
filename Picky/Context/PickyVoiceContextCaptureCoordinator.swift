@@ -14,7 +14,7 @@ struct PickyVoiceContextCaptureResult {
 struct PickyVoiceContextCaptureCoordinator {
     typealias ScreenCapture = @MainActor (_ scope: PickyScreenContextScope, _ maximumDimension: Int) async throws -> [CompanionScreenCapture]
     typealias SettingsProvider = @MainActor () -> PickySettings
-    typealias ContextAssembler = @MainActor (_ screenCaptures: [CompanionScreenCapture], _ source: String, _ transcript: String, _ inkCapture: PickyInkCapture?) throws -> PickyContextPacket
+    typealias ContextAssembler = @MainActor (_ screenCaptures: [CompanionScreenCapture], _ source: String, _ transcript: String, _ inkCapture: PickyInkCapture?) async throws -> PickyContextPacket
 
     private let screenCapture: ScreenCapture
     private let settingsProvider: SettingsProvider
@@ -60,7 +60,7 @@ struct PickyVoiceContextCaptureCoordinator {
         )
         guard !Task.isCancelled else { return nil }
 
-        let assembled = try contextAssembler(screenCaptures, source, transcript, inkCapture)
+        let assembled = try await contextAssembler(screenCaptures, source, transcript, inkCapture)
         let gated = Self.applyInkOnlyAttachmentGate(assembled, settings: settings)
         return PickyVoiceContextCaptureResult(contextPacket: gated, source: source)
     }
@@ -83,7 +83,7 @@ struct PickyVoiceContextCaptureCoordinator {
         source: String,
         transcript: String,
         inkCapture: PickyInkCapture?
-    ) throws -> PickyContextPacket {
+    ) async throws -> PickyContextPacket {
         let assembler = PickyContextPacketAssembler(
             appProvider: WorkspacePickyApplicationContextProvider(),
             windowProvider: CGWindowPickyWindowContextProvider(),
@@ -98,6 +98,6 @@ struct PickyVoiceContextCaptureCoordinator {
             screenProvider: StaticPickyScreenContextProvider(captures: screenCaptures, inkCapture: inkCapture),
             defaultCwd: PickySettingsStore().load().mainAgentCwd
         )
-        return try assembler.assemble(source: source, transcript: transcript)
+        return try await assembler.assemble(source: source, transcript: transcript)
     }
 }

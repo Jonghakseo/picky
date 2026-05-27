@@ -32,7 +32,10 @@ enum PickyContextCaptureResult<Value> {
 }
 
 protocol PickyAdvancedBrowserContextProviding {
-    func browserContextResult() -> PickyContextCaptureResult<PickyBrowserContext>
+    /// Async because some providers (AppleScript) must dispatch off the main
+    /// actor to avoid blocking the UI runloop on `NSAppleScript.executeAndReturnError`,
+    /// which itself spins `CFRunLoopRun` waiting for `AESendMessage` to return.
+    func browserContextResult() async -> PickyContextCaptureResult<PickyBrowserContext>
 }
 
 protocol PickySelectedTextProviding {
@@ -182,6 +185,10 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
     var frontmostWindowTitleProvider: () -> String? = {
         CGWindowPickyWindowContextProvider().activeWindowContext()?.title
     }
+    /// Synchronous, blocking runner. The provider *never* calls this from the
+    /// main actor — `browserContextResult()` jumps to a detached thread and uses
+    /// `scriptExecutionTimeout` as a wall-clock guard so a hung browser cannot
+    /// freeze the UI runloop.
     var scriptRunner: (String) throws -> String = { source in
         var error: NSDictionary?
         guard let script = NSAppleScript(source: source) else { return "" }
@@ -189,6 +196,14 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
         if let error { throw NSError(domain: "PickyAppleScript", code: 1, userInfo: error as? [String: Any]) }
         return descriptor.stringValue ?? ""
     }
+
+    /// Wall-clock cap for a single AppleScript execution. When this elapses,
+    /// `browserContextResult()` returns `.unavailable(warnings: ["timed out"])`.
+    /// The background thread that ran the script is left to finish on its own
+    /// (we cannot safely interrupt NSAppleScript mid-flight); the script body
+    /// also carries `with timeout of 2 seconds`, so the second invocation will
+    /// usually fail fast at the AppleEvent layer.
+    var scriptExecutionTimeout: TimeInterval = 2.5
 
     static func visibleBrowserInstanceCount(bundleId: String) -> Int {
         NSWorkspace.shared.runningApplications
@@ -266,20 +281,22 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
             applicationName: "Safari",
             scriptBody: """
             tell application "Safari"
-              set wc to count of windows
-              if wc is 0 then return linefeed & linefeed & "0" & linefeed
-              set sep to character id 31
-              set u to URL of current tab of front window
-              set t to name of current tab of front window
-              set ns to ""
-              repeat with w in windows
-                set ns to ns & (name of current tab of w) & sep
-              end repeat
-              set s to ""
-              try
-                set s to do JavaScript "(function(){var s=window.getSelection&&window.getSelection();return s?s.toString():'';})()" in current tab of front window
-              end try
-              return u & linefeed & t & linefeed & wc & linefeed & ns & linefeed & s
+              with timeout of 2 seconds
+                set wc to count of windows
+                if wc is 0 then return linefeed & linefeed & "0" & linefeed
+                set sep to character id 31
+                set u to URL of current tab of front window
+                set t to name of current tab of front window
+                set ns to ""
+                repeat with w in windows
+                  set ns to ns & (name of current tab of w) & sep
+                end repeat
+                set s to ""
+                try
+                  set s to do JavaScript "(function(){var s=window.getSelection&&window.getSelection();return s?s.toString():'';})()" in current tab of front window
+                end try
+                return u & linefeed & t & linefeed & wc & linefeed & ns & linefeed & s
+              end timeout
             end tell
             """
         ),
@@ -288,20 +305,22 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
             applicationName: "Google Chrome",
             scriptBody: """
             tell application "Google Chrome"
-              set wc to count of windows
-              if wc is 0 then return linefeed & linefeed & "0" & linefeed
-              set sep to character id 31
-              set u to URL of active tab of front window
-              set t to title of active tab of front window
-              set ns to ""
-              repeat with w in windows
-                set ns to ns & (title of active tab of w) & sep
-              end repeat
-              set s to ""
-              try
-                set s to execute active tab of front window javascript "(function(){var s=window.getSelection&&window.getSelection();return s?s.toString():'';})()"
-              end try
-              return u & linefeed & t & linefeed & wc & linefeed & ns & linefeed & s
+              with timeout of 2 seconds
+                set wc to count of windows
+                if wc is 0 then return linefeed & linefeed & "0" & linefeed
+                set sep to character id 31
+                set u to URL of active tab of front window
+                set t to title of active tab of front window
+                set ns to ""
+                repeat with w in windows
+                  set ns to ns & (title of active tab of w) & sep
+                end repeat
+                set s to ""
+                try
+                  set s to execute active tab of front window javascript "(function(){var s=window.getSelection&&window.getSelection();return s?s.toString():'';})()"
+                end try
+                return u & linefeed & t & linefeed & wc & linefeed & ns & linefeed & s
+              end timeout
             end tell
             """
         ),
@@ -310,26 +329,28 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
             applicationName: "Arc",
             scriptBody: """
             tell application "Arc"
-              set wc to count of windows
-              if wc is 0 then return linefeed & linefeed & "0" & linefeed
-              set sep to character id 31
-              set u to URL of active tab of front window
-              set t to title of active tab of front window
-              set ns to ""
-              repeat with w in windows
-                set ns to ns & (title of active tab of w) & sep
-              end repeat
-              set s to ""
-              try
-                set s to execute active tab of front window javascript "(function(){var s=window.getSelection&&window.getSelection();return s?s.toString():'';})()"
-              end try
-              return u & linefeed & t & linefeed & wc & linefeed & ns & linefeed & s
+              with timeout of 2 seconds
+                set wc to count of windows
+                if wc is 0 then return linefeed & linefeed & "0" & linefeed
+                set sep to character id 31
+                set u to URL of active tab of front window
+                set t to title of active tab of front window
+                set ns to ""
+                repeat with w in windows
+                  set ns to ns & (title of active tab of w) & sep
+                end repeat
+                set s to ""
+                try
+                  set s to execute active tab of front window javascript "(function(){var s=window.getSelection&&window.getSelection();return s?s.toString():'';})()"
+                end try
+                return u & linefeed & t & linefeed & wc & linefeed & ns & linefeed & s
+              end timeout
             end tell
             """
         )
     ]
 
-    func browserContextResult() -> PickyContextCaptureResult<PickyBrowserContext> {
+    func browserContextResult() async -> PickyContextCaptureResult<PickyBrowserContext> {
         guard let bundleIdentifier = frontmostBundleIdProvider(),
               let target = targets.first(where: { $0.bundleIdentifier == bundleIdentifier }) else {
             return .unavailable()
@@ -341,7 +362,9 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
         }
         let raw: String
         do {
-            raw = try scriptRunner(target.scriptBody)
+            raw = try await runScriptOffMainActor(target.scriptBody)
+        } catch let error as AppleScriptTimeoutError {
+            return .unavailable(warnings: ["Browser context unavailable: AppleScript for \(target.applicationName) timed out after \(error.timeoutSeconds)s."])
         } catch {
             return .unavailable(warnings: ["Browser context permission or automation failure for \(target.applicationName): \(error.localizedDescription)"])
         }
@@ -374,6 +397,57 @@ struct AppleScriptBrowserContextProvider: PickyAdvancedBrowserContextProviding {
             warnings.append("Selected text truncated from \(selectedText.originalLength) characters.")
         }
         return .value(PickyBrowserContext(url: url, title: resolvedTitle, selectedText: selectedText?.text), warnings: warnings)
+    }
+
+    /// Runs `scriptRunner` on a one-shot background thread, with a wall-clock
+    /// timeout. The main actor only awaits the continuation, so a hung browser
+    /// can no longer block the UI runloop on `AESendMessage` (which was the
+    /// root cause of the "picky CLI freezes the app" beachballs).
+    ///
+    /// NSAppleScript itself spins a CFRunLoop while waiting for the Apple
+    /// Event reply, so it needs to be on a real Thread (not an arbitrary
+    /// DispatchQueue worker) — `Thread.start` gives us a fresh runloop owner
+    /// that is safe to leave running if the timeout fires.
+    private func runScriptOffMainActor(_ source: String) async throws -> String {
+        let runner = scriptRunner
+        let timeout = scriptExecutionTimeout
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+            let resolver = AppleScriptResolveOnce()
+            let thread = Thread {
+                autoreleasepool {
+                    do {
+                        let value = try runner(source)
+                        if resolver.claim() { continuation.resume(returning: value) }
+                    } catch {
+                        if resolver.claim() { continuation.resume(throwing: error) }
+                    }
+                }
+            }
+            thread.qualityOfService = .userInitiated
+            thread.name = "Picky.AppleScript"
+            thread.start()
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + timeout) {
+                if resolver.claim() {
+                    continuation.resume(throwing: AppleScriptTimeoutError(timeoutSeconds: timeout))
+                }
+            }
+        }
+    }
+}
+
+struct AppleScriptTimeoutError: LocalizedError {
+    let timeoutSeconds: TimeInterval
+    var errorDescription: String? { "AppleScript execution exceeded \(timeoutSeconds)s." }
+}
+
+final class AppleScriptResolveOnce {
+    private var resolved = false
+    private let lock = NSLock()
+    func claim() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if resolved { return false }
+        resolved = true
+        return true
     }
 }
 
@@ -465,10 +539,10 @@ struct ChainedBrowserContextProvider: PickyAdvancedBrowserContextProviding {
         self.providers = providers
     }
 
-    func browserContextResult() -> PickyContextCaptureResult<PickyBrowserContext> {
+    func browserContextResult() async -> PickyContextCaptureResult<PickyBrowserContext> {
         var accumulated: [String] = []
         for provider in providers {
-            let result = provider.browserContextResult()
+            let result = await provider.browserContextResult()
             switch result {
             case .value(let value, let warnings):
                 return .value(value, warnings: accumulated + warnings)

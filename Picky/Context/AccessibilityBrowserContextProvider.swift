@@ -45,7 +45,7 @@ struct AccessibilityBrowserContextProvider: PickyAdvancedBrowserContextProviding
     var titleExtractor: TitleExtractor = AccessibilityBrowserContextProvider.defaultTitleExtractor
     var urlExtractor: URLExtractor = AccessibilityBrowserContextProvider.defaultURLExtractor
 
-    func browserContextResult() -> PickyContextCaptureResult<PickyBrowserContext> {
+    func browserContextResult() async -> PickyContextCaptureResult<PickyBrowserContext> {
         guard let app = frontmostApplicationProvider(),
               let bundleId = app.bundleIdentifier,
               supportedBundleIds.contains(bundleId) else {

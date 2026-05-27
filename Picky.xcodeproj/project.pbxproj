@@ -121,7 +121,7 @@
 				28F22CBB2F56440300A0FC59 /* Sources */,
 				28F22CBC2F56440300A0FC59 /* Frameworks */,
 				28F22CBD2F56440300A0FC59 /* Resources */,
-				F3E2D1C0B9A8877655443322 /* Copy pi-extensions */,
+				F3E2D1C0B9A8877655443322 /* Copy Pi resources */,
 			);
 			buildRules = (
 			);
@@ -259,7 +259,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		F3E2D1C0B9A8877655443322 /* Copy pi-extensions */ = {
+		F3E2D1C0B9A8877655443322 /* Copy Pi resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -269,16 +269,18 @@
 			);
 			inputPaths = (
 				"$(SRCROOT)/pi-extensions",
+				"$(SRCROOT)/pi-skills",
 			);
-			name = "Copy pi-extensions";
+			name = "Copy Pi resources";
 			outputFileListPaths = (
 			);
 			outputPaths = (
 				"$(BUILT_PRODUCTS_DIR)/$(FULL_PRODUCT_NAME)/Contents/Resources/pi-extensions",
+				"$(BUILT_PRODUCTS_DIR)/$(FULL_PRODUCT_NAME)/Contents/Resources/pi-skills",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# pi-extensions are bundled by scripts/package-signed-app.sh outside Xcode's user-script sandbox.\n: \"${SRCROOT}/pi-extensions\"\n";
+			shellScript = "# Pi resources are bundled by scripts/package-signed-app.sh outside Xcode's user-script sandbox.\n: \"${SRCROOT}/pi-extensions\"\n: \"${SRCROOT}/pi-skills\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

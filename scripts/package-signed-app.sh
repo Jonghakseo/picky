@@ -284,7 +284,7 @@ step_end
 
 step_start "stage_app_bundle"
 # Sync the freshly built bundle into PACKAGED_APP without wiping cached
-# Resources/agentd or Resources/pi-extensions trees that we plan to update
+# Resources/agentd, Resources/pi-extensions, or Resources/pi-skills trees that we plan to update
 # selectively below. rsync's --delete prunes stale Xcode-produced files only.
 mkdir -p "${PACKAGED_APP}"
 # macOS /usr/bin/rsync is openrsync, which does not accept the GNU short flag
@@ -293,6 +293,7 @@ mkdir -p "${PACKAGED_APP}"
 /usr/bin/rsync -a --extended-attributes --delete \
   --exclude '/Contents/Resources/agentd/' \
   --exclude '/Contents/Resources/pi-extensions/' \
+  --exclude '/Contents/Resources/pi-skills/' \
   "${BUILT_APP}/" "${PACKAGED_APP}/"
 
 /usr/bin/python3 - "${BUILD_INFO_PATH}" "${APP_NAME}" "${MARKETING_VERSION}" "${BUILD_NUMBER}" "${RELEASE_CHANNEL}" "${GIT_SHA}" "${BUILD_TIMESTAMP}" "${BUILD_LABEL}" "${CONFIGURATION}" "${REALTIME_OPT_IN}" <<'PY'
@@ -355,14 +356,19 @@ if [[ "${PACKAGE_AGENTD}" == "1" ]]; then
   fi
 fi
 
-# Bundle pi-extensions so PickyExtensionInstaller can symlink them into
-# ~/.pi/agent/extensions on first launch. Run outside Xcode's user-script
-# sandbox because recursive directory writes under Resources are restricted
-# when declared as a single script output directory.
+# Bundle Pi resources so Picky installers can copy them into ~/.pi/agent on
+# demand. Run outside Xcode's user-script sandbox because recursive directory
+# writes under Resources are restricted when declared as a single script output
+# directory.
 if [[ -d "${ROOT_DIR}/pi-extensions" ]]; then
   rm -rf "${PACKAGED_APP}/Contents/Resources/pi-extensions"
   mkdir -p "${PACKAGED_APP}/Contents/Resources"
   /bin/cp -Rc "${ROOT_DIR}/pi-extensions" "${PACKAGED_APP}/Contents/Resources/pi-extensions"
+fi
+if [[ -d "${ROOT_DIR}/pi-skills" ]]; then
+  rm -rf "${PACKAGED_APP}/Contents/Resources/pi-skills"
+  mkdir -p "${PACKAGED_APP}/Contents/Resources"
+  /bin/cp -Rc "${ROOT_DIR}/pi-skills" "${PACKAGED_APP}/Contents/Resources/pi-skills"
 fi
 
 # Bundle the watchdog alert helper. Kept as a tiny standalone executable so
@@ -463,6 +469,7 @@ Configuration: ${CONFIGURATION}
 Build info: ${BUILD_INFO_PATH}
 $(if [[ "${PACKAGE_AGENTD}" == "1" ]]; then printf 'Bundled agentd: %s\n' "${PACKAGED_APP}/Contents/Resources/agentd"; fi)
 $(if [[ -d "${PACKAGED_APP}/Contents/Resources/pi-extensions" ]]; then printf 'Bundled pi-extensions: %s\n' "${PACKAGED_APP}/Contents/Resources/pi-extensions"; fi)
+$(if [[ -d "${PACKAGED_APP}/Contents/Resources/pi-skills" ]]; then printf 'Bundled pi-skills: %s\n' "${PACKAGED_APP}/Contents/Resources/pi-skills"; fi)
 $(if [[ -f "${PACKAGED_APP}/Contents/Resources/agentd-runtime/bin/node" ]]; then printf 'Bundled Node: %s\n' "${PACKAGED_APP}/Contents/Resources/agentd-runtime/bin/node"; fi)
 $(if [[ "${CREATE_ZIP}" == "1" ]]; then printf 'Zip: %s\n' "${ZIP_PATH}"; fi)
 

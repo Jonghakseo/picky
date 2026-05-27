@@ -2,21 +2,61 @@
 //  CompanionPanelExtensionsSection.swift
 //  Picky
 //
-//  Opt-in install/uninstall controls for bundled pi-extensions. Picky no
-//  longer auto-installs anything into `~/.pi/agent/extensions` on launch;
-//  this section lets the user enable each bundled extension explicitly and
-//  surfaces conflicts when the target path is owned by something else.
+//  Opt-in install/uninstall controls for bundled Pi resources. Picky no
+//  longer auto-installs anything into `~/.pi/agent` on launch; this section
+//  lets the user enable each bundled extension/skill explicitly and surfaces
+//  conflicts when the target path is owned by something else.
 //
 
 import Combine
 import SwiftUI
 
+private enum PickyBundledPluginKind: String, Equatable {
+    case `extension`
+    case skill
+}
+
+private enum PickyBundledPluginStatus: Equatable {
+    case bundleMissing
+    case notInstalled
+    case installed
+    case outdated
+    case legacySymlink
+    case developerOverride(target: String)
+    case conflict(reason: String)
+
+    init(_ status: PickyExtensionInstaller.Status) {
+        switch status {
+        case .bundleMissing: self = .bundleMissing
+        case .notInstalled: self = .notInstalled
+        case .installed: self = .installed
+        case .outdated: self = .outdated
+        case .legacySymlink: self = .legacySymlink
+        case .developerOverride(let target): self = .developerOverride(target: target)
+        case .conflict(let reason): self = .conflict(reason: reason)
+        }
+    }
+
+    init(_ status: PickySkillInstaller.Status) {
+        switch status {
+        case .bundleMissing: self = .bundleMissing
+        case .notInstalled: self = .notInstalled
+        case .installed: self = .installed
+        case .outdated: self = .outdated
+        case .legacySymlink: self = .legacySymlink
+        case .developerOverride(let target): self = .developerOverride(target: target)
+        case .conflict(let reason): self = .conflict(reason: reason)
+        }
+    }
+}
+
 @MainActor
-final class PickyExtensionsSectionViewModel: ObservableObject {
+private final class PickyExtensionsSectionViewModel: ObservableObject {
     struct Row: Identifiable, Equatable {
         let id: String
-        var name: String { id }
-        var status: PickyExtensionInstaller.Status
+        let name: String
+        let kind: PickyBundledPluginKind
+        var status: PickyBundledPluginStatus
         var description: String
         var isBusy: Bool
     }
@@ -29,14 +69,27 @@ final class PickyExtensionsSectionViewModel: ObservableObject {
     }
 
     func refresh() {
-        rows = PickyExtensionInstaller.bundledExtensions.map { name in
+        let extensionRows = PickyExtensionInstaller.bundledExtensions.map { name in
             Row(
-                id: name,
-                status: PickyExtensionInstaller.status(named: name),
-                description: Self.description(for: name),
+                id: Self.rowID(kind: .extension, name: name),
+                name: name,
+                kind: .extension,
+                status: PickyBundledPluginStatus(PickyExtensionInstaller.status(named: name)),
+                description: Self.description(for: name, kind: .extension),
                 isBusy: false
             )
         }
+        let skillRows = PickySkillInstaller.bundledSkills.map { name in
+            Row(
+                id: Self.rowID(kind: .skill, name: name),
+                name: name,
+                kind: .skill,
+                status: PickyBundledPluginStatus(PickySkillInstaller.status(named: name)),
+                description: Self.description(for: name, kind: .skill),
+                isBusy: false
+            )
+        }
+        rows = extensionRows + skillRows
     }
 
     /// Closure the section view installs at body time so install/uninstall
@@ -45,31 +98,43 @@ final class PickyExtensionsSectionViewModel: ObservableObject {
     /// view since the view model has no access to SwiftUI environment.
     var onPluginStateChanged: (() -> Void)?
 
-    func install(named name: String) {
-        guard let index = rows.firstIndex(where: { $0.id == name }) else { return }
+    func install(_ row: Row) {
+        guard let index = rows.firstIndex(where: { $0.id == row.id }) else { return }
         rows[index].isBusy = true
         lastError = nil
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = PickyExtensionInstaller.install(named: name)
+            let result: Result<Void, Error>
+            switch row.kind {
+            case .extension:
+                result = PickyExtensionInstaller.install(named: row.name).mapError { $0 as Error }
+            case .skill:
+                result = PickySkillInstaller.install(named: row.name).mapError { $0 as Error }
+            }
             DispatchQueue.main.async { [weak self] in
-                self?.applyMutationResult(name: name, result: result.mapError { $0 as Error })
+                self?.applyMutationResult(rowID: row.id, result: result)
             }
         }
     }
 
-    func uninstall(named name: String) {
-        guard let index = rows.firstIndex(where: { $0.id == name }) else { return }
+    func uninstall(_ row: Row) {
+        guard let index = rows.firstIndex(where: { $0.id == row.id }) else { return }
         rows[index].isBusy = true
         lastError = nil
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = PickyExtensionInstaller.uninstall(named: name)
+            let result: Result<Void, Error>
+            switch row.kind {
+            case .extension:
+                result = PickyExtensionInstaller.uninstall(named: row.name).mapError { $0 as Error }
+            case .skill:
+                result = PickySkillInstaller.uninstall(named: row.name).mapError { $0 as Error }
+            }
             DispatchQueue.main.async { [weak self] in
-                self?.applyMutationResult(name: name, result: result.mapError { $0 as Error })
+                self?.applyMutationResult(rowID: row.id, result: result)
             }
         }
     }
 
-    private func applyMutationResult(name: String, result: Result<Void, Error>) {
+    private func applyMutationResult(rowID: String, result: Result<Void, Error>) {
         switch result {
         case .success:
             lastError = nil
@@ -77,19 +142,34 @@ final class PickyExtensionsSectionViewModel: ObservableObject {
         case .failure(let error):
             lastError = error.localizedDescription
         }
-        if let index = rows.firstIndex(where: { $0.id == name }) {
+        if let index = rows.firstIndex(where: { $0.id == rowID }) {
             rows[index].isBusy = false
-            rows[index].status = PickyExtensionInstaller.status(named: name)
+            rows[index].status = Self.status(for: rows[index])
         }
     }
 
-    private static func description(for name: String) -> String {
-        switch name {
-        case "picky-handoff":
+    private static func status(for row: Row) -> PickyBundledPluginStatus {
+        switch row.kind {
+        case .extension:
+            return PickyBundledPluginStatus(PickyExtensionInstaller.status(named: row.name))
+        case .skill:
+            return PickyBundledPluginStatus(PickySkillInstaller.status(named: row.name))
+        }
+    }
+
+    private static func description(for name: String, kind: PickyBundledPluginKind) -> String {
+        switch (kind, name) {
+        case (.extension, "picky-handoff"):
             return L10n.t("status.extensions.pickyHandoff.description")
+        case (.skill, "picky-cli"):
+            return L10n.t("status.extensions.pickyCLI.description")
         default:
             return name
         }
+    }
+
+    private static func rowID(kind: PickyBundledPluginKind, name: String) -> String {
+        "\(kind.rawValue):\(name)"
     }
 }
 
@@ -139,12 +219,12 @@ struct CompanionPanelExtensionsSection: View {
     @ViewBuilder
     private func rowView(_ row: PickyExtensionsSectionViewModel.Row) -> some View {
         HStack(alignment: .center, spacing: 8) {
-            Image(systemName: "puzzlepiece.extension")
+            Image(systemName: iconName(for: row.kind))
                 .pickyFont(size: 10.5, weight: .medium)
                 .foregroundColor(DS.Colors.textTertiary)
                 .frame(width: 14, alignment: .center)
 
-            Text(displayName(for: row.name))
+            Text(displayName(for: row))
                 .pickyFont(size: 11.5, weight: .semibold)
                 .foregroundColor(DS.Colors.textSecondary)
                 .lineLimit(1)
@@ -197,21 +277,21 @@ struct CompanionPanelExtensionsSection: View {
     private func actionButton(for row: PickyExtensionsSectionViewModel.Row) -> some View {
         switch row.status {
         case .installed:
-            Button(action: { viewModel.uninstall(named: row.name) }) {
+            Button(action: { viewModel.uninstall(row) }) {
                 buttonLabel(text: "status.extensions.action.remove", isBusy: row.isBusy)
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(row.isBusy)
         case .notInstalled, .legacySymlink:
-            Button(action: { viewModel.install(named: row.name) }) {
+            Button(action: { viewModel.install(row) }) {
                 buttonLabel(text: "status.extensions.action.install", isBusy: row.isBusy)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
             .disabled(row.isBusy)
         case .outdated:
-            Button(action: { viewModel.install(named: row.name) }) {
+            Button(action: { viewModel.install(row) }) {
                 buttonLabel(text: "status.extensions.action.update", isBusy: row.isBusy)
             }
             .buttonStyle(.borderedProminent)
@@ -297,12 +377,23 @@ struct CompanionPanelExtensionsSection: View {
         }
     }
 
-    private func displayName(for name: String) -> String {
-        switch name {
-        case "picky-handoff":
+    private func displayName(for row: PickyExtensionsSectionViewModel.Row) -> String {
+        switch (row.kind, row.name) {
+        case (.extension, "picky-handoff"):
             return L10n.t("status.extensions.pickyHandoff.title")
+        case (.skill, "picky-cli"):
+            return L10n.t("status.extensions.pickyCLI.title")
         default:
-            return name
+            return row.name
+        }
+    }
+
+    private func iconName(for kind: PickyBundledPluginKind) -> String {
+        switch kind {
+        case .extension:
+            return "puzzlepiece.extension"
+        case .skill:
+            return "text.book.closed"
         }
     }
 }

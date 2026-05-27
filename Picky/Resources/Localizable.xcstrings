@@ -3979,6 +3979,38 @@
         }
       }
     },
+    "status.extensions.pickyCLI.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adds a Picky CLI skill to Pi so explicit Picky CLI requests can use the right local command guidance."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "명시적인 Picky CLI 요청에서 올바른 로컬 명령 가이드를 참고할 수 있도록 Pi에 Picky CLI 스킬을 추가해요."
+          }
+        }
+      }
+    },
+    "status.extensions.pickyCLI.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky CLI skill"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky CLI 스킬"
+          }
+        }
+      }
+    },
     "status.extensions.badge.conflict": {
       "comment": "Short badge label for the conflict state. Full reason appears in the row tooltip.",
       "localizations": {

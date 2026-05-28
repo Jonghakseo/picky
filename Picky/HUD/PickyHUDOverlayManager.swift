@@ -55,6 +55,7 @@ final class PickyHUDOverlayManager {
     private let appearanceStore: PickyAppearanceStore
     private let fontScaleStore: PickyAppFontScaleStore
     private let settingsStore: PickySettingsStore
+    private let onOpenFullscreenSession: (String?) -> Void
     private let collapsedHeight: CGFloat = 180
     private let minimumHeight: CGFloat = 48
 
@@ -78,6 +79,7 @@ final class PickyHUDOverlayManager {
 
     private var panelsByDisplayID: [CGDirectDisplayID: PanelEntry] = [:]
     private var archiveUndoToastsByDisplayID: [CGDirectDisplayID: ArchiveUndoToastEntry] = [:]
+    private var isHiddenForFullscreen = false
     private var screenParametersObserver: NSObjectProtocol?
     private var settingsObserver: NSObjectProtocol?
     private var currentDockSizePreset: PickyHUDDockSizePreset
@@ -96,12 +98,14 @@ final class PickyHUDOverlayManager {
         viewModel: PickySessionListViewModel,
         appearanceStore: PickyAppearanceStore,
         fontScaleStore: PickyAppFontScaleStore,
-        settingsStore: PickySettingsStore
+        settingsStore: PickySettingsStore,
+        onOpenFullscreenSession: @escaping (String?) -> Void = { _ in }
     ) {
         self.viewModel = viewModel
         self.appearanceStore = appearanceStore
         self.fontScaleStore = fontScaleStore
         self.settingsStore = settingsStore
+        self.onOpenFullscreenSession = onOpenFullscreenSession
         let settings = settingsStore.load()
         self.currentPositionsByDisplayID = settings.hudDockPositions
         self.currentDockSizePreset = settings.hudDockSizePreset
@@ -169,13 +173,19 @@ final class PickyHUDOverlayManager {
         stopScreenParametersObserver()
         stopSettingsObserver()
         viewModel.stop()
+        tearDownPanels()
+    }
+
+    private func tearDownPanels() {
         for (_, entry) in panelsByDisplayID {
             entry.pendingShrinkTask?.cancel()
             entry.panel.orderOut(nil)
+            entry.panel.contentView = nil
         }
         for (_, entry) in archiveUndoToastsByDisplayID {
             entry.dismissTask?.cancel()
             entry.panel.orderOut(nil)
+            entry.panel.contentView = nil
         }
         panelsByDisplayID.removeAll()
         archiveUndoToastsByDisplayID.removeAll()
@@ -184,6 +194,11 @@ final class PickyHUDOverlayManager {
     // MARK: - Panel sync
 
     private func syncPanelsForCurrentScreens() {
+        guard !isHiddenForFullscreen else {
+            tearDownPanels()
+            return
+        }
+
         let screens = NSScreen.screens
         let liveDisplayIDs = Set(screens.compactMap(\.pickyDisplayID))
 
@@ -278,6 +293,9 @@ final class PickyHUDOverlayManager {
             },
             onArchiveUndoRequested: { [weak self] sessionID, title in
                 self?.showArchiveUndoToast(displayID: displayID, sessionID: sessionID, title: title)
+            },
+            onOpenFullscreenSession: { [weak self] sessionID in
+                self?.onOpenFullscreenSession(sessionID)
             }
         )
             .environmentObject(appearanceStore)
@@ -877,5 +895,25 @@ private extension NSScreen {
     /// unrecognized screens so callers can skip them.
     var pickyDisplayID: CGDirectDisplayID? {
         deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+    }
+}
+
+// MARK: - Fullscreen HUD visibility
+
+extension PickyHUDOverlayManager: PickyHUDVisibilityControlling {
+    var isHUDVisibleForFullscreen: Bool {
+        !isHiddenForFullscreen
+    }
+
+    func hideForFullscreen() {
+        guard !isHiddenForFullscreen else { return }
+        isHiddenForFullscreen = true
+        tearDownPanels()
+    }
+
+    func restoreAfterFullscreen() {
+        guard isHiddenForFullscreen else { return }
+        isHiddenForFullscreen = false
+        syncPanelsForCurrentScreens()
     }
 }

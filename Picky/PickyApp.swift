@@ -128,7 +128,20 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         viewModel: hudSessionViewModel,
         appearanceStore: appearanceStore,
         fontScaleStore: fontScaleStore,
-        settingsStore: settingsStore
+        settingsStore: settingsStore,
+        onOpenFullscreenSession: { [weak self] sessionID in
+            self?.openFullscreenSession(sessionID: sessionID)
+        }
+    )
+    private lazy var fullscreenCoordinator = PickyFullscreenCoordinator(
+        viewModel: hudSessionViewModel,
+        onDidClose: { [weak self] in
+            self?.restoreHUDAfterFullscreenClose()
+        }
+    )
+    private lazy var fullscreenModeController = PickyFullscreenModeController(
+        fullscreenCoordinator: fullscreenCoordinator,
+        hudVisibilityController: hudOverlayManager
     )
     /// Shared with the plugin manager UI. Subscribes to the agent client for
     /// `pluginsReloaded` broadcasts and exposes a single async `reload()` the
@@ -314,6 +327,14 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     /// user can confirm the change. Anyone who explicitly uninstalled the
     /// command from Settings has `shellCommandAutoInstallOptedOut == true`
     /// and will be skipped here.
+    private func openFullscreenSession(sessionID: String?) {
+        fullscreenModeController.open(sessionID: sessionID)
+    }
+
+    private func restoreHUDAfterFullscreenClose() {
+        fullscreenModeController.fullscreenDidClose()
+    }
+
     private func autoInstallShellCommandIfPermitted() {
         let settings = settingsStore.load()
         guard !settings.shellCommandAutoInstallOptedOut else { return }

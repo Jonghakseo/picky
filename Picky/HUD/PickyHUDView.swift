@@ -29,6 +29,7 @@ struct PickyHUDView: View {
     var onCardResizeDragEnded: () -> Void = { }
     var onCardResizeReset: () -> Void = { }
     var onArchiveUndoRequested: (_ sessionID: String, _ title: String) -> Void = { _, _ in }
+    var onOpenFullscreenSession: (String?) -> Void = { _ in }
     @State private var heldSession: PickyHUDDockHold?
     @State private var pendingManualAutoOpenSessionID: String?
     @State private var pendingRequestedOpenSessionID: String?
@@ -404,6 +405,7 @@ struct PickyHUDView: View {
                 onDockHandleDragChanged: onDockHandleDragChanged,
                 onDockHandleDragEnded: onDockHandleDragEnded,
                 onDockHandleDoubleClick: onDockHandleDoubleClick,
+                onOpenFullscreenSession: onOpenFullscreenSession,
                 onMoveSession: { sessionID, visibleIndex in
                     viewModel.moveSession(sessionID: sessionID, toVisibleIndex: visibleIndex)
                 }
@@ -414,7 +416,7 @@ struct PickyHUDView: View {
                         sessionCount: visibleSessions.count,
                         isAddSlotExpanded: isDockAddSlotExpanded,
                         metrics: dockMetrics
-                    )
+                    ) + PickyHUDFullscreenDockControl.length(metrics: dockMetrics)
                     : dockMetrics.railWidth,
                 height: placement.dockSide.orientation == .horizontal ? dockMetrics.railWidth : nil
             )
@@ -1380,6 +1382,16 @@ private extension PickySessionListViewModel.SessionCard {
     }
 }
 
+private enum PickyHUDFullscreenDockControl {
+    static func side(metrics: PickyHUDDockMetrics) -> CGFloat {
+        max(22, metrics.addSlotButtonSide * 0.62)
+    }
+
+    static func length(metrics: PickyHUDDockMetrics) -> CGFloat {
+        side(metrics: metrics) + 2
+    }
+}
+
 private struct PickyHUDDockRailView: View {
     let sessions: [PickySessionListViewModel.SessionCard]
     let activeSessionID: String?
@@ -1407,6 +1419,7 @@ private struct PickyHUDDockRailView: View {
     let onDockHandleDragChanged: (CGPoint) -> Void
     let onDockHandleDragEnded: () -> Void
     let onDockHandleDoubleClick: () -> Void
+    let onOpenFullscreenSession: (String?) -> Void
     /// Called when the user drags an icon into a new visible slot. Argument
     /// is the visible index in the rail's current orientation (= the index
     /// in `sessions`, which is already in `prefix.reversed()` order).
@@ -1426,6 +1439,7 @@ private struct PickyHUDDockRailView: View {
             if dockSide.orientation == .horizontal {
                 HStack(spacing: 2) {
                     dockAnchorHandle
+                    fullscreenButton
                     sessionsAndAddSlot
                 }
                 // Symmetric leading/trailing in horizontal so the dock doesn't
@@ -1445,6 +1459,7 @@ private struct PickyHUDDockRailView: View {
                 // backing the handle, not the empty space outside an external pill.
                 VStack(spacing: 2) {
                     dockAnchorHandle
+                    fullscreenButton
                     sessionsAndAddSlot
                 }
                 .padding(.horizontal, metrics.horizontalPadding)
@@ -1469,13 +1484,35 @@ private struct PickyHUDDockRailView: View {
                 sessionCount: sessions.count,
                 isAddSlotExpanded: isAddSlotExpanded,
                 metrics: metrics
-            )
+            ) + PickyHUDFullscreenDockControl.length(metrics: metrics)
         }
         return PickyHUDDockLayout.dockRailHeight(
             sessionCount: sessions.count,
             isAddSlotExpanded: isAddSlotExpanded,
             metrics: metrics
-        )
+        ) + PickyHUDFullscreenDockControl.length(metrics: metrics)
+    }
+
+    private var fullscreenButton: some View {
+        Button {
+            onOpenFullscreenSession(activeSessionID)
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: metrics.iconCornerRadius * 0.72, style: .continuous)
+                    .fill(DS.Colors.accent.opacity(0.16))
+                RoundedRectangle(cornerRadius: metrics.iconCornerRadius * 0.72, style: .continuous)
+                    .strokeBorder(DS.Colors.accent.opacity(0.42), lineWidth: 1)
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: max(10, 12 * metrics.scale), weight: .semibold))
+                    .foregroundColor(DS.Colors.accent)
+            }
+            .frame(width: PickyHUDFullscreenDockControl.side(metrics: metrics), height: PickyHUDFullscreenDockControl.side(metrics: metrics))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
+        .accessibilityLabel("Open Fullscreen Workspace")
+        .accessibilityHint("Hides the dock and opens the selected Pickle in fullscreen mode")
     }
 
     @ViewBuilder

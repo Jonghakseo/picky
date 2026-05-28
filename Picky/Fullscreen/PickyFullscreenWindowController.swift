@@ -11,14 +11,17 @@ import SwiftUI
 
 @MainActor
 final class PickyFullscreenWindowController: NSWindowController, NSWindowDelegate {
+    let appearanceStore: PickyAppearanceStore
     private let onClose: @MainActor (PickyFullscreenWindowController) -> Void
     private var didReportClose = false
 
     init(
         viewModel: PickySessionListViewModel,
         stateStore: PickyFullscreenStateStore,
+        appearanceStore: PickyAppearanceStore,
         onClose: @escaping @MainActor (PickyFullscreenWindowController) -> Void
     ) {
+        self.appearanceStore = appearanceStore
         self.onClose = onClose
 
         let visibleFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
@@ -44,10 +47,11 @@ final class PickyFullscreenWindowController: NSWindowController, NSWindowDelegat
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.fullScreenPrimary, .managed]
         window.minSize = NSSize(width: 1040, height: 680)
+        let rootView = PickyFullscreenWorkspaceView(viewModel: viewModel, stateStore: stateStore)
+            .environmentObject(appearanceStore)
+            .modifier(PickyPreferredColorSchemeModifier(store: appearanceStore))
         window.contentView = NSHostingView(
-            rootView: LocalizedHostingRoot {
-                PickyFullscreenWorkspaceView(viewModel: viewModel, stateStore: stateStore)
-            }
+            rootView: LocalizedHostingRoot { rootView }
         )
 
         super.init(window: window)

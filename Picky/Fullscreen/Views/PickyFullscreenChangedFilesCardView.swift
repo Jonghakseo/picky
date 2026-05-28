@@ -29,7 +29,7 @@ struct PickyFullscreenChangedFilesCardView: View {
                         changedFileRow(file)
                     }
                     if changedFiles.count > Self.maxVisibleFiles {
-                        Text("+ \(changedFiles.count - Self.maxVisibleFiles) more session files")
+                        Text("+ \(changedFiles.count - Self.maxVisibleFiles)개 더 있음")
                             .pickyFont(size: 11.5, weight: .medium)
                             .foregroundStyle(.secondary)
                     }
@@ -53,10 +53,12 @@ struct PickyFullscreenChangedFilesCardView: View {
 
     private func changedFileRow(_ file: PickyChangedFile) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(file.status.uppercased())
+            Text(statusBadgeText(for: file.status))
                 .pickyFont(size: 10, weight: .bold, design: .monospaced)
                 .foregroundStyle(statusColor(for: file.status))
-                .frame(minWidth: 18, alignment: .leading)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(minWidth: 12, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.path)
                     .pickyFont(size: 12, weight: .medium, design: .monospaced)
@@ -69,6 +71,16 @@ struct PickyFullscreenChangedFilesCardView: View {
                         .lineLimit(2)
                 }
             }
+        }
+    }
+
+    private func statusBadgeText(for status: String) -> String {
+        switch status.lowercased() {
+        case "added", "a", "new": "A"
+        case "modified", "m", "changed": "M"
+        case "deleted", "d", "removed": "D"
+        case "renamed", "r": "R"
+        default: "•"
         }
     }
 

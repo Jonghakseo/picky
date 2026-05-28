@@ -249,10 +249,12 @@ struct PickyFullscreenWorkInfoPanelView: View {
                 .fill(changedFileColor(for: file.status))
                 .frame(width: 7, height: 7)
                 .accessibilityHidden(true)
-            Text(file.status.uppercased())
+            Text(changedFileBadgeText(for: file.status))
                 .pickyFont(size: 10, weight: .bold, design: .monospaced)
                 .foregroundStyle(changedFileColor(for: file.status))
-                .frame(width: 24, alignment: .leading)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(width: 12, alignment: .leading)
             Text(file.path)
                 .pickyFont(size: 11.5, weight: .medium, design: .monospaced)
                 .lineLimit(1)
@@ -284,7 +286,7 @@ struct PickyFullscreenWorkInfoPanelView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(Capsule().fill(Color.primary.opacity(0.08)))
-                Text(nonEmpty(artifact.title) ?? "Untitled")
+                Text(nonEmpty(artifact.title) ?? "제목 없음")
                     .pickyFont(size: 12, weight: .semibold)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -351,6 +353,16 @@ struct PickyFullscreenWorkInfoPanelView: View {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    private func changedFileBadgeText(for status: String) -> String {
+        switch status.lowercased() {
+        case "added", "a", "new": "A"
+        case "modified", "m", "changed": "M"
+        case "deleted", "d", "removed": "D"
+        case "renamed", "r": "R"
+        default: "•"
+        }
+    }
+
     private func changedFileColor(for status: String) -> Color {
         switch status.lowercased() {
         case "added", "a", "new": .green
@@ -391,13 +403,8 @@ struct PickyFullscreenWorkInfoPanelView: View {
         case .figma: "Figma"
         case .googleDocs, .googleSheets, .googleSlides, .googleDrive: "Google"
         case nil:
-            nonEmptyStatic(artifact.kind)?.capitalized ?? "Link"
+            "링크"
         }
-    }
-
-    private static func nonEmptyStatic(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
     }
 
     private static let maxVisibleChangedFiles = 10

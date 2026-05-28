@@ -40,7 +40,7 @@ struct PickyFullscreenSidebarView: View {
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel(session.title)
                             .accessibilityValue(session.accessibilitySummary)
-                            .accessibilityHint(selectedSessionID == session.id ? "Selected Pickle" : "Select Pickle")
+                            .accessibilityHint(selectedSessionID == session.id ? "선택된 Pickle" : "Pickle 선택")
                         }
                     }
                     .padding(.vertical, 2)
@@ -52,7 +52,7 @@ struct PickyFullscreenSidebarView: View {
             Button {
                 isRecentPickleFolderPickerPresented = true
             } label: {
-                Label(isCreatingPickle ? "Starting Pickle…" : "New Pickle", systemImage: "plus")
+                Label(isCreatingPickle ? "Pickle 생성 중…" : "새 Pickle", systemImage: "plus")
                     .pickyFont(size: 13, weight: .semibold)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12)
@@ -72,23 +72,23 @@ struct PickyFullscreenSidebarView: View {
                 onChooseFolder: onChoosePickleFolder,
                 onRemoveRecentPickleFolder: onRemoveRecentPickleFolder
             )
-            .help("Start a Pickle from a recent folder or choose a working folder.")
-            .accessibilityLabel("New Pickle")
-            .accessibilityHint("Choose a recent working folder or browse for a new one")
+            .help("최근 폴더에서 Pickle을 시작하거나 작업 폴더를 선택합니다.")
+            .accessibilityLabel("새 Pickle")
+            .accessibilityHint("최근 작업 폴더를 선택하거나 새 폴더를 찾습니다")
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 20)
         .frame(minWidth: 236, idealWidth: 276, maxWidth: 296, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .underPageBackgroundColor).opacity(0.72))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Pickles sidebar")
+        .accessibilityLabel("Pickle 사이드바")
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Pickles")
+            Text("Pickle 목록")
                 .pickyFont(size: 16, weight: .semibold)
-            Text("\(sessions.count) active sessions")
+            Text("활성 \(sessions.count)개")
                 .pickyFont(size: 12)
                 .foregroundStyle(.secondary)
         }
@@ -99,9 +99,9 @@ struct PickyFullscreenSidebarView: View {
             Image(systemName: "tray")
                 .pickyFont(size: 18, weight: .medium)
                 .foregroundStyle(.secondary)
-            Text("No active Pickles")
+            Text("활성 Pickle 없음")
                 .pickyFont(size: 13, weight: .semibold)
-            Text("Start a new Pickle from this workspace to begin.")
+            Text("새 Pickle을 시작하세요.")
                 .pickyFont(size: 12)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -113,8 +113,8 @@ struct PickyFullscreenSidebarView: View {
                 .fill(Color(nsColor: .controlBackgroundColor).opacity(0.55))
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("No active Pickles")
-        .accessibilityHint("Start a new Pickle from this workspace to begin")
+        .accessibilityLabel("활성 Pickle 없음")
+        .accessibilityHint("새 Pickle을 시작하세요")
     }
 }
 
@@ -151,7 +151,7 @@ private struct PickyFullscreenSidebarRow: View {
                     .foregroundStyle(session.status.fullscreenForegroundStyle)
                 Text("•")
                     .foregroundStyle(.tertiary)
-                Text("Updated \(session.elapsedSinceUpdate()) ago")
+                Text("\(session.elapsedSinceUpdate()) 전 업데이트")
                     .pickyFont(size: 11)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -184,7 +184,7 @@ private extension PickySessionListViewModel.SessionCard {
         if let cwd = compactCwdDescription {
             parts.append(cwd)
         }
-        parts.append("Updated \(elapsedSinceUpdate()) ago")
+        parts.append("\(elapsedSinceUpdate()) 전 업데이트")
         return parts.joined(separator: ", ")
     }
 }
@@ -192,13 +192,13 @@ private extension PickySessionListViewModel.SessionCard {
 private extension PickySessionStatus {
     var fullscreenDisplayText: String {
         switch self {
-        case .queued: "Queued"
-        case .running: "Running"
-        case .waiting_for_input: "Waiting for input"
-        case .blocked: "Blocked"
-        case .completed: "Completed"
-        case .failed: "Failed"
-        case .cancelled: "Cancelled"
+        case .queued: "대기 중"
+        case .running: "실행 중"
+        case .waiting_for_input: "입력 대기"
+        case .blocked: "차단됨"
+        case .completed: "완료"
+        case .failed: "실패"
+        case .cancelled: "취소됨"
         }
     }
 

@@ -56,7 +56,7 @@ struct PickyFullscreenWorkspaceView: View {
         .frame(minWidth: 1040, minHeight: 680)
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Picky fullscreen workspace")
+        .accessibilityLabel("Picky 전체화면 워크스페이스")
         .transaction { transaction in
             if accessibilityReduceMotion {
                 transaction.animation = nil
@@ -81,9 +81,9 @@ struct PickyFullscreenWorkspaceView: View {
         NSApp.activate(ignoringOtherApps: true)
 
         let panel = NSOpenPanel()
-        panel.title = "Choose a working folder"
-        panel.prompt = "Start"
-        panel.message = "Choose the folder where the new Pickle should run."
+        panel.title = "작업 폴더 선택"
+        panel.prompt = "시작"
+        panel.message = "새 Pickle을 실행할 폴더를 선택하세요."
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false

@@ -77,7 +77,7 @@ struct PickyFullscreenConversationListView: View {
             observeCompletedTurns(ids)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Conversation messages")
+        .accessibilityLabel("대화 메시지")
     }
 
     private func observeCompletedTurns(_ ids: Set<String>) {
@@ -98,17 +98,17 @@ struct PickyFullscreenConversationListView: View {
             Image(systemName: "bubble.left.and.bubble.right")
                 .pickyFont(size: 28, weight: .medium)
                 .foregroundStyle(.secondary)
-            Text("No conversation yet")
+            Text("아직 대화가 없습니다")
                 .pickyFont(size: 16, weight: .semibold)
-            Text("This Pickle has not recorded any chat messages yet.")
+            Text("이 Pickle에는 아직 기록된 대화 메시지가 없습니다.")
                 .pickyFont(size: 13)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, minHeight: 260)
         .padding(32)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("No conversation yet")
-        .accessibilityHint("This Pickle has not recorded any chat messages yet")
+        .accessibilityLabel("아직 대화가 없습니다")
+        .accessibilityHint("이 Pickle에는 아직 기록된 대화 메시지가 없습니다")
     }
 
     private var bottomScrollTrigger: PickyFullscreenConversationBottomScrollTrigger {

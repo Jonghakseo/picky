@@ -45,7 +45,7 @@ final class PickyFullscreenWindowController: NSWindowController, NSWindowDelegat
             backing: .buffered,
             defer: false
         )
-        window.title = "Picky Workspace"
+        window.title = "Picky 워크스페이스"
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.fullScreenPrimary, .managed]

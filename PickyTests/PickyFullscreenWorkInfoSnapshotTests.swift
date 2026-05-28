@@ -63,7 +63,7 @@ struct PickyFullscreenWorkInfoSnapshotTests {
         #expect(PickyFullscreenWorkInfoPanelView.artifactBadgeText(for: github) == "GitHub")
         #expect(PickyFullscreenWorkInfoPanelView.artifactBadgeText(for: slack) == "Slack")
         #expect(PickyFullscreenWorkInfoPanelView.artifactBadgeText(for: googleDocs) == "Google")
-        #expect(PickyFullscreenWorkInfoPanelView.artifactBadgeText(for: fallback) == "Report")
+        #expect(PickyFullscreenWorkInfoPanelView.artifactBadgeText(for: fallback) == "링크")
     }
 
     private func card(

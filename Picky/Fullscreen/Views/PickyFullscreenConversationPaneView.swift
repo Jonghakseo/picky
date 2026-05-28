@@ -37,7 +37,7 @@ struct PickyFullscreenConversationPaneView: View {
         .layoutPriority(1)
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Conversation")
+        .accessibilityLabel("대화")
     }
 
     private func conversationContent(for session: PickySessionListViewModel.SessionCard) -> some View {
@@ -59,6 +59,7 @@ struct PickyFullscreenConversationPaneView: View {
                 droppedFilePaths: droppedFilePathsBinding(for: session.id),
                 isFileDropTargeted: isFileDropTargeted,
                 isExtendedTerminalOpen: isExtendedTerminalOpen(sessionID: session.id),
+                copyStyle: .fullscreenKorean,
                 onToggleExtendedTerminal: { toggleExtendedTerminal(sessionID: session.id) }
             )
             .id(session.id)
@@ -112,7 +113,7 @@ struct PickyFullscreenConversationPaneView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(session?.title ?? "Conversation")
+                Text(session?.title ?? "대화")
                     .pickyFont(size: 18, weight: .semibold)
                     .lineLimit(1)
                 HStack(spacing: 8) {
@@ -125,7 +126,7 @@ struct PickyFullscreenConversationPaneView: View {
                                 .lineLimit(1)
                         }
                     } else {
-                        Text("Select a Pickle to inspect the conversation.")
+                        Text("Pickle을 선택하면 대화를 볼 수 있습니다.")
                             .pickyFont(size: 12)
                             .foregroundStyle(.secondary)
                     }
@@ -142,17 +143,17 @@ struct PickyFullscreenConversationPaneView: View {
             Image(systemName: "sidebar.left")
                 .pickyFont(size: 30, weight: .medium)
                 .foregroundStyle(.secondary)
-            Text("Select a Pickle")
+            Text("Pickle을 선택하세요")
                 .pickyFont(size: 16, weight: .semibold)
-            Text("Choose an active Pickle from the sidebar to read its LLM conversation.")
+            Text("사이드바에서 Pickle을 선택하면 대화를 볼 수 있습니다.")
                 .pickyFont(size: 13)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(32)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Select a Pickle")
-        .accessibilityHint("Choose an active Pickle from the sidebar to read its LLM conversation")
+        .accessibilityLabel("Pickle을 선택하세요")
+        .accessibilityHint("사이드바에서 Pickle을 선택하면 대화를 볼 수 있습니다")
     }
 
     private func statusPill(for status: PickySessionStatus) -> some View {
@@ -163,7 +164,7 @@ struct PickyFullscreenConversationPaneView: View {
             .padding(.vertical, 4)
             .background(Capsule().fill(status.fullscreenConversationColor.opacity(0.12)))
             .overlay(Capsule().stroke(status.fullscreenConversationColor.opacity(0.28), lineWidth: 0.6))
-            .accessibilityLabel("Status")
+            .accessibilityLabel("상태")
             .accessibilityValue(status.fullscreenConversationDisplayText)
     }
 
@@ -185,13 +186,13 @@ struct PickyFullscreenConversationPaneView: View {
 private extension PickySessionStatus {
     var fullscreenConversationDisplayText: String {
         switch self {
-        case .queued: "Queued"
-        case .running: "Running"
-        case .waiting_for_input: "Waiting for input"
-        case .blocked: "Blocked"
-        case .completed: "Completed"
-        case .failed: "Failed"
-        case .cancelled: "Cancelled"
+        case .queued: "대기 중"
+        case .running: "실행 중"
+        case .waiting_for_input: "입력 대기"
+        case .blocked: "차단됨"
+        case .completed: "완료"
+        case .failed: "실패"
+        case .cancelled: "취소됨"
         }
     }
 

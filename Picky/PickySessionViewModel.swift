@@ -109,6 +109,33 @@ protocol PickyRecentPickleFolderStoring {
     func remove(cwd: String) throws -> [String]
 }
 
+/// Read/write access to the persisted dock layout (groups + ordered
+/// session/group refs). Production uses the same `settings.json` Picky has
+/// always used; tests inject a fake implementation.
+protocol PickyDockLayoutStoring {
+    func load() -> PickyDockLayout
+    func save(_ layout: PickyDockLayout) throws
+}
+
+struct PickyNoopDockLayoutStore: PickyDockLayoutStoring {
+    func load() -> PickyDockLayout { .empty }
+    func save(_ layout: PickyDockLayout) throws {}
+}
+
+struct PickySettingsDockLayoutStore: PickyDockLayoutStoring {
+    var settingsStore: PickySettingsStore = PickySettingsStore()
+
+    func load() -> PickyDockLayout {
+        settingsStore.load().dockLayout
+    }
+
+    func save(_ layout: PickyDockLayout) throws {
+        var settings = settingsStore.load()
+        settings.dockLayout = layout
+        try settingsStore.save(settings)
+    }
+}
+
 struct PickyNoopRecentPickleFolderStore: PickyRecentPickleFolderStoring {
     var recentPickleCwds: [String] { [] }
     func record(cwd: String) throws -> [String] { [] }
@@ -442,6 +469,11 @@ final class PickySessionListViewModel: ObservableObject {
     /// new Pickles always land on the visually-end slot, regardless of any
     /// past drag the user did to existing sessions.
     private var manualOrder: [String] = []
+    /// Persisted dock layout (groups + ordered top-level entries). Source of
+    /// truth for the dock rail's visual ordering once any group has been
+    /// created. Empty layout falls back to the legacy `manualOrder` flow.
+    @Published private(set) var dockLayout: PickyDockLayout = .empty
+    private let dockLayoutStore: PickyDockLayoutStoring
     private let composerDraftStore: PickyComposerDraftStoring
     private let composerAttachmentDraftStore: PickyComposerAttachmentDraftStoring
     private let recentPickleFolderStore: PickyRecentPickleFolderStoring
@@ -498,6 +530,7 @@ final class PickySessionListViewModel: ObservableObject {
         composerDraftStore: PickyComposerDraftStoring = PickyUserDefaultsComposerDraftStore.shared,
         composerAttachmentDraftStore: PickyComposerAttachmentDraftStoring = PickyUserDefaultsComposerAttachmentDraftStore.shared,
         recentPickleFolderStore: PickyRecentPickleFolderStoring = PickyNoopRecentPickleFolderStore(),
+        dockLayoutStore: PickyDockLayoutStoring = PickyNoopDockLayoutStore(),
         artifactPathValidator: PickyArtifactPathValidator = PickyArtifactPathValidator(appSupportRoot: PickyAppSupport.defaultRoot()),
         clipboardWriter: PickyClipboardWriting = PickyPasteboardClipboardWriter(),
         terminalPresenter: PickyTerminalOverlayPresenting? = nil,
@@ -521,6 +554,8 @@ final class PickySessionListViewModel: ObservableObject {
         self.composerAttachmentDraftStore = composerAttachmentDraftStore
         self.recentPickleFolderStore = recentPickleFolderStore
         self.recentPickleCwds = recentPickleFolderStore.recentPickleCwds
+        self.dockLayoutStore = dockLayoutStore
+        self.dockLayout = dockLayoutStore.load()
         self.artifactPathValidator = artifactPathValidator
         self.clipboardWriter = clipboardWriter
         self.terminalPresenter = terminalPresenter ?? PickyTerminalOverlayPresenter.shared
@@ -785,6 +820,7 @@ final class PickySessionListViewModel: ObservableObject {
         if screenContextTargetSessionID == sessionID {
             clearScreenContextTargetState()
         }
+        reconcileDockLayout()
     }
 
     private func clearScreenContextTargetState() {
@@ -2270,6 +2306,10 @@ final class PickySessionListViewModel: ObservableObject {
     /// `manualOrder` (preserving newest-first inside the new batch) so brand
     /// new Pickles land on the visually-end slot.
     private func applyManualOrderToActiveSessions() {
+        // Keep the dock layout in lockstep with the daemon's session
+        // universe. Done up-front so newly created Pickles end up appended
+        // to `dockLayout.entries` before any HUD render reads it.
+        reconcileDockLayout()
         guard !manualOrder.isEmpty else {
             sessions = sessions.sortedForHUD()
             return
@@ -2373,6 +2413,124 @@ final class PickySessionListViewModel: ObservableObject {
         manualOrder = []
         manualOrderStore.manualOrder = []
         applyManualOrderToActiveSessions()
+    }
+
+    // MARK: - Dock layout / groups
+
+    /// Drop dock-layout references whose session id no longer exists and
+    /// append brand-new active sessions at the bottom of the dock (= end of
+    /// `entries`). Called after every `sessions` mutation so the persisted
+    /// layout stays in lockstep with the daemon's session universe.
+    ///
+    /// First-run migration: when the persisted layout is empty but the
+    /// legacy `manualOrder` UserDefaults has user-driven reorders, seed the
+    /// layout from that ordering (reversed because manualOrder stores newest
+    /// first and `entries` is top-down = oldest first). New sessions then
+    /// fall through to the standard "append to end" branch below.
+    private func reconcileDockLayout() {
+        let universe = Set(sessions.map(\.id))
+        var layout = dockLayout
+        var changed = layout.pruneUnknownSessions(universe: universe)
+
+        if layout.entries.isEmpty && !manualOrder.isEmpty {
+            for sessionID in manualOrder.reversed() where universe.contains(sessionID) {
+                if layout.appendNewSessionIfMissing(sessionID) {
+                    changed = true
+                }
+            }
+        }
+
+        // Sessions newest-first; layout entries are top-down (bottom of dock
+        // = end of array). New sessions should land on the bottom-end slot,
+        // so iterate reversed so the very newest ends up at `entries.last`.
+        for session in sessions.reversed() {
+            if layout.appendNewSessionIfMissing(session.id) {
+                changed = true
+            }
+        }
+
+        guard changed else { return }
+        dockLayout = layout
+        persistDockLayout()
+    }
+
+    private func persistDockLayout() {
+        do {
+            try dockLayoutStore.save(dockLayout)
+        } catch {
+            pickySessionLog("dockLayout save failed: \(error)")
+        }
+    }
+
+    /// Create a new empty group at the bottom of the dock (just above the
+    /// `+` slot) with the next color in rotation. Returns the new group's id
+    /// so the caller can focus a rename input on it.
+    @discardableResult
+    func createDockGroup(name: String = "") -> String {
+        let nextColor = PickyDockGroupColor.nextColor(forExistingGroupCount: dockLayout.groups.count)
+        let group = PickyDockGroup(name: name, color: nextColor)
+        var layout = dockLayout
+        layout.entries.append(.group(group))
+        dockLayout = layout
+        persistDockLayout()
+        return group.id
+    }
+
+    func renameDockGroup(id: String, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var layout = dockLayout
+        layout.updateGroup(id: id) { $0.name = trimmed }
+        dockLayout = layout
+        persistDockLayout()
+    }
+
+    func setDockGroupColor(id: String, color: PickyDockGroupColor) {
+        var layout = dockLayout
+        layout.updateGroup(id: id) { $0.color = color }
+        dockLayout = layout
+        persistDockLayout()
+    }
+
+    func toggleDockGroupCollapsed(id: String) {
+        var layout = dockLayout
+        layout.updateGroup(id: id) { $0.isCollapsed.toggle() }
+        dockLayout = layout
+        persistDockLayout()
+    }
+
+    /// Remove a group. When `keepMembers` is true, the members are spliced
+    /// back into the top-level layout at the group's previous position (the
+    /// "Ungroup" action). When false, the group's member sessions are
+    /// archived too ("Delete group + archive pickles").
+    func removeDockGroup(id: String, keepMembers: Bool) {
+        var layout = dockLayout
+        let removedMemberIDs = layout.removeGroup(id: id, keepMembers: keepMembers)
+        dockLayout = layout
+        persistDockLayout()
+        if !keepMembers {
+            for memberID in removedMemberIDs {
+                archive(sessionID: memberID)
+            }
+        }
+    }
+
+    /// Move a session to an explicit dock container/position. Used by the
+    /// drag handler after it hit-tests the cursor against the current
+    /// rendered slots.
+    func moveSessionInDock(sessionID: String, to destination: PickyDockContainer) {
+        var layout = dockLayout
+        layout.move(session: sessionID, to: destination)
+        dockLayout = layout
+        persistDockLayout()
+    }
+
+    /// Reorder a group as a whole within the top-level layout. `target` is
+    /// the post-removal index (0 = top of dock).
+    func moveDockGroup(id: String, toTopLevelIndex target: Int) {
+        var layout = dockLayout
+        layout.moveGroup(id: id, toTopLevelIndex: target)
+        dockLayout = layout
+        persistDockLayout()
     }
 
     private func syncSelectionAfterSessionListChange() {

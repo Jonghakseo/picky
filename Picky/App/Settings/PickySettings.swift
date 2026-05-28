@@ -966,6 +966,13 @@ struct PickySettings: Codable, Equatable {
     /// actions mean "no action wired yet"; the chip click handler deep-links
     /// to Settings → Pickle for configuration.
     var gitChipActions: PickyGitChipActions
+    /// Persisted dock layout for user-created Pickle groups. Source of truth
+    /// for top-level icon/group order; ungrouped sessions live as
+    /// `.session(id)` entries and groups as `.group(PickyDockGroup)` with
+    /// their own ordered member lists. Empty on fresh installs and on builds
+    /// older than the grouping feature — `PickySessionListViewModel` seeds it
+    /// from the legacy `manualOrder` UserDefaults on first migration.
+    var dockLayout: PickyDockLayout
 
     static let dockTopAnchorPercentRange: ClosedRange<Double> = 2.0...70.0
     static let defaultDockTopAnchorPercent: Double = 22.0
@@ -1043,7 +1050,8 @@ struct PickySettings: Codable, Equatable {
         appLanguage: PickyLanguage = .system,
         recentPickleCwds: [String] = [],
         detachedPanelFrames: [String: PickyDetachedPanelFrame] = [:],
-        gitChipActions: PickyGitChipActions = .empty
+        gitChipActions: PickyGitChipActions = .empty,
+        dockLayout: PickyDockLayout = .empty
     ) {
         self.defaultCwd = defaultCwd
         self.mainAgentCwd = mainAgentCwd ?? defaultCwd
@@ -1108,6 +1116,7 @@ struct PickySettings: Codable, Equatable {
         self.recentPickleCwds = PickySettings.normalizedRecentPickleCwds(recentPickleCwds)
         self.detachedPanelFrames = detachedPanelFrames
         self.gitChipActions = gitChipActions
+        self.dockLayout = dockLayout
     }
 
     static func defaultUpdateChannel(forReleaseChannel releaseChannel: String) -> PickyUpdateChannel {
@@ -1200,7 +1209,8 @@ struct PickySettings: Codable, Equatable {
             appLanguage: .system,
             recentPickleCwds: [],
             detachedPanelFrames: [:],
-            gitChipActions: .empty
+            gitChipActions: .empty,
+            dockLayout: .empty
         )
     }
 
@@ -1333,6 +1343,7 @@ struct PickySettings: Codable, Equatable {
         case recentPickleCwds
         case detachedPanelFrames
         case gitChipActions
+        case dockLayout
     }
 
     init(from decoder: Decoder) throws {
@@ -1416,6 +1427,11 @@ struct PickySettings: Codable, Equatable {
         recentPickleCwds = Self.normalizedRecentPickleCwds(try container.decodeIfPresent([String].self, forKey: .recentPickleCwds) ?? defaults.recentPickleCwds)
         detachedPanelFrames = try container.decodeIfPresent([String: PickyDetachedPanelFrame].self, forKey: .detachedPanelFrames) ?? defaults.detachedPanelFrames
         gitChipActions = try container.decodeIfPresent(PickyGitChipActions.self, forKey: .gitChipActions) ?? defaults.gitChipActions
+        // Missing dockLayout means the user is on a pre-grouping build. Decode
+        // as empty and let `PickySessionListViewModel` rehydrate from the
+        // legacy manualOrder UserDefaults so existing reorders survive the
+        // upgrade.
+        dockLayout = try container.decodeIfPresent(PickyDockLayout.self, forKey: .dockLayout) ?? defaults.dockLayout
         if let storedScales = try container.decodeIfPresent(PickyFontScales.self, forKey: .fontScales) {
             fontScales = PickyFontScales(
                 markdownReport: PickyFontScales.clamped(storedScales.markdownReport),

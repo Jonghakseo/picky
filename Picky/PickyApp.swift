@@ -121,6 +121,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private lazy var hudSessionViewModel = PickySessionListViewModel(
         client: hudAgentClientRouter,
         recentPickleFolderStore: PickySettingsRecentPickleFolderStore(settingsStore: settingsStore),
+        dockLayoutStore: PickySettingsDockLayoutStore(settingsStore: settingsStore),
         manualPickleChildSpawner: hudAgentClientRouter,
         childSessionReleaser: hudAgentClientRouter
     )

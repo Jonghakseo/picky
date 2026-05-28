@@ -154,6 +154,13 @@ private struct PickyShellTerminalAttachment: Equatable {
     let attachmentID: String
 }
 
+private struct PickyPendingFullscreenTurnSnapshot: Equatable {
+    let id: UUID
+    let cwd: String?
+    let existingTurnIDs: Set<String>
+    let snapshot: PickyFullscreenTurnGitSnapshot
+}
+
 /// Owns the "which Pickle is the cursor hovering over for voice follow-up"
 /// flag in its own ObservableObject so the SwiftUI subscription is scoped to
 /// the one view that actually reads it (the conversation header's pi-badge).
@@ -416,6 +423,7 @@ final class PickySessionListViewModel: ObservableObject {
     /// 'click to close' and 'long-press to archive' into separate beats.
     @Published private(set) var lastClosedSessionToken: UUID = UUID()
     private(set) var lastClosedSessionID: String?
+    let fullscreenTurnSnapshotStore = PickyFullscreenTurnSnapshotStore()
 
     var selectedSession: SessionCard? {
         guard let selectedSessionID else { return sessions.first }
@@ -476,6 +484,8 @@ final class PickySessionListViewModel: ObservableObject {
     private var slashCommandRequestEpochByID: [String: UInt64] = [:]
     private var slashCommandRequestSessionByID: [String: String] = [:]
     private var lastIncrementalSeqBySessionID: [String: Int] = [:]
+    private var pendingFullscreenTurnSnapshotsBySessionID: [String: [PickyPendingFullscreenTurnSnapshot]] = [:]
+    private var pendingNewFullscreenTurnSnapshots: [PickyPendingFullscreenTurnSnapshot] = []
     private var hasExplicitSelection = false
 
     init(
@@ -612,7 +622,15 @@ final class PickySessionListViewModel: ObservableObject {
 
     func submit(transcript: String, context: PickyContextPacket) async throws {
         pickySessionLog("submit context=\(context.id) source=\(context.source) transcriptChars=\(transcript.count)")
-        _ = try await client.submit(PickyAgentSubmission(transcript: transcript, context: context))
+        let pendingSnapshotID = await enqueueFullscreenTurnSnapshotForNewSession(cwd: context.cwd)
+        do {
+            _ = try await client.submit(PickyAgentSubmission(transcript: transcript, context: context))
+        } catch {
+            if let pendingSnapshotID {
+                removePendingNewFullscreenTurnSnapshot(id: pendingSnapshotID)
+            }
+            throw error
+        }
     }
 
     @discardableResult
@@ -941,10 +959,14 @@ final class PickySessionListViewModel: ObservableObject {
             throw PickySessionListViewModelError.noSessionSelected
         }
         pickySessionLog("follow-up session=\(target) textChars=\(trimmed.count)")
+        let pendingSnapshotID = await enqueueFullscreenTurnSnapshot(sessionID: target)
         do {
             try await client.send(PickyCommandEnvelope(type: .followUp, sessionId: target, text: trimmed))
             lastError = nil
         } catch {
+            if let pendingSnapshotID {
+                removePendingFullscreenTurnSnapshot(sessionID: target, id: pendingSnapshotID)
+            }
             lastError = error.localizedDescription
             throw error
         }
@@ -1100,6 +1122,77 @@ final class PickySessionListViewModel: ObservableObject {
 
     private func card(sessionID: String) -> SessionCard? {
         (sessions + archivedSessions).first { $0.id == sessionID }
+    }
+
+    private func enqueueFullscreenTurnSnapshot(sessionID: String) async -> UUID? {
+        guard let session = card(sessionID: sessionID), let snapshot = await captureFullscreenTurnSnapshot(cwd: session.cwd) else { return nil }
+        let existingTurnIDs = Self.turnIDs(from: session.messages)
+        let pending = PickyPendingFullscreenTurnSnapshot(id: UUID(), cwd: session.cwd, existingTurnIDs: existingTurnIDs, snapshot: snapshot)
+        pendingFullscreenTurnSnapshotsBySessionID[sessionID, default: []].append(pending)
+        return pending.id
+    }
+
+    private func enqueueFullscreenTurnSnapshotForNewSession(cwd: String?) async -> UUID? {
+        guard let snapshot = await captureFullscreenTurnSnapshot(cwd: cwd) else { return nil }
+        let pending = PickyPendingFullscreenTurnSnapshot(id: UUID(), cwd: cwd, existingTurnIDs: [], snapshot: snapshot)
+        pendingNewFullscreenTurnSnapshots.append(pending)
+        return pending.id
+    }
+
+    private func removePendingFullscreenTurnSnapshot(sessionID: String, id: UUID) {
+        pendingFullscreenTurnSnapshotsBySessionID[sessionID]?.removeAll { $0.id == id }
+        if pendingFullscreenTurnSnapshotsBySessionID[sessionID]?.isEmpty == true {
+            pendingFullscreenTurnSnapshotsBySessionID.removeValue(forKey: sessionID)
+        }
+    }
+
+    private func removePendingNewFullscreenTurnSnapshot(id: UUID) {
+        pendingNewFullscreenTurnSnapshots.removeAll { $0.id == id }
+    }
+
+    private func captureFullscreenTurnSnapshot(cwd: String?) async -> PickyFullscreenTurnGitSnapshot? {
+        await PickyFullscreenTurnSnapshotCapturer.captureSnapshot(cwd: cwd)
+    }
+
+    private func bindPendingFullscreenTurnSnapshots(sessionID: String, messages: [PickySessionMessage]) {
+        let turnIDs = messages
+            .filter { $0.kind == .userText || $0.kind == .commandReceipt }
+            .map(\.id)
+        guard !turnIDs.isEmpty else { return }
+
+        var recordedTurnIDs = Set(fullscreenTurnSnapshotStore.snapshots[sessionID]?.keys.map { $0 } ?? [])
+        if var pending = pendingFullscreenTurnSnapshotsBySessionID[sessionID], !pending.isEmpty {
+            var remaining: [PickyPendingFullscreenTurnSnapshot] = []
+            for snapshot in pending {
+                guard let turnID = turnIDs.first(where: { !recordedTurnIDs.contains($0) && !snapshot.existingTurnIDs.contains($0) }) else {
+                    remaining.append(snapshot)
+                    continue
+                }
+                fullscreenTurnSnapshotStore.record(sessionID: sessionID, turnID: turnID, snapshot: snapshot.snapshot)
+                recordedTurnIDs.insert(turnID)
+            }
+            pendingFullscreenTurnSnapshotsBySessionID[sessionID] = remaining.isEmpty ? nil : remaining
+        }
+
+        guard !pendingNewFullscreenTurnSnapshots.isEmpty,
+              fullscreenTurnSnapshotStore.snapshots[sessionID]?.isEmpty != false,
+              let firstTurnID = turnIDs.first,
+              !recordedTurnIDs.contains(firstTurnID) else { return }
+        let cwd = card(sessionID: sessionID)?.cwd
+        let pendingIndex = pendingNewFullscreenTurnSnapshots.firstIndex { pending in
+            Self.cwdsMatch(pending.cwd, cwd)
+        } ?? pendingNewFullscreenTurnSnapshots.indices.first
+        guard let index = pendingIndex else { return }
+        let pending = pendingNewFullscreenTurnSnapshots.remove(at: index)
+        fullscreenTurnSnapshotStore.record(sessionID: sessionID, turnID: firstTurnID, snapshot: pending.snapshot)
+    }
+
+    private static func turnIDs(from messages: [PickySessionMessage]) -> Set<String> {
+        Set(messages.filter { $0.kind == .userText || $0.kind == .commandReceipt }.map(\.id))
+    }
+
+    private static func cwdsMatch(_ lhs: String?, _ rhs: String?) -> Bool {
+        (lhs?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") == (rhs?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
     }
 
     private func sessionTitle(for sessionID: String) -> String {
@@ -1736,6 +1829,7 @@ final class PickySessionListViewModel: ObservableObject {
             for card in cards {
                 PickyGitRepositoryStatus.prefetchIfNeeded(cwd: card.cwd)
                 PickyGitHubPullRequestStatus.prefetchIfNeeded(cwd: card.cwd)
+                bindPendingFullscreenTurnSnapshots(sessionID: card.id, messages: card.messages)
             }
             pruneSlashCommandCache(knownSessionIDs: Set(cards.map(\.id)))
             syncThinkingBlockVisibility()
@@ -1761,6 +1855,9 @@ final class PickySessionListViewModel: ObservableObject {
                 incomingCard,
                 preserveIncrementalConversationState: lastIncrementalSeqBySessionID[session.id] != nil
             )
+            if let messages = card(sessionID: session.id)?.messages {
+                bindPendingFullscreenTurnSnapshots(sessionID: session.id, messages: messages)
+            }
         case .sessionArchivedAuthoritative(let sessionId, let archived):
             // agentd has issued an authoritative archive-state change (either
             // from a client setSessionArchived command, or from the realtime
@@ -1898,6 +1995,10 @@ final class PickySessionListViewModel: ObservableObject {
                 card.messages.append(message)
                 card.updatedAt = max(card.updatedAt, message.createdAt)
             }
+            if message.kind == .userText || message.kind == .commandReceipt,
+               let messages = card(sessionID: sessionId)?.messages {
+                bindPendingFullscreenTurnSnapshots(sessionID: sessionId, messages: messages)
+            }
         case .sessionMessageReplaced(let sessionId, let messageId, let message, let seq):
             guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
             update(sessionID: sessionId) { card in
@@ -1907,6 +2008,10 @@ final class PickySessionListViewModel: ObservableObject {
                     card.messages.append(message)
                 }
                 card.updatedAt = max(card.updatedAt, message.createdAt)
+            }
+            if message.kind == .userText || message.kind == .commandReceipt,
+               let messages = card(sessionID: sessionId)?.messages {
+                bindPendingFullscreenTurnSnapshots(sessionID: sessionId, messages: messages)
             }
         case .sessionMessageRemoved(let sessionId, let messageId, let seq):
             guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }

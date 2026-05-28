@@ -12,6 +12,8 @@ struct PickyFullscreenTurnView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
     var isLastTurn = false
+    var turnChangedFiles: [PickyChangedFile] = []
+    var usesSessionChangedFilesFallback = false
     var isWorkSummaryExpanded = false
     var onToggleWorkSummary: (() -> Void)? = nil
 
@@ -52,20 +54,14 @@ struct PickyFullscreenTurnView: View {
                 statusMessageView(message)
             }
 
-            if shouldShowChangedFilesCard {
-                PickyFullscreenChangedFilesCardView(changedFiles: session.changedFiles)
+            if !turnChangedFiles.isEmpty {
+                PickyFullscreenChangedFilesCardView(
+                    changedFiles: turnChangedFiles,
+                    title: usesSessionChangedFilesFallback ? "세션 변경 파일" : "변경 파일"
+                )
             }
         }
         .padding(.vertical, 4)
-    }
-
-    private var shouldShowChangedFilesCard: Bool {
-        PickyFullscreenTurnPolicy.shouldShowSessionChangedFilesCard(
-            isLastTurn: isLastTurn,
-            isCurrentTurn: turn.isCurrent,
-            sessionStatus: session.status,
-            changedFilesCount: session.changedFiles.count
-        )
     }
 
     private var shouldShowWorkSummary: Bool {

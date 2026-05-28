@@ -10,10 +10,18 @@ import SwiftUI
 struct PickyFullscreenConversationListView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
+    @ObservedObject private var snapshotStore: PickyFullscreenTurnSnapshotStore
+    @StateObject private var turnDiffProvider = PickyFullscreenTurnDiffProvider()
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var hasAppeared = false
     @State private var completedTurnIDsBySessionID: [String: Set<String>] = [:]
     @State private var expandedWorkSummaryTurnIDs: Set<String> = []
+
+    init(session: PickySessionListViewModel.SessionCard, viewModel: PickySessionListViewModel) {
+        self.session = session
+        self.viewModel = viewModel
+        _snapshotStore = ObservedObject(wrappedValue: viewModel.fullscreenTurnSnapshotStore)
+    }
 
     private var turnGroups: [PickyTurnGroup] {
         PickyTurnGrouper.groups(
@@ -47,9 +55,14 @@ struct PickyFullscreenConversationListView: View {
                                 session: session,
                                 viewModel: viewModel,
                                 isLastTurn: index == turns.index(before: turns.endIndex),
+                                turnChangedFiles: changedFiles(for: turn, at: index),
+                                usesSessionChangedFilesFallback: usesSessionChangedFilesFallback(for: turn, at: index),
                                 isWorkSummaryExpanded: expandedWorkSummaryTurnIDs.contains(turn.id),
                                 onToggleWorkSummary: { toggleWorkSummary(turnID: turn.id) }
                             )
+                            .task(id: diffTaskID(for: turn, at: index)) {
+                                await fetchTurnDiffIfNeeded(for: turn, at: index)
+                            }
                         }
                     }
                     Color.clear
@@ -71,7 +84,11 @@ struct PickyFullscreenConversationListView: View {
             }
         }
         .onAppear {
+            turnDiffProvider.configure(cwd: session.cwd)
             observeCompletedTurns(completedTurnIDsToObserve)
+        }
+        .onChange(of: session.cwd) { _, cwd in
+            turnDiffProvider.configure(cwd: cwd)
         }
         .onChange(of: completedTurnIDsToObserve) { _, ids in
             observeCompletedTurns(ids)
@@ -91,6 +108,59 @@ struct PickyFullscreenConversationListView: View {
         } else {
             expandedWorkSummaryTurnIDs.insert(turnID)
         }
+    }
+
+    private func changedFiles(for turn: PickyFullscreenTurnRenderModel, at index: Int) -> [PickyChangedFile] {
+        if let scoped = turnDiffProvider.diffsByTurnID[turn.id], !scoped.isEmpty {
+            return scoped
+        }
+        if usesSessionChangedFilesFallback(for: turn, at: index) {
+            return session.changedFiles
+        }
+        return []
+    }
+
+    private func usesSessionChangedFilesFallback(for turn: PickyFullscreenTurnRenderModel, at index: Int) -> Bool {
+        snapshotStore.snapshot(sessionID: session.id, turnID: turn.id) == nil
+            && PickyFullscreenTurnPolicy.shouldShowSessionChangedFilesCard(
+                isLastTurn: index == turns.index(before: turns.endIndex),
+                isCurrentTurn: turn.isCurrent,
+                sessionStatus: session.status,
+                changedFilesCount: session.changedFiles.count
+            )
+    }
+
+    private func diffTaskID(for turn: PickyFullscreenTurnRenderModel, at index: Int) -> String {
+        guard let startSnapshot = snapshotStore.snapshot(sessionID: session.id, turnID: turn.id), !turn.isCurrent else {
+            return "\(session.id):\(turn.id):no-snapshot"
+        }
+        if let nextTurn = nextTurn(after: index), let endSnapshot = snapshotStore.snapshot(sessionID: session.id, turnID: nextTurn.id) {
+            return "\(session.id):\(turn.id):\(startSnapshot.effectiveRef)..\(endSnapshot.effectiveRef)"
+        }
+        if index == turns.index(before: turns.endIndex) {
+            return "\(session.id):\(turn.id):\(startSnapshot.effectiveRef)..latest:\(session.status.rawValue):\(session.updatedAt.timeIntervalSince1970)"
+        }
+        return "\(session.id):\(turn.id):waiting-for-next-snapshot"
+    }
+
+    private func fetchTurnDiffIfNeeded(for turn: PickyFullscreenTurnRenderModel, at index: Int) async {
+        guard !turn.isCurrent,
+              let startSnapshot = snapshotStore.snapshot(sessionID: session.id, turnID: turn.id) else { return }
+        if let nextTurn = nextTurn(after: index), let endSnapshot = snapshotStore.snapshot(sessionID: session.id, turnID: nextTurn.id) {
+            await turnDiffProvider.fetchDiff(
+                turnID: turn.id,
+                startRef: startSnapshot.effectiveRef,
+                endRef: endSnapshot.effectiveRef
+            )
+        } else if index == turns.index(before: turns.endIndex) {
+            await turnDiffProvider.fetchLastTurnDiff(turnID: turn.id, startRef: startSnapshot.effectiveRef)
+        }
+    }
+
+    private func nextTurn(after index: Int) -> PickyFullscreenTurnRenderModel? {
+        let nextIndex = turns.index(after: index)
+        guard nextIndex < turns.endIndex else { return nil }
+        return turns[nextIndex]
     }
 
     private var emptyConversation: some View {

@@ -9,6 +9,7 @@ import SwiftUI
 
 struct PickyFullscreenChangedFilesCardView: View {
     let changedFiles: [PickyChangedFile]
+    var title = "세션 변경 파일"
 
     var body: some View {
         if !changedFiles.isEmpty {
@@ -16,7 +17,7 @@ struct PickyFullscreenChangedFilesCardView: View {
                 HStack(spacing: 7) {
                     Image(systemName: "doc.text.magnifyingglass")
                         .pickyFont(size: 12, weight: .semibold)
-                    Text("세션 변경 파일")
+                    Text(title)
                         .pickyFont(size: 13, weight: .semibold)
                     Text("\(changedFiles.count)")
                         .pickyFont(size: 11, weight: .bold, design: .monospaced)
@@ -45,7 +46,7 @@ struct PickyFullscreenChangedFilesCardView: View {
                     .stroke(Color.primary.opacity(0.08), lineWidth: 1)
             )
             .accessibilityElement(children: .contain)
-            .accessibilityLabel("세션 변경 파일")
+            .accessibilityLabel(title)
         }
     }
 

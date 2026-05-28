@@ -73,14 +73,20 @@ final class OpenAIRealtimeVoiceInputManager {
     /// configuration-change observer can rebuild the graph on route changes
     /// without duplicating logic.
     ///
-    /// Three defensive layers protect against the AVFAudio crash where the
+    /// Three defensive layers protect against AVFAudio failures when the
     /// input hardware (BT HFP @ 24 kHz) doesn't match the engine's cached
     /// client format (48 kHz):
-    ///   1. Call `prepare()` BEFORE reading the format so AVAudioEngine has
-    ///      negotiated with the HAL.
-    ///   2. Snapshot `inputNode.outputFormat(forBus: 0)` after prepare; this
-    ///      is what the tap must receive to avoid the "format mismatch"
-    ///      NSException.
+    ///   1. Call `prepare()` BEFORE we touch the input node so AVAudioEngine
+    ///      has negotiated with the HAL.
+    ///   2. Pass `format: nil` to `installTap` so AVAudioEngine uses the bus's
+    ///      native format. The previous revision snapshotted
+    ///      `inputNode.outputFormat(forBus: 0)` based on the assumption that
+    ///      `prepare()` reconciles the cached client format with the HAL, but
+    ///      in practice (macOS 15.6, observed in `AVAEInternal.h:71
+    ///      InstallTapOnNode: format.sampleRate == inputHWFormat.sampleRate`)
+    ///      the snapshot can still disagree with the live HW format and the
+    ///      assertion silently rejects the tap — no NSException, no audio
+    ///      chunks, just an empty stream.
     ///   3. Wrap `installTap` in `PickyTrapObjCException` so any residual
     ///      Obj-C exception (race with a concurrent route change) surfaces
     ///      as a Swift error the caller can recover from instead of
@@ -90,7 +96,7 @@ final class OpenAIRealtimeVoiceInputManager {
         inputNode.removeTap(onBus: 0)
 
         audioEngine.prepare()
-        let format = inputNode.outputFormat(forBus: 0)
+        let format = inputNode.inputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
             throw PickyRealtimeVoiceInputError.installTapFailed(
                 reason: "Input node reported an invalid format after prepare (sampleRate=\(format.sampleRate), channels=\(format.channelCount))."
@@ -99,7 +105,7 @@ final class OpenAIRealtimeVoiceInputManager {
 
         var trapError: NSError?
         let installed = PickyTrapObjCException({
-            inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, _ in
+            inputNode.installTap(onBus: 0, bufferSize: 1_024, format: nil) { [weak self] buffer, _ in
                 guard let self else { return }
                 guard let data = self.converter.convertToPCM16Data(from: buffer), !data.isEmpty else { return }
                 self.onAudioChunk?(data)

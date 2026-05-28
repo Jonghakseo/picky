@@ -427,14 +427,20 @@ final class BuddyDictationManager: NSObject, ObservableObject {
 
     /// Installs the input tap and starts the audio engine.
     ///
-    /// Three defensive layers guard against the AVFAudio crash where the input
+    /// Three defensive layers guard against AVFAudio failures when the input
     /// hardware (e.g. AirPods HFP at 24 kHz) doesn't match the engine's cached
     /// client format (48 kHz):
-    ///   1. `prepare()` runs BEFORE reading the format so AVAudioEngine has
-    ///      negotiated with the HAL.
-    ///   2. We snapshot `inputNode.outputFormat(forBus: 0)` after prepare;
-    ///      that is what the tap must use to avoid the "format mismatch"
-    ///      NSException.
+    ///   1. `prepare()` runs BEFORE we touch the input node so AVAudioEngine
+    ///      has negotiated with the HAL.
+    ///   2. `installTap` is called with `format: nil`, which tells
+    ///      AVAudioEngine to use the bus's native format. The previous
+    ///      revision passed `inputNode.outputFormat(forBus: 0)` here based on
+    ///      the assumption that `prepare()` reconciles the cached client
+    ///      format with the HAL, but in practice (macOS 15.6, observed in
+    ///      `AVAEInternal.h:71 InstallTapOnNode: format.sampleRate ==
+    ///      inputHWFormat.sampleRate`) the snapshot can still disagree with
+    ///      the live HW format and the assertion silently rejects the tap —
+    ///      no NSException, no buffers, just an empty recording.
     ///   3. `installTap` is wrapped in `PickyTrapObjCException` so any Obj-C
     ///      exception (race with a concurrent route change) surfaces as a
     ///      Swift error rather than terminating the app.
@@ -443,7 +449,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         inputNode.removeTap(onBus: 0)
 
         audioEngine.prepare()
-        let inputFormat = inputNode.outputFormat(forBus: 0)
+        let inputFormat = inputNode.inputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             throw PickyRealtimeVoiceInputError.installTapFailed(
                 reason: "Input node reported an invalid format after prepare (sampleRate=\(inputFormat.sampleRate), channels=\(inputFormat.channelCount))."
@@ -452,7 +458,7 @@ final class BuddyDictationManager: NSObject, ObservableObject {
 
         var trapError: NSError?
         let installed = PickyTrapObjCException({
-            inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
                 self?.activeTranscriptionSession?.appendAudioBuffer(buffer)
                 self?.updateAudioPowerLevel(from: buffer)
             }

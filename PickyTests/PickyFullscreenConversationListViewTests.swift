@@ -14,6 +14,39 @@ struct PickyFullscreenConversationListViewTests {
         #expect(!PickyFullscreenConversationListView.shouldAnimateScroll(hasAppeared: true, reduceMotion: true))
     }
 
+    @Test func initialEntryScrollRetriesAfterLayoutDelay() {
+        #expect(PickyFullscreenConversationListView.initialBottomScrollPassCount == 2)
+        #expect(PickyFullscreenConversationListView.initialBottomScrollRetryDelay == .milliseconds(30))
+    }
+
+    @Test func turnInputsKeyTracksTranscriptDependencies() {
+        var session = sessionFixture()
+        let initialKey = PickyFullscreenConversationListView.turnInputsKey(
+            session: session,
+            completedTurnCount: 0,
+            expandedWorkSummaryTurnCount: 0
+        )
+
+        session.messages.append(message(id: "agent-2", kind: .agentText, text: "new answer"))
+        let appendedKey = PickyFullscreenConversationListView.turnInputsKey(
+            session: session,
+            completedTurnCount: 0,
+            expandedWorkSummaryTurnCount: 0
+        )
+
+        #expect(appendedKey != initialKey)
+        #expect(PickyFullscreenConversationListView.turnInputsKey(
+            session: session,
+            completedTurnCount: 1,
+            expandedWorkSummaryTurnCount: 0
+        ) != appendedKey)
+        #expect(PickyFullscreenConversationListView.turnInputsKey(
+            session: session,
+            completedTurnCount: 0,
+            expandedWorkSummaryTurnCount: 1
+        ) != appendedKey)
+    }
+
     @Test func fullscreenDetailWidthTracksAvailableColumnWithoutTouchingDivider() {
         for columnWidth in [CGFloat(1040), 1280, 1600] {
             let detailWidth = PickyFullscreenConversationPaneView.responsiveConversationDetailWidth(forColumnWidth: columnWidth)
@@ -33,5 +66,44 @@ struct PickyFullscreenConversationListViewTests {
 
             #expect(occupiedWidth <= columnWidth)
         }
+    }
+
+    private func sessionFixture() -> PickySessionListViewModel.SessionCard {
+        PickyAgentSession(
+            id: "session-1",
+            title: "Fullscreen Fixture",
+            status: .completed,
+            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_060),
+            logs: [],
+            tools: [],
+            artifacts: [],
+            changedFiles: [],
+            messages: [
+                message(id: "user-1", kind: .userText, text: "question"),
+                message(id: "agent-1", kind: .agentText, text: "answer")
+            ]
+        ).toSessionCard()
+    }
+
+    private func message(id: String, kind: PickySessionMessageKind, text: String?) -> PickySessionMessage {
+        PickySessionMessage(
+            id: id,
+            kind: kind,
+            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+            originatedBy: nil,
+            text: text,
+            question: nil,
+            cancelledAt: nil,
+            activitySnapshot: nil,
+            errorContext: nil,
+            errorMessage: nil
+        )
+    }
+}
+
+private extension PickyAgentSession {
+    func toSessionCard() -> PickySessionListViewModel.SessionCard {
+        PickySessionListViewModel.SessionCard.fromAgentSession(self)
     }
 }

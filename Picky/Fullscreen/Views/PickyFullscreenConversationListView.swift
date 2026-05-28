@@ -16,26 +16,33 @@ struct PickyFullscreenConversationListView: View {
     @State private var hasAppeared = false
     @State private var completedTurnIDsBySessionID: [String: Set<String>] = [:]
     @State private var expandedWorkSummaryTurnIDs: Set<String> = []
+    @State private var cachedTurnGroups: [PickyTurnGroup]
+    @State private var cachedTurns: [PickyFullscreenTurnRenderModel]
+    @State private var lastTurnInputsKey: String?
 
     init(session: PickySessionListViewModel.SessionCard, viewModel: PickySessionListViewModel) {
         self.session = session
         self.viewModel = viewModel
         _snapshotStore = ObservedObject(wrappedValue: viewModel.fullscreenTurnSnapshotStore)
-    }
-
-    private var turnGroups: [PickyTurnGroup] {
-        PickyTurnGrouper.groups(
+        let initialTurnGroups = PickyTurnGrouper.groups(
             from: session.messages,
             sessionStatus: session.status,
             liveActivitySummary: session.activitySummary
         )
+        _cachedTurnGroups = State(initialValue: initialTurnGroups)
+        _cachedTurns = State(initialValue: PickyFullscreenTurnPolicy.renderModels(
+            from: initialTurnGroups,
+            completedTurnIDs: []
+        ))
+        _lastTurnInputsKey = State(initialValue: nil)
+    }
+
+    private var turnGroups: [PickyTurnGroup] {
+        cachedTurnGroups
     }
 
     private var turns: [PickyFullscreenTurnRenderModel] {
-        PickyFullscreenTurnPolicy.renderModels(
-            from: turnGroups,
-            completedTurnIDs: completedTurnIDsBySessionID[session.id, default: []]
-        )
+        cachedTurns
     }
 
     private var completedTurnIDsToObserve: Set<String> {
@@ -73,7 +80,8 @@ struct PickyFullscreenConversationListView: View {
                 .padding(.vertical, 18)
             }
             .task(id: session.id) {
-                scrollToBottom(proxy: proxy, animated: false)
+                hasAppeared = false
+                await scrollToBottomAfterInitialLayout(proxy: proxy)
                 hasAppeared = true
             }
             .onChange(of: bottomScrollTrigger) { _, _ in
@@ -90,11 +98,30 @@ struct PickyFullscreenConversationListView: View {
         .onChange(of: session.cwd) { _, cwd in
             turnDiffProvider.configure(cwd: cwd)
         }
+        .onChange(of: turnInputsKey) { _, _ in
+            recomputeTurnCacheIfNeeded()
+        }
         .onChange(of: completedTurnIDsToObserve) { _, ids in
             observeCompletedTurns(ids)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("대화 메시지")
+    }
+
+    private func recomputeTurnCacheIfNeeded() {
+        let key = turnInputsKey
+        guard lastTurnInputsKey != key else { return }
+        let groups = PickyTurnGrouper.groups(
+            from: session.messages,
+            sessionStatus: session.status,
+            liveActivitySummary: session.activitySummary
+        )
+        cachedTurnGroups = groups
+        cachedTurns = PickyFullscreenTurnPolicy.renderModels(
+            from: groups,
+            completedTurnIDs: completedTurnIDsBySessionID[session.id, default: []]
+        )
+        lastTurnInputsKey = key
     }
 
     private func observeCompletedTurns(_ ids: Set<String>) {
@@ -190,8 +217,71 @@ struct PickyFullscreenConversationListView: View {
         )
     }
 
+    private var turnInputsKey: String {
+        Self.turnInputsKey(
+            session: session,
+            completedTurnCount: completedTurnIDsBySessionID[session.id]?.count ?? 0,
+            expandedWorkSummaryTurnCount: expandedWorkSummaryTurnIDs.count
+        )
+    }
+
+    static func turnInputsKey(
+        session: PickySessionListViewModel.SessionCard,
+        completedTurnCount: Int,
+        expandedWorkSummaryTurnCount: Int
+    ) -> String {
+        var messageDigestParts: [String] = []
+        messageDigestParts.reserveCapacity(session.messages.count)
+        for message in session.messages {
+            let activity = message.activitySnapshot
+            var parts: [String] = []
+            parts.reserveCapacity(10)
+            parts.append(message.id)
+            parts.append(message.kind.rawValue)
+            parts.append(String(message.text?.count ?? 0))
+            parts.append(String(message.errorMessage?.count ?? 0))
+            parts.append(String(activity?.edit ?? 0))
+            parts.append(String(activity?.bash ?? 0))
+            parts.append(String(activity?.thinking ?? 0))
+            parts.append(String(activity?.other ?? 0))
+            parts.append(String(activity?.read ?? 0))
+            parts.append(String(activity?.write ?? 0))
+            messageDigestParts.append(parts.joined(separator: ","))
+        }
+        let messageDigest = messageDigestParts.joined(separator: "|")
+        let summary = session.activitySummary
+        return [
+            session.id,
+            session.status.rawValue,
+            String(session.messages.count),
+            messageDigest,
+            String(summary.edit),
+            String(summary.bash),
+            String(summary.thinking),
+            String(summary.other),
+            String(summary.read),
+            String(summary.write),
+            String(completedTurnCount),
+            String(expandedWorkSummaryTurnCount)
+        ].joined(separator: ":")
+    }
+
     static func shouldAnimateScroll(hasAppeared: Bool, reduceMotion: Bool) -> Bool {
         hasAppeared && !reduceMotion
+    }
+
+    static var initialBottomScrollPassCount: Int { 2 }
+
+    static var initialBottomScrollRetryDelay: Duration { .milliseconds(30) }
+
+    private func scrollToBottomAfterInitialLayout(proxy: ScrollViewProxy) async {
+        for pass in 0..<Self.initialBottomScrollPassCount {
+            scrollToBottom(proxy: proxy, animated: false)
+            if pass < Self.initialBottomScrollPassCount - 1 {
+                await Task.yield()
+                try? await Task.sleep(for: Self.initialBottomScrollRetryDelay)
+            }
+        }
     }
 
     private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool) {

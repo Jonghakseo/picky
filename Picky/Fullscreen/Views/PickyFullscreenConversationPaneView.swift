@@ -5,25 +5,101 @@
 //  Center pane for fullscreen's focused LLM chat UI.
 //
 
+import AppKit
 import SwiftUI
 
 struct PickyFullscreenConversationPaneView: View {
     let session: PickySessionListViewModel.SessionCard?
     @ObservedObject var viewModel: PickySessionListViewModel
+    @State private var droppedFilePathsBySessionID: [String: [String]] = [:]
+    @State private var isFileDropTargeted = false
+    @State private var extendedTerminalOpenSessionIDs: Set<String> = []
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
             if let session {
-                PickyFullscreenConversationListView(session: session, viewModel: viewModel)
+                conversationContent(for: session)
                     .environment(\.pickyHUDDetailWidth, Self.conversationDetailWidth)
+                    .onDrop(
+                        of: PickyConversationFileDrop.acceptedTypeIdentifiers,
+                        isTargeted: $isFileDropTargeted,
+                        perform: { handleFileDrop($0, sessionID: session.id) }
+                    )
             } else {
                 noSelectionView
             }
         }
         .frame(minWidth: 480, idealWidth: 760, maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private func conversationContent(for session: PickySessionListViewModel.SessionCard) -> some View {
+        VStack(spacing: 0) {
+            PickyFullscreenConversationListView(session: session, viewModel: viewModel)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if isExtendedTerminalOpen(sessionID: session.id) {
+                Divider()
+                PickySessionExtendedTerminalView(session: session, viewModel: viewModel)
+                    .transition(.opacity)
+            }
+
+            Divider()
+            PickyConversationComposerView(
+                session: session,
+                viewModel: viewModel,
+                droppedFilePaths: droppedFilePathsBinding(for: session.id),
+                isFileDropTargeted: isFileDropTargeted,
+                isExtendedTerminalOpen: isExtendedTerminalOpen(sessionID: session.id),
+                onToggleExtendedTerminal: { toggleExtendedTerminal(sessionID: session.id) }
+            )
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
+            .background(Color(nsColor: .windowBackgroundColor))
+        }
+    }
+
+    private func droppedFilePathsBinding(for sessionID: String) -> Binding<[String]> {
+        Binding(
+            get: { droppedFilePathsBySessionID[sessionID, default: []] },
+            set: { paths in
+                if paths.isEmpty {
+                    droppedFilePathsBySessionID.removeValue(forKey: sessionID)
+                } else {
+                    droppedFilePathsBySessionID[sessionID] = paths
+                }
+            }
+        )
+    }
+
+    private func handleFileDrop(_ providers: [NSItemProvider], sessionID: String) -> Bool {
+        let fileProviders = providers.filter(PickyConversationFileDrop.acceptsDrop)
+        guard !fileProviders.isEmpty else { return false }
+
+        Task {
+            let paths = await PickyConversationFileDrop.filePaths(from: fileProviders)
+            guard !paths.isEmpty else { return }
+            await MainActor.run {
+                droppedFilePathsBySessionID[sessionID, default: []].append(contentsOf: paths)
+            }
+        }
+        return true
+    }
+
+    private func isExtendedTerminalOpen(sessionID: String) -> Bool {
+        extendedTerminalOpenSessionIDs.contains(sessionID)
+            && !(viewModel.isInlineTerminalMode(sessionID: sessionID))
+    }
+
+    private func toggleExtendedTerminal(sessionID: String) {
+        if extendedTerminalOpenSessionIDs.contains(sessionID) {
+            extendedTerminalOpenSessionIDs.remove(sessionID)
+        } else {
+            extendedTerminalOpenSessionIDs.insert(sessionID)
+            viewModel.markSessionRead(sessionID: sessionID)
+        }
     }
 
     private var header: some View {

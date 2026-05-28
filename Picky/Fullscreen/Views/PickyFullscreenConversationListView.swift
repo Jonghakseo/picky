@@ -41,17 +41,17 @@ struct PickyFullscreenConversationListView: View {
                     if turns.isEmpty {
                         emptyConversation
                     } else {
-                        ForEach(turns) { turn in
+                        ForEach(Array(turns.enumerated()), id: \.element.id) { index, turn in
                             PickyFullscreenTurnView(
                                 turn: turn,
                                 session: session,
                                 viewModel: viewModel,
+                                isLastTurn: index == turns.index(before: turns.endIndex),
                                 isWorkSummaryExpanded: expandedWorkSummaryTurnIDs.contains(turn.id),
                                 onToggleWorkSummary: { toggleWorkSummary(turnID: turn.id) }
                             )
                         }
                     }
-                    PickyFullscreenChangedFilesCardView(changedFiles: session.changedFiles)
                     Color.clear
                         .frame(height: 1)
                         .id(Self.bottomAnchorID)

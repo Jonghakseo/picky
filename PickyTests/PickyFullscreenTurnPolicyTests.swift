@@ -291,6 +291,42 @@ struct PickyFullscreenTurnPolicyTests {
         #expect(models[1].liveActivitySummary == PickyActivitySummary(read: 1))
     }
 
+    @Test func sessionChangedFilesCardShowsOnlyOnLastCompletedTurn() {
+        #expect(PickyFullscreenTurnPolicy.shouldShowSessionChangedFilesCard(
+            isLastTurn: true,
+            isCurrentTurn: false,
+            sessionStatus: .completed,
+            changedFilesCount: 2
+        ))
+        #expect(!PickyFullscreenTurnPolicy.shouldShowSessionChangedFilesCard(
+            isLastTurn: false,
+            isCurrentTurn: false,
+            sessionStatus: .completed,
+            changedFilesCount: 2
+        ))
+    }
+
+    @Test func sessionChangedFilesCardHidesWhileCurrentOrRunningOrEmpty() {
+        #expect(!PickyFullscreenTurnPolicy.shouldShowSessionChangedFilesCard(
+            isLastTurn: true,
+            isCurrentTurn: true,
+            sessionStatus: .running,
+            changedFilesCount: 2
+        ))
+        #expect(!PickyFullscreenTurnPolicy.shouldShowSessionChangedFilesCard(
+            isLastTurn: true,
+            isCurrentTurn: false,
+            sessionStatus: .running,
+            changedFilesCount: 2
+        ))
+        #expect(!PickyFullscreenTurnPolicy.shouldShowSessionChangedFilesCard(
+            isLastTurn: true,
+            isCurrentTurn: false,
+            sessionStatus: .completed,
+            changedFilesCount: 0
+        ))
+    }
+
     private func msg(
         _ id: String,
         kind: PickySessionMessageKind,

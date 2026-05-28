@@ -131,4 +131,16 @@ enum PickyFullscreenTurnPolicy {
                 || message.notifyType != nil
         }
     }
+
+    static func shouldShowSessionChangedFilesCard(
+        isLastTurn: Bool,
+        isCurrentTurn: Bool,
+        sessionStatus: PickySessionStatus,
+        changedFilesCount: Int
+    ) -> Bool {
+        isLastTurn
+            && !isCurrentTurn
+            && sessionStatus == .completed
+            && changedFilesCount > 0
+    }
 }

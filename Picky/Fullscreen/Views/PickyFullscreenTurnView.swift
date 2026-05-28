@@ -11,6 +11,7 @@ struct PickyFullscreenTurnView: View {
     let turn: PickyFullscreenTurnRenderModel
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
+    var isLastTurn = false
     var isWorkSummaryExpanded = false
     var onToggleWorkSummary: (() -> Void)? = nil
 
@@ -50,8 +51,21 @@ struct PickyFullscreenTurnView: View {
             ForEach(turn.statusMessages, id: \.id) { message in
                 statusMessageView(message)
             }
+
+            if shouldShowChangedFilesCard {
+                PickyFullscreenChangedFilesCardView(changedFiles: session.changedFiles)
+            }
         }
         .padding(.vertical, 4)
+    }
+
+    private var shouldShowChangedFilesCard: Bool {
+        PickyFullscreenTurnPolicy.shouldShowSessionChangedFilesCard(
+            isLastTurn: isLastTurn,
+            isCurrentTurn: turn.isCurrent,
+            sessionStatus: session.status,
+            changedFilesCount: session.changedFiles.count
+        )
     }
 
     private var shouldShowWorkSummary: Bool {

@@ -127,6 +127,20 @@ struct PickyFullscreenWorkInfoSnapshotTests {
         #expect(PickyFullscreenWorkInfoPanelView.contextUsagePercentText(-2) == "0%")
     }
 
+    @Test func workInfoDateFormatterIncludesDateOutsideToday() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let sameDay = now.addingTimeInterval(-60 * 60)
+        let previousDay = now.addingTimeInterval(-24 * 60 * 60)
+
+        let sameDayText = PickyFullscreenWorkInfoPanelView.formatDate(sameDay, now: now, calendar: calendar)
+        let previousDayText = PickyFullscreenWorkInfoPanelView.formatDate(previousDay, now: now, calendar: calendar)
+
+        #expect(sameDayText == sameDay.formatted(date: .omitted, time: .shortened))
+        #expect(previousDayText == previousDay.formatted(date: .numeric, time: .shortened))
+    }
+
     private func card(
         status: PickySessionStatus = .completed,
         createdAt: Date = Date(timeIntervalSince1970: 1_800_000_000),

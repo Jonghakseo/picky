@@ -355,7 +355,14 @@ struct PickyFullscreenWorkInfoPanelView: View {
     }
 
     private func formatDate(_ date: Date) -> String {
-        date.formatted(date: .omitted, time: .shortened)
+        Self.formatDate(date)
+    }
+
+    static func formatDate(_ date: Date, now: Date = Date.now, calendar: Calendar = .current) -> String {
+        if calendar.isDate(date, inSameDayAs: now) {
+            return date.formatted(date: .omitted, time: .shortened)
+        }
+        return date.formatted(date: .numeric, time: .shortened)
     }
 
     private func formatInteger(_ value: Int) -> String {

@@ -12,13 +12,25 @@ struct PickyFullscreenConversationListView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var hasAppeared = false
+    @State private var completedTurnIDsBySessionID: [String: Set<String>] = [:]
 
-    private var turns: [PickyFullscreenTurnRenderModel] {
-        PickyFullscreenTurnPolicy.renderModels(
+    private var turnGroups: [PickyTurnGroup] {
+        PickyTurnGrouper.groups(
             from: session.messages,
             sessionStatus: session.status,
             liveActivitySummary: session.activitySummary
         )
+    }
+
+    private var turns: [PickyFullscreenTurnRenderModel] {
+        PickyFullscreenTurnPolicy.renderModels(
+            from: turnGroups,
+            completedTurnIDs: completedTurnIDsBySessionID[session.id, default: []]
+        )
+    }
+
+    private var completedTurnIDsToObserve: Set<String> {
+        Set(turnGroups.filter { !$0.isCurrent }.map(\.id))
     }
 
     var body: some View {
@@ -55,8 +67,19 @@ struct PickyFullscreenConversationListView: View {
                 )
             }
         }
+        .onAppear {
+            observeCompletedTurns(completedTurnIDsToObserve)
+        }
+        .onChange(of: completedTurnIDsToObserve) { _, ids in
+            observeCompletedTurns(ids)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Conversation messages")
+    }
+
+    private func observeCompletedTurns(_ ids: Set<String>) {
+        guard !ids.isEmpty else { return }
+        completedTurnIDsBySessionID[session.id, default: []].formUnion(ids)
     }
 
     private var emptyConversation: some View {

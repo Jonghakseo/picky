@@ -170,6 +170,61 @@ struct PickyFullscreenTurnPolicyTests {
         #expect(models[1].bodyMessages.map(\.id) == ["activity"])
     }
 
+    @Test func latchedCompletedTurnDoesNotReturnToCurrentProgressDuringFollowUpRace() {
+        let messages = [
+            msg("u1", kind: .userText, text: "first request"),
+            msg("thinking", kind: .agentThinking, text: "hidden thinking"),
+            msg("activity", kind: .agentActivity, activitySnapshot: PickyActivitySummary(bash: 1)),
+            msg("final", kind: .agentText, text: "final answer")
+        ]
+        let completedGroups = PickyTurnGrouper.groups(from: messages, sessionStatus: .completed)
+        let completedTurnIDs = Set(completedGroups.filter { !$0.isCurrent }.map(\.id))
+
+        let raceGroups = PickyTurnGrouper.groups(
+            from: messages,
+            sessionStatus: .running,
+            liveActivitySummary: PickyActivitySummary(bash: 2)
+        )
+        let raceModels = PickyFullscreenTurnPolicy.renderModels(
+            from: raceGroups,
+            completedTurnIDs: completedTurnIDs
+        )
+
+        #expect(raceModels.count == 1)
+        #expect(raceModels[0].id == "u1")
+        #expect(raceModels[0].isCurrent == false)
+        #expect(raceModels[0].bodyMessages.map(\.id) == ["final"])
+        #expect(raceModels[0].liveActivitySummary == nil)
+    }
+
+    @Test func newFollowUpTurnCanBecomeCurrentAfterCompletedTurnWasLatched() {
+        let messages = [
+            msg("u1", kind: .userText, text: "first request"),
+            msg("final", kind: .agentText, text: "final answer"),
+            msg("u2", kind: .userText, text: "follow up"),
+            msg("thinking-2", kind: .agentThinking, text: "working on follow-up")
+        ]
+        let groups = PickyTurnGrouper.groups(
+            from: messages,
+            sessionStatus: .running,
+            liveActivitySummary: PickyActivitySummary(read: 1)
+        )
+
+        let models = PickyFullscreenTurnPolicy.renderModels(
+            from: groups,
+            completedTurnIDs: ["u1"]
+        )
+
+        #expect(models.count == 2)
+        #expect(models[0].id == "u1")
+        #expect(models[0].isCurrent == false)
+        #expect(models[0].bodyMessages.map(\.id) == ["final"])
+        #expect(models[1].id == "u2")
+        #expect(models[1].isCurrent == true)
+        #expect(models[1].bodyMessages.map(\.id) == ["thinking-2"])
+        #expect(models[1].liveActivitySummary == PickyActivitySummary(read: 1))
+    }
+
     private func msg(
         _ id: String,
         kind: PickySessionMessageKind,

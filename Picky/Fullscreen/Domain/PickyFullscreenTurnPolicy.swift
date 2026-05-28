@@ -22,21 +22,40 @@ enum PickyFullscreenTurnPolicy {
     static func renderModels(
         from messages: [PickySessionMessage],
         sessionStatus: PickySessionStatus,
-        liveActivitySummary: PickyActivitySummary? = nil
+        liveActivitySummary: PickyActivitySummary? = nil,
+        completedTurnIDs: Set<String> = []
     ) -> [PickyFullscreenTurnRenderModel] {
-        PickyTurnGrouper.groups(
+        let groups = PickyTurnGrouper.groups(
             from: messages,
             sessionStatus: sessionStatus,
             liveActivitySummary: liveActivitySummary
         )
-        .map(renderModel(from:))
-        .filter { model in
-            model.userMessage != nil || !model.bodyMessages.isEmpty || !model.statusMessages.isEmpty
-        }
+        return renderModels(from: groups, completedTurnIDs: completedTurnIDs)
     }
 
-    static func renderModel(from group: PickyTurnGroup) -> PickyFullscreenTurnRenderModel {
-        let visibleBody = group.isCurrent
+    static func renderModels(
+        from groups: [PickyTurnGroup],
+        completedTurnIDs: Set<String> = []
+    ) -> [PickyFullscreenTurnRenderModel] {
+        groups
+            .map { renderModel(from: $0, completedTurnIDs: completedTurnIDs) }
+            .filter { model in
+                model.userMessage != nil || !model.bodyMessages.isEmpty || !model.statusMessages.isEmpty
+            }
+    }
+
+    static func renderModel(
+        from group: PickyTurnGroup,
+        completedTurnIDs: Set<String> = []
+    ) -> PickyFullscreenTurnRenderModel {
+        // Mirror the HUD turn-card latch at the fullscreen render-policy level:
+        // once a turn has been observed as completed, do not let the
+        // status-before-user-message follow-up race promote that same group
+        // back into live-progress rendering. The next real follow-up turn has a
+        // new user-message id, so it can still become current normally.
+        let isLatchedComplete = completedTurnIDs.contains(group.id)
+        let isCurrent = group.isCurrent && !isLatchedComplete
+        let visibleBody = isCurrent
             ? currentTurnBodyMessages(from: group)
             : completedTurnBodyMessages(from: group.bodyMessages)
         let statuses = statusMessages(from: group.bodyMessages) + group.trailingCompactMessages
@@ -45,8 +64,8 @@ enum PickyFullscreenTurnPolicy {
             userMessage: group.userMessage,
             bodyMessages: visibleBody,
             statusMessages: statuses,
-            isCurrent: group.isCurrent,
-            liveActivitySummary: group.liveActivitySummary
+            isCurrent: isCurrent,
+            liveActivitySummary: isCurrent ? group.liveActivitySummary : nil
         )
     }
 

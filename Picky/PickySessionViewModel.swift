@@ -845,6 +845,12 @@ final class PickySessionListViewModel: ObservableObject {
         composerAttachmentDraftStore.setAttachmentPaths(paths, for: sessionID)
     }
 
+    func clearComposerDraft(sessionID: String) {
+        composerDraftRequestsBySessionID[sessionID] = nil
+        composerDraftStore.setDraft(nil, for: sessionID)
+        composerAttachmentDraftStore.setAttachmentPaths([], for: sessionID)
+    }
+
     func appendComposerDraftText(_ text: String, sessionID: String) {
         let incoming = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !incoming.isEmpty else { return }

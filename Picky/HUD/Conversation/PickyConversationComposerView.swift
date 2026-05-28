@@ -1086,6 +1086,8 @@ struct PickyConversationComposerView: View {
 
     private func submit(_ kind: PickyConversationComposerSubmitKind?) {
         guard !isComposerInputDisabled else { return }
+        let submittedSessionID = session.id
+        let submittedAttachmentIDs = Set(attachments.map(\.id))
         let attachmentPaths = attachments.map(\.path)
         let text = Self.submissionText(draft: draft, attachmentPaths: attachmentPaths)
         guard !text.isEmpty, let kind else { return }
@@ -1094,15 +1096,24 @@ struct PickyConversationComposerView: View {
             do {
                 switch kind {
                 case .steer:
-                    try await viewModel.steer(text: text, sessionID: session.id)
+                    try await viewModel.steer(text: text, sessionID: submittedSessionID)
                 case .followUp:
-                    try await viewModel.followUp(text: text, sessionID: session.id)
+                    try await viewModel.followUp(text: text, sessionID: submittedSessionID)
                 }
-                if draft == originalDraft {
+                let shouldClearSubmittedDraft = draft == originalDraft
+                if shouldClearSubmittedDraft {
                     draft = ""
                 }
                 attachments.removeAll { attachment in
-                    attachmentPaths.contains(attachment.path)
+                    submittedAttachmentIDs.contains(attachment.id)
+                }
+                if shouldClearSubmittedDraft && attachments.isEmpty {
+                    viewModel.clearComposerDraft(sessionID: submittedSessionID)
+                } else {
+                    if shouldClearSubmittedDraft {
+                        viewModel.updateComposerDraft("", sessionID: submittedSessionID)
+                    }
+                    viewModel.updateComposerAttachmentPaths(attachments.map(\.path), sessionID: submittedSessionID)
                 }
             } catch {
                 // PickySessionListViewModel surfaces command failures through lastError.

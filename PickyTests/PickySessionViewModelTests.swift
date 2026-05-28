@@ -138,6 +138,28 @@ private final class FakeComposerDraftStore: PickyComposerDraftStoring {
     }
 }
 
+private final class FakeComposerAttachmentDraftStore: PickyComposerAttachmentDraftStoring {
+    var attachments: [String: [String]] = [:]
+    var prunedKnownSessionIDs: Set<String>?
+
+    func attachmentPaths(for sessionID: String) -> [String] {
+        attachments[sessionID] ?? []
+    }
+
+    func setAttachmentPaths(_ paths: [String], for sessionID: String) {
+        if paths.isEmpty {
+            attachments.removeValue(forKey: sessionID)
+        } else {
+            attachments[sessionID] = paths
+        }
+    }
+
+    func prune(knownSessionIDs: Set<String>) {
+        prunedKnownSessionIDs = knownSessionIDs
+        attachments = attachments.filter { knownSessionIDs.contains($0.key) }
+    }
+}
+
 private final class FakeClipboardWriter: PickyClipboardWriting {
     private(set) var copied: [String] = []
 
@@ -575,6 +597,29 @@ struct PickySessionViewModelTests {
         #expect(draftRequest.text == "revised message")
         #expect(viewModel.persistedComposerDraft(for: "session-1") == "revised message")
         #expect(draftStore.drafts["session-1"] == "revised message")
+    }
+
+    @Test func clearComposerDraftRemovesPersistedDraftAttachmentsAndRequestForSubmittedSession() async throws {
+        let draftStore = FakeComposerDraftStore()
+        let attachmentStore = FakeComposerAttachmentDraftStore()
+        draftStore.drafts = ["session-1": "submitted draft", "session-2": "keep draft"]
+        attachmentStore.attachments = ["session-1": ["/tmp/submitted.png"], "session-2": ["/tmp/keep.png"]]
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            composerDraftStore: draftStore,
+            composerAttachmentDraftStore: attachmentStore
+        )
+        viewModel.replaceComposerDraftText("submitted draft", sessionID: "session-1")
+        #expect(viewModel.composerDraftRequest(for: "session-1") != nil)
+
+        viewModel.clearComposerDraft(sessionID: "session-1")
+
+        #expect(viewModel.composerDraftRequest(for: "session-1") == nil)
+        #expect(draftStore.drafts["session-1"] == nil)
+        #expect(draftStore.drafts["session-2"] == "keep draft")
+        #expect(attachmentStore.attachments["session-1"] == nil)
+        #expect(attachmentStore.attachments["session-2"] == ["/tmp/keep.png"])
     }
 
     @Test func copyMessageTextWritesOriginalTextToClipboard() {

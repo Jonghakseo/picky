@@ -125,27 +125,22 @@ struct PickyFullscreenWorkInfoPanelView: View {
     }
 
     private var collapsedRail: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 0) {
             Button {
                 isVisible = true
             } label: {
                 Image(systemName: "sidebar.right")
                     .pickyFont(size: 14, weight: .semibold)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
             .help("변경사항 보기")
             .accessibilityLabel("변경사항 패널 보기")
-
-            Text("변경사항")
-                .pickyFont(size: 11, weight: .semibold)
-                .foregroundStyle(.secondary)
-                .rotationEffect(.degrees(90))
-                .fixedSize()
-                .padding(.top, 26)
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 14)
+        .padding(.top, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("변경사항")
     }

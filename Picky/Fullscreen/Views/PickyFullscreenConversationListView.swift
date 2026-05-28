@@ -79,11 +79,7 @@ struct PickyFullscreenConversationListView: View {
                 .padding(.horizontal, 24)
                 .padding(.vertical, 18)
             }
-            .task(id: session.id) {
-                hasAppeared = false
-                await scrollToBottomAfterInitialLayout(proxy: proxy)
-                hasAppeared = true
-            }
+            .defaultScrollAnchor(.bottom)
             .onChange(of: bottomScrollTrigger) { _, _ in
                 scrollToBottom(
                     proxy: proxy,
@@ -92,6 +88,7 @@ struct PickyFullscreenConversationListView: View {
             }
         }
         .onAppear {
+            hasAppeared = true
             turnDiffProvider.configure(cwd: session.cwd)
             observeCompletedTurns(completedTurnIDsToObserve)
         }
@@ -270,19 +267,7 @@ struct PickyFullscreenConversationListView: View {
         hasAppeared && !reduceMotion
     }
 
-    static var initialBottomScrollPassCount: Int { 2 }
-
-    static var initialBottomScrollRetryDelay: Duration { .milliseconds(30) }
-
-    private func scrollToBottomAfterInitialLayout(proxy: ScrollViewProxy) async {
-        for pass in 0..<Self.initialBottomScrollPassCount {
-            scrollToBottom(proxy: proxy, animated: false)
-            if pass < Self.initialBottomScrollPassCount - 1 {
-                await Task.yield()
-                try? await Task.sleep(for: Self.initialBottomScrollRetryDelay)
-            }
-        }
-    }
+    static var usesBottomDefaultScrollAnchor: Bool { true }
 
     private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool) {
         DispatchQueue.main.async {

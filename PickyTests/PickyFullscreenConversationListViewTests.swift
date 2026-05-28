@@ -14,9 +14,8 @@ struct PickyFullscreenConversationListViewTests {
         #expect(!PickyFullscreenConversationListView.shouldAnimateScroll(hasAppeared: true, reduceMotion: true))
     }
 
-    @Test func initialEntryScrollRetriesAfterLayoutDelay() {
-        #expect(PickyFullscreenConversationListView.initialBottomScrollPassCount == 2)
-        #expect(PickyFullscreenConversationListView.initialBottomScrollRetryDelay == .milliseconds(30))
+    @Test func initialEntryUsesBottomDefaultScrollAnchor() {
+        #expect(PickyFullscreenConversationListView.usesBottomDefaultScrollAnchor)
     }
 
     @Test func turnInputsKeyTracksTranscriptDependencies() {

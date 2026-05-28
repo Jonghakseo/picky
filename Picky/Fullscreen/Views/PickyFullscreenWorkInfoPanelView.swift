@@ -2,7 +2,7 @@
 //  PickyFullscreenWorkInfoPanelView.swift
 //  Picky
 //
-//  Read-only 작업 정보 panel for fullscreen workspace.
+//  Read-only 변경사항 panel for fullscreen workspace.
 //
 
 import SwiftUI
@@ -10,14 +10,44 @@ import SwiftUI
 struct PickyFullscreenWorkInfoPanelView: View {
     let session: PickySessionListViewModel.SessionCard?
     @Binding var isVisible: Bool
+    @State private var gitStatus: PickyGitRepositoryStatus?
+    @State private var didLoadGitStatus = false
+
+    init(session: PickySessionListViewModel.SessionCard?, isVisible: Binding<Bool>) {
+        self.session = session
+        _isVisible = isVisible
+        _gitStatus = State(initialValue: PickyGitRepositoryStatus.cached(cwd: session?.cwd))
+        _didLoadGitStatus = State(initialValue: false)
+    }
 
     private var snapshot: PickyFullscreenWorkInfoSnapshot? {
         session.map(PickyFullscreenWorkInfoSnapshot.make)
     }
 
+    private var hasVisibleSections: Bool {
+        guard let snapshot else { return false }
+        return gitStatus != nil || !snapshot.changedFiles.isEmpty || !snapshot.artifacts.isEmpty
+    }
+
     var body: some View {
         content
             .background(Color(nsColor: .underPageBackgroundColor).opacity(0.56))
+            .task(id: gitTaskID) {
+                await refreshGitStatus()
+            }
+            .onChange(of: gitTaskID) { _, _ in
+                didLoadGitStatus = false
+                gitStatus = PickyGitRepositoryStatus.cached(cwd: session?.cwd)
+            }
+            .onChange(of: didLoadGitStatus) { _, loaded in
+                autoCollapseIfEmpty(loaded: loaded)
+            }
+            .onChange(of: snapshot?.changedFiles.count ?? 0) { _, _ in
+                autoCollapseIfEmpty(loaded: didLoadGitStatus)
+            }
+            .onChange(of: snapshot?.artifacts.count ?? 0) { _, _ in
+                autoCollapseIfEmpty(loaded: didLoadGitStatus)
+            }
     }
 
     @ViewBuilder
@@ -34,7 +64,7 @@ struct PickyFullscreenWorkInfoPanelView: View {
     private var panel: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Text("작업 정보")
+                Text("변경사항")
                     .pickyFont(size: 16, weight: .semibold)
                 Spacer(minLength: 0)
                 Button {
@@ -44,8 +74,8 @@ struct PickyFullscreenWorkInfoPanelView: View {
                         .pickyFont(size: 13, weight: .semibold)
                 }
                 .buttonStyle(.borderless)
-                .help("작업 정보 숨기기")
-                .accessibilityLabel("작업 정보 패널 숨기기")
+                .help("변경사항 숨기기")
+                .accessibilityLabel("변경사항 패널 숨기기")
             }
             .padding(.horizontal, 22)
             .padding(.vertical, 18)
@@ -55,14 +85,18 @@ struct PickyFullscreenWorkInfoPanelView: View {
             if let snapshot {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
-                        statusSection(snapshot)
-                        runtimeSection(snapshot)
-                        contextUsageSection(snapshot)
-                        activitySection(snapshot)
-                        toolsSection(snapshot)
-                        changedFilesSection(snapshot)
-                        artifactsSection(snapshot)
-                        pendingInputSection(snapshot)
+                        if let gitStatus {
+                            branchSection(gitStatus)
+                        }
+                        if !snapshot.changedFiles.isEmpty {
+                            changedFilesSection(snapshot.changedFiles, gitStatus: gitStatus)
+                        }
+                        if !snapshot.artifacts.isEmpty {
+                            artifactsSection(snapshot.artifacts)
+                        }
+                        if !hasVisibleSections {
+                            emptyChanges
+                        }
                     }
                     .padding(.horizontal, 22)
                     .padding(.vertical, 20)
@@ -72,7 +106,7 @@ struct PickyFullscreenWorkInfoPanelView: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("작업 정보")
+        .accessibilityLabel("변경사항")
     }
 
     private var collapsedRail: some View {
@@ -85,10 +119,10 @@ struct PickyFullscreenWorkInfoPanelView: View {
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.borderless)
-            .help("작업 정보 보기")
-            .accessibilityLabel("작업 정보 패널 보기")
+            .help("변경사항 보기")
+            .accessibilityLabel("변경사항 패널 보기")
 
-            Text("작업 정보")
+            Text("변경사항")
                 .pickyFont(size: 11, weight: .semibold)
                 .foregroundStyle(.secondary)
                 .rotationEffect(.degrees(90))
@@ -98,17 +132,17 @@ struct PickyFullscreenWorkInfoPanelView: View {
         }
         .padding(.vertical, 14)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("작업 정보")
+        .accessibilityLabel("변경사항")
     }
 
     private var emptySelection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: "info.circle")
+            Image(systemName: "arrow.triangle.branch")
                 .pickyFont(size: 18, weight: .medium)
                 .foregroundStyle(.secondary)
             Text("Pickle을 선택하세요")
                 .pickyFont(size: 13, weight: .semibold)
-            Text("선택한 Pickle의 상태, 런타임, 도구, 산출물 정보가 여기에 표시됩니다.")
+            Text("선택한 Pickle의 브랜치, 변경 파일, 참조 링크가 여기에 표시됩니다.")
                 .pickyFont(size: 12)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -120,190 +154,162 @@ struct PickyFullscreenWorkInfoPanelView: View {
         .accessibilityLabel("Pickle을 선택하세요")
     }
 
-    private func statusSection(_ snapshot: PickyFullscreenWorkInfoSnapshot) -> some View {
-        section("상태") {
-            infoRow("상태", snapshot.status.fullscreenWorkInfoDisplayText)
-            infoRow("생성", formatDate(snapshot.createdAt))
-            infoRow("업데이트", formatDate(snapshot.updatedAt))
-            if let notifyMainOnCompletion = snapshot.notifyMainOnCompletion {
-                infoRow("완료 알림", notifyMainOnCompletion ? "켜짐" : "꺼짐")
-            }
-            if snapshot.isPinned { infoRow("고정", "예") }
-            if snapshot.isArchived { infoRow("아카이브", "예") }
+    private var emptyChanges: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: "doc.text.magnifyingglass")
+                .pickyFont(size: 18, weight: .medium)
+                .foregroundStyle(.secondary)
+            Text("표시할 변경사항이 없습니다")
+                .pickyFont(size: 13, weight: .semibold)
+            Text("변경 파일이나 참조 링크가 생기면 여기에 표시됩니다.")
+                .pickyFont(size: 12)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.62))
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("표시할 변경사항이 없습니다")
     }
 
-    private func runtimeSection(_ snapshot: PickyFullscreenWorkInfoSnapshot) -> some View {
-        section("런타임") {
-            infoRow("모델", nonEmpty(snapshot.assistantModel) ?? "기록 없음")
-            infoRow("Thinking", snapshot.assistantThinkingLevel?.rawValue ?? "기록 없음")
-            infoRow("Pi 세션", snapshot.canResumePiSession ? "재개 가능" : "기록 없음")
-        }
-    }
-
-    private func contextUsageSection(_ snapshot: PickyFullscreenWorkInfoSnapshot) -> some View {
-        section("컨텍스트 사용량") {
-            if let usage = snapshot.contextUsage {
-                if let tokens = usage.tokens {
-                    infoRow("토큰", formatInteger(tokens))
-                } else {
-                    infoRow("토큰", "기록 없음")
+    private func branchSection(_ status: PickyGitRepositoryStatus) -> some View {
+        section("브랜치") {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(status.repositoryDisplayName)
+                        .pickyFont(size: 12, weight: .semibold, design: .monospaced)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(status.branchDisplayName)
+                        .pickyFont(size: 12, weight: .medium, design: .monospaced)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
                 }
-                infoRow("컨텍스트 한도", formatInteger(usage.contextWindow))
-                if let percent = usage.percent {
-                    infoRow("사용률", Self.contextUsagePercentText(percent))
-                } else {
-                    infoRow("사용률", "기록 없음")
-                }
-            } else {
-                emptyText("컨텍스트 사용량 기록이 없습니다.")
-            }
-        }
-    }
 
-    private func activitySection(_ snapshot: PickyFullscreenWorkInfoSnapshot) -> some View {
-        section("현재/마지막 턴 활동") {
-            if let activity = snapshot.activity {
-                infoRow("범위", activity.label)
-                if activity.totalCount == 0 {
-                    emptyText("기록된 활동이 없습니다.")
-                } else {
-                    activityRow("읽기", activity.summary.read)
-                    activityRow("Bash", activity.summary.bash)
-                    activityRow("편집", activity.summary.edit)
-                    activityRow("쓰기", activity.summary.write)
-                    activityRow("Thinking", activity.summary.thinking)
-                    activityRow("기타", activity.summary.other)
-                }
-            } else {
-                emptyText("턴 활동 스냅샷이 없습니다.")
-            }
-        }
-    }
-
-    private func toolsSection(_ snapshot: PickyFullscreenWorkInfoSnapshot) -> some View {
-        section("도구 히스토리") {
-            if snapshot.tools.isEmpty {
-                emptyText("도구 실행 기록이 없습니다.")
-            } else {
-                ForEach(snapshot.tools.suffix(8).reversed()) { tool in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(tool.name)
-                                .pickyFont(size: 12, weight: .semibold, design: .monospaced)
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
-                            Text(tool.status)
-                                .pickyFont(size: 10, weight: .bold, design: .monospaced)
-                                .foregroundStyle(statusColor(for: tool.status))
-                        }
-                        if let preview = nonEmpty(tool.preview) {
-                            Text(preview)
-                                .pickyFont(size: 11.5)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                        if let startedAt = tool.startedAt {
-                            Text(toolTimeText(startedAt: startedAt, endedAt: tool.endedAt))
-                                .pickyFont(size: 10.5)
-                                .foregroundStyle(.tertiary)
-                        }
+                HStack(spacing: 6) {
+                    metricPill("+\(status.insertions)", color: .green)
+                    metricPill("-\(status.deletions)", color: .red)
+                    if status.aheadCount > 0 {
+                        metricPill("↑\(status.aheadCount)", color: .blue)
                     }
-                    .padding(.vertical, 3)
+                    if status.behindCount > 0 {
+                        metricPill("↓\(status.behindCount)", color: .orange)
+                    }
+                    Spacer(minLength: 0)
+                }
+
+                if let url = status.branchWebURL ?? status.remoteWebURL {
+                    Link(destination: url) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.up.right.square")
+                            Text("GitHub에서 열기")
+                        }
+                        .pickyFont(size: 11.5, weight: .semibold)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.blue)
+                    .help(url.absoluteString)
                 }
             }
         }
     }
 
-    private func changedFilesSection(_ snapshot: PickyFullscreenWorkInfoSnapshot) -> some View {
-        section("세션 변경 파일") {
-            if snapshot.changedFiles.isEmpty {
-                emptyText("세션 변경 파일 기록이 없습니다.")
-            } else {
-                ForEach(Array(snapshot.changedFiles.prefix(8).enumerated()), id: \.offset) { _, file in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(file.status.uppercased())
-                                .pickyFont(size: 10, weight: .bold, design: .monospaced)
-                                .foregroundStyle(changedFileColor(for: file.status))
-                            Text(file.path)
-                                .pickyFont(size: 11.5, weight: .medium, design: .monospaced)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        if let summary = nonEmpty(file.summary) {
-                            Text(summary)
-                                .pickyFont(size: 11.5)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
+    private func changedFilesSection(_ files: [PickyChangedFile], gitStatus: PickyGitRepositoryStatus?) -> some View {
+        section("세션 누적 변경 · \(files.count)개") {
+            VStack(alignment: .leading, spacing: 8) {
+                if let gitStatus {
+                    HStack(spacing: 6) {
+                        Text("작업 트리 합계")
+                            .pickyFont(size: 11.5)
+                            .foregroundStyle(.secondary)
+                        metricPill("+\(gitStatus.insertions)", color: .green)
+                        metricPill("-\(gitStatus.deletions)", color: .red)
+                        Spacer(minLength: 0)
                     }
+                }
+
+                ForEach(Array(files.prefix(Self.maxVisibleChangedFiles).enumerated()), id: \.offset) { _, file in
+                    changedFileRow(file)
+                }
+                if files.count > Self.maxVisibleChangedFiles {
+                    emptyText("+ \(files.count - Self.maxVisibleChangedFiles)개 더 있음")
+                }
+            }
+        }
+    }
+
+    private func changedFileRow(_ file: PickyChangedFile) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Circle()
+                .fill(changedFileColor(for: file.status))
+                .frame(width: 7, height: 7)
+                .accessibilityHidden(true)
+            Text(file.status.uppercased())
+                .pickyFont(size: 10, weight: .bold, design: .monospaced)
+                .foregroundStyle(changedFileColor(for: file.status))
+                .frame(width: 24, alignment: .leading)
+            Text(file.path)
+                .pickyFont(size: 11.5, weight: .medium, design: .monospaced)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func artifactsSection(_ artifacts: [PickyFullscreenWorkInfoSnapshot.Artifact]) -> some View {
+        section("참조 링크 · \(artifacts.count)개") {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(artifacts.suffix(Self.maxVisibleArtifacts).reversed()) { artifact in
+                    artifactRow(artifact)
+                }
+                if artifacts.count > Self.maxVisibleArtifacts {
+                    emptyText("+ \(artifacts.count - Self.maxVisibleArtifacts)개 더 있음")
+                }
+            }
+        }
+    }
+
+    private func artifactRow(_ artifact: PickyFullscreenWorkInfoSnapshot.Artifact) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Text(Self.artifactBadgeText(for: artifact))
+                    .pickyFont(size: 10, weight: .bold, design: .monospaced)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                }
-                if snapshot.changedFiles.count > 8 {
-                    emptyText("+ \(snapshot.changedFiles.count - 8)개 더 있음")
-                }
+                    .background(Capsule().fill(Color.primary.opacity(0.08)))
+                Text(nonEmpty(artifact.title) ?? "Untitled")
+                    .pickyFont(size: 12, weight: .semibold)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
             }
-        }
-    }
 
-    private func artifactsSection(_ snapshot: PickyFullscreenWorkInfoSnapshot) -> some View {
-        section("링크와 산출물") {
-            if snapshot.artifacts.isEmpty {
-                emptyText("링크나 산출물 기록이 없습니다.")
-            } else {
-                ForEach(snapshot.artifacts.suffix(8).reversed()) { artifact in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(artifact.kind)
-                                .pickyFont(size: 10, weight: .bold, design: .monospaced)
-                                .foregroundStyle(.secondary)
-                            Text(artifact.title)
-                                .pickyFont(size: 12, weight: .semibold)
-                                .lineLimit(1)
-                        }
-                        if let url = artifact.url {
-                            Text(url.absoluteString)
-                                .pickyFont(size: 11, design: .monospaced)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        } else if let path = nonEmpty(artifact.path) {
-                            Text(path)
-                                .pickyFont(size: 11, design: .monospaced)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        Text("업데이트 \(formatDate(artifact.updatedAt))")
-                            .pickyFont(size: 10.5)
-                            .foregroundStyle(.tertiary)
-                    }
-                    .padding(.vertical, 2)
+            if let url = artifact.url {
+                Link(destination: url) {
+                    Text(url.absoluteString)
+                        .pickyFont(size: 11, design: .monospaced)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
+                .buttonStyle(.plain)
+                .help(url.absoluteString)
+            } else if let path = nonEmpty(artifact.path) {
+                Text(path)
+                    .pickyFont(size: 11, design: .monospaced)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
         }
-    }
-
-    private func pendingInputSection(_ snapshot: PickyFullscreenWorkInfoSnapshot) -> some View {
-        section("대기 중 입력") {
-            if snapshot.pendingInput.isEmpty {
-                emptyText("대기 중인 입력이 없습니다.")
-            } else {
-                if let title = snapshot.pendingInput.extensionRequestTitle {
-                    infoRow("Extension UI", title)
-                }
-                if let method = snapshot.pendingInput.extensionRequestMethod {
-                    infoRow("요청", method)
-                }
-                if snapshot.pendingInput.queuedSteerCount > 0 {
-                    infoRow("대기 steer", "\(snapshot.pendingInput.queuedSteerCount)개")
-                }
-                if snapshot.pendingInput.queuedFollowUpCount > 0 {
-                    infoRow("대기 follow-up", "\(snapshot.pendingInput.queuedFollowUpCount)개")
-                }
-            }
-        }
+        .padding(.vertical, 2)
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -323,25 +329,14 @@ struct PickyFullscreenWorkInfoPanelView: View {
         }
     }
 
-    private func infoRow(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(label)
-                .pickyFont(size: 11.5)
-                .foregroundStyle(.secondary)
-                .frame(width: 78, alignment: .leading)
-            Text(value)
-                .pickyFont(size: 11.5, weight: .medium)
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    @ViewBuilder
-    private func activityRow(_ label: String, _ count: Int) -> some View {
-        if count > 0 {
-            infoRow(label, "\(count)")
-        }
+    private func metricPill(_ value: String, color: Color) -> some View {
+        Text(value)
+            .pickyFont(size: 10.5, weight: .bold, design: .monospaced)
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(color.opacity(0.12)))
+            .overlay(Capsule().stroke(color.opacity(0.22), lineWidth: 0.6))
     }
 
     private func emptyText(_ value: String) -> some View {
@@ -356,42 +351,6 @@ struct PickyFullscreenWorkInfoPanelView: View {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private func formatDate(_ date: Date) -> String {
-        Self.formatDate(date)
-    }
-
-    static func formatDate(_ date: Date, now: Date = Date.now, calendar: Calendar = .current) -> String {
-        if calendar.isDate(date, inSameDayAs: now) {
-            return date.formatted(date: .omitted, time: .shortened)
-        }
-        return date.formatted(date: .numeric, time: .shortened)
-    }
-
-    private func formatInteger(_ value: Int) -> String {
-        value.formatted(.number)
-    }
-
-    static func contextUsagePercentText(_ value: Double) -> String {
-        let clamped = max(0, min(100, value))
-        return "\(Int(clamped.rounded()))%"
-    }
-
-    private func toolTimeText(startedAt: Date, endedAt: Date?) -> String {
-        if let endedAt {
-            return "\(formatDate(startedAt)) – \(formatDate(endedAt))"
-        }
-        return "시작 \(formatDate(startedAt))"
-    }
-
-    private func statusColor(for status: String) -> Color {
-        switch status.lowercased() {
-        case "succeeded", "completed", "success": .green
-        case "failed", "error": .red
-        case "running", "active": .blue
-        default: .secondary
-        }
-    }
-
     private func changedFileColor(for status: String) -> Color {
         switch status.lowercased() {
         case "added", "a", "new": .green
@@ -401,18 +360,56 @@ struct PickyFullscreenWorkInfoPanelView: View {
         default: .secondary
         }
     }
+
+    private var gitTaskID: String {
+        "\(session?.id ?? "none")|\(session?.cwd ?? "")|\(session?.updatedAt.timeIntervalSince1970 ?? 0)"
+    }
+
+    private func refreshGitStatus() async {
+        if let cached = PickyGitRepositoryStatus.cached(cwd: session?.cwd) {
+            gitStatus = cached
+        }
+        let freshGit = await PickyGitRepositoryStatus.load(cwd: session?.cwd)
+        guard !Task.isCancelled else { return }
+        gitStatus = freshGit
+        didLoadGitStatus = true
+    }
+
+    private func autoCollapseIfEmpty(loaded: Bool) {
+        guard loaded, snapshot != nil, isVisible, !hasVisibleSections else { return }
+        isVisible = false
+    }
+
+    static func artifactBadgeText(for artifact: PickyFullscreenWorkInfoSnapshot.Artifact) -> String {
+        switch artifact.linkBadgeKind {
+        case .github: "GitHub"
+        case .slack: "Slack"
+        case .notion: "Notion"
+        case .jira: "Jira"
+        case .sentry: "Sentry"
+        case .linear: "Linear"
+        case .figma: "Figma"
+        case .googleDocs, .googleSheets, .googleSlides, .googleDrive: "Google"
+        case nil:
+            nonEmptyStatic(artifact.kind)?.capitalized ?? "Link"
+        }
+    }
+
+    private static func nonEmptyStatic(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static let maxVisibleChangedFiles = 10
+    private static let maxVisibleArtifacts = 8
 }
 
-private extension PickySessionStatus {
-    var fullscreenWorkInfoDisplayText: String {
-        switch self {
-        case .queued: "Queued"
-        case .running: "Running"
-        case .waiting_for_input: "Waiting for input"
-        case .blocked: "Blocked"
-        case .completed: "Completed"
-        case .failed: "Failed"
-        case .cancelled: "Cancelled"
-        }
+private extension PickyFullscreenWorkInfoSnapshot.Artifact {
+    var asPickyArtifact: PickyArtifact {
+        PickyArtifact(id: id, kind: kind, title: title, path: path, url: url, updatedAt: updatedAt)
+    }
+
+    var linkBadgeKind: PickyLinkBadgeKind? {
+        asPickyArtifact.linkBadgeKind
     }
 }

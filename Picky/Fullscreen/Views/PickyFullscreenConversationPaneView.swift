@@ -20,18 +20,21 @@ struct PickyFullscreenConversationPaneView: View {
             header
             Divider()
             if let session {
-                conversationContent(for: session)
-                    .environment(\.pickyHUDDetailWidth, Self.conversationDetailWidth)
-                    .onDrop(
-                        of: PickyConversationFileDrop.acceptedTypeIdentifiers,
-                        isTargeted: $isFileDropTargeted,
-                        perform: { handleFileDrop($0, sessionID: session.id) }
-                    )
+                GeometryReader { proxy in
+                    conversationContent(for: session)
+                        .environment(\.pickyHUDDetailWidth, Self.responsiveConversationDetailWidth(forColumnWidth: proxy.size.width))
+                        .onDrop(
+                            of: PickyConversationFileDrop.acceptedTypeIdentifiers,
+                            isTargeted: $isFileDropTargeted,
+                            perform: { handleFileDrop($0, sessionID: session.id) }
+                        )
+                }
             } else {
                 noSelectionView
             }
         }
         .frame(minWidth: 480, idealWidth: 760, maxWidth: .infinity, maxHeight: .infinity)
+        .layoutPriority(1)
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Conversation")
@@ -40,6 +43,7 @@ struct PickyFullscreenConversationPaneView: View {
     private func conversationContent(for session: PickySessionListViewModel.SessionCard) -> some View {
         VStack(spacing: 0) {
             PickyFullscreenConversationListView(session: session, viewModel: viewModel)
+                .padding(.trailing, Self.conversationDividerClearance)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if isExtendedTerminalOpen(sessionID: session.id) {
@@ -163,7 +167,12 @@ struct PickyFullscreenConversationPaneView: View {
             .accessibilityValue(status.fullscreenConversationDisplayText)
     }
 
-    private static let conversationDetailWidth: CGFloat = 760
+    static func responsiveConversationDetailWidth(forColumnWidth columnWidth: CGFloat) -> CGFloat {
+        min(conversationDetailWidthMax, max(0, columnWidth - conversationDividerClearance))
+    }
+
+    static let conversationDividerClearance: CGFloat = 24
+    private static let conversationDetailWidthMax: CGFloat = 760
 }
 
 private extension PickySessionStatus {

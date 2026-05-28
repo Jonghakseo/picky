@@ -77,7 +77,7 @@ struct PickyFullscreenSidebarView: View {
             .accessibilityHint("Choose a recent working folder or browse for a new one")
         }
         .padding(18)
-        .frame(minWidth: 220, idealWidth: 260, maxHeight: .infinity, alignment: .topLeading)
+        .frame(minWidth: 220, idealWidth: 260, maxWidth: 280, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .underPageBackgroundColor).opacity(0.72))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Pickles sidebar")

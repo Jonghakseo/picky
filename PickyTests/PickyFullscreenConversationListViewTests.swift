@@ -13,4 +13,13 @@ struct PickyFullscreenConversationListViewTests {
         #expect(PickyFullscreenConversationListView.shouldAnimateScroll(hasAppeared: true, reduceMotion: false))
         #expect(!PickyFullscreenConversationListView.shouldAnimateScroll(hasAppeared: true, reduceMotion: true))
     }
+
+    @Test func fullscreenDetailWidthTracksAvailableColumnWithoutTouchingDivider() {
+        for columnWidth in [CGFloat(1040), 1280, 1600] {
+            let detailWidth = PickyFullscreenConversationPaneView.responsiveConversationDetailWidth(forColumnWidth: columnWidth)
+
+            #expect(detailWidth <= columnWidth - PickyFullscreenConversationPaneView.conversationDividerClearance)
+            #expect(detailWidth <= 760)
+        }
+    }
 }

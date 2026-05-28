@@ -35,7 +35,7 @@ final class PickyFullscreenWindowController: NSWindowController, NSWindowDelegat
 
         let window = PickyFullscreenWindow(
             contentRect: initialFrame,
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )

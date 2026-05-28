@@ -11,6 +11,17 @@ import Testing
 @MainActor
 @Suite("PickyFullscreenWindowController")
 struct PickyFullscreenWindowControllerTests {
+    @Test func fullscreenWindowDisablesMiniaturizeButKeepsCloseAndResize() throws {
+        let controller = makeController { _ in }
+        let window = try #require(controller.window)
+
+        #expect(window.styleMask.contains(.titled))
+        #expect(window.styleMask.contains(.closable))
+        #expect(!window.styleMask.contains(.miniaturizable))
+        #expect(window.styleMask.contains(.resizable))
+        #expect(window.styleMask.contains(.fullSizeContentView))
+    }
+
     @Test func closeCallbackRunsAfterHostedWindowTeardown() async throws {
         var callbackSnapshot: CloseCallbackSnapshot?
         let controller = makeController { controller in

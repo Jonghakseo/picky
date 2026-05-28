@@ -31,6 +31,14 @@ struct PickyFullscreenWorkInfoSnapshotTests {
                     path: nil,
                     url: artifactURL,
                     updatedAt: artifactDate
+                ),
+                PickyArtifact(
+                    id: "artifact-report",
+                    kind: "report",
+                    title: "Local report",
+                    path: "Reports/local.md",
+                    url: nil,
+                    updatedAt: artifactDate
                 )
             ],
             changedFiles: [

@@ -111,7 +111,7 @@ struct PickyFullscreenConversationPaneView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(session?.title ?? "대화")
                     .pickyFont(size: 18, weight: .semibold)
@@ -119,11 +119,12 @@ struct PickyFullscreenConversationPaneView: View {
                 HStack(spacing: 8) {
                     if let session {
                         statusPill(for: session.status)
-                        if let runText = PickyFullscreenAssistantRunResolver.effectiveAssistantRun(for: session)?.displayText {
-                            Text(runText)
-                                .pickyFont(size: 12, weight: .medium)
+                        if let cwd = session.compactCwdDescription {
+                            Text(cwd)
+                                .pickyFont(size: 12, weight: .medium, design: .monospaced)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
+                                .truncationMode(.middle)
                         }
                     } else {
                         Text("Pickle을 선택하면 대화를 볼 수 있습니다.")
@@ -132,7 +133,13 @@ struct PickyFullscreenConversationPaneView: View {
                     }
                 }
             }
+            .layoutPriority(1)
+
             Spacer(minLength: 0)
+
+            if let session {
+                PickyFullscreenHeaderMetaChips(session: session)
+            }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
@@ -181,6 +188,115 @@ struct PickyFullscreenConversationPaneView: View {
     static let conversationUserBubbleOppositeReserve: CGFloat = PickyConversationBubbleLayout.oppositeSideReserve
     private static let conversationDetailWidthMin: CGFloat = 260
     private static let conversationDetailWidthMax: CGFloat = 760
+}
+
+private struct PickyFullscreenHeaderMetaChips: View {
+    let session: PickySessionListViewModel.SessionCard
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let runText = assistantRun?.displayText {
+                Text(runText)
+                    .pickyFont(size: 12, weight: .semibold)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.primary.opacity(0.06)))
+                    .overlay(Capsule().stroke(Color.primary.opacity(0.10), lineWidth: 0.6))
+                    .accessibilityLabel("모델과 사고 수준")
+                    .accessibilityValue(runText)
+            }
+
+            if let usage = session.contextUsage {
+                PickyFullscreenContextUsageChip(display: .init(usage: usage))
+            }
+        }
+    }
+
+    private var assistantRun: PickyAssistantRunMetadata? {
+        PickyFullscreenAssistantRunResolver.effectiveAssistantRun(for: session)
+    }
+}
+
+private struct PickyFullscreenContextUsageChip: View {
+    let display: PickyFullscreenContextUsageDisplay
+
+    var body: some View {
+        HStack(spacing: 6) {
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.primary.opacity(0.08))
+                    if display.isKnown {
+                        Capsule()
+                            .fill(display.color)
+                            .frame(width: geometry.size.width * CGFloat(max(0, min(1, display.fraction))))
+                    }
+                }
+                .overlay(
+                    Capsule()
+                        .stroke(display.color.opacity(display.isKnown ? 0.42 : 0.28), style: StrokeStyle(lineWidth: 0.6, dash: display.isKnown ? [] : [2, 2]))
+                )
+            }
+            .frame(width: 28, height: 5)
+
+            Text("ctx \(display.label)")
+                .pickyFont(size: 12, weight: .semibold, design: .monospaced)
+                .foregroundStyle(display.color)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(display.color.opacity(0.10)))
+        .overlay(Capsule().stroke(display.color.opacity(0.20), lineWidth: 0.6))
+        .help(display.tooltip)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("컨텍스트 사용량")
+        .accessibilityValue(display.accessibilityValue)
+    }
+}
+
+private struct PickyFullscreenContextUsageDisplay {
+    let fraction: Double
+    let label: String
+    let color: Color
+    let tooltip: String
+    let isKnown: Bool
+
+    init(usage: PickyContextUsage) {
+        guard let percent = usage.percent else {
+            self.fraction = 0
+            self.label = "?%"
+            self.color = .secondary
+            self.tooltip = "Context usage unknown after compaction until the next model response"
+            self.isKnown = false
+            return
+        }
+
+        let clamped = max(0, min(100, percent))
+        self.fraction = clamped / 100
+        self.label = "\(Int(clamped.rounded()))%"
+        switch clamped {
+        case 90...:
+            self.color = .red
+        case 70..<90:
+            self.color = .orange
+        default:
+            self.color = .green
+        }
+        if let tokens = usage.tokens {
+            self.tooltip = "Context usage: \(tokens.formatted())/\(usage.contextWindow.formatted()) tokens (\(Int(clamped.rounded()))%)"
+        } else {
+            self.tooltip = "Context usage: \(Int(clamped.rounded()))% of \(usage.contextWindow.formatted()) tokens"
+        }
+        self.isKnown = true
+    }
+
+    var accessibilityValue: String {
+        isKnown ? label : "알 수 없음"
+    }
 }
 
 private extension PickySessionStatus {

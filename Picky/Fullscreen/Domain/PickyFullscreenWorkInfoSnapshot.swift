@@ -25,7 +25,7 @@ struct PickyFullscreenWorkInfoSnapshot: Equatable {
         Self(
             sessionID: session.id,
             changedFiles: session.changedFiles,
-            artifacts: session.artifacts.map {
+            artifacts: session.linkBadgeArtifacts.map {
                 Artifact(
                     id: $0.id,
                     kind: $0.kind,

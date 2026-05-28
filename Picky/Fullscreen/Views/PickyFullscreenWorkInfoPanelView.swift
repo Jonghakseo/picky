@@ -12,20 +12,20 @@ struct PickyFullscreenWorkInfoPanelView: View {
     @Binding var isVisible: Bool
     @State private var gitStatus: PickyGitRepositoryStatus?
     @State private var didLoadGitStatus = false
-    @State private var diffProvider: PickyFullscreenFileDiffProvider?
-    @State private var fileNumstat: [String: PickyFullscreenFileDiffProvider.Numstat] = [:]
+    @State private var branchDiffProvider: PickyFullscreenBranchDiffProvider?
+    @State private var branchDiff: PickyFullscreenBranchDiffProvider.BranchDiff?
     @State private var expandedDiffPaths: Set<String> = []
     @State private var loadingDiffPaths: Set<String> = []
     @State private var fileDiffs: [String: String] = [:]
     @State private var failedDiffPaths: Set<String> = []
-    @State private var didLoadNumstat = false
+    @State private var didLoadBranchDiff = false
 
     init(session: PickySessionListViewModel.SessionCard?, isVisible: Binding<Bool>) {
         self.session = session
         _isVisible = isVisible
         _gitStatus = State(initialValue: PickyGitRepositoryStatus.cached(cwd: session?.cwd))
         _didLoadGitStatus = State(initialValue: false)
-        _diffProvider = State(initialValue: Self.makeDiffProvider(cwd: session?.cwd))
+        _branchDiffProvider = State(initialValue: Self.makeBranchDiffProvider(cwd: session?.cwd))
     }
 
     private var snapshot: PickyFullscreenWorkInfoSnapshot? {
@@ -34,7 +34,7 @@ struct PickyFullscreenWorkInfoPanelView: View {
 
     private var hasVisibleSections: Bool {
         guard let snapshot else { return false }
-        return gitStatus != nil || !snapshot.changedFiles.isEmpty || !snapshot.artifacts.isEmpty
+        return gitStatus != nil || branchDiff?.files.isEmpty == false || !snapshot.changedFiles.isEmpty || !snapshot.artifacts.isEmpty
     }
 
     var body: some View {
@@ -44,17 +44,21 @@ struct PickyFullscreenWorkInfoPanelView: View {
                 await refreshGitStatus()
             }
             .task(id: diffTaskID) {
-                await refreshNumstatIfNeeded()
+                await refreshBranchDiffIfNeeded()
             }
             .onChange(of: gitTaskID) { _, _ in
                 didLoadGitStatus = false
                 gitStatus = PickyGitRepositoryStatus.cached(cwd: session?.cwd)
+                resetDiffState()
             }
             .onChange(of: diffProviderKey) { _, _ in
                 resetDiffState()
             }
             .onChange(of: didLoadGitStatus) { _, loaded in
                 autoCollapseIfEmpty(loaded: loaded)
+            }
+            .onChange(of: didLoadBranchDiff) { _, _ in
+                autoCollapseIfEmpty(loaded: didLoadGitStatus)
             }
             .onChange(of: snapshot?.changedFiles.count ?? 0) { _, _ in
                 autoCollapseIfEmpty(loaded: didLoadGitStatus)
@@ -103,7 +107,9 @@ struct PickyFullscreenWorkInfoPanelView: View {
                         if let gitStatus {
                             branchSection(gitStatus)
                         }
-                        if !snapshot.changedFiles.isEmpty {
+                        if let branchDiff, !branchDiff.files.isEmpty {
+                            branchChangedFilesSection(branchDiff)
+                        } else if !snapshot.changedFiles.isEmpty {
                             changedFilesSection(snapshot.changedFiles, gitStatus: gitStatus)
                         }
                         if !snapshot.artifacts.isEmpty {
@@ -202,8 +208,8 @@ struct PickyFullscreenWorkInfoPanelView: View {
                 }
 
                 HStack(spacing: 6) {
-                    metricPill("+\(status.insertions)", color: .green)
-                    metricPill("-\(status.deletions)", color: .red)
+                    metricPill("+\(branchDiff?.totalInsertions ?? status.insertions)", color: .green)
+                    metricPill("-\(branchDiff?.totalDeletions ?? status.deletions)", color: .red)
                     if status.aheadCount > 0 {
                         metricPill("↑\(status.aheadCount)", color: .blue)
                     }
@@ -253,40 +259,82 @@ struct PickyFullscreenWorkInfoPanelView: View {
         }
     }
 
+    private func branchChangedFilesSection(_ diff: PickyFullscreenBranchDiffProvider.BranchDiff) -> some View {
+        section("변경 파일 · \(diff.files.count)개") {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Text(diff.baseRef == nil ? "작업 트리 합계" : "브랜치 + 작업 트리 합계")
+                        .pickyFont(size: 11.5)
+                        .foregroundStyle(.secondary)
+                    metricPill("+\(diff.totalInsertions)", color: .green)
+                    metricPill("-\(diff.totalDeletions)", color: .red)
+                    Spacer(minLength: 0)
+                }
+
+                ForEach(Array(diff.files.prefix(Self.maxVisibleChangedFiles).enumerated()), id: \.element.id) { _, file in
+                    branchChangedFileRow(file)
+                }
+                if diff.files.count > Self.maxVisibleChangedFiles {
+                    emptyText("+ \(diff.files.count - Self.maxVisibleChangedFiles)개 더 있음")
+                }
+            }
+        }
+    }
+
+    private func branchChangedFileRow(_ file: PickyFullscreenBranchDiffProvider.File) -> some View {
+        changedFileRow(
+            path: file.path,
+            status: file.status,
+            insertions: file.insertions,
+            deletions: file.deletions,
+            accessibilityLabel: "\(file.path) diff 보기"
+        )
+    }
+
     private func changedFileRow(_ file: PickyChangedFile) -> some View {
+        changedFileRow(
+            path: file.path,
+            status: file.status,
+            insertions: nil,
+            deletions: nil,
+            accessibilityLabel: "\(file.path) diff 보기"
+        )
+    }
+
+    private func changedFileRow(path: String, status: String, insertions: Int?, deletions: Int?, accessibilityLabel: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                toggleDiff(for: file.path)
+                toggleDiff(for: path)
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Image(systemName: expandedDiffPaths.contains(file.path) ? "chevron.down" : "chevron.right")
+                    Image(systemName: expandedDiffPaths.contains(path) ? "chevron.down" : "chevron.right")
                         .pickyFont(size: 9.5, weight: .bold)
                         .foregroundStyle(.secondary)
                         .frame(width: 10)
                     Circle()
-                        .fill(changedFileColor(for: file.status))
+                        .fill(changedFileColor(for: status))
                         .frame(width: 7, height: 7)
                         .accessibilityHidden(true)
-                    Text(changedFileBadgeText(for: file.status))
+                    Text(changedFileBadgeText(for: status))
                         .pickyFont(size: 10, weight: .bold, design: .monospaced)
-                        .foregroundStyle(changedFileColor(for: file.status))
+                        .foregroundStyle(changedFileColor(for: status))
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                         .frame(width: 12, alignment: .leading)
-                    Text(file.path)
+                    Text(path)
                         .pickyFont(size: 11.5, weight: .medium, design: .monospaced)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    fileNumstatText(for: file.path)
+                    fileNumstatText(insertions: insertions, deletions: deletions)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(file.path) diff 보기")
+            .accessibilityLabel(accessibilityLabel)
 
-            if expandedDiffPaths.contains(file.path) {
-                diffContent(for: file.path)
+            if expandedDiffPaths.contains(path) {
+                diffContent(for: path)
                     .padding(.leading, 18)
             }
         }
@@ -294,17 +342,17 @@ struct PickyFullscreenWorkInfoPanelView: View {
     }
 
     @ViewBuilder
-    private func fileNumstatText(for path: String) -> some View {
-        if let stat = fileNumstat[path] {
+    private func fileNumstatText(insertions: Int?, deletions: Int?) -> some View {
+        if let insertions, let deletions {
             HStack(spacing: 4) {
-                Text("+\(stat.insertions)")
+                Text("+\(insertions)")
                     .foregroundStyle(.green)
-                Text("−\(stat.deletions)")
+                Text("−\(deletions)")
                     .foregroundStyle(.red)
             }
             .pickyFont(size: 10.5, weight: .bold, design: .monospaced)
             .fixedSize(horizontal: true, vertical: false)
-        } else if didLoadNumstat {
+        } else if didLoadBranchDiff {
             Text("—")
                 .pickyFont(size: 10.5, weight: .bold, design: .monospaced)
                 .foregroundStyle(.secondary)
@@ -487,13 +535,13 @@ struct PickyFullscreenWorkInfoPanelView: View {
 
     private var diffTaskID: String {
         let changedFileKey = snapshot?.changedFiles.map(\.path).joined(separator: "\u{1f}") ?? ""
-        return "\(isVisible)|\(diffProviderKey)|\(changedFileKey)"
+        return "\(isVisible)|\(diffProviderKey)|\(changedFileKey)|\(session?.updatedAt.timeIntervalSince1970 ?? 0)"
     }
 
-    private static func makeDiffProvider(cwd: String?) -> PickyFullscreenFileDiffProvider? {
+    private static func makeBranchDiffProvider(cwd: String?) -> PickyFullscreenBranchDiffProvider? {
         let trimmed = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !trimmed.isEmpty else { return nil }
-        return PickyFullscreenFileDiffProvider(cwd: trimmed)
+        return PickyFullscreenBranchDiffProvider(cwd: trimmed)
     }
 
     private func refreshGitStatus() async {
@@ -506,22 +554,27 @@ struct PickyFullscreenWorkInfoPanelView: View {
         didLoadGitStatus = true
     }
 
-    private func refreshNumstatIfNeeded() async {
-        guard isVisible, snapshot?.changedFiles.isEmpty == false, let diffProvider else { return }
-        let stats = await diffProvider.fetchNumstat()
+    private func refreshBranchDiffIfNeeded() async {
+        guard isVisible else { return }
+        branchDiffProvider = Self.makeBranchDiffProvider(cwd: session?.cwd)
+        guard let branchDiffProvider else {
+            didLoadBranchDiff = true
+            return
+        }
+        let diff = await branchDiffProvider.fetchSummary()
         guard !Task.isCancelled else { return }
-        fileNumstat = stats
-        didLoadNumstat = true
+        branchDiff = diff
+        didLoadBranchDiff = true
     }
 
     private func resetDiffState() {
-        diffProvider = Self.makeDiffProvider(cwd: session?.cwd)
-        fileNumstat = [:]
+        branchDiffProvider = Self.makeBranchDiffProvider(cwd: session?.cwd)
+        branchDiff = nil
         expandedDiffPaths = []
         loadingDiffPaths = []
         fileDiffs = [:]
         failedDiffPaths = []
-        didLoadNumstat = false
+        didLoadBranchDiff = false
     }
 
     private func toggleDiff(for path: String) {
@@ -533,7 +586,7 @@ struct PickyFullscreenWorkInfoPanelView: View {
         guard fileDiffs[path] == nil, !loadingDiffPaths.contains(path), !failedDiffPaths.contains(path) else { return }
         loadingDiffPaths.insert(path)
         Task {
-            let diff = await diffProvider?.fetchDiff(path: path)
+            let diff = await branchDiffProvider?.fetchDiff(path: path)
             guard !Task.isCancelled else { return }
             loadingDiffPaths.remove(path)
             if let diff {
@@ -546,7 +599,7 @@ struct PickyFullscreenWorkInfoPanelView: View {
     }
 
     private func autoCollapseIfEmpty(loaded: Bool) {
-        guard loaded, snapshot != nil, isVisible, !hasVisibleSections else { return }
+        guard loaded, didLoadBranchDiff, snapshot != nil, isVisible, !hasVisibleSections else { return }
         isVisible = false
     }
 

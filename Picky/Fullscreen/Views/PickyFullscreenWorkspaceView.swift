@@ -26,13 +26,10 @@ struct PickyFullscreenWorkspaceView: View {
 
             Divider()
 
-            placeholderColumn(
-                title: selectedSession?.title ?? "Conversation",
-                subtitle: selectedSessionDescription,
-                minWidth: 480,
-                idealWidth: 720
+            PickyFullscreenConversationPaneView(
+                session: selectedSession,
+                viewModel: viewModel
             )
-            .frame(maxWidth: .infinity)
 
             if stateStore.isWorkInfoPanelVisible {
                 Divider()
@@ -50,15 +47,6 @@ struct PickyFullscreenWorkspaceView: View {
         .onAppear(perform: reconcileSelectedSession)
         .onChange(of: viewModel.sessions.map(\.id)) { _, _ in reconcileSelectedSession() }
         .onChange(of: viewModel.selectedSessionID) { _, _ in reconcileSelectedSession() }
-    }
-
-    private var selectedSessionDescription: String {
-        guard let selectedSession else {
-            return viewModel.sessions.isEmpty
-                ? "No active Pickles yet."
-                : "Select a Pickle to inspect the conversation."
-        }
-        return "Selected Pickle: \(selectedSession.id)"
     }
 
     private var selectedSessionWorkInfoDescription: String {

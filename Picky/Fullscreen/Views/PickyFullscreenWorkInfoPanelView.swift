@@ -145,7 +145,7 @@ struct PickyFullscreenWorkInfoPanelView: View {
                 }
                 infoRow("컨텍스트 한도", formatInteger(usage.contextWindow))
                 if let percent = usage.percent {
-                    infoRow("사용률", formatPercent(percent))
+                    infoRow("사용률", Self.contextUsagePercentText(percent))
                 } else {
                     infoRow("사용률", "기록 없음")
                 }
@@ -358,9 +358,9 @@ struct PickyFullscreenWorkInfoPanelView: View {
         value.formatted(.number)
     }
 
-    private func formatPercent(_ value: Double) -> String {
-        let normalized = value > 1 ? value / 100 : value
-        return normalized.formatted(.percent.precision(.fractionLength(0)))
+    static func contextUsagePercentText(_ value: Double) -> String {
+        let clamped = max(0, min(100, value))
+        return "\(Int(clamped.rounded()))%"
     }
 
     private func toolTimeText(startedAt: Date, endedAt: Date?) -> String {

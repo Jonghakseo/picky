@@ -120,6 +120,13 @@ struct PickyFullscreenWorkInfoSnapshotTests {
         #expect(snapshot.activity == PickyFullscreenWorkInfoSnapshot.Activity(label: "마지막 턴", summary: latest))
     }
 
+    @Test func contextUsagePercentUsesExistingZeroToOneHundredScale() {
+        #expect(PickyFullscreenWorkInfoPanelView.contextUsagePercentText(0.5) == "1%")
+        #expect(PickyFullscreenWorkInfoPanelView.contextUsagePercentText(12.4) == "12%")
+        #expect(PickyFullscreenWorkInfoPanelView.contextUsagePercentText(100.4) == "100%")
+        #expect(PickyFullscreenWorkInfoPanelView.contextUsagePercentText(-2) == "0%")
+    }
+
     private func card(
         status: PickySessionStatus = .completed,
         createdAt: Date = Date(timeIntervalSince1970: 1_800_000_000),

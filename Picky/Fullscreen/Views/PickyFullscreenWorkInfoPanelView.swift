@@ -24,7 +24,7 @@ struct PickyFullscreenWorkInfoPanelView: View {
     private var content: some View {
         if isVisible {
             panel
-                .frame(minWidth: 280, idealWidth: 320, maxWidth: 360, maxHeight: .infinity)
+                .frame(minWidth: 296, idealWidth: 336, maxWidth: 376, maxHeight: .infinity)
         } else {
             collapsedRail
                 .frame(minWidth: 44, idealWidth: 44, maxWidth: 44, maxHeight: .infinity)
@@ -47,8 +47,8 @@ struct PickyFullscreenWorkInfoPanelView: View {
                 .help("작업 정보 숨기기")
                 .accessibilityLabel("작업 정보 패널 숨기기")
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 16)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 18)
 
             Divider()
 
@@ -64,7 +64,8 @@ struct PickyFullscreenWorkInfoPanelView: View {
                         artifactsSection(snapshot)
                         pendingInputSection(snapshot)
                     }
-                    .padding(18)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 20)
                 }
             } else {
                 emptySelection
@@ -112,7 +113,8 @@ struct PickyFullscreenWorkInfoPanelView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(18)
+        .padding(.horizontal, 22)
+        .padding(.vertical, 20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Pickle을 선택하세요")

@@ -76,8 +76,9 @@ struct PickyFullscreenSidebarView: View {
             .accessibilityLabel("New Pickle")
             .accessibilityHint("Choose a recent working folder or browse for a new one")
         }
-        .padding(18)
-        .frame(minWidth: 220, idealWidth: 260, maxWidth: 280, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, 22)
+        .padding(.vertical, 20)
+        .frame(minWidth: 236, idealWidth: 276, maxWidth: 296, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .underPageBackgroundColor).opacity(0.72))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Pickles sidebar")

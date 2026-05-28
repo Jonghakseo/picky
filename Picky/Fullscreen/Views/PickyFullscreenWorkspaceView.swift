@@ -12,19 +12,22 @@ struct PickyFullscreenWorkspaceView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     @ObservedObject var stateStore: PickyFullscreenStateStore
 
+    private var selectedSession: PickySessionListViewModel.SessionCard? {
+        guard let selectedSessionID = stateStore.selectedSessionID else { return nil }
+        return viewModel.sessions.first { $0.id == selectedSessionID }
+    }
+
     var body: some View {
         HStack(spacing: 0) {
-            placeholderColumn(
-                title: "Pickles",
-                subtitle: "\(viewModel.sessions.count) active sessions",
-                minWidth: 220,
-                idealWidth: 260
+            PickyFullscreenSidebarView(
+                sessions: viewModel.sessions,
+                selectedSessionID: $stateStore.selectedSessionID
             )
 
             Divider()
 
             placeholderColumn(
-                title: "Conversation",
+                title: selectedSession?.title ?? "Conversation",
                 subtitle: selectedSessionDescription,
                 minWidth: 480,
                 idealWidth: 720
@@ -36,7 +39,7 @@ struct PickyFullscreenWorkspaceView: View {
 
                 placeholderColumn(
                     title: "작업 정보",
-                    subtitle: "Session details will appear here.",
+                    subtitle: selectedSessionWorkInfoDescription,
                     minWidth: 260,
                     idealWidth: 300
                 )
@@ -44,13 +47,37 @@ struct PickyFullscreenWorkspaceView: View {
         }
         .frame(minWidth: 1040, minHeight: 680)
         .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear(perform: reconcileSelectedSession)
+        .onChange(of: viewModel.sessions.map(\.id)) { _, _ in reconcileSelectedSession() }
+        .onChange(of: viewModel.selectedSessionID) { _, _ in reconcileSelectedSession() }
     }
 
     private var selectedSessionDescription: String {
-        guard let selectedSessionID = stateStore.selectedSessionID else {
-            return "Select a Pickle to inspect the conversation."
+        guard let selectedSession else {
+            return viewModel.sessions.isEmpty
+                ? "No active Pickles yet."
+                : "Select a Pickle to inspect the conversation."
         }
-        return "Selected session: \(selectedSessionID)"
+        return "Selected Pickle: \(selectedSession.id)"
+    }
+
+    private var selectedSessionWorkInfoDescription: String {
+        guard let selectedSession else {
+            return "Session details will appear here."
+        }
+        return "\(selectedSession.status.rawValue) · updated \(selectedSession.elapsedSinceUpdate()) ago"
+    }
+
+    private func reconcileSelectedSession() {
+        let resolvedID = PickyFullscreenSessionSelection.resolvedSessionID(
+            requestedSessionID: nil,
+            storedSelectedSessionID: stateStore.selectedSessionID,
+            viewModelSelectedSessionID: viewModel.selectedSessionID,
+            candidates: PickyFullscreenSessionSelection.candidates(from: viewModel.sessions)
+        )
+        if stateStore.selectedSessionID != resolvedID {
+            stateStore.selectedSessionID = resolvedID
+        }
     }
 
     private func placeholderColumn(

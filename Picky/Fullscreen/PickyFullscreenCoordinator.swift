@@ -30,11 +30,12 @@ final class PickyFullscreenCoordinator: NSObject {
     }
 
     func open(sessionID: String?) {
-        if let sessionID {
-            stateStore.selectedSessionID = sessionID
-        } else if stateStore.selectedSessionID == nil {
-            stateStore.selectedSessionID = viewModel.selectedSessionID
-        }
+        stateStore.selectedSessionID = PickyFullscreenSessionSelection.resolvedSessionID(
+            requestedSessionID: sessionID,
+            storedSelectedSessionID: stateStore.selectedSessionID,
+            viewModelSelectedSessionID: viewModel.selectedSessionID,
+            candidates: PickyFullscreenSessionSelection.candidates(from: viewModel.sessions)
+        )
 
         if let windowController {
             windowController.show()

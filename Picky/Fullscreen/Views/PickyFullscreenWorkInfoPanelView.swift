@@ -12,12 +12,20 @@ struct PickyFullscreenWorkInfoPanelView: View {
     @Binding var isVisible: Bool
     @State private var gitStatus: PickyGitRepositoryStatus?
     @State private var didLoadGitStatus = false
+    @State private var diffProvider: PickyFullscreenFileDiffProvider?
+    @State private var fileNumstat: [String: PickyFullscreenFileDiffProvider.Numstat] = [:]
+    @State private var expandedDiffPaths: Set<String> = []
+    @State private var loadingDiffPaths: Set<String> = []
+    @State private var fileDiffs: [String: String] = [:]
+    @State private var failedDiffPaths: Set<String> = []
+    @State private var didLoadNumstat = false
 
     init(session: PickySessionListViewModel.SessionCard?, isVisible: Binding<Bool>) {
         self.session = session
         _isVisible = isVisible
         _gitStatus = State(initialValue: PickyGitRepositoryStatus.cached(cwd: session?.cwd))
         _didLoadGitStatus = State(initialValue: false)
+        _diffProvider = State(initialValue: Self.makeDiffProvider(cwd: session?.cwd))
     }
 
     private var snapshot: PickyFullscreenWorkInfoSnapshot? {
@@ -35,9 +43,15 @@ struct PickyFullscreenWorkInfoPanelView: View {
             .task(id: gitTaskID) {
                 await refreshGitStatus()
             }
+            .task(id: diffTaskID) {
+                await refreshNumstatIfNeeded()
+            }
             .onChange(of: gitTaskID) { _, _ in
                 didLoadGitStatus = false
                 gitStatus = PickyGitRepositoryStatus.cached(cwd: session?.cwd)
+            }
+            .onChange(of: diffProviderKey) { _, _ in
+                resetDiffState()
             }
             .onChange(of: didLoadGitStatus) { _, loaded in
                 autoCollapseIfEmpty(loaded: loaded)
@@ -244,24 +258,118 @@ struct PickyFullscreenWorkInfoPanelView: View {
     }
 
     private func changedFileRow(_ file: PickyChangedFile) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Circle()
-                .fill(changedFileColor(for: file.status))
-                .frame(width: 7, height: 7)
-                .accessibilityHidden(true)
-            Text(changedFileBadgeText(for: file.status))
-                .pickyFont(size: 10, weight: .bold, design: .monospaced)
-                .foregroundStyle(changedFileColor(for: file.status))
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(width: 12, alignment: .leading)
-            Text(file.path)
-                .pickyFont(size: 11.5, weight: .medium, design: .monospaced)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                toggleDiff(for: file.path)
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: expandedDiffPaths.contains(file.path) ? "chevron.down" : "chevron.right")
+                        .pickyFont(size: 9.5, weight: .bold)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 10)
+                    Circle()
+                        .fill(changedFileColor(for: file.status))
+                        .frame(width: 7, height: 7)
+                        .accessibilityHidden(true)
+                    Text(changedFileBadgeText(for: file.status))
+                        .pickyFont(size: 10, weight: .bold, design: .monospaced)
+                        .foregroundStyle(changedFileColor(for: file.status))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(width: 12, alignment: .leading)
+                    Text(file.path)
+                        .pickyFont(size: 11.5, weight: .medium, design: .monospaced)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    fileNumstatText(for: file.path)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(file.path) diff 보기")
+
+            if expandedDiffPaths.contains(file.path) {
+                diffContent(for: file.path)
+                    .padding(.leading, 18)
+            }
         }
         .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func fileNumstatText(for path: String) -> some View {
+        if let stat = fileNumstat[path] {
+            HStack(spacing: 4) {
+                Text("+\(stat.insertions)")
+                    .foregroundStyle(.green)
+                Text("−\(stat.deletions)")
+                    .foregroundStyle(.red)
+            }
+            .pickyFont(size: 10.5, weight: .bold, design: .monospaced)
+            .fixedSize(horizontal: true, vertical: false)
+        } else if didLoadNumstat {
+            Text("—")
+                .pickyFont(size: 10.5, weight: .bold, design: .monospaced)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    @ViewBuilder
+    private func diffContent(for path: String) -> some View {
+        if loadingDiffPaths.contains(path) {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("diff 불러오는 중…")
+                    .pickyFont(size: 11.5)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 8)
+        } else if let diff = fileDiffs[path] {
+            diffBlock(diff)
+        } else if failedDiffPaths.contains(path) {
+            Text("diff를 불러올 수 없습니다")
+                .pickyFont(size: 11.5)
+                .foregroundStyle(.secondary)
+                .padding(.vertical, 6)
+        }
+    }
+
+    private func diffBlock(_ diff: String) -> some View {
+        ScrollView([.vertical, .horizontal]) {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(diff.split(separator: "\n", omittingEmptySubsequences: false).enumerated()), id: \.offset) { _, line in
+                    Text(String(line))
+                        .pickyFont(size: 10.5, design: .monospaced)
+                        .foregroundStyle(diffLineColor(String(line)))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxHeight: 300)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(nsColor: .textBackgroundColor).opacity(0.72))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private func diffLineColor(_ line: String) -> Color {
+        if line.hasPrefix("@@") { return .secondary }
+        if line.hasPrefix("diff --git") || line.hasPrefix("index ") || line.hasPrefix("---") || line.hasPrefix("+++") {
+            return .secondary
+        }
+        if line.hasPrefix("+") { return .green }
+        if line.hasPrefix("-") { return .red }
+        return .primary.opacity(0.74)
     }
 
     private func artifactsSection(_ artifacts: [PickyFullscreenWorkInfoSnapshot.Artifact]) -> some View {
@@ -377,6 +485,21 @@ struct PickyFullscreenWorkInfoPanelView: View {
         "\(session?.id ?? "none")|\(session?.cwd ?? "")|\(session?.updatedAt.timeIntervalSince1970 ?? 0)"
     }
 
+    private var diffProviderKey: String {
+        session?.cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private var diffTaskID: String {
+        let changedFileKey = snapshot?.changedFiles.map(\.path).joined(separator: "\u{1f}") ?? ""
+        return "\(isVisible)|\(diffProviderKey)|\(changedFileKey)"
+    }
+
+    private static func makeDiffProvider(cwd: String?) -> PickyFullscreenFileDiffProvider? {
+        let trimmed = cwd?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return nil }
+        return PickyFullscreenFileDiffProvider(cwd: trimmed)
+    }
+
     private func refreshGitStatus() async {
         if let cached = PickyGitRepositoryStatus.cached(cwd: session?.cwd) {
             gitStatus = cached
@@ -385,6 +508,45 @@ struct PickyFullscreenWorkInfoPanelView: View {
         guard !Task.isCancelled else { return }
         gitStatus = freshGit
         didLoadGitStatus = true
+    }
+
+    private func refreshNumstatIfNeeded() async {
+        guard isVisible, snapshot?.changedFiles.isEmpty == false, let diffProvider else { return }
+        let stats = await diffProvider.fetchNumstat()
+        guard !Task.isCancelled else { return }
+        fileNumstat = stats
+        didLoadNumstat = true
+    }
+
+    private func resetDiffState() {
+        diffProvider = Self.makeDiffProvider(cwd: session?.cwd)
+        fileNumstat = [:]
+        expandedDiffPaths = []
+        loadingDiffPaths = []
+        fileDiffs = [:]
+        failedDiffPaths = []
+        didLoadNumstat = false
+    }
+
+    private func toggleDiff(for path: String) {
+        if expandedDiffPaths.contains(path) {
+            expandedDiffPaths.remove(path)
+            return
+        }
+        expandedDiffPaths.insert(path)
+        guard fileDiffs[path] == nil, !loadingDiffPaths.contains(path), !failedDiffPaths.contains(path) else { return }
+        loadingDiffPaths.insert(path)
+        Task {
+            let diff = await diffProvider?.fetchDiff(path: path)
+            guard !Task.isCancelled else { return }
+            loadingDiffPaths.remove(path)
+            if let diff {
+                fileDiffs[path] = diff
+                failedDiffPaths.remove(path)
+            } else {
+                failedDiffPaths.insert(path)
+            }
+        }
     }
 
     private func autoCollapseIfEmpty(loaded: Bool) {

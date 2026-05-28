@@ -81,8 +81,23 @@ struct PickyFullscreenTurnPolicyTests {
 
         let model = PickyFullscreenTurnPolicy.renderModel(from: group)
 
-        #expect(model.bodyMessages.map(\.id) == ["activity", "latest"])
+        #expect(model.bodyMessages.map(\.id) == ["thinking", "activity", "latest"])
         #expect(model.liveActivitySummary == PickyActivitySummary(bash: 2))
+    }
+
+    @Test func currentTurnShowsThinkingOnlyProgress() {
+        let group = PickyTurnGroup(
+            id: "turn-1",
+            userMessage: msg("u1", kind: .userText),
+            bodyMessages: [
+                msg("thinking", kind: .agentThinking, text: "still thinking")
+            ],
+            isCurrent: true
+        )
+
+        let model = PickyFullscreenTurnPolicy.renderModel(from: group)
+
+        #expect(model.bodyMessages.map(\.id) == ["thinking"])
     }
 
     @Test func renderModelsMarksLatestActiveTurnCurrent() {

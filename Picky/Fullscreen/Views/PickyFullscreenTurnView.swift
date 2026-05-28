@@ -82,7 +82,7 @@ struct PickyFullscreenTurnView: View {
         case .system:
             statusMessageView(message)
         case .agentThinking:
-            EmptyView()
+            PickyTypingBubbleView(message: message, initiallyCollapsed: viewModel.thinkingBlocksHidden(sessionID: session.id))
         }
     }
 

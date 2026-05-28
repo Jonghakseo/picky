@@ -70,9 +70,9 @@ enum PickyFullscreenTurnPolicy {
                 if message.id == latestAgentTextID { output.append(message) }
             case .agentActivity:
                 if message.activitySnapshot?.visibleToolCallItems.isEmpty == false { output.append(message) }
-            case .agentQuestion, .agentError:
+            case .agentQuestion, .agentError, .agentThinking:
                 output.append(message)
-            case .system, .userText, .commandReceipt, .agentThinking:
+            case .system, .userText, .commandReceipt:
                 break
             }
         }

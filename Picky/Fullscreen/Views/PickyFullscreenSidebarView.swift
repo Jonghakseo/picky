@@ -18,6 +18,10 @@ struct PickyFullscreenSidebarView: View {
     @Binding var selectedSessionID: String?
     @State private var isRecentPickleFolderPickerPresented = false
 
+    private var sessionGroups: [PickyFullscreenSidebarGroup] {
+        PickyFullscreenSidebarGrouping.groups(from: sessions)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
@@ -26,21 +30,34 @@ struct PickyFullscreenSidebarView: View {
                 emptyState
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(sessions) { session in
-                            Button {
-                                selectedSessionID = session.id
-                            } label: {
-                                PickyFullscreenSidebarRow(
-                                    session: session,
-                                    isSelected: selectedSessionID == session.id
-                                )
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(sessionGroups) { group in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(group.label)
+                                    .pickyFont(size: 11.5, weight: .semibold)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .padding(.horizontal, 2)
+                                    .accessibilityAddTraits(.isHeader)
+
+                                ForEach(group.sessions) { session in
+                                    Button {
+                                        selectedSessionID = session.id
+                                    } label: {
+                                        PickyFullscreenSidebarRow(
+                                            session: session,
+                                            isSelected: selectedSessionID == session.id
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityElement(children: .ignore)
+                                    .accessibilityLabel(session.title)
+                                    .accessibilityValue(session.accessibilitySummary)
+                                    .accessibilityHint(selectedSessionID == session.id ? "선택된 Pickle" : "Pickle 선택")
+                                }
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityElement(children: .ignore)
-                            .accessibilityLabel(session.title)
-                            .accessibilityValue(session.accessibilitySummary)
-                            .accessibilityHint(selectedSessionID == session.id ? "선택된 Pickle" : "Pickle 선택")
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                     .padding(.vertical, 2)

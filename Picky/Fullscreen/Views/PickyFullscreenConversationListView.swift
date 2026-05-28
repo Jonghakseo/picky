@@ -10,6 +10,7 @@ import SwiftUI
 struct PickyFullscreenConversationListView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var hasAppeared = false
 
     private var turns: [PickyFullscreenTurnRenderModel] {
@@ -48,9 +49,14 @@ struct PickyFullscreenConversationListView: View {
                 hasAppeared = true
             }
             .onChange(of: bottomScrollTrigger) { _, _ in
-                scrollToBottom(proxy: proxy, animated: hasAppeared)
+                scrollToBottom(
+                    proxy: proxy,
+                    animated: Self.shouldAnimateScroll(hasAppeared: hasAppeared, reduceMotion: accessibilityReduceMotion)
+                )
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Conversation messages")
     }
 
     private var emptyConversation: some View {
@@ -66,6 +72,9 @@ struct PickyFullscreenConversationListView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 260)
         .padding(32)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("No conversation yet")
+        .accessibilityHint("This Pickle has not recorded any chat messages yet")
     }
 
     private var bottomScrollTrigger: PickyFullscreenConversationBottomScrollTrigger {
@@ -75,6 +84,10 @@ struct PickyFullscreenConversationListView: View {
             changedFilesCount: session.changedFiles.count,
             activitySummary: session.activitySummary
         )
+    }
+
+    static func shouldAnimateScroll(hasAppeared: Bool, reduceMotion: Bool) -> Bool {
+        hasAppeared && !reduceMotion
     }
 
     private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool) {

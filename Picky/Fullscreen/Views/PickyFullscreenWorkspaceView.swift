@@ -12,6 +12,7 @@ import SwiftUI
 struct PickyFullscreenWorkspaceView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     @ObservedObject var stateStore: PickyFullscreenStateStore
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var isCreatingPickle = false
     @State private var pendingCreatedPickleSessionID: String?
 
@@ -31,6 +32,7 @@ struct PickyFullscreenWorkspaceView: View {
                 onRemoveRecentPickleFolder: viewModel.removeRecentPickleFolder,
                 selectedSessionID: $stateStore.selectedSessionID
             )
+            .accessibilitySortPriority(4)
 
             Divider()
 
@@ -38,6 +40,7 @@ struct PickyFullscreenWorkspaceView: View {
                 session: selectedSession,
                 viewModel: viewModel
             )
+            .accessibilitySortPriority(3)
 
             Divider()
 
@@ -45,12 +48,21 @@ struct PickyFullscreenWorkspaceView: View {
                 session: selectedSession,
                 isVisible: $stateStore.isWorkInfoPanelVisible
             )
+            .accessibilitySortPriority(1)
             .transaction { transaction in
                 transaction.animation = nil
             }
         }
         .frame(minWidth: 1040, minHeight: 680)
         .background(Color(nsColor: .windowBackgroundColor))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Picky fullscreen workspace")
+        .transaction { transaction in
+            if accessibilityReduceMotion {
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
+        }
         .onAppear(perform: reconcileSelectedSession)
         .onChange(of: viewModel.sessions.map(\.id)) { _, _ in reconcileSelectedSession() }
         .onChange(of: viewModel.selectedSessionID) { _, _ in reconcileSelectedSession() }

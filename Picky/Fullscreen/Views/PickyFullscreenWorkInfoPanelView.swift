@@ -96,6 +96,8 @@ struct PickyFullscreenWorkInfoPanelView: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 14)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("작업 정보")
     }
 
     private var emptySelection: some View {
@@ -112,6 +114,8 @@ struct PickyFullscreenWorkInfoPanelView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Pickle을 선택하세요")
     }
 
     private func statusSection(_ snapshot: PickyFullscreenWorkInfoSnapshot) -> some View {

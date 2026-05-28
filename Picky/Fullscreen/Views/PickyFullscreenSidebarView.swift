@@ -37,8 +37,10 @@ struct PickyFullscreenSidebarView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .accessibilityElement(children: .ignore)
                             .accessibilityLabel(session.title)
-                            .accessibilityValue(session.status.fullscreenDisplayText)
+                            .accessibilityValue(session.accessibilitySummary)
+                            .accessibilityHint(selectedSessionID == session.id ? "Selected Pickle" : "Select Pickle")
                         }
                     }
                     .padding(.vertical, 2)
@@ -77,6 +79,8 @@ struct PickyFullscreenSidebarView: View {
         .padding(18)
         .frame(minWidth: 220, idealWidth: 260, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .underPageBackgroundColor).opacity(0.72))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Pickles sidebar")
     }
 
     private var header: some View {
@@ -107,6 +111,9 @@ struct PickyFullscreenSidebarView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor).opacity(0.55))
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("No active Pickles")
+        .accessibilityHint("Start a new Pickle from this workspace to begin")
     }
 }
 
@@ -167,6 +174,17 @@ private struct PickyFullscreenSidebarRow: View {
     private var rowBackground: some View {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
             .fill(isSelected ? Color.accentColor.opacity(0.16) : Color(nsColor: .controlBackgroundColor).opacity(0.58))
+    }
+}
+
+private extension PickySessionListViewModel.SessionCard {
+    var accessibilitySummary: String {
+        var parts = [status.fullscreenDisplayText]
+        if let cwd = compactCwdDescription {
+            parts.append(cwd)
+        }
+        parts.append("Updated \(elapsedSinceUpdate()) ago")
+        return parts.joined(separator: ", ")
     }
 }
 

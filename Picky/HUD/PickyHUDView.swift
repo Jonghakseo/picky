@@ -1511,7 +1511,7 @@ private struct PickyHUDDockRailView: View {
         }
         .buttonStyle(.plain)
         .pointerCursor()
-        .accessibilityLabel("Open Fullscreen Workspace")
+        .accessibilityLabel("Open fullscreen workspace")
         .accessibilityHint("Hides the dock and opens the selected Pickle in fullscreen mode")
     }
 

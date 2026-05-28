@@ -33,6 +33,8 @@ struct PickyFullscreenConversationPaneView: View {
         }
         .frame(minWidth: 480, idealWidth: 760, maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Conversation")
     }
 
     private func conversationContent(for session: PickySessionListViewModel.SessionCard) -> some View {
@@ -144,6 +146,9 @@ struct PickyFullscreenConversationPaneView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(32)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Select a Pickle")
+        .accessibilityHint("Choose an active Pickle from the sidebar to read its LLM conversation")
     }
 
     private func statusPill(for status: PickySessionStatus) -> some View {
@@ -154,6 +159,8 @@ struct PickyFullscreenConversationPaneView: View {
             .padding(.vertical, 4)
             .background(Capsule().fill(status.fullscreenConversationColor.opacity(0.12)))
             .overlay(Capsule().stroke(status.fullscreenConversationColor.opacity(0.28), lineWidth: 0.6))
+            .accessibilityLabel("Status")
+            .accessibilityValue(status.fullscreenConversationDisplayText)
     }
 
     private static let conversationDetailWidth: CGFloat = 760

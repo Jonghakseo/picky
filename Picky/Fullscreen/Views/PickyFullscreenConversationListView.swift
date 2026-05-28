@@ -13,6 +13,7 @@ struct PickyFullscreenConversationListView: View {
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @State private var hasAppeared = false
     @State private var completedTurnIDsBySessionID: [String: Set<String>] = [:]
+    @State private var expandedWorkSummaryTurnIDs: Set<String> = []
 
     private var turnGroups: [PickyTurnGroup] {
         PickyTurnGrouper.groups(
@@ -44,7 +45,9 @@ struct PickyFullscreenConversationListView: View {
                             PickyFullscreenTurnView(
                                 turn: turn,
                                 session: session,
-                                viewModel: viewModel
+                                viewModel: viewModel,
+                                isWorkSummaryExpanded: expandedWorkSummaryTurnIDs.contains(turn.id),
+                                onToggleWorkSummary: { toggleWorkSummary(turnID: turn.id) }
                             )
                         }
                     }
@@ -80,6 +83,14 @@ struct PickyFullscreenConversationListView: View {
     private func observeCompletedTurns(_ ids: Set<String>) {
         guard !ids.isEmpty else { return }
         completedTurnIDsBySessionID[session.id, default: []].formUnion(ids)
+    }
+
+    private func toggleWorkSummary(turnID: String) {
+        if expandedWorkSummaryTurnIDs.contains(turnID) {
+            expandedWorkSummaryTurnIDs.remove(turnID)
+        } else {
+            expandedWorkSummaryTurnIDs.insert(turnID)
+        }
     }
 
     private var emptyConversation: some View {

@@ -11,6 +11,8 @@ struct PickyFullscreenTurnView: View {
     let turn: PickyFullscreenTurnRenderModel
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
+    var isWorkSummaryExpanded = false
+    var onToggleWorkSummary: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -29,6 +31,18 @@ struct PickyFullscreenTurnView: View {
                 }
             }
 
+            if shouldShowWorkSummary {
+                PickyFullscreenWorkSummaryView(
+                    durationSeconds: turn.workDurationSeconds ?? 0,
+                    messages: turn.intermediateMessages,
+                    isExpanded: isWorkSummaryExpanded,
+                    onToggle: onToggleWorkSummary ?? {},
+                    messageView: { message in
+                        AnyView(messageView(message))
+                    }
+                )
+            }
+
             ForEach(turn.bodyMessages, id: \.id) { message in
                 messageView(message)
             }
@@ -38,6 +52,10 @@ struct PickyFullscreenTurnView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private var shouldShowWorkSummary: Bool {
+        !turn.isCurrent && turn.workDurationSeconds != nil && !turn.intermediateMessages.isEmpty
     }
 
     @ViewBuilder
@@ -115,6 +133,70 @@ struct PickyFullscreenTurnView: View {
         return { [weak viewModel] in
             Task { try? await viewModel?.retryAfterRuntimeRace(sessionID: session.id) }
         }
+    }
+}
+
+private struct PickyFullscreenWorkSummaryView: View {
+    let durationSeconds: Int
+    let messages: [PickySessionMessage]
+    let isExpanded: Bool
+    let onToggle: () -> Void
+    let messageView: (PickySessionMessage) -> AnyView
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button(action: onToggle) {
+                HStack(spacing: 8) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .pickyFont(size: 10, weight: .semibold)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .frame(width: 12, alignment: .center)
+                    Text("\(Self.formatDuration(durationSeconds)) 동안 작업")
+                        .font(PickyHUDTypography.labelMonospacedMedium)
+                        .foregroundColor(DS.Colors.textSecondary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(DS.Colors.surface2.opacity(0.86), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(DS.Colors.borderSubtle.opacity(0.65), lineWidth: 0.5)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(Self.formatDuration(durationSeconds)) 동안 작업")
+            .accessibilityHint(isExpanded ? "작업 내역 접기" : "작업 내역 펼치기")
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(messages, id: \.id) { message in
+                        messageView(message)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 10)
+                .background(DS.Colors.surface1.opacity(0.72), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(DS.Colors.borderSubtle.opacity(0.45), lineWidth: 0.5)
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private static func formatDuration(_ seconds: Int) -> String {
+        if seconds < 60 { return "\(seconds)s" }
+        if seconds < 3_600 {
+            let minutes = seconds / 60
+            let remainingSeconds = seconds % 60
+            return remainingSeconds == 0 ? "\(minutes)m" : "\(minutes)m \(remainingSeconds)s"
+        }
+        let hours = seconds / 3_600
+        let remainingMinutes = (seconds % 3_600) / 60
+        return remainingMinutes == 0 ? "\(hours)h" : "\(hours)h \(remainingMinutes)m"
     }
 }
 

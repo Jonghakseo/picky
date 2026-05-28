@@ -13,7 +13,9 @@ struct PickyFullscreenTurnRenderModel: Equatable, Identifiable {
     let id: String
     let userMessage: PickySessionMessage?
     let bodyMessages: [PickySessionMessage]
+    let intermediateMessages: [PickySessionMessage]
     let statusMessages: [PickySessionMessage]
+    let workDurationSeconds: Int?
     let isCurrent: Bool
     let liveActivitySummary: PickyActivitySummary?
 }
@@ -58,12 +60,15 @@ enum PickyFullscreenTurnPolicy {
         let visibleBody = isCurrent
             ? currentTurnBodyMessages(from: group)
             : completedTurnBodyMessages(from: group.bodyMessages)
+        let intermediateMessages = intermediateMessages(for: group, isCurrent: isCurrent)
         let statuses = statusMessages(from: group.bodyMessages) + group.trailingCompactMessages
         return PickyFullscreenTurnRenderModel(
             id: group.id,
             userMessage: group.userMessage,
             bodyMessages: visibleBody,
+            intermediateMessages: intermediateMessages,
             statusMessages: statuses,
+            workDurationSeconds: isCurrent ? nil : workDurationSeconds(for: group),
             isCurrent: isCurrent,
             liveActivitySummary: isCurrent ? group.liveActivitySummary : nil
         )
@@ -74,6 +79,28 @@ enum PickyFullscreenTurnPolicy {
             return [finalOutput]
         }
         return []
+    }
+
+    static func intermediateMessages(for group: PickyTurnGroup, isCurrent: Bool) -> [PickySessionMessage] {
+        guard !isCurrent else { return [] }
+        let finalOutputID = completedTurnBodyMessages(from: group.bodyMessages).first?.id
+        return group.bodyMessages.filter { message in
+            guard message.id != finalOutputID else { return false }
+            switch message.kind {
+            case .agentThinking, .system, .userText:
+                return false
+            case .agentText, .agentActivity, .agentError, .commandReceipt, .agentQuestion:
+                return true
+            }
+        }
+    }
+
+    static func workDurationSeconds(for group: PickyTurnGroup) -> Int? {
+        let firstAt = group.userMessage?.createdAt ?? group.bodyMessages.first?.createdAt
+        let lastAt = group.bodyMessages.last?.createdAt ?? group.userMessage?.createdAt
+        guard let firstAt, let lastAt else { return nil }
+        let seconds = Int(lastAt.timeIntervalSince(firstAt))
+        return seconds >= 1 ? seconds : nil
     }
 
     static func currentTurnBodyMessages(from group: PickyTurnGroup) -> [PickySessionMessage] {

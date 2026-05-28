@@ -116,6 +116,72 @@ struct PickyFullscreenTurnPolicyTests {
         #expect(model.bodyMessages.map(\.id) == ["answer"])
     }
 
+    @Test func completedTurnIntermediateMessagesIncludeWorkLogButExcludeThinkingAndFinalAnswer() {
+        let group = PickyTurnGroup(
+            id: "turn-1",
+            userMessage: msg("u1", kind: .userText, text: "Do it"),
+            bodyMessages: [
+                msg("thinking", kind: .agentThinking, text: "hidden thinking"),
+                msg("draft", kind: .agentText, text: "draft answer"),
+                msg("activity", kind: .agentActivity, activitySnapshot: PickyActivitySummary(read: 1)),
+                msg("error", kind: .agentError, errorMessage: "non-final error"),
+                msg("final", kind: .agentText, text: "final answer")
+            ],
+            isCurrent: false
+        )
+
+        let messages = PickyFullscreenTurnPolicy.intermediateMessages(for: group, isCurrent: false)
+
+        #expect(messages.map(\.id) == ["draft", "activity", "error"])
+    }
+
+    @Test func currentTurnIntermediateMessagesAreEmpty() {
+        let group = PickyTurnGroup(
+            id: "turn-1",
+            userMessage: msg("u1", kind: .userText),
+            bodyMessages: [
+                msg("draft", kind: .agentText, text: "draft answer"),
+                msg("activity", kind: .agentActivity, activitySnapshot: PickyActivitySummary(read: 1))
+            ],
+            isCurrent: true
+        )
+
+        let messages = PickyFullscreenTurnPolicy.intermediateMessages(for: group, isCurrent: true)
+
+        #expect(messages.isEmpty)
+    }
+
+    @Test func completedTurnWorkDurationUsesFirstAndLastMessageTimestamps() {
+        let group = PickyTurnGroup(
+            id: "turn-1",
+            userMessage: msg("u1", kind: .userText, createdAt: Date(timeIntervalSince1970: 100)),
+            bodyMessages: [
+                msg("draft", kind: .agentText, createdAt: Date(timeIntervalSince1970: 125)),
+                msg("final", kind: .agentText, createdAt: Date(timeIntervalSince1970: 153))
+            ],
+            isCurrent: false
+        )
+
+        let model = PickyFullscreenTurnPolicy.renderModel(from: group)
+
+        #expect(model.workDurationSeconds == 53)
+    }
+
+    @Test func completedTurnWorkDurationBelowOneSecondIsHidden() {
+        let group = PickyTurnGroup(
+            id: "turn-1",
+            userMessage: msg("u1", kind: .userText, createdAt: Date(timeIntervalSince1970: 100)),
+            bodyMessages: [
+                msg("final", kind: .agentText, createdAt: Date(timeIntervalSince1970: 100.5))
+            ],
+            isCurrent: false
+        )
+
+        let model = PickyFullscreenTurnPolicy.renderModel(from: group)
+
+        #expect(model.workDurationSeconds == nil)
+    }
+
     @Test func currentTurnShowsLiveProgressAndLatestAssistantTextOnly() {
         let group = PickyTurnGroup(
             id: "turn-1",
@@ -230,12 +296,13 @@ struct PickyFullscreenTurnPolicyTests {
         kind: PickySessionMessageKind,
         text: String? = nil,
         activitySnapshot: PickyActivitySummary? = nil,
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        createdAt: Date = Date(timeIntervalSince1970: 1_800_000_000)
     ) -> PickySessionMessage {
         PickySessionMessage(
             id: id,
             kind: kind,
-            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+            createdAt: createdAt,
             originatedBy: nil,
             text: text,
             question: nil,

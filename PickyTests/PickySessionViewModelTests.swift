@@ -1039,6 +1039,14 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDDockLayout.activeSessionID(visibleIDs: visibleIDs, held: .open("missing"), previewID: nil) == nil)
     }
 
+    @Test func hudDockFullscreenTargetUsesHeldThenHoverPreview() throws {
+        let visibleIDs = ["first", "opened", "hovered"]
+        #expect(PickyHUDDockLayout.fullscreenTargetSessionID(visibleIDs: visibleIDs, held: .open("opened"), hoverPreviewID: "hovered") == "opened")
+        #expect(PickyHUDDockLayout.fullscreenTargetSessionID(visibleIDs: visibleIDs, held: nil, hoverPreviewID: "hovered") == "hovered")
+        #expect(PickyHUDDockLayout.fullscreenTargetSessionID(visibleIDs: visibleIDs, held: .open("missing"), hoverPreviewID: "hovered") == "hovered")
+        #expect(PickyHUDDockLayout.fullscreenTargetSessionID(visibleIDs: visibleIDs, held: nil, hoverPreviewID: "missing") == nil)
+    }
+
     @Test func hudDockHeldStateIsExclusiveAcrossClicks() throws {
         #expect(PickyHUDDockLayout.heldSessionAfterClick(current: nil, clicked: "agent-a") == .open("agent-a"))
         #expect(PickyHUDDockLayout.heldSessionAfterClick(current: .open("agent-a"), clicked: "agent-a") == nil)

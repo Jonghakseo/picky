@@ -438,6 +438,12 @@ enum PickyHUDDockLayout {
         return nil
     }
 
+    static func fullscreenTargetSessionID(visibleIDs: [String], held: PickyHUDDockHold?, hoverPreviewID: String?) -> String? {
+        if let held, visibleIDs.contains(held.sessionID) { return held.sessionID }
+        if let hoverPreviewID, visibleIDs.contains(hoverPreviewID) { return hoverPreviewID }
+        return nil
+    }
+
     static func previewSessionID(hoveredID: String?, heldID: String?) -> String? {
         heldID == nil ? hoveredID : nil
     }

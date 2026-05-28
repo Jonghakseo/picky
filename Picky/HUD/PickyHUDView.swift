@@ -72,6 +72,14 @@ struct PickyHUDView: View {
         return nil
     }
 
+    private var fullscreenTargetSessionID: String? {
+        PickyHUDDockLayout.fullscreenTargetSessionID(
+            visibleIDs: visibleSessionIDs,
+            held: heldSession,
+            hoverPreviewID: hoverPreviewSessionID
+        )
+    }
+
     private var activeSession: PickySessionListViewModel.SessionCard? {
         guard let activeSessionID else { return nil }
         return visibleSessions.first { $0.id == activeSessionID }
@@ -383,6 +391,7 @@ struct PickyHUDView: View {
                 activeSessionID: activeSession?.id,
                 openedSessionID: openedSessionID,
                 previewSessionID: hoverPreviewSessionID,
+                fullscreenTargetSessionID: fullscreenTargetSessionID,
                 screenContextTargetSessionID: viewModel.screenContextTargetSessionID,
                 dockSide: placement.dockSide,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
@@ -1387,6 +1396,7 @@ private struct PickyHUDDockRailView: View {
     let activeSessionID: String?
     let openedSessionID: String?
     let previewSessionID: String?
+    let fullscreenTargetSessionID: String?
     let screenContextTargetSessionID: String?
     let dockSide: PickyHUDDockSide
     let isCommandShortcutHintVisible: Bool
@@ -1485,7 +1495,7 @@ private struct PickyHUDDockRailView: View {
 
     private var fullscreenButton: some View {
         Button {
-            onOpenFullscreenSession(activeSessionID)
+            onOpenFullscreenSession(fullscreenTargetSessionID)
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: metrics.iconCornerRadius * 0.72, style: .continuous)

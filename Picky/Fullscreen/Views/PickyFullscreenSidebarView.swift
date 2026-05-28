@@ -10,7 +10,13 @@ import SwiftUI
 
 struct PickyFullscreenSidebarView: View {
     let sessions: [PickySessionListViewModel.SessionCard]
+    let recentPickleCwds: [String]
+    let isCreatingPickle: Bool
+    let onCreatePickleInRecentFolder: (String) -> Void
+    let onChoosePickleFolder: () -> Void
+    let onRemoveRecentPickleFolder: (String) -> Void
     @Binding var selectedSessionID: String?
+    @State private var isRecentPickleFolderPickerPresented = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -42,9 +48,9 @@ struct PickyFullscreenSidebarView: View {
             Spacer(minLength: 0)
 
             Button {
-                // Phase 07 wires the real New Pickle lifecycle.
+                isRecentPickleFolderPickerPresented = true
             } label: {
-                Label("New Pickle", systemImage: "plus")
+                Label(isCreatingPickle ? "Starting Pickle…" : "New Pickle", systemImage: "plus")
                     .font(.system(size: 13, weight: .semibold))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12)
@@ -55,8 +61,18 @@ struct PickyFullscreenSidebarView: View {
                     )
             }
             .buttonStyle(.plain)
-            .disabled(true)
-            .help("New Pickle will be available in a later phase.")
+            .disabled(isCreatingPickle)
+            .recentPickleFolderPicker(
+                isPresented: $isRecentPickleFolderPickerPresented,
+                arrowEdge: .leading,
+                recentPickleCwds: recentPickleCwds,
+                onCreatePickleInRecentFolder: onCreatePickleInRecentFolder,
+                onChooseFolder: onChoosePickleFolder,
+                onRemoveRecentPickleFolder: onRemoveRecentPickleFolder
+            )
+            .help("Start a Pickle from a recent folder or choose a working folder.")
+            .accessibilityLabel("New Pickle")
+            .accessibilityHint("Choose a recent working folder or browse for a new one")
         }
         .padding(18)
         .frame(minWidth: 220, idealWidth: 260, maxHeight: .infinity, alignment: .topLeading)
@@ -80,7 +96,7 @@ struct PickyFullscreenSidebarView: View {
                 .foregroundStyle(.secondary)
             Text("No active Pickles")
                 .font(.system(size: 13, weight: .semibold))
-            Text("Start a Pickle from dock mode, then return here to browse it.")
+            Text("Start a new Pickle from this workspace to begin.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

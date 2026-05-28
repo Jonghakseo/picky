@@ -1886,7 +1886,7 @@ struct PickyRecentPickleFolderPolicy {
     }
 }
 
-private extension View {
+extension View {
     func recentPickleFolderPicker(
         isPresented: Binding<Bool>,
         arrowEdge: Edge,
@@ -1907,7 +1907,7 @@ private extension View {
     }
 }
 
-private struct PickyRecentPickleFolderPickerView: View {
+struct PickyRecentPickleFolderPickerView: View {
     @Binding var isPresented: Bool
     let recentPickleCwds: [String]
     let onCreatePickleInRecentFolder: (String) -> Void

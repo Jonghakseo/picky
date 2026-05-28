@@ -473,7 +473,8 @@ final class PickyHUDOverlayManager {
             let horizontalDockLength = PickyHUDDockLayout.horizontalDockRailLength(
                 sessionCount: visibleSessionCount(),
                 isAddSlotExpanded: false,
-                metrics: dockMetrics
+                metrics: dockMetrics,
+                includesFullscreenControl: PickyFullscreenFeatureFlags.isEnabled
             )
             safeXOffset = PickyHUDDockLayout.clampedHorizontalXOffset(
                 pos.xOffset,
@@ -671,7 +672,8 @@ final class PickyHUDOverlayManager {
             let horizontalDockLength = PickyHUDDockLayout.horizontalDockRailLength(
                 sessionCount: visibleSessionCount(),
                 isAddSlotExpanded: false,
-                metrics: dockMetrics
+                metrics: dockMetrics,
+                includesFullscreenControl: PickyFullscreenFeatureFlags.isEnabled
             )
             // -- X axis: along-axis position from screen center --
             pos.xOffset = PickyHUDDockLayout.clampedHorizontalXOffset(

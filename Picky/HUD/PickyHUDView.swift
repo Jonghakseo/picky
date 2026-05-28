@@ -424,7 +424,8 @@ struct PickyHUDView: View {
                     ? PickyHUDDockLayout.horizontalDockRailLength(
                         sessionCount: visibleSessions.count,
                         isAddSlotExpanded: isDockAddSlotExpanded,
-                        metrics: dockMetrics
+                        metrics: dockMetrics,
+                        includesFullscreenControl: PickyFullscreenFeatureFlags.isEnabled
                     )
                     : dockMetrics.railWidth,
                 height: placement.dockSide.orientation == .horizontal ? dockMetrics.railWidth : nil
@@ -1439,7 +1440,9 @@ private struct PickyHUDDockRailView: View {
             if dockSide.orientation == .horizontal {
                 HStack(spacing: 2) {
                     dockAnchorHandle
-                    fullscreenButton
+                    if PickyFullscreenFeatureFlags.isEnabled {
+                        fullscreenButton
+                    }
                     sessionsAndAddSlot
                 }
                 // Symmetric leading/trailing in horizontal so the dock doesn't
@@ -1459,7 +1462,9 @@ private struct PickyHUDDockRailView: View {
                 // backing the handle, not the empty space outside an external pill.
                 VStack(spacing: 2) {
                     dockAnchorHandle
-                    fullscreenButton
+                    if PickyFullscreenFeatureFlags.isEnabled {
+                        fullscreenButton
+                    }
                     sessionsAndAddSlot
                 }
                 .padding(.horizontal, metrics.horizontalPadding)
@@ -1483,14 +1488,17 @@ private struct PickyHUDDockRailView: View {
             return PickyHUDDockLayout.horizontalDockRailLength(
                 sessionCount: sessions.count,
                 isAddSlotExpanded: isAddSlotExpanded,
-                metrics: metrics
+                metrics: metrics,
+                includesFullscreenControl: PickyFullscreenFeatureFlags.isEnabled
             )
         }
-        return PickyHUDDockLayout.dockRailHeight(
+        let base = PickyHUDDockLayout.dockRailHeight(
             sessionCount: sessions.count,
             isAddSlotExpanded: isAddSlotExpanded,
             metrics: metrics
-        ) + PickyHUDDockLayout.fullscreenDockControlLength(metrics: metrics)
+        )
+        guard PickyFullscreenFeatureFlags.isEnabled else { return base }
+        return base + PickyHUDDockLayout.fullscreenDockControlLength(metrics: metrics)
     }
 
     private var fullscreenButton: some View {

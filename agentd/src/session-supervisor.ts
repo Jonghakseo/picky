@@ -1976,6 +1976,7 @@ export class SessionSupervisor extends EventEmitter {
         sessionFilePath,
         (entries) => this.handleTerminalTailEntries(sessionId, entries),
         (error) => logAgentd("terminal tail error", { sessionId, error: error instanceof Error ? error.message : String(error) }),
+        { onTruncate: () => this.handleTerminalTailTruncation(sessionId, sessionFilePath) },
       );
       try {
         await watcher.start();
@@ -1991,6 +1992,29 @@ export class SessionSupervisor extends EventEmitter {
     this.terminalTailWatchers.delete(sessionId);
     await watcher.stop().catch(() => undefined);
     logAgentd("terminal tail stopped", { sessionId });
+  }
+
+  /**
+   * Invoked by `PiSessionTailWatcher` when the watched JSONL shrinks below its cursor, which
+   * Pi triggers when `pi --session` / `/compact` rewrites the transcript from a TUI overlay
+   * the user opened on top of an active Picky session. The in-memory `runtime.session` bound
+   * inside our `PiSdkRuntimeSession` is now stale (it still references pre-compaction message
+   * ids and parent chains), so we drop it from `runtimeHandles`. The next user input falls
+   * through `runtimeHandleForUserInput` -> `tryResumeRuntimeHandle`, which calls
+   * `runtime.resume(sessionFilePath, ...)` against the rewritten file and rebinds a fresh
+   * in-memory session. Without this, the next follow-up would be sent to the LLM with the
+   * pre-TUI context AND Pi SDK would append the response with a stale `parentId`, orphaning
+   * the compaction summary fork when the user reopens the TUI.
+   *
+   * We deliberately do NOT call `handle.abort()`: the tail watcher is only active while the
+   * TUI overlay is open, the HUD runtime is idle in that window, and `abort()` would emit a
+   * user-visible "Cancelled" status that the user did not request. The orphaned handle is
+   * left to be garbage-collected.
+   */
+  private handleTerminalTailTruncation(sessionId: string, sessionFilePath: string): void {
+    if (!this.runtimeHandles.has(sessionId)) return;
+    this.runtimeHandles.delete(sessionId);
+    logAgentd("terminal tail invalidated runtime handle after pi session rewrite", { sessionId, sessionFilePath });
   }
 
   private async handleTerminalTailEntries(sessionId: string, entries: PiSessionTailEntry[]): Promise<void> {

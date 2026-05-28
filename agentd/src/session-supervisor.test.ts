@@ -1,4 +1,4 @@
-import { appendFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -5225,6 +5225,71 @@ describe("SessionSupervisor", () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(supervisor.get("terminal-tail-cancelled")?.status).toBe("cancelled");
     await supervisor.setTerminalSessionTailEnabled("terminal-tail-cancelled", false);
+  });
+
+  it("invalidates the attached runtime handle when the tailed Pi JSONL is rewritten so the next user input re-resumes from disk", async () => {
+    // Regression: opening the Pi TUI overlay and running /compact rewrites the JSONL while
+    // the agentd's in-memory Pi runtime still holds pre-compaction message ids and parent
+    // chains. Without invalidation, the next HUD follow-up would be sent to the LLM with the
+    // stale pre-TUI context AND Pi SDK would append the answer with a stale `parentId`,
+    // orphaning the compaction summary fork when the user reopens the TUI. The tail watcher
+    // must therefore signal the supervisor on truncation and the supervisor must drop the
+    // handle so `runtimeHandleForUserInput` falls through to `tryResumeRuntimeHandle`.
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-tail-truncate-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    await writeFile(piSessionFile, [
+      JSON.stringify({ type: "session", version: 3, id: "pi-session", timestamp: "2026-05-01T00:00:00.000Z", cwd: "/tmp/project" }),
+      JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-05-01T00:00:01.000Z", message: { role: "user", content: "prior prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-05-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "prior answer" }], timestamp: 0, stopReason: "stop" } }),
+      "",
+    ].join("\n"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "terminal-tail-truncate",
+      title: "Terminal tail truncate",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "prior answer",
+      finalAnswer: "prior answer",
+      logs: [`pi session: ${piSessionFile}`],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [],
+    });
+
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+
+    // First follow-up resumes from disk because the daemon just started; this attaches the
+    // in-memory handle that the truncation must invalidate.
+    await supervisor.followUp("terminal-tail-truncate", "before TUI follow-up");
+    expect(runtime.resumeCalls).toHaveLength(1);
+
+    await supervisor.setTerminalSessionTailEnabled("terminal-tail-truncate", true);
+
+    // Simulate `pi --session ... /compact` rewriting the JSONL from the TUI process.
+    await truncate(piSessionFile, 0);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await writeFile(piSessionFile, [
+      JSON.stringify({ type: "session", version: 3, id: "pi-session", timestamp: "2026-05-01T00:00:30.000Z", cwd: "/tmp/project" }),
+      JSON.stringify({ type: "message", id: "compact-u", parentId: null, timestamp: "2026-05-01T00:00:31.000Z", message: { role: "user", content: "please compact", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "compact-a", parentId: "compact-u", timestamp: "2026-05-01T00:00:32.000Z", message: { role: "assistant", content: [{ type: "text", text: "compacted summary" }], timestamp: 0, stopReason: "stop" } }),
+      "",
+    ].join("\n"));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    await supervisor.setTerminalSessionTailEnabled("terminal-tail-truncate", false);
+
+    // After the overlay closes, the next follow-up must re-resume from disk so the runtime
+    // sees the post-compaction transcript instead of the cached pre-compaction state.
+    await supervisor.followUp("terminal-tail-truncate", "after TUI follow-up");
+
+    expect(runtime.resumeCalls).toHaveLength(2);
+    expect(runtime.resumeCalls[1]).toEqual({ sessionFilePath: piSessionFile, cwd: "/tmp/project", sessionId: "terminal-tail-truncate" });
   });
 
   it("preserves persisted messages on daemon restart", async () => {

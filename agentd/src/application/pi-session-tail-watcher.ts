@@ -12,6 +12,13 @@ export interface PiSessionTailEntry {
 export interface PiSessionTailWatcherOptions {
   /** Where to start reading from. Defaults to `"eof"` so existing transcript isn't replayed as fake transitions. */
   startAt?: "eof" | "beginning";
+  /**
+   * Fired when the watched file shrinks below the current cursor, which Pi triggers when a
+   * `pi --session` TUI / `/compact` rewrites the JSONL. Used by the supervisor to invalidate
+   * the in-memory Pi runtime handle so the next user input re-resumes from the (now
+   * post-compaction) on-disk transcript instead of replaying the stale pre-compaction context.
+   */
+  onTruncate?: () => void | Promise<void>;
 }
 
 /**
@@ -93,6 +100,17 @@ export class PiSessionTailWatcher {
       this.cursor = size;
       this.buffer = "";
       this.suppressNextEmit = true;
+      // Notify the host (supervisor) so it can invalidate any in-memory runtime
+      // bound to the pre-rewrite state. Failures are routed to `onError` so the
+      // tail loop itself never tears down on a flaky callback.
+      const onTruncate = this.options.onTruncate;
+      if (onTruncate) {
+        try {
+          await onTruncate();
+        } catch (error) {
+          this.onError(error);
+        }
+      }
       return;
     }
     if (size === this.cursor) return;

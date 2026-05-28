@@ -298,7 +298,8 @@ enum PickyHUDDockLayout {
     static func horizontalDockRailLength(
         sessionCount: Int,
         isAddSlotExpanded: Bool,
-        metrics: PickyHUDDockMetrics = .medium
+        metrics: PickyHUDDockMetrics = .medium,
+        includesFullscreenControl: Bool = true
     ) -> CGFloat {
         let sessionsAndSlot: CGFloat = {
             guard sessionCount > 0 else { return metrics.addSlotButtonSide }
@@ -310,10 +311,11 @@ enum PickyHUDDockLayout {
                 + 2
                 + addSlotFrameHeight(isExpanded: isAddSlotExpanded, metrics: metrics)
         }()
+        let fullscreenLength = includesFullscreenControl ? fullscreenDockControlLength(metrics: metrics) : 0
         return metrics.topPadding
             + metrics.handleAreaHeight
             + 2
-            + fullscreenDockControlLength(metrics: metrics)
+            + fullscreenLength
             + sessionsAndSlot
             + metrics.topPadding
     }

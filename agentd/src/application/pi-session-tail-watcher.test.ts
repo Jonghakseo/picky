@@ -24,7 +24,10 @@ describe("PiSessionTailWatcher", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  async function startWatcher(initial: string, options?: { startAt?: "eof" | "beginning" }): Promise<void> {
+  async function startWatcher(
+    initial: string,
+    options?: { startAt?: "eof" | "beginning"; onTruncate?: () => void | Promise<void> },
+  ): Promise<void> {
     await writeFile(filePath, initial, "utf8");
     watcher = new PiSessionTailWatcher(
       filePath,
@@ -110,6 +113,35 @@ describe("PiSessionTailWatcher", () => {
     expect(entries.length).toBe(1);
 
     // Subsequent appends should be emitted normally.
+    await appendFile(filePath, line({ id: "post-trunc", message: { role: "user" } }));
+    await waitForBatches(2);
+    expect(entries[1].map((entry) => entry.id)).toEqual(["post-trunc"]);
+  });
+
+  it("invokes onTruncate when the file shrinks below the cursor", async () => {
+    const truncations: number[] = [];
+    await startWatcher("", { onTruncate: () => { truncations.push(Date.now()); } });
+    await appendFile(filePath, line({ id: "before-trunc", message: { role: "user" } }));
+    await waitForBatches(1);
+    await truncate(filePath, 0);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await writeFile(filePath, line({ id: "rewritten", message: { role: "assistant" } }));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(truncations.length).toBeGreaterThanOrEqual(1);
+    expect(errors).toEqual([]);
+  });
+
+  it("routes onTruncate failures to onError without tearing down the tail", async () => {
+    const boom = new Error("onTruncate exploded");
+    await startWatcher("", { onTruncate: () => { throw boom; } });
+    await appendFile(filePath, line({ id: "u1", message: { role: "user" } }));
+    await waitForBatches(1);
+    await truncate(filePath, 0);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await writeFile(filePath, line({ id: "rewritten", message: { role: "assistant" } }));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(errors).toContain(boom);
+    // Tail still works after the callback throws.
     await appendFile(filePath, line({ id: "post-trunc", message: { role: "user" } }));
     await waitForBatches(2);
     expect(entries[1].map((entry) => entry.id)).toEqual(["post-trunc"]);

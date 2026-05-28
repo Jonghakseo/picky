@@ -202,7 +202,10 @@ if [[ "${SKIP_LAUNCH}" == "1" ]]; then
 fi
 
 echo "🚀 Launching ${PACKAGED_APP}"
-/usr/bin/open "${PACKAGED_APP}"
+# Inject feature gates that should only be active for local dev launches.
+# `open --env KEY=VALUE` is the supported macOS path for passing environment
+# variables to GUI apps (LaunchServices otherwise strips the parent shell env).
+/usr/bin/open --env PICKY_FULLSCREEN_ENABLED=1 "${PACKAGED_APP}"
 sleep 1
 
 if /usr/bin/pgrep -x "${APP_NAME}" >/dev/null 2>&1; then

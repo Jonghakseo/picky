@@ -20,7 +20,7 @@ struct PickyFullscreenTurnView: View {
             if let userMessage = turn.userMessage {
                 PickyUserBubbleView(
                     message: userMessage,
-                    onOpenAsReport: openMessageReportAction(for: userMessage),
+                    onOpenAsReport: nil,
                     onCopyText: { viewModel.copyMessageText($0) },
                     onEditText: { viewModel.replaceComposerDraftText($0, sessionID: session.id) }
                 )
@@ -78,7 +78,6 @@ struct PickyFullscreenTurnView: View {
         case .agentText:
             PickyFullscreenAgentMessageView(
                 message: message,
-                onOpenAsReport: openMessageReportAction(for: message),
                 onCopyText: { viewModel.copyMessageText($0) }
             )
         case .agentActivity:
@@ -107,7 +106,7 @@ struct PickyFullscreenTurnView: View {
         case .userText, .commandReceipt:
             PickyUserBubbleView(
                 message: message,
-                onOpenAsReport: openMessageReportAction(for: message),
+                onOpenAsReport: nil,
                 onCopyText: { viewModel.copyMessageText($0) },
                 onEditText: { viewModel.replaceComposerDraftText($0, sessionID: session.id) }
             )
@@ -127,19 +126,12 @@ struct PickyFullscreenTurnView: View {
         } else if message.notifyType != nil {
             PickyNotifyBubbleView(
                 message: message,
-                onOpenAsReport: openMessageReportAction(for: message)
+                onOpenAsReport: nil
             )
         }
     }
 
-    private func openMessageReportAction(for message: PickySessionMessage) -> (() -> Void)? {
-        guard message.openAsReportMarkdown != nil else { return nil }
-        let sessionID = session.id
-        let messageID = message.id
-        return { [weak viewModel] in
-            Task { try? await viewModel?.openReport(sessionID: sessionID, messageID: messageID) }
-        }
-    }
+
 
     private func retryRuntimeRaceAction(for message: PickySessionMessage) -> (() -> Void)? {
         guard PickyErrorBubbleView.isRecoverableRuntimeRace(errorMessage: message.errorMessage) else { return nil }
@@ -216,7 +208,6 @@ private struct PickyFullscreenWorkSummaryView: View {
 
 private struct PickyFullscreenAgentMessageView: View {
     let message: PickySessionMessage
-    var onOpenAsReport: (() -> Void)? = nil
     var onCopyText: ((String) -> Void)? = nil
 
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
@@ -227,7 +218,7 @@ private struct PickyFullscreenAgentMessageView: View {
                 markdown: displayText,
                 maxBubbleWidth: bubbleMaxWidth,
                 showsShortcutBadge: false,
-                onOpenAsReport: onOpenAsReport,
+                onOpenAsReport: nil,
                 onCopyText: copyTextAction
             )
             .frame(width: bubbleMaxWidth, alignment: .leading)

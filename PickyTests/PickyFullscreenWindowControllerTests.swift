@@ -22,11 +22,16 @@ struct PickyFullscreenWindowControllerTests {
         #expect(window.styleMask.contains(.fullSizeContentView))
     }
 
-    @Test func fullscreenWindowRetainsInjectedAppearanceStore() {
+    @Test func fullscreenWindowRetainsInjectedAppearanceAndFontScaleStores() {
         let appearanceStore = PickyAppearanceStore()
-        let controller = makeController(appearanceStore: appearanceStore) { _ in }
+        let fontScaleStore = PickyAppFontScaleStore()
+        let controller = makeController(
+            appearanceStore: appearanceStore,
+            fontScaleStore: fontScaleStore
+        ) { _ in }
 
         #expect(controller.appearanceStore === appearanceStore)
+        #expect(controller.fontScaleStore === fontScaleStore)
     }
 
     @Test func closeCallbackRunsAfterHostedWindowTeardown() async throws {
@@ -69,9 +74,11 @@ struct PickyFullscreenWindowControllerTests {
 
     private func makeController(
         appearanceStore: PickyAppearanceStore? = nil,
+        fontScaleStore: PickyAppFontScaleStore? = nil,
         onClose: @escaping @MainActor (PickyFullscreenWindowController) -> Void
     ) -> PickyFullscreenWindowController {
         let injectedAppearanceStore = appearanceStore ?? PickyAppearanceStore()
+        let injectedFontScaleStore = fontScaleStore ?? PickyAppFontScaleStore()
         return PickyFullscreenWindowController(
             viewModel: PickySessionListViewModel(
                 client: StubFullscreenWindowAgentClient(),
@@ -79,6 +86,7 @@ struct PickyFullscreenWindowControllerTests {
             ),
             stateStore: PickyFullscreenStateStore(defaults: makeDefaults()),
             appearanceStore: injectedAppearanceStore,
+            fontScaleStore: injectedFontScaleStore,
             onClose: onClose
         )
     }

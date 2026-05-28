@@ -15,11 +15,11 @@ struct PickyFullscreenChangedFilesCardView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 7) {
                     Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 12, weight: .semibold))
+                        .pickyFont(size: 12, weight: .semibold)
                     Text("세션 변경 파일")
-                        .font(.system(size: 13, weight: .semibold))
+                        .pickyFont(size: 13, weight: .semibold)
                     Text("\(changedFiles.count)")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .pickyFont(size: 11, weight: .bold, design: .monospaced)
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 0)
                 }
@@ -30,7 +30,7 @@ struct PickyFullscreenChangedFilesCardView: View {
                     }
                     if changedFiles.count > Self.maxVisibleFiles {
                         Text("+ \(changedFiles.count - Self.maxVisibleFiles) more session files")
-                            .font(.system(size: 11.5, weight: .medium))
+                            .pickyFont(size: 11.5, weight: .medium)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -54,17 +54,17 @@ struct PickyFullscreenChangedFilesCardView: View {
     private func changedFileRow(_ file: PickyChangedFile) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(file.status.uppercased())
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .pickyFont(size: 10, weight: .bold, design: .monospaced)
                 .foregroundStyle(statusColor(for: file.status))
                 .frame(minWidth: 18, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.path)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .pickyFont(size: 12, weight: .medium, design: .monospaced)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if let summary = file.summary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
                     Text(summary)
-                        .font(.system(size: 11.5))
+                        .pickyFont(size: 11.5)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }

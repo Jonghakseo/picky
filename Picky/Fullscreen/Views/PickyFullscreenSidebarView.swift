@@ -53,7 +53,7 @@ struct PickyFullscreenSidebarView: View {
                 isRecentPickleFolderPickerPresented = true
             } label: {
                 Label(isCreatingPickle ? "Starting Pickle…" : "New Pickle", systemImage: "plus")
-                    .font(.system(size: 13, weight: .semibold))
+                    .pickyFont(size: 13, weight: .semibold)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
@@ -86,9 +86,9 @@ struct PickyFullscreenSidebarView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Pickles")
-                .font(.system(size: 16, weight: .semibold))
+                .pickyFont(size: 16, weight: .semibold)
             Text("\(sessions.count) active sessions")
-                .font(.system(size: 12))
+                .pickyFont(size: 12)
                 .foregroundStyle(.secondary)
         }
     }
@@ -96,12 +96,12 @@ struct PickyFullscreenSidebarView: View {
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 8) {
             Image(systemName: "tray")
-                .font(.system(size: 18, weight: .medium))
+                .pickyFont(size: 18, weight: .medium)
                 .foregroundStyle(.secondary)
             Text("No active Pickles")
-                .font(.system(size: 13, weight: .semibold))
+                .pickyFont(size: 13, weight: .semibold)
             Text("Start a new Pickle from this workspace to begin.")
-                .font(.system(size: 12))
+                .pickyFont(size: 12)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -129,13 +129,13 @@ private struct PickyFullscreenSidebarRow: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(session.title)
-                        .font(.system(size: 13.5, weight: .semibold))
+                        .pickyFont(size: 13.5, weight: .semibold)
                         .foregroundStyle(.primary)
                         .lineLimit(2)
 
                     if let cwd = session.compactCwdDescription {
                         Text(cwd)
-                            .font(.system(size: 11.5))
+                            .pickyFont(size: 11.5)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -146,12 +146,12 @@ private struct PickyFullscreenSidebarRow: View {
 
             HStack(spacing: 6) {
                 Text(session.status.fullscreenDisplayText)
-                    .font(.system(size: 11, weight: .medium))
+                    .pickyFont(size: 11, weight: .medium)
                     .foregroundStyle(session.status.fullscreenForegroundStyle)
                 Text("•")
                     .foregroundStyle(.tertiary)
                 Text("Updated \(session.elapsedSinceUpdate()) ago")
-                    .font(.system(size: 11))
+                    .pickyFont(size: 11)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }

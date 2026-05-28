@@ -35,13 +35,13 @@ struct PickyFullscreenWorkInfoPanelView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Text("작업 정보")
-                    .font(.system(size: 16, weight: .semibold))
+                    .pickyFont(size: 16, weight: .semibold)
                 Spacer(minLength: 0)
                 Button {
                     isVisible = false
                 } label: {
                     Image(systemName: "sidebar.right")
-                        .font(.system(size: 13, weight: .semibold))
+                        .pickyFont(size: 13, weight: .semibold)
                 }
                 .buttonStyle(.borderless)
                 .help("작업 정보 숨기기")
@@ -80,7 +80,7 @@ struct PickyFullscreenWorkInfoPanelView: View {
                 isVisible = true
             } label: {
                 Image(systemName: "sidebar.right")
-                    .font(.system(size: 14, weight: .semibold))
+                    .pickyFont(size: 14, weight: .semibold)
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.borderless)
@@ -88,7 +88,7 @@ struct PickyFullscreenWorkInfoPanelView: View {
             .accessibilityLabel("작업 정보 패널 보기")
 
             Text("작업 정보")
-                .font(.system(size: 11, weight: .semibold))
+                .pickyFont(size: 11, weight: .semibold)
                 .foregroundStyle(.secondary)
                 .rotationEffect(.degrees(90))
                 .fixedSize()
@@ -103,12 +103,12 @@ struct PickyFullscreenWorkInfoPanelView: View {
     private var emptySelection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Image(systemName: "info.circle")
-                .font(.system(size: 18, weight: .medium))
+                .pickyFont(size: 18, weight: .medium)
                 .foregroundStyle(.secondary)
             Text("Pickle을 선택하세요")
-                .font(.system(size: 13, weight: .semibold))
+                .pickyFont(size: 13, weight: .semibold)
             Text("선택한 Pickle의 상태, 런타임, 도구, 산출물 정보가 여기에 표시됩니다.")
-                .font(.system(size: 12))
+                .pickyFont(size: 12)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -188,22 +188,22 @@ struct PickyFullscreenWorkInfoPanelView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(tool.name)
-                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                .pickyFont(size: 12, weight: .semibold, design: .monospaced)
                                 .lineLimit(1)
                             Spacer(minLength: 0)
                             Text(tool.status)
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .pickyFont(size: 10, weight: .bold, design: .monospaced)
                                 .foregroundStyle(statusColor(for: tool.status))
                         }
                         if let preview = nonEmpty(tool.preview) {
                             Text(preview)
-                                .font(.system(size: 11.5))
+                                .pickyFont(size: 11.5)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
                         }
                         if let startedAt = tool.startedAt {
                             Text(toolTimeText(startedAt: startedAt, endedAt: tool.endedAt))
-                                .font(.system(size: 10.5))
+                                .pickyFont(size: 10.5)
                                 .foregroundStyle(.tertiary)
                         }
                     }
@@ -222,16 +222,16 @@ struct PickyFullscreenWorkInfoPanelView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(file.status.uppercased())
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .pickyFont(size: 10, weight: .bold, design: .monospaced)
                                 .foregroundStyle(changedFileColor(for: file.status))
                             Text(file.path)
-                                .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                                .pickyFont(size: 11.5, weight: .medium, design: .monospaced)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }
                         if let summary = nonEmpty(file.summary) {
                             Text(summary)
-                                .font(.system(size: 11.5))
+                                .pickyFont(size: 11.5)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
                         }
@@ -254,27 +254,27 @@ struct PickyFullscreenWorkInfoPanelView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(artifact.kind)
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .pickyFont(size: 10, weight: .bold, design: .monospaced)
                                 .foregroundStyle(.secondary)
                             Text(artifact.title)
-                                .font(.system(size: 12, weight: .semibold))
+                                .pickyFont(size: 12, weight: .semibold)
                                 .lineLimit(1)
                         }
                         if let url = artifact.url {
                             Text(url.absoluteString)
-                                .font(.system(size: 11, design: .monospaced))
+                                .pickyFont(size: 11, design: .monospaced)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         } else if let path = nonEmpty(artifact.path) {
                             Text(path)
-                                .font(.system(size: 11, design: .monospaced))
+                                .pickyFont(size: 11, design: .monospaced)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }
                         Text("업데이트 \(formatDate(artifact.updatedAt))")
-                            .font(.system(size: 10.5))
+                            .pickyFont(size: 10.5)
                             .foregroundStyle(.tertiary)
                     }
                     .padding(.vertical, 2)
@@ -307,7 +307,7 @@ struct PickyFullscreenWorkInfoPanelView: View {
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .pickyFont(size: 12, weight: .semibold)
                 .foregroundStyle(.primary)
             VStack(alignment: .leading, spacing: 6) {
                 content()
@@ -324,11 +324,11 @@ struct PickyFullscreenWorkInfoPanelView: View {
     private func infoRow(_ label: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(label)
-                .font(.system(size: 11.5))
+                .pickyFont(size: 11.5)
                 .foregroundStyle(.secondary)
                 .frame(width: 78, alignment: .leading)
             Text(value)
-                .font(.system(size: 11.5, weight: .medium))
+                .pickyFont(size: 11.5, weight: .medium)
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -344,7 +344,7 @@ struct PickyFullscreenWorkInfoPanelView: View {
 
     private func emptyText(_ value: String) -> some View {
         Text(value)
-            .font(.system(size: 11.5))
+            .pickyFont(size: 11.5)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }

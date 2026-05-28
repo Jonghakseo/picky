@@ -109,20 +109,20 @@ struct PickyFullscreenConversationPaneView: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(session?.title ?? "Conversation")
-                    .font(.system(size: 18, weight: .semibold))
+                    .pickyFont(size: 18, weight: .semibold)
                     .lineLimit(1)
                 HStack(spacing: 8) {
                     if let session {
                         statusPill(for: session.status)
                         if let runText = PickyFullscreenAssistantRunResolver.effectiveAssistantRun(for: session)?.displayText {
                             Text(runText)
-                                .font(.system(size: 12, weight: .medium))
+                                .pickyFont(size: 12, weight: .medium)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
                     } else {
                         Text("Select a Pickle to inspect the conversation.")
-                            .font(.system(size: 12))
+                            .pickyFont(size: 12)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -136,12 +136,12 @@ struct PickyFullscreenConversationPaneView: View {
     private var noSelectionView: some View {
         VStack(spacing: 10) {
             Image(systemName: "sidebar.left")
-                .font(.system(size: 30, weight: .medium))
+                .pickyFont(size: 30, weight: .medium)
                 .foregroundStyle(.secondary)
             Text("Select a Pickle")
-                .font(.system(size: 16, weight: .semibold))
+                .pickyFont(size: 16, weight: .semibold)
             Text("Choose an active Pickle from the sidebar to read its LLM conversation.")
-                .font(.system(size: 13))
+                .pickyFont(size: 13)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -153,7 +153,7 @@ struct PickyFullscreenConversationPaneView: View {
 
     private func statusPill(for status: PickySessionStatus) -> some View {
         Text(status.fullscreenConversationDisplayText)
-            .font(.system(size: 11, weight: .semibold))
+            .pickyFont(size: 11, weight: .semibold)
             .foregroundStyle(status.fullscreenConversationColor)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)

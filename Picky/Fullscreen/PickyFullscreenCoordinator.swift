@@ -12,6 +12,7 @@ final class PickyFullscreenCoordinator: NSObject {
     private let viewModel: PickySessionListViewModel
     private let stateStore: PickyFullscreenStateStore
     private let appearanceStore: PickyAppearanceStore
+    private let fontScaleStore: PickyAppFontScaleStore
     private let onDidClose: @MainActor () -> Void
     private var windowController: PickyFullscreenWindowController?
 
@@ -19,11 +20,13 @@ final class PickyFullscreenCoordinator: NSObject {
         viewModel: PickySessionListViewModel,
         stateStore: PickyFullscreenStateStore? = nil,
         appearanceStore: PickyAppearanceStore,
+        fontScaleStore: PickyAppFontScaleStore,
         onDidClose: @escaping @MainActor () -> Void = { }
     ) {
         self.viewModel = viewModel
         self.stateStore = stateStore ?? PickyFullscreenStateStore()
         self.appearanceStore = appearanceStore
+        self.fontScaleStore = fontScaleStore
         self.onDidClose = onDidClose
         super.init()
     }
@@ -49,6 +52,7 @@ final class PickyFullscreenCoordinator: NSObject {
             viewModel: viewModel,
             stateStore: stateStore,
             appearanceStore: appearanceStore,
+            fontScaleStore: fontScaleStore,
             onClose: { [weak self] closedController in
                 self?.windowDidClose(closedController)
             }

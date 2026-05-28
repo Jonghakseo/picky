@@ -85,12 +85,12 @@ struct PickyFullscreenConversationListView: View {
     private var emptyConversation: some View {
         VStack(alignment: .center, spacing: 10) {
             Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 28, weight: .medium))
+                .pickyFont(size: 28, weight: .medium)
                 .foregroundStyle(.secondary)
             Text("No conversation yet")
-                .font(.system(size: 16, weight: .semibold))
+                .pickyFont(size: 16, weight: .semibold)
             Text("This Pickle has not recorded any chat messages yet.")
-                .font(.system(size: 13))
+                .pickyFont(size: 13)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, minHeight: 260)

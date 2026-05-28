@@ -136,6 +136,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private lazy var fullscreenCoordinator = PickyFullscreenCoordinator(
         viewModel: hudSessionViewModel,
         appearanceStore: appearanceStore,
+        fontScaleStore: fontScaleStore,
         onDidClose: { [weak self] in
             self?.restoreHUDAfterFullscreenClose()
         }

@@ -1236,6 +1236,36 @@ struct PickySessionViewModelTests {
         #expect(dockCenterX == visibleFrame.maxX - PickyHUDDockLayout.screenMargin - (dockLength / 2))
     }
 
+    @Test func hudDockHorizontalPanelWidthAndClampReserveFullscreenControl() throws {
+        let metrics = PickyHUDDockMetrics(preset: .medium)
+        let visibleFrame = CGRect(x: 100, y: 80, width: 1200, height: 800)
+        let sessionCount = PickyHUDDockLayout.visibleSessionLimit
+        let railLength = PickyHUDDockLayout.horizontalDockRailLength(
+            sessionCount: sessionCount,
+            isAddSlotExpanded: false,
+            metrics: metrics
+        )
+        let panelWidth = PickyHUDDockLayout.panelWidth(
+            cardWidth: 1,
+            dockSide: .top,
+            sessionCount: sessionCount,
+            isAddSlotExpanded: false,
+            metrics: metrics
+        )
+        let expectedVisibleRailWidth = railLength + (PickyHUDDockLayout.miniPreviewHorizontalReserve(metrics: metrics) * 2)
+
+        #expect(railLength >= PickyHUDDockLayout.fullscreenDockControlLength(metrics: metrics))
+        #expect(panelWidth == expectedVisibleRailWidth + (PickyHUDExpansion.dockShadowHorizontalPadding * 2))
+
+        let clampedRight = PickyHUDDockLayout.clampedHorizontalXOffset(
+            10_000,
+            visibleFrame: visibleFrame,
+            panelWidth: panelWidth,
+            dockRailLength: railLength
+        )
+        #expect(visibleFrame.midX + clampedRight == visibleFrame.maxX - PickyHUDDockLayout.screenMargin - (railLength / 2))
+    }
+
     @Test func hudDockHorizontalSideUsesFortySixtySnapHysteresis() throws {
         let visibleFrame = CGRect(x: 100, y: 80, width: 1200, height: 800)
         let snapBottomY = visibleFrame.minY + visibleFrame.height * PickyHUDDockLayout.dockSideSnapBottomThreshold

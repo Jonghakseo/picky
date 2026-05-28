@@ -416,7 +416,7 @@ struct PickyHUDView: View {
                         sessionCount: visibleSessions.count,
                         isAddSlotExpanded: isDockAddSlotExpanded,
                         metrics: dockMetrics
-                    ) + PickyHUDFullscreenDockControl.length(metrics: dockMetrics)
+                    )
                     : dockMetrics.railWidth,
                 height: placement.dockSide.orientation == .horizontal ? dockMetrics.railWidth : nil
             )
@@ -1382,16 +1382,6 @@ private extension PickySessionListViewModel.SessionCard {
     }
 }
 
-private enum PickyHUDFullscreenDockControl {
-    static func side(metrics: PickyHUDDockMetrics) -> CGFloat {
-        max(22, metrics.addSlotButtonSide * 0.62)
-    }
-
-    static func length(metrics: PickyHUDDockMetrics) -> CGFloat {
-        side(metrics: metrics) + 2
-    }
-}
-
 private struct PickyHUDDockRailView: View {
     let sessions: [PickySessionListViewModel.SessionCard]
     let activeSessionID: String?
@@ -1484,13 +1474,13 @@ private struct PickyHUDDockRailView: View {
                 sessionCount: sessions.count,
                 isAddSlotExpanded: isAddSlotExpanded,
                 metrics: metrics
-            ) + PickyHUDFullscreenDockControl.length(metrics: metrics)
+            )
         }
         return PickyHUDDockLayout.dockRailHeight(
             sessionCount: sessions.count,
             isAddSlotExpanded: isAddSlotExpanded,
             metrics: metrics
-        ) + PickyHUDFullscreenDockControl.length(metrics: metrics)
+        ) + PickyHUDDockLayout.fullscreenDockControlLength(metrics: metrics)
     }
 
     private var fullscreenButton: some View {
@@ -1506,7 +1496,7 @@ private struct PickyHUDDockRailView: View {
                     .font(.system(size: max(10, 12 * metrics.scale), weight: .semibold))
                     .foregroundColor(DS.Colors.accent)
             }
-            .frame(width: PickyHUDFullscreenDockControl.side(metrics: metrics), height: PickyHUDFullscreenDockControl.side(metrics: metrics))
+            .frame(width: PickyHUDDockLayout.fullscreenDockControlSide(metrics: metrics), height: PickyHUDDockLayout.fullscreenDockControlSide(metrics: metrics))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

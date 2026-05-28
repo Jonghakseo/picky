@@ -252,6 +252,14 @@ enum PickyHUDDockLayout {
     static let addSlotButtonSide: CGFloat = 36
     static let collapsedAddSlotVisualHeight: CGFloat = 14
 
+    static func fullscreenDockControlSide(metrics: PickyHUDDockMetrics = .medium) -> CGFloat {
+        max(22, metrics.addSlotButtonSide * 0.62)
+    }
+
+    static func fullscreenDockControlLength(metrics: PickyHUDDockMetrics = .medium) -> CGFloat {
+        fullscreenDockControlSide(metrics: metrics) + 2
+    }
+
     static var addSlotCollapsedExpansionReserve: CGFloat {
         PickyHUDDockMetrics.medium.addSlotCollapsedExpansionReserve
     }
@@ -284,7 +292,9 @@ enum PickyHUDDockLayout {
     /// `bottomPadding`) and drops `addSlotTopPadding` between the last
     /// session and the collapsed `+` slot — horizontal needs less internal
     /// breathing room than vertical because the dock is short on the cross
-    /// axis and any extra padding reads as wasted space.
+    /// axis and any extra padding reads as wasted space. Includes the
+    /// fullscreen workspace control so the owning NSPanel width and drag clamp
+    /// match the rail actually rendered by `PickyHUDDockRailView`.
     static func horizontalDockRailLength(
         sessionCount: Int,
         isAddSlotExpanded: Bool,
@@ -303,6 +313,7 @@ enum PickyHUDDockLayout {
         return metrics.topPadding
             + metrics.handleAreaHeight
             + 2
+            + fullscreenDockControlLength(metrics: metrics)
             + sessionsAndSlot
             + metrics.topPadding
     }

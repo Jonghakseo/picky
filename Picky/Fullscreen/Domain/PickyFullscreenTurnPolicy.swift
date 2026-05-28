@@ -51,11 +51,8 @@ enum PickyFullscreenTurnPolicy {
     }
 
     static func completedTurnBodyMessages(from messages: [PickySessionMessage]) -> [PickySessionMessage] {
-        if let lastAgentText = messages.last(where: { $0.kind == .agentText }) {
-            return [lastAgentText]
-        }
-        if let lastAgentError = messages.last(where: { $0.kind == .agentError }) {
-            return [lastAgentError]
+        if let finalOutput = messages.last(where: { $0.kind == .agentText || $0.kind == .agentError }) {
+            return [finalOutput]
         }
         return []
     }

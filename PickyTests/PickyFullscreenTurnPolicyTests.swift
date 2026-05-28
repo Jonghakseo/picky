@@ -46,6 +46,58 @@ struct PickyFullscreenTurnPolicyTests {
         #expect(model.bodyMessages.map(\.id) == ["error-2"])
     }
 
+    @Test func completedTurnShowsAgentErrorWhenItFollowsAgentText() {
+        let group = PickyTurnGroup(
+            id: "turn-1",
+            userMessage: msg("u1", kind: .userText),
+            bodyMessages: [
+                msg("thinking", kind: .agentThinking, text: "working"),
+                msg("partial", kind: .agentText, text: "partial answer"),
+                msg("activity", kind: .agentActivity, activitySnapshot: PickyActivitySummary(bash: 1)),
+                msg("error", kind: .agentError, errorMessage: "terminal failure")
+            ],
+            isCurrent: false
+        )
+
+        let model = PickyFullscreenTurnPolicy.renderModel(from: group)
+
+        #expect(model.bodyMessages.map(\.id) == ["error"])
+    }
+
+    @Test func completedTurnShowsAgentTextWhenItFollowsAgentError() {
+        let group = PickyTurnGroup(
+            id: "turn-1",
+            userMessage: msg("u1", kind: .userText),
+            bodyMessages: [
+                msg("error", kind: .agentError, errorMessage: "recoverable failure"),
+                msg("activity", kind: .agentActivity, activitySnapshot: PickyActivitySummary(read: 1)),
+                msg("final", kind: .agentText, text: "recovered final answer")
+            ],
+            isCurrent: false
+        )
+
+        let model = PickyFullscreenTurnPolicy.renderModel(from: group)
+
+        #expect(model.bodyMessages.map(\.id) == ["final"])
+    }
+
+    @Test func completedTurnStillHidesThinkingAndActivityWhenFinalOutputExists() {
+        let group = PickyTurnGroup(
+            id: "turn-1",
+            userMessage: msg("u1", kind: .userText),
+            bodyMessages: [
+                msg("thinking", kind: .agentThinking, text: "hidden thinking"),
+                msg("activity", kind: .agentActivity, activitySnapshot: PickyActivitySummary(edit: 1)),
+                msg("final", kind: .agentText, text: "final answer")
+            ],
+            isCurrent: false
+        )
+
+        let model = PickyFullscreenTurnPolicy.renderModel(from: group)
+
+        #expect(model.bodyMessages.map(\.id) == ["final"])
+    }
+
     @Test func completedTurnDoesNotUseSystemMessageAsFinalAnswer() {
         let group = PickyTurnGroup(
             id: "turn-1",

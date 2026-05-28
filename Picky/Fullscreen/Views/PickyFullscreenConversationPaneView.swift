@@ -55,6 +55,7 @@ struct PickyFullscreenConversationPaneView: View {
                 isExtendedTerminalOpen: isExtendedTerminalOpen(sessionID: session.id),
                 onToggleExtendedTerminal: { toggleExtendedTerminal(sessionID: session.id) }
             )
+            .id(session.id)
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
             .background(Color(nsColor: .windowBackgroundColor))

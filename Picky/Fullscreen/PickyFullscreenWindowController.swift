@@ -66,16 +66,28 @@ final class PickyFullscreenWindowController: NSWindowController, NSWindowDelegat
     }
 
     func closeWindow() {
+        guard !didReportClose else { return }
         window?.performClose(nil)
     }
 
     func windowWillClose(_ notification: Notification) {
-        reportCloseIfNeeded()
+        reportCloseAfterTeardownIfNeeded()
     }
 
-    private func reportCloseIfNeeded() {
+    private func reportCloseAfterTeardownIfNeeded() {
         guard !didReportClose else { return }
         didReportClose = true
-        onClose(self)
+
+        tearDownHostedWindow()
+
+        Task { @MainActor [self] in
+            onClose(self)
+        }
+    }
+
+    private func tearDownHostedWindow() {
+        window?.delegate = nil
+        window?.contentView = nil
+        window = nil
     }
 }

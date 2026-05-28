@@ -168,10 +168,17 @@ struct PickyFullscreenConversationPaneView: View {
     }
 
     static func responsiveConversationDetailWidth(forColumnWidth columnWidth: CGFloat) -> CGFloat {
-        min(conversationDetailWidthMax, max(0, columnWidth - conversationDividerClearance))
+        let availableWidth = columnWidth
+            - conversationListInnerHorizontalPadding
+            - conversationDividerClearance
+            - conversationUserBubbleOppositeReserve
+        return min(conversationDetailWidthMax, max(conversationDetailWidthMin, availableWidth))
     }
 
     static let conversationDividerClearance: CGFloat = 24
+    static let conversationListInnerHorizontalPadding: CGFloat = 48
+    static let conversationUserBubbleOppositeReserve: CGFloat = PickyConversationBubbleLayout.oppositeSideReserve
+    private static let conversationDetailWidthMin: CGFloat = 260
     private static let conversationDetailWidthMax: CGFloat = 760
 }
 

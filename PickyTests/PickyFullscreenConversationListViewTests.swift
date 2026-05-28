@@ -22,4 +22,16 @@ struct PickyFullscreenConversationListViewTests {
             #expect(detailWidth <= 760)
         }
     }
+
+    @Test func fullscreenDetailWidthAccountsForNarrowCenterColumnInsets() {
+        for columnWidth in [CGFloat(480), 498, 528] {
+            let detailWidth = PickyFullscreenConversationPaneView.responsiveConversationDetailWidth(forColumnWidth: columnWidth)
+            let occupiedWidth = detailWidth
+                + PickyFullscreenConversationPaneView.conversationListInnerHorizontalPadding
+                + PickyFullscreenConversationPaneView.conversationDividerClearance
+                + PickyFullscreenConversationPaneView.conversationUserBubbleOppositeReserve
+
+            #expect(occupiedWidth <= columnWidth)
+        }
+    }
 }

@@ -50,6 +50,8 @@ struct PickyFullscreenWorkspaceSnapshotCapture {
             .init(name: "running", selected: "session-running"),
             .init(name: "waiting", selected: "session-waiting"),
             .init(name: "empty", selected: nil, omitSessions: true),
+            .init(name: "completed-rail", selected: "session-completed", workInfoPanelVisible: false),
+            .init(name: "running-rail", selected: "session-running", workInfoPanelVisible: false),
         ]
 
         for scenario in scenarios {
@@ -71,7 +73,7 @@ struct PickyFullscreenWorkspaceSnapshotCapture {
 
         let stateStore = PickyFullscreenStateStore(defaults: SnapshotIsolatedDefaults.make())
         stateStore.selectedSessionID = scenario.selected
-        stateStore.isWorkInfoPanelVisible = true
+        stateStore.isWorkInfoPanelVisible = scenario.workInfoPanelVisible
 
         let view = PickyFullscreenWorkspaceView(viewModel: viewModel, stateStore: stateStore)
         let hosting = NSHostingView(rootView: view)
@@ -108,6 +110,7 @@ private struct SnapshotScenario {
     let name: String
     let selected: String?
     var omitSessions: Bool = false
+    var workInfoPanelVisible: Bool = true
 }
 
 private enum SnapshotIsolatedDefaults {

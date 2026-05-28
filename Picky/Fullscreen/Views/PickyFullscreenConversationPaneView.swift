@@ -34,7 +34,6 @@ struct PickyFullscreenConversationPaneView: View {
             }
         }
         .frame(minWidth: 480, idealWidth: 760, maxWidth: .infinity, maxHeight: .infinity)
-        .layoutPriority(1)
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("대화")

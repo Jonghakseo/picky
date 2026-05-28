@@ -68,10 +68,11 @@ struct PickyFullscreenWorkInfoPanelView: View {
     private var content: some View {
         if isVisible {
             panel
-                .frame(minWidth: 296, idealWidth: 336, maxWidth: 376, maxHeight: .infinity)
+                .frame(minWidth: 316, idealWidth: 336, maxWidth: 376, maxHeight: .infinity)
         } else {
             collapsedRail
-                .frame(minWidth: 44, idealWidth: 44, maxWidth: 44, maxHeight: .infinity)
+                .frame(width: 56, alignment: .topLeading)
+                .frame(maxHeight: .infinity)
         }
     }
 

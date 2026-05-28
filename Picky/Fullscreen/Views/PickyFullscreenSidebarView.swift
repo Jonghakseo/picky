@@ -78,7 +78,7 @@ struct PickyFullscreenSidebarView: View {
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 20)
-        .frame(minWidth: 236, idealWidth: 276, maxWidth: 296, maxHeight: .infinity, alignment: .topLeading)
+        .frame(minWidth: 256, idealWidth: 276, maxWidth: 296, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .underPageBackgroundColor).opacity(0.72))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Pickle 사이드바")

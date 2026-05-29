@@ -1728,7 +1728,11 @@ private struct PickyHUDDockRailView: View {
                             color: group.color,
                             metrics: metrics
                         ) {
-                            iconView(for: card, slot: slot)
+                            collapsedGroupRepresentativeIcon(
+                                for: card,
+                                slot: slot,
+                                group: group
+                            )
                         }
                     } else {
                         // Group has no visible members — render a small
@@ -1773,6 +1777,49 @@ private struct PickyHUDDockRailView: View {
                 dockSide: dockSide
             )
         }
+    }
+
+    /// Renders the top-member icon as the visible face of a collapsed
+    /// group. Visually identical to a normal Pickle tile (so hover preview,
+    /// unread dot, status flash all still work), but tap/hold callbacks
+    /// are redirected to expand the group instead of opening or archiving
+    /// just the top member — the user is interacting with the group block,
+    /// not the single Pickle peeking out of the stack. Drag is disabled
+    /// because the group header is what reorders the whole block.
+    @ViewBuilder
+    private func collapsedGroupRepresentativeIcon(
+        for session: PickySessionListViewModel.SessionCard,
+        slot: PickyDockSlot,
+        group: PickyDockGroup
+    ) -> some View {
+        PickyHUDDockIconView(
+            session: session,
+            index: slot.visibleIndex,
+            isActive: activeSessionID == session.id,
+            isOpened: false,
+            isPreviewed: previewSessionID == session.id,
+            isScreenContextArmed: false,
+            dockSide: dockSide,
+            shortcutNumber: PickyHUDDockLayout.numberShortcutForSessionIndex(slot.visibleIndex),
+            isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+            shouldFlashCompletion: pendingDoneFlashSessionIDs.contains(session.id),
+            isUnread: unreadSessionIDs.contains(session.id),
+            metrics: metrics,
+            isDragging: false,
+            dragOffset: .zero,
+            onHover: { onHoverSession(session.id) },
+            onOpen: { onToggleDockGroupCollapsed(group.id) },
+            onToggleScreenContextTarget: {},
+            onCompact: {},
+            onArchive: { onToggleDockGroupCollapsed(group.id) },
+            onStop: {},
+            onDoneFlashConsumed: { onDoneFlashConsumed(session.id) },
+            onReorderBegin: {},
+            onReorderChanged: { _ in },
+            onReorderEnded: { _ in },
+            onReorderCanceled: {}
+        )
+        .publishDockSlotCenter(sessionID: session.id, dockSide: dockSide)
     }
 
     @ViewBuilder

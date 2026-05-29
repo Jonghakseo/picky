@@ -164,12 +164,19 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
                     content()
                 }
             } else {
-                HStack(alignment: .top, spacing: 4) {
-                    accentBar
-                        .frame(width: 2)
-                    VStack(alignment: .leading, spacing: 2) {
-                        header
-                        content()
+                // Vertical rail: header chip sits across the full width so
+                // the chevron lives at the same left column as the accent
+                // bar that follows. The bar only renders alongside the
+                // member content, leaving the header row clear of any
+                // vertical line above it.
+                VStack(alignment: .leading, spacing: 2) {
+                    header
+                    HStack(alignment: .top, spacing: 4) {
+                        accentBar
+                            .frame(width: 2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            content()
+                        }
                     }
                 }
             }
@@ -201,6 +208,19 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
     @ViewBuilder
     private var header: some View {
         HStack(spacing: 2) {
+            // Chevron renders first so it shares the leftmost column with
+            // the accent bar below. Tap toggles collapse; the visible
+            // pickle stack remains the *content* of the row to the right.
+            Button(action: onToggleCollapsed) {
+                Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundColor(group.color.accent.opacity(0.85))
+                    .frame(width: 10, height: 10)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(group.isCollapsed ? "Expand group" : "Collapse group")
+
             if isEditing {
                 PickyHUDDockGroupRenameField(
                     text: $draftName,
@@ -242,15 +262,6 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
                                 .fill(Color.white.opacity(0.08))
                         )
                 }
-                Button(action: onToggleCollapsed) {
-                    Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 7, weight: .semibold))
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .frame(width: 8, height: 10)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(group.isCollapsed ? "Expand group" : "Collapse group")
             }
         }
         .padding(.horizontal, 1)

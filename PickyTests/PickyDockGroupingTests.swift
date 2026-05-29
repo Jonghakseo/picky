@@ -289,4 +289,127 @@ final class PickyDockGroupingTests: XCTestCase {
             )
         }
     }
+
+    // MARK: - Drag drop resolution (PickyDockDropResolver)
+
+    /// Regression: a Pickle dragged toward an EMPTY group at the bottom of the
+    /// dock must land inside the group, not escape to the top level. Before the
+    /// fix the bottom escape hatch overrode the empty-group drop target because
+    /// the tile sits below the last real slot center.
+    func testDropIntoEmptyBottomGroupDoesNotEscapeToTopLevel() {
+        let layout = PickyDockLayout(entries: [
+            .session(id: "a"),
+            .group(PickyDockGroup(id: "g", memberSessionIDs: []))
+        ])
+        let result = PickyDockDropResolver.resolveDropContainer(
+            draggedSessionID: "a",
+            cursorAxis: 100,
+            slotCandidates: [.init(container: .topLevel(index: 0), center: 0)],
+            emptyGroupCandidates: [.init(groupID: "g", center: 100)],
+            layout: layout,
+            slotPitch: 100
+        )
+        XCTAssertEqual(result, .group(id: "g", memberIndex: 0))
+    }
+
+    /// A Pickle dragged onto a NON-empty bottom group lands inside it even when
+    /// the cursor overshoots past the last member's center (which would have
+    /// tripped the old unconditional bottom escape).
+    func testDropIntoNonEmptyBottomGroupSurvivesOvershoot() {
+        let layout = PickyDockLayout(entries: [
+            .session(id: "a"),
+            .group(PickyDockGroup(id: "g", memberSessionIDs: ["b"]))
+        ])
+        let result = PickyDockDropResolver.resolveDropContainer(
+            draggedSessionID: "a",
+            cursorAxis: 180,
+            slotCandidates: [
+                .init(container: .topLevel(index: 0), center: 0),
+                .init(container: .group(id: "g", memberIndex: 0), center: 100)
+            ],
+            emptyGroupCandidates: [],
+            layout: layout,
+            slotPitch: 100
+        )
+        XCTAssertEqual(result, .group(id: "g", memberIndex: 0))
+    }
+
+    /// Extraction is preserved: a MEMBER of the bottom group dragged past the
+    /// last slot still escapes to the top level so the user can ungroup it.
+    func testMemberDraggedPastBottomGroupEscapesToTopLevel() {
+        let layout = PickyDockLayout(entries: [
+            .group(PickyDockGroup(id: "g", memberSessionIDs: ["a", "b"]))
+        ])
+        let result = PickyDockDropResolver.resolveDropContainer(
+            draggedSessionID: "a",
+            cursorAxis: 180,
+            slotCandidates: [
+                .init(container: .group(id: "g", memberIndex: 0), center: 0),
+                .init(container: .group(id: "g", memberIndex: 1), center: 100)
+            ],
+            emptyGroupCandidates: [],
+            layout: layout,
+            slotPitch: 100
+        )
+        XCTAssertEqual(result, .topLevel(index: 1))
+    }
+
+    /// When the last entry is an ungrouped session, dragging past it appends at
+    /// the top level as before.
+    func testDragPastBottomUngroupedSessionAppendsTopLevel() {
+        let layout = PickyDockLayout(entries: [
+            .session(id: "a"),
+            .session(id: "b")
+        ])
+        let result = PickyDockDropResolver.resolveDropContainer(
+            draggedSessionID: "a",
+            cursorAxis: 180,
+            slotCandidates: [
+                .init(container: .topLevel(index: 0), center: 0),
+                .init(container: .topLevel(index: 1), center: 100)
+            ],
+            emptyGroupCandidates: [],
+            layout: layout,
+            slotPitch: 100
+        )
+        XCTAssertEqual(result, .topLevel(index: 2))
+    }
+
+    /// Symmetric top edge: dragging a non-member above a TOP empty group drops
+    /// into the group rather than escaping above it.
+    func testDropIntoEmptyTopGroupDoesNotEscapeToTopLevel() {
+        let layout = PickyDockLayout(entries: [
+            .group(PickyDockGroup(id: "g", memberSessionIDs: [])),
+            .session(id: "b")
+        ])
+        let result = PickyDockDropResolver.resolveDropContainer(
+            draggedSessionID: "b",
+            cursorAxis: -80,
+            slotCandidates: [.init(container: .topLevel(index: 1), center: 100)],
+            emptyGroupCandidates: [.init(groupID: "g", center: 0)],
+            layout: layout,
+            slotPitch: 100
+        )
+        XCTAssertEqual(result, .group(id: "g", memberIndex: 0))
+    }
+
+    /// Top escape still works when the first entry is an ungrouped session.
+    func testDragAboveTopUngroupedSessionInsertsAtTopLevelZero() {
+        let layout = PickyDockLayout(entries: [
+            .session(id: "a"),
+            .session(id: "b")
+        ])
+        let result = PickyDockDropResolver.resolveDropContainer(
+            draggedSessionID: "b",
+            cursorAxis: -80,
+            slotCandidates: [
+                .init(container: .topLevel(index: 0), center: 0),
+                .init(container: .topLevel(index: 1), center: 100)
+            ],
+            emptyGroupCandidates: [],
+            layout: layout,
+            slotPitch: 100
+        )
+        XCTAssertEqual(result, .topLevel(index: 0))
+    }
 }

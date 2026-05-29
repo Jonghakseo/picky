@@ -2364,46 +2364,29 @@ private struct PickyHUDDockRailView: View {
         let cursorAxis = dragStartCenter + translationAxis
 
         // Hit-test against the FROZEN reference snapshot (captured at drag
-        // start), not the live preview. The closest fixed center wins; if an
-        // empty-group drop tile wins, the destination becomes "insert at
-        // memberIndex 0 of that group". Because the reference never moves
+        // start), not the live preview. Because the reference never moves
         // during the drag, the decision is a pure function of cursor position
-        // and can't oscillate as the preview reflows.
-        var nearestDestination: PickyDockContainer?
-        var minDistance: CGFloat = .infinity
-
-        for slot in dragReferenceSlots {
-            guard let center = dragReferenceCenters[slot.sessionID] else { continue }
-            let distance = abs(center - cursorAxis)
-            if distance < minDistance {
-                minDistance = distance
-                nearestDestination = slot.container
-            }
+        // and can't oscillate as the preview reflows. The resolution itself
+        // (nearest center + group-edge escape) lives in the pure
+        // `PickyDockDropResolver` so it can be unit-tested.
+        let slotCandidates: [PickyDockDropResolver.SlotCandidate] = dragReferenceSlots.compactMap { slot in
+            guard let center = dragReferenceCenters[slot.sessionID] else { return nil }
+            return .init(container: slot.container, center: center)
         }
-
+        var emptyGroupCandidates: [PickyDockDropResolver.EmptyGroupCandidate] = []
         for (centerKey, center) in dragReferenceCenters {
             guard let groupID = Self.parseEmptyGroupDropTargetID(centerKey) else { continue }
-            let distance = abs(center - cursorAxis)
-            if distance < minDistance {
-                minDistance = distance
-                nearestDestination = .group(id: groupID, memberIndex: 0)
-            }
+            emptyGroupCandidates.append(.init(groupID: groupID, center: center))
         }
 
-        // Escape hatch: when the cursor is dragged clearly past the topmost or
-        // bottommost slot, force a *top-level* (ungrouped) destination. This
-        // is the only way to pull a Pickle out of a group when every visible
-        // slot is a group member — dragging above the first slot drops it
-        // above the group, below the last slot drops it after the group.
-        let realCenters = dragReferenceSlots.compactMap { dragReferenceCenters[$0.sessionID] }
-        if let minCenter = realCenters.min(), let maxCenter = realCenters.max() {
-            let escapeMargin = slotPitchAlongAxis * 0.6
-            if cursorAxis < minCenter - escapeMargin {
-                nearestDestination = .topLevel(index: 0)
-            } else if cursorAxis > maxCenter + escapeMargin {
-                nearestDestination = .topLevel(index: layout.entries.count)
-            }
-        }
+        let nearestDestination = PickyDockDropResolver.resolveDropContainer(
+            draggedSessionID: sessionID,
+            cursorAxis: cursorAxis,
+            slotCandidates: slotCandidates,
+            emptyGroupCandidates: emptyGroupCandidates,
+            layout: layout,
+            slotPitch: slotPitchAlongAxis
+        )
 
         // Record where the icon *would* land. This drives the live preview
         // projection (siblings make room at the landing spot) but is NOT

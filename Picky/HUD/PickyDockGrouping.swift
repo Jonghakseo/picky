@@ -494,3 +494,90 @@ enum PickyDockProjector {
         return PickyDockProjection(items: items, slots: slots)
     }
 }
+
+// MARK: - Drag drop resolution
+
+/// Pure resolver for "where would the dragged Pickle land right now?" given the
+/// frozen drag-start geometry. Extracted from the HUD so the drop decision —
+/// including the group-edge escape behavior — can be unit-tested without the
+/// SwiftUI view.
+enum PickyDockDropResolver {
+    /// A real (session) drop slot and its measured primary-axis center.
+    struct SlotCandidate: Equatable {
+        let container: PickyDockContainer
+        let center: CGFloat
+    }
+
+    /// An expanded-but-empty (or collapsed-with-no-visible-member) group's
+    /// drop tile and its center. Dropping here inserts at member index 0.
+    struct EmptyGroupCandidate: Equatable {
+        let groupID: String
+        let center: CGFloat
+    }
+
+    /// Resolve the prospective drop container for a Pickle dragged to
+    /// `cursorAxis` (primary-axis position). Returns nil only when there are
+    /// no candidates at all.
+    ///
+    /// The nearest candidate center wins. An escape hatch then lets the user
+    /// pull a Pickle out to the top level by dragging past the first/last real
+    /// slot — but only when that escape is unambiguous: if the edge entry is a
+    /// group and the dragged Pickle is NOT already a member of it, the region
+    /// past the edge belongs to that group's drop area (e.g. an empty bottom
+    /// group), so the escape is suppressed and the group target stands.
+    static func resolveDropContainer(
+        draggedSessionID: String,
+        cursorAxis: CGFloat,
+        slotCandidates: [SlotCandidate],
+        emptyGroupCandidates: [EmptyGroupCandidate],
+        layout: PickyDockLayout,
+        slotPitch: CGFloat
+    ) -> PickyDockContainer? {
+        var nearest: PickyDockContainer?
+        var minDistance = CGFloat.infinity
+
+        for candidate in slotCandidates {
+            let distance = abs(candidate.center - cursorAxis)
+            if distance < minDistance {
+                minDistance = distance
+                nearest = candidate.container
+            }
+        }
+
+        for candidate in emptyGroupCandidates {
+            let distance = abs(candidate.center - cursorAxis)
+            if distance < minDistance {
+                minDistance = distance
+                nearest = .group(id: candidate.groupID, memberIndex: 0)
+            }
+        }
+
+        let realCenters = slotCandidates.map(\.center)
+        if let minCenter = realCenters.min(), let maxCenter = realCenters.max() {
+            let escapeMargin = slotPitch * 0.6
+            if cursorAxis < minCenter - escapeMargin,
+               canEscapePastEdge(layout.entries.first, draggedSessionID: draggedSessionID) {
+                nearest = .topLevel(index: 0)
+            } else if cursorAxis > maxCenter + escapeMargin,
+                      canEscapePastEdge(layout.entries.last, draggedSessionID: draggedSessionID) {
+                nearest = .topLevel(index: layout.entries.count)
+            }
+        }
+
+        return nearest
+    }
+
+    /// Whether dragging past `entry` (the first or last dock entry) should
+    /// escape to the top level. True when the edge is an ungrouped session, or
+    /// when it is a group the dragged Pickle is being extracted from. False
+    /// when the edge is a group the dragged Pickle is being dropped into.
+    static func canEscapePastEdge(_ entry: PickyDockEntry?, draggedSessionID: String) -> Bool {
+        guard let entry else { return true }
+        switch entry {
+        case .session:
+            return true
+        case .group(let group):
+            return group.memberSessionIDs.contains(draggedSessionID)
+        }
+    }
+}

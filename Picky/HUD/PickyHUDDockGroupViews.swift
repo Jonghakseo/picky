@@ -200,7 +200,7 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
 
     @ViewBuilder
     private var header: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 2) {
             if isEditing {
                 PickyHUDDockGroupRenameField(
                     text: $draftName,
@@ -222,31 +222,38 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
                     .foregroundColor(group.color.accent.opacity(0.92))
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .onTapGesture(count: 2) {
                         draftName = group.name
                         isEditing = true
                     }
-                Text("\(group.memberSessionIDs.count)")
-                    .pickyFont(size: 8, weight: .medium)
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .padding(.horizontal, 3)
-                    .background(
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
-                            .fill(Color.white.opacity(0.08))
-                    )
-                Spacer(minLength: 2)
+                // Count chip only shows when collapsed (a collapsed group's
+                // members are not visible, so the count is informative).
+                // Expanded groups display the icons themselves — a count
+                // chip would steal text width the group name needs in the
+                // narrow vertical rail.
+                if group.isCollapsed {
+                    Text("\(group.memberSessionIDs.count)")
+                        .pickyFont(size: 8, weight: .medium)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .padding(.horizontal, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .fill(Color.white.opacity(0.08))
+                        )
+                }
                 Button(action: onToggleCollapsed) {
                     Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
                         .font(.system(size: 7, weight: .semibold))
                         .foregroundColor(DS.Colors.textTertiary)
-                        .frame(width: 10, height: 10)
+                        .frame(width: 8, height: 10)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(group.isCollapsed ? "Expand group" : "Collapse group")
             }
         }
-        .padding(.horizontal, 2)
+        .padding(.horizontal, 1)
         .frame(height: PickyHUDDockGroupHeaderHeight, alignment: .center)
         .contentShape(Rectangle())
         // Header drag = reorder the entire group block. `minimumDistance`

@@ -1575,15 +1575,42 @@ private struct PickyHUDDockRailView: View {
         }
     }
 
+    /// Number of empty-group drop tiles rendered (one per expanded group
+    /// with zero visible members, plus one per collapsed group whose only
+    /// member is outside the visible cap). Each tile occupies a full
+    /// session tile slot below its header but does NOT appear in
+    /// `projection.slots`, so the rail height must account for them
+    /// explicitly or the dashed drop slot overflows the capsule.
+    private var emptyGroupDropTileCount: Int {
+        var count = 0
+        for item in projection.items {
+            switch item {
+            case .groupHeader(let g):
+                if !projection.slots.contains(where: { slot in
+                    if case .group(let id, _) = slot.container { return id == g.id }
+                    return false
+                }) {
+                    count += 1
+                }
+            case .collapsedGroup(_, let topMember):
+                if topMember == nil { count += 1 }
+            default:
+                break
+            }
+        }
+        return count
+    }
+
     private var railHeight: CGFloat {
         let headersExtraLength = CGFloat(expandedGroupHeaderCount) * (PickyHUDDockGroupHeaderHeight + metrics.sessionSpacing)
+        let emptyDropExtraLength = CGFloat(emptyGroupDropTileCount) * (metrics.sessionTileHeight + metrics.sessionSpacing)
         if dockSide.orientation == .horizontal {
             return PickyHUDDockLayout.horizontalDockRailLength(
                 sessionCount: sessions.count,
                 isAddSlotExpanded: isAddSlotExpanded,
                 metrics: metrics,
                 includesFullscreenControl: PickyFullscreenFeatureFlags.isEnabled
-            ) + headersExtraLength
+            ) + headersExtraLength + emptyDropExtraLength
         }
         let base = PickyHUDDockLayout.dockRailHeight(
             sessionCount: sessions.count,
@@ -1593,7 +1620,7 @@ private struct PickyHUDDockRailView: View {
         let withFullscreen = PickyFullscreenFeatureFlags.isEnabled
             ? base + PickyHUDDockLayout.fullscreenDockControlLength(metrics: metrics)
             : base
-        return withFullscreen + headersExtraLength
+        return withFullscreen + headersExtraLength + emptyDropExtraLength
     }
 
     private var fullscreenButton: some View {
@@ -1708,9 +1735,17 @@ private struct PickyHUDDockRailView: View {
                         // empty drop target so the user can still drag
                         // pickles in or expand/rename via the header menu.
                         PickyHUDDockGroupEmptySlot(color: group.color, metrics: metrics)
+                            .publishDockSlotCenter(
+                                sessionID: Self.emptyGroupDropTargetID(groupID: group.id),
+                                dockSide: dockSide
+                            )
                     }
                 } else if members.isEmpty {
                     PickyHUDDockGroupEmptySlot(color: group.color, metrics: metrics)
+                        .publishDockSlotCenter(
+                            sessionID: Self.emptyGroupDropTargetID(groupID: group.id),
+                            dockSide: dockSide
+                        )
                 } else {
                     if dockSide.orientation == .horizontal {
                         HStack(spacing: metrics.sessionSpacing) {
@@ -1781,6 +1816,21 @@ private struct PickyHUDDockRailView: View {
                 transaction.animation = slotShiftAnimation
             }
         }
+    }
+
+    /// Synthetic id used to publish/look up an empty group's drop tile
+    /// center in `slotCenters`. Distinct from any real session id so drag
+    /// hit-tests can tell "drop into empty group" apart from "drop onto a
+    /// session".
+    private static func emptyGroupDropTargetID(groupID: String) -> String {
+        "_empty_group:\(groupID)"
+    }
+
+    /// Extract the group id from a synthetic empty-group drop target id, or
+    /// return nil if the input is a real session id.
+    private static func parseEmptyGroupDropTargetID(_ id: String) -> String? {
+        guard id.hasPrefix("_empty_group:") else { return nil }
+        return String(id.dropFirst("_empty_group:".count))
     }
 
     /// Walk projection items linearly and emit one render unit per ungrouped
@@ -1876,32 +1926,40 @@ private struct PickyHUDDockRailView: View {
     }
 
     private func handleReorderChanged(sessionID: String, translation: CGSize) {
-        guard draggingSessionID == sessionID, !projection.slots.isEmpty else { return }
+        guard draggingSessionID == sessionID else { return }
         let translationAxis = axisDelta(translation)
         let cursorAxis = dragStartCenter + translationAxis
 
-        // Precise hit-test: find the slot whose measured center is closest
-        // to the current cursor axis. Falls back to no-move when the slot
-        // centers haven't been published yet (very first frame of drag).
-        var nearestIdx = dragCurrentVisibleIndex
+        // Precise hit-test: scan both real session slots and the synthetic
+        // empty-group drop tiles. The closest measured center wins; if a
+        // drop tile wins, the destination becomes "insert at memberIndex 0
+        // of that group" so the dragged Pickle lands inside the empty
+        // group. Falls back to no-move when nothing is published yet (very
+        // first frame of drag, before GeometryReader has run).
+        var nearestDestination: PickyDockContainer?
         var minDistance: CGFloat = .infinity
-        for (i, slot) in projection.slots.enumerated() {
+
+        for slot in projection.slots {
             guard let center = slotCenters[slot.sessionID] else { continue }
             let distance = abs(center - cursorAxis)
             if distance < minDistance {
                 minDistance = distance
-                nearestIdx = i
+                nearestDestination = slot.container
             }
         }
 
-        if nearestIdx != dragCurrentVisibleIndex {
-            // Drop slot at target visibleIndex owns a container; place the
-            // dragged session at that container/position. The atomic move
-            // in `PickyDockLayout.move` lands the icon at the requested
-            // final slot (semantic (a)).
-            let destinationSlot = projection.slots[nearestIdx]
-            onMoveSessionInDock(sessionID, destinationSlot.container)
-            dragCurrentVisibleIndex = nearestIdx
+        for (centerKey, center) in slotCenters {
+            guard let groupID = Self.parseEmptyGroupDropTargetID(centerKey) else { continue }
+            let distance = abs(center - cursorAxis)
+            if distance < minDistance {
+                minDistance = distance
+                nearestDestination = .group(id: groupID, memberIndex: 0)
+            }
+        }
+
+        if let nearestDestination,
+           layout.container(forSessionID: sessionID) != nearestDestination {
+            onMoveSessionInDock(sessionID, nearestDestination)
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
 

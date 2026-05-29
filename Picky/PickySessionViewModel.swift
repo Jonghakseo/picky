@@ -2506,13 +2506,6 @@ final class PickySessionListViewModel: ObservableObject {
         persistDockLayout()
     }
 
-    func toggleDockGroupCollapsed(id: String) {
-        var layout = dockLayout
-        layout.updateGroup(id: id) { $0.isCollapsed.toggle() }
-        dockLayout = layout
-        persistDockLayout()
-    }
-
     /// Remove a group. When `keepMembers` is true, the members are spliced
     /// back into the top-level layout at the group's previous position (the
     /// "Ungroup" action). When false, the group's member sessions are

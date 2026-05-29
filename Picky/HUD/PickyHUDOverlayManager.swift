@@ -93,6 +93,9 @@ final class PickyHUDOverlayManager {
     /// original anchor rather than the previous frame's clamped value.
     private var dragStartPositionsByDisplayID: [String: PickyHUDDockPosition]?
     private var resizeStartCardSizesByDisplayID: [String: PickyHUDCardSize]?
+    /// Per-display dock group collapse overrides keyed by display ID, then
+    /// group ID. Each monitor manages its collapsed groups independently.
+    private var dockGroupCollapseByDisplayID: [String: [String: Bool]]
 
     init(
         viewModel: PickySessionListViewModel,
@@ -110,6 +113,20 @@ final class PickyHUDOverlayManager {
         self.currentPositionsByDisplayID = settings.hudDockPositions
         self.currentDockSizePreset = settings.hudDockSizePreset
         self.currentCardSizesByDisplayID = settings.hudCardSizes
+        self.dockGroupCollapseByDisplayID = settings.hudDockGroupCollapse
+    }
+
+    private func dockGroupCollapse(for displayID: CGDirectDisplayID) -> [String: Bool] {
+        dockGroupCollapseByDisplayID[String(displayID)] ?? [:]
+    }
+
+    /// Store this display's collapse overrides and persist to Settings so the
+    /// per-monitor collapse state survives relaunch.
+    private func handleDockGroupCollapseChanged(displayID: CGDirectDisplayID, overrides: [String: Bool]) {
+        dockGroupCollapseByDisplayID[String(displayID)] = overrides
+        var settings = settingsStore.load()
+        settings.hudDockGroupCollapse = dockGroupCollapseByDisplayID
+        try? settingsStore.save(settings)
     }
 
     /// Get the live position for a display. Returns defaults for unknown displays.
@@ -258,7 +275,8 @@ final class PickyHUDOverlayManager {
             dockSide: position(for: displayID).side,
             dockSizePreset: currentDockSizePreset,
             cardSize: cardSize(for: displayID),
-            panelWidth: initialPanelWidth
+            panelWidth: initialPanelWidth,
+            collapsedGroupOverrides: dockGroupCollapse(for: displayID)
         )
         let hudRoot = PickyHUDView(
             viewModel: viewModel,
@@ -296,6 +314,9 @@ final class PickyHUDOverlayManager {
             },
             onOpenFullscreenSession: { [weak self] sessionID in
                 self?.onOpenFullscreenSession(sessionID)
+            },
+            onDockGroupCollapseChanged: { [weak self] overrides in
+                self?.handleDockGroupCollapseChanged(displayID: displayID, overrides: overrides)
             }
         )
             .environmentObject(appearanceStore)

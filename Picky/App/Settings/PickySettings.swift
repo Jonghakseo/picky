@@ -920,6 +920,10 @@ struct PickySettings: Codable, Equatable {
     /// the dock independently on each screen. Falls back to `PickyHUDDockPosition.defaults()`
     /// when a display has not yet been configured.
     var hudDockPositions: [String: PickyHUDDockPosition]
+    /// Per-display group collapse/expand state keyed by display ID, then group
+    /// ID. Each monitor manages its own collapsed groups independently; a
+    /// missing entry falls back to the layout's stored `isCollapsed` default.
+    var hudDockGroupCollapse: [String: [String: Bool]]
     /// S/M/L size preset for the Pickle dock rail only. The conversation card keeps
     /// its current width so the setting stays visually scoped to the dock.
     var hudDockSizePreset: PickyHUDDockSizePreset
@@ -1040,6 +1044,7 @@ struct PickySettings: Codable, Equatable {
         pushToTalkShortcut: PickyShortcutSpec = .defaultPushToTalk,
         quickInputShortcut: PickyShortcutSpec = .defaultQuickInput,
         hudDockPositions: [String: PickyHUDDockPosition] = [:],
+        hudDockGroupCollapse: [String: [String: Bool]] = [:],
         hudDockSizePreset: PickyHUDDockSizePreset = .medium,
         hudCardSizes: [String: PickyHUDCardSize] = [:],
         updateChannel: PickyUpdateChannel = .stable,
@@ -1105,6 +1110,7 @@ struct PickySettings: Codable, Equatable {
         self.pushToTalkShortcut = pushToTalkShortcut
         self.quickInputShortcut = quickInputShortcut
         self.hudDockPositions = hudDockPositions
+        self.hudDockGroupCollapse = hudDockGroupCollapse
         self.hudDockSizePreset = hudDockSizePreset
         self.hudCardSizes = hudCardSizes
         self.updateChannel = updateChannel
@@ -1199,6 +1205,7 @@ struct PickySettings: Codable, Equatable {
             pushToTalkShortcut: .defaultPushToTalk,
             quickInputShortcut: .defaultQuickInput,
             hudDockPositions: [:],
+            hudDockGroupCollapse: [:],
             hudDockSizePreset: .medium,
             hudCardSizes: [:],
             updateChannel: defaultUpdateChannel(forReleaseChannel: AppBundleConfiguration.releaseChannel),
@@ -1332,6 +1339,7 @@ struct PickySettings: Codable, Equatable {
         case pushToTalkShortcut
         case quickInputShortcut
         case hudDockPositions
+        case hudDockGroupCollapse
         case hudDockSizePreset
         case hudCardSizes
         case updateChannel
@@ -1402,6 +1410,7 @@ struct PickySettings: Codable, Equatable {
         // behavior so screenshots do not silently disappear after the update.
         attachScreenshotsOnlyWhenInked = try container.decodeIfPresent(Bool.self, forKey: .attachScreenshotsOnlyWhenInked) ?? defaults.attachScreenshotsOnlyWhenInked
         useConversationCard = try container.decodeIfPresent(Bool.self, forKey: .useConversationCard) ?? defaults.useConversationCard
+        hudDockGroupCollapse = try container.decodeIfPresent([String: [String: Bool]].self, forKey: .hudDockGroupCollapse) ?? defaults.hudDockGroupCollapse
         hudDockSizePreset = try container.decodeIfPresent(PickyHUDDockSizePreset.self, forKey: .hudDockSizePreset) ?? defaults.hudDockSizePreset
         hudCardSizes = (try container.decodeIfPresent([String: PickyHUDCardSize].self, forKey: .hudCardSizes) ?? defaults.hudCardSizes)
             .mapValues { $0.clamped() }

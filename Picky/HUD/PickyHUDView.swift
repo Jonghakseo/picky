@@ -31,6 +31,10 @@ struct PickyHUDView: View {
     var onCardResizeReset: () -> Void = { }
     var onArchiveUndoRequested: (_ sessionID: String, _ title: String) -> Void = { _, _ in }
     var onOpenFullscreenSession: (String?) -> Void = { _ in }
+    /// Persist this display's dock group collapse overrides. Wired by the
+    /// overlay manager to store the map keyed by display ID so collapse state
+    /// is independent per monitor and survives relaunch.
+    var onDockGroupCollapseChanged: (_ overrides: [String: Bool]) -> Void = { _ in }
     @State private var heldSession: PickyHUDDockHold?
     @State private var pendingManualAutoOpenSessionID: String?
     @State private var pendingRequestedOpenSessionID: String?
@@ -68,8 +72,20 @@ struct PickyHUDView: View {
     private var dockProjection: PickyDockProjection {
         PickyDockProjector.project(
             layout: viewModel.dockLayout,
-            visibleSessionIDs: visibleSessionUniverse
+            visibleSessionIDs: visibleSessionUniverse,
+            collapsedOverrides: placement.collapsedGroupOverrides
         )
+    }
+
+    /// Toggle a group's collapse state for this panel's display only. Updates
+    /// the per-panel placement override (so the projection recomputes for
+    /// this monitor) and hands the new override map to the overlay manager
+    /// for per-display persistence.
+    private func toggleDockGroupCollapsedForThisDisplay(_ groupID: String) {
+        let layoutDefault = viewModel.dockLayout.groups.first(where: { $0.id == groupID })?.isCollapsed ?? false
+        let current = placement.collapsedGroupOverrides[groupID] ?? layoutDefault
+        placement.collapsedGroupOverrides[groupID] = !current
+        onDockGroupCollapseChanged(placement.collapsedGroupOverrides)
     }
 
     /// Session cards in their final top-to-bottom dock order. Replaces the
@@ -449,7 +465,7 @@ struct PickyHUDView: View {
                 },
                 onRenameDockGroup: { id, name in viewModel.renameDockGroup(id: id, to: name) },
                 onSetDockGroupColor: { id, color in viewModel.setDockGroupColor(id: id, color: color) },
-                onToggleDockGroupCollapsed: { id in viewModel.toggleDockGroupCollapsed(id: id) },
+                onToggleDockGroupCollapsed: { id in toggleDockGroupCollapsedForThisDisplay(id) },
                 onRemoveDockGroup: { id, keepMembers in viewModel.removeDockGroup(id: id, keepMembers: keepMembers) },
                 onMoveSessionInDock: { sessionID, container in viewModel.moveSessionInDock(sessionID: sessionID, to: container) },
                 onMoveDockGroup: { id, target in viewModel.moveDockGroup(id: id, toTopLevelIndex: target) },

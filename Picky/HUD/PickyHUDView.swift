@@ -1614,6 +1614,14 @@ private struct PickyHUDDockRailView: View {
     /// floating dragged icon overlay; the in-flow slot is rendered as an
     /// invisible placeholder so the real icon never reparents (no flicker).
     @State private var dragTranslation: CGSize = .zero
+    /// Frozen geometry the drop decision is computed against, captured once at
+    /// drag start from the persisted (pre-preview) layout. The drop target is
+    /// hit-tested ONLY against this snapshot — never against the live,
+    /// self-reflowing preview centers — which breaks the feedback loop where
+    /// inserting the placeholder shifted measured centers and flipped the
+    /// decision back and forth (the group-boundary oscillation/flicker).
+    @State private var dragReferenceSlots: [PickyDockSlot] = []
+    @State private var dragReferenceCenters: [String: CGFloat] = [:]
     /// Destination the dragged icon would land in if released *right now*.
     /// Drives the live preview projection so siblings animate to make room
     /// at the landing spot, but the actual `onMoveSessionInDock` commit is
@@ -2175,6 +2183,12 @@ private struct PickyHUDDockRailView: View {
         // moment the user picked up the icon. Falling back to 0 keeps the
         // first frame safe when the GeometryReader publish hasn't landed yet.
         dragStartCenter = slotCenters[sessionID] ?? 0
+        // Freeze the hit-test geometry now, while the rail still shows the
+        // base (un-previewed) layout. Every subsequent drop decision is made
+        // against this fixed snapshot, so the preview reflow is a pure visual
+        // consequence and can never feed back into the decision.
+        dragReferenceSlots = baseProjection.slots
+        dragReferenceCenters = slotCenters
     }
 
     private func handleReorderChanged(sessionID: String, translation: CGSize) {
@@ -2183,17 +2197,17 @@ private struct PickyHUDDockRailView: View {
         let translationAxis = axisDelta(translation)
         let cursorAxis = dragStartCenter + translationAxis
 
-        // Precise hit-test: scan both real session slots and the synthetic
-        // empty-group drop tiles. The closest measured center wins; if a
-        // drop tile wins, the destination becomes "insert at memberIndex 0
-        // of that group" so the dragged Pickle lands inside the empty
-        // group. Falls back to no-move when nothing is published yet (very
-        // first frame of drag, before GeometryReader has run).
+        // Hit-test against the FROZEN reference snapshot (captured at drag
+        // start), not the live preview. The closest fixed center wins; if an
+        // empty-group drop tile wins, the destination becomes "insert at
+        // memberIndex 0 of that group". Because the reference never moves
+        // during the drag, the decision is a pure function of cursor position
+        // and can't oscillate as the preview reflows.
         var nearestDestination: PickyDockContainer?
         var minDistance: CGFloat = .infinity
 
-        for slot in projection.slots {
-            guard let center = slotCenters[slot.sessionID] else { continue }
+        for slot in dragReferenceSlots {
+            guard let center = dragReferenceCenters[slot.sessionID] else { continue }
             let distance = abs(center - cursorAxis)
             if distance < minDistance {
                 minDistance = distance
@@ -2201,7 +2215,7 @@ private struct PickyHUDDockRailView: View {
             }
         }
 
-        for (centerKey, center) in slotCenters {
+        for (centerKey, center) in dragReferenceCenters {
             guard let groupID = Self.parseEmptyGroupDropTargetID(centerKey) else { continue }
             let distance = abs(center - cursorAxis)
             if distance < minDistance {
@@ -2215,7 +2229,7 @@ private struct PickyHUDDockRailView: View {
         // is the only way to pull a Pickle out of a group when every visible
         // slot is a group member — dragging above the first slot drops it
         // above the group, below the last slot drops it after the group.
-        let realCenters = projection.slots.compactMap { slotCenters[$0.sessionID] }
+        let realCenters = dragReferenceSlots.compactMap { dragReferenceCenters[$0.sessionID] }
         if let minCenter = realCenters.min(), let maxCenter = realCenters.max() {
             let escapeMargin = slotPitchAlongAxis * 0.6
             if cursorAxis < minCenter - escapeMargin {
@@ -2244,6 +2258,8 @@ private struct PickyHUDDockRailView: View {
         draggingSessionID = nil
         pendingDropContainer = nil
         dragTranslation = .zero
+        dragReferenceSlots = []
+        dragReferenceCenters = [:]
     }
 
     private func handleReorderCanceled() {
@@ -2252,6 +2268,8 @@ private struct PickyHUDDockRailView: View {
         draggingSessionID = nil
         pendingDropContainer = nil
         dragTranslation = .zero
+        dragReferenceSlots = []
+        dragReferenceCenters = [:]
         activeReorderSessionID = nil
         reorderController.reset()
     }

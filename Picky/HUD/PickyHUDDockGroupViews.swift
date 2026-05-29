@@ -253,8 +253,8 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
             // the header and the accent bar carries the group color. Long
             // names truncate within the rail width.
             Text(group.displayName)
-                .pickyFont(size: 10, weight: .medium)
-                .foregroundColor(DS.Colors.textSecondary)
+                .pickyFont(size: 11, weight: .medium)
+                .foregroundColor(DS.Colors.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)

@@ -258,13 +258,13 @@ The dock icon color, glyph, unread dot, and completion flash reflect these state
 | Hover a Pickle | Shows a mini preview. |
 | Click a Pickle | Opens or closes its conversation card. |
 | Press and hold a Pickle | Archives it after a ~1.2s hold timer; a progress ring fills around the dock icon, and moving the cursor more than ~10pt away cancels the archive before it fires. Archives are recoverable from the undo toast or Settings → Pickle → Archived sessions. |
-| Drag a Pickle | Reorders dock Pickles, or drags one into / out of a group. The move is committed when you release. |
+| Drag a Pickle | Reorders dock Pickles, or drags one into / out of a group. The move is committed when you release. Hold it clearly **outside** the dock for a moment and an **Archive** label appears; release there to archive it (macOS Dock style). |
 | Right-click / Control-click | Opens the dock context menu (Send Context / Compact / Archive / Stop). |
 | Click the `+` slot | Opens a popover with recent folders, **Choose Folder…**, and **New Group…**. |
 | Drag the dock handle | Move the dock along or across screen edges. |
 | Double-click the dock handle | Toggle the dock between vertical and horizontal layouts. |
 
-Number shortcuts (`Cmd + 1`…`9`) apply to the first 9 visible Pickles.
+Number shortcuts (`Cmd + 1`…`9`) apply to the first 9 visible dock slots, top to bottom. A collapsed group counts as one slot: pressing its number **expands the group** instead of opening a Pickle, after which each member gets its own number — so a second press reaches the individual Pickle. While `Cmd` is held, every numbered slot (including collapsed groups) shows its badge.
 
 ### 7.3 Creating an empty Pickle
 
@@ -287,7 +287,7 @@ Create a group:
 Manage membership by dragging:
 
 - Drag a Pickle onto a group to move it in; drag it above the first slot or below the last slot to pull it back out to the top level. The dock previews where it will land and commits the move only when you release.
-- Drag a group's header to reorder the whole group within the dock.
+- Drag a group's header to reorder the whole group within the dock. Hold it clearly **outside** the dock and a **Remove** label appears; release there to remove the group and archive its Pickles (macOS Dock style).
 
 Collapse and expand:
 
@@ -303,7 +303,7 @@ Right-click a group header for more actions:
 | Color | Pick the group's accent color. |
 | Collapse / Expand | Toggle the folder drawer for this display. |
 | Ungroup (keep pickles) | Remove the group but keep its Pickles in the dock. |
-| Delete group + archive pickles | Remove the group and archive all its Pickles (with confirmation). |
+| Delete group + archive pickles | Remove the group and archive all its Pickles (with confirmation; an empty group is removed immediately with no prompt). |
 
 ### 7.5 Archiving and undo
 
@@ -559,7 +559,7 @@ These work when a Pickle card/HUD panel is active.
 | Cmd + W | Close the open Pickle card. |
 | Escape | Close the card when no text input is focused. |
 | Return | Focus the active composer when no text input is focused. |
-| Cmd + 1…9 | Open/close the corresponding visible Pickle. |
+| Cmd + 1…9 | Open/close the Pickle in that dock slot; if the slot is a collapsed group, expand it instead. |
 | Cmd + Shift + `[` | Cycle to previous Pickle. |
 | Cmd + Shift + `]` | Cycle to next Pickle. |
 | Cmd + R | Open latest agent response as a report. |

@@ -2569,8 +2569,22 @@ private struct PickyHUDDockRailView: View {
         draggingGroupID = nil
         if didRemove {
             // Released outside the dock: remove the group and archive its
-            // members (same outcome as the context-menu delete).
-            onRemoveDockGroup(groupID, false)
+            // members (same outcome as the context-menu delete). A group with
+            // Pickles inside confirms first; an empty group is removed at once.
+            let group = layout.group(withID: groupID)
+            if let group, !group.memberSessionIDs.isEmpty {
+                // Defer the modal so the block first springs back into the
+                // dock, then the confirmation appears over a settled layout.
+                DispatchQueue.main.async {
+                    PickyHUDDockGroupDeletePrompt.confirmDeleteWithArchive(
+                        groupName: group.displayName
+                    ) {
+                        onRemoveDockGroup(groupID, false)
+                    }
+                }
+            } else {
+                onRemoveDockGroup(groupID, false)
+            }
         }
     }
 

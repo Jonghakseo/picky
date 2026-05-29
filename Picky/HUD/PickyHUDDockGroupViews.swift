@@ -547,17 +547,30 @@ struct PickyHUDDockGroupContextMenu: View {
                 onDeleteWithArchive()
                 return
             }
-            // Surface a quick confirmation by routing through an NSAlert so
-            // we don't silently archive a user's work in a single click.
-            let alert = NSAlert()
-            alert.messageText = L10n.t("group.delete.confirm.title", group.displayName)
-            alert.informativeText = L10n.t("group.delete.confirm.message")
-            alert.addButton(withTitle: L10n.t("group.delete.confirm.archive"))
-            alert.addButton(withTitle: L10n.t("common.cancel"))
-            alert.alertStyle = .warning
-            if alert.runModal() == .alertFirstButtonReturn {
-                onDeleteWithArchive()
-            }
+            PickyHUDDockGroupDeletePrompt.confirmDeleteWithArchive(
+                groupName: group.displayName,
+                onConfirm: onDeleteWithArchive
+            )
+        }
+    }
+}
+
+/// Shared confirmation for removing a non-empty dock group and archiving its
+/// Pickles. Used by both the header context menu and the drag-out gesture so
+/// the prompt stays identical no matter how the removal is triggered.
+enum PickyHUDDockGroupDeletePrompt {
+    @MainActor
+    static func confirmDeleteWithArchive(groupName: String, onConfirm: () -> Void) {
+        // Surface a quick confirmation by routing through an NSAlert so we
+        // don't silently archive a user's work.
+        let alert = NSAlert()
+        alert.messageText = L10n.t("group.delete.confirm.title", groupName)
+        alert.informativeText = L10n.t("group.delete.confirm.message")
+        alert.addButton(withTitle: L10n.t("group.delete.confirm.archive"))
+        alert.addButton(withTitle: L10n.t("common.cancel"))
+        alert.alertStyle = .warning
+        if alert.runModal() == .alertFirstButtonReturn {
+            onConfirm()
         }
     }
 }

@@ -171,22 +171,22 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
             } else {
                 // Vertical rail: header chip sits across the full width so
                 // the chevron lives at the same left column as the accent
-                // bar that follows. The bar only renders alongside the
-                // member content, leaving the header row clear of any
-                // vertical line above it. `maxHeight: .infinity` on the
-                // accent bar forces it to claim the HStack's resolved
-                // height — SwiftUI's Shape preferred-size is nil, which
-                // could otherwise let the bar render at zero (or shrink
-                // during transitions) when a sibling group elsewhere in
-                // the rail collapses.
+                // bar that follows. The bar is attached as an *overlay*
+                // on the padded content view rather than as an HStack
+                // sibling — in an HStack a SwiftUI Shape has nil preferred
+                // height, and other groups collapsing in the same dock
+                // body re-propagate sizes through the rail in a way that
+                // would intermittently shrink this bar to a partial
+                // height. Tying the bar's height directly to the content
+                // frame via overlay eliminates that ambiguity.
                 VStack(alignment: .leading, spacing: 2) {
                     header
-                    HStack(alignment: .top, spacing: 4) {
-                        accentBar
-                            .frame(width: 2)
-                            .frame(maxHeight: .infinity)
-                        content()
-                    }
+                    content()
+                        .padding(.leading, 6)
+                        .overlay(alignment: .leading) {
+                            accentBar
+                                .frame(width: 2)
+                        }
                 }
             }
         }

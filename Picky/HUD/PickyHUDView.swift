@@ -680,6 +680,13 @@ struct PickyHUDView: View {
         onDockGroupCollapseChanged(placement.collapsedGroupOverrides)
     }
 
+    /// Effective collapse state for `groupID` on this panel's display: the
+    /// per-display override if present, otherwise the layout default.
+    private func isGroupCollapsedOnThisDisplay(_ groupID: String) -> Bool {
+        let group = viewModel.dockLayout.groups.first { $0.id == groupID }
+        return placement.collapsedGroupOverrides[groupID] ?? (group?.isCollapsed ?? false)
+    }
+
     private func openPendingRequestedSessionIfVisible() {
         guard let next = PickyHUDDockLayout.requestedOpenResolution(
             pendingSessionID: pendingRequestedOpenSessionID,
@@ -930,9 +937,18 @@ struct PickyHUDView: View {
             return true
         }
 
-        if flags == .command,
-           let number = Self.numberShortcutValue(for: event),
-           PickyHUDDockLayout.sessionIDForNumberShortcut(visibleIDs: visibleIDs, number: number) != nil {
+        if flags == .command, let number = Self.numberShortcutValue(for: event) {
+            let slots = dockProjection.slots
+            guard number >= 1, number <= slots.count else { return false }
+            // A collapsed group occupies one ⌘N slot. Pressing it expands the
+            // group instead of opening its top member; expanding reassigns a
+            // number to every member, so a second ⌘N reaches the individual
+            // Pickle. This makes every Pickle ⌘N-reachable in two presses.
+            if case let .group(groupID, _) = slots[number - 1].container,
+               isGroupCollapsedOnThisDisplay(groupID) {
+                toggleDockGroupCollapsedForThisDisplay(groupID)
+                return true
+            }
             let next = PickyHUDDockLayout.heldSessionAfterNumberShortcut(
                 current: heldSession,
                 visibleIDs: visibleIDs,
@@ -2002,6 +2018,10 @@ private struct PickyHUDDockRailView: View {
                             unreadCount: unreadCount,
                             tint: group.color.accent,
                             metrics: metrics,
+                            shortcutNumber: projection.slots
+                                .first(where: { $0.sessionID == topID })
+                                .flatMap { PickyHUDDockLayout.numberShortcutForSessionIndex($0.visibleIndex) },
+                            isCommandShortcutHintVisible: isCommandShortcutHintVisible,
                             onTap: { onToggleDockGroupCollapsed(group.id) }
                         )
                         .publishDockSlotCenter(sessionID: topID, dockSide: dockSide)
@@ -3188,30 +3208,7 @@ private struct PickyHUDDockIconView: View {
     }
 
     private func commandShortcutBadge(label: String) -> some View {
-        HStack(spacing: 1.5) {
-            Image(systemName: "command")
-                .pickyFont(size: 6.5, weight: .bold)
-            Text(label)
-                .pickyFont(size: 7.5, weight: .bold, design: .rounded)
-                .monospacedDigit()
-        }
-        .foregroundColor(DS.Colors.textPrimary)
-        .padding(.horizontal, 4.5)
-        .frame(height: 15)
-        .background(
-            Capsule(style: .continuous)
-                .fill(.ultraThinMaterial)
-        )
-        .overlay(
-            Capsule(style: .continuous)
-                .fill(DS.Colors.surface1.opacity(0.70))
-        )
-        .overlay(
-            Capsule(style: .continuous)
-                .strokeBorder(DS.Colors.borderSubtle.opacity(0.72), lineWidth: 0.7)
-        )
-        .shadow(color: Color.black.opacity(0.18), radius: 4, x: 0, y: 1.5)
-        .accessibilityHidden(true)
+        PickyHUDDockCommandShortcutBadge(label: label)
     }
 
     private var dockIconContent: some View {

@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import Combine
 import SwiftUI
 
 struct PickyHUDView: View {
@@ -420,7 +421,7 @@ struct PickyHUDView: View {
         if !viewModel.isLoadingInitialSessionSnapshot {
             PickyHUDDockRailView(
                 sessions: visibleSessions,
-                projection: dockProjection,
+                baseProjection: dockProjection,
                 layout: viewModel.dockLayout,
                 activeSessionID: activeSession?.id,
                 openedSessionID: openedSessionID,
@@ -1464,9 +1465,79 @@ private extension PickySessionListViewModel.SessionCard {
     }
 }
 
+/// Owns an in-flight Pickle reorder drag at the dock-rail level. The per-icon
+/// click host only detects the reorder threshold and hands off here; from then
+/// on an app-level `NSEvent` monitor drives the drag to completion. This is
+/// essential because the live drop preview reparents the dragged icon across
+/// group boundaries (top-level <-> group member), which tears down and
+/// recreates its per-icon NSView. A rail-level monitor is immune to that, so
+/// the drag survives crossing into/out of groups and only commits on release.
+final class PickyDockReorderDragController: ObservableObject {
+    enum Phase: Equatable {
+        case idle
+        case dragging(sessionID: String, translation: CGSize)
+        case ended(sessionID: String, translation: CGSize)
+    }
+
+    @Published private(set) var phase: Phase = .idle
+
+    private var monitor: Any?
+    private var anchorScreenPoint: NSPoint = .zero
+    private var sessionID: String?
+
+    /// Begin tracking a reorder for `sessionID`. `anchorScreenPoint` is the
+    /// mouse-down location in screen space so deltas stay continuous with the
+    /// threshold the icon already crossed.
+    func begin(sessionID: String, anchorScreenPoint: NSPoint) {
+        if self.sessionID != nil { cancelMonitor() }
+        self.sessionID = sessionID
+        self.anchorScreenPoint = anchorScreenPoint
+        phase = .dragging(sessionID: sessionID, translation: currentTranslation())
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged, .leftMouseUp]) { [weak self] event in
+            guard let self, let sessionID = self.sessionID else { return event }
+            let translation = self.currentTranslation()
+            switch event.type {
+            case .leftMouseUp:
+                self.phase = .ended(sessionID: sessionID, translation: translation)
+                self.cancelMonitor()
+                self.sessionID = nil
+                return nil
+            default:
+                self.phase = .dragging(sessionID: sessionID, translation: translation)
+                return nil
+            }
+        }
+    }
+
+    /// Acknowledge that the SwiftUI side consumed the terminal phase and return
+    /// to idle so the next drag starts clean.
+    func reset() {
+        phase = .idle
+    }
+
+    /// Screen-space delta from the mouse-down anchor, flipped to SwiftUI
+    /// top-down y. Screen-space keeps it stable even as the icon's NSView is
+    /// recreated mid-drag.
+    private func currentTranslation() -> CGSize {
+        let current = NSEvent.mouseLocation
+        return CGSize(width: current.x - anchorScreenPoint.x, height: -(current.y - anchorScreenPoint.y))
+    }
+
+    private func cancelMonitor() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+
+    deinit { cancelMonitor() }
+}
+
 private struct PickyHUDDockRailView: View {
     let sessions: [PickySessionListViewModel.SessionCard]
-    let projection: PickyDockProjection
+    /// Projection of the *persisted* layout. Read through the `projection`
+    /// computed property below, which overlays the in-flight drag preview
+    /// so callers (render + hit-test) transparently see the prospective
+    /// drop while a Pickle is being dragged.
+    let baseProjection: PickyDockProjection
     /// Persisted dock layout. The rail uses it to translate visible
     /// top-level entry indices back to `entries` indices when committing
     /// group-header drag reorders.
@@ -1518,9 +1589,22 @@ private struct PickyHUDDockRailView: View {
     @State private var isHandleHovered = false
     @State private var isHandleDragging = false
     @State private var draggingSessionID: String?
-    @State private var dragOffset: CGSize = .zero
-    @State private var dragStartVisibleIndex: Int = 0
-    @State private var dragCurrentVisibleIndex: Int = 0
+    /// Raw cursor translation (in points) since the drag began. Positions the
+    /// floating dragged icon overlay; the in-flow slot is rendered as an
+    /// invisible placeholder so the real icon never reparents (no flicker).
+    @State private var dragTranslation: CGSize = .zero
+    /// Destination the dragged icon would land in if released *right now*.
+    /// Drives the live preview projection so siblings animate to make room
+    /// at the landing spot, but the actual `onMoveSessionInDock` commit is
+    /// deferred to release — the Pickle's group assignment only changes once
+    /// the user lets go, never while the cursor merely crosses a boundary.
+    @State private var pendingDropContainer: PickyDockContainer?
+    /// Rail-level reorder drag tracker. Survives the dragged icon's NSView
+    /// being recreated when the preview reparents it across a group boundary.
+    @StateObject private var reorderController = PickyDockReorderDragController()
+    /// Session whose reorder drag is currently being driven by
+    /// `reorderController`, so the phase handler knows when to fire `begin`.
+    @State private var activeReorderSessionID: String?
     /// Primary-axis center the dragged icon occupied at pickup time, in the
     /// dock rail's named coordinate space. Combined with the gesture's
     /// `translation` it gives the current cursor axis position without
@@ -1546,6 +1630,26 @@ private struct PickyHUDDockRailView: View {
     @State private var groupDragStartCenter: CGFloat = 0
     @State private var groupDragStartLayoutIndex: Int = 0
     @State private var groupDragCurrentLayoutIndex: Int = 0
+
+    /// Live render/hit-test projection. While a Pickle is being dragged, this
+    /// reflects the *prospective* drop (`pendingDropContainer`) so siblings
+    /// animate to make room at the landing spot — without persisting the
+    /// move. The actual commit happens on release. When not dragging (or the
+    /// prospective drop equals the current home) it is the persisted
+    /// projection unchanged.
+    private var projection: PickyDockProjection {
+        guard let draggingSessionID,
+              let pendingDropContainer,
+              layout.container(forSessionID: draggingSessionID) != pendingDropContainer else {
+            return baseProjection
+        }
+        var preview = layout
+        preview.move(session: draggingSessionID, to: pendingDropContainer)
+        return PickyDockProjector.project(
+            layout: preview,
+            visibleSessionIDs: baseProjection.slots.map(\.sessionID)
+        )
+    }
 
     var body: some View {
         Group {
@@ -1587,6 +1691,7 @@ private struct PickyHUDDockRailView: View {
         }
         .background(dockGlassBackground)
         .coordinateSpace(name: PickyHUDDockRailCoordinateSpace)
+        .overlay { draggedFloatingIconOverlay }
         .onPreferenceChange(PickyDockSlotCenterPreferenceKey.self) { centers in
             slotCenters = centers
         }
@@ -1599,6 +1704,32 @@ private struct PickyHUDDockRailView: View {
                 isAddSlotExpanded = isPresented
             }
             onAddSlotExpandedChanged(isPresented)
+        }
+        // Drive the reorder drag from the rail-level controller. Running the
+        // handlers here (rather than from the per-icon NSView) means they keep
+        // firing with fresh layout/slot state even after the dragged icon's
+        // view is recreated by a cross-group preview reparent.
+        .onChange(of: reorderController.phase) { _, phase in
+            handleReorderPhase(phase)
+        }
+    }
+
+    private func handleReorderPhase(_ phase: PickyDockReorderDragController.Phase) {
+        switch phase {
+        case .idle:
+            break
+        case .dragging(let sessionID, let translation):
+            if activeReorderSessionID != sessionID {
+                activeReorderSessionID = sessionID
+                handleReorderBegin(sessionID: sessionID)
+            }
+            handleReorderChanged(sessionID: sessionID, translation: translation)
+        case .ended(let sessionID, let translation):
+            if activeReorderSessionID == sessionID {
+                handleReorderEnded(sessionID: sessionID, translation: translation)
+            }
+            activeReorderSessionID = nil
+            reorderController.reset()
         }
     }
 
@@ -1854,10 +1985,7 @@ private struct PickyHUDDockRailView: View {
             onArchive: { onToggleDockGroupCollapsed(group.id) },
             onStop: {},
             onDoneFlashConsumed: { onDoneFlashConsumed(session.id) },
-            onReorderBegin: {},
-            onReorderChanged: { _ in },
-            onReorderEnded: { _ in },
-            onReorderCanceled: {}
+            onReorderHandoff: { _ in }
         )
         .publishDockSlotCenter(sessionID: session.id, dockSide: dockSide)
     }
@@ -1867,41 +1995,95 @@ private struct PickyHUDDockRailView: View {
         for session: PickySessionListViewModel.SessionCard,
         slot: PickyDockSlot
     ) -> some View {
-        PickyHUDDockIconView(
-            session: session,
-            index: slot.visibleIndex,
-            isActive: activeSessionID == session.id,
-            isOpened: openedSessionID == session.id,
-            isPreviewed: previewSessionID == session.id,
-            isScreenContextArmed: screenContextTargetSessionID == session.id,
-            dockSide: dockSide,
-            shortcutNumber: PickyHUDDockLayout.numberShortcutForSessionIndex(slot.visibleIndex),
-            isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-            shouldFlashCompletion: pendingDoneFlashSessionIDs.contains(session.id),
-            isUnread: unreadSessionIDs.contains(session.id),
-            metrics: metrics,
-            isDragging: draggingSessionID == session.id,
-            dragOffset: draggingSessionID == session.id ? dragOffset : .zero,
-            onHover: { onHoverSession(session.id) },
-            onOpen: { onOpenSession(session.id) },
-            onToggleScreenContextTarget: { onToggleScreenContextTarget(session.id) },
-            onCompact: { onCompactSession(session.id) },
-            onArchive: { onArchiveSession(session.id) },
-            onStop: { onStopSession(session.id) },
-            onDoneFlashConsumed: { onDoneFlashConsumed(session.id) },
-            onReorderBegin: { handleReorderBegin(sessionID: session.id) },
-            onReorderChanged: { handleReorderChanged(sessionID: session.id, translation: $0) },
-            onReorderEnded: { handleReorderEnded(sessionID: session.id, translation: $0) },
-            onReorderCanceled: { handleReorderCanceled() }
-        )
-        .publishDockSlotCenter(sessionID: session.id, dockSide: dockSide)
-        .transaction { transaction in
-            guard let draggingID = draggingSessionID else { return }
-            if draggingID == session.id {
-                transaction.animation = nil
-            } else {
+        if draggingSessionID == session.id {
+            // The dragged Pickle is rendered as a floating overlay that never
+            // reparents (see `draggedFloatingIconOverlay`). In the flow it is
+            // an invisible placeholder of identical size so neighbors reflow
+            // to make room at the landing spot, but no real icon view crosses
+            // the group-container boundary — which is what caused the flicker.
+            Color.clear
+                .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
+                .publishDockSlotCenter(sessionID: session.id, dockSide: dockSide)
+        } else {
+            PickyHUDDockIconView(
+                session: session,
+                index: slot.visibleIndex,
+                isActive: activeSessionID == session.id,
+                isOpened: openedSessionID == session.id,
+                isPreviewed: previewSessionID == session.id,
+                isScreenContextArmed: screenContextTargetSessionID == session.id,
+                dockSide: dockSide,
+                shortcutNumber: PickyHUDDockLayout.numberShortcutForSessionIndex(slot.visibleIndex),
+                isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+                shouldFlashCompletion: pendingDoneFlashSessionIDs.contains(session.id),
+                isUnread: unreadSessionIDs.contains(session.id),
+                metrics: metrics,
+                isDragging: false,
+                dragOffset: .zero,
+                onHover: { onHoverSession(session.id) },
+                onOpen: { onOpenSession(session.id) },
+                onToggleScreenContextTarget: { onToggleScreenContextTarget(session.id) },
+                onCompact: { onCompactSession(session.id) },
+                onArchive: { onArchiveSession(session.id) },
+                onStop: { onStopSession(session.id) },
+                onDoneFlashConsumed: { onDoneFlashConsumed(session.id) },
+                onReorderHandoff: { anchorScreenPoint in
+                    reorderController.begin(sessionID: session.id, anchorScreenPoint: anchorScreenPoint)
+                }
+            )
+            .publishDockSlotCenter(sessionID: session.id, dockSide: dockSide)
+            .transaction { transaction in
+                // While a drag is in progress, animate sibling slot moves so
+                // they slide to make room at the landing spot.
+                guard draggingSessionID != nil else { return }
                 transaction.animation = slotShiftAnimation
             }
+        }
+    }
+
+    /// The real dragged Pickle, floating above the rail at the cursor. Lives in
+    /// a single stable overlay so it never reparents across group containers
+    /// (the in-flow slot is an invisible placeholder). Pure-translation
+    /// positioning means it tracks the cursor with no per-frame layout lag.
+    @ViewBuilder
+    private var draggedFloatingIconOverlay: some View {
+        if let id = draggingSessionID,
+           let card = sessions.first(where: { $0.id == id }) {
+            GeometryReader { geo in
+                PickyHUDDockIconView(
+                    session: card,
+                    index: 0,
+                    isActive: activeSessionID == id,
+                    isOpened: false,
+                    isPreviewed: false,
+                    isScreenContextArmed: false,
+                    dockSide: dockSide,
+                    shortcutNumber: nil,
+                    isCommandShortcutHintVisible: false,
+                    shouldFlashCompletion: false,
+                    isUnread: unreadSessionIDs.contains(id),
+                    metrics: metrics,
+                    isDragging: true,
+                    dragOffset: .zero,
+                    onHover: {},
+                    onOpen: {},
+                    onToggleScreenContextTarget: {},
+                    onCompact: {},
+                    onArchive: {},
+                    onStop: {},
+                    onDoneFlashConsumed: {},
+                    onReorderHandoff: { _ in }
+                )
+                .position(
+                    x: dockSide.orientation == .vertical
+                        ? geo.size.width / 2
+                        : dragStartCenter + dragTranslation.width,
+                    y: dockSide.orientation == .vertical
+                        ? dragStartCenter + dragTranslation.height
+                        : geo.size.height / 2
+                )
+            }
+            .allowsHitTesting(false)
         }
     }
 
@@ -1999,21 +2181,19 @@ private struct PickyHUDDockRailView: View {
     }
 
     private func handleReorderBegin(sessionID: String) {
-        guard let slot = projection.slots.first(where: { $0.sessionID == sessionID }) else { return }
+        guard projection.slots.contains(where: { $0.sessionID == sessionID }) else { return }
         draggingSessionID = sessionID
-        dragStartVisibleIndex = slot.visibleIndex
-        dragCurrentVisibleIndex = slot.visibleIndex
-        dragOffset = .zero
-        // Anchor cursor math on the measured slot center captured the
+        pendingDropContainer = layout.container(forSessionID: sessionID)
+        dragTranslation = .zero
+        // Anchor the floating overlay on the measured slot center captured the
         // moment the user picked up the icon. Falling back to 0 keeps the
-        // first frame safe when the GeometryReader publish hasn't landed
-        // yet — the rail self-corrects on the next change cycle.
+        // first frame safe when the GeometryReader publish hasn't landed yet.
         dragStartCenter = slotCenters[sessionID] ?? 0
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
     }
 
     private func handleReorderChanged(sessionID: String, translation: CGSize) {
         guard draggingSessionID == sessionID else { return }
+        dragTranslation = translation
         let translationAxis = axisDelta(translation)
         let cursorAxis = dragStartCenter + translationAxis
 
@@ -2044,42 +2224,50 @@ private struct PickyHUDDockRailView: View {
             }
         }
 
-        if let nearestDestination,
-           layout.container(forSessionID: sessionID) != nearestDestination {
-            onMoveSessionInDock(sessionID, nearestDestination)
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        // Escape hatch: when the cursor is dragged clearly past the topmost or
+        // bottommost slot, force a *top-level* (ungrouped) destination. This
+        // is the only way to pull a Pickle out of a group when every visible
+        // slot is a group member — dragging above the first slot drops it
+        // above the group, below the last slot drops it after the group.
+        let realCenters = projection.slots.compactMap { slotCenters[$0.sessionID] }
+        if let minCenter = realCenters.min(), let maxCenter = realCenters.max() {
+            let escapeMargin = slotPitchAlongAxis * 0.6
+            if cursorAxis < minCenter - escapeMargin {
+                nearestDestination = .topLevel(index: 0)
+            } else if cursorAxis > maxCenter + escapeMargin {
+                nearestDestination = .topLevel(index: layout.entries.count)
+            }
         }
 
-        // Keep the dragged icon glued under the cursor. The rail has moved
-        // the icon's home to the new slot; the gap between the old start
-        // center and the new home center has been absorbed by the layout,
-        // so dragOffset only needs to cover the *remaining* translation.
-        let currentHomeCenter = slotCenters[sessionID] ?? dragStartCenter
-        let shift = currentHomeCenter - dragStartCenter
-        let offsetAxis = translationAxis - shift
-        switch dockSide.orientation {
-        case .horizontal:
-            dragOffset = CGSize(width: offsetAxis, height: translation.height)
-        case .vertical:
-            dragOffset = CGSize(width: translation.width, height: offsetAxis)
+        // Record where the icon *would* land. This drives the live preview
+        // projection (siblings make room at the landing spot) but is NOT
+        // committed: grouping/ungrouping only happens on release, so the
+        // assignment never flickers as the cursor crosses a boundary.
+        if let nearestDestination, pendingDropContainer != nearestDestination {
+            pendingDropContainer = nearestDestination
         }
     }
 
     private func handleReorderEnded(sessionID: String, translation: CGSize) {
         guard draggingSessionID == sessionID else { return }
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
-            dragOffset = .zero
+        // Commit the deferred move exactly once, on release.
+        let currentContainer = layout.container(forSessionID: sessionID)
+        if let destination = pendingDropContainer, destination != currentContainer {
+            onMoveSessionInDock(sessionID, destination)
         }
         draggingSessionID = nil
-        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+        pendingDropContainer = nil
+        dragTranslation = .zero
     }
 
     private func handleReorderCanceled() {
         guard draggingSessionID != nil else { return }
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
-            dragOffset = .zero
-        }
+        // No commit on cancel — the Pickle simply snaps back to its slot.
         draggingSessionID = nil
+        pendingDropContainer = nil
+        dragTranslation = .zero
+        activeReorderSessionID = nil
+        reorderController.reset()
     }
 
     // MARK: - Group header drag (whole-group reorder)
@@ -2132,7 +2320,6 @@ private struct PickyHUDDockRailView: View {
         groupDragCurrentLayoutIndex = layoutIdx
         groupDragOffset = .zero
         groupDragStartCenter = topEntryCenters["group:\(groupID)"] ?? 0
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
     }
 
     private func handleGroupHeaderDragChanged(groupID: String, translation: CGSize) {
@@ -2162,7 +2349,6 @@ private struct PickyHUDDockRailView: View {
         if nearestLayoutIdx != groupDragCurrentLayoutIndex {
             onMoveDockGroup(groupID, nearestLayoutIdx)
             groupDragCurrentLayoutIndex = nearestLayoutIdx
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
 
         // Keep the group block glued under the cursor.
@@ -2183,7 +2369,6 @@ private struct PickyHUDDockRailView: View {
             groupDragOffset = .zero
         }
         draggingGroupID = nil
-        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
     }
 
     private func handleGroupHeaderDragCanceled() {
@@ -2645,10 +2830,11 @@ private struct PickyHUDDockIconView: View {
     let onArchive: () -> Void
     let onStop: () -> Void
     let onDoneFlashConsumed: () -> Void
-    var onReorderBegin: () -> Void = {}
-    var onReorderChanged: (CGSize) -> Void = { _ in }
-    var onReorderEnded: (CGSize) -> Void = { _ in }
-    var onReorderCanceled: () -> Void = {}
+    /// Fired once when the cursor crosses the reorder threshold. The argument
+    /// is the mouse-down anchor in screen space; the rail hands the drag off
+    /// to its rail-level controller from here so it survives this icon's
+    /// NSView being recreated mid-drag.
+    var onReorderHandoff: (NSPoint) -> Void = { _ in }
 
     @State private var completionFlashIntensity: Double = 0
     @State private var completionFlashTask: Task<Void, Never>?
@@ -2734,10 +2920,7 @@ private struct PickyHUDDockIconView: View {
                 onArchivePressing: handleArchivePressing,
                 onArchive: completeArchiveHold,
                 onStop: onStop,
-                onReorderBegin: onReorderBegin,
-                onReorderChanged: onReorderChanged,
-                onReorderEnded: onReorderEnded,
-                onReorderCanceled: onReorderCanceled
+                onReorderHandoff: onReorderHandoff
             )
         }
         .pointerCursor()
@@ -2752,9 +2935,10 @@ private struct PickyHUDDockIconView: View {
             completionFlashTask = nil
             cancelArchiveHoldFeedback()
             didCompleteArchiveHold = false
-            if isDragging {
-                onReorderCanceled()
-            }
+            // Do NOT cancel an in-flight reorder here. The drag is owned by the
+            // rail-level controller; this icon disappears precisely because the
+            // live preview reparented it across a group boundary, and the drag
+            // must keep going until the user releases.
         }
         .animation(.spring(response: 0.2, dampingFraction: 0.78), value: isArchivePressing)
         .accessibilityLabel("Preview \(session.title)")
@@ -3179,20 +3363,14 @@ private struct PickyHUDDockIconClickHost: NSViewRepresentable {
     var onArchivePressing: (Bool) -> Void
     var onArchive: () -> Void
     var onStop: () -> Void
-    /// Fired when the cursor leaves the archive hold's stationary tolerance,
-    /// signalling "this drag is now a reorder, not a long-press archive".
-    /// Argument is the window-space point where the drag started, which the
-    /// parent uses purely as a deterministic anchor for haptic alignment.
-    var onReorderBegin: () -> Void = {}
-    /// Cumulative drag offset (in points) from the original mouse-down point,
-    /// in window coordinates: (dx, dy). The parent decides which axis is
-    /// relevant based on the dock's orientation.
-    var onReorderChanged: (CGSize) -> Void = { _ in }
-    /// Drag ended (mouse up) while in reorder mode. Argument matches the
-    /// final cumulative offset from mouseDown.
-    var onReorderEnded: (CGSize) -> Void = { _ in }
-    /// Drag canceled (e.g. due to window losing focus, view disappearing).
-    var onReorderCanceled: () -> Void = {}
+    /// Fired once when the cursor leaves the archive hold's stationary
+    /// tolerance, signalling "this drag is now a reorder, not a long-press
+    /// archive". Argument is the mouse-down point in screen coordinates,
+    /// which the rail uses as the anchor for its rail-level drag tracker. All
+    /// subsequent drag/up handling happens there, not on this NSView, so the
+    /// drag survives this view being recreated when the preview reparents the
+    /// icon across a group boundary.
+    var onReorderHandoff: (NSPoint) -> Void = { _ in }
 
     final class Coordinator: NSObject {
         var onHover: (() -> Void)?
@@ -3205,10 +3383,7 @@ private struct PickyHUDDockIconClickHost: NSViewRepresentable {
         var onArchivePressing: ((Bool) -> Void)?
         var onArchive: (() -> Void)?
         var onStop: (() -> Void)?
-        var onReorderBegin: (() -> Void)?
-        var onReorderChanged: ((CGSize) -> Void)?
-        var onReorderEnded: ((CGSize) -> Void)?
-        var onReorderCanceled: (() -> Void)?
+        var onReorderHandoff: ((NSPoint) -> Void)?
 
         func clearCallbacks() {
             onHover = nil
@@ -3218,10 +3393,7 @@ private struct PickyHUDDockIconClickHost: NSViewRepresentable {
             onArchivePressing = nil
             onArchive = nil
             onStop = nil
-            onReorderBegin = nil
-            onReorderChanged = nil
-            onReorderEnded = nil
-            onReorderCanceled = nil
+            onReorderHandoff = nil
         }
 
         @objc func toggleScreenContextTarget(_ sender: NSMenuItem) {
@@ -3267,10 +3439,7 @@ private struct PickyHUDDockIconClickHost: NSViewRepresentable {
         coordinator.onArchivePressing = onArchivePressing
         coordinator.onArchive = onArchive
         coordinator.onStop = onStop
-        coordinator.onReorderBegin = onReorderBegin
-        coordinator.onReorderChanged = onReorderChanged
-        coordinator.onReorderEnded = onReorderEnded
-        coordinator.onReorderCanceled = onReorderCanceled
+        coordinator.onReorderHandoff = onReorderHandoff
     }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
@@ -3293,7 +3462,11 @@ private final class PickyHUDDockIconClickNSView: NSView {
     /// jitter and the icon falling behind the cursor.
     private var mouseDownScreenPoint: NSPoint?
     private var didCompleteArchiveHold = false
-    private var isReordering = false
+    /// True once the drag crossed the reorder threshold and was handed off to
+    /// the rail-level drag controller. From that point this view does nothing
+    /// for the drag — an app-level event monitor owns it — so the drag is
+    /// unaffected when SwiftUI recreates this view.
+    private var handedOffReorder = false
 
     override var isFlipped: Bool { false }
 
@@ -3334,7 +3507,7 @@ private final class PickyHUDDockIconClickNSView: NSView {
         }
         mouseDownScreenPoint = NSEvent.mouseLocation
         didCompleteArchiveHold = false
-        isReordering = false
+        handedOffReorder = false
         guard event.clickCount == 1 else { return }
         coordinator?.onArchivePressing?(true)
         let item = DispatchWorkItem { [weak self] in
@@ -3354,7 +3527,7 @@ private final class PickyHUDDockIconClickNSView: NSView {
         cancelArchiveHoldFeedback()
         mouseDownScreenPoint = nil
         didCompleteArchiveHold = false
-        isReordering = false
+        handedOffReorder = false
         coordinator?.onHover?()
         guard let coordinator else { return }
 
@@ -3393,46 +3566,35 @@ private final class PickyHUDDockIconClickNSView: NSView {
         return item
     }
 
-    /// Cursor delta since `mouseDownScreenPoint`, in screen coordinates and
-    /// then flipped to SwiftUI top-down y. Stable across view position
-    /// changes because both anchor and current sample are screen-space.
-    private func swiftUIDelta() -> CGSize? {
-        guard let anchor = mouseDownScreenPoint else { return nil }
+    override func mouseDragged(with event: NSEvent) {
+        guard !handedOffReorder, let anchor = mouseDownScreenPoint else { return }
         let current = NSEvent.mouseLocation
         let dx = current.x - anchor.x
         let dy = current.y - anchor.y
-        return CGSize(width: dx, height: -dy)
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard let delta = swiftUIDelta() else { return }
-        let distance = (delta.width * delta.width + delta.height * delta.height).squareRoot()
-        if isReordering {
-            coordinator?.onReorderChanged?(delta)
-            return
-        }
+        let distance = (dx * dx + dy * dy).squareRoot()
         // Same threshold as archive cancel — so the moment the user clearly
         // commits to moving the cursor, archive intent gives way to reorder.
+        // Hand the drag off to the rail-level controller and stop tracking it
+        // here; the controller's app-level monitor takes over from the next
+        // event onward (and swallows it so we don't double-handle).
         if distance > PickyHUDArchiveHoldPolicy.maximumDistance {
             cancelArchiveHoldFeedback()
-            isReordering = true
-            coordinator?.onReorderBegin?()
-            coordinator?.onReorderChanged?(delta)
+            handedOffReorder = true
+            coordinator?.onReorderHandoff?(anchor)
         }
     }
 
     override func mouseUp(with event: NSEvent) {
         let completedArchive = didCompleteArchiveHold
-        let wasReordering = isReordering
-        let finalOffset = wasReordering ? (swiftUIDelta() ?? .zero) : .zero
+        let wasHandedOff = handedOffReorder
         cancelArchiveHoldFeedback()
         mouseDownScreenPoint = nil
         didCompleteArchiveHold = false
-        isReordering = false
-        if wasReordering {
-            coordinator?.onReorderEnded?(finalOffset)
-            return
-        }
+        handedOffReorder = false
+        // When the drag was handed off the rail controller owns its end; the
+        // app-level monitor normally swallows this mouseUp before it reaches
+        // us, but guard anyway so a click isn't synthesized.
+        if wasHandedOff { return }
         guard !completedArchive else { return }
         coordinator?.onOpen?()
     }
@@ -3444,17 +3606,16 @@ private final class PickyHUDDockIconClickNSView: NSView {
     }
 
     func cancelTransientInteraction(notifyingCallbacks shouldNotify: Bool = true) {
-        let wasReordering = isReordering
         archiveWorkItem?.cancel()
         archiveWorkItem = nil
         mouseDownScreenPoint = nil
         didCompleteArchiveHold = false
-        isReordering = false
+        // Note: a handed-off reorder is owned by the rail-level controller, so
+        // tearing this view down does NOT cancel the drag. That is the whole
+        // point — the drag must survive the icon being recreated.
+        handedOffReorder = false
         guard shouldNotify else { return }
         coordinator?.onArchivePressing?(false)
-        if wasReordering {
-            coordinator?.onReorderCanceled?()
-        }
     }
 
     override func viewDidMoveToWindow() {

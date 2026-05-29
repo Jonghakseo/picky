@@ -520,6 +520,11 @@ struct PickyHUDDockGroupContextMenu: View {
         Divider()
         Button(L10n.t("group.menu.ungroup"), action: onUngroup)
         Button(L10n.t("group.menu.delete"), role: .destructive) {
+            // Empty group: nothing to archive, so delete without confirmation.
+            guard !group.memberSessionIDs.isEmpty else {
+                onDeleteWithArchive()
+                return
+            }
             // Surface a quick confirmation by routing through an NSAlert so
             // we don't silently archive a user's work in a single click.
             let alert = NSAlert()

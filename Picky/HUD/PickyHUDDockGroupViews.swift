@@ -150,38 +150,13 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
     @State private var hasReportedHeaderDragBegin: Bool = false
 
     var body: some View {
-        Group {
-            if dockSide.orientation == .horizontal {
-                // Horizontal rail: accent renders as a thin TOP bar above
-                // the header + members so the group block stays compact in
-                // the cross-axis direction.
-                VStack(alignment: .leading, spacing: 2) {
-                    accentBar
-                        .frame(height: 2)
-                    header
-                    content()
-                }
-            } else {
-                // Vertical rail: header chip sits across the full width so
-                // the chevron lives at the same left column as the accent
-                // bar that follows. The bar is attached as an *overlay*
-                // on the padded content view rather than as an HStack
-                // sibling — in an HStack a SwiftUI Shape has nil preferred
-                // height, and other groups collapsing in the same dock
-                // body re-propagate sizes through the rail in a way that
-                // would intermittently shrink this bar to a partial
-                // height. Tying the bar's height directly to the content
-                // frame via overlay eliminates that ambiguity.
-                VStack(alignment: .leading, spacing: 2) {
-                    header
-                    content()
-                        .padding(.leading, 6)
-                        .overlay(alignment: .leading) {
-                            accentBar
-                                .frame(width: 2)
-                        }
-                }
-            }
+        // Group block: the name header sits above the app-drawer container
+        // that holds the members. The group color is carried as a subtle
+        // tint on the drawer (see `pickyDockGroupDrawer`), so there is no
+        // left accent bar and no chevron.
+        VStack(alignment: .leading, spacing: 2) {
+            header
+            content()
         }
         .scaleEffect(isHeaderDragging ? 1.03 : 1.0)
         .shadow(
@@ -233,25 +208,12 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
         }
     }
 
-    private var accentBar: some View {
-        RoundedRectangle(cornerRadius: 1, style: .continuous)
-            .fill(group.color.accent.opacity(0.78))
-    }
-
     @ViewBuilder
     private var header: some View {
         HStack(spacing: 3) {
-            // Always-visible header is intentionally tiny: chevron + accent
-            // dot + (count when collapsed). The group name lives in the
-            // hover-revealed floating label so the narrow vertical rail
-            // never has to truncate it.
-            Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
-                .font(.system(size: 7, weight: .semibold))
-                .foregroundColor(group.color.accent.opacity(0.9))
-            // The group name renders inline above the members. No accent
-            // dot and no hover-revealed floating label: the chevron marks
-            // the header and the accent bar carries the group color. Long
-            // names truncate within the rail width.
+            // The group name renders inline above the members. No chevron,
+            // accent dot, or hover label: the drawer's tint + border below
+            // carries the grouping cue. Long names truncate within the rail.
             Text(group.displayName)
                 .pickyFont(size: 11, weight: .medium)
                 .foregroundColor(DS.Colors.textPrimary)
@@ -329,6 +291,37 @@ enum PickyDockPickleStatusVisual {
     }
 }
 
+/// Shared "app drawer" surface for a dock group: a subtle neutral fill with
+/// a faint group-color tint and a weak border. Used by both the collapsed
+/// folder badge and the expanded member column so an expanded group reads as
+/// the same drawer extended downward.
+struct PickyDockGroupDrawerBackground: ViewModifier {
+    let tint: Color
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.white.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(tint.opacity(0.16))
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(tint.opacity(0.32), lineWidth: 0.5)
+            )
+    }
+}
+
+extension View {
+    func pickyDockGroupDrawer(tint: Color, cornerRadius: CGFloat) -> some View {
+        modifier(PickyDockGroupDrawerBackground(tint: tint, cornerRadius: cornerRadius))
+    }
+}
+
 /// A single member rendered inside the collapsed-group folder grid: the
 /// pickle glyph (or status asset) tinted by the member's status color.
 struct PickyDockMiniPickleGlyph: View {
@@ -363,6 +356,7 @@ struct PickyDockMiniPickleGlyph: View {
 struct PickyHUDDockCollapsedGroupBadge: View {
     let members: [PickySessionListViewModel.SessionCard]
     let unreadCount: Int
+    let tint: Color
     let metrics: PickyHUDDockMetrics
     var onTap: () -> Void = {}
 
@@ -408,24 +402,17 @@ struct PickyHUDDockCollapsedGroupBadge: View {
         let grid = cells
 
         ZStack(alignment: .bottomTrailing) {
-            RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                .fill(Color.white.opacity(0.06))
-                .overlay(
-                    RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.5)
-                )
-                .frame(width: containerSide, height: containerSide)
-                .overlay {
-                    VStack(spacing: gap) {
-                        ForEach(0..<2, id: \.self) { row in
-                            HStack(spacing: gap) {
-                                ForEach(0..<2, id: \.self) { col in
-                                    cellView(grid[row * 2 + col], side: cellSide, glyphSide: glyphSide)
-                                }
-                            }
+            VStack(spacing: gap) {
+                ForEach(0..<2, id: \.self) { row in
+                    HStack(spacing: gap) {
+                        ForEach(0..<2, id: \.self) { col in
+                            cellView(grid[row * 2 + col], side: cellSide, glyphSide: glyphSide)
                         }
                     }
                 }
+            }
+            .frame(width: containerSide, height: containerSide)
+            .pickyDockGroupDrawer(tint: tint, cornerRadius: metrics.iconCornerRadius)
 
             if unreadCount > 0 {
                 Text("\(unreadCount)")

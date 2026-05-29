@@ -440,6 +440,7 @@ struct PickyHUDView: View {
                 allSessions: viewModel.sessions,
                 baseProjection: dockProjection,
                 layout: viewModel.dockLayout,
+                collapsedGroupOverrides: placement.collapsedGroupOverrides,
                 activeSessionID: activeSession?.id,
                 openedSessionID: openedSessionID,
                 previewSessionID: hoverPreviewSessionID,
@@ -1563,6 +1564,10 @@ private struct PickyHUDDockRailView: View {
     /// top-level entry indices back to `entries` indices when committing
     /// group-header drag reorders.
     let layout: PickyDockLayout
+    /// Per-display group collapse overrides. The drag preview projection must
+    /// apply these too, or expanded-on-this-display groups would render with
+    /// their model (default) collapse state mid-drag and appear to collapse.
+    let collapsedGroupOverrides: [String: Bool]
     let activeSessionID: String?
     let openedSessionID: String?
     let previewSessionID: String?
@@ -1676,7 +1681,8 @@ private struct PickyHUDDockRailView: View {
         preview.move(session: draggingSessionID, to: pendingDropContainer)
         return PickyDockProjector.project(
             layout: preview,
-            visibleSessionIDs: baseProjection.slots.map(\.sessionID)
+            visibleSessionIDs: baseProjection.slots.map(\.sessionID),
+            collapsedOverrides: collapsedGroupOverrides
         )
     }
 
@@ -1935,6 +1941,7 @@ private struct PickyHUDDockRailView: View {
                         PickyHUDDockCollapsedGroupBadge(
                             members: memberCards,
                             unreadCount: unreadCount,
+                            tint: group.color.accent,
                             metrics: metrics,
                             onTap: { onToggleDockGroupCollapsed(group.id) }
                         )
@@ -1956,25 +1963,31 @@ private struct PickyHUDDockRailView: View {
                             dockSide: dockSide
                         )
                 } else {
-                    if dockSide.orientation == .horizontal {
-                        HStack(spacing: metrics.sessionSpacing) {
-                            ForEach(members, id: \.sessionID) { member in
-                                if let card = sessions.first(where: { $0.id == member.sessionID }),
-                                   let slot = projection.slots.first(where: { $0.sessionID == member.sessionID }) {
-                                    iconView(for: card, slot: slot)
+                    // Expanded group: members live inside the same app-drawer
+                    // surface as the collapsed folder, extended along the dock
+                    // axis so the grouping stays visible while expanded.
+                    Group {
+                        if dockSide.orientation == .horizontal {
+                            HStack(spacing: metrics.sessionSpacing) {
+                                ForEach(members, id: \.sessionID) { member in
+                                    if let card = sessions.first(where: { $0.id == member.sessionID }),
+                                       let slot = projection.slots.first(where: { $0.sessionID == member.sessionID }) {
+                                        iconView(for: card, slot: slot)
+                                    }
                                 }
                             }
-                        }
-                    } else {
-                        VStack(spacing: metrics.sessionSpacing) {
-                            ForEach(members, id: \.sessionID) { member in
-                                if let card = sessions.first(where: { $0.id == member.sessionID }),
-                                   let slot = projection.slots.first(where: { $0.sessionID == member.sessionID }) {
-                                    iconView(for: card, slot: slot)
+                        } else {
+                            VStack(spacing: metrics.sessionSpacing) {
+                                ForEach(members, id: \.sessionID) { member in
+                                    if let card = sessions.first(where: { $0.id == member.sessionID }),
+                                       let slot = projection.slots.first(where: { $0.sessionID == member.sessionID }) {
+                                        iconView(for: card, slot: slot)
+                                    }
                                 }
                             }
                         }
                     }
+                    .pickyDockGroupDrawer(tint: group.color.accent, cornerRadius: metrics.iconCornerRadius)
                 }
             }
             .publishDockTopEntryCenter(

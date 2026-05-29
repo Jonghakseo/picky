@@ -281,20 +281,22 @@ extension PickyDockLayout {
     }
 
     /// Atomic move of a session from its current container to `destination`.
-    /// Adjusts `destination` indices for self-removal when source and target
-    /// containers match so the post-remove insertion lands exactly on the
-    /// requested slot.
+    /// `destination` is interpreted as the desired *final* address inside
+    /// the post-move layout, matching the drag UX expectation "drop where
+    /// the cursor points". When source and target containers are the same
+    /// and the source sits above the target, the index is bumped by one
+    /// so the post-remove insertion still lands on the requested slot.
     mutating func move(session id: String, to destination: PickyDockContainer) {
         let origin = container(forSessionID: id)
         _ = removeSession(id)
         let adjusted: PickyDockContainer = {
             guard let origin else { return destination }
             switch (origin, destination) {
-            case (.topLevel(let from), .topLevel(let to)) where from < to:
-                return .topLevel(index: to - 1)
+            case (.topLevel(let from), .topLevel(let to)) where from <= to:
+                return .topLevel(index: to)
             case (.group(let oid, let from), .group(let did, let to))
-                where oid == did && from < to:
-                return .group(id: did, memberIndex: to - 1)
+                where oid == did && from <= to:
+                return .group(id: did, memberIndex: to)
             default:
                 return destination
             }
@@ -335,28 +337,25 @@ extension PickyDockLayout {
         return []
     }
 
-    /// Reorder a group within the top-level entries. The target index is
-    /// measured *after* the group is removed from its current slot so the
-    /// caller can pass the simple visual target.
+    /// Reorder a group within the top-level entries. `target` is the
+    /// desired *final* position of the group in `entries`, matching the
+    /// header-drag UX ("drop where my cursor points"). The model removes
+    /// the group from its current slot first, then inserts at `target`
+    /// clamped to the post-removal bounds, so the final array length is
+    /// preserved and the group lands at the requested visual position
+    /// regardless of move direction. No-op when the group does not exist.
     mutating func moveGroup(id: String, toTopLevelIndex target: Int) {
         var removedEntry: PickyDockEntry?
-        var removedAt: Int = 0
         for (idx, entry) in entries.enumerated() {
             if case .group(let g) = entry, g.id == id {
                 removedEntry = entry
-                removedAt = idx
                 entries.remove(at: idx)
                 break
             }
         }
         guard let removedEntry else { return }
-        var clampedTarget = max(0, min(entries.count, target))
-        // When the group sat above the target, the implicit "shift up" of
-        // the trailing entries already absorbed one slot — keep the target
-        // as-is. When it sat below, no adjustment needed.
-        _ = removedAt
-        clampedTarget = max(0, min(entries.count, clampedTarget))
-        entries.insert(removedEntry, at: clampedTarget)
+        let clamped = max(0, min(entries.count, target))
+        entries.insert(removedEntry, at: clamped)
     }
 }
 

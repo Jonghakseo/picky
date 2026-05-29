@@ -15,6 +15,79 @@ import AppKit
 /// dock capsule reserves matching vertical space.
 let PickyHUDDockGroupHeaderHeight: CGFloat = 14
 
+/// Named SwiftUI coordinate space the rail establishes so child icons and
+/// group headers can publish their layout centers in a single shared frame.
+let PickyHUDDockRailCoordinateSpace = "PickyHUDDockRail"
+
+/// Maps a session id to the primary-axis center (Y for vertical docks, X for
+/// horizontal) of its rendered slot in the rail coordinate space. Drives
+/// precise drag hit-testing so reorders work correctly even when group
+/// headers introduce non-uniform vertical chrome between icons.
+struct PickyDockSlotCenterPreferenceKey: PreferenceKey {
+    static let defaultValue: [String: CGFloat] = [:]
+    static func reduce(
+        value: inout [String: CGFloat],
+        nextValue: () -> [String: CGFloat]
+    ) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+/// Maps a top-level entry id (`"session:<id>"` or `"group:<id>"`) to its
+/// primary-axis center in the rail coordinate space. Drives precise drop
+/// hit-testing for the group-header drag that reorders entire groups
+/// within the layout.
+struct PickyDockTopEntryCenterPreferenceKey: PreferenceKey {
+    static let defaultValue: [String: CGFloat] = [:]
+    static func reduce(
+        value: inout [String: CGFloat],
+        nextValue: () -> [String: CGFloat]
+    ) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+extension View {
+    /// Publishes this view's primary-axis center (Y for vertical docks,
+    /// X for horizontal) to the named coordinate space via the
+    /// `PickyDockSlotCenterPreferenceKey`. Apply on every draggable dock
+    /// icon so the rail can hit-test the cursor against measured centers.
+    func publishDockSlotCenter(
+        sessionID: String,
+        dockSide: PickyHUDDockSide
+    ) -> some View {
+        background {
+            GeometryReader { proxy in
+                let frame = proxy.frame(in: .named(PickyHUDDockRailCoordinateSpace))
+                let axis = dockSide.orientation == .vertical ? frame.midY : frame.midX
+                Color.clear.preference(
+                    key: PickyDockSlotCenterPreferenceKey.self,
+                    value: [sessionID: axis]
+                )
+            }
+        }
+    }
+
+    /// Publishes a top-level entry's primary-axis center for group-header
+    /// drag hit-testing. Pass either `"session:<id>"` for an ungrouped
+    /// session slot or `"group:<id>"` for a group container.
+    func publishDockTopEntryCenter(
+        entryID: String,
+        dockSide: PickyHUDDockSide
+    ) -> some View {
+        background {
+            GeometryReader { proxy in
+                let frame = proxy.frame(in: .named(PickyHUDDockRailCoordinateSpace))
+                let axis = dockSide.orientation == .vertical ? frame.midY : frame.midX
+                Color.clear.preference(
+                    key: PickyDockTopEntryCenterPreferenceKey.self,
+                    value: [entryID: axis]
+                )
+            }
+        }
+    }
+}
+
 /// A render unit emitted by `PickyHUDDockRailView.buildRenderUnits` — either
 /// an ungrouped session slot or a group block that wraps members in a single
 /// accent-bar container.
@@ -54,10 +127,29 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
     let onSetColor: (PickyDockGroupColor) -> Void
     let onUngroup: () -> Void
     let onDeleteWithArchive: () -> Void
+    /// Header drag callbacks. The rail uses them to reorder the entire
+    /// group block within the top-level layout while the user holds the
+    /// header chip and drags. Default no-ops keep the container usable in
+    /// previews/tests that don't wire reorder.
+    var onHeaderDragBegin: () -> Void = {}
+    var onHeaderDragChanged: (CGSize) -> Void = { _ in }
+    var onHeaderDragEnded: (CGSize) -> Void = { _ in }
+    var onHeaderDragCanceled: () -> Void = {}
+    /// True while this group's header is the live drag target. The rail
+    /// flips it on so the container can apply a small drag-state effect
+    /// (lifted shadow, faint scale) and the icon row can dim slightly so
+    /// the user sees the whole block following the cursor.
+    var isHeaderDragging: Bool = false
+    var headerDragOffset: CGSize = .zero
     @ViewBuilder var content: () -> Content
 
     @State private var draftName: String = ""
     @State private var isEditing: Bool = false
+    /// Tracks whether the current drag gesture has already reported its
+    /// `begin` event. SwiftUI's `DragGesture` only exposes `onChanged` /
+    /// `onEnded`, so we synthesize a single begin from the first onChanged
+    /// callback.
+    @State private var hasReportedHeaderDragBegin: Bool = false
 
     var body: some View {
         Group {
@@ -82,6 +174,16 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
                 }
             }
         }
+        .scaleEffect(isHeaderDragging ? 1.03 : 1.0)
+        .shadow(
+            color: Color.black.opacity(isHeaderDragging ? 0.28 : 0),
+            radius: isHeaderDragging ? 12 : 0,
+            x: 0,
+            y: isHeaderDragging ? 4 : 0
+        )
+        .offset(x: headerDragOffset.width, y: headerDragOffset.height)
+        .zIndex(isHeaderDragging ? 220 : 0)
+        .animation(.spring(response: 0.28, dampingFraction: 0.72), value: isHeaderDragging)
         .onAppear {
             draftName = group.name
             if isRenamingOnAppear { isEditing = true }
@@ -146,6 +248,24 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
         }
         .padding(.horizontal, 2)
         .frame(height: PickyHUDDockGroupHeaderHeight, alignment: .center)
+        .contentShape(Rectangle())
+        // Header drag = reorder the entire group block. `minimumDistance`
+        // keeps the chevron Button and the rename double-tap responsive
+        // for short cursor moves; only intentional drags begin reorder.
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 4, coordinateSpace: .global)
+                .onChanged { value in
+                    if !hasReportedHeaderDragBegin {
+                        hasReportedHeaderDragBegin = true
+                        onHeaderDragBegin()
+                    }
+                    onHeaderDragChanged(value.translation)
+                }
+                .onEnded { value in
+                    hasReportedHeaderDragBegin = false
+                    onHeaderDragEnded(value.translation)
+                }
+        )
         .contextMenu {
             PickyHUDDockGroupContextMenu(
                 group: group,

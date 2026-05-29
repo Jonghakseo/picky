@@ -421,6 +421,7 @@ struct PickyHUDView: View {
             PickyHUDDockRailView(
                 sessions: visibleSessions,
                 projection: dockProjection,
+                layout: viewModel.dockLayout,
                 activeSessionID: activeSession?.id,
                 openedSessionID: openedSessionID,
                 previewSessionID: hoverPreviewSessionID,
@@ -1432,6 +1433,10 @@ private extension PickySessionListViewModel.SessionCard {
 private struct PickyHUDDockRailView: View {
     let sessions: [PickySessionListViewModel.SessionCard]
     let projection: PickyDockProjection
+    /// Persisted dock layout. The rail uses it to translate visible
+    /// top-level entry indices back to `entries` indices when committing
+    /// group-header drag reorders.
+    let layout: PickyDockLayout
     let activeSessionID: String?
     let openedSessionID: String?
     let previewSessionID: String?
@@ -1478,10 +1483,31 @@ private struct PickyHUDDockRailView: View {
     @State private var dragOffset: CGSize = .zero
     @State private var dragStartVisibleIndex: Int = 0
     @State private var dragCurrentVisibleIndex: Int = 0
+    /// Primary-axis center the dragged icon occupied at pickup time, in the
+    /// dock rail's named coordinate space. Combined with the gesture's
+    /// `translation` it gives the current cursor axis position without
+    /// needing per-frame global coordinate math.
+    @State private var dragStartCenter: CGFloat = 0
     /// Group id whose inline rename input should grab keyboard focus on next
     /// appearance. Set right after `onCreateDockGroup()` so the user can type
     /// a name immediately; cleared on commit/cancel.
     @State private var pendingRenameGroupID: String?
+    /// Per-session primary-axis centers measured via `GeometryReader` in the
+    /// `PickyHUDDockRailCoordinateSpace`. Updated on every layout pass via
+    /// `PickyDockSlotCenterPreferenceKey`. Drives precise drop hit-testing
+    /// for icon drags so reorders survive non-uniform group-header chrome.
+    @State private var slotCenters: [String: CGFloat] = [:]
+    /// Per-top-entry primary-axis centers (one per ungrouped session and
+    /// one per group container). Drives the group-header drag's drop
+    /// hit-test against other top-level entries.
+    @State private var topEntryCenters: [String: CGFloat] = [:]
+    /// Currently-dragged group id (header drag). Mutually exclusive with
+    /// `draggingSessionID`.
+    @State private var draggingGroupID: String?
+    @State private var groupDragOffset: CGSize = .zero
+    @State private var groupDragStartCenter: CGFloat = 0
+    @State private var groupDragStartLayoutIndex: Int = 0
+    @State private var groupDragCurrentLayoutIndex: Int = 0
 
     var body: some View {
         Group {
@@ -1522,6 +1548,13 @@ private struct PickyHUDDockRailView: View {
             }
         }
         .background(dockGlassBackground)
+        .coordinateSpace(name: PickyHUDDockRailCoordinateSpace)
+        .onPreferenceChange(PickyDockSlotCenterPreferenceKey.self) { centers in
+            slotCenters = centers
+        }
+        .onPreferenceChange(PickyDockTopEntryCenterPreferenceKey.self) { centers in
+            topEntryCenters = centers
+        }
         .onHover(perform: onDockHoverChanged)
         .onChange(of: isRecentPickleFolderPickerPresented) { _, isPresented in
             withAnimation(PickyHUDExpansion.animation) {
@@ -1630,6 +1663,10 @@ private struct PickyHUDDockRailView: View {
             if let card = sessions.first(where: { $0.id == id }),
                let slot = projection.slots.first(where: { $0.sessionID == id }) {
                 iconView(for: card, slot: slot)
+                    .publishDockTopEntryCenter(
+                        entryID: "session:\(id)",
+                        dockSide: dockSide
+                    )
             }
         case .group(let group, let members):
             PickyHUDDockGroupContainer(
@@ -1647,7 +1684,13 @@ private struct PickyHUDDockRailView: View {
                 onToggleCollapsed: { onToggleDockGroupCollapsed(group.id) },
                 onSetColor: { onSetDockGroupColor(group.id, $0) },
                 onUngroup: { onRemoveDockGroup(group.id, true) },
-                onDeleteWithArchive: { onRemoveDockGroup(group.id, false) }
+                onDeleteWithArchive: { onRemoveDockGroup(group.id, false) },
+                onHeaderDragBegin: { handleGroupHeaderDragBegin(groupID: group.id) },
+                onHeaderDragChanged: { handleGroupHeaderDragChanged(groupID: group.id, translation: $0) },
+                onHeaderDragEnded: { handleGroupHeaderDragEnded(groupID: group.id, translation: $0) },
+                onHeaderDragCanceled: { handleGroupHeaderDragCanceled() },
+                isHeaderDragging: draggingGroupID == group.id,
+                headerDragOffset: draggingGroupID == group.id ? groupDragOffset : .zero
             ) {
                 if group.isCollapsed {
                     if let topID = members.first?.sessionID,
@@ -1690,6 +1733,10 @@ private struct PickyHUDDockRailView: View {
                     }
                 }
             }
+            .publishDockTopEntryCenter(
+                entryID: "group:\(group.id)",
+                dockSide: dockSide
+            )
         }
     }
 
@@ -1725,6 +1772,7 @@ private struct PickyHUDDockRailView: View {
             onReorderEnded: { handleReorderEnded(sessionID: session.id, translation: $0) },
             onReorderCanceled: { handleReorderCanceled() }
         )
+        .publishDockSlotCenter(sessionID: session.id, dockSide: dockSide)
         .transaction { transaction in
             guard let draggingID = draggingSessionID else { return }
             if draggingID == session.id {
@@ -1819,38 +1867,56 @@ private struct PickyHUDDockRailView: View {
         dragStartVisibleIndex = slot.visibleIndex
         dragCurrentVisibleIndex = slot.visibleIndex
         dragOffset = .zero
+        // Anchor cursor math on the measured slot center captured the
+        // moment the user picked up the icon. Falling back to 0 keeps the
+        // first frame safe when the GeometryReader publish hasn't landed
+        // yet — the rail self-corrects on the next change cycle.
+        dragStartCenter = slotCenters[sessionID] ?? 0
         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
     }
 
     private func handleReorderChanged(sessionID: String, translation: CGSize) {
         guard draggingSessionID == sessionID, !projection.slots.isEmpty else { return }
-        let pitch = slotPitchAlongAxis
-        guard pitch > 0 else { return }
-        let axis = axisDelta(translation)
-        let steps = Int((axis / pitch).rounded())
-        let maxIdx = projection.slots.count - 1
-        let targetIdx = max(0, min(maxIdx, dragStartVisibleIndex + steps))
-        if targetIdx != dragCurrentVisibleIndex {
+        let translationAxis = axisDelta(translation)
+        let cursorAxis = dragStartCenter + translationAxis
+
+        // Precise hit-test: find the slot whose measured center is closest
+        // to the current cursor axis. Falls back to no-move when the slot
+        // centers haven't been published yet (very first frame of drag).
+        var nearestIdx = dragCurrentVisibleIndex
+        var minDistance: CGFloat = .infinity
+        for (i, slot) in projection.slots.enumerated() {
+            guard let center = slotCenters[slot.sessionID] else { continue }
+            let distance = abs(center - cursorAxis)
+            if distance < minDistance {
+                minDistance = distance
+                nearestIdx = i
+            }
+        }
+
+        if nearestIdx != dragCurrentVisibleIndex {
             // Drop slot at target visibleIndex owns a container; place the
-            // dragged session at that container/position. The atomic move in
-            // `PickyDockLayout.move` handles self-removal index adjustment.
-            let destinationSlot = projection.slots[targetIdx]
+            // dragged session at that container/position. The atomic move
+            // in `PickyDockLayout.move` lands the icon at the requested
+            // final slot (semantic (a)).
+            let destinationSlot = projection.slots[nearestIdx]
             onMoveSessionInDock(sessionID, destinationSlot.container)
-            dragCurrentVisibleIndex = targetIdx
+            dragCurrentVisibleIndex = nearestIdx
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
-        // Subtract the slot shift already absorbed by the reorder so the
-        // icon stays glued under the cursor. Pitch is approximate when an
-        // expanded group's header sits between the dragged slot and its
-        // target (header has slightly less vertical height than a full
-        // tile); the resulting drift is at most ~14px per crossed header,
-        // which is comfortably inside the cursor's hit-tolerance.
-        let slotShift = CGFloat(dragCurrentVisibleIndex - dragStartVisibleIndex) * pitch
+
+        // Keep the dragged icon glued under the cursor. The rail has moved
+        // the icon's home to the new slot; the gap between the old start
+        // center and the new home center has been absorbed by the layout,
+        // so dragOffset only needs to cover the *remaining* translation.
+        let currentHomeCenter = slotCenters[sessionID] ?? dragStartCenter
+        let shift = currentHomeCenter - dragStartCenter
+        let offsetAxis = translationAxis - shift
         switch dockSide.orientation {
         case .horizontal:
-            dragOffset = CGSize(width: translation.width - slotShift, height: translation.height)
+            dragOffset = CGSize(width: offsetAxis, height: translation.height)
         case .vertical:
-            dragOffset = CGSize(width: translation.width, height: translation.height - slotShift)
+            dragOffset = CGSize(width: translation.width, height: offsetAxis)
         }
     }
 
@@ -1869,6 +1935,118 @@ private struct PickyHUDDockRailView: View {
             dragOffset = .zero
         }
         draggingSessionID = nil
+    }
+
+    // MARK: - Group header drag (whole-group reorder)
+
+    /// Visible top-level entry ids in the order the projection emitted them.
+    /// `"session:<id>"` for an ungrouped slot, `"group:<id>"` for a group
+    /// (either expanded or collapsed). Drives the header drag's drop
+    /// hit-test along the same axis the icons live on.
+    private var visibleTopEntryIDs: [String] {
+        var ids: [String] = []
+        for item in projection.items {
+            switch item {
+            case .session(let sid): ids.append("session:\(sid)")
+            case .groupHeader(let g): ids.append("group:\(g.id)")
+            case .collapsedGroup(let g, _): ids.append("group:\(g.id)")
+            case .groupMember: break
+            }
+        }
+        return ids
+    }
+
+    /// Translate a visible top-entry index back to its index in
+    /// `dockLayout.entries`. Necessary when the visible projection is a
+    /// strict subset of the persisted layout (some sessions outside the
+    /// `visibleSessionLimit` cap). When the visible entry id maps to a
+    /// layout entry that no longer exists, returns nil so the caller can
+    /// no-op safely.
+    private func layoutEntryIndex(forVisibleTopEntryID entryID: String) -> Int? {
+        layout.entries.firstIndex { entry in
+            switch entry {
+            case .session(let id): return "session:\(id)" == entryID
+            case .group(let g):    return "group:\(g.id)" == entryID
+            }
+        }
+    }
+
+    private func handleGroupHeaderDragBegin(groupID: String) {
+        guard let layoutIdx = layout.entries.firstIndex(where: { entry in
+            if case .group(let g) = entry, g.id == groupID { return true }
+            return false
+        }) else { return }
+        // Cancel any in-flight icon drag so the two gestures never run in
+        // parallel. The user typically pulls one or the other; defensive
+        // here keeps state machines from getting tangled.
+        if draggingSessionID != nil {
+            handleReorderCanceled()
+        }
+        draggingGroupID = groupID
+        groupDragStartLayoutIndex = layoutIdx
+        groupDragCurrentLayoutIndex = layoutIdx
+        groupDragOffset = .zero
+        groupDragStartCenter = topEntryCenters["group:\(groupID)"] ?? 0
+        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+    }
+
+    private func handleGroupHeaderDragChanged(groupID: String, translation: CGSize) {
+        guard draggingGroupID == groupID else { return }
+        let topEntryIDs = visibleTopEntryIDs
+        guard !topEntryIDs.isEmpty else { return }
+        let translationAxis = axisDelta(translation)
+        let cursorAxis = groupDragStartCenter + translationAxis
+
+        // Find the visible top entry whose measured center is closest to
+        // the cursor. Skip entries with no published center (= still
+        // settling) so the hit-test never picks an unmeasured entry.
+        var nearestVisibleIdx: Int? = nil
+        var minDistance: CGFloat = .infinity
+        for (i, entryID) in topEntryIDs.enumerated() {
+            guard let center = topEntryCenters[entryID] else { continue }
+            let distance = abs(center - cursorAxis)
+            if distance < minDistance {
+                minDistance = distance
+                nearestVisibleIdx = i
+            }
+        }
+        guard let nearestVisibleIdx else { return }
+        let nearestEntryID = topEntryIDs[nearestVisibleIdx]
+        guard let nearestLayoutIdx = layoutEntryIndex(forVisibleTopEntryID: nearestEntryID) else { return }
+
+        if nearestLayoutIdx != groupDragCurrentLayoutIndex {
+            onMoveDockGroup(groupID, nearestLayoutIdx)
+            groupDragCurrentLayoutIndex = nearestLayoutIdx
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        }
+
+        // Keep the group block glued under the cursor.
+        let currentHomeCenter = topEntryCenters["group:\(groupID)"] ?? groupDragStartCenter
+        let shift = currentHomeCenter - groupDragStartCenter
+        let offsetAxis = translationAxis - shift
+        switch dockSide.orientation {
+        case .horizontal:
+            groupDragOffset = CGSize(width: offsetAxis, height: translation.height)
+        case .vertical:
+            groupDragOffset = CGSize(width: translation.width, height: offsetAxis)
+        }
+    }
+
+    private func handleGroupHeaderDragEnded(groupID: String, translation: CGSize) {
+        guard draggingGroupID == groupID else { return }
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
+            groupDragOffset = .zero
+        }
+        draggingGroupID = nil
+        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+    }
+
+    private func handleGroupHeaderDragCanceled() {
+        guard draggingGroupID != nil else { return }
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
+            groupDragOffset = .zero
+        }
+        draggingGroupID = nil
     }
 
     /// Drag handle that lives inside the dock capsule's top row. Backed by an

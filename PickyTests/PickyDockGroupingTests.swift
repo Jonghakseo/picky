@@ -56,21 +56,47 @@ final class PickyDockGroupingTests: XCTestCase {
         XCTAssertEqual(g.memberSessionIDs, ["a", "b"])
     }
 
-    func testMoveWithinSameTopLevelAdjustsForSelfRemoval() {
+    func testMoveWithinSameTopLevelLandsOnRequestedSlot() {
         var layout = PickyDockLayout(entries: [
             .session(id: "a"),
             .session(id: "b"),
             .session(id: "c")
         ])
-        // Move a down to position 2 (between b and c, then after c). Naive
-        // remove+insert at idx 2 would land at the very end; adjusted move
-        // keeps the request semantically meaningful.
-        layout.move(session: "a", to: .topLevel(index: 2))
-        let ids: [String] = layout.entries.compactMap {
+        // Drag UX: `target` is the desired *final* position. From idx 0 to
+        // idx 1 should produce [b, a, c]; from idx 0 to idx 2 should
+        // produce [b, c, a].
+        layout.move(session: "a", to: .topLevel(index: 1))
+        var ids: [String] = layout.entries.compactMap {
             if case .session(let id) = $0 { return id }
             return nil
         }
         XCTAssertEqual(ids, ["b", "a", "c"])
+
+        layout = PickyDockLayout(entries: [
+            .session(id: "a"),
+            .session(id: "b"),
+            .session(id: "c")
+        ])
+        layout.move(session: "a", to: .topLevel(index: 2))
+        ids = layout.entries.compactMap {
+            if case .session(let id) = $0 { return id }
+            return nil
+        }
+        XCTAssertEqual(ids, ["b", "c", "a"])
+    }
+
+    func testMoveSessionUpwardLandsOnRequestedSlot() {
+        var layout = PickyDockLayout(entries: [
+            .session(id: "a"),
+            .session(id: "b"),
+            .session(id: "c")
+        ])
+        layout.move(session: "c", to: .topLevel(index: 0))
+        let ids: [String] = layout.entries.compactMap {
+            if case .session(let id) = $0 { return id }
+            return nil
+        }
+        XCTAssertEqual(ids, ["c", "a", "b"])
     }
 
     func testUngroupKeepsMembersInOriginalSlot() {
@@ -86,6 +112,43 @@ final class PickyDockGroupingTests: XCTestCase {
             return nil
         }
         XCTAssertEqual(ids, ["a", "b", "c", "d"])
+    }
+
+    func testMoveGroupLandsOnRequestedSlot() {
+        var layout = PickyDockLayout(entries: [
+            .group(PickyDockGroup(id: "g1", name: "A", color: .teal, memberSessionIDs: ["s1"])),
+            .session(id: "s2"),
+            .session(id: "s3"),
+            .group(PickyDockGroup(id: "g4", name: "D", color: .pink, memberSessionIDs: ["s4"]))
+        ])
+        // Header drag UX: target = final position. Move g1 from idx 0 to
+        // idx 2 should put g1 between s3 and g4 in the final array.
+        layout.moveGroup(id: "g1", toTopLevelIndex: 2)
+        let kinds: [String] = layout.entries.map {
+            switch $0 {
+            case .session(let id): return "session:\(id)"
+            case .group(let g): return "group:\(g.id)"
+            }
+        }
+        XCTAssertEqual(kinds, ["session:s2", "session:s3", "group:g1", "group:g4"])
+    }
+
+    func testMoveGroupUpwardKeepsTargetIndex() {
+        var layout = PickyDockLayout(entries: [
+            .session(id: "s1"),
+            .session(id: "s2"),
+            .group(PickyDockGroup(id: "g3", name: "C", color: .blue, memberSessionIDs: ["s3"])),
+            .session(id: "s4")
+        ])
+        // Move g3 upward to position 0 (top of dock).
+        layout.moveGroup(id: "g3", toTopLevelIndex: 0)
+        let kinds: [String] = layout.entries.map {
+            switch $0 {
+            case .session(let id): return "session:\(id)"
+            case .group(let g): return "group:\(g.id)"
+            }
+        }
+        XCTAssertEqual(kinds, ["group:g3", "session:s1", "session:s2", "session:s4"])
     }
 
     func testDeleteGroupReturnsMemberIDsForArchive() {

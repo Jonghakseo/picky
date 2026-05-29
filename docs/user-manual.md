@@ -287,7 +287,7 @@ Create a group:
 Manage membership by dragging:
 
 - Drag a Pickle onto a group to move it in; drag it above the first slot or below the last slot to pull it back out to the top level. The dock previews where it will land and commits the move only when you release.
-- Drag a group's header to reorder the whole group within the dock. Hold it clearly **outside** the dock and a **Remove** label appears; release there to remove the group and archive its Pickles (macOS Dock style).
+- Drag a group's header to reorder the whole group within the dock. Hold it clearly **outside** the dock and a **Remove** label appears; release there to remove the group (macOS Dock style). A group that still contains Pickles asks for confirmation before archiving them; an empty group is removed immediately.
 
 Collapse and expand:
 

@@ -258,9 +258,9 @@ The dock icon color, glyph, unread dot, and completion flash reflect these state
 | Hover a Pickle | Shows a mini preview. |
 | Click a Pickle | Opens or closes its conversation card. |
 | Press and hold a Pickle | Archives it after a ~1.2s hold timer; a progress ring fills around the dock icon, and moving the cursor more than ~10pt away cancels the archive before it fires. Archives are recoverable from the undo toast or Settings → Pickle → Archived sessions. |
-| Drag a Pickle | Reorders visible dock sessions. |
+| Drag a Pickle | Reorders dock Pickles, or drags one into / out of a group. The move is committed when you release. |
 | Right-click / Control-click | Opens the dock context menu (Send Context / Compact / Archive / Stop). |
-| Click the `+` slot | Choose a folder and start an empty Pickle. |
+| Click the `+` slot | Opens a popover with recent folders, **Choose Folder…**, and **New Group…**. |
 | Drag the dock handle | Move the dock along or across screen edges. |
 | Double-click the dock handle | Toggle the dock between vertical and horizontal layouts. |
 
@@ -268,14 +268,44 @@ Number shortcuts (`Cmd + 1`…`9`) apply to the first 9 visible Pickles.
 
 ### 7.3 Creating an empty Pickle
 
-Click the `+` slot in the dock. Picky opens a folder picker:
+Click the `+` slot in the dock to open the **Recent folders** popover:
 
-1. Choose a working folder.
-2. Click **Start**.
-3. Picky creates an empty Pickle for that folder.
-4. If visible, the new Pickle opens automatically.
+- Pick a recent working folder to start an empty Pickle there immediately.
+- **Choose Folder…** opens the macOS folder picker for any other folder.
+- **New Group…** creates a dock group instead of a Pickle (see §7.4).
 
-### 7.4 Archiving and undo
+When you start a Pickle this way, Picky creates an empty Pickle for that folder and, if it is visible, opens it automatically.
+
+### 7.4 Pickle groups
+
+Group related Pickles into a single labeled block in the dock rail.
+
+Create a group:
+
+- Click the `+` slot → **New Group…**, give it a name, and optionally pick initial Pickles and an accent color.
+
+Manage membership by dragging:
+
+- Drag a Pickle onto a group to move it in; drag it above the first slot or below the last slot to pull it back out to the top level. The dock previews where it will land and commits the move only when you release.
+- Drag a group's header to reorder the whole group within the dock.
+
+Collapse and expand:
+
+- Click a group's header (or its chevron) to collapse it into a compact **folder drawer** badge that shows a grid of its members, or to expand it again.
+- Collapse state is remembered **per display**, so the same group can stay open on one monitor and collapsed on another.
+- Collapsing a group automatically closes any open conversation card that belongs to one of its members.
+
+Right-click a group header for more actions:
+
+| Action | Behavior |
+| --- | --- |
+| Rename | Rename the group via a dialog. |
+| Color | Pick the group's accent color. |
+| Collapse / Expand | Toggle the folder drawer for this display. |
+| Ungroup (keep pickles) | Remove the group but keep its Pickles in the dock. |
+| Delete group + archive pickles | Remove the group and archive all its Pickles (with confirmation). |
+
+### 7.5 Archiving and undo
 
 Archive methods:
 
@@ -497,7 +527,7 @@ The Pickle card menu contains:
 | Stop session | Abort the active session. |
 | Archive | Archive the Pickle. |
 
-The archived Pickle list lives in **Settings → Pickle → Archived sessions**, not in the card menu — see [§7.4](#74-archiving-and-undo).
+The archived Pickle list lives in **Settings → Pickle → Archived sessions**, not in the card menu — see [§7.5](#75-archiving-and-undo).
 
 ### 9.2 Dock right-click menu
 

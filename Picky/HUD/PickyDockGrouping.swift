@@ -56,15 +56,16 @@ enum PickyDockGroupColor: Int, Codable, CaseIterable, Identifiable {
     }
 
     /// Display name for the color picker submenu.
-    var displayName: String {
+    /// Localized display name for the color picker submenu.
+    var localizedName: String {
         switch self {
-        case .teal:   "Teal"
-        case .amber:  "Amber"
-        case .blue:   "Blue"
-        case .pink:   "Pink"
-        case .purple: "Purple"
-        case .red:    "Red"
-        case .gray:   "Gray"
+        case .teal:   L10n.t("group.color.teal")
+        case .amber:  L10n.t("group.color.amber")
+        case .blue:   L10n.t("group.color.blue")
+        case .pink:   L10n.t("group.color.pink")
+        case .purple: L10n.t("group.color.purple")
+        case .red:    L10n.t("group.color.red")
+        case .gray:   L10n.t("group.color.gray")
         }
     }
 }
@@ -410,9 +411,16 @@ enum PickyDockProjector {
     /// but missing from the layout is appended as a top-level ungrouped slot
     /// at the *end* of the projection so brand-new Pickles flow into the
     /// bottom-end slot the user expects.
+    /// `collapsedOverrides` carries per-display collapse state keyed by group
+    /// ID. When an entry exists for a group it wins over the layout's stored
+    /// `isCollapsed`, letting each monitor's dock collapse/expand groups
+    /// independently. The effective flag is baked into the emitted group copy
+    /// so every downstream consumer (render branch, header chevron, badge)
+    /// observes the same per-display state.
     static func project(
         layout: PickyDockLayout,
-        visibleSessionIDs: [String]
+        visibleSessionIDs: [String],
+        collapsedOverrides: [String: Bool] = [:]
     ) -> PickyDockProjection {
         let visibleSet = Set(visibleSessionIDs)
         var items: [PickyDockRenderItem] = []
@@ -432,7 +440,9 @@ enum PickyDockProjector {
                 ))
                 seen.insert(id)
                 slotIndex += 1
-            case .group(let group):
+            case .group(let storedGroup):
+                var group = storedGroup
+                group.isCollapsed = collapsedOverrides[storedGroup.id] ?? storedGroup.isCollapsed
                 let visibleMembers = group.memberSessionIDs.filter { visibleSet.contains($0) }
                 if group.isCollapsed {
                     items.append(.collapsedGroup(group: group, topMemberSessionID: visibleMembers.first))

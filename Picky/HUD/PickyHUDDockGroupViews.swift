@@ -687,23 +687,23 @@ struct PickyHUDDockGroupContextMenu: View {
     @State private var isConfirmingDelete = false
 
     var body: some View {
-        Button("Rename", action: onRename)
-        Menu("Color") {
+        Button(L10n.t("group.menu.rename"), action: onRename)
+        Menu(L10n.t("group.menu.color")) {
             ForEach(PickyDockGroupColor.palette) { color in
-                Button(color.displayName) { onSetColor(color) }
+                Button(color.localizedName) { onSetColor(color) }
             }
         }
-        Button(group.isCollapsed ? "Expand" : "Collapse", action: onToggleCollapsed)
+        Button(group.isCollapsed ? L10n.t("group.menu.expand") : L10n.t("group.menu.collapse"), action: onToggleCollapsed)
         Divider()
-        Button("Ungroup (keep pickles)", action: onUngroup)
-        Button("Delete group + archive pickles", role: .destructive) {
+        Button(L10n.t("group.menu.ungroup"), action: onUngroup)
+        Button(L10n.t("group.menu.delete"), role: .destructive) {
             // Surface a quick confirmation by routing through an NSAlert so
             // we don't silently archive a user's work in a single click.
             let alert = NSAlert()
-            alert.messageText = "Delete \"\(group.displayName)\" and archive its Pickles?"
-            alert.informativeText = "All Pickles inside this group will be archived. You can restore them from the archive list."
-            alert.addButton(withTitle: "Archive Pickles")
-            alert.addButton(withTitle: "Cancel")
+            alert.messageText = L10n.t("group.delete.confirm.title", group.displayName)
+            alert.informativeText = L10n.t("group.delete.confirm.message")
+            alert.addButton(withTitle: L10n.t("group.delete.confirm.archive"))
+            alert.addButton(withTitle: L10n.t("common.cancel"))
             alert.alertStyle = .warning
             if alert.runModal() == .alertFirstButtonReturn {
                 onDeleteWithArchive()

@@ -17,6 +17,9 @@ protocol PickyNotificationDelivering: AnyObject {
 struct PickyHUDOpenSessionRequest: Equatable {
     let id = UUID()
     let sessionID: String
+    /// When set, only the HUD panel on this display should open the card.
+    /// `nil` keeps the legacy behavior of opening on every display.
+    var targetDisplayID: CGDirectDisplayID?
 }
 
 final class PickyNoopNotificationCenter: PickyNotificationDelivering {
@@ -647,12 +650,12 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    func requestOpenSession(sessionID: String) {
-        pickySessionLog("open session requested session=\(sessionID)")
+    func requestOpenSession(sessionID: String, targetDisplayID: CGDirectDisplayID? = nil) {
+        pickySessionLog("open session requested session=\(sessionID) display=\(targetDisplayID.map(String.init) ?? "all")")
         if sessions.contains(where: { $0.id == sessionID }) {
             select(sessionID: sessionID)
         }
-        openSessionRequest = PickyHUDOpenSessionRequest(sessionID: sessionID)
+        openSessionRequest = PickyHUDOpenSessionRequest(sessionID: sessionID, targetDisplayID: targetDisplayID)
     }
 
     func submit(transcript: String, context: PickyContextPacket) async throws {

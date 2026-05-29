@@ -180,10 +180,25 @@ final class PickyHUDOverlayManager {
     /// notification banner; selection alone is not enough because each HUD view keeps
     /// its open card in local `heldSession` state.
     func focusSession(id: String) {
-        viewModel.requestOpenSession(sessionID: id)
-        for (_, entry) in panelsByDisplayID {
+        // macOS notifications don't tell us which display they were shown on,
+        // so use the screen under the cursor at click time as the target.
+        // Falling back to `nil` (all displays) keeps focus working when the
+        // cursor isn't over a known Picky screen.
+        let targetDisplayID = displayIDUnderCursor()
+        viewModel.requestOpenSession(sessionID: id, targetDisplayID: targetDisplayID)
+        if let targetDisplayID, let entry = panelsByDisplayID[targetDisplayID] {
             entry.panel.orderFrontRegardless()
+        } else {
+            for (_, entry) in panelsByDisplayID {
+                entry.panel.orderFrontRegardless()
+            }
         }
+    }
+
+    private func displayIDUnderCursor() -> CGDirectDisplayID? {
+        let location = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(location) } ?? NSScreen.main
+        return screen?.pickyDisplayID
     }
 
     func stop() {
@@ -281,6 +296,7 @@ final class PickyHUDOverlayManager {
         let hudRoot = PickyHUDView(
             viewModel: viewModel,
             panelIdentifier: panelIdentifier,
+            displayID: displayID,
             placement: placement,
             onSizeChange: { [weak self] size in
                 // SwiftUI animates the card reveal itself. Grow the transparent NSPanel

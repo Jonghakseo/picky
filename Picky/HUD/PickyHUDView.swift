@@ -12,6 +12,9 @@ import SwiftUI
 struct PickyHUDView: View {
     @ObservedObject var viewModel: PickySessionListViewModel
     var panelIdentifier: NSUserInterfaceItemIdentifier?
+    /// Display this panel renders on. Used to route notification-driven open
+    /// requests to only the screen the user clicked the banner on.
+    var displayID: CGDirectDisplayID?
     /// Per-panel reactive placement state. The overlay manager updates
     /// `placement.availableCardMaxHeight` whenever the dock anchor or the screen
     /// configuration changes; the conversation card binds to it so it grows or
@@ -653,8 +656,28 @@ struct PickyHUDView: View {
 
     private func handleOpenSessionRequest(_ request: PickyHUDOpenSessionRequest?) {
         guard let request else { return }
+        // Honor the requested target display so a notification only opens the
+        // card on the screen the user clicked. `nil` target opens everywhere.
+        if let target = request.targetDisplayID, target != displayID { return }
         pendingRequestedOpenSessionID = request.sessionID
+        // Opening a member of a collapsed group must reveal it first, otherwise
+        // the session never enters this display's visible slot set and the
+        // resolution below can't open it.
+        expandGroupForOpeningIfNeeded(request.sessionID)
         openPendingRequestedSessionIfVisible()
+    }
+
+    /// If `sessionID` belongs to a collapsed group on this display, expand the
+    /// group so the session becomes visible and openable. Persists the change
+    /// like a manual expand so it stays consistent per monitor.
+    private func expandGroupForOpeningIfNeeded(_ sessionID: String) {
+        guard let group = viewModel.dockLayout.groups.first(where: {
+            $0.memberSessionIDs.contains(sessionID)
+        }) else { return }
+        let isCollapsed = placement.collapsedGroupOverrides[group.id] ?? group.isCollapsed
+        guard isCollapsed else { return }
+        placement.collapsedGroupOverrides[group.id] = false
+        onDockGroupCollapseChanged(placement.collapsedGroupOverrides)
     }
 
     private func openPendingRequestedSessionIfVisible() {

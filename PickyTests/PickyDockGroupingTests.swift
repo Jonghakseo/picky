@@ -226,6 +226,56 @@ final class PickyDockGroupingTests: XCTestCase {
         XCTAssertEqual(projection.slots.map(\.visibleIndex), [0, 1, 2])
     }
 
+    // MARK: - Create with members
+
+    func testCreateGroupWithMembersRemovesFromPreviousContainers() {
+        var layout = PickyDockLayout(entries: [
+            .session(id: "a"),
+            .session(id: "b"),
+            .group(PickyDockGroup(
+                id: "g1", name: "Old", color: .teal,
+                memberSessionIDs: ["c", "d"]
+            )),
+            .session(id: "e")
+        ])
+        // Simulate VM logic by hand: remove members, append a new group.
+        let pickedMembers = ["a", "c", "e"]
+        var orderedMembers: [String] = []
+        var seen = Set<String>()
+        for memberID in pickedMembers where !seen.contains(memberID) {
+            seen.insert(memberID)
+            _ = layout.removeSession(memberID)
+            orderedMembers.append(memberID)
+        }
+        let newGroup = PickyDockGroup(
+            id: "g2", name: "product", color: .amber,
+            memberSessionIDs: orderedMembers
+        )
+        layout.entries.append(.group(newGroup))
+
+        // Top-level entries left: b, g1(only d), e was removed from top, so just
+        // b and g1, plus the new g2 at the end.
+        let kinds: [String] = layout.entries.map {
+            switch $0 {
+            case .session(let id): return "session:\(id)"
+            case .group(let g): return "group:\(g.id)"
+            }
+        }
+        XCTAssertEqual(kinds, ["session:b", "group:g1", "group:g2"])
+
+        // g1 lost c, kept d.
+        guard case .group(let oldGroup) = layout.entries[1] else {
+            return XCTFail("expected g1 to remain in place")
+        }
+        XCTAssertEqual(oldGroup.memberSessionIDs, ["d"])
+
+        // g2 has the picked members in the requested order.
+        guard case .group(let createdGroup) = layout.entries.last else {
+            return XCTFail("expected g2 to be the last entry")
+        }
+        XCTAssertEqual(createdGroup.memberSessionIDs, ["a", "c", "e"])
+    }
+
     // MARK: - Color rotation
 
     func testGroupColorRotationCyclesPalette() {

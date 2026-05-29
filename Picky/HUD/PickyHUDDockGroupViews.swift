@@ -145,6 +145,11 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
 
     @State private var draftName: String = ""
     @State private var isEditing: Bool = false
+    /// Hover-tracked so the floating name label appears next to the dock
+    /// only while the user points at the group's header. The header chip
+    /// itself stays tiny (chevron + color dot + collapsed count) so the
+    /// group name has no width pressure from the narrow rail.
+    @State private var isHeaderHovered: Bool = false
     /// Tracks whether the current drag gesture has already reported its
     /// `begin` event. SwiftUI's `DragGesture` only exposes `onChanged` /
     /// `onEnded`, so we synthesize a single begin from the first onChanged
@@ -191,12 +196,95 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
         .offset(x: headerDragOffset.width, y: headerDragOffset.height)
         .zIndex(isHeaderDragging ? 220 : 0)
         .animation(.spring(response: 0.28, dampingFraction: 0.72), value: isHeaderDragging)
+        .overlay(alignment: floatingLabelAlignment) {
+            floatingNameLabel
+        }
         .onAppear {
             draftName = group.name
             if isRenamingOnAppear { isEditing = true }
         }
         .onChange(of: group.name) { _, newName in
             if !isEditing { draftName = newName }
+        }
+    }
+
+    /// Alignment anchor for the hover-revealed floating label. Vertical
+    /// docks anchor the label to the header row; horizontal docks anchor
+    /// it just outside the cross-axis edge.
+    private var floatingLabelAlignment: Alignment {
+        switch dockSide {
+        case .right: return .topLeading
+        case .left:  return .topTrailing
+        case .top:   return .topLeading
+        case .bottom: return .topLeading
+        }
+    }
+
+    /// Width budget the floating label uses for offset math. The chip
+    /// itself shrinks to text content; the surrounding `.frame` aligns it
+    /// against this width so the leading/trailing offset is deterministic.
+    /// Stored as computed vars because `PickyHUDDockGroupContainer` is
+    /// generic over its content view, and Swift forbids static stored
+    /// properties on generic types.
+    private var floatingLabelMaxWidth: CGFloat { 160 }
+    private var floatingLabelGap: CGFloat { 8 }
+
+    @ViewBuilder
+    private var floatingNameLabel: some View {
+        if isHeaderHovered && !isEditing {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(group.color.accent)
+                    .frame(width: 6, height: 6)
+                Text(group.displayName)
+                    .pickyFont(size: 11, weight: .medium)
+                    .foregroundColor(DS.Colors.textPrimary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.black.opacity(0.86))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+            )
+            .shadow(color: Color.black.opacity(0.4), radius: 6, x: 0, y: 2)
+            .frame(maxWidth: floatingLabelMaxWidth, alignment: floatingChipInternalAlignment)
+            .offset(floatingLabelOffset)
+            .allowsHitTesting(false)
+            .transition(.opacity.combined(with: .move(edge: floatingLabelEdge)))
+            .zIndex(250)
+        }
+    }
+
+    private var floatingChipInternalAlignment: Alignment {
+        switch dockSide {
+        case .right: return .trailing
+        case .left:  return .leading
+        case .top:   return .leading
+        case .bottom: return .leading
+        }
+    }
+
+    private var floatingLabelOffset: CGSize {
+        let width = floatingLabelMaxWidth + floatingLabelGap
+        switch dockSide {
+        case .right: return CGSize(width: -width, height: 0)
+        case .left:  return CGSize(width: width, height: 0)
+        case .top:   return CGSize(width: 0, height: 24)
+        case .bottom: return CGSize(width: 0, height: -24)
+        }
+    }
+
+    private var floatingLabelEdge: Edge {
+        switch dockSide {
+        case .right: return .leading
+        case .left:  return .trailing
+        case .top:   return .top
+        case .bottom: return .bottom
         }
     }
 
@@ -207,16 +295,14 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
 
     @ViewBuilder
     private var header: some View {
-        HStack(spacing: 1) {
-            // Chevron is now an inline glyph (no Button wrapper, no fixed
-            // frame) so it claims only its intrinsic width — freeing every
-            // px we can for the group name. Tap-to-toggle moves to the
-            // entire header row below so users can hit the name itself,
-            // not just the tiny caret.
+        HStack(spacing: 3) {
+            // Always-visible header is intentionally tiny: chevron + accent
+            // dot + (count when collapsed). The group name lives in the
+            // hover-revealed floating label so the narrow vertical rail
+            // never has to truncate it.
             Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
                 .font(.system(size: 7, weight: .semibold))
-                .foregroundColor(group.color.accent.opacity(0.85))
-                .padding(.trailing, 1)
+                .foregroundColor(group.color.accent.opacity(0.9))
 
             if isEditing {
                 PickyHUDDockGroupRenameField(
@@ -234,24 +320,9 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                Text(group.displayName)
-                    .pickyFont(size: 9, weight: .medium)
-                    .foregroundColor(group.color.accent.opacity(0.92))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    // Double-tap stays on the text only — single-tap on the
-                    // surrounding row falls through to the toggle gesture
-                    // below because Text registers no single-tap handler.
-                    .onTapGesture(count: 2) {
-                        draftName = group.name
-                        isEditing = true
-                    }
-                // Count chip only shows when collapsed (a collapsed group's
-                // members are not visible, so the count is informative).
-                // Expanded groups display the icons themselves — a count
-                // chip would steal text width the group name needs in the
-                // narrow vertical rail.
+                Circle()
+                    .fill(group.color.accent.opacity(0.75))
+                    .frame(width: 5, height: 5)
                 if group.isCollapsed {
                     Text("\(group.memberSessionIDs.count)")
                         .pickyFont(size: 8, weight: .medium)
@@ -262,15 +333,20 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
                                 .fill(Color.white.opacity(0.08))
                         )
                 }
+                Spacer(minLength: 0)
             }
         }
         .frame(height: PickyHUDDockGroupHeaderHeight, alignment: .center)
         .contentShape(Rectangle())
-        // Entire header row is the toggle target. Tap anywhere on the
-        // chevron / blank space / name (single-tap on Text falls through
-        // because the text only has a count-2 gesture) toggles the
-        // collapse state. Skipping during edit prevents stray taps inside
-        // the rename field from collapsing the group mid-typing.
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) {
+                isHeaderHovered = hovering
+            }
+        }
+        // Tap anywhere on the header row toggles collapse. The rename
+        // affordance moved to the right-click context menu ("Rename")
+        // because the always-visible header no longer has a text label to
+        // host a double-tap target.
         .onTapGesture {
             guard !isEditing else { return }
             onToggleCollapsed()

@@ -2462,14 +2462,29 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
-    /// Create a new empty group at the bottom of the dock (just above the
-    /// `+` slot) with the next color in rotation. Returns the new group's id
-    /// so the caller can focus a rename input on it.
+    /// Create a new group at the bottom of the dock (just above the `+`
+    /// slot) with the next color in rotation. `memberSessionIDs` may include
+    /// sessions that already live elsewhere in the layout — they are atomic
+    /// ally removed from their previous container and inserted into the new
+    /// group in the order provided. Returns the new group's id so callers
+    /// can focus a rename input on it or run further operations.
     @discardableResult
-    func createDockGroup(name: String = "") -> String {
+    func createDockGroup(name: String = "", withMemberIDs memberSessionIDs: [String] = []) -> String {
         let nextColor = PickyDockGroupColor.nextColor(forExistingGroupCount: dockLayout.groups.count)
-        let group = PickyDockGroup(name: name, color: nextColor)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         var layout = dockLayout
+        var orderedMembers: [String] = []
+        var seen = Set<String>()
+        for memberID in memberSessionIDs where !seen.contains(memberID) {
+            seen.insert(memberID)
+            _ = layout.removeSession(memberID)
+            orderedMembers.append(memberID)
+        }
+        let group = PickyDockGroup(
+            name: trimmedName,
+            color: nextColor,
+            memberSessionIDs: orderedMembers
+        )
         layout.entries.append(.group(group))
         dockLayout = layout
         persistDockLayout()

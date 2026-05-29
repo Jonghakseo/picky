@@ -442,7 +442,9 @@ struct PickyHUDView: View {
                 recentPickleCwds: visibleRecentPickleCwds,
                 onCreatePickleInRecentFolder: startEmptyPickle,
                 onRemoveRecentPickleFolder: viewModel.removeRecentPickleFolder,
-                onCreateDockGroup: { viewModel.createDockGroup() },
+                onCreateDockGroup: { name, memberIDs in
+                    viewModel.createDockGroup(name: name, withMemberIDs: memberIDs)
+                },
                 onRenameDockGroup: { id, name in viewModel.renameDockGroup(id: id, to: name) },
                 onSetDockGroupColor: { id, color in viewModel.setDockGroupColor(id: id, color: color) },
                 onToggleDockGroupCollapsed: { id in viewModel.toggleDockGroupCollapsed(id: id) },
@@ -1479,7 +1481,11 @@ private struct PickyHUDDockRailView: View {
     let recentPickleCwds: [String]
     let onCreatePickleInRecentFolder: (String) -> Void
     let onRemoveRecentPickleFolder: (String) -> Void
-    let onCreateDockGroup: () -> String
+    /// Create a new group with a name and (optionally) an initial set of
+    /// member sessions. Returns the new group's id so callers can chain
+    /// follow-up actions (e.g. focus the new group), though the dock
+    /// rail itself ignores the return value.
+    let onCreateDockGroup: (_ name: String, _ memberIDs: [String]) -> String
     let onRenameDockGroup: (_ id: String, _ name: String) -> Void
     let onSetDockGroupColor: (_ id: String, _ color: PickyDockGroupColor) -> Void
     let onToggleDockGroupCollapsed: (_ id: String) -> Void
@@ -2304,15 +2310,24 @@ private struct PickyHUDDockRailView: View {
             onCreatePickleInRecentFolder: onCreatePickleInRecentFolder,
             onChooseFolder: onCreatePickle,
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
-            onCreateGroup: handleCreateGroupFromAddSlot
+            availableSessionsForGroupCreation: sessions,
+            suggestedGroupColor: nextSuggestedGroupColor,
+            onCreateGroup: { name, memberIDs in
+                _ = onCreateDockGroup(name, memberIDs)
+            }
         )
         .accessibilityLabel("Start Pickle")
         .accessibilityHint("Choose a recent working folder or browse for a new one")
     }
 
-    private func handleCreateGroupFromAddSlot() {
-        let newID = onCreateDockGroup()
-        pendingRenameGroupID = newID
+    /// Accent color the next group will adopt. Surfaced to the creator
+    /// popover so the user sees the upcoming swatch alongside the name
+    /// field instead of being surprised by the auto-rotation after
+    /// pressing Create. Derived from how many group entries already live
+    /// in the layout via the projection's items.
+    private var nextSuggestedGroupColor: PickyDockGroupColor {
+        let existingGroupCount = layout.groups.count
+        return PickyDockGroupColor.nextColor(forExistingGroupCount: existingGroupCount)
     }
 
     private var collapsibleAddAgentSlot: some View {
@@ -2363,7 +2378,11 @@ private struct PickyHUDDockRailView: View {
             onCreatePickleInRecentFolder: onCreatePickleInRecentFolder,
             onChooseFolder: onCreatePickle,
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
-            onCreateGroup: handleCreateGroupFromAddSlot
+            availableSessionsForGroupCreation: sessions,
+            suggestedGroupColor: nextSuggestedGroupColor,
+            onCreateGroup: { name, memberIDs in
+                _ = onCreateDockGroup(name, memberIDs)
+            }
         )
         .onHover { hovering in
             let expanded = hovering || isRecentPickleFolderPickerPresented
@@ -2400,7 +2419,9 @@ extension View {
         onCreatePickleInRecentFolder: @escaping (String) -> Void,
         onChooseFolder: @escaping () -> Void,
         onRemoveRecentPickleFolder: @escaping (String) -> Void,
-        onCreateGroup: (() -> Void)? = nil
+        availableSessionsForGroupCreation: [PickySessionListViewModel.SessionCard] = [],
+        suggestedGroupColor: PickyDockGroupColor = .teal,
+        onCreateGroup: ((_ name: String, _ memberIDs: [String]) -> Void)? = nil
     ) -> some View {
         popover(isPresented: isPresented, arrowEdge: arrowEdge) {
             PickyRecentPickleFolderPickerView(
@@ -2409,6 +2430,8 @@ extension View {
                 onCreatePickleInRecentFolder: onCreatePickleInRecentFolder,
                 onChooseFolder: onChooseFolder,
                 onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
+                availableSessionsForGroupCreation: availableSessionsForGroupCreation,
+                suggestedGroupColor: suggestedGroupColor,
                 onCreateGroup: onCreateGroup
             )
         }
@@ -2421,9 +2444,36 @@ struct PickyRecentPickleFolderPickerView: View {
     let onCreatePickleInRecentFolder: (String) -> Void
     let onChooseFolder: () -> Void
     let onRemoveRecentPickleFolder: (String) -> Void
-    let onCreateGroup: (() -> Void)?
+    let availableSessionsForGroupCreation: [PickySessionListViewModel.SessionCard]
+    let suggestedGroupColor: PickyDockGroupColor
+    let onCreateGroup: ((_ name: String, _ memberIDs: [String]) -> Void)?
+
+    /// Popover mode. Default flow shows the folder picker; tapping
+    /// "New Group" swaps the same popover to the creator dialog so the
+    /// user picks a name and initial members in one step instead of
+    /// being kicked into an inline rename of an empty group.
+    @State private var isShowingGroupCreator = false
 
     var body: some View {
+        if isShowingGroupCreator, let onCreateGroup {
+            PickyDockGroupCreatorView(
+                availableSessions: availableSessionsForGroupCreation,
+                suggestedColor: suggestedGroupColor,
+                onCreate: { name, memberIDs in
+                    isShowingGroupCreator = false
+                    isPresented = false
+                    onCreateGroup(name, memberIDs)
+                },
+                onCancel: {
+                    isShowingGroupCreator = false
+                }
+            )
+        } else {
+            folderPickerContent
+        }
+    }
+
+    private var folderPickerContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
             if recentPickleCwds.isEmpty {
@@ -2455,17 +2505,16 @@ struct PickyRecentPickleFolderPickerView: View {
             .buttonStyle(.borderless)
             .padding(.vertical, 2)
             .accessibilityHint("Open the macOS folder picker")
-            if let onCreateGroup {
+            if onCreateGroup != nil {
                 Button {
-                    isPresented = false
-                    onCreateGroup()
+                    isShowingGroupCreator = true
                 } label: {
-                    Label("New Group", systemImage: "folder.badge.gearshape")
+                    Label("New Group\u{2026}", systemImage: "folder.badge.gearshape")
                         .frame(maxWidth: .infinity, minHeight: 28)
                 }
                 .buttonStyle(.borderless)
                 .padding(.vertical, 2)
-                .accessibilityHint("Create an empty dock group to drop Pickles into")
+                .accessibilityHint("Create a dock group with a name and optional initial Pickles")
             }
         }
         .padding(14)

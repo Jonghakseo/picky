@@ -82,10 +82,32 @@ struct PickyHUDView: View {
     /// this monitor) and hands the new override map to the overlay manager
     /// for per-display persistence.
     private func toggleDockGroupCollapsedForThisDisplay(_ groupID: String) {
-        let layoutDefault = viewModel.dockLayout.groups.first(where: { $0.id == groupID })?.isCollapsed ?? false
+        let group = viewModel.dockLayout.groups.first(where: { $0.id == groupID })
+        let layoutDefault = group?.isCollapsed ?? false
         let current = placement.collapsedGroupOverrides[groupID] ?? layoutDefault
-        placement.collapsedGroupOverrides[groupID] = !current
+        let willCollapse = !current
+        placement.collapsedGroupOverrides[groupID] = willCollapse
         onDockGroupCollapseChanged(placement.collapsedGroupOverrides)
+
+        // Collapsing hides the group's member icons behind the folder badge.
+        // If the open HUD card belongs to a member of this group, close it so
+        // it isn't left floating with no icon to anchor to.
+        if willCollapse,
+           let openedID = openedSessionID,
+           group?.memberSessionIDs.contains(openedID) == true {
+            closeOpenedSession(openedID)
+        }
+    }
+
+    /// Close the expanded HUD card for `sessionID`, mirroring the manual
+    /// close path (clear held/hover state, mark the session closed).
+    private func closeOpenedSession(_ sessionID: String) {
+        cancelPendingClose()
+        pendingManualAutoOpenSessionID = nil
+        if heldSession?.sessionID == sessionID { heldSession = nil }
+        if hoverPreviewSessionID == sessionID { hoverPreviewSessionID = nil }
+        suppressedHoverSessionID = sessionID
+        viewModel.markSessionClosed(sessionID: sessionID)
     }
 
     /// Session cards in their final top-to-bottom dock order. Replaces the

@@ -6354,6 +6354,151 @@
           }
         }
       }
+    },
+    "dock.recentFolders.chooseFolder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Folder…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "폴더 선택…"
+          }
+        }
+      }
+    },
+    "dock.recentFolders.chooseFolder.hint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the macOS folder picker"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS 폴더 선택 창 열기"
+          }
+        }
+      }
+    },
+    "dock.recentFolders.empty": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No recent folders yet. Choose a working folder to start your first Pickle."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 최근 폴더가 없습니다. 작업 폴더를 선택해 첫 피클을 시작하세요."
+          }
+        }
+      }
+    },
+    "dock.recentFolders.newGroup": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Group…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 그룹…"
+          }
+        }
+      }
+    },
+    "dock.recentFolders.newGroup.hint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create a dock group with a name and optional initial Pickles"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름과 선택적 초기 피클로 독 그룹 만들기"
+          }
+        }
+      }
+    },
+    "dock.recentFolders.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recent folders"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최근 폴더"
+          }
+        }
+      }
+    },
+    "dock.startPickle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Pickle"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피클 시작"
+          }
+        }
+      }
+    },
+    "dock.startPickle.hint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a recent working folder or browse for a new one"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최근 작업 폴더를 선택하거나 새 폴더를 찾아보세요"
+          }
+        }
+      }
+    },
+    "dock.startPickleIn": {
+      "comment": "Format: folder display name.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Pickle in %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에서 피클 시작"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

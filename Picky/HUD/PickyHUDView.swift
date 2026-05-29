@@ -2499,8 +2499,8 @@ private struct PickyHUDDockRailView: View {
                 _ = onCreateDockGroup(name, memberIDs)
             }
         )
-        .accessibilityLabel("Start Pickle")
-        .accessibilityHint("Choose a recent working folder or browse for a new one")
+        .accessibilityLabel(L10n.t("dock.startPickle"))
+        .accessibilityHint(L10n.t("dock.startPickle.hint"))
     }
 
     /// Accent color the next group will adopt. Surfaced to the creator
@@ -2574,8 +2574,8 @@ private struct PickyHUDDockRailView: View {
                 isAddSlotExpanded = expanded
             }
         }
-        .accessibilityLabel("Start Pickle")
-        .accessibilityHint("Choose a recent working folder or browse for a new one")
+        .accessibilityLabel(L10n.t("dock.startPickle"))
+        .accessibilityHint(L10n.t("dock.startPickle.hint"))
     }
 
     private var recentPickleFolderPickerArrowEdge: Edge {
@@ -2682,22 +2682,22 @@ struct PickyRecentPickleFolderPickerView: View {
                 isPresented = false
                 onChooseFolder()
             } label: {
-                Label("Choose Folder…", systemImage: "folder.badge.plus")
+                Label(L10n.t("dock.recentFolders.chooseFolder"), systemImage: "folder.badge.plus")
                     .frame(maxWidth: .infinity, minHeight: 28)
             }
             .buttonStyle(.borderless)
             .padding(.vertical, 2)
-            .accessibilityHint("Open the macOS folder picker")
+            .accessibilityHint(L10n.t("dock.recentFolders.chooseFolder.hint"))
             if onCreateGroup != nil {
                 Button {
                     isShowingGroupCreator = true
                 } label: {
-                    Label("New Group\u{2026}", systemImage: "folder.badge.gearshape")
+                    Label(L10n.t("dock.recentFolders.newGroup"), systemImage: "folder.badge.gearshape")
                         .frame(maxWidth: .infinity, minHeight: 28)
                 }
                 .buttonStyle(.borderless)
                 .padding(.vertical, 2)
-                .accessibilityHint("Create a dock group with a name and optional initial Pickles")
+                .accessibilityHint(L10n.t("dock.recentFolders.newGroup.hint"))
             }
         }
         .padding(14)
@@ -2706,18 +2706,18 @@ struct PickyRecentPickleFolderPickerView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("Recent folders")
+            Text(L10n.t("dock.recentFolders.title"))
                 .pickyFont(size: 14, weight: .medium)
                 .foregroundStyle(DS.Colors.textPrimary)
             Spacer()
-            Text("Start Pickle")
+            Text(L10n.t("dock.startPickle"))
                 .pickyFont(size: 11, weight: .medium)
                 .foregroundStyle(DS.Colors.textTertiary)
         }
     }
 
     private var emptyState: some View {
-        Text("No recent folders yet. Choose a working folder to start your first Pickle.")
+        Text(L10n.t("dock.recentFolders.empty"))
             .pickyFont(size: 12)
             .foregroundStyle(DS.Colors.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
@@ -2756,7 +2756,7 @@ private struct PickyRecentPickleFolderRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Start Pickle in \(displayName)")
+            .accessibilityLabel(L10n.t("dock.startPickleIn", displayName))
             .accessibilityHint(compactPath)
 
             Button(action: onRemove) {

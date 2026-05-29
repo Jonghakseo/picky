@@ -173,15 +173,19 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
                 // the chevron lives at the same left column as the accent
                 // bar that follows. The bar only renders alongside the
                 // member content, leaving the header row clear of any
-                // vertical line above it.
+                // vertical line above it. `maxHeight: .infinity` on the
+                // accent bar forces it to claim the HStack's resolved
+                // height — SwiftUI's Shape preferred-size is nil, which
+                // could otherwise let the bar render at zero (or shrink
+                // during transitions) when a sibling group elsewhere in
+                // the rail collapses.
                 VStack(alignment: .leading, spacing: 2) {
                     header
                     HStack(alignment: .top, spacing: 4) {
                         accentBar
                             .frame(width: 2)
-                        VStack(alignment: .leading, spacing: 2) {
-                            content()
-                        }
+                            .frame(maxHeight: .infinity)
+                        content()
                     }
                 }
             }
@@ -240,6 +244,11 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
                     .pickyFont(size: 11, weight: .medium)
                     .foregroundColor(DS.Colors.textPrimary)
                     .lineLimit(1)
+                    .truncationMode(.tail)
+                    // Cap the text width inside the chip so very long
+                    // group names truncate before the chip itself can
+                    // overflow the outer alignment box (160 − chrome).
+                    .frame(maxWidth: 130, alignment: .leading)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -252,7 +261,16 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
                     .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
             )
             .shadow(color: Color.black.opacity(0.4), radius: 6, x: 0, y: 2)
-            .frame(maxWidth: floatingLabelMaxWidth, alignment: floatingChipInternalAlignment)
+            // `fixedSize` makes the chip honor its intrinsic width
+            // regardless of what the .overlay's parent (= the ~60px-wide
+            // group container) proposes — without this, the chip was being
+            // squeezed down to the container's narrow rail width and the
+            // group name would render as "···" instead of its real text.
+            .fixedSize(horizontal: true, vertical: false)
+            // Fixed-width alignment box (not maxWidth) so the offset math
+            // below lines up the chip's trailing/leading edge with the
+            // dock rail's edge regardless of the chip's intrinsic size.
+            .frame(width: floatingLabelMaxWidth, alignment: floatingChipInternalAlignment)
             .offset(floatingLabelOffset)
             .allowsHitTesting(false)
             .transition(.opacity.combined(with: .move(edge: floatingLabelEdge)))

@@ -6499,6 +6499,74 @@
           }
         }
       }
+    },
+    "group.rename.dialog.confirm": {
+      "comment": "Rename dialog confirm button.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rename"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "변경"
+          }
+        }
+      }
+    },
+    "group.rename.dialog.message": {
+      "comment": "Rename dialog message.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a new name for this group."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 그룹의 새 이름을 입력하세요."
+          }
+        }
+      }
+    },
+    "group.rename.dialog.placeholder": {
+      "comment": "Rename dialog text field placeholder.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Group name"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "그룹 이름"
+          }
+        }
+      }
+    },
+    "group.rename.dialog.title": {
+      "comment": "Rename dialog title.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rename group"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "그룹 이름 변경"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

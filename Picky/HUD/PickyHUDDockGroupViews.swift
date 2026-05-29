@@ -143,8 +143,7 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
     var headerDragOffset: CGSize = .zero
     @ViewBuilder var content: () -> Content
 
-    @State private var draftName: String = ""
-    @State private var isEditing: Bool = false
+
     /// Hover-tracked so the floating name label appears next to the dock
     /// only while the user points at the group's header. The header chip
     /// itself stays tiny (chevron + color dot + collapsed count) so the
@@ -204,11 +203,42 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
             floatingNameLabel
         }
         .onAppear {
-            draftName = group.name
-            if isRenamingOnAppear { isEditing = true }
+            // Brand-new groups ("+ → New Group") open the rename dialog
+            // immediately so the user can name the group before its first
+            // member arrives. Defer past the current layout pass so the modal
+            // isn't presented mid-`onAppear`.
+            if isRenamingOnAppear {
+                DispatchQueue.main.async { presentRenameDialog() }
+            }
         }
-        .onChange(of: group.name) { _, newName in
-            if !isEditing { draftName = newName }
+    }
+
+    /// Present a dedicated rename dialog instead of editing inline. The dock
+    /// rail is only ~54pt wide, so an inline `NSTextField` was far too small
+    /// to read or edit comfortably. An `NSAlert` with an accessory text
+    /// field gives a normal-sized, keyboard-focused input.
+    @MainActor
+    private func presentRenameDialog() {
+        let alert = NSAlert()
+        alert.messageText = L10n.t("group.rename.dialog.title")
+        alert.informativeText = L10n.t("group.rename.dialog.message")
+        alert.alertStyle = .informational
+
+        let field = NSTextField(string: group.name)
+        field.placeholderString = L10n.t("group.rename.dialog.placeholder")
+        field.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
+        field.lineBreakMode = .byTruncatingTail
+        alert.accessoryView = field
+
+        alert.addButton(withTitle: L10n.t("group.rename.dialog.confirm"))
+        alert.addButton(withTitle: L10n.t("common.cancel"))
+        alert.window.initialFirstResponder = field
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            let trimmed = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            onRenameCommit(trimmed)
+        } else {
+            onRenameCancel()
         }
     }
 
@@ -235,7 +265,7 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
 
     @ViewBuilder
     private var floatingNameLabel: some View {
-        if isHeaderHovered && !isEditing {
+        if isHeaderHovered {
             HStack(spacing: 5) {
                 Circle()
                     .fill(group.color.accent)
@@ -321,31 +351,12 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
             Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
                 .font(.system(size: 7, weight: .semibold))
                 .foregroundColor(group.color.accent.opacity(0.9))
-
-            if isEditing {
-                PickyHUDDockGroupRenameField(
-                    text: $draftName,
-                    onCommit: {
-                        let trimmed = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
-                        isEditing = false
-                        onRenameCommit(trimmed)
-                    },
-                    onCancel: {
-                        draftName = group.name
-                        isEditing = false
-                        onRenameCancel()
-                    }
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                Circle()
-                    .fill(group.color.accent.opacity(0.75))
-                    .frame(width: 5, height: 5)
-                // Collapsed member count is intentionally not surfaced here:
-                // the app-drawer folder grid below shows the member glyphs
-                // directly, so a header chip would duplicate the count.
-                Spacer(minLength: 0)
-            }
+            // The accent dot and collapsed count chip are intentionally
+            // omitted: the chevron already marks the group header, the
+            // accent bar carries the group color, and the folder grid below
+            // shows the members directly. Rename happens in a dedicated
+            // dialog (see `presentRenameDialog`), not an inline field.
+            Spacer(minLength: 0)
         }
         .frame(height: PickyHUDDockGroupHeaderHeight, alignment: .center)
         .contentShape(Rectangle())
@@ -359,7 +370,6 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
         // because the always-visible header no longer has a text label to
         // host a double-tap target.
         .onTapGesture {
-            guard !isEditing else { return }
             onToggleCollapsed()
         }
         .accessibilityLabel(
@@ -387,91 +397,12 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
         .contextMenu {
             PickyHUDDockGroupContextMenu(
                 group: group,
-                onRename: {
-                    draftName = group.name
-                    isEditing = true
-                },
+                onRename: { presentRenameDialog() },
                 onToggleCollapsed: onToggleCollapsed,
                 onSetColor: onSetColor,
                 onUngroup: onUngroup,
                 onDeleteWithArchive: onDeleteWithArchive
             )
-        }
-    }
-}
-
-/// Tiny rename input rendered inline in a group header. Wraps an
-/// `NSTextField` so we can pull keyboard focus immediately and commit on
-/// Return / Escape without dragging in the full `PickyConversationComposer`
-/// machinery.
-struct PickyHUDDockGroupRenameField: NSViewRepresentable {
-    @Binding var text: String
-    let onCommit: () -> Void
-    let onCancel: () -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, onCommit: onCommit, onCancel: onCancel)
-    }
-
-    func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField(string: text)
-        field.delegate = context.coordinator
-        field.isBordered = false
-        field.isBezeled = false
-        field.drawsBackground = true
-        field.backgroundColor = NSColor.white.withAlphaComponent(0.06)
-        field.focusRingType = .none
-        field.font = NSFont.systemFont(ofSize: 9, weight: .medium)
-        field.textColor = NSColor.white
-        field.placeholderString = "Group name"
-        field.cell?.usesSingleLineMode = true
-        field.cell?.wraps = false
-        field.cell?.isScrollable = true
-        DispatchQueue.main.async {
-            field.window?.makeFirstResponder(field)
-        }
-        return field
-    }
-
-    func updateNSView(_ nsView: NSTextField, context: Context) {
-        if nsView.stringValue != text {
-            nsView.stringValue = text
-        }
-    }
-
-    final class Coordinator: NSObject, NSTextFieldDelegate {
-        @Binding var text: String
-        let onCommit: () -> Void
-        let onCancel: () -> Void
-
-        init(text: Binding<String>, onCommit: @escaping () -> Void, onCancel: @escaping () -> Void) {
-            _text = text
-            self.onCommit = onCommit
-            self.onCancel = onCancel
-        }
-
-        func controlTextDidChange(_ obj: Notification) {
-            guard let field = obj.object as? NSTextField else { return }
-            text = field.stringValue
-        }
-
-        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
-            switch selector {
-            case #selector(NSResponder.insertNewline(_:)):
-                onCommit()
-                return true
-            case #selector(NSResponder.cancelOperation(_:)):
-                onCancel()
-                return true
-            default:
-                return false
-            }
-        }
-
-        // Click-out commits the current draft so users can't accidentally
-        // lose a half-typed name by clicking elsewhere in the dock.
-        func controlTextDidEndEditing(_ obj: Notification) {
-            onCommit()
         }
     }
 }

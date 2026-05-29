@@ -265,7 +265,21 @@ final class PickyTerminalPanel: NSPanel {
 
     override func sendEvent(_ event: NSEvent) {
         if handlePickyCloseWindowShortcut(event) { return }
+        if event.type == .keyDown,
+           let terminal = focusedTerminalView,
+           terminal.handleMacLineEditingShortcut(event) {
+            return
+        }
         super.sendEvent(event)
+    }
+
+    private var focusedTerminalView: PickySwiftTermView? {
+        var currentView = firstResponder as? NSView
+        while let view = currentView {
+            if let terminal = view as? PickySwiftTermView { return terminal }
+            currentView = view.superview
+        }
+        return nil
     }
 }
 
@@ -776,6 +790,33 @@ final class PickySwiftTermView: LocalProcessTerminalView {
         nativeForegroundColor = foreground
         nativeBackgroundColor = background
         layer?.backgroundColor = background.cgColor
+    }
+
+    /// macOS turns the line-editing chords ⌘←, ⌘→, and ⌘⌫ into selectors that
+    /// SwiftTerm either drops (`deleteToBeginningOfLine:` has no case) or maps to
+    /// emacs word-motion escapes Pi's line editor does not interpret, so the keys
+    /// look dead in the inline TUI. SwiftTerm declares `keyDown` as `public` (not
+    /// `open`), so we cannot override it; instead the window/monitor chokepoints
+    /// call this before the event reaches SwiftTerm. When the kitty keyboard
+    /// protocol is off we send the readline control bytes Pi understands; when Pi
+    /// enables kitty we defer so SwiftTerm encodes the chord natively.
+    @discardableResult
+    func handleMacLineEditingShortcut(_ event: NSEvent) -> Bool {
+        guard terminal.keyboardEnhancementFlags.isEmpty,
+              let bytes = Self.macLineEditingShortcutBytes(for: event) else { return false }
+        send(bytes)
+        return true
+    }
+
+    static func macLineEditingShortcutBytes(for event: NSEvent) -> [UInt8]? {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard modifiers == .command else { return nil }
+        switch event.keyCode {
+        case 51: return [0x15]   // ⌘⌫ -> Ctrl-U (delete to start of line)
+        case 123: return [0x01]  // ⌘← -> Ctrl-A (move to start of line)
+        case 124: return [0x05]  // ⌘→ -> Ctrl-E (move to end of line)
+        default: return nil
+        }
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {

@@ -757,13 +757,19 @@ struct PickyHUDView: View {
         guard let keyWindow = NSApp.keyWindow as? PickyHUDPanel else { return false }
         if let panelIdentifier, keyWindow.identifier != panelIdentifier { return false }
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if isTerminalInputFocused(in: keyWindow),
-           !PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(
-               keyCode: event.keyCode,
-               charactersIgnoringModifiers: event.charactersIgnoringModifiers,
-               modifiers: flags
-           ) {
-            return false
+        if let focusedTerminal = focusedTerminalView(in: keyWindow) {
+            // SwiftTerm drops/misroutes ⌘← ⌘→ ⌘⌫, so translate them to readline
+            // control bytes before they reach the (broken) AppKit key-binding path.
+            if focusedTerminal.handleMacLineEditingShortcut(event) {
+                return true
+            }
+            if !PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(
+                keyCode: event.keyCode,
+                charactersIgnoringModifiers: event.charactersIgnoringModifiers,
+                modifiers: flags
+            ) {
+                return false
+            }
         }
         let visibleIDs = visibleSessions.map(\.id)
 
@@ -929,12 +935,16 @@ struct PickyHUDView: View {
     }
 
     private func isTerminalInputFocused(in window: NSWindow) -> Bool {
+        focusedTerminalView(in: window) != nil
+    }
+
+    private func focusedTerminalView(in window: NSWindow) -> PickySwiftTermView? {
         var currentView = window.firstResponder as? NSView
         while let view = currentView {
-            if view is PickySwiftTermView { return true }
+            if let terminal = view as? PickySwiftTermView { return terminal }
             currentView = view.superview
         }
-        return false
+        return nil
     }
 
     private func uninstallCloseShortcutMonitor() {

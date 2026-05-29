@@ -210,18 +210,16 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
 
     @ViewBuilder
     private var header: some View {
-        HStack(spacing: 3) {
-            // The group name renders inline above the members. No chevron,
-            // accent dot, or hover label: the drawer's tint + border below
-            // carries the grouping cue. Long names truncate within the rail.
-            Text(group.displayName)
-                .pickyFont(size: 11, weight: .medium)
-                .foregroundColor(DS.Colors.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 0)
-        }
-        .frame(width: metrics.sessionTileWidth, height: PickyHUDDockGroupHeaderHeight, alignment: .leading)
+        // The group name renders inline above the members, centered over the
+        // drawer. No chevron, accent dot, or hover label: the drawer's tint +
+        // border below carries the grouping cue. Long names truncate within
+        // the rail width.
+        Text(group.displayName)
+            .pickyFont(size: 11, weight: .medium)
+            .foregroundColor(DS.Colors.textPrimary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(width: metrics.sessionTileWidth, height: PickyHUDDockGroupHeaderHeight, alignment: .center)
         .contentShape(Rectangle())
         // Tap anywhere on the header row toggles collapse. The rename
         // affordance moved to the right-click context menu ("Rename")
@@ -360,6 +358,8 @@ struct PickyHUDDockCollapsedGroupBadge: View {
     let metrics: PickyHUDDockMetrics
     var onTap: () -> Void = {}
 
+    @State private var isHovered = false
+
     private enum GridCell: Identifiable {
         case member(PickySessionListViewModel.SessionCard)
         case overflow(Int)
@@ -413,6 +413,10 @@ struct PickyHUDDockCollapsedGroupBadge: View {
             }
             .frame(width: containerSide, height: containerSide)
             .pickyDockGroupDrawer(tint: tint, cornerRadius: metrics.iconCornerRadius)
+            .overlay(
+                RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
+                    .fill(Color.white.opacity(isHovered ? 0.06 : 0))
+            )
 
             if unreadCount > 0 {
                 Text("\(unreadCount)")
@@ -435,7 +439,12 @@ struct PickyHUDDockCollapsedGroupBadge: View {
             }
         }
         .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
+        .scaleEffect(isHovered ? 1.04 : 1.0)
         .contentShape(RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous))
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
+        }
+        .pointerCursor()
         .onTapGesture { onTap() }
     }
 

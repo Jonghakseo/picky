@@ -207,19 +207,16 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
 
     @ViewBuilder
     private var header: some View {
-        HStack(spacing: 2) {
-            // Chevron renders first so it shares the leftmost column with
-            // the accent bar below. Tap toggles collapse; the visible
-            // pickle stack remains the *content* of the row to the right.
-            Button(action: onToggleCollapsed) {
-                Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundColor(group.color.accent.opacity(0.85))
-                    .frame(width: 10, height: 10)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(group.isCollapsed ? "Expand group" : "Collapse group")
+        HStack(spacing: 1) {
+            // Chevron is now an inline glyph (no Button wrapper, no fixed
+            // frame) so it claims only its intrinsic width — freeing every
+            // px we can for the group name. Tap-to-toggle moves to the
+            // entire header row below so users can hit the name itself,
+            // not just the tiny caret.
+            Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
+                .font(.system(size: 7, weight: .semibold))
+                .foregroundColor(group.color.accent.opacity(0.85))
+                .padding(.trailing, 1)
 
             if isEditing {
                 PickyHUDDockGroupRenameField(
@@ -243,6 +240,9 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    // Double-tap stays on the text only — single-tap on the
+                    // surrounding row falls through to the toggle gesture
+                    // below because Text registers no single-tap handler.
                     .onTapGesture(count: 2) {
                         draftName = group.name
                         isEditing = true
@@ -264,11 +264,24 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
                 }
             }
         }
-        .padding(.horizontal, 1)
         .frame(height: PickyHUDDockGroupHeaderHeight, alignment: .center)
         .contentShape(Rectangle())
+        // Entire header row is the toggle target. Tap anywhere on the
+        // chevron / blank space / name (single-tap on Text falls through
+        // because the text only has a count-2 gesture) toggles the
+        // collapse state. Skipping during edit prevents stray taps inside
+        // the rename field from collapsing the group mid-typing.
+        .onTapGesture {
+            guard !isEditing else { return }
+            onToggleCollapsed()
+        }
+        .accessibilityLabel(
+            group.isCollapsed
+                ? "Expand group \(group.displayName)"
+                : "Collapse group \(group.displayName)"
+        )
         // Header drag = reorder the entire group block. `minimumDistance`
-        // keeps the chevron Button and the rename double-tap responsive
+        // keeps the single-tap toggle and double-tap rename responsive
         // for short cursor moves; only intentional drags begin reorder.
         .simultaneousGesture(
             DragGesture(minimumDistance: 4, coordinateSpace: .global)

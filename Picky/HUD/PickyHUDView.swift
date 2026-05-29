@@ -756,7 +756,11 @@ struct PickyHUDView: View {
         if let panelIdentifier, keyWindow.identifier != panelIdentifier { return false }
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         if isTerminalInputFocused(in: keyWindow),
-           PickyHUDKeyboardShortcutPolicy.shouldPassThroughToFocusedTerminal(modifiers: flags) {
+           !PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(
+               keyCode: event.keyCode,
+               charactersIgnoringModifiers: event.charactersIgnoringModifiers,
+               modifiers: flags
+           ) {
             return false
         }
         let visibleIDs = visibleSessions.map(\.id)
@@ -994,6 +998,7 @@ enum PickyHUDKeyboardShortcutPolicy {
     private static let eKeyCode: UInt16 = 14
     private static let nKeyCode: UInt16 = 45
     private static let kKeyCode: UInt16 = 40
+    private static let wKeyCode: UInt16 = 13
     private static let returnKeyCode: UInt16 = 36
     private static let keypadEnterKeyCode: UInt16 = 76
 
@@ -1002,8 +1007,25 @@ enum PickyHUDKeyboardShortcutPolicy {
             && (keyCode == returnKeyCode || keyCode == keypadEnterKeyCode)
     }
 
-    static func shouldPassThroughToFocusedTerminal(modifiers: NSEvent.ModifierFlags) -> Bool {
-        !modifiers.contains(.command)
+    /// While a Pi TUI terminal is focused, the HUD forwards virtually every key to
+    /// the terminal so cmd-based TUI shortcuts (⌘C, ⌘V, ⌘arrows, etc.) reach Pi.
+    /// Only ⌘T (toggle back to chat) and ⌘W (close the held card) stay owned by the
+    /// HUD because they have no useful meaning inside the embedded terminal here.
+    static func shouldInterceptWhileTerminalFocused(
+        keyCode: UInt16,
+        charactersIgnoringModifiers: String?,
+        modifiers: NSEvent.ModifierFlags
+    ) -> Bool {
+        guard modifiers == .command else { return false }
+        if isInlineTerminalToggleShortcut(
+            keyCode: keyCode,
+            charactersIgnoringModifiers: charactersIgnoringModifiers,
+            modifiers: modifiers
+        ) {
+            return true
+        }
+        if keyCode == wKeyCode { return true }
+        return charactersIgnoringModifiers?.lowercased() == "w"
     }
 
     static func isLatestResponseReportShortcut(

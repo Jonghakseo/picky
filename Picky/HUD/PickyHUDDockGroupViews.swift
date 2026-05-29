@@ -341,16 +341,9 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
                 Circle()
                     .fill(group.color.accent.opacity(0.75))
                     .frame(width: 5, height: 5)
-                if group.isCollapsed {
-                    Text("\(group.memberSessionIDs.count)")
-                        .pickyFont(size: 8, weight: .medium)
-                        .foregroundColor(DS.Colors.textTertiary)
-                        .padding(.horizontal, 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                .fill(Color.white.opacity(0.08))
-                        )
-                }
+                // Collapsed member count is intentionally not surfaced here:
+                // the app-drawer folder grid below shows the member glyphs
+                // directly, so a header chip would duplicate the count.
                 Spacer(minLength: 0)
             }
         }
@@ -483,32 +476,130 @@ struct PickyHUDDockGroupRenameField: NSViewRepresentable {
     }
 }
 
-/// Stacked-card badge that represents a collapsed group as a single dock
-/// slot. The top member icon renders normally; two muted "card" rectangles
-/// sit behind it to hint at the hidden siblings. When any member is unread
-/// (completed but not yet opened), a small blue chip in the bottom-right
-/// corner shows the unread count — mirroring the per-Pickle blue unread
-/// dot pattern. The total member count is intentionally not surfaced here
-/// because the stack visual + collapsed header already imply "there are
-/// more inside".
-struct PickyHUDDockCollapsedGroupBadge<Inner: View>: View {
-    let unreadCount: Int
-    let metrics: PickyHUDDockMetrics
-    @ViewBuilder var topIcon: () -> Inner
+/// Shared status -> dock visual mapping so the full dock icon and the
+/// collapsed-group folder mini glyph stay in sync.
+enum PickyDockPickleStatusVisual {
+    static func color(_ status: PickySessionStatus) -> Color {
+        switch status {
+        case .queued: return DS.Colors.accentText
+        case .running: return DS.Colors.overlayCursorBlue
+        case .waiting_for_input: return DS.Colors.warning
+        case .blocked: return DS.Colors.warningText
+        case .completed: return DS.Colors.success
+        case .failed: return DS.Colors.destructiveText
+        case .cancelled: return DS.Colors.textTertiary
+        }
+    }
+
+    /// Template asset for the states that swap the plain pickle glyph for an
+    /// expressive one (waiting / needs-attention). `nil` uses the logo glyph.
+    static func statusAssetName(_ status: PickySessionStatus) -> String? {
+        switch status {
+        case .waiting_for_input: return "PickleDockWait"
+        case .blocked, .failed: return "PickleDockHelp"
+        default: return nil
+        }
+    }
+}
+
+/// A single member rendered inside the collapsed-group folder grid: the
+/// pickle glyph (or status asset) tinted by the member's status color.
+struct PickyDockMiniPickleGlyph: View {
+    let status: PickySessionStatus
+    let side: CGFloat
 
     var body: some View {
+        let color = PickyDockPickleStatusVisual.color(status)
+        Group {
+            if let asset = PickyDockPickleStatusVisual.statusAssetName(status) {
+                Image(asset)
+                    .resizable()
+                    .renderingMode(.template)
+                    .foregroundStyle(color)
+                    .scaledToFit()
+            } else {
+                PickleLogoGlyph()
+                    .fill(color, style: FillStyle(eoFill: true))
+            }
+        }
+        .frame(width: side, height: side)
+    }
+}
+
+/// App-drawer style badge that represents a collapsed group as a single dock
+/// slot. Member pickles are shown as mini glyphs inside a rounded folder
+/// container laid out as a 2x2 grid; the visible glyph count communicates
+/// the member count (so the header no longer needs a count chip). When more
+/// than four members exist, the fourth cell collapses into a `+N` tile. An
+/// unread chip in the bottom-right corner mirrors the per-Pickle blue
+/// unread dot pattern.
+struct PickyHUDDockCollapsedGroupBadge: View {
+    let members: [PickySessionListViewModel.SessionCard]
+    let unreadCount: Int
+    let metrics: PickyHUDDockMetrics
+    var onTap: () -> Void = {}
+
+    private enum GridCell: Identifiable {
+        case member(PickySessionListViewModel.SessionCard)
+        case overflow(Int)
+        case empty(Int)
+
+        var id: String {
+            switch self {
+            case .member(let card): return "m-\(card.id)"
+            case .overflow(let n): return "o-\(n)"
+            case .empty(let i): return "e-\(i)"
+            }
+        }
+    }
+
+    /// Up to four cells: members fill in order; a 5th+ member collapses the
+    /// last cell into `+N`; trailing slots pad with empties so the grid keeps
+    /// its 2x2 shape.
+    private var cells: [GridCell] {
+        var result: [GridCell]
+        if members.count > 4 {
+            result = members.prefix(3).map { .member($0) }
+            result.append(.overflow(members.count - 3))
+        } else {
+            result = members.map { .member($0) }
+        }
+        var pad = 0
+        while result.count < 4 {
+            result.append(.empty(pad))
+            pad += 1
+        }
+        return Array(result.prefix(4))
+    }
+
+    var body: some View {
+        let containerSide = min(metrics.sessionTileWidth, metrics.sessionTileHeight)
+        let inset = max(4, containerSide * 0.11)
+        let gap = max(3, containerSide * 0.06)
+        let cellSide = max(8, (containerSide - inset * 2 - gap) / 2)
+        let glyphSide = cellSide * 0.74
+        let grid = cells
+
         ZStack(alignment: .bottomTrailing) {
-            // Back-most card: smaller, dimmer.
-            RoundedRectangle(cornerRadius: metrics.iconCornerRadius * 0.85, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-                .frame(width: metrics.sessionTileWidth - 6, height: metrics.sessionTileHeight - 6)
-                .offset(x: 0, y: -3)
-            // Mid card.
-            RoundedRectangle(cornerRadius: metrics.iconCornerRadius * 0.9, style: .continuous)
-                .fill(Color.white.opacity(0.08))
-                .frame(width: metrics.sessionTileWidth - 3, height: metrics.sessionTileHeight - 3)
-                .offset(x: 0, y: -1.5)
-            topIcon()
+            RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.5)
+                )
+                .frame(width: containerSide, height: containerSide)
+                .overlay {
+                    VStack(spacing: gap) {
+                        ForEach(0..<2, id: \.self) { row in
+                            HStack(spacing: gap) {
+                                ForEach(0..<2, id: \.self) { col in
+                                    cellView(grid[row * 2 + col], side: cellSide, glyphSide: glyphSide)
+                                }
+                            }
+                        }
+                    }
+                }
+
             if unreadCount > 0 {
                 Text("\(unreadCount)")
                     .pickyFont(size: 8, weight: .medium)
@@ -530,6 +621,29 @@ struct PickyHUDDockCollapsedGroupBadge<Inner: View>: View {
             }
         }
         .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
+        .contentShape(RoundedRectangle(cornerRadius: metrics.iconCornerRadius, style: .continuous))
+        .onTapGesture { onTap() }
+    }
+
+    @ViewBuilder
+    private func cellView(_ entry: GridCell, side: CGFloat, glyphSide: CGFloat) -> some View {
+        switch entry {
+        case .member(let card):
+            PickyDockMiniPickleGlyph(status: card.status, side: glyphSide)
+                .frame(width: side, height: side)
+        case .overflow(let n):
+            RoundedRectangle(cornerRadius: max(3, side * 0.28), style: .continuous)
+                .fill(Color.white.opacity(0.08))
+                .frame(width: side, height: side)
+                .overlay(
+                    Text("+\(n)")
+                        .pickyFont(size: max(8, side * 0.42), weight: .medium)
+                        .foregroundColor(DS.Colors.textSecondary)
+                )
+        case .empty:
+            Color.clear
+                .frame(width: side, height: side)
+        }
     }
 }
 

@@ -1889,22 +1889,23 @@ private struct PickyHUDDockRailView: View {
                 headerDragOffset: draggingGroupID == group.id ? groupDragOffset : .zero
             ) {
                 if group.isCollapsed {
-                    let unreadCount = members.reduce(0) { count, member in
-                        unreadSessionIDs.contains(member.sessionID) ? count + 1 : count
+                    // The collapsed render unit only carries the top member, so
+                    // resolve the full visible member set from the group itself
+                    // to fill the app-drawer folder grid.
+                    let memberCards = group.memberSessionIDs.compactMap { id in
+                        sessions.first(where: { $0.id == id })
                     }
-                    if let topID = members.first?.sessionID,
-                       let card = sessions.first(where: { $0.id == topID }),
-                       let slot = projection.slots.first(where: { $0.sessionID == topID }) {
+                    let unreadCount = memberCards.reduce(0) { count, card in
+                        unreadSessionIDs.contains(card.id) ? count + 1 : count
+                    }
+                    if let topID = memberCards.first?.id {
                         PickyHUDDockCollapsedGroupBadge(
+                            members: memberCards,
                             unreadCount: unreadCount,
-                            metrics: metrics
-                        ) {
-                            collapsedGroupRepresentativeIcon(
-                                for: card,
-                                slot: slot,
-                                group: group
-                            )
-                        }
+                            metrics: metrics,
+                            onTap: { onToggleDockGroupCollapsed(group.id) }
+                        )
+                        .publishDockSlotCenter(sessionID: topID, dockSide: dockSide)
                     } else {
                         // Group has no visible members — render a small
                         // empty drop target so the user can still drag
@@ -1948,46 +1949,6 @@ private struct PickyHUDDockRailView: View {
                 dockSide: dockSide
             )
         }
-    }
-
-    /// Renders the top-member icon as the visible face of a collapsed
-    /// group. Visually identical to a normal Pickle tile (so hover preview,
-    /// unread dot, status flash all still work), but tap/hold callbacks
-    /// are redirected to expand the group instead of opening or archiving
-    /// just the top member — the user is interacting with the group block,
-    /// not the single Pickle peeking out of the stack. Drag is disabled
-    /// because the group header is what reorders the whole block.
-    @ViewBuilder
-    private func collapsedGroupRepresentativeIcon(
-        for session: PickySessionListViewModel.SessionCard,
-        slot: PickyDockSlot,
-        group: PickyDockGroup
-    ) -> some View {
-        PickyHUDDockIconView(
-            session: session,
-            index: slot.visibleIndex,
-            isActive: activeSessionID == session.id,
-            isOpened: false,
-            isPreviewed: previewSessionID == session.id,
-            isScreenContextArmed: false,
-            dockSide: dockSide,
-            shortcutNumber: PickyHUDDockLayout.numberShortcutForSessionIndex(slot.visibleIndex),
-            isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-            shouldFlashCompletion: pendingDoneFlashSessionIDs.contains(session.id),
-            isUnread: unreadSessionIDs.contains(session.id),
-            metrics: metrics,
-            isDragging: false,
-            dragOffset: .zero,
-            onHover: { onHoverSession(session.id) },
-            onOpen: { onToggleDockGroupCollapsed(group.id) },
-            onToggleScreenContextTarget: {},
-            onCompact: {},
-            onArchive: { onToggleDockGroupCollapsed(group.id) },
-            onStop: {},
-            onDoneFlashConsumed: { onDoneFlashConsumed(session.id) },
-            onReorderHandoff: { _ in }
-        )
-        .publishDockSlotCenter(sessionID: session.id, dockSide: dockSide)
     }
 
     @ViewBuilder
@@ -3263,22 +3224,7 @@ private struct PickyHUDDockIconView: View {
     }
 
     private var statusColor: Color {
-        switch session.status {
-        case .queued:
-            return DS.Colors.accentText
-        case .running:
-            return DS.Colors.overlayCursorBlue
-        case .waiting_for_input:
-            return DS.Colors.warning
-        case .blocked:
-            return DS.Colors.warningText
-        case .completed:
-            return DS.Colors.success
-        case .failed:
-            return DS.Colors.destructiveText
-        case .cancelled:
-            return DS.Colors.textTertiary
-        }
+        PickyDockPickleStatusVisual.color(session.status)
     }
 
     private var dockLabel: String {

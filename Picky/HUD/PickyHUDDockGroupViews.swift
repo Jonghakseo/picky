@@ -143,12 +143,6 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
     var headerDragOffset: CGSize = .zero
     @ViewBuilder var content: () -> Content
 
-
-    /// Hover-tracked so the floating name label appears next to the dock
-    /// only while the user points at the group's header. The header chip
-    /// itself stays tiny (chevron + color dot + collapsed count) so the
-    /// group name has no width pressure from the narrow rail.
-    @State private var isHeaderHovered: Bool = false
     /// Tracks whether the current drag gesture has already reported its
     /// `begin` event. SwiftUI's `DragGesture` only exposes `onChanged` /
     /// `onEnded`, so we synthesize a single begin from the first onChanged
@@ -199,9 +193,6 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
         .offset(x: headerDragOffset.width, y: headerDragOffset.height)
         .zIndex(isHeaderDragging ? 220 : 0)
         .animation(.spring(response: 0.28, dampingFraction: 0.72), value: isHeaderDragging)
-        .overlay(alignment: floatingLabelAlignment) {
-            floatingNameLabel
-        }
         .onAppear {
             // Brand-new groups ("+ → New Group") open the rename dialog
             // immediately so the user can name the group before its first
@@ -242,100 +233,6 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
         }
     }
 
-    /// Alignment anchor for the hover-revealed floating label. Vertical
-    /// docks anchor the label to the header row; horizontal docks anchor
-    /// it just outside the cross-axis edge.
-    private var floatingLabelAlignment: Alignment {
-        switch dockSide {
-        case .right: return .topLeading
-        case .left:  return .topTrailing
-        case .top:   return .topLeading
-        case .bottom: return .topLeading
-        }
-    }
-
-    /// Width budget the floating label uses for offset math. The chip
-    /// itself shrinks to text content; the surrounding `.frame` aligns it
-    /// against this width so the leading/trailing offset is deterministic.
-    /// Stored as computed vars because `PickyHUDDockGroupContainer` is
-    /// generic over its content view, and Swift forbids static stored
-    /// properties on generic types.
-    private var floatingLabelMaxWidth: CGFloat { 160 }
-    private var floatingLabelGap: CGFloat { 8 }
-
-    @ViewBuilder
-    private var floatingNameLabel: some View {
-        if isHeaderHovered {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(group.color.accent)
-                    .frame(width: 6, height: 6)
-                Text(group.displayName)
-                    .pickyFont(size: 11, weight: .medium)
-                    .foregroundColor(DS.Colors.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    // Cap the text width inside the chip so very long
-                    // group names truncate before the chip itself can
-                    // overflow the outer alignment box (160 − chrome).
-                    .frame(maxWidth: 130, alignment: .leading)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.black.opacity(0.86))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
-            )
-            .shadow(color: Color.black.opacity(0.4), radius: 6, x: 0, y: 2)
-            // `fixedSize` makes the chip honor its intrinsic width
-            // regardless of what the .overlay's parent (= the ~60px-wide
-            // group container) proposes — without this, the chip was being
-            // squeezed down to the container's narrow rail width and the
-            // group name would render as "···" instead of its real text.
-            .fixedSize(horizontal: true, vertical: false)
-            // Fixed-width alignment box (not maxWidth) so the offset math
-            // below lines up the chip's trailing/leading edge with the
-            // dock rail's edge regardless of the chip's intrinsic size.
-            .frame(width: floatingLabelMaxWidth, alignment: floatingChipInternalAlignment)
-            .offset(floatingLabelOffset)
-            .allowsHitTesting(false)
-            .transition(.opacity.combined(with: .move(edge: floatingLabelEdge)))
-            .zIndex(250)
-        }
-    }
-
-    private var floatingChipInternalAlignment: Alignment {
-        switch dockSide {
-        case .right: return .trailing
-        case .left:  return .leading
-        case .top:   return .leading
-        case .bottom: return .leading
-        }
-    }
-
-    private var floatingLabelOffset: CGSize {
-        let width = floatingLabelMaxWidth + floatingLabelGap
-        switch dockSide {
-        case .right: return CGSize(width: -width, height: 0)
-        case .left:  return CGSize(width: width, height: 0)
-        case .top:   return CGSize(width: 0, height: 24)
-        case .bottom: return CGSize(width: 0, height: -24)
-        }
-    }
-
-    private var floatingLabelEdge: Edge {
-        switch dockSide {
-        case .right: return .leading
-        case .left:  return .trailing
-        case .top:   return .top
-        case .bottom: return .bottom
-        }
-    }
-
     private var accentBar: some View {
         RoundedRectangle(cornerRadius: 1, style: .continuous)
             .fill(group.color.accent.opacity(0.78))
@@ -351,20 +248,19 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
             Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
                 .font(.system(size: 7, weight: .semibold))
                 .foregroundColor(group.color.accent.opacity(0.9))
-            // The accent dot and collapsed count chip are intentionally
-            // omitted: the chevron already marks the group header, the
-            // accent bar carries the group color, and the folder grid below
-            // shows the members directly. Rename happens in a dedicated
-            // dialog (see `presentRenameDialog`), not an inline field.
+            // The group name renders inline above the members. No accent
+            // dot and no hover-revealed floating label: the chevron marks
+            // the header and the accent bar carries the group color. Long
+            // names truncate within the rail width.
+            Text(group.displayName)
+                .pickyFont(size: 10, weight: .medium)
+                .foregroundColor(DS.Colors.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
             Spacer(minLength: 0)
         }
-        .frame(height: PickyHUDDockGroupHeaderHeight, alignment: .center)
+        .frame(width: metrics.sessionTileWidth, height: PickyHUDDockGroupHeaderHeight, alignment: .leading)
         .contentShape(Rectangle())
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.12)) {
-                isHeaderHovered = hovering
-            }
-        }
         // Tap anywhere on the header row toggles collapse. The rename
         // affordance moved to the right-click context menu ("Rename")
         // because the always-visible header no longer has a text label to

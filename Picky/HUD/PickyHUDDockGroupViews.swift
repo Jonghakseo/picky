@@ -467,11 +467,14 @@ struct PickyHUDDockGroupRenameField: NSViewRepresentable {
 
 /// Stacked-card badge that represents a collapsed group as a single dock
 /// slot. The top member icon renders normally; two muted "card" rectangles
-/// sit behind it to hint at the hidden siblings, and a small accent-colored
-/// count chip lives in the bottom-right corner.
+/// sit behind it to hint at the hidden siblings. When any member is unread
+/// (completed but not yet opened), a small blue chip in the bottom-right
+/// corner shows the unread count — mirroring the per-Pickle blue unread
+/// dot pattern. The total member count is intentionally not surfaced here
+/// because the stack visual + collapsed header already imply "there are
+/// more inside".
 struct PickyHUDDockCollapsedGroupBadge<Inner: View>: View {
-    let memberCount: Int
-    let color: PickyDockGroupColor
+    let unreadCount: Int
     let metrics: PickyHUDDockMetrics
     @ViewBuilder var topIcon: () -> Inner
 
@@ -488,17 +491,25 @@ struct PickyHUDDockCollapsedGroupBadge<Inner: View>: View {
                 .frame(width: metrics.sessionTileWidth - 3, height: metrics.sessionTileHeight - 3)
                 .offset(x: 0, y: -1.5)
             topIcon()
-            Text("\(memberCount)")
-                .pickyFont(size: 8, weight: .medium)
-                .padding(.horizontal, 3)
-                .padding(.vertical, 0.5)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(color.accent)
-                )
-                .foregroundColor(.black.opacity(0.78))
-                .offset(x: 4, y: 4)
-                .allowsHitTesting(false)
+            if unreadCount > 0 {
+                Text("\(unreadCount)")
+                    .pickyFont(size: 8, weight: .medium)
+                    .padding(.horizontal, 3)
+                    .padding(.vertical, 0.5)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(DS.Colors.accent)
+                    )
+                    .foregroundColor(.white)
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(DS.Colors.background, lineWidth: 0.8)
+                    )
+                    .shadow(color: DS.Colors.accent.opacity(0.45), radius: 2.5, x: 0, y: 0)
+                    .offset(x: 4, y: 4)
+                    .allowsHitTesting(false)
+                    .accessibilityLabel("\(unreadCount) unread")
+            }
         }
         .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
     }

@@ -1748,12 +1748,14 @@ private struct PickyHUDDockRailView: View {
                 headerDragOffset: draggingGroupID == group.id ? groupDragOffset : .zero
             ) {
                 if group.isCollapsed {
+                    let unreadCount = members.reduce(0) { count, member in
+                        unreadSessionIDs.contains(member.sessionID) ? count + 1 : count
+                    }
                     if let topID = members.first?.sessionID,
                        let card = sessions.first(where: { $0.id == topID }),
                        let slot = projection.slots.first(where: { $0.sessionID == topID }) {
                         PickyHUDDockCollapsedGroupBadge(
-                            memberCount: members.count,
-                            color: group.color,
+                            unreadCount: unreadCount,
                             metrics: metrics
                         ) {
                             collapsedGroupRepresentativeIcon(

@@ -202,10 +202,17 @@ if [[ "${SKIP_LAUNCH}" == "1" ]]; then
 fi
 
 echo "🚀 Launching ${PACKAGED_APP}"
-# Inject feature gates that should only be active for local dev launches.
+# Forward opt-in feature gates from the caller's shell to the GUI app.
 # `open --env KEY=VALUE` is the supported macOS path for passing environment
 # variables to GUI apps (LaunchServices otherwise strips the parent shell env).
-/usr/bin/open --env PICKY_FULLSCREEN_ENABLED=1 "${PACKAGED_APP}"
+# The fullscreen workspace UI is still being polished, so we no longer enable
+# it by default in dev launches. To preview it, prefix the call:
+#   PICKY_FULLSCREEN_ENABLED=1 ./scripts/run-dev-signed-app.sh
+OPEN_ENV_ARGS=()
+if [[ -n "${PICKY_FULLSCREEN_ENABLED:-}" ]]; then
+  OPEN_ENV_ARGS+=(--env "PICKY_FULLSCREEN_ENABLED=${PICKY_FULLSCREEN_ENABLED}")
+fi
+/usr/bin/open "${OPEN_ENV_ARGS[@]}" "${PACKAGED_APP}"
 sleep 1
 
 if /usr/bin/pgrep -x "${APP_NAME}" >/dev/null 2>&1; then

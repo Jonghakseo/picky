@@ -1710,6 +1710,17 @@ private struct PickyHUDDockRailView: View {
     @State private var groupDragStartLayoutIndex: Int = 0
     @State private var groupDragCurrentLayoutIndex: Int = 0
 
+    /// macOS Dock-style pull-out. While dragging an icon or group clearly
+    /// away from the dock on the cross axis, we arm a destructive release:
+    /// a Pickle archives, a group is removed. Sessions require a short dwell
+    /// outside (so a quick wobble never archives); groups arm immediately.
+    @State private var sessionPullOutArmed = false
+    @State private var groupPullOutArmed = false
+    /// Pending dwell timer that arms `sessionPullOutArmed`. Cancelled the
+    /// moment the cursor returns inside the pull-out threshold or the drag
+    /// ends, so a stale timer can never arm after the fact.
+    @State private var sessionPullOutDwellWork: DispatchWorkItem?
+
     /// Live render/hit-test projection. While a Pickle is being dragged, this
     /// reflects the *prospective* drop (`pendingDropContainer`) so siblings
     /// animate to make room at the landing spot — without persisting the
@@ -1970,7 +1981,10 @@ private struct PickyHUDDockRailView: View {
                 onHeaderDragEnded: { handleGroupHeaderDragEnded(groupID: group.id, translation: $0) },
                 onHeaderDragCanceled: { handleGroupHeaderDragCanceled() },
                 isHeaderDragging: draggingGroupID == group.id,
-                headerDragOffset: draggingGroupID == group.id ? groupDragOffset : .zero
+                headerDragOffset: draggingGroupID == group.id ? groupDragOffset : .zero,
+                pullOutBadgeText: (draggingGroupID == group.id && groupPullOutArmed)
+                    ? L10n.t("dock.drag.remove.label")
+                    : nil
             ) {
                 if group.isCollapsed {
                     // The collapsed render unit only carries the top member, so
@@ -2126,17 +2140,40 @@ private struct PickyHUDDockRailView: View {
                     onDoneFlashConsumed: {},
                     onReorderHandoff: { _ in }
                 )
+                // Follow the cursor on both axes so a pull-out reads like
+                // the macOS Dock; reorder hit-testing still uses only the
+                // primary-axis delta, so cross-axis follow is purely visual.
+                .opacity(sessionPullOutArmed ? 0.5 : 1)
                 .position(
                     x: dockSide.orientation == .vertical
-                        ? geo.size.width / 2
+                        ? geo.size.width / 2 + dragTranslation.width
                         : dragStartCenter + dragTranslation.width,
                     y: dockSide.orientation == .vertical
                         ? dragStartCenter + dragTranslation.height
-                        : geo.size.height / 2
+                        : geo.size.height / 2 + dragTranslation.height
                 )
+
+                if sessionPullOutArmed {
+                    pullOutBadge(L10n.t("dock.drag.archive.label"))
+                        .position(
+                            x: dockSide.orientation == .vertical
+                                ? geo.size.width / 2 + dragTranslation.width
+                                : dragStartCenter + dragTranslation.width,
+                            y: (dockSide.orientation == .vertical
+                                ? dragStartCenter + dragTranslation.height
+                                : geo.size.height / 2 + dragTranslation.height)
+                                - (metrics.sessionTileHeight / 2 + 16)
+                        )
+                }
             }
             .allowsHitTesting(false)
         }
+    }
+
+    /// Small capsule label floated over a dragged Pickle once archive-on-
+    /// release is armed, mirroring the macOS Dock cue.
+    private func pullOutBadge(_ text: String) -> some View {
+        PickyHUDDockPullOutBadge(text: text)
     }
 
     /// Synthetic id used to publish/look up an empty group's drop tile
@@ -2232,6 +2269,42 @@ private struct PickyHUDDockRailView: View {
         }
     }
 
+    /// Signed distance the cursor has been dragged *away* from the dock along
+    /// the cross axis (perpendicular to the icon column/row). Positive means
+    /// pulled out toward open screen; negative means pushed across the dock.
+    private func pullOutDistance(_ translation: CGSize) -> CGFloat {
+        switch dockSide {
+        case .left:   return translation.width
+        case .right:  return -translation.width
+        case .top:    return translation.height
+        case .bottom: return -translation.height
+        }
+    }
+
+    /// Cross-axis travel past which a drag counts as "outside the dock". Based
+    /// on the dock thickness plus a margin so the icon has visibly cleared the
+    /// capsule before a destructive release arms.
+    private var pullOutThreshold: CGFloat { metrics.railWidth * 0.5 + 40 }
+
+    /// Schedule the dwell that arms session archive-on-release. Idempotent:
+    /// re-arming while a timer is pending (or already armed) is a no-op, so
+    /// per-frame drag callbacks don't keep rescheduling it.
+    private func scheduleSessionPullOutDwell() {
+        guard sessionPullOutDwellWork == nil, !sessionPullOutArmed else { return }
+        let work = DispatchWorkItem {
+            sessionPullOutDwellWork = nil
+            guard draggingSessionID != nil else { return }
+            withAnimation(.easeOut(duration: 0.16)) { sessionPullOutArmed = true }
+        }
+        sessionPullOutDwellWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+
+    private func cancelSessionPullOutDwell() {
+        sessionPullOutDwellWork?.cancel()
+        sessionPullOutDwellWork = nil
+    }
+
     private func handleReorderBegin(sessionID: String) {
         guard projection.slots.contains(where: { $0.sessionID == sessionID }) else { return }
         draggingSessionID = sessionID
@@ -2252,6 +2325,21 @@ private struct PickyHUDDockRailView: View {
     private func handleReorderChanged(sessionID: String, translation: CGSize) {
         guard draggingSessionID == sessionID else { return }
         dragTranslation = translation
+
+        // macOS Dock-style pull-out: once the icon has clearly cleared the
+        // dock on the cross axis, freeze the layout (no sibling reflow) and
+        // arm archive-on-release after a short dwell. Returning early keeps
+        // the dock visually still while the icon floats outside.
+        if pullOutDistance(translation) > pullOutThreshold {
+            pendingDropContainer = layout.container(forSessionID: sessionID)
+            scheduleSessionPullOutDwell()
+            return
+        }
+        cancelSessionPullOutDwell()
+        if sessionPullOutArmed {
+            withAnimation(.easeOut(duration: 0.16)) { sessionPullOutArmed = false }
+        }
+
         let translationAxis = axisDelta(translation)
         let cursorAxis = dragStartCenter + translationAxis
 
@@ -2308,10 +2396,19 @@ private struct PickyHUDDockRailView: View {
 
     private func handleReorderEnded(sessionID: String, translation: CGSize) {
         guard draggingSessionID == sessionID else { return }
-        // Commit the deferred move exactly once, on release.
-        let currentContainer = layout.container(forSessionID: sessionID)
-        if let destination = pendingDropContainer, destination != currentContainer {
-            onMoveSessionInDock(sessionID, destination)
+        let didArchive = sessionPullOutArmed
+        cancelSessionPullOutDwell()
+        sessionPullOutArmed = false
+        if didArchive {
+            // Released outside the dock after the dwell: archive instead of
+            // reordering. No move is committed.
+            onArchiveSession(sessionID)
+        } else {
+            // Commit the deferred move exactly once, on release.
+            let currentContainer = layout.container(forSessionID: sessionID)
+            if let destination = pendingDropContainer, destination != currentContainer {
+                onMoveSessionInDock(sessionID, destination)
+            }
         }
         draggingSessionID = nil
         pendingDropContainer = nil
@@ -2323,6 +2420,8 @@ private struct PickyHUDDockRailView: View {
     private func handleReorderCanceled() {
         guard draggingSessionID != nil else { return }
         // No commit on cancel — the Pickle simply snaps back to its slot.
+        cancelSessionPullOutDwell()
+        sessionPullOutArmed = false
         draggingSessionID = nil
         pendingDropContainer = nil
         dragTranslation = .zero
@@ -2386,6 +2485,21 @@ private struct PickyHUDDockRailView: View {
 
     private func handleGroupHeaderDragChanged(groupID: String, translation: CGSize) {
         guard draggingGroupID == groupID else { return }
+
+        // macOS Dock-style pull-out: while the group block is dragged clearly
+        // outside the dock, arm removal-on-release immediately (no dwell) and
+        // let the block float freely under the cursor instead of reordering.
+        if pullOutDistance(translation) > pullOutThreshold {
+            if !groupPullOutArmed {
+                withAnimation(.easeOut(duration: 0.16)) { groupPullOutArmed = true }
+            }
+            groupDragOffset = translation
+            return
+        }
+        if groupPullOutArmed {
+            withAnimation(.easeOut(duration: 0.16)) { groupPullOutArmed = false }
+        }
+
         let topEntryIDs = visibleTopEntryIDs
         guard !topEntryIDs.isEmpty else { return }
         let translationAxis = axisDelta(translation)
@@ -2427,14 +2541,22 @@ private struct PickyHUDDockRailView: View {
 
     private func handleGroupHeaderDragEnded(groupID: String, translation: CGSize) {
         guard draggingGroupID == groupID else { return }
+        let didRemove = groupPullOutArmed
+        groupPullOutArmed = false
         withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
             groupDragOffset = .zero
         }
         draggingGroupID = nil
+        if didRemove {
+            // Released outside the dock: remove the group and archive its
+            // members (same outcome as the context-menu delete).
+            onRemoveDockGroup(groupID, false)
+        }
     }
 
     private func handleGroupHeaderDragCanceled() {
         guard draggingGroupID != nil else { return }
+        groupPullOutArmed = false
         withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
             groupDragOffset = .zero
         }

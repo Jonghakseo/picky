@@ -6355,6 +6355,40 @@
         }
       }
     },
+    "dock.drag.archive.label": {
+      "comment": "Shown over a Pickle dragged out of the dock; release archives it.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아카이브"
+          }
+        }
+      }
+    },
+    "dock.drag.remove.label": {
+      "comment": "Shown over a group dragged out of the dock; release removes the group.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제거"
+          }
+        }
+      }
+    },
     "dock.recentFolders.chooseFolder": {
       "localizations": {
         "en": {

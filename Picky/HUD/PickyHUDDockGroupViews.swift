@@ -141,6 +141,9 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
     /// the user sees the whole block following the cursor.
     var isHeaderDragging: Bool = false
     var headerDragOffset: CGSize = .zero
+    /// When non-nil the group has been dragged out of the dock and a release
+    /// will remove it; the block dims and floats this label as a cue.
+    var pullOutBadgeText: String? = nil
     @ViewBuilder var content: () -> Content
 
     /// Tracks whether the current drag gesture has already reported its
@@ -157,6 +160,13 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
         VStack(alignment: .leading, spacing: 2) {
             header
             content()
+        }
+        .opacity(pullOutBadgeText != nil ? 0.5 : 1)
+        .overlay(alignment: .top) {
+            if let pullOutBadgeText {
+                PickyHUDDockPullOutBadge(text: pullOutBadgeText)
+                    .offset(y: -22)
+            }
         }
         .scaleEffect(isHeaderDragging ? 1.03 : 1.0)
         .shadow(
@@ -537,5 +547,29 @@ struct PickyHUDDockGroupContextMenu: View {
                 onDeleteWithArchive()
             }
         }
+    }
+}
+
+/// Small capsule label floated over a dock item (Pickle or group) once a
+/// destructive drag-out release is armed, mirroring the macOS Dock "Remove"
+/// cue. Shared by the icon overlay and the group container.
+struct PickyHUDDockPullOutBadge: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .pickyFont(size: 11, weight: .semibold)
+            .foregroundColor(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.black.opacity(0.82))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
+            )
+            .fixedSize()
     }
 }

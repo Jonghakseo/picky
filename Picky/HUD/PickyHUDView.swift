@@ -421,6 +421,7 @@ struct PickyHUDView: View {
         if !viewModel.isLoadingInitialSessionSnapshot {
             PickyHUDDockRailView(
                 sessions: visibleSessions,
+                allSessions: viewModel.sessions,
                 baseProjection: dockProjection,
                 layout: viewModel.dockLayout,
                 activeSessionID: activeSession?.id,
@@ -1533,6 +1534,10 @@ final class PickyDockReorderDragController: ObservableObject {
 
 private struct PickyHUDDockRailView: View {
     let sessions: [PickySessionListViewModel.SessionCard]
+    /// Every live session card, including those hidden inside collapsed
+    /// groups. `sessions` only carries the dock-visible slots, so the
+    /// collapsed-group folder grid resolves its members from here.
+    let allSessions: [PickySessionListViewModel.SessionCard]
     /// Projection of the *persisted* layout. Read through the `projection`
     /// computed property below, which overlays the in-flight drag preview
     /// so callers (render + hit-test) transparently see the prospective
@@ -1733,14 +1738,18 @@ private struct PickyHUDDockRailView: View {
         }
     }
 
-    /// Number of expanded group headers rendered in this projection. Each
-    /// header adds a small vertical chip above its members in vertical mode;
-    /// the rail height accounts for this so groups don't push icons past the
-    /// fixed-height frame.
-    private var expandedGroupHeaderCount: Int {
+    /// Number of group header chips rendered in this projection. Every group
+    /// renders one header chip regardless of collapse state (an expanded group
+    /// emits a `.groupHeader` item; a collapsed group emits `.collapsedGroup`
+    /// but still renders the same chip above its badge). The rail height must
+    /// account for ALL of them or the bottom `+` slot overflows the capsule
+    /// when groups are collapsed.
+    private var groupHeaderCount: Int {
         projection.items.reduce(0) { count, item in
-            if case .groupHeader = item { return count + 1 }
-            return count
+            switch item {
+            case .groupHeader, .collapsedGroup: return count + 1
+            default: return count
+            }
         }
     }
 
@@ -1771,7 +1780,7 @@ private struct PickyHUDDockRailView: View {
     }
 
     private var railHeight: CGFloat {
-        let headersExtraLength = CGFloat(expandedGroupHeaderCount) * (PickyHUDDockGroupHeaderHeight + metrics.sessionSpacing)
+        let headersExtraLength = CGFloat(groupHeaderCount) * (PickyHUDDockGroupHeaderHeight + metrics.sessionSpacing)
         let emptyDropExtraLength = CGFloat(emptyGroupDropTileCount) * (metrics.sessionTileHeight + metrics.sessionSpacing)
         if dockSide.orientation == .horizontal {
             return PickyHUDDockLayout.horizontalDockRailLength(
@@ -1893,7 +1902,7 @@ private struct PickyHUDDockRailView: View {
                     // resolve the full visible member set from the group itself
                     // to fill the app-drawer folder grid.
                     let memberCards = group.memberSessionIDs.compactMap { id in
-                        sessions.first(where: { $0.id == id })
+                        allSessions.first(where: { $0.id == id })
                     }
                     let unreadCount = memberCards.reduce(0) { count, card in
                         unreadSessionIDs.contains(card.id) ? count + 1 : count

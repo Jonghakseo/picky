@@ -28,13 +28,11 @@ Picky stays intentionally lightweight. It follows your cursor, gathers context o
 
 <table align="center">
   <tr>
-    <th align="center">Picky use case</th>
-    <th align="center">Pickle use case</th>
-  </tr>
-  <tr>
     <td align="center">
       <img alt="combined_screen_recording_2026-05-26" src="https://github.com/user-attachments/assets/338e423a-06fe-4a9e-b28d-a2fcb1e3515b" width="100%" />
     </td>
+  </tr>
+  <tr>
     <td align="center">
       <img alt="combined_3_4_screen_recording_2026-05-26" src="https://github.com/user-attachments/assets/7695a78d-837a-4c64-8ec7-1c18af09b08d" width="100%" />
     </td>

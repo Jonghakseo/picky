@@ -3003,7 +3003,10 @@ struct PickySessionViewModelTests {
 
         viewModel.openTerminalOverlay(sessionID: "pickle-1")
         presenter.close(sessionID: "pickle-1")
-        try await settle()
+        // sentCommands is the latest effect in the close -> Task -> client.send chain;
+        // poll for it instead of a fixed settle() to stay deterministic under the
+        // parallel full-suite MainActor contention that previously made this flaky.
+        try await wait { client.sentCommands.contains { $0.type == .syncTerminalSession } }
 
         let command = try #require(client.sentCommands.last)
         #expect(command.type == .syncTerminalSession)

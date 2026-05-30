@@ -364,8 +364,13 @@ final class CompanionManager: ObservableObject {
     private var interactionSpeechID: UUID?
     private var interactionVoiceInputID: UUID?
     private var realtimeVoiceInputID: UUID?
-    private var realtimeCanSendAudio = false
-    private var realtimeBufferedAudioChunks: [Data] = []
+    /// Buffers captured PCM until the turn is acked, then a single pump task
+    /// drains it to agentd. The stream's unbounded buffer holds chunks that
+    /// arrive before `beginMainRealtimeVoiceTurn` returns; the pump starts only
+    /// once we're cleared to send, so early speech is never clipped.
+    private var realtimeAudioStream: AsyncStream<Data>?
+    private var realtimeAudioChunkContinuation: AsyncStream<Data>.Continuation?
+    private var realtimeAudioPumpTask: Task<Void, Never>?
     private var realtimeOutputTranscriptByInputID: [UUID: String] = [:]
     /// True while a Realtime assistant audio response has been handed to the
     /// local playback engine but has not yet drained. This separates the
@@ -1339,20 +1344,21 @@ final class CompanionManager: ObservableObject {
         }
 
         realtimeVoiceInputID = inputID
-        realtimeCanSendAudio = false
-        realtimeBufferedAudioChunks.removeAll()
+        teardownRealtimeAudioPump()
+        let (audioStream, audioContinuation) = AsyncStream<Data>.makeStream(bufferingPolicy: .unbounded)
+        realtimeAudioStream = audioStream
+        realtimeAudioChunkContinuation = audioContinuation
         realtimeOutputTranscriptByInputID.removeAll()
         currentResponseTask?.cancel()
         beginAwaitingAgentResponse(recognizedTranscript: nil)
 
         do {
-            try realtimeVoiceInputManager.start(inputID: inputID) { [weak self] data in
-                Task { @MainActor [weak self] in
-                    self?.sendRealtimeAudioChunk(data, inputID: inputID)
-                }
+            try realtimeVoiceInputManager.start(inputID: inputID) { data in
+                audioContinuation.yield(data)
             }
         } catch {
             realtimeVoiceInputID = nil
+            teardownRealtimeAudioPump()
             interactionCoordinator.accept(
                 .voiceStartFailed(message: error.localizedDescription, inputID: inputID),
                 correlation: PickyInteractionCorrelation(inputID: inputID, source: .voice)
@@ -1378,13 +1384,12 @@ final class CompanionManager: ObservableObject {
                     context: captureResult.contextPacket,
                     inputId: inputID
                 ))
-                realtimeCanSendAudio = true
-                flushBufferedRealtimeAudio(inputID: inputID)
+                startRealtimeAudioPump(inputID: inputID)
             } catch is CancellationError {
                 // Superseded by a newer utterance.
             } catch {
                 realtimeVoiceInputID = nil
-                realtimeCanSendAudio = false
+                teardownRealtimeAudioPump()
                 realtimeVoiceInputManager.stop()
                 interactionCoordinator.accept(
                     .transcriptFailed(message: error.localizedDescription, inputID: inputID),
@@ -1396,29 +1401,36 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    private func sendRealtimeAudioChunk(_ data: Data, inputID: UUID) {
-        guard realtimeVoiceInputID == inputID else { return }
-        guard realtimeCanSendAudio else {
-            realtimeBufferedAudioChunks.append(data)
-            return
-        }
-        let audioBase64 = data.base64EncodedString()
-        Task { [agentClient] in
-            try? await agentClient.send(PickyCommandEnvelope(
-                type: .appendMainRealtimeInputAudio,
-                inputId: inputID,
-                audioBase64: audioBase64
-            ))
+    /// Starts the single serial pump that drains captured audio to agentd.
+    /// One long-lived task replaces the per-chunk `Task {}` that previously
+    /// fired hundreds of times per utterance, and serial `await`s keep the
+    /// chunks strictly in order on the wire.
+    private func startRealtimeAudioPump(inputID: UUID) {
+        guard realtimeVoiceInputID == inputID, let stream = realtimeAudioStream else { return }
+        realtimeAudioStream = nil
+        realtimeAudioPumpTask?.cancel()
+        realtimeAudioPumpTask = Task { @MainActor [weak self, agentClient] in
+            for await chunk in stream {
+                guard !Task.isCancelled else { break }
+                guard let self, self.realtimeVoiceInputID == inputID else { continue }
+                try? await agentClient.send(PickyCommandEnvelope(
+                    type: .appendMainRealtimeInputAudio,
+                    inputId: inputID,
+                    audioBase64: chunk.base64EncodedString()
+                ))
+            }
         }
     }
 
-    private func flushBufferedRealtimeAudio(inputID: UUID) {
-        guard realtimeVoiceInputID == inputID, realtimeCanSendAudio else { return }
-        let chunks = realtimeBufferedAudioChunks
-        realtimeBufferedAudioChunks.removeAll()
-        for chunk in chunks {
-            sendRealtimeAudioChunk(chunk, inputID: inputID)
-        }
+    /// Ends the audio stream and stops the pump. `finish()` lets the pump drain
+    /// to completion; `cancel()` makes it skip anything still buffered (the
+    /// cancel/fail paths must not ship audio for an abandoned turn).
+    private func teardownRealtimeAudioPump() {
+        realtimeAudioChunkContinuation?.finish()
+        realtimeAudioChunkContinuation = nil
+        realtimeAudioStream = nil
+        realtimeAudioPumpTask?.cancel()
+        realtimeAudioPumpTask = nil
     }
 
     private func commitRealtimeMainVoiceTurn(inputID: UUID?) {
@@ -1474,8 +1486,7 @@ final class CompanionManager: ObservableObject {
         let playedAudioMs = realtimeAudioPlaybackEngine.stopAndReturnPlayedAudioMs()
         realtimeVoiceInputManager.stop()
         realtimeVoiceInputID = nil
-        realtimeCanSendAudio = false
-        realtimeBufferedAudioChunks.removeAll()
+        teardownRealtimeAudioPump()
         isRealtimePlaybackResponseActive = false
         // The pttReleased event already pushed the voice machine into
         // .loading on the way here (PTT release path always reduces
@@ -2362,8 +2373,7 @@ final class CompanionManager: ObservableObject {
                 realtimeOutputTranscriptByInputID.removeValue(forKey: inputId)
                 if realtimeVoiceInputID == inputId {
                     realtimeVoiceInputID = nil
-                    realtimeCanSendAudio = false
-                    realtimeBufferedAudioChunks.removeAll()
+                    teardownRealtimeAudioPump()
                     completeVoiceInteractionIfCurrent(inputID: inputId)
                 }
             }
@@ -2469,8 +2479,7 @@ final class CompanionManager: ObservableObject {
             clearPendingAgentResponseTiming()
             latestAgentSessionSummary = event.message ?? "Realtime Picky failed"
             realtimeVoiceInputID = nil
-            realtimeCanSendAudio = false
-            realtimeBufferedAudioChunks.removeAll()
+            teardownRealtimeAudioPump()
             isRealtimePlaybackResponseActive = false
             scheduleTransientHideIfNeeded()
         }

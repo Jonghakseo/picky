@@ -82,6 +82,13 @@ final class BuddyDictationManager: NSObject, ObservableObject {
     /// silently dropping audio after a route change.
     private var audioEngineConfigurationChangeObserver: NSObjectProtocol?
     private var activeTranscriptionSession: (any BuddyStreamingTranscriptionSession)?
+    /// Single serial consumer for streaming transcript events. Provider
+    /// callbacks `yield` into this stream from whatever thread they fire on
+    /// (the continuation is thread-safe), and one MainActor task applies the
+    /// updates in order — replacing the `Task {}` that was spawned per partial
+    /// result.
+    private var transcriptEventContinuation: AsyncStream<TranscriptStreamEvent>.Continuation?
+    private var transcriptConsumerTask: Task<Void, Never>?
     private var activeStartSource: BuddyDictationStartSource?
     private var draftCallbacks: BuddyDictationDraftCallbacks?
     private var draftTextBeforeCurrentDictation = ""
@@ -387,30 +394,45 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         resetSessionState()
     }
 
+    private enum TranscriptStreamEvent: Sendable {
+        case partial(String)
+        case final(String)
+    }
+
     private func startRecognitionSession() async throws {
         activeTranscriptionSession?.cancel()
         activeTranscriptionSession = nil
 
         print("🎙️ BuddyDictationManager: opening transcription provider \(transcriptionProvider.displayName)")
 
-        let activeTranscriptionSession = try await transcriptionProvider.startStreamingSession(
-            keyterms: buildTranscriptionKeyterms(),
-            onTranscriptUpdate: { [weak self] transcriptText in
-                Task { @MainActor in
-                    self?.latestRecognizedText = transcriptText
-                }
-            },
-            onFinalTranscriptReady: { [weak self] transcriptText in
-                Task { @MainActor in
-                    guard let self else { return }
+        teardownTranscriptConsumer()
+        let (events, continuation) = AsyncStream<TranscriptStreamEvent>.makeStream()
+        transcriptEventContinuation = continuation
+        transcriptConsumerTask = Task { @MainActor [weak self] in
+            for await event in events {
+                guard !Task.isCancelled else { break }
+                guard let self else { break }
+                switch event {
+                case .partial(let transcriptText):
                     self.latestRecognizedText = transcriptText
-
+                case .final(let transcriptText):
+                    self.latestRecognizedText = transcriptText
                     if self.isFinalizingTranscript {
                         self.finishCurrentDictationSessionIfNeeded(
                             shouldSubmitFinalDraft: self.shouldAutomaticallySubmitFinalDraft
                         )
                     }
                 }
+            }
+        }
+
+        let activeTranscriptionSession = try await transcriptionProvider.startStreamingSession(
+            keyterms: buildTranscriptionKeyterms(),
+            onTranscriptUpdate: { transcriptText in
+                continuation.yield(.partial(transcriptText))
+            },
+            onFinalTranscriptReady: { transcriptText in
+                continuation.yield(.final(transcriptText))
             },
             onError: { [weak self] error in
                 Task { @MainActor in
@@ -572,8 +594,16 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         return draftTextBeforeCurrentDictation + " " + trimmedTranscriptText
     }
 
+    private func teardownTranscriptConsumer() {
+        transcriptEventContinuation?.finish()
+        transcriptEventContinuation = nil
+        transcriptConsumerTask?.cancel()
+        transcriptConsumerTask = nil
+    }
+
     private func resetSessionState() {
         pendingStartRequestIdentifier = UUID()
+        teardownTranscriptConsumer()
         activeTranscriptionSession = nil
         draftCallbacks = nil
         activeStartSource = nil

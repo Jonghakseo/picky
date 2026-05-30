@@ -535,7 +535,7 @@ struct CompanionPanelFeedbackView: View {
         mediaAttachmentNotice = nil
 
         let job = FeedbackSendJob(payload: payload, diagnosticsScope: scope, mediaSelection: mediaSelection)
-        Task.detached(priority: .utility) {
+        Task(priority: .utility) {
             await job.run()
         }
 

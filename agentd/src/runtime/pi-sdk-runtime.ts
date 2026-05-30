@@ -372,6 +372,26 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     return this.currentAssistantRunMetadata();
   }
 
+  async setModel(pattern?: string): Promise<RuntimeAssistantRunMetadata | undefined> {
+    const normalized = normalizeModelPattern(pattern);
+    const services = this.runtime.services;
+    if (normalized) {
+      const model = await modelFromServices(services, normalized);
+      if (!model) throw new Error(`No Pi model matched pattern: ${normalized}`);
+      const scopedModel: ScopedModelOption = { model: model as ScopedModelOption["model"], ...(this.configuredThinkingLevel ? { thinkingLevel: this.configuredThinkingLevel } : {}) };
+      applyScopedModelsForCycling(this.runtime.session, [scopedModel]);
+      await this.runtime.session.setModel(scopedModel.model);
+    } else {
+      const scopedModels = await scopedModelsFromServices(services);
+      applyScopedModelsForCycling(this.runtime.session, scopedModels);
+      const automaticModel = await automaticModelFromServices(services, scopedModels);
+      if (automaticModel) await this.runtime.session.setModel(automaticModel as ScopedModelOption["model"]);
+    }
+    const metadata = this.currentAssistantRunMetadata();
+    logAgentd("pi model set", { sessionId: this.id, modelPattern: normalized, model: metadata?.model, thinkingLevel: metadata?.thinkingLevel });
+    return metadata;
+  }
+
   async cycleModel(direction: ModelCycleDirection): Promise<RuntimeAssistantRunMetadata | undefined> {
     const result = await piTryCycleModel(this.runtime.session, this.id, direction);
     if (!result) {
@@ -1240,6 +1260,29 @@ async function modelFromServices(services: Awaited<ReturnType<NonNullable<PiSdkR
   const model = findScopedModel(pattern, available);
   if (!model) logAgentd("pi fixed model not found", { pattern, available: available.length });
   return model;
+}
+
+async function automaticModelFromServices(
+  services: Awaited<ReturnType<NonNullable<PiSdkRuntimeOptions["createServices"]>>>,
+  scopedModels: ScopedModelOption[],
+): Promise<unknown | undefined> {
+  const settingsManager = asRecord(services.settingsManager);
+  const getDefaultModel = settingsManager.getDefaultModel;
+  if (typeof getDefaultModel === "function") {
+    const defaultPattern = stringValue(getDefaultModel.call(services.settingsManager));
+    const defaultModel = await modelFromServices(services, defaultPattern);
+    if (defaultModel) return defaultModel;
+  }
+  const scopedModel = scopedModels[0]?.model;
+  if (scopedModel) return scopedModel;
+
+  const available = await availableModelsFromServices(services);
+  const modelRegistry = asRecord(services.modelRegistry);
+  const hasConfiguredAuth = modelRegistry.hasConfiguredAuth;
+  if (typeof hasConfiguredAuth === "function") {
+    return available.find((model) => hasConfiguredAuth.call(services.modelRegistry, model));
+  }
+  return available[0];
 }
 
 function runtimeModelOptionFromModel(model: unknown): RuntimeModelOption | undefined {

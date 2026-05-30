@@ -3395,6 +3395,51 @@ describe("SessionSupervisor", () => {
     expect(mainRuntime.handle?.followUps[0].text).toContain("두 번째");
   });
 
+  it("soft-switches the active Picky main model without resetting the Pi session", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-model-soft-switch-"));
+    const store = new SessionStore(dir);
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store, { mainRuntime });
+
+    await supervisor.route(context("첫 질문"));
+    const handle = mainRuntime.handle!;
+    handle.emit({ type: "log", line: "pi session: /tmp/picky-main.jsonl" });
+    handle.emit({ type: "assistant_delta", delta: "첫 답변" });
+    handle.emit({ type: "status", status: "completed", summary: "Completed" });
+    await settle();
+
+    await supervisor.setMainAgentModel("anthropic/claude-sonnet-4-5");
+
+    expect(mainRuntime.modelPatterns).toEqual(["anthropic/claude-sonnet-4-5"]);
+    expect(handle.modelPatterns).toEqual(["anthropic/claude-sonnet-4-5"]);
+    expect(handle.aborts).toBe(0);
+    expect(mainRuntime.handle).toBe(handle);
+    expect((await store.loadMainAgentState()).sessionFilePath).toBe("/tmp/picky-main.jsonl");
+
+    await supervisor.route(context("두 번째 질문"));
+
+    expect(mainRuntime.createCalls).toBe(1);
+    expect(mainRuntime.handle).toBe(handle);
+    expect(handle.followUps.at(-1)?.text).toContain("두 번째 질문");
+  });
+
+  it("restores automatic Picky main model selection on the active Pi session", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-main-model-auto-soft-switch-"));
+    const mainRuntime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(new ManualRuntime(), new SessionStore(dir), { mainRuntime });
+
+    await supervisor.route(context("첫 질문"));
+    const handle = mainRuntime.handle!;
+
+    await supervisor.setMainAgentModel("anthropic/claude-sonnet-4-5");
+    await supervisor.setMainAgentModel("");
+
+    expect(mainRuntime.modelPatterns).toEqual(["anthropic/claude-sonnet-4-5", undefined]);
+    expect(handle.modelPatterns).toEqual(["anthropic/claude-sonnet-4-5", undefined]);
+    expect(handle.aborts).toBe(0);
+    expect(mainRuntime.handle).toBe(handle);
+  });
+
   it("interrupts the active Picky turn when newer voice input arrives", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const mainRuntime = new ManualRuntime({ supportsPrewarm: true });
@@ -6170,6 +6215,7 @@ class ManualRuntime implements AgentRuntime {
   createPrompts: BuiltPrompt[] = [];
   thinkingLevels: string[] = [];
   ttsEnabledCalls: boolean[] = [];
+  modelPatterns: Array<string | undefined> = [];
   prewarmCalls = 0;
   prewarmOptions: Array<{ cwd?: string; sessionId?: string }> = [];
   prewarm?: (options: { cwd?: string; sessionId?: string }) => Promise<RuntimeSessionHandle>;
@@ -6200,6 +6246,13 @@ class ManualRuntime implements AgentRuntime {
     this.thinkingLevels.push(level);
   }
 
+  setModelPattern(pattern?: string): boolean {
+    const normalized = pattern?.trim() || undefined;
+    const previous = this.modelPatterns.at(-1);
+    this.modelPatterns.push(normalized);
+    return previous !== normalized;
+  }
+
   setMainAgentTTSEnabled(enabled: boolean): void {
     this.ttsEnabledCalls.push(enabled);
   }
@@ -6216,6 +6269,7 @@ class ManualHandle implements RuntimeSessionHandle {
   /** Request ids whose runtime-side dialog has already been discarded; mirrors the bridge throwing "Unknown extension UI request". */
   stalePendingRequestIds = new Set<string>();
   thinkingLevels: string[] = [];
+  modelPatterns: Array<string | undefined> = [];
   userBashExecutions: Array<{ command: string; excludeFromContext?: boolean }> = [];
   newSessionCalls = 0;
   sessionFilePath?: string;
@@ -6287,6 +6341,12 @@ class ManualHandle implements RuntimeSessionHandle {
   }
   setThinkingLevel(level: ThinkingLevel): void {
     this.thinkingLevels.push(level);
+  }
+  async setModel(pattern?: string): Promise<RuntimeAssistantRunMetadata | undefined> {
+    const normalized = pattern?.trim() || undefined;
+    this.modelPatterns.push(normalized);
+    this.assistantRunMetadata = normalized ? { model: normalized } : undefined;
+    return this.assistantRunMetadata;
   }
   getAssistantRunMetadata(): RuntimeAssistantRunMetadata | undefined {
     return this.assistantRunMetadata;

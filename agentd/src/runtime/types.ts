@@ -129,6 +129,7 @@ export interface RuntimeSessionHandle {
   setThinkingLevel?(level: ThinkingLevel): void;
   getAssistantRunMetadata?(): RuntimeAssistantRunMetadata | undefined;
   cycleThinkingLevel?(): RuntimeAssistantRunMetadata | undefined;
+  setModel?(pattern?: string): Promise<RuntimeAssistantRunMetadata | undefined>;
   cycleModel?(direction: ModelCycleDirection): Promise<RuntimeAssistantRunMetadata | undefined>;
   listSlashCommands?(): RuntimeSlashCommand[] | Promise<RuntimeSlashCommand[]>;
   /**

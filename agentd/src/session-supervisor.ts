@@ -556,13 +556,37 @@ export class SessionSupervisor extends EventEmitter {
 
   async setMainAgentModel(pattern: string): Promise<void> {
     const normalized = pattern.trim();
-    const changed = this.options.mainRuntime?.setModelPattern?.(normalized || undefined) ?? false;
+    const modelPattern = normalized || undefined;
+    const changed = this.options.mainRuntime?.setModelPattern?.(modelPattern) ?? false;
     logAgentd("main model configured", { patternChars: normalized.length, changed: changed ? 1 : 0, hadHandle: this.mainHandle ? 1 : 0, hadPendingHandle: this.mainHandlePromise ? 1 : 0 });
     if (!changed) return;
-    const currentHandle = this.mainHandle;
-    this.detachMainHandleForInterruption();
-    if (currentHandle) await this.abortResetMainHandle(currentHandle, "model-switch");
-    await this.patchMainState({ sessionFilePath: undefined });
+
+    const applyToHandle = async (handle: RuntimeSessionHandle, source: "active" | "pending"): Promise<void> => {
+      if (!handle.setModel) {
+        logAgentd("main model live switch skipped", { reason: "runtime handle does not support setModel", source });
+        return;
+      }
+      const currentAssistantRun = await handle.setModel(modelPattern);
+      logAgentd("main model live switch applied", { source, model: currentAssistantRun?.model, thinkingLevel: currentAssistantRun?.thinkingLevel });
+    };
+
+    if (this.mainHandle) {
+      await applyToHandle(this.mainHandle, "active");
+      return;
+    }
+
+    const pendingHandlePromise = this.mainHandlePromise;
+    if (pendingHandlePromise) {
+      const generation = this.mainHandleGeneration;
+      void pendingHandlePromise
+        .then(async (handle) => {
+          if (generation !== this.mainHandleGeneration) return;
+          await applyToHandle(handle, "pending");
+        })
+        .catch((error) => {
+          logAgentd("main model pending live switch failed", { error: error instanceof Error ? error.message : String(error) });
+        });
+    }
   }
 
   async setDisabledBuiltinTools(names: readonly string[]): Promise<void> {

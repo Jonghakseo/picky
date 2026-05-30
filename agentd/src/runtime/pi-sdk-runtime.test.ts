@@ -14,6 +14,7 @@ class FakeSession extends EventEmitter {
   compactCalls: Array<string | undefined> = [];
   thinkingLevels: string[] = [];
   scopedModelUpdates: unknown[][] = [];
+  modelUpdates: unknown[] = [];
   isStreaming = false;
   isCompacting = false;
   bound = false;
@@ -129,6 +130,15 @@ class FakeSession extends EventEmitter {
     this.scopedModelUpdates.push(scopedModels);
   }
 
+  async setModel(model: { provider?: string; id?: string; model?: string; api?: string }): Promise<void> {
+    this.modelUpdates.push(model);
+    this.state.model = {
+      api: model.api ?? "fake-api",
+      provider: model.provider ?? "fake-provider",
+      id: model.id ?? model.model ?? "fake-model",
+    };
+  }
+
   async bindExtensions(options?: { uiContext?: Record<string, unknown> }): Promise<void> {
     this.bound = true;
     this.uiContext = options?.uiContext;
@@ -235,6 +245,7 @@ function makeRuntime(fakeSession: FakeSession): PiSdkRuntime {
       const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
       return {
         session: result.session,
+        services: result.services,
         diagnostics: result.diagnostics,
         setRebindSession: vi.fn(),
         cwd: options.cwd,
@@ -1247,6 +1258,73 @@ describe("PiSdkRuntime", () => {
       scopedModels: [{ model: codexModel, thinkingLevel: "high" }],
     }));
     expect(fakeSession.scopedModelUpdates).toEqual([]);
+  });
+
+  it("sets an explicit model on the active Pi session without recreating it", async () => {
+    const fakeSession = new FakeSession();
+    const codexModel = { provider: "openai-codex", id: "gpt-5.5", name: "GPT-5.5" };
+    const runtime = new PiSdkRuntime({
+      getAgentDir: () => "/tmp/.pi/agent",
+      createServices: vi.fn(async () => ({
+        diagnostics: [],
+        settingsManager: { getEnabledModels: () => [] },
+        modelRegistry: { getAvailable: async () => [codexModel] },
+      })) as never,
+      createSessionFromServices: vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } })) as never,
+      createRuntime: vi.fn(async (factory, options) => {
+        const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
+        return {
+          session: result.session,
+          services: result.services,
+          diagnostics: result.diagnostics,
+          setRebindSession: vi.fn(),
+        };
+      }) as never,
+    });
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
+
+    const metadata = await handle.setModel?.("openai-codex/gpt-5.5");
+
+    expect(fakeSession.scopedModelUpdates).toEqual([[{ model: codexModel }]]);
+    expect(fakeSession.modelUpdates).toEqual([codexModel]);
+    expect(metadata).toEqual({ model: "gpt-5.5" });
+  });
+
+  it("restores automatic model scope and default model on the active Pi session", async () => {
+    const fakeSession = new FakeSession();
+    const codexModel = { provider: "openai-codex", id: "gpt-5.5", name: "GPT-5.5" };
+    const defaultModel = { provider: "anthropic", id: "claude-opus-4-7", name: "Claude Opus 4.7" };
+    const runtime = new PiSdkRuntime({
+      getAgentDir: () => "/tmp/.pi/agent",
+      createServices: vi.fn(async () => ({
+        diagnostics: [],
+        settingsManager: {
+          getDefaultModel: () => "anthropic/claude-opus-4-7",
+          getEnabledModels: () => ["openai-codex/gpt-5.5"],
+        },
+        modelRegistry: { getAvailable: async () => [codexModel, defaultModel] },
+      })) as never,
+      createSessionFromServices: vi.fn(async () => ({ session: fakeSession, extensionsResult: { extensions: [], errors: [], runtime: {} } })) as never,
+      createRuntime: vi.fn(async (factory, options) => {
+        const result = await factory({ cwd: options.cwd, agentDir: options.agentDir, sessionManager: options.sessionManager });
+        return {
+          session: result.session,
+          services: result.services,
+          diagnostics: result.diagnostics,
+          setRebindSession: vi.fn(),
+        };
+      }) as never,
+    });
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "picky" });
+
+    const metadata = await handle.setModel?.("");
+
+    expect(fakeSession.scopedModelUpdates).toEqual([
+      [{ model: codexModel }],
+      [{ model: codexModel }],
+    ]);
+    expect(fakeSession.modelUpdates).toEqual([defaultModel]);
+    expect(metadata).toEqual({ model: "claude-opus-4-7" });
   });
 
   it("updates the active Pi session thinking level", async () => {

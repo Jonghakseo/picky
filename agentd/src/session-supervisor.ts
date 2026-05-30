@@ -953,12 +953,83 @@ export class SessionSupervisor extends EventEmitter {
   async createPickleFromHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string }): Promise<PickyAgentSession> {
     const cwd = normalizeOptionalString(handoff.cwd) ?? context.cwd;
     const handoffContext = cwd ? { ...context, cwd } : context;
-    logAgentd("pickle session create requested", { contextId: context.id, titleChars: handoff.title.length, instructionChars: handoff.instructions.length, cwd: handoffContext.cwd });
+    const sourceSessionFilePath = piSessionFilePathFromHandoffTranscript(handoffContext.transcript);
+    logAgentd("pickle session create requested", { contextId: context.id, titleChars: handoff.title.length, instructionChars: handoff.instructions.length, cwd: handoffContext.cwd, sourceSessionFilePath });
+    if (sourceSessionFilePath && this.runtime.resume) {
+      return this.createPickleFromResumedHandoff(handoffContext, handoff, sourceSessionFilePath);
+    }
     const session = await this.createVisibleSession(handoffContext, handoff.title.trim() || titleFromContext(context), buildPicklePrompt(handoffContext, handoff), { notifyMainOnCompletion: true });
     this.pickleSessionIds.add(session.id);
     await this.appendLog(session.id, `${HANDOFF_PREFIX}${handoff.instructions}`);
     if (handoffContext.cwd) await this.appendLog(session.id, `Picky handoff cwd: ${handoffContext.cwd}`);
     return this.mustGet(session.id);
+  }
+
+  private async createPickleFromResumedHandoff(context: PickyContextPacket, handoff: { title: string; instructions: string; cwd?: string }, sourceSessionFilePath: string): Promise<PickyAgentSession> {
+    const now = new Date().toISOString();
+    const id = this.sessionIdFactory();
+    const cwd = normalizeOptionalString(context.cwd);
+    const newFilePath = await snapshotPiSessionFile(sourceSessionFilePath, id);
+    const title = handoff.title.trim() || titleFromContext(context);
+    const session: PickyAgentSession = {
+      id,
+      title,
+      status: "queued",
+      cwd,
+      createdAt: now,
+      updatedAt: now,
+      lastSummary: "Resuming source Pi session",
+      logs: [
+        `pi session: ${newFilePath}`,
+        `source pi session snapshot: ${sourceSessionFilePath}`,
+      ],
+      notifyMainOnCompletion: true,
+      tools: [],
+      artifacts: extractSessionLinkArtifacts(context.transcript ?? "", now),
+      changedFiles: [],
+      activitySummary: zeroActivitySummary(),
+      piSessionFilePath: newFilePath,
+    };
+    this.pickleSessionIds.add(id);
+    this.sessionContexts.set(id, context);
+    const pendingHandle = createPendingRuntimeHandle();
+    this.pendingRuntimeHandles.set(id, pendingHandle.promise);
+    this.pendingRuntimeAbortControllers.set(id, new AbortController());
+    try {
+      await this.upsert(session);
+      logAgentd("pickle handoff resume queued", { sessionId: id, sourceSessionFilePath, sessionFilePath: newFilePath, cwd });
+      const resume = this.runtime.resume?.bind(this.runtime);
+      if (!resume) throw new Error("Runtime cannot resume handoff sessions");
+      const handle = await resume(newFilePath, { cwd, sessionId: id });
+      if (this.mustGet(id).status === "cancelled") {
+        await handle.abort();
+        logAgentd("pickle handoff resume resolved after session was cancelled", { sessionId: id });
+        return this.mustGet(id);
+      }
+      await this.attachRuntimeHandle(id, handle);
+      await this.patch(id, { status: "running", lastSummary: "Started", thinkingPreview: undefined, piSessionFilePath: newFilePath });
+      pendingHandle.resolve(handle);
+      await handle.followUp({ text: handoff.instructions, imagePaths: [] });
+      await this.appendLog(id, `${HANDOFF_PREFIX}${handoff.instructions}`);
+      if (cwd) await this.appendLog(id, `Picky handoff cwd: ${cwd}`);
+      void this.refreshPickleSessionTitleFromPi(id);
+      return this.mustGet(id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logAgentd("pickle handoff resume failed", { sessionId: id, sourceSessionFilePath, sessionFilePath: newFilePath, error: message });
+      if (this.sessions.has(id) && this.mustGet(id).status !== "cancelled") {
+        await this.patch(id, {
+          status: "failed",
+          lastSummary: `Failed to resume handoff: ${message}`,
+          logs: [...this.mustGet(id).logs, `Failed to resume handoff: ${message}`],
+        });
+      }
+      pendingHandle.reject(error);
+      throw error;
+    } finally {
+      if (this.pendingRuntimeHandles.get(id) === pendingHandle.promise) this.pendingRuntimeHandles.delete(id);
+      this.pendingRuntimeAbortControllers.delete(id);
+    }
   }
 
 

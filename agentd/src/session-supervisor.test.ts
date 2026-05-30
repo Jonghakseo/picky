@@ -556,6 +556,35 @@ describe("SessionSupervisor", () => {
     await expect(supervisor.steerPickleSession(regular.id, "wrong target")).rejects.toThrow(/not a Pickle/);
   });
 
+  it("resumes a busy handoff from a snapshot of the source Pi transcript before continuing", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-handoff-resume-"));
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const sourceFilePath = join(dir, "source-pi.jsonl");
+    await writeFile(sourceFilePath, '{"type":"user_text","text":"original task"}\n{"type":"agent_text","text":"partial answer"}\n');
+
+    const pickle = await supervisor.createPickleFromHandoff(
+      contextWithPiSessionFile("continue this work", sourceFilePath),
+      { title: "Continue source", instructions: "continue", cwd: "/tmp/override-project" },
+    );
+
+    expect(runtime.resumeCalls).toHaveLength(1);
+    expect(runtime.resumeCalls[0]?.sessionId).toBe(pickle.id);
+    expect(runtime.resumeCalls[0]?.cwd).toBe("/tmp/override-project");
+    expect(runtime.resumeCalls[0]?.sessionFilePath).not.toBe(sourceFilePath);
+    expect(runtime.resumeCalls[0]?.sessionFilePath?.endsWith(`${pickle.id}.jsonl`)).toBe(true);
+    expect(pickle.piSessionFilePath).toBe(runtime.resumeCalls[0]?.sessionFilePath);
+    expect(runtime.handle?.followUps.at(-1)?.text).toContain("continue");
+    expect(runtime.handle?.followUps.at(-1)?.text).not.toContain("## Recent source-session branch excerpt");
+
+    const copied = await readFile(runtime.resumeCalls[0]!.sessionFilePath, "utf8");
+    const original = await readFile(sourceFilePath, "utf8");
+    expect(copied).toBe(original);
+    expect(supervisor.isPickleSession(pickle.id)).toBe(true);
+    expect(pickle.logs).toContain("Picky handoff: continue");
+  });
+
   it("duplicates a Pickle session by snapshotting its Pi transcript and resuming the copy", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-duplicate-"));
     const runtime = new ResumableRuntime();

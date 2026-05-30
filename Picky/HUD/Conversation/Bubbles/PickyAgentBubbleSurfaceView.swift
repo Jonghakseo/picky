@@ -165,25 +165,22 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
 
     func measuredSize(forRootWidth rootWidth: CGFloat) -> NSSize {
         let rootWidth = max(0, rootWidth)
-        let bubbleWidth = measuredBubbleWidth(rootWidth: rootWidth)
-        let height = measuredBubbleHeight(interiorWidth: max(0, bubbleWidth - 2 * Metrics.horizontalPadding))
-        return NSSize(width: rootWidth, height: ceil(height))
+        let metrics = bubbleMetrics(rootWidth: rootWidth)
+        return NSSize(width: rootWidth, height: ceil(metrics.bubbleHeight))
     }
 
     override func layout() {
         super.layout()
-        let bubbleWidth = measuredBubbleWidth(rootWidth: bounds.width)
-        let bubbleHeight = measuredBubbleHeight(interiorWidth: max(0, bubbleWidth - 2 * Metrics.horizontalPadding))
-        let bubbleRect = NSRect(x: 0, y: 0, width: bubbleWidth, height: bubbleHeight)
+        let metrics = bubbleMetrics(rootWidth: bounds.width)
+        let bubbleRect = NSRect(x: 0, y: 0, width: metrics.bubbleWidth, height: metrics.bubbleHeight)
         lastBubbleRect = bubbleRect
 
         let textWidth = max(0, bubbleRect.width - 2 * Metrics.horizontalPadding)
-        let textSize = measuredTextContentSize(forWidth: textWidth)
         markdownView.frame = NSRect(
             x: bubbleRect.minX + Metrics.horizontalPadding,
             y: bubbleRect.minY + Metrics.verticalPadding,
             width: textWidth,
-            height: ceil(textSize.height)
+            height: ceil(metrics.textHeight)
         )
 
         hoverButton.frame = NSRect(
@@ -257,16 +254,23 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
         NSColor(DS.Colors.borderSubtle.opacity(0.72))
     }
 
-    private func measuredBubbleWidth(rootWidth: CGFloat) -> CGFloat {
+    /// Measure the markdown content ONCE — at the bubble cap interior width —
+    /// and derive both the content-hugging bubble width and the height from
+    /// that single `boundingRect`. The old code measured a second time at the
+    /// narrower content-fit width to get the height; narrowing the wrap width
+    /// from the cap down to `ceil(textSize.width)` never re-wraps a line
+    /// (`ceil` rounds up so the widest used line still fits), so the height is
+    /// identical at both widths. The second measure was pure thrash against
+    /// the content view's per-width cache — eliminating it halves the
+    /// surface-initiated measurement count.
+    private func bubbleMetrics(rootWidth: CGFloat) -> (bubbleWidth: CGFloat, bubbleHeight: CGFloat, textHeight: CGFloat) {
         let bubbleCap = min(maxBubbleWidth, rootWidth)
         let interiorCap = max(0, bubbleCap - 2 * Metrics.horizontalPadding)
         let textSize = measuredTextContentSize(forWidth: interiorCap)
         let contentWidth = min(interiorCap, ceil(textSize.width))
-        return min(bubbleCap, contentWidth + 2 * Metrics.horizontalPadding)
-    }
-
-    private func measuredBubbleHeight(interiorWidth: CGFloat) -> CGFloat {
-        ceil(measuredTextContentSize(forWidth: interiorWidth).height) + 2 * Metrics.verticalPadding
+        let bubbleWidth = min(bubbleCap, contentWidth + 2 * Metrics.horizontalPadding)
+        let textHeight = ceil(textSize.height)
+        return (bubbleWidth, textHeight + 2 * Metrics.verticalPadding, textHeight)
     }
 
     private func measuredTextContentSize(forWidth width: CGFloat) -> NSSize {

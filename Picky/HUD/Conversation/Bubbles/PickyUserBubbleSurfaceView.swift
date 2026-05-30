@@ -185,27 +185,24 @@ final class PickyUserBubbleSurfaceNSView: NSView {
 
     func measuredSize(forRootWidth rootWidth: CGFloat) -> NSSize {
         let rootWidth = max(0, rootWidth)
-        let bubbleWidth = measuredBubbleWidth(rootWidth: rootWidth)
-        let height = measuredBubbleHeight(interiorWidth: max(0, bubbleWidth - 2 * Metrics.horizontalPadding))
-        return NSSize(width: rootWidth, height: ceil(height))
+        let metrics = bubbleMetrics(rootWidth: rootWidth)
+        return NSSize(width: rootWidth, height: ceil(metrics.bubbleHeight))
     }
 
     override func layout() {
         super.layout()
-        let bubbleWidth = measuredBubbleWidth(rootWidth: bounds.width)
-        let bubbleHeight = measuredBubbleHeight(interiorWidth: max(0, bubbleWidth - 2 * Metrics.horizontalPadding))
-        let bubbleX = max(0, bounds.width - bubbleWidth)
-        let bubbleRect = NSRect(x: bubbleX, y: 0, width: bubbleWidth, height: bubbleHeight)
+        let metrics = bubbleMetrics(rootWidth: bounds.width)
+        let bubbleX = max(0, bounds.width - metrics.bubbleWidth)
+        let bubbleRect = NSRect(x: bubbleX, y: 0, width: metrics.bubbleWidth, height: metrics.bubbleHeight)
         lastBubbleRect = bubbleRect
 
         let textWidth = max(0, bubbleRect.width - 2 * Metrics.horizontalPadding)
-        let textSize = measuredTextContentSize(forWidth: textWidth)
         var y = bubbleRect.minY + Metrics.verticalPadding
         markdownView.frame = NSRect(
             x: bubbleRect.minX + Metrics.horizontalPadding,
             y: y,
             width: textWidth,
-            height: ceil(textSize.height)
+            height: ceil(metrics.textHeight)
         )
         y = markdownView.frame.maxY
 
@@ -247,30 +244,36 @@ final class PickyUserBubbleSurfaceNSView: NSView {
         return NSColor(DS.Colors.accentSubtle.opacity(0.95))
     }
 
-    private func measuredBubbleWidth(rootWidth: CGFloat) -> CGFloat {
+    /// Measure the markdown content ONCE — at the bubble cap interior width —
+    /// and derive both the content-hugging bubble width and the full bubble
+    /// height (text + labels + expansion chrome) from that single
+    /// `boundingRect`. The old split measured the text a second time at the
+    /// narrower content-fit width just to read its height; that height is
+    /// identical at both widths (`ceil` on the content width never re-wraps a
+    /// line), so the second measure was pure thrash against the content view's
+    /// per-width cache. Mirrors `PickyAgentBubbleSurfaceNSView.bubbleMetrics`.
+    private func bubbleMetrics(rootWidth: CGFloat) -> (bubbleWidth: CGFloat, bubbleHeight: CGFloat, textHeight: CGFloat) {
         let bubbleCap = min(maxBubbleWidth, rootWidth)
         let interiorCap = max(0, bubbleCap - 2 * Metrics.horizontalPadding)
         let textSize = measuredTextContentSize(forWidth: interiorCap)
         let labelWidth = max(labelWidth(attachedImagesField), labelWidth(originField))
         let expansionWidth = expansionButtonWidth()
         let contentWidth = min(interiorCap, ceil(max(textSize.width, labelWidth, expansionWidth)))
-        return min(bubbleCap, contentWidth + 2 * Metrics.horizontalPadding)
-    }
+        let bubbleWidth = min(bubbleCap, contentWidth + 2 * Metrics.horizontalPadding)
 
-    private func measuredBubbleHeight(interiorWidth: CGFloat) -> CGFloat {
-        let textHeight = ceil(measuredTextContentSize(forWidth: interiorWidth).height)
-        var height = Metrics.verticalPadding + textHeight
+        let textHeight = ceil(textSize.height)
+        var bubbleHeight = Metrics.verticalPadding + textHeight
         if attachedImagesLabel != nil {
-            height += Metrics.labelSpacing + ceil(attachedImagesField.fittingSize.height)
+            bubbleHeight += Metrics.labelSpacing + ceil(attachedImagesField.fittingSize.height)
         }
         if originLabel != nil {
-            height += Metrics.labelSpacing + ceil(originField.fittingSize.height)
+            bubbleHeight += Metrics.labelSpacing + ceil(originField.fittingSize.height)
         }
         if expansionTitle != nil {
-            height += Metrics.expansionSpacing + Metrics.expansionButtonHeight
+            bubbleHeight += Metrics.expansionSpacing + Metrics.expansionButtonHeight
         }
-        height += Metrics.verticalPadding
-        return height
+        bubbleHeight += Metrics.verticalPadding
+        return (bubbleWidth, bubbleHeight, textHeight)
     }
 
     private func measuredTextContentSize(forWidth width: CGFloat) -> NSSize {

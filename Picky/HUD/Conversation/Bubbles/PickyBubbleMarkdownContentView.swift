@@ -107,20 +107,23 @@ final class PickyBubbleMarkdownContentView: NSView {
         }
     }
 
-    /// Single-slot cache keyed on the requested width. AppKit's layout cycle
-    /// invokes `measuredSize(forWidth:)` many times for the same view at the
-    /// same width during a single pass (the bubble surface needs it to size
-    /// the rounded rect, then `layout()` needs it again to position the
-    /// internal frame). Measurement is deterministic for a fixed block-view
-    /// set so we keep the most recent (width, size) pair and short-circuit
-    /// repeat queries. Profiling showed this single function dominated HUD
-    /// activation time (~83% of hud-perf signpost time) before this cache.
-    private var lastMeasuredWidth: CGFloat?
-    private var lastMeasuredSize: NSSize = .zero
+    /// Width-keyed cache. AppKit's layout cycle invokes `measuredSize(forWidth:)`
+    /// many times during a single pass, but — critically — `PickyAgentBubbleSurfaceNSView`
+    /// measures at TWO alternating widths per pass: the bubble cap
+    /// (`measuredBubbleWidth`) and the narrower content-fit width
+    /// (`measuredBubbleHeight`/`layout`). A single-slot `(width, size)` cache
+    /// thrashes between those two values and misses on essentially every call,
+    /// which profiling caught dominating HUD time again (~93% of hud-perf,
+    /// single measures up to ~1.1s while expanding large bubbles). Keep a small
+    /// per-width map instead so both widths stay resident across the pass.
+    /// Bounded because a bubble realistically only sees a handful of widths
+    /// (cap + content-fit, plus transient widths during a panel drag).
+    private var measuredSizeCache: [CGFloat: NSSize] = [:]
+    private static let measuredSizeCacheLimit = 8
 
     func measuredSize(forWidth width: CGFloat) -> NSSize {
-        if let cachedWidth = lastMeasuredWidth, cachedWidth == width {
-            return lastMeasuredSize
+        if let cached = measuredSizeCache[width] {
+            return cached
         }
         let measured: NSSize = PickyPerf.interval("bubble_measured_size") {
             let clamped = max(0, width)
@@ -138,16 +141,17 @@ final class PickyBubbleMarkdownContentView: NSView {
             }
             return NSSize(width: min(clamped, ceil(measuredWidth)), height: ceil(measuredHeight))
         }
-        lastMeasuredWidth = width
-        lastMeasuredSize = measured
+        if measuredSizeCache.count >= Self.measuredSizeCacheLimit {
+            measuredSizeCache.removeAll(keepingCapacity: true)
+        }
+        measuredSizeCache[width] = measured
         return measured
     }
 
     /// Invalidate the measured-size cache. Called whenever the underlying
     /// `blockViews` are rebuilt so the next layout pass measures fresh.
     private func invalidateMeasuredSizeCache() {
-        lastMeasuredWidth = nil
-        lastMeasuredSize = .zero
+        measuredSizeCache.removeAll(keepingCapacity: true)
     }
 
     override func layout() {
@@ -233,22 +237,25 @@ class PickyMarkdownBlockNSView: NSView {
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
 
-    /// Single-slot (width, size) cache. Every concrete subclass holds
+    /// Width-keyed (width → size) cache. Every concrete subclass holds
     /// immutable rendered content (NSAttributedString set once in init), so
     /// measurement is deterministic for a given width across the view's
-    /// lifetime. AppKit calls `measuredSize(forWidth:)` repeatedly for the
-    /// same view at the same width during a single layout pass; caching
-    /// here cuts the bubble-content view's measuredSize cost dramatically.
-    private var lastMeasuredWidth: CGFloat?
-    private var lastMeasuredSize: NSSize = .zero
+    /// lifetime — a per-width map can never go stale and needs no
+    /// invalidation. The parent surface measures at two alternating widths
+    /// (cap + content-fit) per layout pass, so a single-slot cache would
+    /// thrash and miss on every call; the map keeps both resident.
+    private var measuredSizeCache: [CGFloat: NSSize] = [:]
+    private static let measuredSizeCacheLimit = 8
 
     final func measuredSize(forWidth width: CGFloat) -> NSSize {
-        if let cachedWidth = lastMeasuredWidth, cachedWidth == width {
-            return lastMeasuredSize
+        if let cached = measuredSizeCache[width] {
+            return cached
         }
         let size = computeMeasuredSize(forWidth: width)
-        lastMeasuredWidth = width
-        lastMeasuredSize = size
+        if measuredSizeCache.count >= Self.measuredSizeCacheLimit {
+            measuredSizeCache.removeAll(keepingCapacity: true)
+        }
+        measuredSizeCache[width] = size
         return size
     }
 

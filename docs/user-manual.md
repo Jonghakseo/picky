@@ -107,7 +107,7 @@ For every bundled extension the tab shows:
 
 Currently bundled:
 
-- **Pi handoff command** — adds a `/handoff-to-picky` slash command to local Pi so you can pin an idle Pi conversation to Picky as a completed Pickle card. After installing, restart Pi or run `/reload`.
+- **Pi handoff command** — adds a `/handoff-to-picky` slash command to local Pi. When the source Pi turn is idle, it pins the conversation to Picky as a completed Pickle card; when Pi is busy, it aborts the source turn, snapshots that Pi session, resumes it as a Pickle, and sends the handoff instruction (default: `continue`). After installing, restart Pi or run `/reload`.
 
 A **Curated extensions** section under the bundled list lists a small set of useful third-party Pi extensions. Each row shows the extension name, a short description, and an install/remove control that installs the extension from npm into the local Pi setup.
 

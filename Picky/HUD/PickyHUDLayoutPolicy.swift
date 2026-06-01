@@ -286,6 +286,22 @@ enum PickyHUDDockLayout {
             + metrics.bottomPadding
     }
 
+    /// Cross-axis (Y) thickness of the dock rail in horizontal orientation.
+    /// Defaults to `metrics.railWidth` (matches `sessionTileHeight` + padding),
+    /// but grows by `PickyHUDDockGroupHeaderHeight + 2` when any dock group is
+    /// rendered so the group title chip sits inside the capsule above its
+    /// members instead of overflowing above the dock background.
+    static func horizontalDockRailCrossSize(
+        hasGroupHeaders: Bool,
+        metrics: PickyHUDDockMetrics = .medium
+    ) -> CGFloat {
+        let base = metrics.railWidth
+        guard hasGroupHeaders else { return base }
+        // 2pt matches the VStack spacing between the header and the drawer in
+        // `PickyHUDDockGroupContainer`.
+        return base + PickyHUDDockGroupHeaderHeight + 2
+    }
+
     /// Long-axis (X) length of the dock rail in horizontal orientation.
     /// Mirrors `dockRailHeight` but uses symmetric leading/trailing padding
     /// (small `topPadding` on both sides instead of vertical's larger

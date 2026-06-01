@@ -512,7 +512,17 @@ struct PickyHUDView: View {
                         includesFullscreenControl: PickyFullscreenFeatureFlags.isEnabled
                     )
                     : dockMetrics.railWidth,
-                height: placement.dockSide.orientation == .horizontal ? dockMetrics.railWidth : nil
+                height: placement.dockSide.orientation == .horizontal
+                    ? PickyHUDDockLayout.horizontalDockRailCrossSize(
+                        hasGroupHeaders: dockProjection.items.contains { item in
+                            switch item {
+                            case .groupHeader, .collapsedGroup: return true
+                            default: return false
+                            }
+                        },
+                        metrics: dockMetrics
+                    )
+                    : nil
             )
             // In horizontal mode the mini hover preview is centered on each dock
             // icon (`miniPreviewOffset` x = 0), so previewing an edge icon makes
@@ -1776,7 +1786,7 @@ private struct PickyHUDDockRailView: View {
                 // padding.
                 .padding(.horizontal, metrics.topPadding)
                 .padding(.vertical, metrics.horizontalPadding)
-                .frame(width: railHeight, height: metrics.railWidth, alignment: .center)
+                .frame(width: railHeight, height: horizontalRailCrossSize, alignment: .center)
             } else {
                 // The handle is the first child INSIDE the dock capsule (after a small top
                 // padding) so the dock body itself acts as the hit target. The capsule
@@ -1882,16 +1892,22 @@ private struct PickyHUDDockRailView: View {
     }
 
     private var railHeight: CGFloat {
-        let headersExtraLength = CGFloat(groupHeaderCount) * (PickyHUDDockGroupHeaderHeight + metrics.sessionSpacing)
-        let emptyDropExtraLength = CGFloat(emptyGroupDropTileCount) * (metrics.sessionTileHeight + metrics.sessionSpacing)
         if dockSide.orientation == .horizontal {
+            // Horizontal: group headers stack ABOVE their drawer (cross axis),
+            // so they do not add to long-axis length. Empty-group drop tiles
+            // are full-sized tiles inside the drawer and do add one tile
+            // worth of long-axis length each (`sessionTileWidth`, not
+            // `sessionTileHeight`).
+            let emptyDropExtraLength = CGFloat(emptyGroupDropTileCount) * (metrics.sessionTileWidth + metrics.sessionSpacing)
             return PickyHUDDockLayout.horizontalDockRailLength(
                 sessionCount: sessions.count,
                 isAddSlotExpanded: isAddSlotExpanded,
                 metrics: metrics,
                 includesFullscreenControl: PickyFullscreenFeatureFlags.isEnabled
-            ) + headersExtraLength + emptyDropExtraLength
+            ) + emptyDropExtraLength
         }
+        let headersExtraLength = CGFloat(groupHeaderCount) * (PickyHUDDockGroupHeaderHeight + metrics.sessionSpacing)
+        let emptyDropExtraLength = CGFloat(emptyGroupDropTileCount) * (metrics.sessionTileHeight + metrics.sessionSpacing)
         let base = PickyHUDDockLayout.dockRailHeight(
             sessionCount: sessions.count,
             isAddSlotExpanded: isAddSlotExpanded,
@@ -1901,6 +1917,16 @@ private struct PickyHUDDockRailView: View {
             ? base + PickyHUDDockLayout.fullscreenDockControlLength(metrics: metrics)
             : base
         return withFullscreen + headersExtraLength + emptyDropExtraLength
+    }
+
+    /// Cross-axis (height) of the dock rail in horizontal mode. Grows by the
+    /// group header chip height when any dock group is rendered so the title
+    /// sits inside the capsule above its members.
+    private var horizontalRailCrossSize: CGFloat {
+        PickyHUDDockLayout.horizontalDockRailCrossSize(
+            hasGroupHeaders: groupHeaderCount > 0,
+            metrics: metrics
+        )
     }
 
     private var fullscreenButton: some View {
@@ -1980,6 +2006,7 @@ private struct PickyHUDDockRailView: View {
                 group: group,
                 dockSide: dockSide,
                 metrics: metrics,
+                drawerSpan: groupDrawerSpan(group: group, members: members),
                 isRenamingOnAppear: pendingRenameGroupID == group.id,
                 onRenameCommit: { newName in
                     onRenameDockGroup(group.id, newName)
@@ -2202,6 +2229,25 @@ private struct PickyHUDDockRailView: View {
     /// session".
     private static func emptyGroupDropTargetID(groupID: String) -> String {
         "_empty_group:\(groupID)"
+    }
+
+    /// Long-axis span of a group block's drawer (the surface that hosts
+    /// member icons or the collapsed/empty placeholder). The header chip is
+    /// sized to match so the group title sits centered above the drawer. In
+    /// vertical mode every group occupies a single column; in horizontal
+    /// mode an expanded group with N members spans N tiles plus (N-1) gaps.
+    private func groupDrawerSpan(
+        group: PickyDockGroup,
+        members: [PickyHUDDockGroupMemberRef]
+    ) -> CGFloat {
+        guard dockSide.orientation == .horizontal else {
+            return metrics.sessionTileWidth
+        }
+        if group.isCollapsed || members.isEmpty {
+            return metrics.sessionTileWidth
+        }
+        let n = CGFloat(members.count)
+        return n * metrics.sessionTileWidth + max(0, n - 1) * metrics.sessionSpacing
     }
 
     /// Extract the group id from a synthetic empty-group drop target id, or

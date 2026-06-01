@@ -117,6 +117,13 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
     let group: PickyDockGroup
     let dockSide: PickyHUDDockSide
     let metrics: PickyHUDDockMetrics
+    /// Long-axis span of the drawer that hosts this group's members (or
+    /// collapsed/empty placeholder). The header chip is sized to match this
+    /// span so the group title sits centered above the drawer regardless of
+    /// member count. For vertical docks this is just `sessionTileWidth`; for
+    /// horizontal docks it grows with the member count so the title spans the
+    /// full HStack of members.
+    let drawerSpan: CGFloat
     /// When true, the header should focus its rename input as soon as the
     /// view appears. Used after `+ → New Group` so the user can type a
     /// name without an extra click.
@@ -229,7 +236,7 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
             .foregroundColor(DS.Colors.textPrimary)
             .lineLimit(1)
             .truncationMode(.tail)
-            .frame(width: metrics.sessionTileWidth, height: PickyHUDDockGroupHeaderHeight, alignment: .center)
+            .frame(width: drawerSpan, height: PickyHUDDockGroupHeaderHeight, alignment: .center)
         .contentShape(Rectangle())
         // Tap anywhere on the header row toggles collapse. The rename
         // affordance moved to the right-click context menu ("Rename")

@@ -1960,10 +1960,17 @@ private struct PickyHUDDockRailView: View {
             addAgentSlotButton
         } else {
             if dockSide.orientation == .horizontal {
-                HStack(spacing: metrics.sessionSpacing) {
-                    dockBodyItems
+                // Bottom-align so ungrouped Pickle icons (`sessionTileHeight`)
+                // share the same baseline as the drawer of a grouped block
+                // (which sits below its title chip). Without this they
+                // floated to the rail's vertical center and looked offset
+                // from the grouped Pickles whenever any dock group existed.
+                HStack(alignment: .bottom, spacing: 2) {
+                    HStack(alignment: .bottom, spacing: metrics.sessionSpacing) {
+                        dockBodyItems
+                    }
+                    collapsibleAddAgentSlot
                 }
-                collapsibleAddAgentSlot
             } else {
                 VStack(spacing: metrics.sessionSpacing) {
                     dockBodyItems

@@ -1965,11 +1965,16 @@ private struct PickyHUDDockRailView: View {
                 // (which sits below its title chip). Without this they
                 // floated to the rail's vertical center and looked offset
                 // from the grouped Pickles whenever any dock group existed.
+                // The collapsible `+` slot is *not* a Pickle and stays
+                // vertically centered — flexing its height to fill the
+                // wrapper lets the button center itself inside that frame
+                // while the body row keeps its bottom-aligned baseline.
                 HStack(alignment: .bottom, spacing: 2) {
                     HStack(alignment: .bottom, spacing: metrics.sessionSpacing) {
                         dockBodyItems
                     }
                     collapsibleAddAgentSlot
+                        .frame(maxHeight: .infinity)
                 }
             } else {
                 VStack(spacing: metrics.sessionSpacing) {

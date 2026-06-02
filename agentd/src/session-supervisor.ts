@@ -2112,6 +2112,27 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("terminal tail invalidated runtime handle after pi session rewrite", { sessionId, sessionFilePath });
   }
 
+  private invalidateRuntimeHandleAfterTerminalSync(
+    sessionId: string,
+    outcome: { activeLastMessageId?: string; baselinePiMessageId?: string; importedMessageCount: number },
+  ): void {
+    const activeLastMessageId = outcome.activeLastMessageId?.trim();
+    if (!activeLastMessageId) return;
+    const baselinePiMessageId = outcome.baselinePiMessageId?.trim();
+    const activePathAdvanced = baselinePiMessageId
+      ? activeLastMessageId !== baselinePiMessageId
+      : outcome.importedMessageCount > 0;
+    if (!activePathAdvanced) return;
+    if (!this.runtimeHandles.has(sessionId)) return;
+    this.runtimeHandles.delete(sessionId);
+    logAgentd("terminal session sync invalidated runtime handle after pi session advanced", {
+      sessionId,
+      activeLastMessageId,
+      ...(baselinePiMessageId ? { baselinePiMessageId } : {}),
+      importedMessageCount: outcome.importedMessageCount,
+    });
+  }
+
   private async handleTerminalTailEntries(sessionId: string, entries: PiSessionTailEntry[]): Promise<void> {
     if (!this.sessions.has(sessionId)) return;
     const inferred = inferTerminalStatusFromEntries(entries);
@@ -2172,6 +2193,11 @@ export class SessionSupervisor extends EventEmitter {
         return false;
       }
       return true;
+    });
+    this.invalidateRuntimeHandleAfterTerminalSync(sessionId, {
+      activeLastMessageId: result.activeLastMessageId,
+      baselinePiMessageId,
+      importedMessageCount: messagesToImport.length,
     });
     if (messagesToImport.length === 0) {
       logAgentd("terminal session sync noop", { sessionId, activeLastMessageId: result.activeLastMessageId });

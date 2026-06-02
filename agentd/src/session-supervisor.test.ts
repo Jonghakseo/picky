@@ -4788,6 +4788,66 @@ describe("SessionSupervisor", () => {
     expect(outcomes.at(-1)).toEqual({ baselineFound: true, importedMessageCount: 0, activeLastMessageId: "a2", baselinePiMessageId: "a1" });
   });
 
+  it("invalidates the attached runtime handle after terminal sync imports append-only TUI transcript", async () => {
+    // Regression: a user can continue a Pickle through `pi --session` in a TUI without
+    // compacting or truncating the JSONL. The HUD sync imports those append-only TUI turns into
+    // `session.messages`, but the attached Pi runtime handle still points at the pre-TUI in-memory
+    // session. The next HUD follow-up must therefore re-resume from disk instead of delivering to
+    // the stale handle and appending a response with a pre-TUI parentId.
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-sync-runtime-invalidate-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    await writeFile(piSessionFile, [
+      JSON.stringify({ type: "session", version: 3, id: "pi-session", timestamp: "2026-05-01T00:00:00.000Z", cwd: "/tmp/project" }),
+      JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-05-01T00:00:01.000Z", message: { role: "user", content: "old prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-05-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "old answer" }], timestamp: 0, stopReason: "stop" } }),
+      "",
+    ].join("\n"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "terminal-sync-runtime-invalidate",
+      title: "Terminal sync runtime invalidate",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "old answer",
+      finalAnswer: "old answer",
+      logs: [`pi session: ${piSessionFile}`],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [
+        { id: "msg-existing-user", kind: "user_text", createdAt: "2026-05-01T00:00:01.000Z", originatedBy: "user", text: "old prompt" },
+        { id: "msg-existing-agent", kind: "agent_text", createdAt: "2026-05-01T00:00:02.000Z", text: "old answer" },
+      ],
+    });
+
+    const runtime = new ResumableRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+
+    await supervisor.followUp("terminal-sync-runtime-invalidate", "before TUI follow-up");
+    expect(runtime.resumeCalls).toEqual([{ sessionFilePath: piSessionFile, cwd: "/tmp/project", sessionId: "terminal-sync-runtime-invalidate" }]);
+    const staleHandle = runtime.handle!;
+    expect(staleHandle.followUps.map((prompt) => prompt.text)).toEqual(["before TUI follow-up"]);
+
+    await appendFile(piSessionFile, [
+      JSON.stringify({ type: "message", id: "u2", parentId: "a1", timestamp: "2026-05-01T00:00:03.000Z", message: { role: "user", content: "terminal prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a2", parentId: "u2", timestamp: "2026-05-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: "terminal reply" }], timestamp: 0, stopReason: "stop" } }),
+      "",
+    ].join("\n"));
+    await supervisor.syncTerminalSession("terminal-sync-runtime-invalidate", "a1");
+    expect(supervisor.get("terminal-sync-runtime-invalidate")?.lastSummary).toBe("terminal reply");
+
+    await supervisor.followUp("terminal-sync-runtime-invalidate", "after TUI follow-up");
+
+    expect(runtime.resumeCalls).toHaveLength(2);
+    expect(runtime.resumeCalls[1]).toEqual({ sessionFilePath: piSessionFile, cwd: "/tmp/project", sessionId: "terminal-sync-runtime-invalidate" });
+    expect(runtime.handle).not.toBe(staleHandle);
+    expect(staleHandle.followUps.map((prompt) => prompt.text)).toEqual(["before TUI follow-up"]);
+    expect(runtime.handle?.followUps.map((prompt) => prompt.text)).toEqual(["after TUI follow-up"]);
+  });
+
   it("imports Pi terminal thinking and tool-call activity into canonical session messages", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-sync-activity-"));
     const piSessionFile = join(dir, "pi-session.jsonl");

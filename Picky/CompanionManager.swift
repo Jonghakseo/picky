@@ -1225,7 +1225,10 @@ final class CompanionManager: ObservableObject {
                 screenContextVoiceTargetByInputID[inputID] = screenContextTargetSessionID
             }
             interactionVoiceInputID = inputID
-            let voiceMode: PickyVoiceInteractionMode = shouldUseRealtimeMainVoiceTurn(targetSessionID: targetSessionID) ? .realtime : .standard
+            let voiceMode = PickyRealtimeVoiceTurnPolicy.mode(
+                targetSessionID: targetSessionID,
+                runtimeMode: AppBundleConfiguration.effectiveRuntimeMode
+            )
             reduceVoiceInteraction(.pttPressed(inputID: inputID, targetSessionID: targetSessionID, mode: voiceMode))
             beginInkCapture(source: .voice)
             print("🎙️ Picky voice route — PTT pressed; screenContext=\(selectionStore.screenContextTargetSessionID ?? "<nil>") storeHover=\(selectionStore.hoveredVoiceFollowUpSessionID ?? "<nil>") prevTask=\(currentResponseTask != nil)")
@@ -1257,7 +1260,7 @@ final class CompanionManager: ObservableObject {
             PickyAnalytics.trackPushToTalkStarted()
 
             pendingKeyboardShortcutStartTask?.cancel()
-            if shouldUseRealtimeMainVoiceTurn(targetSessionID: targetSessionID) {
+            if voiceMode == .realtime {
                 realtimeVoicePressStartedAt = Date()
                 beginRealtimeMainVoiceTurn(inputID: inputID)
                 return
@@ -1320,10 +1323,6 @@ final class CompanionManager: ObservableObject {
         }
     }
 
-    private func shouldUseRealtimeMainVoiceTurn(targetSessionID: String?) -> Bool {
-        guard normalizedVoiceFollowUpSessionID(targetSessionID) == nil else { return false }
-        return AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime
-    }
 
     private func beginRealtimeMainVoiceTurn(inputID: UUID) {
         let settings = PickySettingsStore().load()

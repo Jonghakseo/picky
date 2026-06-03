@@ -46,6 +46,17 @@ describe("image size parsing", () => {
     expect(readJpegSize(Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0x00]))).toBeUndefined();
   });
 
+  it("rejects malformed JPEG start-of-frame segments without throwing", () => {
+    const tooShortSofSegment = Buffer.alloc(12);
+    tooShortSofSegment[0] = 0xff;
+    tooShortSofSegment[1] = 0xd8;
+    tooShortSofSegment[2] = 0xff;
+    tooShortSofSegment[3] = 0xc0;
+    tooShortSofSegment.writeUInt16BE(2, 4);
+    expect(() => readJpegSize(tooShortSofSegment)).not.toThrow();
+    expect(readJpegSize(tooShortSofSegment)).toBeUndefined();
+  });
+
   it("stops before scan data when no size-bearing frame was found", () => {
     const buffer = Buffer.from([0xff, 0xd8, 0xff, 0xda, 0x00, 0x02, 0x00, 0x00]);
     expect(readJpegSize(buffer)).toBeUndefined();

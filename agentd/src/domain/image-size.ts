@@ -40,6 +40,7 @@ export function readJpegSize(buffer: Buffer): ImageSize | undefined {
     if (segmentLength < 2 || offset + segmentLength > buffer.length) return undefined;
 
     if (isJpegStartOfFrameMarker(marker)) {
+      if (segmentLength < 7) return undefined;
       const height = buffer.readUInt16BE(offset + 3);
       const width = buffer.readUInt16BE(offset + 5);
       return width > 0 && height > 0 ? { width, height } : undefined;

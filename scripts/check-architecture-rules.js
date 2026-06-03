@@ -101,7 +101,7 @@ function checkSwiftDomainImports() {
 
 function checkAgentdDomainImports() {
   const forbiddenPatterns = [
-    { pattern: /from\s+["']node:(fs|http|https|child_process)["']/, reason: "node side-effect module" },
+    { pattern: /from\s+["']node:(?:fs(?:\/[^"']*)?|http|https|child_process)["']/, reason: "node side-effect module" },
     { pattern: /from\s+["']ws["']/, reason: "transport adapter" },
     { pattern: /from\s+["']\.\.\/server(?:\.js)?["']/, reason: "server adapter" },
     { pattern: /from\s+["']\.\.\/application\//, reason: "application service" },

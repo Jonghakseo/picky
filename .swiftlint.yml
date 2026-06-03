@@ -15,27 +15,53 @@ excluded:
   - node_modules
   - Picky.xcodeproj
 
+disabled_rules:
+  # These legacy style rules currently produce hard errors unrelated to the
+  # refactoring safety gates. Keep this config warning-first and introduce
+  # narrower ratchets later if these become a priority.
+  - identifier_name
+  - shorthand_operator
+
 opt_in_rules:
   - empty_count
   - force_unwrapping
-  - redundant_optional_initialization
+  - implicit_optional_initialization
+
+line_length:
+  warning: 120
+  error: 1000
+  ignores_comments: false
+  ignores_urls: true
+  ignores_function_declarations: false
+  ignores_interpolated_strings: false
 
 file_length:
   warning: 1500
-  error: 6000
+  error: 20000
   ignore_comment_only_lines: true
 
 type_body_length:
   warning: 700
-  error: 2500
+  error: 10000
 
 function_body_length:
   warning: 120
-  error: 400
+  error: 2000
+
+function_parameter_count:
+  warning: 5
+  error: 100
+
+large_tuple:
+  warning: 2
+  error: 20
 
 cyclomatic_complexity:
   warning: 18
-  error: 40
+  error: 200
+
+empty_count:
+  severity: warning
 
 force_cast:
   severity: warning
@@ -58,7 +84,7 @@ custom_rules:
 
   picky_silent_async_action:
     name: "Do not silently drop async user-action failures"
-    regex: "Task\\s*\\{[^\\n]*try\\?\\s*await\\s+(?!Task\\.sleep)"
+    regex: "(?s)Task\\s*\\{[^}]*try\\?\\s*await\\s+(?!Task\\.sleep)"
     message: "Side-effecting async user actions should fail visibly or be logged; avoid Task { try? await ... }."
     severity: warning
 

@@ -2,7 +2,7 @@
 
 _Last updated: 2026-06-03_
 
-Use this document before structural refactors in Picky. It complements `ARCHITECTURE.md`, `docs/swift-concurrency.md`, `docs/perf-profiling.md`, and the execution plan in `docs/refactoring-execution-plan.md`.
+Use this document before structural refactors in Picky. It complements `ARCHITECTURE.md`, `docs/swift-concurrency.md`, and `docs/perf-profiling.md`.
 
 ## One-line rule
 
@@ -206,7 +206,6 @@ Use this sequence for safe refactors:
 
 ## 6. References
 
-- Execution plan: `docs/refactoring-execution-plan.md`
 - Current architecture: `ARCHITECTURE.md`
 - Swift concurrency guide: `docs/swift-concurrency.md`
 - HUD performance playbook: `docs/perf-profiling.md`

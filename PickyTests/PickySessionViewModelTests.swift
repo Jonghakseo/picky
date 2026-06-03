@@ -112,6 +112,45 @@ private final class FakeManualOrderStore: PickySessionManualOrderStoring {
     var manualOrder: [String] = []
 }
 
+private final class FakeViewModelDockLayoutStore: PickyDockLayoutStoring {
+    private var storedLayout: PickyDockLayout
+    private(set) var savedLayouts: [PickyDockLayout] = []
+
+    init(layout: PickyDockLayout = .empty) {
+        self.storedLayout = layout
+    }
+
+    func load() -> PickyDockLayout {
+        storedLayout
+    }
+
+    func save(_ layout: PickyDockLayout) throws {
+        storedLayout = layout
+        savedLayouts.append(layout)
+    }
+}
+
+private extension PickyDockLayout {
+    var testSessionIDs: [String] {
+        entries.flatMap { entry -> [String] in
+            switch entry {
+            case .session(let id): [id]
+            case .group(let group): group.memberSessionIDs
+            }
+        }
+    }
+
+    var testEntryDescriptions: [String] {
+        entries.map { entry in
+            switch entry {
+            case .session(let id): "session:\(id)"
+            case .group(let group):
+                "group:\(group.id)[\(group.memberSessionIDs.joined(separator: ","))]"
+            }
+        }
+    }
+}
+
 @MainActor
 private final class FakeChildSessionReleaser: PickyChildSessionReleasing {
     var releasedSessionIDs: [String] = []
@@ -2741,6 +2780,88 @@ struct PickySessionViewModelTests {
 
         // Order from store wins, not createdAt.
         #expect(viewModel.sessions.map(\.id) == ["c", "a", "b"])
+    }
+
+    // MARK: - Dock layout controller seam
+
+    @MainActor @Test func dockLayoutStoreSeedsInitialPublishedLayout() {
+        let dockLayoutStore = FakeViewModelDockLayoutStore(layout: PickyDockLayout(entries: [
+            .session(id: "a"),
+            .group(PickyDockGroup(
+                id: "g",
+                name: "G",
+                color: .teal,
+                memberSessionIDs: ["b"]
+            ))
+        ]))
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            dockLayoutStore: dockLayoutStore
+        )
+
+        #expect(viewModel.dockLayout.testEntryDescriptions == ["session:a", "group:g[b]"])
+        #expect(dockLayoutStore.savedLayouts.isEmpty)
+    }
+
+    @MainActor @Test func dockLayoutMigratesManualOrderThroughViewModelReconcile() {
+        let orderStore = FakeManualOrderStore()
+        orderStore.manualOrder = ["c", "a", "b"]
+        let dockLayoutStore = FakeViewModelDockLayoutStore()
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            selectionStore: FakeSelectionStore(),
+            archiveStore: FakeArchiveStore(),
+            manualOrderStore: orderStore,
+            dockLayoutStore: dockLayoutStore
+        )
+        let snapshotJSON = """
+        {"id":"snapshot-dock-layout","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:30.000Z","type":"sessionSnapshot","sessions":[
+            {"id":"a","title":"A","status":"running","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"a","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},
+            {"id":"b","title":"B","status":"running","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:10.000Z","updatedAt":"2026-05-01T00:00:10.000Z","lastSummary":"b","logs":[],"tools":[],"artifacts":[],"changedFiles":[]},
+            {"id":"c","title":"C","status":"running","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:20.000Z","updatedAt":"2026-05-01T00:00:20.000Z","lastSummary":"c","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}
+        ]}
+        """
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: snapshotJSON)))
+
+        #expect(viewModel.sessions.map(\.id) == ["c", "a", "b"])
+        #expect(viewModel.dockLayout.testSessionIDs == ["b", "a", "c"])
+        #expect(dockLayoutStore.savedLayouts.map(\.testSessionIDs) == [["b", "a", "c"]])
+    }
+
+    @Test func removeDockGroupArchivesMembersAndPersistsThroughViewModel() async throws {
+        let client = FakePickyAgentClient()
+        let archiveStore = FakeArchiveStore()
+        let dockLayoutStore = FakeViewModelDockLayoutStore(layout: PickyDockLayout(entries: [
+            .session(id: "a"),
+            .group(PickyDockGroup(
+                id: "g",
+                name: "G",
+                color: .red,
+                memberSessionIDs: ["b", "c"]
+            ))
+        ]))
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            archiveStore: archiveStore,
+            dockLayoutStore: dockLayoutStore
+        )
+
+        viewModel.removeDockGroup(id: "g", keepMembers: false)
+
+        try await wait { client.sentCommands.filter { $0.type == .setSessionArchived }.count == 2 }
+        #expect(viewModel.dockLayout.testSessionIDs == ["a"])
+        #expect(dockLayoutStore.savedLayouts.map(\.testSessionIDs) == [["a"]])
+        #expect(archiveStore.manuallyArchivedSessionIDs == ["b", "c"])
+        let archivedCommandIDs = Set(
+            client.sentCommands
+                .filter { $0.type == .setSessionArchived && $0.archived == true }
+                .compactMap(\.sessionId)
+        )
+        #expect(archivedCommandIDs == ["b", "c"])
     }
 
     @MainActor @Test func copyTerminalResumeCommandUsesCapturedPiSessionFileAndCwd() {

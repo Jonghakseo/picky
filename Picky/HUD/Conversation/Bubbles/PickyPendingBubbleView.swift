@@ -124,7 +124,32 @@ enum PickyQueuedInputText {
             extracted.append(line)
         }
 
-        let result = extracted.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        let result = stripEnvelopeMetadataPrefix(from: extracted)
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         return result.isEmpty ? nil : result
+    }
+
+    /// `prompt-builder.ts` prefixes the user section with exactly one envelope
+    /// metadata line (`- Source: …`) followed by a blank separator before the
+    /// real instruction. Strip only that wrapper prefix; once user content
+    /// starts, preserve it even if the user intentionally begins with
+    /// `- Source: ...`.
+    private static func stripEnvelopeMetadataPrefix(from lines: [Substring]) -> [Substring] {
+        var result = lines
+        guard let first = result.first,
+              isEnvelopeMetadataLine(first.trimmingCharacters(in: .whitespaces))
+        else { return result }
+
+        result.removeFirst()
+        if let separator = result.first,
+           separator.trimmingCharacters(in: .whitespaces).isEmpty {
+            result.removeFirst()
+        }
+        return result
+    }
+
+    private static func isEnvelopeMetadataLine(_ line: String) -> Bool {
+        line.hasPrefix("- Source:")
     }
 }

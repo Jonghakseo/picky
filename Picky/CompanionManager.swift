@@ -355,6 +355,7 @@ final class CompanionManager: ObservableObject {
     private var responseStateTask: Task<Void, Never>?
     private var deferredInteractionSpeechTask: Task<Void, Never>?
     private var deferredFinishAwaitingAgentResponseTask: Task<Void, Never>?
+    private var deferredFinishAwaitingAgentResponseSessionID: String?
     /// Caps how long the recognized-transcript bubble lingers after STT.
     private var voicePromptBubbleAutoHideTask: Task<Void, Never>?
     private var voiceInteractionState = PickyVoiceInteractionState()
@@ -519,6 +520,7 @@ final class CompanionManager: ObservableObject {
         responseStateTask = nil
         deferredFinishAwaitingAgentResponseTask?.cancel()
         deferredFinishAwaitingAgentResponseTask = nil
+        deferredFinishAwaitingAgentResponseSessionID = nil
         activeSpeechID = nil
         lastQuickReplyTTSDedupKey = nil
         lastQuickReplyTTSDedupAt = nil
@@ -1258,6 +1260,7 @@ final class CompanionManager: ObservableObject {
             currentResponseTask?.cancel()
             deferredFinishAwaitingAgentResponseTask?.cancel()
             deferredFinishAwaitingAgentResponseTask = nil
+            deferredFinishAwaitingAgentResponseSessionID = nil
             clearDetectedElementLocation()
             updateVoicePresentation()
 
@@ -1797,6 +1800,7 @@ final class CompanionManager: ObservableObject {
     private func clearPendingAgentResponseTiming() {
         deferredFinishAwaitingAgentResponseTask?.cancel()
         deferredFinishAwaitingAgentResponseTask = nil
+        deferredFinishAwaitingAgentResponseSessionID = nil
         pendingAgentResponseStartedAt = nil
     }
 
@@ -2256,7 +2260,13 @@ final class CompanionManager: ObservableObject {
         if !receiptMessage.isEmpty {
             finishAwaitingAgentResponse(visibleText: receiptMessage, spokenText: receiptMessage)
         } else if source == "voice-follow-up" || source == "voice-steer" {
-            finishAwaitingAgentResponse(visibleText: L10n.t("directMessage.steerDelivered"), spokenText: nil)
+            let shouldEnforceMinimumDisplay = currentVoicePromptPreview != nil
+            finishAwaitingAgentResponse(
+                visibleText: L10n.t("directMessage.steerDelivered"),
+                spokenText: nil,
+                enforceMinimumProcessingDuration: shouldEnforceMinimumDisplay,
+                deferredSessionID: shouldEnforceMinimumDisplay ? receipt.sessionID : nil
+            )
         }
     }
 
@@ -2619,6 +2629,7 @@ final class CompanionManager: ObservableObject {
     func beginAwaitingAgentResponse(recognizedTranscript: String? = nil) {
         deferredFinishAwaitingAgentResponseTask?.cancel()
         deferredFinishAwaitingAgentResponseTask = nil
+        deferredFinishAwaitingAgentResponseSessionID = nil
         if !buddyDictationManager.isDictationInProgress {
             updateVoiceInputAudioSuppression(isVoiceInputActive: false)
         }
@@ -2684,6 +2695,7 @@ final class CompanionManager: ObservableObject {
     }
 
     private func releaseCursorForTerminatedSession(sessionID: String, status: PickySessionStatus) {
+        releaseDeferredAcceptedReceiptIfNeeded(sessionID: sessionID)
         // Only release the voice-input "awaiting agent" timing when the cursor is
         // actually waiting on THIS session. Otherwise we'd race-clear a fresh voice
         // turn that started against a different (still-running) Pickle, or an in-flight
@@ -2691,6 +2703,7 @@ final class CompanionManager: ObservableObject {
         if voiceFollowUpSessionIDForCurrentUtterance == sessionID {
             deferredFinishAwaitingAgentResponseTask?.cancel()
             deferredFinishAwaitingAgentResponseTask = nil
+            deferredFinishAwaitingAgentResponseSessionID = nil
             responseStateTask?.cancel()
             responseStateTask = nil
             pendingAgentResponseStartedAt = nil
@@ -2715,16 +2728,33 @@ final class CompanionManager: ObservableObject {
         )
     }
 
+    private func releaseDeferredAcceptedReceiptIfNeeded(sessionID: String) {
+        guard deferredFinishAwaitingAgentResponseSessionID == sessionID else { return }
+        deferredFinishAwaitingAgentResponseTask?.cancel()
+        deferredFinishAwaitingAgentResponseTask = nil
+        deferredFinishAwaitingAgentResponseSessionID = nil
+        pendingAgentResponseStartedAt = nil
+        currentVoicePromptPreview = nil
+        voicePromptBubbleState = .hidden
+        if voiceState == .processing {
+            reduceVoiceInteraction(.reset)
+        } else {
+            updateVoicePresentation()
+        }
+    }
+
     private func finishAwaitingAgentResponse(
         visibleText: String,
         spokenText: String?,
-        enforceMinimumProcessingDuration: Bool = false
+        enforceMinimumProcessingDuration: Bool = false,
+        deferredSessionID: String? = nil
     ) {
         if enforceMinimumProcessingDuration,
            let pendingAgentResponseStartedAt,
            Date().timeIntervalSince(pendingAgentResponseStartedAt) < Self.minimumVoiceProcessingDisplayDuration {
             let remainingDelay = Self.minimumVoiceProcessingDisplayDuration - Date().timeIntervalSince(pendingAgentResponseStartedAt)
             deferredFinishAwaitingAgentResponseTask?.cancel()
+            deferredFinishAwaitingAgentResponseSessionID = deferredSessionID
             deferredFinishAwaitingAgentResponseTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(max(remainingDelay, 0) * 1_000_000_000))
                 guard !Task.isCancelled else { return }
@@ -2737,6 +2767,7 @@ final class CompanionManager: ObservableObject {
 
         deferredFinishAwaitingAgentResponseTask?.cancel()
         deferredFinishAwaitingAgentResponseTask = nil
+        deferredFinishAwaitingAgentResponseSessionID = nil
         responseStateTask?.cancel()
         responseStateTask = nil
         pendingAgentResponseStartedAt = nil

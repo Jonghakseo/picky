@@ -291,6 +291,77 @@ struct PickyCompanionManagerTests {
         #expect(manager.latestAgentSessionSummary == L10n.t("directMessage.steerDelivered"))
     }
 
+    @Test func recognizedVoiceFollowUpReceiptKeepsPromptVisibleUntilMinimumDisplayDuration() async throws {
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "중복되는 느낌이야")
+
+        manager.handleAgentSubmissionAccepted(
+            receipt: PickyAgentSubmissionReceipt(sessionID: "session-selected", message: ""),
+            source: "voice-follow-up"
+        )
+
+        #expect(manager.voiceState == .processing)
+        #expect(manager.voicePromptBubbleState == .recognized("중복되는 느낌이야"))
+        #expect(manager.latestAgentSessionSummary == L10n.t("agent.summary.preparingResponse"))
+
+        try await waitUntil {
+            manager.voiceState == .idle
+                && manager.voicePromptBubbleState == .hidden
+                && manager.latestAgentSessionSummary == L10n.t("directMessage.steerDelivered")
+        }
+
+        #expect(manager.voiceState == .idle)
+        #expect(manager.voicePromptBubbleState == .hidden)
+        #expect(manager.latestAgentSessionSummary == L10n.t("directMessage.steerDelivered"))
+    }
+
+    @Test func recognizedVoiceSteerReceiptKeepsPromptVisibleUntilMinimumDisplayDuration() async throws {
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "방향 바꿔줘")
+
+        manager.handleAgentSubmissionAccepted(
+            receipt: PickyAgentSubmissionReceipt(sessionID: "session-selected", message: ""),
+            source: "voice-steer"
+        )
+
+        #expect(manager.voiceState == .processing)
+        #expect(manager.voicePromptBubbleState == .recognized("방향 바꿔줘"))
+        #expect(manager.latestAgentSessionSummary == L10n.t("agent.summary.preparingResponse"))
+
+        try await waitUntil {
+            manager.voiceState == .idle
+                && manager.voicePromptBubbleState == .hidden
+                && manager.latestAgentSessionSummary == L10n.t("directMessage.steerDelivered")
+        }
+
+        #expect(manager.voiceState == .idle)
+        #expect(manager.voicePromptBubbleState == .hidden)
+        #expect(manager.latestAgentSessionSummary == L10n.t("directMessage.steerDelivered"))
+    }
+
+    @Test func terminalUpdateCancelsDeferredVoiceFollowUpReceiptAfterTargetWasCleared() async throws {
+        let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-race")
+        manager.beginAwaitingAgentResponse(recognizedTranscript: "중복되는 느낌이야")
+
+        manager.handleAgentSubmissionAccepted(
+            receipt: PickyAgentSubmissionReceipt(sessionID: "pickle-race", message: ""),
+            source: "voice-follow-up"
+        )
+        // Mirrors `finishVoiceSubmissionIfIdle`: the send task releases the
+        // utterance-scoped target before the Pickle terminal event can arrive.
+        manager.setVoiceFollowUpSessionIDForCurrentUtterance(nil, caller: "test-target-cleared-after-send")
+
+        manager.applyAgentEvent(.sessionUpdated(session(id: "pickle-race", status: .cancelled)))
+        #expect(manager.latestAgentSessionSummary == "Pickle · cancelled")
+
+        try await Task.sleep(nanoseconds: 1_100_000_000)
+
+        #expect(manager.voiceState == .idle)
+        #expect(manager.voicePromptBubbleState == .hidden)
+        #expect(manager.latestAgentSessionSummary == "Pickle · cancelled")
+    }
+
     @Test func emptyNewVoiceTaskReceiptKeepsWaitingForAgentEvents() async throws {
         let manager = CompanionManager(agentClient: FakeVoiceClient(), selectionStore: FakeVoiceSelectionStore())
         manager.beginAwaitingAgentResponse()
@@ -1440,12 +1511,12 @@ struct PickyCompanionManagerTests {
         )
     }
 
-    /// Polls `predicate` up to one second so timing-sensitive expectations stay
+    /// Polls `predicate` up to two seconds so timing-sensitive expectations stay
     /// stable when the test runner is under heavy parallel load. Records a
     /// regular `#expect` failure if the predicate never holds within the
     /// budget so debugging output points at the actual mismatch.
     private func waitUntil(_ predicate: @escaping @MainActor () -> Bool) async throws {
-        for _ in 0..<50 {
+        for _ in 0..<100 {
             if predicate() { return }
             try await Task.sleep(nanoseconds: 20_000_000)
         }

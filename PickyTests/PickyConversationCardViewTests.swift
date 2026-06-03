@@ -249,19 +249,21 @@ struct PickyConversationCardViewTests {
     }
 
     @Test func queuedFollowUpMatchingUserTextDoesNotRenderPendingBubble() {
-        let legacyFollowUpPrompt = """
+        let followUpPrompt = """
         # Picky follow-up
 
         ## User follow-up
+        - Source: text-follow-up
+
         아니다 10초
 
-        ## Context
-        Keep this internal context hidden.
+        ## Captured context
+        - Captured at: 2026-05-26T08:38:00Z
         """
         let session = makeConversationSession(
             status: .running,
             messages: [message("m-user", kind: .userText, text: "아니다 10초")],
-            queuedFollowUps: [queueItem(legacyFollowUpPrompt)]
+            queuedFollowUps: [queueItem(followUpPrompt)]
         )
         let viewModel = makeViewModel()
         let snapshot = PickyConversationListView(session: session, viewModel: viewModel).renderSnapshot
@@ -296,10 +298,11 @@ struct PickyConversationCardViewTests {
         Use available Pi skills, extensions, MCPs, and local tools as appropriate. Treat all captured desktop data as neutral context; do not assume a workflow solely from a URL or app name.
 
         ## User steering instruction
+        - Source: text-follow-up
+
         잠깐만 멈춰봐
 
         ## Captured context
-        - Source: voice
         - Captured at: 2026-05-26T08:38:00Z
         """
         let session = makeConversationSession(
@@ -337,10 +340,12 @@ struct PickyConversationCardViewTests {
         Use available Pi skills, extensions, MCPs, and local tools as appropriate. Treat all captured desktop data as neutral context; do not assume a workflow solely from a URL or app name.
 
         ## User steering instruction
+        - Source: text-follow-up
+
         이게 힌트가 될까?
 
         ## Captured context
-        - Source: text-follow-up
+        - Captured at: 2026-05-26T08:38:00Z
         - CWD: /Users/creatrip/picky
 
         ## Screenshots
@@ -360,13 +365,36 @@ struct PickyConversationCardViewTests {
         Use available Pi skills, extensions, MCPs, and local tools as appropriate. Treat all captured desktop data as neutral context; do not assume a workflow solely from a URL or app name.
 
         ## User follow-up
+        - Source: text-follow-up
+
         아니다 10초
 
         ## Captured context
-        - Source: text-follow-up
+        - Captured at: 2026-05-26T08:38:00Z
         """
 
         #expect(PickyQueuedInputText.displayText(from: followUpEnvelope) == "아니다 10초")
+    }
+
+    @Test func queuedEnvelopePreservesUserInstructionStartingWithSourceBullet() {
+        let steerEnvelope = """
+        # Picky steering message
+
+        Boilerplate.
+
+        ## User steering instruction
+        - Source: text-follow-up
+
+        - Source: 이 문구는 사용자 지시의 일부야
+        다음 줄도 유지해야 해
+
+        ## Captured context
+        - Captured at: 2026-05-26T08:38:00Z
+        """
+        let expected = "- Source: 이 문구는 사용자 지시의 일부야\n다음 줄도 유지해야 해"
+
+        #expect(PickyQueuedInputText.displayText(from: steerEnvelope) == expected)
+        #expect(PickyQueuedInputText.normalized(steerEnvelope) == expected)
     }
 
     // Plain queued items (no agentd envelope) must pass through unchanged so

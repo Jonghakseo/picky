@@ -1,6 +1,6 @@
 # Picky Refactoring Execution Plan
 
-_Last updated: 2026-06-02_
+_Last updated: 2026-06-03_
 
 This document is the source-of-truth plan for the maintainability/refactoring initiative discussed in the 2026-06-02 Pi session. It is intentionally self-contained so a future Pi/Picky session can resume the work from this document alone, even if the original conversation context is unavailable.
 
@@ -20,7 +20,7 @@ The current macro risk is not file size by itself. The risk is that state invari
 Refactoring must therefore proceed in this order:
 
 1. Establish baseline tests and characterization tests for each target module.
-2. Add static rules and CI gates to prevent regressions.
+2. Add static rules and a local pre-push quality gate to prevent regressions before sharing changes.
 3. Document the mental-model rules and link them from `AGENTS.md`.
 4. Extract only pure policies/reducers/projectors/mappers first.
 5. Keep public/app-facing facade entrypoints stable until enough tests cover ordering, persistence, and UI identity.
@@ -81,7 +81,7 @@ Large tests also exist:
 
 ### 2.3 Current weaknesses to address
 
-- No PR/push GitHub Actions quality workflow exists; release workflow is packaging/notarization focused.
+- No local quality gate existed before this initiative; release automation is packaging/notarization focused, while refactoring checks now belong in the local pre-push hook.
 - No `.swiftlint.yml` in the project.
 - No ESLint/Biome config for `agentd`.
 - Swift production code has many `try?` and raw `print(` call sites.
@@ -123,7 +123,7 @@ This initiative is complete when the repository has:
 
 1. **Baseline and module-specific characterization tests** for the high-risk facades.
 2. **Static rules** via SwiftLint, ESLint/typescript-eslint, and custom architecture checks.
-3. **A CI quality workflow** for PR/push or at least PR + manual/nightly full Swift suite.
+3. **A local pre-push quality gate** that runs the lightweight checks previously planned for CI before changes leave the workstation.
 4. **A mental-model document** referenced from `AGENTS.md`.
 5. **At least one successful pilot extraction** from `agentd/src/session-supervisor.ts` into pure `domain/` modules.
 6. **At least one successful Swift pilot extraction** from `PickySessionListViewModel` or a HUD policy into a pure/policy module.
@@ -549,45 +549,46 @@ Recommended checks:
    - Existing large files are allowlisted.
    - New files above threshold or large growth emit warning/annotation first.
 
-## 9. Phase 3 — CI quality workflow
+## 9. Phase 3 — Local pre-push quality gate
 
-Add a new workflow:
+Use the repository's local hooks path for this initiative. The project already configures hooks through:
+
+```json
+{
+  "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true"
+  }
+}
+```
+
+The pre-push hook should delegate to a reusable script:
 
 ```text
-.github/workflows/quality.yml
+.githooks/pre-push
+scripts/pre-push-checks.sh
 ```
 
-Recommended initial trigger:
+Default pre-push checks:
 
-```yaml
-on:
-  pull_request:
-  push:
-    branches: [main, development]
-  workflow_dispatch:
-```
+1. `agentd` quality
+   - `pnpm --dir agentd run typecheck`
+   - `pnpm --dir agentd run lint`
+   - `pnpm --dir agentd run test:serial`
 
-Start with agentd checks and lightweight Swift contract tests if macOS runner availability is constrained.
+2. Architecture guard
+   - `pnpm run check:architecture`
 
-Suggested jobs:
-
-1. `agentd-quality`
-   - setup Node 22.19.0
-   - setup pnpm 10.15.1
-   - `pnpm install --frozen-lockfile`
-   - `cd agentd && pnpm run typecheck`
-   - `cd agentd && pnpm test`
-   - `cd agentd && pnpm run lint`
-
-2. `swift-contracts`
-   - macOS runner
+3. Swift lightweight checks
+   - `swiftlint lint --config .swiftlint.yml --quiet`
    - `xcodebuild ... test -only-testing:PickyTests/ProtocolContractTests`
 
-3. `swift-targeted` or `swift-full`
-   - initially workflow_dispatch/nightly if runtime is costly
-   - full command uses `-parallel-testing-enabled NO`
+Full Swift suite remains opt-in so unrelated or long-running Swift failures do not block every push during the refactoring initiative:
 
-Reference: GitHub Actions workflow syntax — https://docs.github.com/actions/reference/workflows-and-actions/workflow-syntax
+```bash
+PICKY_PRE_PUSH_FULL_SWIFT=1 pnpm run check:pre-push
+```
+
+Reference: Git hooks — https://git-scm.com/docs/githooks
 
 ## 10. Phase 4 — Mental-model documentation and `AGENTS.md` link
 
@@ -855,8 +856,8 @@ Keep each change small and reviewable.
 4. `chore: add lint configuration`
    - SwiftLint and/or ESLint setup.
 
-5. `ci: add quality workflow`
-   - PR/push checks.
+5. `chore: add local pre-push quality gate`
+   - Local pre-push checks.
 
 6. `docs: add refactoring principles`
    - `docs/refactoring-principles.md` + `AGENTS.md` link.
@@ -874,7 +875,7 @@ Note: actual commits should only be made when the user/workflow explicitly asks 
 
 ## 15. Official references
 
-- GitHub Actions workflow syntax: https://docs.github.com/actions/reference/workflows-and-actions/workflow-syntax
+- Git hooks: https://git-scm.com/docs/githooks
 - SwiftLint rule directory: https://realm.github.io/SwiftLint/rule-directory.html
 - typescript-eslint rules: https://typescript-eslint.io/rules/
 - Swift Concurrency migration/guidance should also follow Apple documentation and the local project guide in `docs/swift-concurrency.md`.
@@ -886,7 +887,7 @@ If no implementation has started yet, proceed in this exact order:
 1. Run `git status --short`.
 2. Run agentd baseline:
    ```bash
-   cd agentd && pnpm run typecheck && pnpm test && pnpm run test:contracts
+   cd agentd && pnpm run typecheck && pnpm run test:serial && pnpm run test:contracts
    ```
 3. Run Swift protocol contract baseline:
    ```bash

@@ -169,16 +169,6 @@ struct PickySettingsRecentPickleFolderStore: PickyRecentPickleFolderStoring {
     }
 }
 
-private struct PickyInlineTerminalAttachment: Equatable {
-    let sessionID: String
-    let attachmentID: String
-}
-
-private struct PickyShellTerminalAttachment: Equatable {
-    let sessionID: String
-    let attachmentID: String
-}
-
 private struct PickyPendingFullscreenTurnSnapshot: Equatable {
     let id: UUID
     let cwd: String?
@@ -412,8 +402,7 @@ final class PickySessionListViewModel: ObservableObject {
     /// Other visible inline terminal cards stay in TUI mode but show an explanatory
     /// placeholder so AppKit never has to attach one terminal view to multiple parents.
     @Published private(set) var activeInlineTerminalAttachmentSessionID: String?
-    private var activeInlineTerminalAttachmentID: String?
-    private var visibleInlineTerminalAttachments: [PickyInlineTerminalAttachment] = []
+    private var inlineTerminalAttachmentCoordinator = PickyTerminalAttachmentCoordinator()
     /// Long-lived inline terminal sessions keyed by Pickle session ID. The terminal
     /// NSView/process is retained here so collapsing/reopening the HUD card reuses
     /// the same TUI instead of launching a fresh `pi --session` process.
@@ -427,8 +416,7 @@ final class PickySessionListViewModel: ObservableObject {
     /// terminal view. Multiple HUD panels can exist, but a single NSView cannot be
     /// attached to multiple parents at the same time.
     @Published private(set) var activeShellTerminalAttachmentSessionID: String?
-    private var activeShellTerminalAttachmentID: String?
-    private var visibleShellTerminalAttachments: [PickyShellTerminalAttachment] = []
+    private var shellTerminalAttachmentCoordinator = PickyTerminalAttachmentCoordinator()
     /// Long-lived local shell terminals keyed by Pickle session ID. Hiding the
     /// add-on intentionally keeps the shell process alive so reopening resumes the
     /// same terminal session.
@@ -1442,44 +1430,37 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func isInlineTerminalAttachmentActive(sessionID: String, attachmentID: String) -> Bool {
-        activeInlineTerminalAttachmentSessionID == sessionID && activeInlineTerminalAttachmentID == attachmentID
+        inlineTerminalAttachmentCoordinator.isActive(sessionID: sessionID, attachmentID: attachmentID)
     }
 
     func activateInlineTerminalAttachment(sessionID: String, attachmentID: String) {
-        guard inlineTerminalSessionIDs.contains(sessionID) else { return }
-        let attachment = PickyInlineTerminalAttachment(sessionID: sessionID, attachmentID: attachmentID)
-        visibleInlineTerminalAttachments.removeAll { $0 == attachment }
-        visibleInlineTerminalAttachments.append(attachment)
-        activeInlineTerminalAttachmentSessionID = sessionID
-        activeInlineTerminalAttachmentID = attachmentID
+        inlineTerminalAttachmentCoordinator.activate(
+            sessionID: sessionID,
+            attachmentID: attachmentID,
+            eligibleSessionIDs: inlineTerminalSessionIDs
+        )
+        syncInlineTerminalAttachmentState()
     }
 
     func releaseInlineTerminalAttachment(sessionID: String, attachmentID: String) {
-        let releasedActiveAttachment = activeInlineTerminalAttachmentSessionID == sessionID && activeInlineTerminalAttachmentID == attachmentID
-        visibleInlineTerminalAttachments.removeAll { $0.sessionID == sessionID && $0.attachmentID == attachmentID }
-        guard releasedActiveAttachment else { return }
-        promoteLastVisibleInlineTerminalAttachment()
+        inlineTerminalAttachmentCoordinator.release(
+            sessionID: sessionID,
+            attachmentID: attachmentID,
+            eligibleSessionIDs: inlineTerminalSessionIDs
+        )
+        syncInlineTerminalAttachmentState()
     }
 
     private func removeVisibleInlineTerminalAttachments(sessionID: String) {
-        let removedActiveSession = activeInlineTerminalAttachmentSessionID == sessionID
-        visibleInlineTerminalAttachments.removeAll { $0.sessionID == sessionID }
-        if removedActiveSession {
-            promoteLastVisibleInlineTerminalAttachment()
-        }
+        inlineTerminalAttachmentCoordinator.removeSession(
+            sessionID: sessionID,
+            eligibleSessionIDs: inlineTerminalSessionIDs
+        )
+        syncInlineTerminalAttachmentState()
     }
 
-    private func promoteLastVisibleInlineTerminalAttachment() {
-        while let next = visibleInlineTerminalAttachments.last {
-            if inlineTerminalSessionIDs.contains(next.sessionID) {
-                activeInlineTerminalAttachmentSessionID = next.sessionID
-                activeInlineTerminalAttachmentID = next.attachmentID
-                return
-            }
-            visibleInlineTerminalAttachments.removeLast()
-        }
-        activeInlineTerminalAttachmentSessionID = nil
-        activeInlineTerminalAttachmentID = nil
+    private func syncInlineTerminalAttachmentState() {
+        activeInlineTerminalAttachmentSessionID = inlineTerminalAttachmentCoordinator.activeSessionID
     }
 
     private func closeInlineTerminalSession(sessionID: String) {
@@ -1508,44 +1489,41 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func isShellTerminalAttachmentActive(sessionID: String, attachmentID: String) -> Bool {
-        activeShellTerminalAttachmentSessionID == sessionID && activeShellTerminalAttachmentID == attachmentID
+        shellTerminalAttachmentCoordinator.isActive(sessionID: sessionID, attachmentID: attachmentID)
     }
 
     func activateShellTerminalAttachment(sessionID: String, attachmentID: String) {
-        guard (sessions + archivedSessions).contains(where: { $0.id == sessionID }) else { return }
-        let attachment = PickyShellTerminalAttachment(sessionID: sessionID, attachmentID: attachmentID)
-        visibleShellTerminalAttachments.removeAll { $0 == attachment }
-        visibleShellTerminalAttachments.append(attachment)
-        activeShellTerminalAttachmentSessionID = sessionID
-        activeShellTerminalAttachmentID = attachmentID
+        shellTerminalAttachmentCoordinator.activate(
+            sessionID: sessionID,
+            attachmentID: attachmentID,
+            eligibleSessionIDs: shellTerminalEligibleSessionIDs
+        )
+        syncShellTerminalAttachmentState()
     }
 
     func releaseShellTerminalAttachment(sessionID: String, attachmentID: String) {
-        let releasedActiveAttachment = activeShellTerminalAttachmentSessionID == sessionID && activeShellTerminalAttachmentID == attachmentID
-        visibleShellTerminalAttachments.removeAll { $0.sessionID == sessionID && $0.attachmentID == attachmentID }
-        guard releasedActiveAttachment else { return }
-        promoteLastVisibleShellTerminalAttachment()
+        shellTerminalAttachmentCoordinator.release(
+            sessionID: sessionID,
+            attachmentID: attachmentID,
+            eligibleSessionIDs: shellTerminalEligibleSessionIDs
+        )
+        syncShellTerminalAttachmentState()
     }
 
     private func removeVisibleShellTerminalAttachments(sessionID: String) {
-        let removedActiveSession = activeShellTerminalAttachmentSessionID == sessionID
-        visibleShellTerminalAttachments.removeAll { $0.sessionID == sessionID }
-        if removedActiveSession {
-            promoteLastVisibleShellTerminalAttachment()
-        }
+        shellTerminalAttachmentCoordinator.removeSession(
+            sessionID: sessionID,
+            eligibleSessionIDs: shellTerminalEligibleSessionIDs
+        )
+        syncShellTerminalAttachmentState()
     }
 
-    private func promoteLastVisibleShellTerminalAttachment() {
-        while let next = visibleShellTerminalAttachments.last {
-            if (sessions + archivedSessions).contains(where: { $0.id == next.sessionID }) {
-                activeShellTerminalAttachmentSessionID = next.sessionID
-                activeShellTerminalAttachmentID = next.attachmentID
-                return
-            }
-            visibleShellTerminalAttachments.removeLast()
-        }
-        activeShellTerminalAttachmentSessionID = nil
-        activeShellTerminalAttachmentID = nil
+    private var shellTerminalEligibleSessionIDs: Set<String> {
+        Set((sessions + archivedSessions).map(\.id))
+    }
+
+    private func syncShellTerminalAttachmentState() {
+        activeShellTerminalAttachmentSessionID = shellTerminalAttachmentCoordinator.activeSessionID
     }
 
     private func closeShellTerminalSession(sessionID: String) {

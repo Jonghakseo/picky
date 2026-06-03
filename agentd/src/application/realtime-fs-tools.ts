@@ -141,7 +141,7 @@ export async function executeRealtimeBash(request: RealtimeBashRequest, options:
 
   const child = spawn("/bin/bash", ["-lc", command], {
     cwd,
-    env: process.env,
+    env: shellEnvWithoutNpmPrefix(process.env),
     stdio: ["ignore", "pipe", "pipe"],
   });
 
@@ -246,6 +246,15 @@ function resolveBashCwd(cwd: string | undefined): string {
   if (!candidate) return process.cwd();
   const expanded = expandHome(candidate);
   return isAbsolute(expanded) ? expanded : resolve(process.cwd(), expanded);
+}
+
+function shellEnvWithoutNpmPrefix(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const next = { ...env };
+  // Pnpm lifecycle scripts set npm_config_prefix. Login shells that load nvm print a warning when
+  // this variable is present, which pollutes command stdout/stderr and breaks realtime bash output.
+  delete next.npm_config_prefix;
+  delete next.NPM_CONFIG_PREFIX;
+  return next;
 }
 
 // Expand a leading `~` (alone or followed by `/`) to the current user's home

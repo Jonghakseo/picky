@@ -15,6 +15,7 @@
     "lint": "eslint src --max-warnings 9999",
     "lint:fix": "eslint src --fix --max-warnings 9999",
     "test": "vitest run",
+    "test:serial": "vitest run --no-file-parallelism",
     "test:contracts": "vitest run src/protocol.test.ts src/prompt-builder.test.ts src/pi-event-normalizer.test.ts"
   },
   "dependencies": {

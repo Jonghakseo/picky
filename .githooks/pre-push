@@ -2,22 +2,4 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
-cd "$ROOT"
-
-HOST_ARCH="$(uname -m)"
-DESTINATION="${PICKY_XCODE_DESTINATION:-platform=macOS,arch=${HOST_ARCH}}"
-
-echo "🔎 pre-push: verifying Picky app build..."
-xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" build
-
-echo "🧪 pre-push: running Picky test suite..."
-# `-parallel-testing-enabled NO` forces a single xctest runner process. When xcodebuild
-# shards PickyTests across two runners (the default), both host processes initialize the
-# shared Speech/Audio/agentd-launcher frameworks at the same time and one of them
-# occasionally trips a malloc double-free inside those system frameworks, killing the
-# runner and reporting every still-scheduled test in that shard as a failure (observed
-# ~20% of consecutive runs). Serializing the runners avoids the cross-process collision
-# and trades ~5-9s for deterministic results.
-xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -parallel-testing-enabled NO test
-
-echo "✅ pre-push: build and tests passed."
+exec "$ROOT/scripts/pre-push-checks.sh"

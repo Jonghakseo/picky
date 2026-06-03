@@ -4,7 +4,8 @@
   "scripts": {
     "prepare": "git config core.hooksPath .githooks || true",
     "commitlint": "commitlint",
-    "check:architecture": "node scripts/check-architecture-rules.js"
+    "check:architecture": "node scripts/check-architecture-rules.js",
+    "check:pre-push": "scripts/pre-push-checks.sh"
   },
   "devDependencies": {
     "@commitlint/cli": "^20.5.3",

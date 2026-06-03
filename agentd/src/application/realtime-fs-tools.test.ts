@@ -85,6 +85,21 @@ describe("executeRealtimeBash", () => {
     expect(result.timedOut).toBe(false);
   });
 
+  it("strips npm_config_prefix from spawned shell environments", async () => {
+    const previousLower = process.env.npm_config_prefix;
+    const previousUpper = process.env.NPM_CONFIG_PREFIX;
+    process.env.npm_config_prefix = "/tmp/pnpm-prefix";
+    process.env.NPM_CONFIG_PREFIX = "/tmp/pnpm-prefix";
+    try {
+      const result = await executeRealtimeBash({ command: "printf '%s:%s' \"${npm_config_prefix:-unset}\" \"${NPM_CONFIG_PREFIX:-unset}\"" });
+      expect(result.exitCode).toBe(0);
+      expect(result.output).toBe("unset:unset");
+    } finally {
+      if (previousLower === undefined) delete process.env.npm_config_prefix; else process.env.npm_config_prefix = previousLower;
+      if (previousUpper === undefined) delete process.env.NPM_CONFIG_PREFIX; else process.env.NPM_CONFIG_PREFIX = previousUpper;
+    }
+  });
+
   it("merges stderr into the output stream", async () => {
     const result = await executeRealtimeBash({ command: "printf 'oops\\n' 1>&2; exit 3" });
     expect(result.exitCode).toBe(3);

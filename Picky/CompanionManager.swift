@@ -1550,20 +1550,24 @@ final class CompanionManager: ObservableObject {
         contextPacket: PickyContextPacket,
         voiceFollowUpSessionID: String? = nil
     ) async throws -> PickyAgentSubmissionReceipt {
-        if let targetSessionID = normalizedVoiceFollowUpSessionID(voiceFollowUpSessionID) {
-            if selectionStore.screenContextTargetSessionID == targetSessionID {
-                print("🎙️ Picky voice route — STEER Pickle=\(targetSessionID)")
-                try await agentClient.send(PickyCommandEnvelope(type: .steer, context: contextPacket, sessionId: targetSessionID, text: transcript))
-                clearScreenContextTargetIfCurrent(targetSessionID)
-                return PickyAgentSubmissionReceipt(sessionID: targetSessionID, message: "")
-            }
+        switch PickyVoiceTranscriptRoutingPolicy.route(
+            voiceFollowUpSessionID: voiceFollowUpSessionID,
+            screenContextTargetSessionID: selectionStore.screenContextTargetSessionID
+        ) {
+        case .steerPickle(let targetSessionID):
+            print("🎙️ Picky voice route — STEER Pickle=\(targetSessionID)")
+            try await agentClient.send(PickyCommandEnvelope(type: .steer, context: contextPacket, sessionId: targetSessionID, text: transcript))
+            clearScreenContextTargetIfCurrent(targetSessionID)
+            return PickyAgentSubmissionReceipt(sessionID: targetSessionID, message: "")
+        case .followUpPickle(let targetSessionID):
             print("🎙️ Picky voice route — FOLLOW-UP Pickle=\(targetSessionID)")
             try await agentClient.send(PickyCommandEnvelope(type: .followUp, context: pickleFollowUpContext(contextPacket, sessionID: targetSessionID), sessionId: targetSessionID, text: transcript))
             clearScreenContextTargetIfCurrent(targetSessionID)
             return PickyAgentSubmissionReceipt(sessionID: targetSessionID, message: "")
+        case .submitToMain:
+            print("🎙️ Picky voice route — SUBMIT Picky (arg=\(voiceFollowUpSessionID ?? "<nil>") self=\(voiceFollowUpSessionIDForCurrentUtterance ?? "<nil>"))")
+            return try await submitOrIntercept(PickyAgentSubmission(transcript: transcript, context: contextPacket))
         }
-        print("🎙️ Picky voice route — SUBMIT Picky (arg=\(voiceFollowUpSessionID ?? "<nil>") self=\(voiceFollowUpSessionIDForCurrentUtterance ?? "<nil>"))")
-        return try await submitOrIntercept(PickyAgentSubmission(transcript: transcript, context: contextPacket))
     }
 
     /// Routes a submission through the onboarding interceptor when one is
@@ -1616,8 +1620,7 @@ final class CompanionManager: ObservableObject {
     }
 
     private func normalizedVoiceFollowUpSessionID(_ sessionID: String?) -> String? {
-        let trimmed = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
+        PickyVoiceTranscriptRoutingPolicy.normalizedSessionID(sessionID)
     }
 
     private func clearScreenContextTargetIfCurrent(_ sessionID: String?) {

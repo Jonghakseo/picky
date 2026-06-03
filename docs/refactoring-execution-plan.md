@@ -652,12 +652,14 @@ agentd/src/domain/image-size.ts
 agentd/src/domain/image-size.test.ts
 ```
 
-Move from `agentd/src/session-supervisor.ts`:
+Move only pure Buffer parsing from `agentd/src/session-supervisor.ts` into domain:
 
-- `readImageSize`
+- `readImageSizeFromBuffer`
 - `readPngSize`
 - `readJpegSize`
 - `isJpegStartOfFrameMarker`
+
+Keep file IO wrappers such as `readImageSize(path)` in the facade/adapter layer, because `agentd/src/domain` must not import `node:fs`.
 
 Test cases:
 
@@ -665,8 +667,8 @@ Test cases:
 - invalid PNG header
 - valid JPEG SOF dimensions
 - truncated JPEG
+- JPEG scan-data stop before SOF
 - non-image buffer
-- unreadable path returns `undefined` if preserving current behavior
 
 Validation:
 

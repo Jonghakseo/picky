@@ -493,6 +493,8 @@ final class PickySessionListViewModel: ObservableObject {
     private var archiveCommitTasks: [String: Task<Void, Never>] = [:]
     private var releasedArchivedChildSessionIDs = Set<String>()
     private let manualPickleSessionIdFactory: () -> String
+    private var terminalSessionCommandChains: [String: Task<Void, Never>] = [:]
+    private var terminalSessionCommandChainIDs: [String: UUID] = [:]
     private var eventTask: Task<Void, Never>?
     /// Safety watchdog that flips `isLoadingInitialSessionSnapshot` to `false`
     /// even when the daemon never delivers a `sessionSnapshot` (e.g. WebSocket
@@ -615,6 +617,9 @@ final class PickySessionListViewModel: ObservableObject {
         eventTask = nil
         initialSnapshotWatchdogTask?.cancel()
         initialSnapshotWatchdogTask = nil
+        terminalSessionCommandChains.values.forEach { $0.cancel() }
+        terminalSessionCommandChains.removeAll()
+        terminalSessionCommandChainIDs.removeAll()
         client.disconnect()
     }
 
@@ -1377,17 +1382,40 @@ final class PickySessionListViewModel: ObservableObject {
     /// forget: failures are logged at the daemon side and the HUD just degrades to the previous
     /// "frozen status until overlay close" behaviour.
     private func setTerminalSessionTailEnabled(sessionID: String, enabled: Bool) {
+        enqueueTerminalSessionCommand(sessionID: sessionID) { [weak self] in
+            await self?.sendTerminalSessionTailEnabled(sessionID: sessionID, enabled: enabled)
+        }
+    }
+
+    private func enqueueTerminalSessionCommand(sessionID: String, operation: @escaping @MainActor () async -> Void) {
+        let previous = terminalSessionCommandChains[sessionID]
+        let chainID = UUID()
+        terminalSessionCommandChainIDs[sessionID] = chainID
+        let task = Task { [weak self, previous] in
+            await previous?.value
+            if !Task.isCancelled {
+                await operation()
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                guard self.terminalSessionCommandChainIDs[sessionID] == chainID else { return }
+                self.terminalSessionCommandChains[sessionID] = nil
+                self.terminalSessionCommandChainIDs[sessionID] = nil
+            }
+        }
+        terminalSessionCommandChains[sessionID] = task
+    }
+
+    private func sendTerminalSessionTailEnabled(sessionID: String, enabled: Bool) async {
         let command = PickyCommandEnvelope(
             type: .setTerminalSessionTailEnabled,
             sessionId: sessionID,
             enabled: enabled
         )
-        Task { [weak self] in
-            do {
-                try await self?.client.send(command)
-            } catch {
-                pickySessionLog("terminal tail toggle failed session=\(sessionID) enabled=\(enabled) error=\(error.localizedDescription)")
-            }
+        do {
+            try await client.send(command)
+        } catch {
+            pickySessionLog("terminal tail toggle failed session=\(sessionID) enabled=\(enabled) error=\(error.localizedDescription)")
         }
     }
 
@@ -1568,20 +1596,23 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func syncTerminalSessionOnce(sessionID: String, baselineSnapshot: PickyTerminalSessionSnapshot? = nil) {
+        enqueueTerminalSessionCommand(sessionID: sessionID) { [weak self] in
+            await self?.sendTerminalSessionSync(sessionID: sessionID, baselineSnapshot: baselineSnapshot)
+        }
+    }
+
+    private func sendTerminalSessionSync(sessionID: String, baselineSnapshot: PickyTerminalSessionSnapshot? = nil) async {
         guard (sessions + archivedSessions).contains(where: { $0.id == sessionID }) else { return }
         let command = PickyCommandEnvelope(
             type: .syncTerminalSession,
             sessionId: sessionID,
             baselinePiMessageId: baselineSnapshot?.lastMessageId
         )
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                try await client.send(command)
-                lastError = nil
-            } catch {
-                lastError = error.localizedDescription
-            }
+        do {
+            try await client.send(command)
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
         }
     }
 

@@ -33,20 +33,16 @@ run_step "agentd: lint" pnpm --dir agentd run lint
 run_step "agentd: tests (serial)" pnpm --dir agentd run test:serial
 run_step "architecture guard" pnpm run check:architecture
 run_step "SwiftLint warning-first rules" swiftlint lint --config .swiftlint.yml --quiet
-run_step "Swift ProtocolContractTests" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -parallel-testing-enabled NO test -only-testing:PickyTests/ProtocolContractTests
+run_step "Picky app build" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" build
 
-if [[ "${PICKY_PRE_PUSH_FULL_SWIFT:-0}" == "1" ]]; then
-  run_step "Picky app build" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" build
-
-  # `-parallel-testing-enabled NO` forces a single xctest runner process. When xcodebuild
-  # shards PickyTests across two runners (the default), both host processes initialize the
-  # shared Speech/Audio/agentd-launcher frameworks at the same time and one of them
-  # occasionally trips a malloc double-free inside those system frameworks, killing the
-  # runner and reporting every still-scheduled test in that shard as a failure (observed
-  # ~20% of consecutive runs). Serializing the runners avoids the cross-process collision
-  # and trades ~5-9s for deterministic results.
-  run_step "Picky test suite" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -parallel-testing-enabled NO test
-fi
+# `-parallel-testing-enabled NO` forces a single xctest runner process. When xcodebuild
+# shards PickyTests across two runners (the default), both host processes initialize the
+# shared Speech/Audio/agentd-launcher frameworks at the same time and one of them
+# occasionally trips a malloc double-free inside those system frameworks, killing the
+# runner and reporting every still-scheduled test in that shard as a failure (observed
+# ~20% of consecutive runs). Serializing the runners avoids the cross-process collision
+# and trades ~5-9s for deterministic results.
+run_step "Picky test suite" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" -parallel-testing-enabled NO test
 
 echo
 echo "✅ pre-push: all local quality checks passed."

@@ -30,6 +30,7 @@ private final class FakePickyAgentClient: PickyAgentClient {
     // sent so far.
     @MainActor private(set) var submitted: [PickyAgentSubmission] = []
     @MainActor private(set) var sentCommands: [PickyCommandEnvelope] = []
+    var beforeSend: ((PickyCommandEnvelope) async -> Void)?
 
     init() {
         var continuation: AsyncStream<PickyClientEvent>.Continuation!
@@ -43,6 +44,9 @@ private final class FakePickyAgentClient: PickyAgentClient {
         return PickyAgentSubmissionReceipt(sessionID: "session-1", message: "sent")
     }
     func send(_ command: PickyCommandEnvelope) async throws {
+        if let beforeSend {
+            await beforeSend(command)
+        }
         await MainActor.run { sentCommands.append(command) }
     }
     func disconnect() { continuation.yield(.disconnected) }
@@ -2979,6 +2983,37 @@ struct PickySessionViewModelTests {
         #expect(command.sessionId == "pickle-1")
         #expect(command.baselinePiMessageId == "a1")
         #expect(viewModel.sessions.first?.lastSummary == "Old summary")
+    }
+
+    @Test func terminalOverlayCloseSerializesTailDisableBeforeCanonicalSync() async throws {
+        let client = FakePickyAgentClient()
+        client.beforeSend = { command in
+            if command.type == .setTerminalSessionTailEnabled, command.enabled == false {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+        let presenter = FakeTerminalOverlayPresenter()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            terminalPresenter: presenter
+        )
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(
+            id: "pickle-1",
+            title: "Pickle",
+            status: "completed",
+            logs: ["pi session: /tmp/pi-session.jsonl"]
+        ))))
+
+        viewModel.openTerminalOverlay(sessionID: "pickle-1")
+        presenter.close(sessionID: "pickle-1")
+        try await wait {
+            client.sentCommands.filter { $0.type == .setTerminalSessionTailEnabled || $0.type == .syncTerminalSession }.count == 3
+        }
+
+        let terminalCommands = client.sentCommands.filter { $0.type == .setTerminalSessionTailEnabled || $0.type == .syncTerminalSession }
+        #expect(terminalCommands.map(\.type) == [.setTerminalSessionTailEnabled, .setTerminalSessionTailEnabled, .syncTerminalSession])
+        #expect(terminalCommands.map(\.enabled) == [true, false, nil])
     }
 
     @Test func terminalOverlayCloseRequestsCanonicalDaemonSyncWithoutBaselineWhenSnapshotUnavailable() async throws {

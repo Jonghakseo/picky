@@ -821,6 +821,27 @@ struct PickyCompanionManagerTests {
         }
     }
 
+    @Test func realtimeRuntimeTargetedPickleLoadingInterruptDoesNotCancelMainRealtimeTurn() async throws {
+        try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.openAIRealtime) {
+            let client = FakeVoiceClient()
+            let manager = CompanionManager(agentClient: client, selectionStore: FakeVoiceSelectionStore())
+            manager.setVoiceFollowUpSessionIDForCurrentUtterance("pickle-in-flight")
+            manager.beginAwaitingAgentResponse(recognizedTranscript: "이전 질문")
+
+            manager.interruptSpokenResponseForVoiceInput()
+            try await waitUntil {
+                let calls = client.calls
+                return calls.contains("send:abortMainAgent") && calls.contains("send:abort")
+            }
+            try await settle()
+
+            #expect(client.commands.contains { $0.type == .abortMainAgent })
+            #expect(client.commands.contains { $0.type == .cancelMainRealtimeVoiceTurn } == false)
+            let abortCommand = client.commands.first { $0.type == .abort }
+            #expect(abortCommand?.sessionId == "pickle-in-flight")
+        }
+    }
+
     @Test func voiceInputAbortDoesNotTouchPickleWhenNoResponseIsInFlight() async throws {
         try await AppBundleConfiguration.$testRuntimeModeOverride.withValue(.pi) {
             // Regression guard: when the previous Pickle follow-up has already

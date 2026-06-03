@@ -2594,7 +2594,7 @@ final class CompanionManager: ObservableObject {
         // overwrite a `done` Pickle's status back to `cancelled` on agentd.
         let isAgentResponseInFlight = pendingAgentResponseStartedAt != nil || voiceState == .responding
         let previousPickleSessionID = isAgentResponseInFlight ? voiceFollowUpSessionIDForCurrentUtterance : nil
-        if AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime {
+        if currentVoiceInteractionMode() == .realtime {
             cancelRealtimeMainVoiceTurn(inputID: realtimeVoiceInputID)
         } else {
             Task { [agentClient] in

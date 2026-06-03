@@ -19,6 +19,7 @@ import { OpenAIRealtimeTranscriptionSession } from "./runtime/openai-realtime-tr
 import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
 import { readImageSizeFromBuffer } from "./domain/image-size.js";
+import { clampPointerCoordinates, screenshotSizeFromMetadata, selectPointerScreenshot } from "./domain/pointer-validation.js";
 import { diffQueueRemovedItems, queueItems, sameQueueItems } from "./domain/queue-policy.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
@@ -3104,8 +3105,6 @@ export class SessionSupervisor extends EventEmitter {
   }
 }
 
-type ScreenshotContext = PickyContextPacket["screenshots"][number];
-
 type UserBashInput = { command: string; excludeFromContext: boolean };
 
 const LIVE_USER_BASH_OUTPUT_MAX_CHARS = 8000;
@@ -3160,11 +3159,9 @@ function userBashSummary(command: string, result: RuntimeBashExecutionResult): s
 }
 
 function makePointerOverlayRequestForContext(context: PickyContextPacket, request: PickyShowPointerRequest): PickyShowPointerResult["request"] {
-  const screenshot = selectScreenshot(context, request);
+  const screenshot = selectPointerScreenshot(context.screenshots, request);
   if (!screenshot.bounds) throw new Error(`No display bounds are available for ${screenshot.screenId ?? screenshot.id}.`);
-  const screenshotSize = screenshot.screenshotWidthInPixels && screenshot.screenshotHeightInPixels
-    ? { width: screenshot.screenshotWidthInPixels, height: screenshot.screenshotHeightInPixels }
-    : readImageSize(screenshot.path);
+  const screenshotSize = screenshotSizeFromMetadata(screenshot) ?? readImageSize(screenshot.path);
   if (!screenshotSize) {
     throw new Error(`Screenshot pixel coordinates require screenshot dimensions for ${screenshot.screenId ?? screenshot.id}.`);
   }
@@ -3179,31 +3176,6 @@ function makePointerOverlayRequestForContext(context: PickyContextPacket, reques
     }),
     ...(bounded.clamped ? { clamped: true } : {}),
   };
-}
-
-function selectScreenshot(context: PickyContextPacket, request: PickyShowPointerRequest): ScreenshotContext {
-  if (context.screenshots.length === 0) throw new Error("No screenshots are available for pointer overlay validation.");
-  const requestedScreenId = request.screenId?.trim();
-  if (requestedScreenId) {
-    const screenshot = context.screenshots.find((candidate) => candidate.screenId === requestedScreenId || candidate.id === requestedScreenId);
-    if (!screenshot) throw new Error(`Unknown pointer overlay screenId: ${requestedScreenId}`);
-    return screenshot;
-  }
-  const cursorScreenshot = context.screenshots.find((screenshot) => screenshot.isCursorScreen === true || /cursor|primary|focus/i.test(screenshot.label));
-  return cursorScreenshot ?? context.screenshots[0]!;
-}
-
-function clampPointerCoordinates(
-  request: PickyShowPointerRequest,
-  screenshotSize: { width: number; height: number },
-): { x: number; y: number; clamped?: boolean } {
-  const x = clamp(request.x, 0, screenshotSize.width);
-  const y = clamp(request.y, 0, screenshotSize.height);
-  return { x, y, clamped: x !== request.x || y !== request.y ? true : undefined };
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
 }
 
 function readImageSize(path: string): { width: number; height: number } | undefined {

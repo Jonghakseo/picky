@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { hasActivity, zeroActivitySummary } from "../domain/activity-summary.js";
 import { categorizeTool } from "../domain/tool-categorizer.js";
 import type { PickyActivitySummary, PickySessionMessage } from "../protocol.js";
 
@@ -151,7 +152,7 @@ function toPickySessionMessages(entry: PiSessionEntry): PickySessionMessage[] {
     });
   }
   const activitySnapshot = toolActivitySnapshot(entry.message?.content);
-  if (activitySnapshot && activityTotal(activitySnapshot) > 0) {
+  if (activitySnapshot && hasActivity(activitySnapshot)) {
     messages.push({
       id: `msg-pi-activity-${safePiMessageId}`,
       kind: "agent_activity",
@@ -177,26 +178,18 @@ function thinkingPlainText(content: unknown): string {
 }
 
 function toolActivitySnapshot(content: unknown): PickyActivitySummary | undefined {
-  const summary = emptyActivitySummary();
+  const summary = zeroActivitySummary();
   for (const block of contentBlocks(content)) {
     if (block.type !== "toolCall" || typeof block.name !== "string") continue;
     const category = categorizeTool(block.name);
     summary[category] += 1;
   }
-  return activityTotal(summary) > 0 ? summary : undefined;
+  return hasActivity(summary) ? summary : undefined;
 }
 
 function contentBlocks(content: unknown): PiContentBlock[] {
   if (!Array.isArray(content)) return [];
   return content.filter((block): block is PiContentBlock => Boolean(block && typeof block === "object"));
-}
-
-function emptyActivitySummary(): PickyActivitySummary {
-  return { read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 };
-}
-
-function activityTotal(summary: PickyActivitySummary): number {
-  return summary.read + summary.bash + summary.edit + summary.write + summary.thinking + summary.other;
 }
 
 function isoTimestamp(...candidates: unknown[]): string {

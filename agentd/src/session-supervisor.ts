@@ -16,6 +16,7 @@ import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SU
 import type { TaskRouter } from "./task-router.js";
 import { isMainRealtimeRuntime, type AgentRuntime, type RuntimeBashExecutionResult, type RuntimeEvent, type RuntimeSessionHandle, type RuntimeSlashCommand, type RuntimeSteerResult, type ThinkingLevel } from "./runtime/types.js";
 import { OpenAIRealtimeTranscriptionSession } from "./runtime/openai-realtime-transcription.js";
+import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
 import { readImageSizeFromBuffer } from "./domain/image-size.js";
@@ -2690,7 +2691,7 @@ export class SessionSupervisor extends EventEmitter {
 
   private async commitTurnActivityNow(sessionId: string): Promise<void> {
     const snapshot = this.turnActivity.get(sessionId);
-    if (!snapshot || activityTotal(snapshot) <= 0) return;
+    if (!snapshot || !hasActivity(snapshot)) return;
     await this.messageBuilder.recordActivitySnapshot(sessionId, snapshot);
     this.turnActivity.delete(sessionId);
     const reset = zeroActivitySummary();
@@ -3189,14 +3190,6 @@ function readImageSize(path: string): { width: number; height: number } | undefi
 function normalizeOptionalString(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
-}
-
-function zeroActivitySummary(): PickyActivitySummary {
-  return { read: 0, bash: 0, edit: 0, write: 0, thinking: 0, other: 0 };
-}
-
-function activityTotal(summary: PickyActivitySummary): number {
-  return summary.read + summary.bash + summary.edit + summary.write + summary.thinking + summary.other;
 }
 
 function awaitPendingRuntimeHandle(pending: Promise<RuntimeSessionHandle>, signal?: AbortSignal): Promise<RuntimeSessionHandle> {

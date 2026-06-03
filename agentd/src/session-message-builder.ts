@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { hasActivity } from "./domain/activity-summary.js";
 import { stripAnsiEscapeSequences } from "./domain/ansi.js";
 import type { PickyActivitySummary, PickyAssistantRunMetadata, PickyCommandReceipt, PickyExtensionUiRequest, PickySessionMessage } from "./protocol.js";
 
@@ -206,7 +207,7 @@ export class SessionMessageBuilder {
   }
 
   async recordActivitySnapshot(sessionId: string, activitySnapshot: PickyActivitySummary): Promise<void> {
-    if (activityTotal(activitySnapshot) <= 0) return;
+    if (!hasActivity(activitySnapshot)) return;
     await this.appendInternal(sessionId, {
       id: `msg-activity-${randomUUID()}`,
       kind: "agent_activity",
@@ -374,10 +375,6 @@ export class SessionMessageBuilder {
     this.states.set(sessionId, state);
     return state;
   }
-}
-
-function activityTotal(summary: PickyActivitySummary): number {
-  return summary.read + summary.bash + summary.edit + summary.write + summary.thinking + summary.other;
 }
 
 function hasAssistantRunMetadata(metadata: PickyAssistantRunMetadata | undefined): metadata is PickyAssistantRunMetadata {

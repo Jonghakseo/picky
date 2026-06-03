@@ -451,73 +451,67 @@ enum PickyHUDDockLayout {
     }
 
     static func activeSessionID(visibleIDs: [String], held: PickyHUDDockHold?, previewID: String?) -> String? {
-        if let held, visibleIDs.contains(held.sessionID) { return held.sessionID }
-        if let previewID, visibleIDs.contains(previewID) { return previewID }
-        return nil
+        PickyHUDDockInteractionPolicy.activeSessionID(visibleIDs: visibleIDs, held: held, previewID: previewID)
     }
 
     static func fullscreenTargetSessionID(visibleIDs: [String], held: PickyHUDDockHold?, hoverPreviewID: String?) -> String? {
-        if let held, visibleIDs.contains(held.sessionID) { return held.sessionID }
-        if let hoverPreviewID, visibleIDs.contains(hoverPreviewID) { return hoverPreviewID }
-        return nil
+        PickyHUDDockInteractionPolicy.fullscreenTargetSessionID(
+            visibleIDs: visibleIDs,
+            held: held,
+            hoverPreviewID: hoverPreviewID
+        )
     }
 
     static func previewSessionID(hoveredID: String?, heldID: String?) -> String? {
-        heldID == nil ? hoveredID : nil
+        PickyHUDDockInteractionPolicy.previewSessionID(hoveredID: hoveredID, heldID: heldID)
     }
 
     static func previewSessionIDAfterDockHover(current: String?, sessionID: String) -> String? {
-        sessionID
+        PickyHUDDockInteractionPolicy.previewSessionIDAfterDockHover(current: current, sessionID: sessionID)
     }
 
     static func previewSessionIDAfterCloseTimeout(current: String?, isDockHovered: Bool) -> String? {
-        isDockHovered ? current : nil
+        PickyHUDDockInteractionPolicy.previewSessionIDAfterCloseTimeout(current: current, isDockHovered: isDockHovered)
     }
 
     static func heldSessionAfterCloseTimeout(current: PickyHUDDockHold?, isHUDHovered: Bool) -> PickyHUDDockHold? {
-        current
+        PickyHUDDockInteractionPolicy.heldSessionAfterCloseTimeout(current: current, isHUDHovered: isHUDHovered)
     }
 
     static func heldSessionAfterClick(current: PickyHUDDockHold?, clicked: String) -> PickyHUDDockHold? {
-        switch current {
-        case .open(clicked):
-            return nil
-        case .open, nil:
-            return .open(clicked)
-        }
+        PickyHUDDockInteractionPolicy.heldSessionAfterClick(current: current, clicked: clicked)
     }
 
     static func manualAutoOpenResolution(pendingSessionID: String?, visibleIDs: [String]) -> PickyHUDDockHold? {
-        guard let pendingSessionID, visibleIDs.contains(pendingSessionID) else { return nil }
-        return .open(pendingSessionID)
+        PickyHUDDockInteractionPolicy.manualAutoOpenResolution(pendingSessionID: pendingSessionID, visibleIDs: visibleIDs)
     }
 
     static func requestedOpenResolution(pendingSessionID: String?, visibleIDs: [String]) -> PickyHUDDockHold? {
-        guard let pendingSessionID, visibleIDs.contains(pendingSessionID) else { return nil }
-        return .open(pendingSessionID)
+        PickyHUDDockInteractionPolicy.requestedOpenResolution(pendingSessionID: pendingSessionID, visibleIDs: visibleIDs)
     }
 
     static func numberShortcutForSessionIndex(_ index: Int) -> Int? {
-        guard index >= 0, index < 9 else { return nil }
-        return index + 1
+        PickyHUDDockInteractionPolicy.numberShortcutForSessionIndex(index)
     }
 
     static func sessionIDForNumberShortcut(visibleIDs: [String], number: Int) -> String? {
-        guard number >= 1, number <= visibleIDs.count else { return nil }
-        return visibleIDs[number - 1]
+        PickyHUDDockInteractionPolicy.sessionIDForNumberShortcut(visibleIDs: visibleIDs, number: number)
     }
 
     static func heldSessionAfterNumberShortcut(current: PickyHUDDockHold?, visibleIDs: [String], number: Int) -> PickyHUDDockHold? {
-        guard let targetID = sessionIDForNumberShortcut(visibleIDs: visibleIDs, number: number) else { return current }
-        return heldSessionAfterClick(current: current, clicked: targetID)
+        PickyHUDDockInteractionPolicy.heldSessionAfterNumberShortcut(
+            current: current,
+            visibleIDs: visibleIDs,
+            number: number
+        )
     }
 
     static func heldSessionAfterCycleShortcut(current: PickyHUDDockHold?, visibleIDs: [String], direction: Int) -> PickyHUDDockHold? {
-        guard !visibleIDs.isEmpty else { return current }
-        let currentIndex = current.flatMap { held in visibleIDs.firstIndex(of: held.sessionID) }
-        let baseIndex = currentIndex ?? (direction >= 0 ? -1 : 0)
-        let nextIndex = (baseIndex + direction + visibleIDs.count) % visibleIDs.count
-        return .open(visibleIDs[nextIndex])
+        PickyHUDDockInteractionPolicy.heldSessionAfterCycleShortcut(
+            current: current,
+            visibleIDs: visibleIDs,
+            direction: direction
+        )
     }
 
     static func gitSectionExpansion(sessionID: String, storedValues: [String: Bool]) -> Bool {

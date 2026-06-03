@@ -85,20 +85,20 @@ struct PickyHUDView: View {
     /// this monitor) and hands the new override map to the overlay manager
     /// for per-display persistence.
     private func toggleDockGroupCollapsedForThisDisplay(_ groupID: String) {
-        let group = viewModel.dockLayout.groups.first(where: { $0.id == groupID })
-        let layoutDefault = group?.isCollapsed ?? false
-        let current = placement.collapsedGroupOverrides[groupID] ?? layoutDefault
-        let willCollapse = !current
-        placement.collapsedGroupOverrides[groupID] = willCollapse
-        onDockGroupCollapseChanged(placement.collapsedGroupOverrides)
+        let result = PickyHUDDockGroupCollapsePolicy.toggleResult(
+            groupID: groupID,
+            groups: viewModel.dockLayout.groups,
+            overrides: placement.collapsedGroupOverrides,
+            openedSessionID: openedSessionID
+        )
+        placement.collapsedGroupOverrides = result.overrides
+        onDockGroupCollapseChanged(result.overrides)
 
         // Collapsing hides the group's member icons behind the folder badge.
         // If the open HUD card belongs to a member of this group, close it so
         // it isn't left floating with no icon to anchor to.
-        if willCollapse,
-           let openedID = openedSessionID,
-           group?.memberSessionIDs.contains(openedID) == true {
-            closeOpenedSession(openedID)
+        if let sessionIDToClose = result.sessionIDToClose {
+            closeOpenedSession(sessionIDToClose)
         }
     }
 
@@ -681,20 +681,24 @@ struct PickyHUDView: View {
     /// group so the session becomes visible and openable. Persists the change
     /// like a manual expand so it stays consistent per monitor.
     private func expandGroupForOpeningIfNeeded(_ sessionID: String) {
-        guard let group = viewModel.dockLayout.groups.first(where: {
-            $0.memberSessionIDs.contains(sessionID)
-        }) else { return }
-        let isCollapsed = placement.collapsedGroupOverrides[group.id] ?? group.isCollapsed
-        guard isCollapsed else { return }
-        placement.collapsedGroupOverrides[group.id] = false
-        onDockGroupCollapseChanged(placement.collapsedGroupOverrides)
+        let result = PickyHUDDockGroupCollapsePolicy.expandResultForOpening(
+            sessionID: sessionID,
+            groups: viewModel.dockLayout.groups,
+            overrides: placement.collapsedGroupOverrides
+        )
+        guard result.didExpand else { return }
+        placement.collapsedGroupOverrides = result.overrides
+        onDockGroupCollapseChanged(result.overrides)
     }
 
     /// Effective collapse state for `groupID` on this panel's display: the
     /// per-display override if present, otherwise the layout default.
     private func isGroupCollapsedOnThisDisplay(_ groupID: String) -> Bool {
-        let group = viewModel.dockLayout.groups.first { $0.id == groupID }
-        return placement.collapsedGroupOverrides[groupID] ?? (group?.isCollapsed ?? false)
+        PickyHUDDockGroupCollapsePolicy.isCollapsed(
+            groupID: groupID,
+            groups: viewModel.dockLayout.groups,
+            overrides: placement.collapsedGroupOverrides
+        )
     }
 
     private func openPendingRequestedSessionIfVisible() {

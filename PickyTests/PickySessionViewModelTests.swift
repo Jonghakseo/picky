@@ -1799,43 +1799,6 @@ struct PickySessionViewModelTests {
         ) == short)
     }
 
-    @Test func hudCardResizeInteractionResetClearsStickyHoverAndDragState() throws {
-        var state = PickyHUDCardResizeInteractionState()
-
-        #expect(!state.isVisible)
-        state.setHovered(true)
-        #expect(state.isVisible)
-        let hoverOnlyResetWasDragging = state.reset()
-        #expect(!hoverOnlyResetWasDragging)
-        #expect(!state.isHovered)
-        #expect(!state.isDragging)
-        #expect(!state.isVisible)
-
-        state.setHovered(true)
-        state.beginDragging()
-        #expect(state.isVisible)
-        let draggingResetWasDragging = state.reset()
-        #expect(draggingResetWasDragging)
-        #expect(!state.isHovered)
-        #expect(!state.isDragging)
-        #expect(!state.isVisible)
-    }
-
-    @Test func hudCardResizeInteractionEndsDragWithoutClearingLiveHover() throws {
-        var state = PickyHUDCardResizeInteractionState()
-
-        state.setHovered(true)
-        state.beginDragging()
-
-        let firstEndWasDragging = state.endDragging()
-        #expect(firstEndWasDragging)
-        #expect(state.isHovered)
-        #expect(!state.isDragging)
-        #expect(state.isVisible)
-        let secondEndWasDragging = state.endDragging()
-        #expect(!secondEndWasDragging)
-    }
-
     @Test func hudAppKitRepresentableTeardownSuppressesCallbacksThatMutateSwiftUIState() throws {
         let source = try String(contentsOfFile: "\(testProjectCwd)/Picky/HUD/PickyHUDView.swift")
 

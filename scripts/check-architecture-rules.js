@@ -48,6 +48,45 @@ function addError(message) {
   errors.push(message);
 }
 
+const nodeSideEffectModulePattern = String.raw`(?:node:)?(?:fs(?:\/[^"']*)?|http|https|child_process)`;
+const nodeSideEffectImportPatterns = [
+  new RegExp(String.raw`from\s+["']${nodeSideEffectModulePattern}["']`),
+  new RegExp(String.raw`^\s*import\s+["']${nodeSideEffectModulePattern}["']`, "m"),
+  new RegExp(String.raw`\brequire\s*\(\s*["']${nodeSideEffectModulePattern}["']\s*\)`),
+  new RegExp(String.raw`\bimport\s*\(\s*["']${nodeSideEffectModulePattern}["']\s*\)`),
+];
+
+function hasNodeSideEffectImport(text) {
+  return nodeSideEffectImportPatterns.some((pattern) => pattern.test(text));
+}
+
+function checkGuardPatternFixtures() {
+  const blocked = [
+    "import { readFileSync } from \"node:fs\";",
+    "import { readFile } from \"node:fs/promises\";",
+    "import { readFile } from \"fs/promises\";",
+    "import \"node:fs\";",
+    "const fs = require(\"node:fs/promises\");",
+    "const fs = require(\"fs/promises\");",
+    "const fs = await import(\"node:fs/promises\");",
+    "const fs = await import(\"fs/promises\");",
+    "import http from \"node:http\";",
+    "const childProcess = require(\"child_process\");",
+  ];
+  const allowed = [
+    "import path from \"node:path\";",
+    "import type { RuntimeEvent } from \"../runtime/types.js\";",
+    "import { readFixture } from \"../test-fixtures/fs-helper.js\";",
+  ];
+
+  for (const fixture of blocked) {
+    if (!hasNodeSideEffectImport(fixture)) addError(`Architecture guard self-test failed to block: ${fixture}`);
+  }
+  for (const fixture of allowed) {
+    if (hasNodeSideEffectImport(fixture)) addError(`Architecture guard self-test incorrectly blocked: ${fixture}`);
+  }
+}
+
 function checkProtocolParity() {
   const swift = read("Picky/PickyAgentProtocol.swift").match(/pickyAgentProtocolVersion\s*=\s*"([^"]+)"/);
   const ts = read("agentd/src/protocol.ts").match(/PROTOCOL_VERSION\s*=\s*"([^"]+)"/);
@@ -101,7 +140,6 @@ function checkSwiftDomainImports() {
 
 function checkAgentdDomainImports() {
   const forbiddenPatterns = [
-    { pattern: /from\s+["']node:(?:fs(?:\/[^"']*)?|http|https|child_process)["']/, reason: "node side-effect module" },
     { pattern: /from\s+["']ws["']/, reason: "transport adapter" },
     { pattern: /from\s+["']\.\.\/server(?:\.js)?["']/, reason: "server adapter" },
     { pattern: /from\s+["']\.\.\/application\//, reason: "application service" },
@@ -109,6 +147,7 @@ function checkAgentdDomainImports() {
   ];
   for (const file of walk("agentd/src/domain", (candidate) => candidate.endsWith(".ts") && !candidate.endsWith(".test.ts"))) {
     const text = fs.readFileSync(file, "utf8");
+    if (hasNodeSideEffectImport(text)) addError(`${rel(file)} imports node side-effect module; domain code should remain pure.`);
     for (const { pattern, reason } of forbiddenPatterns) {
       if (pattern.test(text)) addError(`${rel(file)} imports ${reason}; domain code should remain pure.`);
     }
@@ -185,6 +224,7 @@ function main() {
   if (!exists("Picky/PickyAgentProtocol.swift") || !exists("agentd/src/protocol.ts")) {
     addError("Run this script from the repository root.");
   } else {
+    checkGuardPatternFixtures();
     checkProtocolParity();
     checkSwiftDomainImports();
     checkAgentdDomainImports();

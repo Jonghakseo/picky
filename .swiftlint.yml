@@ -84,7 +84,7 @@ custom_rules:
 
   picky_silent_async_action:
     name: "Do not silently drop async user-action failures"
-    regex: "(?s)Task\\s*\\{[^}]*try\\?\\s*await\\s+(?!Task\\.sleep)"
+    regex: "(?s)Task(?:\\s*\\([^)]*\\))?\\s*\\{(?:[^{}]|\\{[^{}]*\\})*try\\?\\s*await\\s+(?!Task\\.sleep)"
     message: "Side-effecting async user actions should fail visibly or be logged; avoid Task { try? await ... }."
     severity: warning
 

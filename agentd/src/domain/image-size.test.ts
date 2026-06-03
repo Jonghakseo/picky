@@ -47,12 +47,13 @@ describe("image size parsing", () => {
   });
 
   it("rejects malformed JPEG start-of-frame segments without throwing", () => {
-    const tooShortSofSegment = Buffer.alloc(12);
+    const tooShortSofSegment = Buffer.alloc(18);
     tooShortSofSegment[0] = 0xff;
     tooShortSofSegment[1] = 0xd8;
-    tooShortSofSegment[2] = 0xff;
-    tooShortSofSegment[3] = 0xc0;
-    tooShortSofSegment.writeUInt16BE(2, 4);
+    for (let index = 2; index < 14; index += 1) tooShortSofSegment[index] = 0xff;
+    tooShortSofSegment[14] = 0xc0;
+    tooShortSofSegment.writeUInt16BE(2, 15);
+
     expect(() => readJpegSize(tooShortSofSegment)).not.toThrow();
     expect(readJpegSize(tooShortSofSegment)).toBeUndefined();
   });

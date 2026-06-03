@@ -1,5 +1,7 @@
 # Phase 02. Dock entry and mode transition
 
+Status: implemented behind `PICKY_FULLSCREEN_ENABLED`; keep this phase doc as historical notes plus current validation pointers.
+
 Goal: add dock expand entry point and enforce dock/fullscreen mutual exclusion.
 
 ## Files
@@ -11,7 +13,7 @@ Modify:
 - `Picky/HUD/PickyHUDDockRailView.swift` or current dock rail file
 - `Picky/HUD/PickyHUDOverlayManager.swift`
 
-Create if needed:
+Current supporting files:
 
 - `Picky/Fullscreen/PickyFullscreenModeController.swift`
 - `Picky/HUD/PickyHUDVisibilityControlling.swift`
@@ -41,14 +43,11 @@ protocol PickyHUDVisibilityControlling: AnyObject {
 
 `PickyHUDOverlayManager` can implement this directly or delegate to a small helper.
 
-## Steps
+## Current implementation notes
 
-1. Add `onOpenFullscreenSession: (String?) -> Void` to `PickyHUDView`.
-2. Thread closure into dock rail.
-3. Add expand button near dock handle.
-4. Implement `PickyHUDVisibilityControlling`.
-5. Wire `PickyApp` so HUD expand calls `fullscreenCoordinator.open(sessionID:)`.
-6. Ensure fullscreen close calls HUD restore.
+- `PickyHUDView` exposes the fullscreen affordance when `PickyFullscreenFeatureFlags.isEnabled`.
+- `PickyApp` wires the HUD action to `PickyFullscreenModeController.open(sessionID:)`.
+- `PickyHUDOverlayManager` implements `PickyHUDVisibilityControlling`; close flows restore HUD through `fullscreenDidClose()`.
 
 ## Validation
 

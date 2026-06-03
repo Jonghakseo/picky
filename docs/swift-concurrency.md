@@ -16,7 +16,7 @@ One-liner: **Start UI on MainActor and keep it simple; only split off the bottle
 
 2. **Don't guess at lag — confirm with Instruments.** If something feels slow (HUD rendering, session list, log/message rendering, context capture), profile first. See `docs/perf-profiling.md`.
 
-3. **Only split off proven bottlenecks.** Move just the genuinely heavy pure work off the main actor (JSON parsing, diffing, log processing, file IO, image processing) using `@concurrent`/background. Leave everything else where it is.
+3. **Only split off proven bottlenecks.** Move just the genuinely heavy pure work off the main actor (JSON parsing, diffing, log processing, file IO, image processing) using the repository's current structured-concurrency/background-helper patterns. Leave everything else where it is, and re-check toolchain-specific attributes such as `@concurrent` before introducing them.
 
 4. **Keep actors few.** Introduce an `actor` only where there is a clear domain boundary with shared mutable state (session store, daemon client, artifact store). Don't actor-ify everything.
 

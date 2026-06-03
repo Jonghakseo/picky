@@ -1,10 +1,12 @@
 # Phase 03. Sidebar session selection
 
+Status: implemented behind `PICKY_FULLSCREEN_ENABLED`; keep this phase doc as historical notes plus current validation pointers.
+
 Goal: render the left Pickle list and support fullscreen-local session selection.
 
 ## Files
 
-Create:
+Current files:
 
 - `Picky/Fullscreen/Views/PickyFullscreenSidebarView.swift`
 - `Picky/Fullscreen/Domain/PickyFullscreenSessionSelection.swift`
@@ -24,7 +26,7 @@ Tests:
 - Selection is fullscreen-local in MVP.
 - Selecting a row updates fullscreen state store, not necessarily global HUD selection.
 - Archived sessions are deferred unless already cheap and clearly separated.
-- `+ New Pickle` affordance can be placeholder until phase 07.
+- `+ New Pickle` reuses the recent-folder picker and creates/selects a fullscreen-local session.
 
 ## Selection fallback
 
@@ -36,13 +38,11 @@ else most recently updated active session
 else nil
 ```
 
-## Steps
+## Current implementation notes
 
-1. Add selection resolver pure helper.
-2. Render sidebar list with title/status/updated time.
-3. Bind row selection to `stateStore.selectedSessionID`.
-4. Update workspace to derive selected `SessionCard` from state store.
-5. Add empty state when no sessions exist.
+- `PickyFullscreenSessionSelection` implements requested → stored → view-model selected → most-recent fallback.
+- `PickyFullscreenSidebarView` renders session rows, empty state, and the New Pickle affordance.
+- `PickyFullscreenWorkspaceView` creates an empty Pickle via `viewModel.createEmptyPickleSession(cwd:)` and selects it locally.
 
 ## Validation
 

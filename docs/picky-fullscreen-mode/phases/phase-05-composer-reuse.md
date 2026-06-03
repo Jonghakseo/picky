@@ -1,5 +1,7 @@
 # Phase 05. Composer reuse
 
+Status: implemented behind `PICKY_FULLSCREEN_ENABLED`; keep this phase doc as historical notes plus current validation pointers.
+
 Goal: reuse `PickyConversationComposerView` in fullscreen without duplicating behavior or corrupting draft/attachment state.
 
 ## Files
@@ -26,17 +28,15 @@ Tests:
 
 - Fullscreen composer receives the same session ID selected in fullscreen.
 - If selected session changes, composer draft/attachments restore by session ID.
-- `followUp(text:sessionID:)` is used for submit.
+- Fullscreen reuses `PickyConversationComposerView` submit routing. `followUp(text:sessionID:)` is used only when the shared composer policy selects follow-up; running/queued/waiting/cancelled/failed sessions may steer according to existing HUD behavior.
 - Stop button uses the same existing view-model action/conditions as HUD composer.
 
-## Steps
+## Current implementation notes
 
-1. Identify current `PickyConversationComposerView` initializer dependencies.
-2. Add only minimal parameters needed for fullscreen layout if any.
-3. Mount composer in fullscreen conversation pane.
-4. Add drop forwarding from center pane to composer path insertion mechanism.
-5. Verify HUD composer is unmounted before fullscreen composer mounts.
-6. Verify fullscreen composer unmounts before HUD restore.
+- `PickyFullscreenConversationPaneView` mounts the shared `PickyConversationComposerView`.
+- File drops are forwarded through the shared draft/attachment path binding.
+- `.id(session.id)` remounts the composer when fullscreen-local selection changes.
+- `PickyFullscreenModeController` hides HUD before opening fullscreen and restores it after close, preventing duplicate composer mounting.
 
 ## Validation
 
@@ -50,7 +50,7 @@ Manual QA:
 - screen context chip appears when armed
 - notify toggle works
 - terminal toggle works
-- send follow-up updates same session
+- submit/steer updates the same session according to shared HUD composer policy
 - stop button appears under same conditions as HUD
 
 ## Exit criteria

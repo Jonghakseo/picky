@@ -1,10 +1,12 @@
 # Phase 06. Right work info panel
 
-Goal: add collapsible `작업 정보` panel using existing session data only.
+Status: implemented behind `PICKY_FULLSCREEN_ENABLED`; keep this phase doc as historical notes plus current validation pointers.
+
+Goal: maintain the collapsible read-only `변경사항` panel for session artifacts, changed files, and local git/diff metadata.
 
 ## Files
 
-Create:
+Current files:
 
 - `Picky/Fullscreen/Views/PickyFullscreenWorkInfoPanelView.swift`
 - `Picky/Fullscreen/Domain/PickyFullscreenWorkInfoSnapshot.swift`
@@ -20,24 +22,21 @@ Tests:
 
 ## Design requirements
 
-- Product label: `작업 정보`.
+- Product label: `변경사항`.
 - Panel is read-only.
 - Collapsed/open state is persisted globally in MVP.
-- Every displayed row is derived from `SessionCard`.
+- Session changed files/artifacts are derived from `SessionCard`; branch/worktree rows are derived read-only from the selected session `cwd`.
 - No unavailable desktop context details.
 
 ## Sections
 
 ```text
-작업 정보
-├─ 상태
-├─ 런타임
-├─ 컨텍스트 사용량
-├─ 현재/마지막 턴 활동
-├─ 도구 히스토리
+변경사항
+├─ 브랜치 / 작업 트리 요약
 ├─ 세션 변경 파일
+├─ 브랜치 변경 파일
 ├─ 링크와 산출물
-└─ 대기 중 입력
+└─ 접기/펼치기 rail
 ```
 
 ## Data classification gate
@@ -47,28 +46,26 @@ Before adding a row, classify it:
 ```text
 A. Existing HUD-visible feature reused/rearranged
 B. Existing session data newly summarized in fullscreen
-C. New data required — not allowed in MVP
+C. New mutating capability required — not allowed without a product decision
 ```
 
-Only A and B are allowed.
+A and B are allowed. Read-only git/diff metadata is allowed by the current implementation but remains tied to the phase 07 product-decision boundary; mutating branch/worktree/PR/cloud controls are not allowed.
 
-## Steps
+## Current implementation notes
 
-1. Add `PickyFullscreenWorkInfoSnapshot` projection from `SessionCard`.
-2. Add tests for nil/empty states.
-3. Render panel sections with empty-state copy.
-4. Add collapse rail.
-5. Persist collapsed/open state.
-6. Ensure panel width changes do not animate entire conversation list.
+- `PickyFullscreenWorkInfoSnapshot` projects session changed files and artifacts.
+- `PickyFullscreenWorkInfoPanelView` renders the `변경사항` panel and collapse rail.
+- `PickyFullscreenBranchDiffProvider` / `PickyFullscreenFileDiffProvider` add read-only git/diff metadata from `cwd`.
+- Panel visibility is persisted in `PickyFullscreenStateStore`.
 
 ## Validation
 
 - no active app/window/browser/selected text rows
-- changed files are session-level
-- empty tools/artifacts/context usage look intentional
+- changed files and git/diff metrics are labelled as change/worktree data, not per-turn claims
+- empty artifacts or no-git/non-repository states look intentional
 - toggle state survives close/reopen
 - VoiceOver labels identify panel and collapse button
 
 ## Exit criteria
 
-- Right panel adds useful session context without pretending to know unavailable data.
+- Right panel adds useful read-only change context without pretending to know transient desktop context or offering mutating IDE/git controls.

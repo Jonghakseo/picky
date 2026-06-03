@@ -1,5 +1,7 @@
 # Phase 08. Polish, animation, accessibility, performance
 
+Status: implemented behind `PICKY_FULLSCREEN_ENABLED`; keep this phase doc as historical notes plus current validation pointers.
+
 Goal: make the fullscreen workspace feel native and stable without fragile cross-window effects.
 
 ## Files
@@ -24,7 +26,7 @@ Modify:
 - Expand button has clear label: “Open fullscreen workspace”.
 - Close/collapse controls have labels and keyboard focus.
 - Sidebar rows expose title/status.
-- Right panel is labelled `작업 정보`.
+- Right panel is labelled `변경사항`, including expanded/collapsed accessibility labels.
 - Composer keeps existing accessibility behavior.
 - Keyboard navigation supports common app behavior:
   - `⌘W` closes fullscreen window, not app
@@ -39,14 +41,10 @@ Modify:
 - Avoid expensive shadows/blur over full-window surfaces.
 - Profile HUD/fullscreen lag with existing `docs/perf-profiling.md` before guessing.
 
-## Steps
+## Current implementation notes
 
-1. Add labels and keyboard shortcuts.
-2. Add reduced-motion friendly transitions.
-3. Audit implicit animations.
-4. Test long conversation scroll performance.
-5. Test running task live updates.
-6. Polish visual spacing, panel widths, empty states.
+- Dock expand, close/collapse controls, `⌘W`, reduced motion handling, and lazy conversation rendering are implemented.
+- Keep this phase as the polish checklist for future changes: accessibility labels, scoped animation, long conversation performance, and recursive screen-capture checks.
 
 ## Validation
 

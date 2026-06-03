@@ -1,6 +1,6 @@
 # 02. Data contracts
 
-Status: design only.
+Status: implemented behind `PICKY_FULLSCREEN_ENABLED`; current data contract reflects the feature-gated implementation.
 
 ## Rule
 
@@ -134,10 +134,11 @@ Fullscreen composer may reuse only existing capabilities:
 
 For a completed/non-current turn:
 
-1. Prefer the last message with `kind == agent_text`.
+1. Prefer the last message with `kind == agent_text` as the primary final answer.
 2. If no `agent_text` exists, use the last `agent_error`.
 3. Render completion/failure system messages as separate compact status rows.
-4. Do not use `PickyTurnGroup.collapsedRepresentativeMessage` directly as the final answer because it can choose a system message.
+4. If intermediate non-thinking work messages exist and a work duration can be computed, show them only behind the expandable work-summary row.
+5. Do not use `PickyTurnGroup.collapsedRepresentativeMessage` directly as the final answer because it can choose a system message.
 
 For a running/current turn:
 
@@ -157,15 +158,16 @@ let effectiveAssistantRun = session.currentAssistantRun
     ?? session.messages.reversed().compactMap(\.assistantRun).first
 ```
 
-Use this for:
+Use this for the center header model/thinking chip. Context usage is also displayed in the center header, not in the right `변경사항` panel.
 
-- header model chip
-- header thinking chip
-- right-panel runtime row
+## Center changed-files card scope
 
-## Changed files scope
+The center conversation can show a compact changed-files card after a completed turn:
 
-`PickyChangedFile` currently provides session-level data such as:
+- `변경 파일`: turn-scoped file list derived from fullscreen turn git snapshots and lazy diff resolution.
+- `세션 변경 파일`: fallback shown on the last completed turn when no turn snapshot exists and only session-level `PickyChangedFile` data is available.
+
+Both variants use `PickyChangedFile` fields:
 
 ```swift
 path
@@ -173,63 +175,38 @@ status
 summary
 ```
 
-MVP must not imply per-turn diff ownership.
+Do not overclaim the source:
 
-UI copy:
+- use `변경 파일` only when turn snapshots/diffs scoped it to that turn
+- use `세션 변경 파일` for session-level fallback
+- do not add fake file summaries
+- do not show unstored diff hunks in the center card
 
-- Preferred label: `세션 변경 파일`
-- Acceptable alternative: `변경 파일` with a session-scope subtitle
-
-Do not show:
-
-- `+143 -62`
-- exact turn association
-- unstored diff hunks
-- fake file summaries
+The right `변경사항` panel below is allowed to show read-only git/diff metrics separately because it is explicitly labelled as change/worktree metadata.
 
 ## Right panel allowed data
 
-`작업 정보` can show only data derived from `SessionCard`:
+The current right panel is labelled `변경사항` and may show read-only data from the selected session and its local `cwd`:
 
 ```text
-상태
-  status
-  createdAt / updatedAt
-  notifyMainOnCompletion
-  pinned / archived if true
-
-런타임
-  effectiveAssistantRun.model
-  effectiveAssistantRun.thinkingLevel
-  piSessionFilePath exists? resume possible
-
-컨텍스트 사용량
-  contextUsage.tokens
-  contextUsage.contextWindow
-  contextUsage.percent
-
-현재/마지막 턴 활동
-  running: session.activitySummary
-  completed: latest message.activitySnapshot if available
-
-도구 히스토리
-  tools name/status/preview/timestamps
-
-세션 변경 파일
-  changedFiles path/status/summary
-
-링크와 산출물
-  artifacts kind/title/path/url/updatedAt
-
-대기 중 입력
-  pendingExtensionUiRequest
-  queuedSteers
-  queuedFollowUps
+변경사항
+├─ session changed files
+│  └─ changedFiles path/status/summary
+├─ artifacts
+│  └─ artifacts kind/title/path/url/updatedAt
+├─ branch/worktree summary
+│  └─ current branch, upstream/ahead/behind, changed-file counts
+├─ line metrics
+│  └─ read-only + / - totals from git numstat
+└─ per-file rows
+   └─ path/status/optional numstat/diff-derived metadata
 ```
 
-## Explicitly unavailable in MVP
+The panel must remain read-only. It may summarize local git metadata, but it must not create, checkout, push, open PRs, or otherwise mutate worktree/cloud state.
 
-Do not show these in fullscreen right panel:
+## Explicitly unavailable
+
+Do not show these in fullscreen right panel unless a later design intentionally persists them as session/worktree data:
 
 - active app
 - active window
@@ -237,6 +214,6 @@ Do not show these in fullscreen right panel:
 - selected text
 - screenshot paths
 - screen thumbnails
-- git branch if not already available through existing HUD context logic
-- PR/cloud/worktree status
-- line additions/deletions
+- mutating PR/cloud/worktree controls
+
+Phase 07 tracks the product decision for the boundary between allowed read-only branch/worktree metadata and forbidden IDE/git controls.

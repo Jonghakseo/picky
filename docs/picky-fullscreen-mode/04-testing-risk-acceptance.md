@@ -1,10 +1,10 @@
 # 04. Testing, risks, acceptance
 
-Status: design only.
+Status: implemented behind `PICKY_FULLSCREEN_ENABLED`; use this as rollout QA checklist.
 
 ## Unit tests
 
-Add focused tests where logic is pure:
+Existing focused tests cover the current pure logic. Add or update tests near touched code:
 
 - `PickyFullscreenStateStoreTests`
   - persists right panel visibility
@@ -18,12 +18,14 @@ Add focused tests where logic is pure:
   - prefers `currentAssistantRun`
   - falls back to latest message `assistantRun`
 - `PickyFullscreenWorkInfoSnapshotTests`
-  - derives only existing fields
-  - handles empty tools/artifacts/context usage
-- coordinator/mode tests with fakes if practical
+  - derives changed files and artifacts from existing session fields
+  - handles empty changed files/artifacts
+- coordinator/mode/window tests with fakes
   - open hides HUD before showing fullscreen
   - close restores HUD after fullscreen close
   - repeated open/close is idempotent
+  - feature flag hides entry points when disabled
+  - branch/file diff providers handle non-git or empty worktrees
 
 ## Build/test commands
 
@@ -44,7 +46,7 @@ Do not restart the running Picky app unless explicitly asked.
 
 ## Manual QA checklist
 
-1. Start with multiple Pickles: one running, one completed, one waiting.
+1. Launch with `PICKY_FULLSCREEN_ENABLED=1` and start with multiple Pickles: one running, one completed, one waiting.
 2. Click dock expand button.
 3. Verify fullscreen opens intended Pickle.
 4. Verify HUD dock/panels are hidden.
@@ -59,8 +61,8 @@ Do not restart the running Picky app unless explicitly asked.
 13. Confirm screen context chip appears.
 14. Run long task.
 15. Confirm live progress appears only while running.
-16. Confirm completed turn collapses to final answer only.
-17. Confirm changed files are labelled as session-level data.
+16. Confirm completed turn shows the final assistant answer as the primary body, with intermediate work only behind the expandable work summary.
+17. Confirm changed files are labelled by scope: `변경 파일` for turn-scoped diffs, `세션 변경 파일` for session-level fallback.
 18. Toggle right panel closed/open.
 19. Close fullscreen and reopen.
 20. Confirm right panel state is remembered.
@@ -69,7 +71,7 @@ Do not restart the running Picky app unless explicitly asked.
 23. Confirm HUD dock drag/hover/add Pickle still works after returning.
 24. Confirm no permission selector appears.
 25. Confirm no plan mode / goal suggestion / plugin menu appears.
-26. Confirm no cloud/worktree/PR controls appear.
+26. Confirm no mutating cloud/worktree/PR controls appear; read-only branch/worktree metadata follows the phase 07 product-decision gate.
 27. Confirm fullscreen chrome is not recursively captured by screen context.
 
 ## Risks and mitigations
@@ -80,11 +82,11 @@ Mitigation: dock/fullscreen modes are mutually exclusive. HUD composer unmounts 
 
 ### Fullscreen renders unavailable context details
 
-Mitigation: right panel uses only `SessionCard`/`PickyAgentSession` data. Active app/browser/selected text are excluded from MVP.
+Mitigation: the `변경사항` panel is read-only and must not display transient desktop context such as active app/browser/selected text. Git/worktree metadata is allowed only as local read-only change data pending the phase 07 decision gate.
 
-### Changed files imply exact per-turn data
+### Changed files imply the wrong scope
 
-Mitigation: label as `세션 변경 파일` or use a session-scope subtitle. Do not show line counts or exact turn claims.
+Mitigation: use `변경 파일` only for turn-scoped git snapshots/diffs, and use `세션 변경 파일` when falling back to session-level changed files. Label git/worktree metrics as change data, not exact per-turn claims unless the snapshot boundary exists.
 
 ### HUD and fullscreen selection fight each other
 
@@ -105,10 +107,10 @@ Mitigation: lazy rows, scoped Markdown rendering, pure turn policy, profile with
 - Closing fullscreen restores dock mode.
 - Center is clean LLM chat UI.
 - Running turns show progress only while running.
-- Completed turns show final assistant answer only.
+- Completed turns show final assistant answer as the primary body, with optional work summary collapsed by default.
 - Composer preserves existing Pickle capabilities without copied behavior.
-- Right `작업 정보` panel is collapsible and persisted.
-- Right panel uses existing session data only.
-- Changed files are session-level.
+- Right `변경사항` panel is collapsible and persisted.
+- Right panel remains read-only and does not invent transient desktop context.
+- Changed files are labelled with the correct scope (`변경 파일` vs `세션 변경 파일`).
 - Fullscreen window is excluded from Picky screen capture.
 - No Codex-only controls appear.

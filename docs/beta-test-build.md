@@ -14,20 +14,21 @@ Use this flow when all of the following are true:
 - You have a working `notarytool` credential profile.
 - The build is intended for beta distribution, not local-only smoke testing.
 
-Do **not** use this flow for App Store/TestFlight distribution. This project currently prepares a signed/notarized zip, not an appcast, DMG, or automatic-update release.
+Do **not** use this flow for App Store/TestFlight distribution. The current CI distribution flow publishes a signed/notarized DMG for testers and a separate Sparkle update zip/appcast for automatic updates. Local zip steps below are kept as a manual fallback/debugging path, not the primary beta artifact.
 
 ## GitHub Actions release automation
 
-The repo includes `.github/workflows/beta-notarized-release.yml` for CI-based beta distribution. It runs the same core flow as this guide on a macOS runner:
+The repo includes `.github/workflows/beta-notarized-release.yml` for CI-based beta distribution. It runs the current release flow on a macOS runner:
 
 1. import the Developer ID `.p12` certificate into a temporary keychain,
-2. run `./scripts/package-signed-app.sh` with `PICKY_RELEASE_CHANNEL=beta`,
-3. re-sign nested native Node add-ons and the final app with secure timestamps,
-4. submit the upload zip to Apple Notary service with `notarytool --wait`,
-5. staple and validate the app,
-6. create the final `*-notarized.zip`,
-7. upload the zip to the GitHub Release, and
-8. insert/update a release-note block between `<!-- picky-notarized-build:start -->` and `<!-- picky-notarized-build:end -->`.
+2. run `./scripts/package-signed-app.sh` with `PICKY_RELEASE_CHANNEL=beta` or `stable`,
+3. re-sign nested native Node add-ons, the bundled Node runtime, and the final app with secure timestamps,
+4. create a styled DMG with `scripts/dmg/create-styled-dmg.sh`,
+5. sign, notarize, staple, and validate the DMG,
+6. create and Sparkle-sign a separate update zip from the notarized app,
+7. upload the DMG and update zip to the GitHub Release,
+8. update the `auto-update` release's `appcast.xml`, and
+9. insert/update a release-note block between `<!-- picky-notarized-build:start -->` and `<!-- picky-notarized-build:end -->`.
 
 Supported triggers:
 
@@ -50,6 +51,7 @@ Add these under GitHub repository **Settings → Secrets and variables → Actio
 | `PICKY_SLACK_CHANNEL_ID` | Slack channel ID used by in-app feedback, for example `C0123456789`. |
 | `PICKY_NOTARY_APPLE_ID` | Apple ID email used for notarization. |
 | `PICKY_NOTARY_APP_PASSWORD` | App-specific password for that Apple ID. |
+| `PICKY_SPARKLE_ED_PRIVATE_KEY` | Sparkle EdDSA private key used to sign update zips for beta/stable appcast entries. |
 
 Create the base64 certificate secret from a local `.p12` file:
 
@@ -77,7 +79,7 @@ create_release_if_missing: true
 prerelease: true
 ```
 
-The workflow creates the GitHub Release if missing, uploads the final `Picky-<version>-beta.<build>-<sha>-<timestamp>-notarized.zip`, and appends the SHA256/notary metadata to the release notes. GitHub's release automation APIs are documented here: <https://docs.github.com/rest/releases/releases>.
+The workflow creates the GitHub Release if missing, uploads the final `Picky-<version>-beta.<build>-<sha>-<timestamp>.dmg` plus the Sparkle update zip, updates the appcast, and appends SHA256/notary/appcast metadata to the release notes. GitHub's release automation APIs are documented here: <https://docs.github.com/rest/releases/releases>.
 
 ## Required local credentials
 
@@ -112,9 +114,10 @@ Start from the Picky repository. Confirm the worktree before building so unrelat
 git status --short --branch
 ```
 
-Build a Developer ID-signed Release package without changing Xcode project defaults:
+Build a Developer ID-signed beta Release package without changing Xcode project defaults:
 
 ```bash
+PICKY_RELEASE_CHANNEL=beta \
 PICKY_CODE_SIGN_IDENTITY="Developer ID Application: Example Org (TEAMID)" \
 PICKY_DEVELOPMENT_TEAM="TEAMID" \
 ./scripts/package-signed-app.sh
@@ -124,7 +127,7 @@ The script writes:
 
 ```text
 build/package/export/Picky.app
-build/package/Picky-<version>-alpha.<build>-<git-sha>-<timestamp>.zip
+build/package/Picky-<version>-beta.<build>-<git-sha>-<timestamp>.zip
 ```
 
 It also embeds build metadata in:
@@ -133,7 +136,9 @@ It also embeds build metadata in:
 build/package/export/Picky.app/Contents/Resources/PickyBuildInfo.json
 ```
 
-The package script signs the app bundle, but the current beta notarization path still does a final explicit re-sign before submitting because notarization validates nested native Node add-ons and release entitlements strictly.
+The package script signs the app bundle and bundles pinned Node by default. The CI beta/stable workflow still performs a final explicit Developer ID re-sign before DMG creation because notarization validates nested native Node add-ons, the bundled Node binary, secure timestamps, and release entitlements strictly.
+
+The sections below describe the legacy/manual zip fallback that is useful for debugging notarization locally. The primary CI release artifact is the signed/notarized/stapled DMG created later by `.github/workflows/beta-notarized-release.yml`.
 
 ## Re-sign for notarization
 
@@ -177,9 +182,9 @@ Confirm the printed entitlements do **not** include:
 com.apple.security.get-task-allow
 ```
 
-## Create notarization upload zip
+## Legacy manual zip notarization fallback
 
-Create a fresh zip after the final re-sign:
+For local notarization debugging, create a fresh zip after the final re-sign:
 
 ```bash
 UPLOAD_ZIP="$PWD/build/package/Picky-beta-notary-upload.zip"
@@ -239,9 +244,9 @@ Expected results:
 - `spctl` prints `accepted` and `source=Notarized Developer ID`
 - `lipo` reports `arm64` for the current Apple Silicon beta build
 
-## Create final distribution zip
+## Legacy final distribution zip
 
-Create the zip **after stapling**. This is the file to share with testers:
+If you used the manual zip fallback, create the zip **after stapling**. CI beta/stable releases should instead share the notarized DMG artifact:
 
 ```bash
 read MARKETING_VERSION BUILD_LABEL < <(python3 - <<'PY'
@@ -274,21 +279,21 @@ rm -rf "$TMP_DIR"
 
 ## Share with beta testers
 
-Send the final `*-notarized.zip`, not the raw app bundle and not the pre-staple upload zip.
+For CI releases, send the final notarized `.dmg` link from the GitHub Release. Do not send the raw app bundle or any pre-staple upload container. If you used the legacy manual zip fallback, send only the final `*-notarized.zip` created after stapling.
 
 Suggested message:
 
 ```text
 Picky beta build
 
-Download: <zip link>
+Download: <dmg link>
 Version: <marketing version> (<build number>)
 Build label: <build label>
 SHA256: <sha256>
 
 Install:
-1. Unzip the file.
-2. Move Picky.app to /Applications.
+1. Open the DMG.
+2. Drag Picky.app to Applications.
 3. Open Picky.
 4. Grant macOS permissions when prompted: Accessibility, Screen Recording, Microphone, and Speech Recognition if needed.
 ```
@@ -321,13 +326,15 @@ The packaged app resolves `picky-agentd` in this order:
 2. Bundled `Picky.app/Contents/Resources/agentd/dist/index.js`.
 3. Friendly startup failure.
 
-If the app launches but the daemon does not start, ask the tester to check:
+If the app launches but the daemon does not start, ask the tester to check bundled-runtime diagnostics first:
 
 ```bash
-node --version
 ls -la ~/Library/Application\ Support/Picky/Logs/
+cat ~/Library/Application\ Support/Picky/agentd.node-preflight.json 2>/dev/null || true
 tail -200 ~/Library/Application\ Support/Picky/Logs/agentd.stderr.log
 ```
+
+A packaged beta normally uses the bundled `Contents/Resources/agentd-runtime/bin/node`; `node --version` is only useful when testing a source/dev override, `PICKY_NODE_PATH`, or a `PICKY_SKIP_NODE_BUNDLE=1` package.
 
 ## References
 

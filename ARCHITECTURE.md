@@ -89,7 +89,9 @@ Picky/
   App/
     MenuBarPanelManager.swift            menu bar panel lifecycle
     PickyAnalytics.swift                 local logging/analytics shim
-    PickyRuntimeDependencyChecker.swift  daemon/runtime dependency checks
+    PickyExtensionInstaller.swift        opt-in bundled Pi extension installer
+    PickySkillInstaller.swift            opt-in bundled Picky skill installer
+    PickyRealtimeAuthGate.swift          realtime auth gating helpers
     WindowPositionManager.swift          accessibility/window positioning helpers
     Settings/                            settings model/store/view model/view
 
@@ -121,6 +123,13 @@ Picky/
     PickyArtifactReporter.swift          report generation helpers
     PickyReportViewer.swift              markdown report viewer
     PickyDiffPreview.swift               diff preview helpers
+
+  Fullscreen/
+    PickyFullscreenFeatureFlags.swift    `PICKY_FULLSCREEN_ENABLED` gate
+    PickyFullscreenModeController.swift  HUD/fullscreen mutual-exclusion state
+    PickyFullscreenCoordinator.swift     AppKit window lifecycle coordinator
+    Domain/                              selection, turn policy, snapshot/diff providers
+    Views/                               sidebar, conversation, composer host, `변경사항` panel
 
   Overlay/
     OverlayWindow.swift                  overlay NSWindow
@@ -179,7 +188,7 @@ agentd/src/
     pi-sdk-runtime.ts                   Pi SDK adapter (deferred split)
 ```
 
-`SessionSupervisor` remains the stable facade for app-visible operations: `load`, `list`, `get`, `route`, `create`, `followUp`, `steer`, `abort`, `answerExtensionUi`, and `openArtifact`.
+`SessionSupervisor` remains the stable facade for app-visible operations: `load`, `list`, `get`, `route`, `create`, `followUp`, `steer`, `abort`, `answerExtensionUi`, and artifact/report materialization through the application-layer stores.
 
 ## 7. Protocol and state model
 

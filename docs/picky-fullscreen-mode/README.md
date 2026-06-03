@@ -1,10 +1,12 @@
 # Picky fullscreen workspace
 
-Status: design and implementation plan only. Do not implement until explicitly approved.
+Status: implemented behind `PICKY_FULLSCREEN_ENABLED`; docs now describe current behavior and remaining product decisions.
+
+Enable locally with `PICKY_FULLSCREEN_ENABLED=1 ./scripts/run-dev-signed-app.sh`. Entry points are hidden when the flag is unset.
 
 ## Intent
 
-Fullscreen mode gives an existing Pickle session a focused workspace: left Pickle list, center LLM chat, bottom composer, and right `작업 정보` panel.
+Fullscreen mode gives an existing Pickle session a focused workspace: left Pickle list, center LLM chat, bottom composer, and right `변경사항` panel.
 
 It must stay Picky-shaped:
 
@@ -62,15 +64,15 @@ This avoids duplicate composer instances for the same session and prevents draft
 | 3 | [`phase-03-sidebar-session-selection.md`](phases/phase-03-sidebar-session-selection.md) | Sidebar lists Pickles and controls fullscreen-local selection |
 | 4 | [`phase-04-conversation-rendering.md`](phases/phase-04-conversation-rendering.md) | Center renders clean LLM chat with correct running/completed behavior |
 | 5 | [`phase-05-composer-reuse.md`](phases/phase-05-composer-reuse.md) | Existing composer is reused without duplicate mounting |
-| 6 | [`phase-06-work-info-panel.md`](phases/phase-06-work-info-panel.md) | Right panel shows existing session data only |
+| 6 | [`phase-06-work-info-panel.md`](phases/phase-06-work-info-panel.md) | Right panel shows read-only changes/git/diff metadata |
 | 7 | [`phase-07-new-pickle-lifecycle-polish.md`](phases/phase-07-new-pickle-lifecycle-polish.md) | New Pickle and lifecycle polish are integrated |
 | 8 | [`phase-08-polish-animation-accessibility.md`](phases/phase-08-polish-animation-accessibility.md) | Animation, accessibility, keyboard, performance polish |
 
 ## Review gates
 
-- Product UX gate: `00-product-ux.md`
+- Product UX/current behavior gate: `00-product-ux.md`
 - Architecture gate: `01-swift-architecture.md`
 - Data correctness gate: `02-data-contracts.md`
 - State/lifecycle gate: `03-interactions-state.md`
-- Implementation gate: phase document for the current phase
-- Release gate: `04-testing-risk-acceptance.md`
+- Phase documents: historical implementation notes plus remaining polish/decision notes
+- Release/rollout gate: `04-testing-risk-acceptance.md`

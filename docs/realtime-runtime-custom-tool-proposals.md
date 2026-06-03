@@ -3,12 +3,13 @@
 > 대상: `PICKY_REALTIME_OPT_IN=1` 빌드의 메인 OpenAI Realtime 런타임
 > 
 > 현재 활성 도구(요약): `picky_start_pickle`, `picky_pickle_sessions`,
-> `picky_steer_pickle`, `picky_skill`(Picky 전용 스킬 list/get;
-> `~/Library/Application Support/Picky/skills/`), `read_picky_user_guide`,
-> 그리고 메모리/리콜/Pickle 제어/파일·셸 단발 도구들.
+> `picky_steer_pickle`, `picky_inspect_active_pickle`, `picky_skills`
+> (Picky 전용 스킬 메타데이터 목록), `picky_read_file`(스킬 본문 등 읽기),
+> `read_picky_user_guide`, 그리고 메모리/리콜/Pickle 제어/파일·셸 단발 도구들.
 > 
 > 옛 `picky_skills_search` / `picky_skill_details`(Pi 스킬을 그대로 노출)
-> 는 제거되었고, Picky 자체 스킬 저장소 기반의 `picky_skill` 하나로 교체되었습니다.
+> 는 제거되었습니다. 현재 런타임은 `picky_skill`이라는 단일 get/list 도구를
+> 노출하지 않습니다.
 > 
 > 이 문서는 위 도구 외에 Realtime 메인이 가지면 사용자 경험이 명확히 좋아질
 > 후보들을 우선순위와 트레이드오프까지 정리한 제안서입니다. 코드 변경은 들어
@@ -123,9 +124,11 @@ Realtime 메인은 다음 네 가지 강점에서 Pi 메인과 다릅니다:
 
 ---
 
-### 2.2 `picky_inspect_active_pickle`
+### 2.2 `picky_inspect_active_pickle` — implemented
 
 **한 줄**: 사용자가 "지금 어떻게 돼가?" 라고 물을 때, 특정 pickle 의 최근 활동/마지막 tool 호출/예상 남은 시간을 요약.
+
+Status: this tool is already part of the active Realtime runtime. Keep this section as behavior rationale and update it only when the active schema/handler changes.
 
 **왜 필요한가**: 현재 `picky_pickle_sessions` 는 list 만 줌. 사용자가 호버 중인 pickle 에 대한 상세 진행 상황은 메인이 모름. Pickle 카드를 직접 읽으려면 위임이 필요한데, 위임은 또 다른 Pickle 을 띄움 (재귀).
 
@@ -259,11 +262,12 @@ Realtime 메인은 다음 네 가지 강점에서 Pi 메인과 다릅니다:
 
 ## 4. 우선순위 D — 잠재력 있지만 별도 PR 권장
 
-### 4.1 `picky_remember_for_user`
+### 4.1 Memory CRUD — implemented differently
 
-사용자 메모리에 짧은 사실 저장 ("내 프로젝트 이름은 picky", "내 GitHub는 …").
-별도 storage (예: `~/Library/Application Support/Picky/user-memory.jsonl`) 필요.
-**보안/프라이버시 검토 필요**.
+사용자 메모리 저장/조회/수정/삭제는 이미 `picky_remember`, `picky_list_memories`,
+`picky_update_memory`, `picky_forget` 도구로 제공됩니다. 별도
+`picky_remember_for_user`나 `user-memory.jsonl` 저장소를 새로 추가하지 말고,
+남은 제안은 기존 메모리 도구의 UX/프라이버시 개선으로 다룹니다.
 
 ### 4.2 `picky_quick_web_lookup`
 
@@ -288,11 +292,12 @@ Realtime 메인은 다음 네 가지 강점에서 Pi 메인과 다릅니다:
 가장 적은 코드/risk 대비 사용자 가치가 큰 순서:
 
 1. **1.2 `picky_show_link_or_path`** — 결정 1 으로 인해 URL 발화 못 함 → 가장 시급한 보강
-2. **2.2 `picky_inspect_active_pickle`** — 사용자 "어떻게 돼가?" 류 빈도 높음
-3. **2.3 `picky_quick_clipboard_get/put`** — 단순/높은 가치, redact 만 신경
-4. **1.1 `picky_ask_user_confirm`** — UI 추가 필요, 디자인 시간 필요
-5. **2.1 `picky_get_current_time_context`** — 도구 vs 정적 hint 결정 후
-6. 3.x / 4.x — 별도 PR
+2. **2.3 `picky_quick_clipboard_get/put`** — 단순/높은 가치, redact 만 신경
+3. **1.1 `picky_ask_user_confirm`** — UI 추가 필요, 디자인 시간 필요
+4. **2.1 `picky_get_current_time_context`** — 도구 vs 정적 hint 결정 후
+5. 3.x / remaining 4.x gaps — 별도 PR
+
+Already implemented and no longer on the proposal queue: `picky_inspect_active_pickle`, memory CRUD.
 
 각 항목별로 별도 PR 권장. 한 PR 에 여러 도구를 묶으면 prompt budget / 회귀
 범위가 커집니다.
@@ -301,16 +306,18 @@ Realtime 메인은 다음 네 가지 강점에서 Pi 메인과 다릅니다:
 
 ## 6. 공통 구현 가이드
 
-1. **도구는 모두 `agentd/src/runtime/openai-realtime-main-runtime.ts` 의
-   `RealtimeToolName` union 에 추가**, `realtimeTools` 배열에 schema 등록,
-   `handleToolCall()` switch 에 처리 케이스 추가.
+1. **도구 이름은 `agentd/src/runtime/openai-realtime-main-runtime.ts` 의
+   `RealtimeToolName` union 에 추가**하고, schema/instruction text 는
+   `agentd/src/runtime/openai-realtime-main-prompt.ts` 의 `realtimeTools` /
+   `buildRealtimeInstructions()` 쪽에 등록한다. 실행 처리는 runtime 의
+   `executeTool()` switch 에 케이스를 추가한다.
 2. **tool result 는 plain text (또는 short JSON string)**, 이미지/바이너리
    금지. Realtime API 의 function_call_output 은 string only.
-3. **prompt 측 (`prompt-builder.ts` + `buildRealtimeInstructions()`) 에
+3. **prompt 측 (`openai-realtime-main-prompt.ts` 의 `buildRealtimeInstructions()`) 에
    사용 조건 명시**. "user must explicitly ask" 류 가드를 prompt 에 강하게.
 4. **각 도구에 대한 단위 테스트** — `openai-realtime-main-runtime.test.ts`
    기존 패턴 (`FakeRealtimeSocket` + `RecordingRuntime`) 재사용.
-5. **사용자 가시적 UI 가 있는 도구 (1.2, 1.3, 3.2)** 는 Swift 측에 새
+5. **사용자 가시적 UI 가 있는 도구 (1.1, 1.2, 3.2)** 는 Swift 측에 새
    envelope + 핸들러 추가. CompanionManager 의 기존 이벤트 디스패치 흐름과
    동일 패턴.
 6. **사용량 측면**: 도구 호출당 추가되는 토큰을 측정 가능하게.

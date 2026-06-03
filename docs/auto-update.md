@@ -17,7 +17,7 @@ single appcast that splits stable and beta into channels.
 | beta on appcast   | Items with `<sparkle:channel>beta</sparkle:channel>` only                          |
 | Auto check        | ON, every 4 hours (`SUEnableAutomaticChecks`, `SUScheduledCheckInterval=14400`)    |
 | UX                | Sparkle's standard user driver (prompt on update available)                        |
-| alpha builds      | `SPUUpdater` is **not** started — sideloaded testers update manually via DMG       |
+| alpha builds      | `SPUUpdater` is **not** started — trusted sideload testers update manually via the next internal alpha zip/package |
 | Settings entry    | `CompanionPanelStatusView` adds an **Updates** section with a read-only channel    |
 | Menu entry        | `Check for Updates…` in the app menu commands                                      |
 
@@ -177,8 +177,9 @@ Without publishing a real release, run a smoke check by:
 - **`SUSignatureError`**: the `SUPublicEDKey` in `Info.plist` doesn't match the
   private key that signed the appcast item. Verify with
   `sign_update -p ~/picky-sparkle-private.txt`.
-- **Daemon crashes on relaunch**: `PickyAgentDaemonLauncher` listens for
-  `SPUUpdaterWillRelaunchApplicationNotification` and stops the bundled
+- **Daemon crashes on relaunch**: Sparkle relaunch handling flows through
+  `PickyUpdaterController.updaterWillRelaunchApplication(_:)`; `PickyApp`
+  wires that callback to terminate Pickle child daemons and stop the bundled
   `picky-agentd` before Sparkle replaces the bundle. If the daemon crashes
   during an update, check `~/Library/Application Support/Picky/Logs/agentd.stderr.log`
   around the relaunch timestamp.

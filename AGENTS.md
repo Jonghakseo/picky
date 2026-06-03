@@ -74,6 +74,7 @@ When the user asks about a feature, start here before broad searching:
 - OpenAI Realtime voice mode (opt-in): `Picky/Companion/Realtime/`, `agentd/src/runtime/openai-realtime-main-runtime.ts`, `agentd/src/runtime/selectable-main-runtime.ts`, runtime selection in `agentd/src/bootstrap.ts`
 - Screen/context capture: `Picky/Context/`, `Picky/PickyAdvancedContext.swift`, `Picky/Context/PickyContextPacketAssembler.swift`
 - HUD shell / dock / Pickle container: `Picky/HUD/`, `Picky/HUD/PickyHUDView.swift`, `Picky/PickySessionViewModel.swift`
+- Fullscreen workspace (feature-gated): `Picky/Fullscreen/`, `Picky/Fullscreen/PickyFullscreenFeatureFlags.swift`, `Picky/Fullscreen/PickyFullscreenModeController.swift`, `Picky/Fullscreen/Views/`, `docs/picky-fullscreen-mode/`
 - Conversation card UI: `Picky/HUD/Conversation/`, particularly `PickyConversationCardView`, `PickyConversationListView`, `PickyConversationComposerView`, `PickyConversationMenu`
 - Conversation bubble components: `Picky/HUD/Conversation/Bubbles/`
 - Session selection/archive state: `Picky/Sessions/PickySessionSelectionStore.swift`, `Picky/Sessions/`

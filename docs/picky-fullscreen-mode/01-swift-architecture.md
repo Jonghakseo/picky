@@ -1,6 +1,6 @@
 # 01. Swift architecture
 
-Status: design only.
+Status: implemented behind `PICKY_FULLSCREEN_ENABLED`; this document describes the current architecture plus remaining caveats.
 
 ## Architecture principles
 
@@ -12,15 +12,16 @@ Status: design only.
 6. **Main actor isolation**: windowing, view-model observation, and UI state changes are `@MainActor`.
 7. **No speculative abstraction**: create only seams required to safely coordinate HUD/fullscreen mode, composer lifecycle, and tests.
 
-## Recommended module tree
+## Current module tree
 
 ```text
 Picky/Fullscreen/
   PickyFullscreenCoordinator.swift
-  PickyFullscreenWindowController.swift
-  PickyFullscreenWindow.swift
+  PickyFullscreenFeatureFlags.swift
   PickyFullscreenModeController.swift
   PickyFullscreenStateStore.swift
+  PickyFullscreenWindow.swift
+  PickyFullscreenWindowController.swift
 
   Views/
     PickyFullscreenWorkspaceView.swift
@@ -30,59 +31,52 @@ Picky/Fullscreen/
     PickyFullscreenTurnView.swift
     PickyFullscreenChangedFilesCardView.swift
     PickyFullscreenWorkInfoPanelView.swift
-    PickyFullscreenHeaderView.swift
 
   Domain/
     PickyFullscreenSessionSelection.swift
+    PickyFullscreenSidebarGrouping.swift
     PickyFullscreenTurnPolicy.swift
     PickyFullscreenAssistantRunResolver.swift
     PickyFullscreenWorkInfoSnapshot.swift
+    PickyFullscreenBranchDiffProvider.swift
+    PickyFullscreenFileDiffProvider.swift
+    PickyFullscreenTurnDiffProvider.swift
+    PickyFullscreenTurnGitSnapshot.swift
+    PickyFullscreenTurnSnapshotCapturer.swift
+    PickyFullscreenTurnSnapshotStore.swift
 ```
-
-Use subfolders only if project organization allows them in Xcode without churn. If Xcode project edits become too noisy, keep the same logical names under `Picky/Fullscreen/` first.
 
 ## Responsibility map
 
 | Module | Responsibility | Must not do |
 | --- | --- | --- |
-| `PickyFullscreenCoordinator` | Public API: `open(sessionID:)`, `close()`, `toggle(sessionID:)`; orchestrates mode transition | Render SwiftUI details; mutate sessions |
+| `PickyFullscreenCoordinator` | Owns AppKit window lifecycle, selected-session resolution, appearance/font stores, and `onDidClose` callback | Hide/restore HUD directly; mutate sessions |
 | `PickyFullscreenWindowController` | Owns `PickyFullscreenWindow`, hosts SwiftUI root, handles close notifications | Decide business rules; hide HUD directly without coordinator |
 | `PickyFullscreenWindow` | `NSWindow` subclass, fullscreen/window style, `PickyScreenCaptureExcludedWindow` conformance | Store session state |
-| `PickyFullscreenModeController` | Tiny state machine for dock/fullscreen visibility sequencing | Own AppKit windows |
+| `PickyFullscreenModeController` | Coordinates dock/fullscreen mutual exclusion by hiding/restoring HUD around the coordinator | Own AppKit windows or session data |
 | `PickyFullscreenStateStore` | Persist selected session and right-panel visibility | Store session content |
-| `PickyFullscreenWorkspaceView` | Top-level layout composition | Directly access AppKit or run side effects |
+| `PickyFullscreenWorkspaceView` | Top-level layout composition, current new-Pickle folder picker bridge | Own AppKit window lifecycle |
 | `PickyFullscreenSidebarView` | Pickle list, local selection, new Pickle affordance | Call undocumented global selection APIs accidentally |
 | `PickyFullscreenConversationPaneView` | Header, conversation scroll, drop target, composer slot | Reimplement composer behavior |
 | `PickyFullscreenConversationListView` | Render message groups according to turn policy | Choose final answer ad hoc |
 | `PickyFullscreenTurnPolicy` | Deterministic current/completed turn rendering policy | Depend on SwiftUI |
 | `PickyFullscreenAssistantRunResolver` | Effective model/thinking fallback from current run or messages | Cycle model/thinking |
-| `PickyFullscreenWorkInfoPanelView` | Read-only `작업 정보` panel | Invent unavailable data |
-| `PickyFullscreenWorkInfoSnapshot` | View-ready projection of existing session data | Fetch external data |
+| `PickyFullscreenWorkInfoPanelView` | Read-only `변경사항` panel with session/artifact and git/diff metadata | Mutate git/worktree/PR/cloud state |
+| `PickyFullscreenWorkInfoSnapshot` | View-ready projection of session changed files and artifacts | Fetch git data directly |
 
-## Public coordinator API
+## Public coordinator / mode API
 
 ```swift
 @MainActor
 protocol PickyFullscreenCoordinating: AnyObject {
+    var isOpen: Bool { get }
     func open(sessionID: String?)
     func close()
     func toggle(sessionID: String?)
 }
-
-@MainActor
-final class PickyFullscreenCoordinator: NSObject, PickyFullscreenCoordinating {
-    private let viewModel: PickySessionListViewModel
-    private let stateStore: PickyFullscreenStateStore
-    private let hudVisibility: PickyHUDVisibilityControlling
-    private var windowController: PickyFullscreenWindowController?
-
-    func open(sessionID: String?) { /* orchestrate only */ }
-    func close() { /* orchestrate only */ }
-    func toggle(sessionID: String?) { /* orchestrate only */ }
-}
 ```
 
-The coordinator is the only object that knows both HUD visibility and fullscreen window lifecycle.
+`PickyFullscreenCoordinator` implements this protocol and owns the AppKit window lifecycle. `PickyFullscreenModeController` owns the dock/fullscreen visibility sequencing by calling `PickyHUDVisibilityControlling` before/after coordinator transitions. This separation keeps HUD visibility out of the window coordinator and keeps session mutation out of both objects.
 
 ## HUD visibility seam
 
@@ -216,20 +210,23 @@ Rules:
 
 ### `PickyFullscreenTurnPolicy`
 
-Pure helper that decides what to render.
+Pure helper that builds render models for running/current/completed turns. Current API is static helpers such as `renderModels(...)` and completed-turn body extraction helpers, not an instance facade that stores state.
 
 ```swift
-struct PickyFullscreenTurnPolicy {
-    func groups(from session: PickySessionListViewModel.SessionCard) -> [PickyFullscreenTurnGroup]
-    func finalAnswerMessage(for group: PickyTurnGroup) -> PickySessionMessage?
-    func visibleMessages(for group: PickyTurnGroup, isCurrent: Bool, isRunning: Bool) -> [PickySessionMessage]
+enum PickyFullscreenTurnPolicy {
+    static func renderModels(
+        from messages: [PickySessionMessage],
+        sessionStatus: PickySessionStatus,
+        liveActivitySummary: PickyActivitySummary? = nil,
+        completedTurnIDs: Set<String> = []
+    ) -> [PickyFullscreenTurnRenderModel]
 }
 ```
 
 Rules:
 
 - running/current turn may show live activity and progress
-- completed/non-current turn shows final assistant answer only
+- completed/non-current turn shows final assistant answer as the primary body
 - final answer selector prefers last `agent_text`, then last `agent_error`
 - completion/failure system messages are separate status rows
 - do not blindly use `PickyTurnGroup.collapsedRepresentativeMessage`
@@ -237,9 +234,12 @@ Rules:
 ### `PickyFullscreenAssistantRunResolver`
 
 ```swift
-struct PickyFullscreenAssistantRunResolver {
-    func effectiveAssistantRun(for session: PickySessionListViewModel.SessionCard) -> PickyAssistantRun? {
-        session.currentAssistantRun ?? session.messages.reversed().compactMap(\.assistantRun).first
+enum PickyFullscreenAssistantRunResolver {
+    static func effectiveAssistantRun(for session: PickySessionListViewModel.SessionCard) -> PickyAssistantRunMetadata? {
+        effectiveAssistantRun(
+            currentAssistantRun: session.currentAssistantRun,
+            messages: session.messages
+        )
     }
 }
 ```
@@ -252,20 +252,15 @@ A view-ready projection, not a new data source.
 
 ```swift
 struct PickyFullscreenWorkInfoSnapshot: Equatable {
-    var status: PickyAgentSessionStatus
-    var updatedAt: Date
-    var notifyMainOnCompletion: Bool
-    var runtime: RuntimeSummary
-    var contextUsage: PickyContextUsage?
-    var activity: ActivitySummary?
-    var tools: [PickyToolInvocation]
-    var changedFiles: [PickyChangedFile]
-    var artifacts: [PickyArtifact]
-    var pendingInput: PendingInputSummary
+    let sessionID: String
+    let changedFiles: [PickyChangedFile]
+    let artifacts: [Artifact]
+
+    static func make(from session: PickySessionListViewModel.SessionCard) -> Self
 }
 ```
 
-Every field must be derived from `SessionCard`.
+Every snapshot field must be derived from `SessionCard`. Git branch/diff details are loaded separately by the read-only diff providers for the `변경사항` panel.
 
 ## Persistence
 
@@ -277,7 +272,7 @@ final class PickyFullscreenStateStore: ObservableObject {
 }
 ```
 
-Backed by `UserDefaults` or existing app settings store.
+Backed by `UserDefaults`; setters persist immediately.
 
 MVP persistence:
 

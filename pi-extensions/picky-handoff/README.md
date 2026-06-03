@@ -19,7 +19,7 @@ Picky writes this file when `picky-agentd` starts. It contains the local WebSock
 
 ## Install
 
-Packed Picky alpha builds (`scripts/package-signed-app.sh`) auto-install this extension on first launch by symlinking `~/.pi/agent/extensions/picky-handoff` to the bundle copy. If a different file or symlink already lives at that path, Picky leaves it alone and logs a warning.
+Packed Picky builds include this extension but do not install it automatically on launch. Install it from Picky's Extensions/Status UI when you want the `/handoff-to-picky` command. The installer copies the bundled extension into `~/.pi/agent/extensions/picky-handoff` and writes `.picky-extension-install.json` metadata so Picky can detect managed installs, updates, and conflicts. If an unrelated file or symlink already lives at that path, Picky leaves it alone and reports a conflict instead of overwriting it.
 
 For local development against the source tree:
 

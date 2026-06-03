@@ -132,12 +132,14 @@ suspected cmark parsing was the hot path; profiling showed cmark was
   same width many times per pass. That's not avoidable from the caller
   side; it must be absorbed by a cache on the callee side.
 
-**Fix:** single-slot `(width, NSSize)` cache on both
+**Fix:** a small width-keyed `(width, NSSize)` cache on both
 `PickyBubbleMarkdownContentView` and the `PickyMarkdownBlockNSView` base
 class, invalidated only when the block-view set or font scale actually
-changes (commit `309fe9a4`). Expected post-fix `bubble_measured_size`
+changes (commit `309fe9a4`). The per-width map matters because SwiftUI/AppKit
+can alternate between a couple of near-identical widths during layout; a
+single-slot cache would thrash. Expected post-fix `bubble_measured_size`
 Duration sum: single-digit ms (one real measure per unique width;
-remaining 600 are cache hits at <1µs each).
+remaining calls are cache hits at <1µs each).
 
 **Lesson:** AppKit layout-cycle reentry is a common HUD-side bottleneck
 because SwiftUI fan-out amplifies how often layout runs. Measure first,

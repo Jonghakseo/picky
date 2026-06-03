@@ -1,5 +1,7 @@
 # Phase 07. New Pickle and lifecycle polish
 
+Status: implemented behind `PICKY_FULLSCREEN_ENABLED`; this phase contains an unresolved product-decision gate.
+
 Goal: integrate new Pickle affordance and lifecycle details without expanding MVP scope into IDE/git controls.
 
 ## Files
@@ -15,7 +17,8 @@ Modify as needed:
 - `+ New Pickle` in sidebar should reuse existing creation flow.
 - If recent-folder picker is cheap and already available, reuse it. Otherwise defer.
 - New session becomes fullscreen-local selected session after creation.
-- Do not add worktree/branch/PR/cloud controls.
+- Do not add mutating worktree/branch/PR/cloud controls.
+- **Decision needed:** current fullscreen `변경사항` UI includes read-only branch/worktree metadata and a GitHub link. Product must decide whether those are acceptable read-only metadata or should be removed/reduced to preserve the original no-IDE/git-control boundary.
 
 ## Steps
 
@@ -32,7 +35,7 @@ Modify as needed:
 - new Pickle appears in sidebar
 - new Pickle is selected locally
 - closing fullscreen restores dock without losing session
-- no worktree/PR/cloud controls appear
+- no mutating worktree/PR/cloud controls appear; read-only branch/worktree metadata and GitHub link remain explicitly marked as a product decision
 
 ## Exit criteria
 

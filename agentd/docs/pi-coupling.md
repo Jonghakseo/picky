@@ -144,13 +144,24 @@ When bumping pi (`agentd/package.json` `@earendil-works/pi-coding-agent`):
 
 ### 0.74.0 -> 0.75.1
 
-- Pi 0.75.0 raises the minimum Node.js runtime to 22.19.0. Picky's packaged
-  daemon does not bundle `node`, so the launcher must preflight the host
-  `node --version` and the release workflow must build with Node 22.19.0+.
+- Pi 0.75.0 raises the minimum Node.js runtime to 22.19.0. Picky packages that
+  are built through `scripts/package-signed-app.sh` now bundle a pinned Node
+  runtime under `Contents/Resources/agentd-runtime/bin/node`; source/dev builds
+  and `PICKY_SKIP_NODE_BUNDLE=1` packages still fall back to `PICKY_NODE_PATH`
+  or `/usr/bin/env node`.
 - No CHANGELOG entry in this range calls out a breaking `AgentSession`,
   `ExtensionUIContext`, tool schema, or extension registration API change. Keep
   the normal contract test + full agentd suite as the upgrade gate because
   Picky still depends on T3/T4 internal session/event shapes.
+
+### 0.75.1 -> 0.78.0
+
+- Current `agentd/package.json` pins Pi packages to `0.78.0`. Treat the old
+  bump notes above as historical context, not the current dependency version.
+- `pi-capabilities.ts` also sniffs active-tool refresh support via
+  `tryRefreshSystemPromptFromActiveTools`, backed by `getActiveToolNames` /
+  `setActiveToolsByName` when present. Keep this T2 capability non-fatal and
+  update warn-only contract coverage if the upstream surface changes.
 
 ## Backward-compatibility policy
 

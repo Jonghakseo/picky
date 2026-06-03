@@ -89,40 +89,36 @@ Reached from the footer bug glyph. The feedback form supports:
 
 - Category: Bug, Idea, or Other.
 - Message text.
-- Up to 5 image/video attachments, each up to 100 MB and 250 MB total.
+- Up to 5 file attachments, each up to 100 MB and 250 MB total. Image/video previews are shown when supported; unsupported media is attached as a regular file.
 - Optional diagnostics: Off, Logs only, or Full diagnostics with API keys masked.
 
 If feedback is not configured in the build/environment, the page explains that the feedback channel is unavailable and disables sending.
 
 ### 2.2 Extensions tab
 
-The Extensions tab is where Picky surfaces bundled Pi extensions you can install on demand and (eventually) a curated list of third-party extensions. Picky never modifies `~/.pi/agent` on launch — each extension is opt-in.
+The Extensions tab is where Picky surfaces bundled Pi resources you can install on demand and a curated list of third-party extensions. Picky never modifies `~/.pi/agent` on launch — each extension or skill is opt-in.
 
-For every bundled extension the tab shows:
+For every bundled extension or skill the tab shows:
 
-- A short description of what the extension adds to your local Pi.
+- A short description of what it adds to your local Pi.
 - The current state: **Not installed**, **Installed**, or a **Conflict** message when an unrelated entry already lives at the target path.
 - An **Install** button when the bundled source exists and the target slot is empty.
-- A **Remove** button when Picky's symlink is in place. Picky never removes a path it did not create.
+- A **Remove** button when Picky's managed copy is installed. Picky never removes a path it did not create.
 
 Currently bundled:
 
 - **Pi handoff command** — adds a `/handoff-to-picky` slash command to local Pi. When the source Pi turn is idle, it pins the conversation to Picky as a completed Pickle card; when Pi is busy, it aborts the source turn, snapshots that Pi session, resumes it as a Pickle, and sends the handoff instruction (default: `continue`). After installing, restart Pi or run `/reload`.
+- **Picky CLI skill** — teaches local Pi how to use the `picky` shell command for submitting to Picky, creating/steering Pickles, and controlling Picky push-to-talk.
 
 A **Curated extensions** section under the bundled list lists a small set of useful third-party Pi extensions. Each row shows the extension name, a short description, and an install/remove control that installs the extension from npm into the local Pi setup.
 
 ### 2.3 Settings tab
 
-Settings are grouped into these sections:
+Settings are grouped in the index:
 
-1. General
-2. Pi login (OAuth)
-3. Picky
-4. Pickle
-5. Notification
-6. Cursor & Bubbles
-7. Voice (STT & TTS)
-8. Shortcuts
+- **General**: General, Pi login (OAuth), Shortcuts
+- **Agents**: Main Agent, Pickle, Built-in Tools
+- **Surface**: Voice (STT & TTS), Overlay & Notifications
 
 The **Pi login** page lets you sign in to your Pi account from Picky. Use it to connect your local Pi to your Pi account so account-bound features stay in sync. The section header shows the current login status.
 
@@ -652,7 +648,7 @@ Only **screenshots** are written outside this tree, to the per-user temporary di
 
 **API keys typed into Settings are stored in plain JSON** inside `settings.json` (OpenAI/Azure/ElevenLabs keys, custom base URLs, Realtime credentials). When Picky needs a credential, it resolves it in this order: **(1) the matching `settings.json` field if non-empty, (2) the corresponding environment variable, (3) a consolidated Keychain entry at service `com.jonghakseo.picky.azure-openai` (account `AZURE_OPENAI_VOICE_CONFIG`)** — so env and Keychain are *fallbacks*, not overrides. If you want to keep secrets out of plain JSON, clear the Settings field first, then populate the env var or Keychain entry. Picky never writes to the Keychain itself; you populate the Azure entry by hand (for example with `security add-generic-password`). If you back up or share `settings.json`, scrub the secret fields first.
 
-**Reinstalling Picky.app keeps everything above.** macOS only replaces the bundle in `/Applications`; the Application Support tree and any Keychain entries you populated survive. The Alpha build's "reinstall the latest DMG" notice does not touch your settings, sessions, or workspace.
+**Reinstalling Picky.app keeps everything above.** macOS only replaces the bundle in `/Applications`; the Application Support tree and any Keychain entries you populated survive. The Alpha build's "reinstall the latest alpha package" notice does not touch your settings, sessions, or workspace.
 
 ---
 
@@ -845,11 +841,11 @@ Update controls live in the Status tab.
 
 | Control | Values / behavior |
 | --- | --- |
-| Channel | Pinned by the installed build (Stable, Beta, or Alpha). The Updates row shows the active channel on the build line; there is no in-app channel switcher. To move between channels, install the matching DMG. |
+| Channel | Pinned by the installed build (Stable, Beta, or Alpha). The Updates row shows the active channel on the build line; there is no in-app channel switcher. To move between channels, install the matching release artifact (DMG for beta/stable, trusted internal zip/package for alpha). |
 | Check automatically every 4 hours | Toggle that enables Sparkle automatic checks where available. |
 | Check Now | Manual update check. |
 
-Alpha builds replace the controls above with a one-line reinstall notice because the alpha channel is not exposed through Sparkle's appcast — the updater is not started for alpha builds, so installing a new alpha means downloading the next DMG manually.
+Alpha builds replace the controls above with a one-line reinstall notice because the alpha channel is not exposed through Sparkle's appcast — the updater is not started for alpha builds, so installing a new alpha means downloading the next trusted internal alpha zip/package manually.
 
 ## 14. Common workflows
 

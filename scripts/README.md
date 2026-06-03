@@ -35,7 +35,7 @@ Builds `agentd` into a production runtime directory suitable for copying into `P
 ./scripts/package-agentd-runtime.sh
 ```
 
-The runtime launches with `node dist/index.js`. It includes production `node_modules`, but excludes the launch-time need for `pnpm`, `tsx`, TypeScript, or the `agentd/src` tree. `node` itself is intentionally **not** bundled; beta users are expected to have Node via Pi. Pi 0.75+ requires Node.js 22.19.0 or newer.
+The runtime launches with `node dist/index.js`. It includes production `node_modules`, but excludes the launch-time need for `pnpm`, `tsx`, TypeScript, or the `agentd/src` tree. This script packages only the daemon JavaScript/runtime tree; the signed app packaging step separately bundles a pinned Node runtime unless `PICKY_SKIP_NODE_BUNDLE=1` is set. Pi 0.75+ requires Node.js 22.19.0 or newer when an external Node fallback is used.
 
 Default output:
 
@@ -45,7 +45,7 @@ build/package/agentd-runtime
 
 ## `package-signed-app.sh` — local signed package smoke
 
-Builds `Picky.app`, embeds the bundled `agentd` runtime, re-signs the final bundle, and verifies the result with:
+Builds `Picky.app`, embeds the bundled `agentd` runtime and pinned Node runtime, re-signs the final bundle, and verifies the result with:
 
 ```bash
 codesign --verify --deep --strict --verbose=2
@@ -92,6 +92,7 @@ PICKY_DEVELOPMENT_TEAM="TEAMID" \
 | `PICKY_ZIP_PATH` | versioned zip under `build/package` | Exact zip output path. |
 | `PICKY_CREATE_ZIP` | `1` | Set `0` to skip zip creation. |
 | `PICKY_PACKAGE_AGENTD` | `1` | Set `0` to skip embedding `Contents/Resources/agentd`. |
+| `PICKY_SKIP_NODE_BUNDLE` | `0` | Set `1` to skip `Contents/Resources/agentd-runtime/bin/node`; Picky will require external Node via `PICKY_NODE_PATH` or PATH fallback. |
 | `PICKY_AGENTD_RUNTIME_DIR` | `build/package/agentd-runtime` | Prebuilt/staging agentd runtime directory. |
 | `PICKY_CLEAN` | `1` | Set `0` to reuse package DerivedData. |
 
@@ -99,13 +100,19 @@ Each package writes `PickyBuildInfo.json` into app resources with version, build
 
 ### Runtime resolution
 
-At app launch Picky resolves the daemon in this order:
+At app launch Picky resolves the daemon entrypoint in this order:
 
-1. `PICKY_AGENTD_ROOT` if set. Source overrides with `src/index.ts` run via `pnpm exec tsx`; compiled overrides with `dist/index.js` run via `node`.
-2. Bundled `Picky.app/Contents/Resources/agentd/dist/index.js`, run via `node`.
+1. `PICKY_AGENTD_ROOT` if set. Source overrides with `src/index.ts` run via `pnpm exec tsx`; compiled overrides with `dist/index.js` run via Node.
+2. Bundled `Picky.app/Contents/Resources/agentd/dist/index.js`, run via Node.
 3. Friendly startup failure. There is no implicit source-tree fallback.
 
-Picky preflights that `node` exists, then the bundled agentd validates `process.versions.node` at startup and exits with a clear unsupported-runtime token when it is older than Node.js 22.19.0, the minimum required by Pi 0.75+.
+When Node is needed, the launcher resolves it in this order:
+
+1. `PICKY_NODE_PATH` if it points to an executable.
+2. Bundled `Picky.app/Contents/Resources/agentd-runtime/bin/node`.
+3. `/usr/bin/env node` from the inherited PATH, used for development and `PICKY_SKIP_NODE_BUNDLE=1` packages.
+
+The bundled agentd validates `process.versions.node` at startup and exits with a clear unsupported-runtime token when the selected Node is older than Node.js 22.19.0, the minimum required by Pi 0.75+.
 
 ### Runtime smoke
 
@@ -151,6 +158,6 @@ Build a styled DMG locally:
 
 ## `release.sh`
 
-Currently delegates to `package-signed-app.sh`.
+Currently delegates to `package-signed-app.sh` for local packaging smoke tests.
 
-A notarized DMG/appcast/GitHub release pipeline is intentionally **not** configured yet. Add that later as a separate explicit distribution workflow once Developer ID, notarization credentials, update strategy, and release repository are finalized.
+The notarized DMG, Sparkle update zip/appcast, GitHub Release asset upload, and Slack notification pipeline lives in `.github/workflows/beta-notarized-release.yml`. Keep `release.sh` as a small local delegate unless it is intentionally wired into that CI distribution workflow.

@@ -1,8 +1,8 @@
 # Picky fullscreen workspace implementation plan
 
-Status: design and implementation plan only. Do not implement until explicitly approved.
+Status: implemented behind `PICKY_FULLSCREEN_ENABLED`; this document is now an index plus rollout checklist.
 
-This document is now an index. Detailed planning lives under `docs/picky-fullscreen-mode/` so each phase can be reviewed and implemented independently.
+Detailed current behavior and phase notes live under `docs/picky-fullscreen-mode/`. Use the phase documents as historical implementation notes and update them when feature-gated behavior changes.
 
 ## Product decision
 
@@ -29,18 +29,17 @@ Hard UX rule:
 | [`phases/phase-03-sidebar-session-selection.md`](picky-fullscreen-mode/phases/phase-03-sidebar-session-selection.md) | Left sidebar and local fullscreen selection |
 | [`phases/phase-04-conversation-rendering.md`](picky-fullscreen-mode/phases/phase-04-conversation-rendering.md) | LLM chat rendering and completed/running turn policy |
 | [`phases/phase-05-composer-reuse.md`](picky-fullscreen-mode/phases/phase-05-composer-reuse.md) | Reuse existing Pickle composer safely |
-| [`phases/phase-06-work-info-panel.md`](picky-fullscreen-mode/phases/phase-06-work-info-panel.md) | Right `작업 정보` panel from existing session data |
+| [`phases/phase-06-work-info-panel.md`](picky-fullscreen-mode/phases/phase-06-work-info-panel.md) | Right `변경사항` panel with read-only changes/git/diff metadata |
 | [`phases/phase-07-new-pickle-lifecycle-polish.md`](picky-fullscreen-mode/phases/phase-07-new-pickle-lifecycle-polish.md) | New Pickle affordance and lifecycle polish |
 | [`phases/phase-08-polish-animation-accessibility.md`](picky-fullscreen-mode/phases/phase-08-polish-animation-accessibility.md) | Animation, accessibility, keyboard, performance polish |
 | [`04-testing-risk-acceptance.md`](picky-fullscreen-mode/04-testing-risk-acceptance.md) | Unit/UI/manual QA, risks, acceptance criteria |
 
-## Recommended review sequence
+## Current rollout / review sequence
 
-1. Approve [`00-product-ux.md`](picky-fullscreen-mode/00-product-ux.md).
-2. Approve [`01-swift-architecture.md`](picky-fullscreen-mode/01-swift-architecture.md).
-3. Approve [`02-data-contracts.md`](picky-fullscreen-mode/02-data-contracts.md) and [`03-interactions-state.md`](picky-fullscreen-mode/03-interactions-state.md).
-4. Implement phases in order from phase 01 to phase 08.
-5. Validate against [`04-testing-risk-acceptance.md`](picky-fullscreen-mode/04-testing-risk-acceptance.md).
+1. Run with `PICKY_FULLSCREEN_ENABLED=1` and validate against [`04-testing-risk-acceptance.md`](picky-fullscreen-mode/04-testing-risk-acceptance.md).
+2. Keep [`00-product-ux.md`](picky-fullscreen-mode/00-product-ux.md), [`02-data-contracts.md`](picky-fullscreen-mode/02-data-contracts.md), and phase 06 aligned with the implemented `변경사항` panel.
+3. Resolve the phase 07 product-decision gate before adding any mutating branch/worktree/PR/cloud controls.
+4. Remove or keep the feature flag only after manual QA and release acceptance are updated.
 
 ## MVP acceptance criteria
 
@@ -48,10 +47,10 @@ Hard UX rule:
 - Clicking it hides dock mode and opens a fullscreen-capable workspace for the intended Pickle.
 - Center is a clean LLM chat UI.
 - Running turns show live progress.
-- Completed turns show final assistant answer only, with system status rows separated.
+- Completed turns show final assistant answer as the primary body, with system status rows separated and optional work summary collapsed by default.
 - Composer supports the same Pickle features as HUD composer: follow-up, slash/file autocomplete, drops, screen context chip, notify, terminal, send/stop, model/thinking cycling.
-- Right `작업 정보` panel can be collapsed and remembers state.
-- Right panel uses only existing session data and does not invent active app/browser/selected-text details.
-- Changed files are labelled as session-level data.
+- Right `변경사항` panel can be collapsed and remembers state.
+- Right panel remains read-only and must not invent active app/browser/selected-text details.
+- Changed files and git/diff metadata are labelled as change/worktree data, not per-turn claims.
 - Closing fullscreen restores dock mode without cancelling or resetting Pickles.
-- No permission selector, plan mode, goal suggestion, plugin menu, cloud/worktree/PR controls, or other Codex-only controls appear.
+- No permission selector, plan mode, goal suggestion, plugin menu, mutating cloud/worktree/PR controls, or other Codex-only controls appear. Read-only branch/worktree metadata remains a phase 07 product-decision gate.

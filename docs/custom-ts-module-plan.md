@@ -17,7 +17,7 @@ Artifact/report post-processing is intentionally out of scope.
 - Put custom logic in `picky-agentd`, not in Swift.
 - Do not add deterministic workflow routing in Picky or custom hooks. No `if URL is Sentry then run Sentry flow` style behavior.
 - Preserve local-first behavior. User modules run locally under the user's account.
-- Preserve existing Local/Azure/ElevenLabs providers. Custom TS is an opt-in provider/hook layer.
+- Preserve existing Local/OpenAI/OpenAI Realtime/Azure/ElevenLabs providers. Custom TS is an opt-in provider/hook layer and must explicitly coexist with OpenAI Realtime, which is currently STT-only in the picker.
 - Keep default behavior unchanged when no custom module is configured.
 - Treat privacy hooks differently from convenience hooks: if the user enables fail-closed context redaction, hook failure must not leak the original context into Pi prompts.
 
@@ -33,8 +33,8 @@ Artifact/report post-processing is intentionally out of scope.
 
 Settings → Voice (STT & TTS):
 
-- STT provider: `Automatic`, `Apple Speech`, `Azure OpenAI`, `Custom TypeScript`
-- TTS provider: `Automatic`, `macOS Speech`, `Azure OpenAI`, `ElevenLabs`, `Custom TypeScript`
+- STT provider: `Apple Speech`, `OpenAI`, `OpenAI Realtime`, `Azure OpenAI`, `ElevenLabs`, `Custom TypeScript`
+- TTS provider: `macOS Speech`, `OpenAI`, `Azure OpenAI`, `ElevenLabs`, `Custom TypeScript`
 - Custom module path: default `~/Library/Application Support/Picky/custom-module.ts`
 - Hook toggles:
   - Speech text transforms
@@ -161,14 +161,14 @@ export interface PickySynthesizeResult {
 }
 
 export interface PickySpeechTransformContext {
-  source: "voice" | "voice-follow-up" | "text" | "text-follow-up" | "system";
+  source: "voice" | "voice-follow-up" | "text" | "text-follow-up" | "system" | "cli";
   sessionId?: string;
   cwd?: string;
 }
 
 export interface PickyContextPacketPublic {
   id: string;
-  source: "voice" | "text" | "voice-follow-up" | "text-follow-up" | "system";
+  source: "voice" | "text" | "voice-follow-up" | "text-follow-up" | "system" | "cli";
   transcript?: string;
   cwd?: string;
   activeApp?: { name?: string; bundleId?: string };
@@ -224,6 +224,8 @@ picky-agentd Node/TS
 ```
 
 ## Runtime loading strategy
+
+Status: roadmap. The current repo still keeps `tsx` as a development dependency and packaged runtime deploys production dependencies only, so this section describes a future implementation requirement rather than behavior available today.
 
 ### Development
 

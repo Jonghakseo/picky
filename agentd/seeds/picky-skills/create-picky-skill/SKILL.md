@@ -20,11 +20,11 @@ description: Author a new Picky skill (a short behavior recipe for the realtime 
 
 1. Confirm the trigger and behavior the user wants. Ask one short clarifying question if the trigger is unclear.
 
-2. Pick a kebab-case `<name>` (e.g. `summarize-pr-link`, `escalate-to-pickle`, `prefer-concise-replies`). The directory name and frontmatter `name` must match.
+2. Pick a kebab-case `<name>` (e.g. `summarize-pr-link`, `escalate-to-pickle`, `prefer-concise-replies`). Use it as the directory name. Prefer matching frontmatter `name` to the directory name; the directory name remains the canonical storage key and the frontmatter name is a display/resolution alias.
 
 3. Draft the body using the template below. Keep it tight — this is a recipe, not a manual.
 
-4. Before writing, if a file with the same name might exist, check with `picky_skill({ action: "get", name })` and confirm with the user before overwriting.
+4. Before writing, if a file with the same name might exist, call `picky_read_file` on `~/Library/Application Support/Picky/skills/<name>/SKILL.md` and confirm with the user before overwriting an existing file.
 
 5. Save with `picky_write_file({ path: "~/Library/Application Support/Picky/skills/<name>/SKILL.md", content, mode: "overwrite" })`. Do not use the legacy flat `skills/<name>.md` path.
 
@@ -32,13 +32,13 @@ description: Author a new Picky skill (a short behavior recipe for the realtime 
    
    - The full path of the new file.
    
-   - The skill joins the always-on session list **on the next session start** (the in-session list is a snapshot). Within this session they can still read it via `picky_skill({ action: "get", name })`.
+   - The skill joins the always-on session list **on the next session start** (the in-session list is a snapshot). Within this session they can still list the skill metadata via `picky_skills` and read the file body via `picky_read_file`.
 
 ## Template
 
 ```
 ---
-name: <kebab-case, must match filename>
+name: <kebab-case; prefer matching the directory name>
 description: <one sentence; when to invoke and what to do — shown in the session-start list>
 ---
 

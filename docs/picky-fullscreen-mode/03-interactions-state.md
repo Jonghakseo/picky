@@ -1,6 +1,6 @@
 # 03. Interactions and state
 
-Status: design only.
+Status: implemented behind `PICKY_FULLSCREEN_ENABLED`; pseudocode reflects current ownership.
 
 ## Mode transition
 
@@ -53,10 +53,9 @@ Rules:
 
 ```swift
 func close() {
-    stateStore.persist()
-    windowController?.close()
-    windowController = nil
-    hudVisibility.restoreAfterFullscreen()
+    fullscreenCoordinator.close()
+    // PickyFullscreenStateStore persists through its setters.
+    // PickyFullscreenModeController.fullscreenDidClose() restores HUD after the window tears down.
 }
 ```
 
@@ -77,7 +76,7 @@ When user clicks a sidebar Pickle:
 stateStore.selectedSessionID = session.id
 conversation pane updates
 composer restores draft for session ID
-right panel updates
+`변경사항` panel updates
 ```
 
 Do not call global `viewModel.select(sessionID:)` merely because the user selected a row in fullscreen.
@@ -152,19 +151,19 @@ Do not add model/speed menus that do not exist in current Picky controls.
 - Header shows running status.
 - Conversation shows current turn live progress.
 - Composer shows stop button if existing HUD conditions say it should.
-- Right panel activity section updates.
+- `변경사항` panel updates changed files/artifacts/git metadata.
 
 ### Waiting for input
 
 - Header/status clearly indicates waiting.
 - Pending extension UI remains visible in HUD/fullscreen-visible surface, not hidden in logs.
-- Right panel can summarize `pendingExtensionUiRequest` and queues.
+- Pending extension UI remains visible in HUD/fullscreen surfaces; `변경사항` does not invent queue details unless backed by session data.
 
 ### Completed
 
-- Center shows final assistant answer only for each completed turn.
+- Center shows final assistant answer as the primary body for each completed turn, with optional work summary collapsed by default.
 - Session-level changed files card may appear near latest answer.
-- Right panel remains available for tools/artifacts/context usage.
+- `변경사항` panel remains available for changed files, artifacts, and read-only git metadata.
 
 ## Persistence
 

@@ -1,10 +1,12 @@
 # Phase 01. Shell and window lifecycle
 
-Goal: create a safe fullscreen-capable shell with strong AppKit ownership, capture exclusion, and no HUD integration yet beyond test hooks.
+Status: implemented behind `PICKY_FULLSCREEN_ENABLED`; keep this phase doc as historical notes plus current validation pointers.
+
+Goal: maintain a safe fullscreen-capable shell with strong AppKit ownership and capture exclusion.
 
 ## Files
 
-Create:
+Current files:
 
 - `Picky/Fullscreen/PickyFullscreenCoordinator.swift`
 - `Picky/Fullscreen/PickyFullscreenWindowController.swift`
@@ -24,15 +26,13 @@ Tests:
 - No `weak var window`.
 - Coordinator APIs are `@MainActor`.
 - Closing the window calls back into coordinator once and is idempotent.
-- Shell displays placeholder three-column layout only.
+- Shell composes the implemented sidebar, conversation pane, and `변경사항` panel.
 
-## Steps
+## Current implementation notes
 
-1. Add `PickyFullscreenStateStore` with persisted `isWorkInfoPanelVisible` and `selectedSessionID`.
-2. Add `PickyFullscreenWindow` with capture-exclusion conformance.
-3. Add `PickyFullscreenWindowController` that hosts `PickyFullscreenWorkspaceView`.
-4. Add `PickyFullscreenCoordinator` with `open`, `close`, `toggle`.
-5. Wire a temporary internal debug entry only if needed; remove/hide before final UX.
+- `PickyFullscreenStateStore`, `PickyFullscreenWindow`, `PickyFullscreenWindowController`, and `PickyFullscreenCoordinator` exist.
+- Entry points are production-hidden by `PickyFullscreenFeatureFlags` unless `PICKY_FULLSCREEN_ENABLED=1`.
+- HUD visibility is now handled by phase 02 / `PickyFullscreenModeController`, so the original “no HUD behavior changes yet” constraint is historical.
 
 ## Validation
 
@@ -54,4 +54,4 @@ Manual checks:
 
 - Fullscreen shell can open/close without session mutation.
 - Strong ownership is clear in code review.
-- No HUD behavior changes yet.
+- HUD behavior is coordinated by `PickyFullscreenModeController`; no session mutation occurs during open/close.

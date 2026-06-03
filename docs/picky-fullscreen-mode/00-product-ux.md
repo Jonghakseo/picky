@@ -1,6 +1,6 @@
 # 00. Product UX
 
-Status: design only.
+Status: implemented behind `PICKY_FULLSCREEN_ENABLED`; current implementation notes below supersede the original design-only wording.
 
 ## Goal
 
@@ -12,19 +12,19 @@ The workspace has four areas:
 ┌──────────────────────┬──────────────────────────────────────────────┬──────────────────────┐
 │ Left sidebar          │ Center conversation                          │ Right work info       │
 │                      │                                              │                      │
-│ + New Pickle          │ Pickle title / cwd/git/model/thinking chips  │ 작업 정보             │
-│ Pickle list           │                                              │ Status/runtime        │
-│                      │ user message                                 │ Context usage         │
-│                      │ final assistant answer only                   │ Activity/tools        │
-│                      │ session changed files card                    │ Session changed files │
-│                      │                                              │ Artifacts/queues      │
+│ + New Pickle          │ Pickle title / cwd/status/model/context chips│ 변경사항             │
+│ Pickle list           │                                              │ Branch/worktree      │
+│                      │ user message                                 │ Changed files         │
+│                      │ final answer + optional work summary          │ Artifacts / links     │
+│                      │ turn/session changed-files card              │                      │
+│                      │                                              │                      │
 │                      │ Composer                                     │ [collapse]            │
 └──────────────────────┴──────────────────────────────────────────────┴──────────────────────┘
 ```
 
 ## Entry point
 
-Add an explicit fullscreen/expand affordance to the Pickle dock. Do not overload the existing `+` add-Pickle slot.
+Add an explicit fullscreen/expand affordance to the Pickle dock. Do not overload the existing `+` add-Pickle slot. The control is currently hidden unless `PICKY_FULLSCREEN_ENABLED` is enabled in the launching environment.
 
 Recommended SF Symbols:
 
@@ -70,24 +70,25 @@ Placement:
 The center is a clean LLM chat UI, not a dashboard.
 
 - Running/current turn: show live progress, tool activity, thinking/progress rows, and streaming/latest assistant text.
-- Completed/non-current turn: show user request and final assistant answer only.
+- Completed/non-current turn: show user request and final assistant answer as the primary body.
+- Intermediate completed-turn work logs may appear only behind the expandable work-summary row.
 - System completion/failure rows may appear separately as compact status rows.
-- Do not show every internal progress log after completion.
+- Changed-files cards must label their scope: `변경 파일` for turn-scoped diffs, `세션 변경 파일` for session fallback.
+- Do not replay every internal progress log inline after completion.
 
 ## Right panel rule
 
-The right panel label is `작업 정보`.
+The right panel label is `변경사항`.
 
-It uses existing Pickle session data only. It must not show:
+It is read-only. Current implementation may show session changed files, artifacts, branch/worktree summary, `+/-` metrics, and diff-derived file rows from the selected Pickle `cwd`. It must not show transient desktop context that was not intentionally persisted as session/worktree data:
 
 - active app
 - active window
-- browser URL/title
+- current browser URL/title
 - selected text
-- screenshot paths
-- line additions/deletions
+- screenshot paths or thumbnails
 
-unless those become stable persisted session fields in a later design.
+Phase 07 tracks the remaining product decision: whether read-only branch/worktree metadata and the GitHub link are allowed long-term under the “no IDE/git controls” non-goal, or whether they should be reduced. Do not add mutating branch/worktree/PR/cloud controls without resolving that gate.
 
 ## Composer rule
 
@@ -106,7 +107,7 @@ Fullscreen composer must expose existing Pickle composer capabilities only:
 - model cycling
 - thinking-level cycling
 
-Do not add permission selector, plan mode, plugin menu, goal suggestions, cloud transfer, worktree/PR controls, or other Codex-only controls.
+Do not add permission selector, plan mode, plugin menu, goal suggestions, cloud transfer, mutating worktree/PR controls, or other Codex-only controls. Read-only branch/worktree metadata remains covered by the phase 07 decision gate.
 
 ## Collapsed right panel
 

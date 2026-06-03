@@ -95,6 +95,7 @@ When the user asks about a feature, start here before broad searching:
 - Pi extension handoff command: `pi-extensions/picky-handoff/`
 - HUD perf instrumentation / profiling playbook: `Picky/Feedback/PickyPerf.swift`, `docs/perf-profiling.md` (use this before guessing at HUD lag root causes)
 - Swift Concurrency guidelines (MainActor-first, measure before optimizing, GCD migration): `docs/swift-concurrency.md` (follow this when adding/refactoring async Swift code)
+- Refactoring principles and safety gates: `docs/refactoring-principles.md` (follow this before structural splits; write characterization tests first, extract pure policies before splitting facades, keep line-count checks warning-first, and preserve the Picky neutral-context / Pi-intent boundary)
 - Tests for Swift UI/session/voice: `PickyTests/PickySessionViewModelTests.swift`, `PickyTests/PickyCompanionManagerTests.swift`, `PickyTests/PickyAgentClientTests.swift`
 - Tests for agentd/session/runtime: `agentd/src/*.test.ts`, especially `session-supervisor.test.ts`, `runtime/pi-sdk-runtime.test.ts`
 

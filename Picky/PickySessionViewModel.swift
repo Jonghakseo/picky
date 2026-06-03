@@ -169,11 +169,6 @@ struct PickySettingsRecentPickleFolderStore: PickyRecentPickleFolderStoring {
     }
 }
 
-struct PickyComposerDraftRequest: Equatable, Identifiable {
-    let id: String
-    let text: String
-}
-
 private struct PickyInlineTerminalAttachment: Equatable {
     let sessionID: String
     let attachmentID: String
@@ -403,6 +398,9 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var lastOpenedArtifactPath: String?
     @Published private(set) var slashCommandsBySessionID: [String: [PickySlashCommand]] = [:]
+    /// Published mirror of `PickySessionComposerDraftController` request state.
+    /// `PickyConversationComposerView` observes this dictionary with `.onChange`,
+    /// so every controller mutation path must call `syncComposerDraftRequests()`.
     @Published private(set) var composerDraftRequestsBySessionID: [String: PickyComposerDraftRequest] = [:]
     @Published private(set) var thinkingBlocksHiddenBySessionID: [String: Bool] = [:]
     @Published private(set) var pendingDoneFlashSessionIDs: Set<String> = []
@@ -477,8 +475,7 @@ final class PickySessionListViewModel: ObservableObject {
     /// created. Empty layout falls back to the legacy `manualOrder` flow.
     @Published private(set) var dockLayout: PickyDockLayout = .empty
     private let dockLayoutController: PickySessionDockLayoutController
-    private let composerDraftStore: PickyComposerDraftStoring
-    private let composerAttachmentDraftStore: PickyComposerAttachmentDraftStoring
+    private let composerDraftController: PickySessionComposerDraftController
     private let recentPickleFolderStore: PickyRecentPickleFolderStoring
     private let artifactPathValidator: PickyArtifactPathValidator
     private let clipboardWriter: PickyClipboardWriting
@@ -555,8 +552,10 @@ final class PickySessionListViewModel: ObservableObject {
         self.archiveStore = archiveStore
         self.manualOrderStore = manualOrderStore
         self.manualOrder = manualOrderStore.manualOrder
-        self.composerDraftStore = composerDraftStore
-        self.composerAttachmentDraftStore = composerAttachmentDraftStore
+        self.composerDraftController = PickySessionComposerDraftController(
+            draftStore: composerDraftStore,
+            attachmentStore: composerAttachmentDraftStore
+        )
         self.recentPickleFolderStore = recentPickleFolderStore
         self.recentPickleCwds = recentPickleFolderStore.recentPickleCwds
         let dockLayoutController = PickySessionDockLayoutController(store: dockLayoutStore) { error in
@@ -880,20 +879,20 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func composerDraftRequest(for sessionID: String) -> PickyComposerDraftRequest? {
-        composerDraftRequestsBySessionID[sessionID]
+        composerDraftController.request(for: sessionID)
     }
 
     func consumeComposerDraftRequest(sessionID: String, requestID: String) {
-        guard composerDraftRequestsBySessionID[sessionID]?.id == requestID else { return }
-        composerDraftRequestsBySessionID[sessionID] = nil
+        composerDraftController.consumeRequest(sessionID: sessionID, requestID: requestID)
+        syncComposerDraftRequests()
     }
 
     func persistedComposerDraft(for sessionID: String) -> String {
-        composerDraftStore.draft(for: sessionID) ?? ""
+        composerDraftController.persistedDraft(for: sessionID)
     }
 
     func updateComposerDraft(_ draft: String, sessionID: String) {
-        composerDraftStore.setDraft(draft, for: sessionID)
+        composerDraftController.updateDraft(draft, sessionID: sessionID)
     }
 
     /// Returns previously-persisted composer attachment paths for the session,
@@ -901,42 +900,32 @@ final class PickySessionListViewModel: ObservableObject {
     /// temp directory and may be reaped by the system between launches; the
     /// caller should treat missing paths as silently dropped.
     func persistedComposerAttachmentPaths(for sessionID: String) -> [String] {
-        let stored = composerAttachmentDraftStore.attachmentPaths(for: sessionID)
-        let fileManager = FileManager.default
-        return stored.filter { fileManager.fileExists(atPath: $0) }
+        composerDraftController.persistedAttachmentPaths(for: sessionID)
     }
 
     func updateComposerAttachmentPaths(_ paths: [String], sessionID: String) {
-        composerAttachmentDraftStore.setAttachmentPaths(paths, for: sessionID)
+        composerDraftController.updateAttachmentPaths(paths, sessionID: sessionID)
     }
 
     func clearComposerDraft(sessionID: String) {
-        composerDraftRequestsBySessionID[sessionID] = nil
-        composerDraftStore.setDraft(nil, for: sessionID)
-        composerAttachmentDraftStore.setAttachmentPaths([], for: sessionID)
+        composerDraftController.clearDraft(sessionID: sessionID)
+        syncComposerDraftRequests()
     }
 
     func appendComposerDraftText(_ text: String, sessionID: String) {
-        let incoming = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !incoming.isEmpty else { return }
-        let existing = composerDraftStore.draft(for: sessionID) ?? ""
-        let merged: String
-        if existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            merged = incoming
-        } else {
-            merged = existing + "\n\n" + incoming
-        }
-        composerDraftRequestsBySessionID[sessionID] = PickyComposerDraftRequest(id: "draft-append-\(UUID().uuidString)", text: merged)
-        composerDraftStore.setDraft(merged, for: sessionID)
+        guard composerDraftController.appendText(text, sessionID: sessionID) else { return }
+        syncComposerDraftRequests()
         select(sessionID: sessionID)
     }
 
     func replaceComposerDraftText(_ text: String, sessionID: String) {
-        let incoming = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !incoming.isEmpty else { return }
-        composerDraftRequestsBySessionID[sessionID] = PickyComposerDraftRequest(id: "draft-replace-\(UUID().uuidString)", text: incoming)
-        composerDraftStore.setDraft(incoming, for: sessionID)
+        guard composerDraftController.replaceText(text, sessionID: sessionID) else { return }
+        syncComposerDraftRequests()
         select(sessionID: sessionID)
+    }
+
+    private func syncComposerDraftRequests() {
+        composerDraftRequestsBySessionID = composerDraftController.requestsBySessionID
     }
 
     func copyMessageText(_ text: String) {
@@ -2143,8 +2132,8 @@ final class PickySessionListViewModel: ObservableObject {
         switch request.method {
         case "set_editor_text":
             let text = request.text ?? request.prompt ?? ""
-            composerDraftRequestsBySessionID[request.sessionId] = PickyComposerDraftRequest(id: request.id, text: text)
-            composerDraftStore.setDraft(text, for: request.sessionId)
+            composerDraftController.primeRequest(sessionID: request.sessionId, requestID: request.id, text: text)
+            syncComposerDraftRequests()
             return true
         case "notify", "setStatus", "setWidget", "setTitle":
             return true
@@ -2206,9 +2195,8 @@ final class PickySessionListViewModel: ObservableObject {
         slashCommandRequestedSessionIDs = slashCommandRequestedSessionIDs.filter { knownSessionIDs.contains($0) }
         slashCommandRequestSessionByID = slashCommandRequestSessionByID.filter { knownSessionIDs.contains($0.value) }
         slashCommandRequestEpochByID = slashCommandRequestEpochByID.filter { slashCommandRequestSessionByID[$0.key] != nil }
-        composerDraftRequestsBySessionID = composerDraftRequestsBySessionID.filter { knownSessionIDs.contains($0.key) }
-        composerDraftStore.prune(knownSessionIDs: knownSessionIDs)
-        composerAttachmentDraftStore.prune(knownSessionIDs: knownSessionIDs)
+        composerDraftController.prune(knownSessionIDs: knownSessionIDs)
+        syncComposerDraftRequests()
         thinkingBlocksHiddenBySessionID = thinkingBlocksHiddenBySessionID.filter { knownSessionIDs.contains($0.key) }
         slashCommandRequestedSessionIDs = slashCommandRequestedSessionIDs.filter { knownSessionIDs.contains($0) }
         pendingDoneFlashSessionIDs = pendingDoneFlashSessionIDs.filter { knownSessionIDs.contains($0) }

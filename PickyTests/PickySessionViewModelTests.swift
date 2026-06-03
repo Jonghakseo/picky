@@ -596,6 +596,7 @@ struct PickySessionViewModelTests {
 
         let draftRequest = try #require(viewModel.composerDraftRequest(for: "session-1"))
         #expect(draftRequest.text == "review comments")
+        #expect(viewModel.composerDraftRequestsBySessionID["session-1"] == draftRequest)
         #expect(viewModel.persistedComposerDraft(for: "session-1") == "review comments")
         #expect(draftStore.drafts["session-1"] == "review comments")
         #expect(viewModel.sessions.first?.status == .running)
@@ -603,6 +604,7 @@ struct PickySessionViewModelTests {
 
         viewModel.consumeComposerDraftRequest(sessionID: "session-1", requestID: draftRequest.id)
         #expect(viewModel.composerDraftRequest(for: "session-1") == nil)
+        #expect(viewModel.composerDraftRequestsBySessionID["session-1"] == nil)
     }
 
     @Test func appendComposerDraftTextPreservesExistingDraftAndCreatesRequest() async throws {
@@ -620,6 +622,7 @@ struct PickySessionViewModelTests {
         let expected = "기존 메모\n\n/tmp/picky/shot-1.jpg\n이거 보여?"
         let draftRequest = try #require(viewModel.composerDraftRequest(for: "session-1"))
         #expect(draftRequest.text == expected)
+        #expect(viewModel.composerDraftRequestsBySessionID["session-1"] == draftRequest)
         #expect(viewModel.persistedComposerDraft(for: "session-1") == expected)
         #expect(draftStore.drafts["session-1"] == expected)
     }
@@ -638,6 +641,7 @@ struct PickySessionViewModelTests {
 
         let draftRequest = try #require(viewModel.composerDraftRequest(for: "session-1"))
         #expect(draftRequest.text == "revised message")
+        #expect(viewModel.composerDraftRequestsBySessionID["session-1"] == draftRequest)
         #expect(viewModel.persistedComposerDraft(for: "session-1") == "revised message")
         #expect(draftStore.drafts["session-1"] == "revised message")
     }
@@ -655,10 +659,12 @@ struct PickySessionViewModelTests {
         )
         viewModel.replaceComposerDraftText("submitted draft", sessionID: "session-1")
         #expect(viewModel.composerDraftRequest(for: "session-1") != nil)
+        #expect(viewModel.composerDraftRequestsBySessionID["session-1"] != nil)
 
         viewModel.clearComposerDraft(sessionID: "session-1")
 
         #expect(viewModel.composerDraftRequest(for: "session-1") == nil)
+        #expect(viewModel.composerDraftRequestsBySessionID["session-1"] == nil)
         #expect(draftStore.drafts["session-1"] == nil)
         #expect(draftStore.drafts["session-2"] == "keep draft")
         #expect(attachmentStore.attachments["session-1"] == nil)

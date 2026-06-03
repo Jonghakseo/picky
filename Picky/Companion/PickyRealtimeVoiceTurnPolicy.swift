@@ -18,7 +18,20 @@ enum PickyRealtimeVoiceTurnPolicy {
         targetSessionID: String?,
         runtimeMode: PickyMainAgentRuntimeMode
     ) -> PickyVoiceInteractionMode {
-        shouldUseRealtimeMainVoiceTurn(targetSessionID: targetSessionID, runtimeMode: runtimeMode)
+        currentMode(
+            realtimeInputIsActive: false,
+            targetSessionID: targetSessionID,
+            runtimeMode: runtimeMode
+        )
+    }
+
+    static func currentMode(
+        realtimeInputIsActive: Bool,
+        targetSessionID: String?,
+        runtimeMode: PickyMainAgentRuntimeMode
+    ) -> PickyVoiceInteractionMode {
+        if realtimeInputIsActive { return .realtime }
+        return shouldUseRealtimeMainVoiceTurn(targetSessionID: targetSessionID, runtimeMode: runtimeMode)
             ? .realtime
             : .standard
     }

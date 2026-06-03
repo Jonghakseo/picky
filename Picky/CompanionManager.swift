@@ -1052,7 +1052,11 @@ final class CompanionManager: ObservableObject {
     }
 
     private func currentVoiceInteractionMode() -> PickyVoiceInteractionMode {
-        realtimeVoiceInputID != nil || AppBundleConfiguration.effectiveRuntimeMode == .openAIRealtime ? .realtime : .standard
+        PickyRealtimeVoiceTurnPolicy.currentMode(
+            realtimeInputIsActive: realtimeVoiceInputID != nil,
+            targetSessionID: voiceFollowUpSessionIDForCurrentUtterance,
+            runtimeMode: AppBundleConfiguration.effectiveRuntimeMode
+        )
     }
 
     private func bindShortcutTransitions() {

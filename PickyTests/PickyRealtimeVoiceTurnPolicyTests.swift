@@ -48,4 +48,30 @@ struct PickyRealtimeVoiceTurnPolicyTests {
         #expect(PickyRealtimeVoiceTurnPolicy.mode(targetSessionID: "pickle-session", runtimeMode: .openAIRealtime) == .standard)
         #expect(PickyRealtimeVoiceTurnPolicy.mode(targetSessionID: nil, runtimeMode: .pi) == .standard)
     }
+
+    @Test func currentModeUsesRealtimeWhenRealtimeInputIsAlreadyActive() {
+        #expect(PickyRealtimeVoiceTurnPolicy.currentMode(
+            realtimeInputIsActive: true,
+            targetSessionID: nil,
+            runtimeMode: .pi
+        ) == .realtime)
+        #expect(PickyRealtimeVoiceTurnPolicy.currentMode(
+            realtimeInputIsActive: true,
+            targetSessionID: "pickle-session",
+            runtimeMode: .openAIRealtime
+        ) == .realtime)
+    }
+
+    @Test func currentModeKeepsTargetedPickleTurnsStandardUnderRealtimeRuntime() {
+        #expect(PickyRealtimeVoiceTurnPolicy.currentMode(
+            realtimeInputIsActive: false,
+            targetSessionID: "pickle-session",
+            runtimeMode: .openAIRealtime
+        ) == .standard)
+        #expect(PickyRealtimeVoiceTurnPolicy.currentMode(
+            realtimeInputIsActive: false,
+            targetSessionID: nil,
+            runtimeMode: .openAIRealtime
+        ) == .realtime)
+    }
 }

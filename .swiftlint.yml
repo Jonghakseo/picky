@@ -1,0 +1,75 @@
+# Warning-first SwiftLint configuration for Picky.
+#
+# Structural refactors should reduce these warnings over time, but existing large
+# facades must not be split just to satisfy a line-count gate. See:
+# - docs/refactoring-principles.md
+# - docs/refactoring-execution-plan.md
+
+included:
+  - Picky
+  - PickyTests
+
+excluded:
+  - build
+  - agentd
+  - node_modules
+  - Picky.xcodeproj
+
+opt_in_rules:
+  - empty_count
+  - force_unwrapping
+  - redundant_optional_initialization
+
+file_length:
+  warning: 1500
+  error: 6000
+  ignore_comment_only_lines: true
+
+type_body_length:
+  warning: 700
+  error: 2500
+
+function_body_length:
+  warning: 120
+  error: 400
+
+cyclomatic_complexity:
+  warning: 18
+  error: 40
+
+force_cast:
+  severity: warning
+
+force_try:
+  severity: warning
+
+force_unwrapping:
+  severity: warning
+
+custom_rules:
+  picky_raw_print:
+    name: "Use PickyLog instead of raw print"
+    regex: "\\bprint\\s*\\("
+    message: "Route production diagnostics through PickyLog/OSLog so diagnostics bundles can collect them."
+    severity: warning
+    excluded:
+      - "Picky/Feedback/PickyLogger.swift"
+      - "PickyTests/.*"
+
+  picky_silent_async_action:
+    name: "Do not silently drop async user-action failures"
+    regex: "Task\\s*\\{[^\\n]*try\\?\\s*await\\s+(?!Task\\.sleep)"
+    message: "Side-effecting async user actions should fail visibly or be logged; avoid Task { try? await ... }."
+    severity: warning
+
+  picky_task_detached_escape_hatch:
+    name: "Task.detached requires justification"
+    regex: "Task\\.detached"
+    message: "Task.detached is an escape hatch; justify it per docs/swift-concurrency.md."
+    severity: warning
+
+  picky_semaphore_escape_hatch:
+    name: "Do not block async flows with semaphores"
+    regex: "DispatchSemaphore|\\bsemaphore\\b"
+    message: "Avoid semaphores in async/UI code unless explicitly justified."
+    severity: warning

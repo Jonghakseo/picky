@@ -1,0 +1,105 @@
+name: Quality checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - development
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: picky-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agentd-quality:
+    name: agentd typecheck, lint, and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck agentd
+        run: pnpm --dir agentd run typecheck
+
+      - name: Lint agentd
+        run: pnpm --dir agentd run lint
+
+      - name: Test agentd
+        run: pnpm --dir agentd test
+
+  architecture-guard:
+    name: architecture guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check architecture rules
+        run: pnpm run check:architecture
+
+  swiftlint:
+    name: SwiftLint warning-first rules
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: Run SwiftLint
+        run: swiftlint lint --config .swiftlint.yml
+
+  swift-protocol-contracts:
+    name: Swift protocol contracts
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run ProtocolContractTests
+        run: |
+          xcodebuild -project Picky.xcodeproj \
+            -scheme Picky \
+            -destination "platform=macOS,arch=$(uname -m)" \
+            -parallel-testing-enabled NO \
+            test -only-testing:PickyTests/ProtocolContractTests

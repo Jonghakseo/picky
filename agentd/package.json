@@ -12,6 +12,8 @@
     "dev:cli": "tsx src/cli.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src --max-warnings 9999",
+    "lint:fix": "eslint src --fix --max-warnings 9999",
     "test": "vitest run",
     "test:contracts": "vitest run src/protocol.test.ts src/prompt-builder.test.ts src/pi-event-normalizer.test.ts"
   },
@@ -25,10 +27,14 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.10.2",
     "@types/ws": "^8.5.13",
+    "eslint": "^10.4.1",
+    "globals": "^17.6.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
+    "typescript-eslint": "^8.60.1",
     "vitest": "^2.1.8"
   }
 }

@@ -3,7 +3,8 @@
   "packageManager": "pnpm@10.15.1",
   "scripts": {
     "prepare": "git config core.hooksPath .githooks || true",
-    "commitlint": "commitlint"
+    "commitlint": "commitlint",
+    "check:architecture": "node scripts/check-architecture-rules.js"
   },
   "devDependencies": {
     "@commitlint/cli": "^20.5.3",

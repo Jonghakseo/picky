@@ -68,6 +68,30 @@ describe("queue policy", () => {
     ]);
   });
 
+  it("preserves duplicate identities across an unchanged full snapshot", () => {
+    const previous = [item("first-a", "same"), item("middle-b", "other"), item("second-a", "same")];
+
+    expect(queueItems(["same", "other", "same"], enqueuedAt, previous, [], idFactory(["unused"]))).toEqual(previous);
+  });
+
+  it("treats a reordered front item as new while preserving duplicate suffix identities", () => {
+    const previous = [item("first-a", "same"), item("middle-b", "other"), item("second-a", "same")];
+
+    expect(queueItems(["other", "same", "same"], enqueuedAt, previous, [], idFactory(["new-other"]))).toEqual([
+      item("new-other", "other", enqueuedAt),
+      previous[0],
+      previous[2],
+    ]);
+  });
+
+  it("reports reordered duplicate removals by previous queue identity", () => {
+    const previousFollowUps = [item("first-a", "same"), item("middle-b", "other"), item("second-a", "same")];
+
+    expect(diffQueueRemovedItems([], previousFollowUps, [], ["other", "same", "same"])).toEqual([
+      previousFollowUps[1],
+    ]);
+  });
+
   it("compares queue item identity, text, and timestamp", () => {
     const queue = [item("id", "text")];
 

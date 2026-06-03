@@ -3,7 +3,6 @@
 # Structural refactors should reduce these warnings over time, but existing large
 # facades must not be split just to satisfy a line-count gate. See:
 # - docs/refactoring-principles.md
-# - docs/refactoring-execution-plan.md
 
 included:
   - Picky

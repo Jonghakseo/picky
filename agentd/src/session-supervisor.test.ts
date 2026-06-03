@@ -5167,6 +5167,57 @@ describe("SessionSupervisor", () => {
     expect(outcomes).toEqual([{ baselineFound: false, importedMessageCount: 0, activeLastMessageId: "u1", baselinePiMessageId: "unknown-baseline-id" }]);
   });
 
+  it("can retry terminal sync with a valid baseline after a baseline miss", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-baseline-miss-retry-"));
+    const piSessionFile = join(dir, "pi-session.jsonl");
+    await writeFile(piSessionFile, [
+      JSON.stringify({ type: "session", version: 3, id: "pi-session", timestamp: "2026-05-01T00:00:00.000Z", cwd: "/tmp/project" }),
+      JSON.stringify({ type: "message", id: "u1", parentId: null, timestamp: "2026-05-01T00:00:01.000Z", message: { role: "user", content: "old prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-05-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "old answer" }], timestamp: 0, stopReason: "stop" } }),
+      JSON.stringify({ type: "message", id: "u2", parentId: "a1", timestamp: "2026-05-01T00:00:03.000Z", message: { role: "user", content: "terminal prompt", timestamp: 0 } }),
+      JSON.stringify({ type: "message", id: "a2", parentId: "u2", timestamp: "2026-05-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: "terminal reply" }], timestamp: 0, stopReason: "stop" } }),
+    ].join("\n"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "baseline-miss-retry-session",
+      title: "Baseline miss retry",
+      status: "completed",
+      cwd: "/tmp/project",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      lastSummary: "old answer",
+      finalAnswer: "old answer",
+      logs: [`pi session: ${piSessionFile}`],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+      messages: [
+        { id: "msg-existing-user", kind: "user_text", createdAt: "2026-05-01T00:00:01.000Z", originatedBy: "user", text: "old prompt" },
+        { id: "msg-existing-agent", kind: "agent_text", createdAt: "2026-05-01T00:00:02.000Z", text: "old answer" },
+      ],
+    });
+    const supervisor = new SessionSupervisor(new ManualRuntime(), store);
+    await supervisor.load();
+    const outcomes: Array<unknown> = [];
+    supervisor.on("terminalSessionSyncOutcome", (_sessionId, outcome) => outcomes.push(outcome));
+
+    await supervisor.syncTerminalSession("baseline-miss-retry-session", "unknown-baseline-id");
+    expect(supervisor.get("baseline-miss-retry-session")?.messages).toHaveLength(2);
+
+    await supervisor.syncTerminalSession("baseline-miss-retry-session", "a1");
+
+    expect(supervisor.get("baseline-miss-retry-session")?.messages?.map((message) => ({ id: message.id, kind: message.kind, text: message.text, originatedBy: message.originatedBy }))).toEqual([
+      { id: "msg-existing-user", kind: "user_text", text: "old prompt", originatedBy: "user" },
+      { id: "msg-existing-agent", kind: "agent_text", text: "old answer", originatedBy: undefined },
+      { id: "msg-pi-user-u2", kind: "user_text", text: "terminal prompt", originatedBy: "pi_extension" },
+      { id: "msg-pi-agent-a2", kind: "agent_text", text: "terminal reply", originatedBy: undefined },
+    ]);
+    expect(outcomes).toEqual([
+      { baselineFound: false, importedMessageCount: 0, activeLastMessageId: "a2", baselinePiMessageId: "unknown-baseline-id" },
+      { baselineFound: true, importedMessageCount: 2, activeLastMessageId: "a2", baselinePiMessageId: "a1" },
+    ]);
+  });
+
   it("marks a cancelled session completed when terminal sync imports a recovery answer", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-cancelled-sync-"));
     const piSessionFile = join(dir, "pi-session.jsonl");

@@ -2800,6 +2800,29 @@ struct PickySessionViewModelTests {
         #expect(dockLayoutStore.savedLayouts.map(\.testSessionIDs) == [["b", "a", "c"]])
     }
 
+    @MainActor @Test func moveSessionInDockPublishesControllerLayoutAndPersists() {
+        let dockLayoutStore = FakeViewModelDockLayoutStore(layout: PickyDockLayout(entries: [
+            .session(id: "a"),
+            .group(PickyDockGroup(
+                id: "g",
+                name: "G",
+                color: .teal,
+                memberSessionIDs: ["b"]
+            )),
+            .session(id: "c")
+        ]))
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            dockLayoutStore: dockLayoutStore
+        )
+
+        viewModel.moveSessionInDock(sessionID: "a", to: .group(id: "g", memberIndex: 1))
+
+        #expect(viewModel.dockLayout.testEntryDescriptions == ["group:g[b,a]", "session:c"])
+        #expect(dockLayoutStore.savedLayouts.map(\.testEntryDescriptions) == [["group:g[b,a]", "session:c"]])
+    }
+
     @Test func removeDockGroupArchivesMembersAndPersistsThroughViewModel() async throws {
         let client = FakePickyAgentClient()
         let archiveStore = FakeArchiveStore()

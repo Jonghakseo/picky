@@ -2,7 +2,9 @@
 //  PickySessionNotificationPolicy.swift
 //  Picky
 //
-//  Pure notification eligibility and dedupe-key policy for Pickle sessions.
+//  Notification eligibility and dedupe-key policy for Pickle sessions.
+//  Notification copy is localized through an injectable closure so tests and
+//  callers can keep the decision rules independent from global locale state.
 //
 
 struct PickySessionNotificationPolicy {
@@ -29,7 +31,8 @@ struct PickySessionNotificationPolicy {
 
     static func notification(
         for input: Input,
-        preferences: PickyNotificationPreferences
+        preferences: PickyNotificationPreferences,
+        localizer: (String) -> String = { L10n.t($0) }
     ) -> Notification? {
         switch input.status {
         case .completed:
@@ -37,22 +40,22 @@ struct PickySessionNotificationPolicy {
             guard preferences.notifyOnCompleted else { return nil }
             return Notification(
                 key: "\(input.sessionID):completed",
-                title: L10n.t("notif.session.completed.title"),
+                title: localizer("notif.session.completed.title"),
                 body: input.lastSummary.isEmpty ? input.title : input.lastSummary
             )
         case .failed:
             guard preferences.notifyOnFailed else { return nil }
             return Notification(
                 key: "\(input.sessionID):failed",
-                title: L10n.t("notif.session.failed.title"),
-                body: input.lastSummary.isEmpty ? L10n.t("notif.session.failed.fallbackBody") : input.lastSummary
+                title: localizer("notif.session.failed.title"),
+                body: input.lastSummary.isEmpty ? localizer("notif.session.failed.fallbackBody") : input.lastSummary
             )
         case .waiting_for_input:
             guard preferences.notifyOnWaitingForInput else { return nil }
             guard let pendingRequest = input.pendingRequest else { return nil }
             return Notification(
                 key: "\(input.sessionID):waiting:\(pendingRequest.id)",
-                title: L10n.t("notif.session.waiting.title"),
+                title: localizer("notif.session.waiting.title"),
                 body: pendingRequest.prompt ?? pendingRequest.title ?? input.title
             )
         case .queued, .running, .blocked, .cancelled:

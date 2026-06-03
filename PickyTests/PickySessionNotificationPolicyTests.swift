@@ -180,6 +180,27 @@ final class PickySessionNotificationPolicyTests: XCTestCase {
         )
     }
 
+    func testNotificationCopyCanUseInjectedLocalizer() {
+        let preferences = PickyNotificationPreferences(
+            notifyOnCompleted: true,
+            notifyOnFailed: true,
+            notifyOnWaitingForInput: true
+        )
+        let notification = PickySessionNotificationPolicy.notification(
+            for: PickySessionNotificationPolicy.Input(
+                sessionID: "session-1",
+                title: "Session title",
+                status: .failed,
+                lastSummary: ""
+            ),
+            preferences: preferences,
+            localizer: { "localized:\($0)" }
+        )
+
+        XCTAssertEqual(notification?.title, "localized:notif.session.failed.title")
+        XCTAssertEqual(notification?.body, "localized:notif.session.failed.fallbackBody")
+    }
+
     func testRunningQueuedBlockedAndCancelledHaveNoNotification() {
         for status in [PickySessionStatus.running, .queued, .blocked, .cancelled] {
             let input = PickySessionNotificationPolicy.Input(

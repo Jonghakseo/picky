@@ -94,6 +94,23 @@ final class PickySessionDockLayoutControllerTests: XCTestCase {
         XCTAssertEqual(store.savedLayouts.map(\.sessionIDs), [["a"]])
     }
 
+    func testArchivedGroupMembersReconcileBackAsUngroupedBottomSessionsWhenUnarchived() {
+        let store = FakeDockLayoutStore(layout: PickyDockLayout(entries: [
+            .session(id: "a"),
+            .group(PickyDockGroup(id: "g", name: "G", color: .red, memberSessionIDs: ["b", "c"]))
+        ]))
+        let controller = PickySessionDockLayoutController(store: store)
+
+        _ = controller.removeGroup(id: "g", keepMembers: false)
+        XCTAssertTrue(controller.reconcile(activeSessionIDs: ["c", "b", "a"], legacyManualOrder: []))
+
+        XCTAssertEqual(controller.layout.entryDescriptions, ["session:a", "session:b", "session:c"])
+        XCTAssertEqual(store.savedLayouts.map(\.entryDescriptions), [
+            ["session:a"],
+            ["session:a", "session:b", "session:c"]
+        ])
+    }
+
     func testSaveFailureDoesNotCrashAndStillUpdatesControllerLayout() {
         let store = FakeDockLayoutStore(layout: .empty)
         store.errorToThrow = FakeDockLayoutStore.SaveError.failed

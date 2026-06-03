@@ -450,6 +450,10 @@ enum PickyHUDDockLayout {
         )
     }
 
+    // Compatibility forwarding shim: the HUD view still imports dock layout,
+    // interaction, and geometry decisions through this single policy namespace.
+    // Keep these pass-throughs until call sites are split in a focused HUD
+    // cleanup so behavior changes do not get mixed with namespace churn.
     static func activeSessionID(visibleIDs: [String], held: PickyHUDDockHold?, previewID: String?) -> String? {
         PickyHUDDockInteractionPolicy.activeSessionID(visibleIDs: visibleIDs, held: held, previewID: previewID)
     }

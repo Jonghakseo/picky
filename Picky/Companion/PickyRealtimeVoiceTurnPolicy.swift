@@ -37,8 +37,6 @@ enum PickyRealtimeVoiceTurnPolicy {
     }
 
     private static func normalizedTargetSessionID(_ sessionID: String?) -> String? {
-        guard let sessionID else { return nil }
-        let trimmed = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        PickyVoiceTranscriptRoutingPolicy.normalizedSessionID(sessionID)
     }
 }

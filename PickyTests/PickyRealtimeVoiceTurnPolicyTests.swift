@@ -74,4 +74,24 @@ struct PickyRealtimeVoiceTurnPolicyTests {
             runtimeMode: .openAIRealtime
         ) == .realtime)
     }
+
+    @Test func realtimeRuntimePickleTargetsUseStandardModeAndPickleRouting() {
+        #expect(PickyRealtimeVoiceTurnPolicy.mode(
+            targetSessionID: "screen-pickle",
+            runtimeMode: .openAIRealtime
+        ) == .standard)
+        #expect(PickyVoiceTranscriptRoutingPolicy.route(
+            voiceFollowUpSessionID: "screen-pickle",
+            screenContextTargetSessionID: "screen-pickle"
+        ) == .steerPickle(sessionID: "screen-pickle"))
+
+        #expect(PickyRealtimeVoiceTurnPolicy.mode(
+            targetSessionID: "hovered-pickle",
+            runtimeMode: .openAIRealtime
+        ) == .standard)
+        #expect(PickyVoiceTranscriptRoutingPolicy.route(
+            voiceFollowUpSessionID: "hovered-pickle",
+            screenContextTargetSessionID: "screen-pickle"
+        ) == .followUpPickle(sessionID: "hovered-pickle"))
+    }
 }

@@ -2569,32 +2569,38 @@ final class PickySessionListViewModel: ObservableObject {
         notificationCenter.deliver(title: notification.title, body: notification.body, identifier: notification.key)
     }
 
-    private func notification(for session: SessionCard) -> (key: String, title: String, body: String)? {
-        let preferences = notificationPreferencesProvider.notificationPreferences
-        let notification: (key: String, title: String, body: String)?
-        switch session.status {
-        case .completed:
-            if session.pinned { return nil }
-            guard preferences.notifyOnCompleted else { return nil }
-            notification = ("\(session.id):completed", L10n.t("notif.session.completed.title"), session.lastSummary.isEmpty ? session.title : session.lastSummary)
-        case .failed:
-            guard preferences.notifyOnFailed else { return nil }
-            notification = ("\(session.id):failed", L10n.t("notif.session.failed.title"), session.lastSummary.isEmpty ? L10n.t("notif.session.failed.fallbackBody") : session.lastSummary)
-        case .waiting_for_input:
-            guard preferences.notifyOnWaitingForInput else { return nil }
-            guard let pendingRequest = session.pendingExtensionUiRequest else { return nil }
-            notification = ("\(session.id):waiting:\(pendingRequest.id)", L10n.t("notif.session.waiting.title"), pendingRequest.prompt ?? pendingRequest.title ?? session.title)
-        case .queued, .running, .blocked, .cancelled:
-            notification = nil
-        }
+    private func notification(for session: SessionCard) -> PickySessionNotificationPolicy.Notification? {
+        PickySessionNotificationPolicy.notification(
+            for: notificationInput(for: session),
+            preferences: notificationPreferencesProvider.notificationPreferences
+        )
+    }
 
-        return notification
+    private func notificationInput(for session: SessionCard) -> PickySessionNotificationPolicy.Input {
+        let pendingRequest = session.pendingExtensionUiRequest.map {
+            PickySessionNotificationPolicy.Input.PendingRequest(
+                id: $0.id,
+                title: $0.title,
+                prompt: $0.prompt
+            )
+        }
+        return PickySessionNotificationPolicy.Input(
+            sessionID: session.id,
+            title: session.title,
+            status: session.status,
+            lastSummary: session.lastSummary,
+            pendingRequest: pendingRequest,
+            pinned: session.pinned
+        )
     }
 
     private func resetTerminalNotificationKeysIfNeeded(for session: SessionCard) {
-        guard !session.status.isTerminal else { return }
-        deliveredNotificationKeys.remove("\(session.id):completed")
-        deliveredNotificationKeys.remove("\(session.id):failed")
+        deliveredNotificationKeys.subtract(
+            PickySessionNotificationPolicy.terminalDedupKeysToReset(
+                sessionID: session.id,
+                status: session.status
+            )
+        )
     }
 }
 

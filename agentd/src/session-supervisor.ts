@@ -19,6 +19,7 @@ import { OpenAIRealtimeTranscriptionSession } from "./runtime/openai-realtime-tr
 import { mergeArtifacts } from "./domain/artifacts.js";
 import { mergeChangedFiles } from "./domain/changed-files.js";
 import { readImageSizeFromBuffer } from "./domain/image-size.js";
+import { diffQueueRemovedItems, queueItems, sameQueueItems } from "./domain/queue-policy.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
@@ -2629,8 +2630,8 @@ export class SessionSupervisor extends EventEmitter {
     const current = this.mustGet(sessionId);
     const pendingDeliveries = this.pendingQueueDeliveries.get(sessionId) ?? [];
     const nextRuntimeQueues = this.dropAlreadyMaterializedQueueEntries(sessionId, { steering, followUp }, pendingDeliveries);
-    const queuedSteers = queueItems(nextRuntimeQueues.steering, enqueuedAt, current.queuedSteers, pendingDeliveries.filter((entry) => entry.kind === "steering"));
-    const queuedFollowUps = queueItems(nextRuntimeQueues.followUp, enqueuedAt, current.queuedFollowUps, pendingDeliveries.filter((entry) => entry.kind === "followUp"));
+    const queuedSteers = queueItems(nextRuntimeQueues.steering, enqueuedAt, current.queuedSteers, pendingDeliveries.filter((entry) => entry.kind === "steering"), randomUUID);
+    const queuedFollowUps = queueItems(nextRuntimeQueues.followUp, enqueuedAt, current.queuedFollowUps, pendingDeliveries.filter((entry) => entry.kind === "followUp"), randomUUID);
     const previousSteeringMode = this.lastEmittedSteeringMode.get(sessionId) ?? current.steeringMode ?? "one-at-a-time";
     const previousFollowUpMode = this.lastEmittedFollowUpMode.get(sessionId) ?? current.followUpMode ?? "one-at-a-time";
     const queueChanged = !sameQueueItems(current.queuedSteers ?? [], queuedSteers) || !sameQueueItems(current.queuedFollowUps ?? [], queuedFollowUps);
@@ -3216,88 +3217,6 @@ function readImageSize(path: string): { width: number; height: number } | undefi
 function normalizeOptionalString(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
-}
-
-function matchPreviousQueueItems(
-  nextTexts: readonly string[],
-  previous: readonly PickyQueueItem[] | undefined = [],
-): { matched: Array<PickyQueueItem | undefined>; usedPreviousIndexes: Set<number> } {
-  const matched: Array<PickyQueueItem | undefined> = Array(nextTexts.length).fill(undefined);
-  const usedPreviousIndexes = new Set<number>();
-
-  if (nextTexts.length > previous.length) {
-    let searchStart = 0;
-    for (let nextIndex = 0; nextIndex < nextTexts.length; nextIndex += 1) {
-      const previousIndex = previous.findIndex((item, index) => index >= searchStart && !usedPreviousIndexes.has(index) && item.text === nextTexts[nextIndex]);
-      if (previousIndex < 0) continue;
-      matched[nextIndex] = previous[previousIndex];
-      usedPreviousIndexes.add(previousIndex);
-      searchStart = previousIndex + 1;
-    }
-  } else {
-    let searchEnd = previous.length - 1;
-    for (let nextIndex = nextTexts.length - 1; nextIndex >= 0; nextIndex -= 1) {
-      let previousIndex = -1;
-      for (let index = searchEnd; index >= 0; index -= 1) {
-        if (!usedPreviousIndexes.has(index) && previous[index]?.text === nextTexts[nextIndex]) {
-          previousIndex = index;
-          break;
-        }
-      }
-      if (previousIndex < 0) continue;
-      matched[nextIndex] = previous[previousIndex];
-      usedPreviousIndexes.add(previousIndex);
-      searchEnd = previousIndex - 1;
-    }
-  }
-
-  return { matched, usedPreviousIndexes };
-}
-
-function queueItems(
-  items: readonly string[],
-  enqueuedAt: string,
-  previous: readonly PickyQueueItem[] | undefined = [],
-  pendingDeliveries: readonly PendingQueueDelivery[] = [],
-): PickyQueueItem[] {
-  const { matched } = matchPreviousQueueItems(items, previous);
-  const previousIds = new Set(matched.flatMap((item) => item?.id ? [item.id] : []));
-  const pendingByText = new Map<string, PendingQueueDelivery[]>();
-  for (const delivery of pendingDeliveries) {
-    if (previousIds.has(delivery.id)) continue;
-    const entries = pendingByText.get(delivery.text) ?? [];
-    entries.push(delivery);
-    pendingByText.set(delivery.text, entries);
-  }
-  return items.map((text, index) => {
-    const previousItem = matched[index];
-    if (previousItem) return previousItem;
-    const pending = pendingByText.get(text)?.shift();
-    return { id: pending?.id ?? randomUUID(), text, enqueuedAt };
-  });
-}
-
-function sameQueueItems(left: readonly PickyQueueItem[], right: readonly PickyQueueItem[]): boolean {
-  return left.length === right.length && left.every((item, index) => item.id === right[index]?.id && item.text === right[index]?.text && item.enqueuedAt === right[index]?.enqueuedAt);
-}
-
-/**
- * Compute queue entries that exist in the previous combined queue (steers + follow-ups) but not in
- * the new runtime string snapshot, accounting for duplicate text occurrences. Returning the full
- * previous queue item preserves the Picky delivery id so duplicate texts can be drained one by one.
- */
-function diffQueueRemovedItems(
-  previousSteers: readonly PickyQueueItem[],
-  previousFollowUps: readonly PickyQueueItem[],
-  nextSteers: readonly string[],
-  nextFollowUps: readonly string[],
-): PickyQueueItem[] {
-  const { usedPreviousIndexes: usedSteers } = matchPreviousQueueItems(nextSteers, previousSteers);
-  const { usedPreviousIndexes: usedFollowUps } = matchPreviousQueueItems(nextFollowUps, previousFollowUps);
-  return [
-    ...previousSteers.filter((_, index) => !usedSteers.has(index)),
-    ...previousFollowUps.filter((_, index) => !usedFollowUps.has(index)),
-  ];
 }
 
 function zeroActivitySummary(): PickyActivitySummary {

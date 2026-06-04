@@ -27,6 +27,7 @@ import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX 
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
 import { cleanFinalAnswer } from "./domain/session-summary.js";
 import { settleActiveTools } from "./domain/tool-activity.js";
+import { isTransientAgentBusyError } from "./domain/transient-runtime-error.js";
 import { titleFromContext } from "./domain/session-title.js";
 import type { ToolCategory } from "./domain/tool-categorizer.js";
 import { logAgentd } from "./local-log.js";
@@ -2316,6 +2317,10 @@ export class SessionSupervisor extends EventEmitter {
     logAgentd("follow-up delivery failed", { sessionId, error: message });
     await this.messageBuilder.markCommandReceiptFailed(sessionId, commandReceiptId, message);
     await this.appendLog(sessionId, `follow-up failed: ${message}`);
+    if (isTransientAgentBusyError(message)) {
+      logAgentd("follow-up transient busy failure ignored", { sessionId, error: message });
+      return;
+    }
     const current = this.sessions.get(sessionId);
     if (!current || ["completed", "cancelled"].includes(current.status)) return;
     await this.patch(sessionId, { status: "failed", lastSummary: `Follow-up failed: ${message}` });

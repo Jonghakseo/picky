@@ -17,6 +17,7 @@ import {
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
+import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
 import type { AgentRuntime, AnswerExtensionUiOptions, RuntimeAssistantRunMetadata, RuntimeBashExecutionResult, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
 import { logAgentd } from "../local-log.js";
@@ -230,7 +231,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       await this.runtime.session.prompt(prompt.text, { images: await imageOptions(prompt.imagePaths), source: "rpc" });
     } catch (error) {
       this.cancelExpectedInputDelivery(expected.id);
-      this.emit({ type: "status", status: "failed", summary: messageOf(error) });
+      this.emitPromptFailureStatus(error);
       return;
     }
     if (this.maybeEmitImmediateCompletion(wasStreaming)) this.cancelExpectedInputDelivery(expected.id);
@@ -241,7 +242,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     try {
       await this.promptWithOptions(prompt, "followUp");
     } catch (error) {
-      this.emit({ type: "status", status: "failed", summary: messageOf(error) });
+      this.emitPromptFailureStatus(error);
       throw error;
     }
   }
@@ -254,7 +255,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       }
       await this.promptWithOptions(prompt);
     } catch (error) {
-      this.emit({ type: "status", status: "failed", summary: messageOf(error) });
+      this.emitPromptFailureStatus(error);
       throw error;
     }
   }
@@ -265,9 +266,18 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       const handledSynchronously = await this.promptWithOptions(prompt, "steer");
       return { handledSynchronously };
     } catch (error) {
-      this.emit({ type: "status", status: "failed", summary: messageOf(error) });
+      this.emitPromptFailureStatus(error);
       throw error;
     }
+  }
+
+  private emitPromptFailureStatus(error: unknown): void {
+    const message = messageOf(error);
+    if (isTransientAgentBusyError(message)) {
+      logAgentd("pi prompt busy failure ignored", { sessionId: this.id, error: message });
+      return;
+    }
+    this.emit({ type: "status", status: "failed", summary: message });
   }
 
   async abort(): Promise<void> {
@@ -1056,7 +1066,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
         this.cancelExpectedInputDelivery(expected.id);
         this.removePendingSlashSubmission(pendingSlashSubmission);
         if (accepted) {
-          this.emit({ type: "status", status: "failed", summary: messageOf(error) });
+          this.emitPromptFailureStatus(error);
           return;
         }
         rejectOnce(error);

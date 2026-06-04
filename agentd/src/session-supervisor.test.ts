@@ -1483,6 +1483,31 @@ describe("SessionSupervisor", () => {
     expect((updated.messages ?? []).some((message) => message.kind === "system" && message.text === "Session compacted after context overflow")).toBe(true);
   });
 
+  it("ignores transient busy failures while an overflow-compacted Pickle continues", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const pickle = await supervisor.createPickleFromHandoff(context("pickle request"), { title: "피클 조사", instructions: "Investigate the request" });
+
+    runtime.handle?.emit({ type: "status", status: "running", summary: "Compacting after context overflow…", compactionStarted: true, compactionReason: "overflow" });
+    runtime.handle?.emit({ type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, compactionReason: "overflow" });
+    runtime.handle?.emit({ type: "status", status: "failed", summary: "Agent is already processing. Wait for completion before continuing." });
+    await settle();
+
+    expect(supervisor.get(pickle.id)?.status).toBe("running");
+    expect(supervisor.get(pickle.id)?.messages?.some((message) => message.kind === "agent_error")).toBe(false);
+
+    runtime.handle?.emit({ type: "assistant_delta", delta: "컴팩션 후 계속 진행했습니다." });
+    runtime.handle?.emit({ type: "status", status: "completed", summary: "Completed" });
+    await waitUntil(() => supervisor.get(pickle.id)?.status === "completed");
+
+    const updated = supervisor.get(pickle.id)!;
+    expect(updated.status).toBe("completed");
+    expect(updated.lastSummary).toBe("컴팩션 후 계속 진행했습니다.");
+    expect((updated.messages ?? []).some((message) => message.kind === "agent_error")).toBe(false);
+  });
+
   it("surfaces threshold compaction even when it starts after a completed turn", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();

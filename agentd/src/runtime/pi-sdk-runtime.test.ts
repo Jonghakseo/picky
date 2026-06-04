@@ -236,6 +236,23 @@ class BlockingPromptSession extends FakeSession {
   }
 }
 
+class BusyRejectAfterAcceptedSession extends FakeSession {
+  override async prompt(text: string, options?: unknown): Promise<void> {
+    this.prompts.push(text);
+    this.promptOptions.push(options);
+    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    throw new Error("Agent is already processing. Wait for completion before continuing.");
+  }
+}
+
+class BusyRejectBeforeAcceptedSession extends FakeSession {
+  override async prompt(text: string, options?: unknown): Promise<void> {
+    this.prompts.push(text);
+    this.promptOptions.push(options);
+    throw new Error("Agent is already processing. Wait for completion before continuing.");
+  }
+}
+
 function makeRuntime(fakeSession: FakeSession): PiSdkRuntime {
   return new PiSdkRuntime({
     getAgentDir: () => "/tmp/.pi/agent",
@@ -683,6 +700,31 @@ describe("PiSdkRuntime", () => {
     expect(statusEvents(events)).toContainEqual({ type: "status", status: "running", summary: "Compaction completed; retrying…", compactionCompleted: true, compactionReason: "overflow" });
     expect(statusEvents(events)).toContainEqual({ type: "status", status: "completed", summary: "Completed", finalAnswer: "컴팩션 후 완료", assistantRun: { model: "claude-fake" } });
     expect(fakeSession.setActiveToolsByNameCalls).toEqual([["read", "bash", "edit", "write"]]);
+  });
+
+  it("does not emit a terminal failure for transient Pi busy prompt rejections", async () => {
+    const fakeSession = new BusyRejectAfterAcceptedSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-busy-after-accept" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    await handle.followUp({ text: "continue after compaction", imagePaths: [] });
+    await delay(5);
+
+    expect(statusEvents(events).some((event) => event.status === "failed")).toBe(false);
+  });
+
+  it("rejects pre-accept Pi busy prompts without emitting a terminal session failure", async () => {
+    const fakeSession = new BusyRejectBeforeAcceptedSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-busy-before-accept" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    await expect(handle.followUp({ text: "continue while busy", imagePaths: [] })).rejects.toThrow(/Agent is already processing/);
+
+    expect(statusEvents(events).some((event) => event.status === "failed")).toBe(false);
   });
 
   it("emits completion for non-retry automatic threshold compaction", async () => {

@@ -4,6 +4,7 @@ import { mergeChangedFiles } from "../domain/changed-files.js";
 import { sliceUtf16Safe } from "../domain/safe-truncate.js";
 import { isTerminalStatus } from "../domain/session-status.js";
 import { cleanFinalAnswer, summaryFromFinalAnswer } from "../domain/session-summary.js";
+import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
 import { settleActiveTools } from "../domain/tool-activity.js";
 import { categorizeTool, type ToolCategory } from "../domain/tool-categorizer.js";
 import { logAgentd } from "../local-log.js";
@@ -170,6 +171,11 @@ export class RuntimeEventHandler {
     const explicitFinalAnswer = cleanFinalAnswer(event.finalAnswer);
     const finalAnswer = explicitFinalAnswer ?? (terminal ? (event.status === "failed" ? undefined : cleanFinalAnswer(this.assistantDrafts.get(sessionId))) : undefined);
     const currentSession = this.dependencies.getSession(sessionId);
+    if (currentSession.status === "running" && event.status === "failed" && !event.compactionFailed && isTransientAgentBusyError(event.summary)) {
+      logAgentd("session transient busy status ignored", { sessionId, summary: event.summary });
+      await this.dependencies.appendLog(sessionId, `runtime busy ignored: ${event.summary ?? "Agent is already processing"}`);
+      return;
+    }
     // Once a session has reached a terminal status, ignore any subsequent runtime status
     // events. Stragglers (delayed agent_start emitting `running` after abort, late
     // `waiting_for_input` from a now-cancelled extension dialog, etc.) would otherwise

@@ -912,6 +912,32 @@ final class PickySessionListViewModel: ObservableObject {
         select(sessionID: sessionID)
     }
 
+    @discardableResult
+    func restoreQueuedInputsToComposerDraft(sessionID: String, kind: PickyQueueClearKind = .all) -> Bool {
+        guard let session = card(sessionID: sessionID),
+              let queuedText = PickyQueuedInputDraftPolicy.queuedInputText(
+                queuedSteers: session.queuedSteers,
+                queuedFollowUps: session.queuedFollowUps,
+                kind: kind
+              )
+        else { return false }
+        appendComposerDraftText(queuedText, sessionID: sessionID)
+        return true
+    }
+
+    func clearQueueRestoringQueuedInputs(sessionID: String, kind: PickyQueueClearKind) async throws {
+        restoreQueuedInputsToComposerDraft(sessionID: sessionID, kind: kind)
+        try await clearQueue(sessionID: sessionID, kind: kind)
+    }
+
+    func abortRestoringQueuedInputs(sessionID: String) async throws {
+        let restoredQueuedInputs = restoreQueuedInputsToComposerDraft(sessionID: sessionID, kind: .all)
+        if restoredQueuedInputs {
+            try? await clearQueue(sessionID: sessionID, kind: .all)
+        }
+        try await abort(sessionID: sessionID)
+    }
+
     private func syncComposerDraftRequests() {
         composerDraftRequestsBySessionID = composerDraftController.requestsBySessionID
     }

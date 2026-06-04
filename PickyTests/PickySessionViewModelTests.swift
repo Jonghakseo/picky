@@ -646,6 +646,51 @@ struct PickySessionViewModelTests {
         #expect(draftStore.drafts["session-1"] == "revised message")
     }
 
+    @MainActor @Test func clearQueueRestoringQueuedInputsAppendsDraftBeforeClearCommand() async throws {
+        let client = FakePickyAgentClient()
+        let draftStore = FakeComposerDraftStore()
+        draftStore.drafts["queue-session"] = "existing draft"
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            composerDraftStore: draftStore
+        )
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "queue-session", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "queue-session", steering: [], followUp: ["queued follow-up"], steeringMode: nil, followUpMode: nil, seq: 1))))
+
+        try await viewModel.clearQueueRestoringQueuedInputs(sessionID: "queue-session", kind: .all)
+
+        let draftRequest = try #require(viewModel.composerDraftRequest(for: "queue-session"))
+        #expect(draftRequest.text == "existing draft\n\nqueued follow-up")
+        #expect(viewModel.persistedComposerDraft(for: "queue-session") == "existing draft\n\nqueued follow-up")
+        let clearCommand = try #require(client.sentCommands.last)
+        #expect(clearCommand.type == .clearQueue)
+        #expect(clearCommand.sessionId == "queue-session")
+        #expect(clearCommand.kind == .all)
+    }
+
+    @MainActor @Test func abortRestoringQueuedInputsAppendsDraftAndClearsQueueBeforeAbort() async throws {
+        let client = FakePickyAgentClient()
+        let draftStore = FakeComposerDraftStore()
+        let viewModel = PickySessionListViewModel(
+            client: client,
+            notificationCenter: PickyNoopNotificationCenter(),
+            composerDraftStore: draftStore
+        )
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "running-session", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionQueueUpdated(sessionId: "running-session", steering: ["queued steer"], followUp: [], steeringMode: nil, followUpMode: nil, seq: 1))))
+
+        try await viewModel.abortRestoringQueuedInputs(sessionID: "running-session")
+
+        let draftRequest = try #require(viewModel.composerDraftRequest(for: "running-session"))
+        #expect(draftRequest.text == "queued steer")
+        #expect(viewModel.persistedComposerDraft(for: "running-session") == "queued steer")
+        #expect(client.sentCommands.map(\.type) == [.clearQueue, .abort])
+        #expect(client.sentCommands.first?.kind == .all)
+        #expect(client.sentCommands.last?.sessionId == "running-session")
+        #expect(viewModel.sessions.first?.status == .cancelled)
+    }
+
     @Test func clearComposerDraftRemovesPersistedDraftAttachmentsAndRequestForSubmittedSession() async throws {
         let draftStore = FakeComposerDraftStore()
         let attachmentStore = FakeComposerAttachmentDraftStore()

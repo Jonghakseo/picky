@@ -1209,20 +1209,12 @@ struct PickyConversationComposerView: View {
 
     @discardableResult
     private func clearQueuedMessages() -> Bool {
-        guard restoreQueuedMessagesToDraft() else { return false }
-        Task { try? await viewModel.clearQueue(sessionID: session.id, kind: .all) }
-        return true
-    }
-
-    @discardableResult
-    private func restoreQueuedMessagesToDraft() -> Bool {
-        guard let restoredDraft = Self.draftRestoringQueuedMessages(
-            draft: draft,
+        guard PickyQueuedInputDraftPolicy.queuedInputText(
             queuedSteers: session.queuedSteers,
-            queuedFollowUps: session.queuedFollowUps
-        ) else { return false }
-        draft = restoredDraft
-        isFocused = true
+            queuedFollowUps: session.queuedFollowUps,
+            kind: .all
+        ) != nil else { return false }
+        Task { try? await viewModel.clearQueueRestoringQueuedInputs(sessionID: session.id, kind: .all) }
         return true
     }
 
@@ -1231,14 +1223,12 @@ struct PickyConversationComposerView: View {
         queuedSteers: [PickyQueueItem],
         queuedFollowUps: [PickyQueueItem]
     ) -> String? {
-        let queued = (queuedSteers + queuedFollowUps).sorted { $0.enqueuedAt < $1.enqueuedAt }
-        guard !queued.isEmpty else { return nil }
-        // Move queued texts back into the composer so clearing/stopping the queue preserves
-        // unsent input for revision instead of silently throwing it away. Existing composer text
-        // is preserved by appending the queued payload after it.
-        let merged = queued.map(\.text).filter { !$0.isEmpty }.joined(separator: "\n\n")
-        guard !merged.isEmpty else { return nil }
-        return draft.isEmpty ? merged : "\(draft)\n\n\(merged)"
+        PickyQueuedInputDraftPolicy.draftRestoringQueuedInputs(
+            draft: draft,
+            queuedSteers: queuedSteers,
+            queuedFollowUps: queuedFollowUps,
+            kind: .all
+        )
     }
 
     private func cycleThinkingLevel() {
@@ -1278,13 +1268,7 @@ struct PickyConversationComposerView: View {
 
     private func stopIfPossible() {
         guard [.running, .queued, .waiting_for_input].contains(session.status) else { return }
-        let restoredQueuedMessages = restoreQueuedMessagesToDraft()
-        Task {
-            if restoredQueuedMessages {
-                try? await viewModel.clearQueue(sessionID: session.id, kind: .all)
-            }
-            try? await viewModel.abort(sessionID: session.id)
-        }
+        Task { try? await viewModel.abortRestoringQueuedInputs(sessionID: session.id) }
     }
 }
 

@@ -64,7 +64,7 @@ struct PickyConversationMenu: View {
             .disabled(!canDuplicate)
 
             Button("hud.menu.stopSession") {
-                Task { try? await viewModel.abort(sessionID: session.id) }
+                Task { try? await viewModel.abortRestoringQueuedInputs(sessionID: session.id) }
             }
             .disabled(!canStop)
 

@@ -359,7 +359,7 @@ struct PickyConversationListView: View {
                 .foregroundColor(DS.Colors.textTertiary)
             Spacer(minLength: 8)
             Button(action: {
-                Task { try? await viewModel.clearQueue(sessionID: session.id, kind: .all) }
+                Task { try? await viewModel.clearQueueRestoringQueuedInputs(sessionID: session.id, kind: .all) }
             }) {
                 Text("hud.conversation.clearAll")
                     .font(PickyHUDTypography.metaSemibold)

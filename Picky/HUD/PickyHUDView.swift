@@ -791,7 +791,7 @@ struct PickyHUDView: View {
 
     private func stopSession(_ sessionID: String) {
         cancelPendingClose()
-        Task { try? await viewModel.abort(sessionID: sessionID) }
+        Task { try? await viewModel.abortRestoringQueuedInputs(sessionID: sessionID) }
     }
 
     private func scheduleCloseIfNeeded() {

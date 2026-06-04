@@ -76,6 +76,7 @@ struct PickyConversationHeaderView: View {
     }
 
     var body: some View {
+        let _ = PickyPerf.event("conversation_header_body")
         HStack(alignment: .center, spacing: 8) {
             leadingTitle
             trailingActions

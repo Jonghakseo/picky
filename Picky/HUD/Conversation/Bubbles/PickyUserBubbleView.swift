@@ -17,6 +17,7 @@ struct PickyUserBubbleView: View {
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
     var body: some View {
+        let _ = PickyPerf.event("user_bubble_body")
         HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
             Spacer(minLength: PickyConversationBubbleLayout.oppositeSideReserve)
             PickyUserBubbleSurfaceView(

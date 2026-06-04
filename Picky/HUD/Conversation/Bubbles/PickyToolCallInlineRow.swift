@@ -19,6 +19,7 @@ struct PickyToolCallInlineRow: View {
     let onTap: () -> Void
 
     var body: some View {
+        let _ = PickyPerf.event("tool_call_inline_row_body")
         Button(action: onTap) {
             HStack(spacing: 6) {
                 Text(icon)
@@ -170,11 +171,15 @@ private struct PickyToolCallPulsingDot: View {
     @State private var animating = false
 
     var body: some View {
+        let _ = PickyPerf.event("tool_call_pulsing_dot_body")
         Circle()
             .fill(color)
             .frame(width: 6, height: 6)
             .opacity(animating ? 0.35 : 1.0)
             .animation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true), value: animating)
-            .onAppear { animating = true }
+            .onAppear {
+                PickyPerf.event("tool_call_pulsing_dot_animation_start")
+                animating = true
+            }
     }
 }

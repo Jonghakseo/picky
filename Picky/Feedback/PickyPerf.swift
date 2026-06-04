@@ -34,6 +34,16 @@ enum PickyPerf {
         return try work()
     }
 
+    /// Wrap an asynchronous chunk of work in a signpost interval. Use this for
+    /// SwiftUI `.task` probes such as git/PR refreshes so Instruments can show
+    /// whether background work overlaps UI transaction stalls.
+    @inlinable
+    static func interval<T>(_ name: StaticString, _ work: () async throws -> T) async rethrows -> T {
+        let state = signposter.beginInterval(name)
+        defer { signposter.endInterval(name, state) }
+        return try await work()
+    }
+
     /// Emit a one-shot event signpost. Useful for marking SwiftUI body
     /// re-evaluations or NSViewRepresentable lifecycle calls where the work
     /// itself is not wrappable as an interval.
@@ -48,6 +58,12 @@ enum PickyPerf {
     @inlinable
     static func interval<T>(_ name: StaticString, _ work: () throws -> T) rethrows -> T {
         try work()
+    }
+
+    /// Release-build async no-op.
+    @inlinable
+    static func interval<T>(_ name: StaticString, _ work: () async throws -> T) async rethrows -> T {
+        try await work()
     }
 
     /// Release-build no-op.

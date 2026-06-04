@@ -20,6 +20,7 @@ struct PickyTypingBubbleView: View {
     }
 
     var body: some View {
+        let _ = PickyPerf.event("typing_bubble_body")
         HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
             Button {
                 isCollapsed.toggle()

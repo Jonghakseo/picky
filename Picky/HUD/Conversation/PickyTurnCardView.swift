@@ -365,6 +365,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
     }
 
     var body: some View {
+        let _ = PickyPerf.event("turn_card_body")
         VStack(alignment: .leading, spacing: 6) {
             header
             if isExpanded {
@@ -400,6 +401,7 @@ struct PickyTurnCardView<MessageContent: View>: View {
     private var header: some View {
         if group.isCurrent {
             TimelineView(.periodic(from: .now, by: 1)) { context in
+                let _ = PickyPerf.event("turn_card_header_timeline_tick")
                 headerButton(summary: group.summary(now: context.date))
             }
         } else {

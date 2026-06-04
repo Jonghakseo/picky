@@ -66,6 +66,7 @@ struct PickyConversationContextLineView: View {
     }
 
     var body: some View {
+        let _ = PickyPerf.event("context_line_body")
         VStack(alignment: .leading, spacing: 4) {
             if hasPrimaryContext {
                 primaryContextLine
@@ -83,29 +84,38 @@ struct PickyConversationContextLineView: View {
         .foregroundColor(DS.Colors.textTertiary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: contextRefreshKey) {
+            PickyPerf.event("context_line_refresh_task_start")
             // SWR step 1: hydrate from cache in case cwd became valid after init seeding.
             if gitStatus == nil, let cachedStatus = PickyGitRepositoryStatus.cached(cwd: session.cwd) {
                 gitStatus = cachedStatus
             }
 
             // SWR step 2: revalidate git (cheap, always run so insertions/ahead-behind stay accurate).
-            let freshGit = await PickyGitRepositoryStatus.load(cwd: session.cwd)
+            let freshGit = await PickyPerf.interval("context_line_git_load") {
+                await PickyGitRepositoryStatus.load(cwd: session.cwd)
+            }
             guard !Task.isCancelled else { return }
+            PickyPerf.event("context_line_git_state_publish")
             gitStatus = freshGit
 
             // SWR step 3: PR — paint cached value, only hit `gh` if cache is missing or stale.
             let branch = freshGit?.branchName
             let cachedPR = PickyGitHubPullRequestStatus.cached(cwd: session.cwd, branch: branch)
             if let cachedPR {
+                PickyPerf.event("context_line_pr_cached_publish")
                 pullRequestStatus = cachedPR.status
             }
             let needsPRFetch = cachedPR == nil || cachedPR?.isStale() == true
             guard needsPRFetch else { return }
-            let freshPR = await PickyGitHubPullRequestStatus.load(cwd: session.cwd, branch: branch)
+            let freshPR = await PickyPerf.interval("context_line_pr_load") {
+                await PickyGitHubPullRequestStatus.load(cwd: session.cwd, branch: branch)
+            }
             guard !Task.isCancelled else { return }
+            PickyPerf.event("context_line_pr_state_publish")
             pullRequestStatus = freshPR
         }
         .task(id: completedSessionRefreshKey) {
+            PickyPerf.event("context_line_completed_refresh_task_start")
             guard PickyGitContextRefreshPolicy.shouldAutoRefreshGit(for: session.status) else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: PickyGitContextRefreshPolicy.completedSessionRefreshIntervalNanoseconds)

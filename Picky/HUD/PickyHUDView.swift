@@ -160,6 +160,7 @@ struct PickyHUDView: View {
     }
 
     var body: some View {
+        let _ = PickyPerf.event("hud_root_body")
         hudContent
             // Measure the HUD's intrinsic content height before the hosting view
             // applies the current panel height. Without this, active streaming
@@ -220,25 +221,31 @@ struct PickyHUDView: View {
     }
 
     private func handleHUDSizeChange(_ size: CGSize) {
+        PickyPerf.event("hud_size_preference_changed")
         let activeID = activeSession?.id
-        let panelSize = PickyHUDDockLayout.contentSizeReservingAddSlotExpansion(
-            measuredSize: size,
-            activeSessionID: activeID,
-            hasVisibleSessions: !visibleSessions.isEmpty,
-            isAddSlotExpanded: isDockAddSlotExpanded,
-            metrics: dockMetrics
-        )
+        let panelSize = PickyPerf.interval("hud_size_compute_panel_size") {
+            PickyHUDDockLayout.contentSizeReservingAddSlotExpansion(
+                measuredSize: size,
+                activeSessionID: activeID,
+                hasVisibleSessions: !visibleSessions.isEmpty,
+                isAddSlotExpanded: isDockAddSlotExpanded,
+                metrics: dockMetrics
+            )
+        }
 
-        sizeReporter.handleMeasuredSize(
-            panelSize,
-            activeSessionID: activeID,
-            extensionUiRequestID: activeSession?.pendingExtensionUiRequest?.id,
-            shouldHoldHeight: shouldHoldPanelHeightDuringActiveTurn,
-            onSizeChange: onSizeChange
-        )
+        PickyPerf.interval("hud_size_reporter_handle") {
+            sizeReporter.handleMeasuredSize(
+                panelSize,
+                activeSessionID: activeID,
+                extensionUiRequestID: activeSession?.pendingExtensionUiRequest?.id,
+                shouldHoldHeight: shouldHoldPanelHeightDuringActiveTurn,
+                onSizeChange: onSizeChange
+            )
+        }
     }
 
     private func handleCardMeasuredSize(_ size: CGSize) {
+        PickyPerf.event("hud_card_size_preference_changed")
         guard size.width > 0, size.height > 0 else { return }
         onCardMeasuredSize(size)
     }
@@ -1116,6 +1123,7 @@ private struct PickyHUDMiniPreviewCardView: View {
     private var verticalPadding: CGFloat { max(7, 9 * scale) }
 
     var body: some View {
+        let _ = PickyPerf.event("mini_preview_body")
         HStack(spacing: max(6, 8 * scale)) {
             Circle()
                 .fill(statusColor)
@@ -1157,10 +1165,13 @@ private struct PickyHUDMiniPreviewCardView: View {
                 )
         }
         .task(id: "\(session.cwd ?? "")|\(session.updatedAt.timeIntervalSince1970)") {
+            PickyPerf.event("mini_preview_git_task_start")
             if gitStatus == nil, let cached = PickyGitRepositoryStatus.cached(cwd: session.cwd) {
                 gitStatus = cached
             }
-            let freshGit = await PickyGitRepositoryStatus.load(cwd: session.cwd)
+            let freshGit = await PickyPerf.interval("mini_preview_git_load") {
+                await PickyGitRepositoryStatus.load(cwd: session.cwd)
+            }
             guard !Task.isCancelled else { return }
             gitStatus = freshGit
         }
@@ -1650,6 +1661,7 @@ private struct PickyHUDDockRailView: View {
     }
 
     var body: some View {
+        let _ = PickyPerf.event("dock_rail_body")
         Group {
             if dockSide.orientation == .horizontal {
                 HStack(spacing: 2) {
@@ -2991,6 +3003,7 @@ private struct PickyHUDDockIconView: View {
     }
 
     var body: some View {
+        let _ = PickyPerf.event("dock_icon_body")
         dockIconContent
             .frame(width: metrics.sessionTileWidth, height: metrics.sessionTileHeight)
             .background(dockIconBackground)
@@ -3168,6 +3181,7 @@ private struct PickyHUDDockIconView: View {
                         .shadow(color: DS.Colors.accentText.opacity(isSelected ? 0.18 : 0.10), radius: 2.0, x: 0, y: 0.7)
                 } else if session.status == .running {
                     TimelineView(.animation) { context in
+                        let _ = PickyPerf.event("dock_icon_timeline_tick")
                         let phase = breathingPhase(at: context.date)
                         ZStack {
                             Circle()

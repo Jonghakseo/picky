@@ -374,17 +374,21 @@ final class PickyHUDOverlayManager {
         // Avoid spamming SwiftUI re-renders with identical values; @Published
         // publishes on every assignment regardless of equality.
         if abs(entry.placement.availableCardMaxHeight - next) > 0.5 {
+            PickyPerf.event("placement_publish_available_height")
             entry.placement.availableCardMaxHeight = next
         }
         if entry.placement.dockSide != pos.side {
+            PickyPerf.event("placement_publish_dock_side")
             entry.placement.dockSide = pos.side
         }
         let nextCardSize = cardSize(for: displayID)
         if entry.placement.cardSize != nextCardSize {
+            PickyPerf.event("placement_publish_card_size")
             entry.placement.cardSize = nextCardSize
         }
         let nextPanelWidth = panelWidth(for: displayID, dockSide: pos.side)
         if abs(entry.placement.panelWidth - nextPanelWidth) > 0.5 {
+            PickyPerf.event("placement_publish_panel_width")
             entry.placement.panelWidth = nextPanelWidth
         }
     }
@@ -438,9 +442,13 @@ final class PickyHUDOverlayManager {
     // MARK: - Resizing / placement
 
     private func resizePanel(displayID: CGDirectDisplayID, toContentSize contentSize: CGSize, deferShrink: Bool) {
+        PickyPerf.event("panel_resize_requested")
         guard var entry = panelsByDisplayID[displayID] else { return }
         guard let screen = screen(for: displayID) else { return }
-        guard let targetFrame = targetFrame(for: screen, displayID: displayID, contentSize: contentSize) else { return }
+        let resolvedTargetFrame = PickyPerf.interval("panel_resize_target_frame") {
+            self.targetFrame(for: screen, displayID: displayID, contentSize: contentSize)
+        }
+        guard let targetFrame = resolvedTargetFrame else { return }
 
         let shouldDeferShrink = PickyHUDExpansion.shouldDeferPanelShrink(
             currentHeight: entry.panel.frame.height,
@@ -470,7 +478,9 @@ final class PickyHUDOverlayManager {
         panelsByDisplayID[displayID] = entry
 
         if entry.panel.frame.integral != targetFrame.integral {
-            entry.panel.setFrame(targetFrame, display: true)
+            PickyPerf.interval("panel_resize_set_frame") {
+                entry.panel.setFrame(targetFrame, display: true)
+            }
         }
     }
 
@@ -790,6 +800,7 @@ final class PickyHUDOverlayManager {
     }
 
     private func handleCardMeasuredSize(displayID: CGDirectDisplayID, size: CGSize) {
+        PickyPerf.event("overlay_card_measured_size")
         guard size.width > 0, size.height > 0, var entry = panelsByDisplayID[displayID] else { return }
         if let last = entry.lastCardMeasuredSize,
            abs(last.width - size.width) <= 0.5,

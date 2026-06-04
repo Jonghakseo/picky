@@ -88,6 +88,7 @@ struct PickyConversationComposerView: View {
     }
 
     var body: some View {
+        let _ = PickyPerf.event("composer_body")
         VStack(alignment: .leading, spacing: 4) {
             slashCommandAutocomplete
             fileMentionAutocomplete
@@ -1371,6 +1372,7 @@ private struct PickyRunningComposerBorder: View {
     @State private var phase: Double = 0
 
     var body: some View {
+        let _ = PickyPerf.event("running_composer_border_body")
         RoundedRectangle(cornerRadius: 8, style: .continuous)
             .strokeBorder(
                 AngularGradient(
@@ -1387,7 +1389,9 @@ private struct PickyRunningComposerBorder: View {
                 lineWidth: 1.0
             )
             .onAppear {
+                PickyPerf.event("running_composer_border_appear")
                 guard !reduceMotion else { return }
+                PickyPerf.event("running_composer_border_animation_start")
                 withAnimation(.linear(duration: 2.4).repeatForever(autoreverses: false)) {
                     phase = 360
                 }

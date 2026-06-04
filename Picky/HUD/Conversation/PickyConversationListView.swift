@@ -21,8 +21,8 @@ struct PickyConversationListView: View {
         // `turnGroups` / `visibleMessages` (each of which walks `session.messages`).
         // The computed `var`s are preserved for test access — see
         // PickyConversationCardViewTests.
-        let messages = visibleMessages
-        let groups = turnGroups
+        let messages = PickyPerf.interval("conversation_visible_messages") { visibleMessages }
+        let groups = PickyPerf.interval("conversation_turn_groups") { turnGroups }
         let hiddenCount = max(0, session.messages.count - messages.count)
         ScrollViewReader { proxy in
             ZStack {
@@ -83,6 +83,7 @@ struct PickyConversationListView: View {
                 hasAppeared = true
             }
             .onChange(of: bottomScrollTrigger) { oldValue, newValue in
+                PickyPerf.event("conversation_bottom_scroll_trigger_changed")
                 scrollToBottom(proxy: proxy, animated: PickyConversationScrollPolicy.shouldAnimateScroll(hasAppeared: hasAppeared))
                 if PickyConversationScrollPolicy.shouldRepinAfterQuestionCollapse(from: oldValue, to: newValue) {
                     scheduleQuestionCollapseScrollToBottom(proxy: proxy)
@@ -514,10 +515,17 @@ struct PickyConversationListView: View {
     }
 
     private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool) {
+        if animated {
+            PickyPerf.event("conversation_scroll_to_bottom_animated")
+        } else {
+            PickyPerf.event("conversation_scroll_to_bottom_instant")
+        }
         DispatchQueue.main.async {
             if animated {
                 withAnimation(PickyConversationScrollPolicy.liveUpdateAnimation) {
-                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                    PickyPerf.interval("conversation_scroll_proxy_scroll_to") {
+                        proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                    }
                 }
             } else {
                 // First hover can inherit the HUD reveal transaction. Force the
@@ -526,7 +534,9 @@ struct PickyConversationListView: View {
                 var transaction = Transaction(animation: nil)
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
-                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                    PickyPerf.interval("conversation_scroll_proxy_scroll_to") {
+                        proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                    }
                 }
             }
         }

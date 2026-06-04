@@ -16,6 +16,7 @@ struct PickyAgentBubbleView: View {
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
     var body: some View {
+        let _ = PickyPerf.event("agent_bubble_body")
         HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
             PickyAgentBubbleSurfaceView(
                 markdown: previewText,
@@ -69,6 +70,7 @@ struct PickyNotifyBubbleView: View {
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
 
     var body: some View {
+        let _ = PickyPerf.event("notify_bubble_body")
         HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 6) {

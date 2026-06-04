@@ -621,18 +621,35 @@
       }
     },
     "hud.conversation.viewAsTui": {
-      "comment": "Hint above a hidden-history fold. Format arg is the integer count of hidden older messages. Opens the Pi terminal overlay panel.",
+      "comment": "Button label that opens the full Pi terminal overlay panel.",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Pi terminal · %lld more"
+            "value": "Open Pi terminal"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "TUI창으로 전체 대화 보기 · %lld개 더"
+            "value": "TUI창으로 전체 대화 보기"
+          }
+        }
+      }
+    },
+    "hud.conversation.viewAsTuiMoreSuffix": {
+      "comment": "Suffix appended to the Pi terminal overlay button when older messages are hidden. Format arg is the integer count of hidden older messages.",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " · %lld more"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " · %lld개 더"
           }
         }
       }

@@ -44,9 +44,7 @@ struct PickyConversationListView: View {
                                 viewModel.dismissTerminalSyncOutcome(sessionID: session.id)
                             }
                         }
-                        if hiddenCount > 0 {
-                            moreHistoryButton(hiddenCount: hiddenCount)
-                        }
+                        moreHistoryButton(hiddenCount: hiddenCount)
                         if messages.isEmpty && !hasQueueOrActivity {
                             Color.clear
                                 .frame(height: 24)
@@ -433,6 +431,14 @@ struct PickyConversationListView: View {
         max(0, session.messages.count - visibleMessages.count)
     }
 
+    private func moreHistoryButtonLabel(hiddenCount: Int) -> String {
+        var label = L10n.t("hud.conversation.viewAsTui")
+        if hiddenCount > 0 {
+            label += L10n.t("hud.conversation.viewAsTuiMoreSuffix", Int64(hiddenCount))
+        }
+        return label
+    }
+
     private func moreHistoryButton(hiddenCount: Int) -> some View {
         Button(action: {
             viewModel.openTerminalOverlay(sessionID: session.id)
@@ -440,7 +446,7 @@ struct PickyConversationListView: View {
             HStack(spacing: 5) {
                 Image(systemName: "terminal.fill")
                     .pickyFont(size: 8.5, weight: .semibold)
-                Text(L10n.t("hud.conversation.viewAsTui", Int64(hiddenCount)))
+                Text(moreHistoryButtonLabel(hiddenCount: hiddenCount))
                     .font(PickyHUDTypography.statusMedium)
             }
             .foregroundColor(DS.Colors.textTertiary)

@@ -1114,6 +1114,8 @@ private struct PickyHUDMiniPreviewCardView: View {
         _gitStatus = State(initialValue: PickyGitRepositoryStatus.cached(cwd: session.cwd))
     }
 
+    private static let gitRefreshBucketSeconds: TimeInterval = 5
+
     private var scale: CGFloat { metrics.scale }
     private var cornerRadius: CGFloat { max(12, 16 * scale) }
     private var titleFontSize: CGFloat { max(12, 14 * scale) }
@@ -1121,6 +1123,11 @@ private struct PickyHUDMiniPreviewCardView: View {
     private var statusDotSide: CGFloat { max(6, 7 * scale) }
     private var horizontalPadding: CGFloat { max(8, 10 * scale) }
     private var verticalPadding: CGFloat { max(7, 9 * scale) }
+
+    private var gitRefreshKey: String {
+        let updatedAtBucket = Int(session.updatedAt.timeIntervalSince1970 / Self.gitRefreshBucketSeconds)
+        return "\(session.cwd ?? "")|\(updatedAtBucket)"
+    }
 
     var body: some View {
         let _ = PickyPerf.event("mini_preview_body")
@@ -1164,7 +1171,7 @@ private struct PickyHUDMiniPreviewCardView: View {
                         .strokeBorder(DS.Colors.borderSubtle.opacity(0.55), lineWidth: 0.8)
                 )
         }
-        .task(id: "\(session.cwd ?? "")|\(session.updatedAt.timeIntervalSince1970)") {
+        .task(id: gitRefreshKey) {
             PickyPerf.event("mini_preview_git_task_start")
             if gitStatus == nil, let cached = PickyGitRepositoryStatus.cached(cwd: session.cwd) {
                 gitStatus = cached

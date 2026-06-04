@@ -187,11 +187,16 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         print("🎯 Picky: Starting...")
         print("🎯 Picky: Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")")
 
+        let launchSettings = settingsStore.load()
+        // Capture the settings that are baked into the running app / primary
+        // daemon at launch so the Settings footer can offer a relaunch only
+        // when a later edit actually needs one.
+        PickyRestartSettingsSnapshotStore.captureIfNeeded(settings: launchSettings)
         // Apply the persisted language choice before any SwiftUI host is
         // built so the very first frame already renders in the chosen
         // language. Subsequent in-app switches go through the same
         // `apply(_:)` path from the settings UI.
-        LocaleManager.shared.apply(settingsStore.load().appLanguage)
+        LocaleManager.shared.apply(launchSettings.appLanguage)
 
         guard !Self.isRunningUnitTests else {
             print("🎯 Picky: Unit test host detected; skipping app services and permission probes")

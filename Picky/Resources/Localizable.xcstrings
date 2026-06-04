@@ -134,6 +134,22 @@
         }
       }
     },
+    "common.restart": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restart"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "재시작"
+          }
+        }
+      }
+    },
     "common.ready": {
       "comment": "Status pill for non-permission readiness.",
       "localizations": {
@@ -488,6 +504,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Picky가 메뉴바에서 종료되며, 진행 중인 로컬 세션이 중단될 수 있어요."
+          }
+        }
+      }
+    },
+    "footer.quit.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit Picky?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky를 종료할까요?"
+          }
+        }
+      }
+    },
+    "footer.restart.body": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky will quit and reopen so restart-required settings can take effect. Ongoing local sessions may be interrupted."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "재시작이 필요한 설정을 적용하기 위해 Picky를 종료한 뒤 다시 열어요. 진행 중인 로컬 세션이 중단될 수 있어요."
+          }
+        }
+      }
+    },
+    "footer.restart.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restart Picky?"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky를 재시작할까요?"
           }
         }
       }
@@ -2666,13 +2730,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quit Picky"
+            "value": "Restart Picky"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Picky 종료"
+            "value": "Picky 재시작"
           }
         }
       }
@@ -2682,13 +2746,45 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quit Picky normally, then open it again to apply the selected runtime."
+            "value": "Quit and reopen Picky now so the selected runtime is applied."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Picky를 정상 종료한 뒤 다시 열면 선택한 런타임이 적용돼요."
+            "value": "선택한 런타임을 적용하도록 Picky를 종료한 뒤 바로 다시 열어요."
+          }
+        }
+      }
+    },
+    "settings.mainAgentRuntime.restartButton": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restart Picky"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picky 재시작"
+          }
+        }
+      }
+    },
+    "settings.mainAgentRuntime.restartButton.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit and reopen Picky now so the selected runtime is applied."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 런타임을 적용하도록 Picky를 종료한 뒤 바로 다시 열어요."
           }
         }
       }

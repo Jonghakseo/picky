@@ -882,11 +882,11 @@ struct CompanionPanelSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Button(action: quitPickyForRuntimeRestart) {
+            Button(action: restartPickyForRuntimeSettings) {
                 HStack(spacing: 6) {
-                    Image(systemName: "power")
+                    Image(systemName: "arrow.clockwise")
                         .pickyFont(size: 10, weight: .semibold)
-                    Text("settings.mainAgentRuntime.quitButton")
+                    Text("settings.mainAgentRuntime.restartButton")
                         .pickyFont(size: 11, weight: .semibold)
                 }
                 .foregroundColor(DS.Colors.textSecondary)
@@ -899,7 +899,7 @@ struct CompanionPanelSettingsView: View {
             }
             .buttonStyle(.plain)
             .pointerCursor()
-            .help(L10n.t("settings.mainAgentRuntime.quitButton.help"))
+            .help(L10n.t("settings.mainAgentRuntime.restartButton.help"))
         }
         .padding(8)
         .background(
@@ -2056,8 +2056,8 @@ struct CompanionPanelSettingsView: View {
         }
     }
 
-    private func quitPickyForRuntimeRestart() {
-        NSApp.terminate(nil)
+    private func restartPickyForRuntimeSettings() {
+        PickyRelauncher.relaunchAndTerminate()
     }
 
     private func isMainAgentDraftDirty(

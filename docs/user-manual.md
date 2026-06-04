@@ -693,6 +693,8 @@ Use **Change**, then **Save** or **Cancel**. Conflicts are rejected. **Reset to 
 | Screenshot quality | 1× 1280 px, 1.5× 1920 px, 2× 2560 px longest edge. Captured screenshots are written to the per-user temporary directory (`FileManager.default.temporaryDirectory/Picky/Screenshots`), not the durable Application Support tree. |
 | Additional instructions | Extra standing instructions baked into the Picky bootstrap; apply on next Picky session/relaunch. |
 
+When saved changes require a fresh process (currently **Runtime** or the effective `PI_CODING_AGENT_DIR` for running Picky/Pi sessions), the footer action changes from **Quit** to **Restart** so you can apply them without manually reopening Picky.
+
 #### Customizing the Picky workspace
 
 The Picky main agent runs in a workspace folder so Pi automatically loads any `AGENTS.md`, `.pi/extensions`, `.pi/skills`, and `.pi/prompts` you drop in there. Picky seeds a default `AGENTS.md` with the always-on persona and Pickle delegation policy on first launch.

@@ -72,6 +72,9 @@ struct CompanionPanelView: View {
     private var statusRouteBinding: Binding<CompanionPanelStatusRoute> {
         Binding(get: { navigator.statusRoute }, set: { navigator.statusRoute = $0 })
     }
+    private var restartRequirement: PickyRestartRequirement {
+        PickyRestartSettingsSnapshotStore.requirement(for: settingsViewModel.settings)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -117,9 +120,12 @@ struct CompanionPanelView: View {
                 .background(DS.Colors.borderSubtle.opacity(0.5))
                 .padding(.horizontal, 16)
 
-            CompanionPanelFooterView(onFeedbackTapped: openFeedback)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+            CompanionPanelFooterView(
+                restartRequirement: restartRequirement,
+                onFeedbackTapped: openFeedback
+            )
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
         }
         .frame(width: CompanionPanelMetrics.contentWidth, height: CompanionPanelMetrics.contentHeight)
         .background(panelBackground)

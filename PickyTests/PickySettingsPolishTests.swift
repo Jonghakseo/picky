@@ -117,6 +117,85 @@ struct PickySettingsPolishTests {
         #expect(store.load().mainAgentThinkingLevel == .high)
     }
 
+    @Test func restartRequirementDetectsRuntimeModeChanges() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-restart-requirement-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.mainAgentRuntimeMode = .pi
+        let applied = PickyRestartRequirementDetector.snapshot(
+            from: settings,
+            environment: [:],
+            homeURL: root,
+            runtimeMode: .pi
+        )
+
+        settings.mainAgentRuntimeMode = .openAIRealtime
+        let requirement = PickyRestartRequirementDetector.requirement(
+            for: settings,
+            applied: applied,
+            environment: [:],
+            homeURL: root
+        )
+
+        #expect(requirement.reasons == [.mainAgentRuntime(desired: .openAIRealtime, applied: .pi)])
+    }
+
+    @Test func restartRequirementDetectsEffectivePiCodingAgentDirChanges() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-restart-requirement-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let originalAgentDir = root.appendingPathComponent("agent-a", isDirectory: true)
+        let newAgentDir = root.appendingPathComponent("agent-b", isDirectory: true)
+        try FileManager.default.createDirectory(at: originalAgentDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: newAgentDir, withIntermediateDirectories: true)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.piCodingAgentDir = originalAgentDir.path
+        let applied = PickyRestartRequirementDetector.snapshot(
+            from: settings,
+            environment: [:],
+            homeURL: root,
+            runtimeMode: settings.mainAgentRuntimeMode
+        )
+
+        settings.piCodingAgentDir = newAgentDir.path
+        let requirement = PickyRestartRequirementDetector.requirement(
+            for: settings,
+            applied: applied,
+            environment: [:],
+            homeURL: root
+        )
+
+        #expect(requirement.reasons == [.piCodingAgentDir(desiredPath: newAgentDir.path, appliedPath: originalAgentDir.path)])
+    }
+
+    @Test func relauncherShellQuotesBundlePaths() {
+        #expect(PickyRelauncher.shellQuoted("/Applications/Picky.app") == "'/Applications/Picky.app'")
+        #expect(PickyRelauncher.shellQuoted("/tmp/Picky's App.app") == "'/tmp/Picky'\\''s App.app'")
+    }
+
+    @Test func restartRequirementIgnoresPiBinaryPathChanges() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-restart-requirement-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        let applied = PickyRestartRequirementDetector.snapshot(
+            from: settings,
+            environment: [:],
+            homeURL: root,
+            runtimeMode: settings.mainAgentRuntimeMode
+        )
+
+        settings.piBinaryPath = root.appendingPathComponent("custom-pi", isDirectory: false).path
+        let requirement = PickyRestartRequirementDetector.requirement(
+            for: settings,
+            applied: applied,
+            environment: [:],
+            homeURL: root
+        )
+
+        #expect(requirement == .none)
+    }
+
     @MainActor @Test func settingsViewModelSavePreservesRuntimeRecentPickleFolders() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }

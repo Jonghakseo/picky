@@ -15,11 +15,24 @@ struct CompanionPanelFooterView: View {
     @EnvironmentObject private var appearanceStore: PickyAppearanceStore
     @State private var isQuitConfirmationPresented = false
 
+    /// Settings edits that need a fresh Picky process to become the applied
+    /// runtime/daemon environment. When present, the left footer action becomes
+    /// Restart instead of Quit.
+    var restartRequirement: PickyRestartRequirement = .none
     /// Tapped when the user hits the bug glyph next to the appearance toggle.
     /// Hoisted to the parent so the footer stays a leaf view; the parent
     /// routes the panel to `Status → Feedback` regardless of which tab is
     /// currently active.
     var onFeedbackTapped: () -> Void = {}
+    var terminate: () -> Void = { NSApp.terminate(nil) }
+    var relaunchAndTerminate: () -> Void = { PickyRelauncher.relaunchAndTerminate() }
+
+    private var primaryActionRequiresRestart: Bool { restartRequirement.isRequired }
+    private var primaryActionTitleKey: String { primaryActionRequiresRestart ? "common.restart" : "common.quit" }
+    private var primaryActionIcon: String { primaryActionRequiresRestart ? "arrow.clockwise" : "power" }
+    private var primaryActionForeground: Color {
+        primaryActionRequiresRestart ? DS.Colors.warningText : DS.Colors.destructiveText.opacity(0.82)
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -27,12 +40,12 @@ struct CompanionPanelFooterView: View {
                 isQuitConfirmationPresented = true
             }) {
                 HStack(spacing: 6) {
-                    Image(systemName: "power")
+                    Image(systemName: primaryActionIcon)
                         .pickyFont(size: 11, weight: .medium)
-                    Text("common.quit")
+                    Text(LocalizedStringKey(primaryActionTitleKey))
                         .pickyFont(size: 12, weight: .medium)
                 }
-                .foregroundColor(DS.Colors.destructiveText.opacity(0.82))
+                .foregroundColor(primaryActionForeground)
             }
             .buttonStyle(.plain)
             .pointerCursor()
@@ -43,13 +56,17 @@ struct CompanionPanelFooterView: View {
 
             CompanionPanelAppearanceToggle()
         }
-        .alert("Quit?", isPresented: $isQuitConfirmationPresented) {
-            Button("Cancel", role: .cancel) {}
-            Button("Quit", role: .destructive) {
-                NSApp.terminate(nil)
+        .alert(L10n.t(primaryActionRequiresRestart ? "footer.restart.title" : "footer.quit.title"), isPresented: $isQuitConfirmationPresented) {
+            Button(L10n.t("common.cancel"), role: .cancel) {}
+            Button(L10n.t(primaryActionRequiresRestart ? "common.restart" : "common.quit"), role: primaryActionRequiresRestart ? nil : .destructive) {
+                if primaryActionRequiresRestart {
+                    relaunchAndTerminate()
+                } else {
+                    terminate()
+                }
             }
         } message: {
-            Text("footer.quit.body")
+            Text(LocalizedStringKey(primaryActionRequiresRestart ? "footer.restart.body" : "footer.quit.body"))
         }
     }
 }

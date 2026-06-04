@@ -1114,7 +1114,7 @@ private struct PickyHUDMiniPreviewCardView: View {
         _gitStatus = State(initialValue: PickyGitRepositoryStatus.cached(cwd: session.cwd))
     }
 
-    private static let gitRefreshBucketSeconds: TimeInterval = 5
+    private static let gitRefreshBucketSeconds: TimeInterval = 20
 
     private var scale: CGFloat { metrics.scale }
     private var cornerRadius: CGFloat { max(12, 16 * scale) }

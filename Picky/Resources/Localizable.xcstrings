@@ -2504,13 +2504,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Leave empty to auto-discover with PI_CODING_AGENT_DIR/bin/pi, PATH (`which pi`), then ~/.pi/agent/bin/pi. Applies after restarting Picky."
+            "value": "Leave empty to auto-discover with PI_CODING_AGENT_DIR/bin/pi, PATH (`which pi`), then ~/.pi/agent/bin/pi. Used when Picky runs `pi install/remove`; install actions pick it up immediately."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "비워두면 PI_CODING_AGENT_DIR/bin/pi, PATH(`which pi`), ~/.pi/agent/bin/pi 순서로 자동 탐색해요. Picky 재시작 후 적용돼요."
+            "value": "비워두면 PI_CODING_AGENT_DIR/bin/pi, PATH(`which pi`), ~/.pi/agent/bin/pi 순서로 자동 탐색해요. Picky가 `pi install/remove`를 실행할 때 사용하며, 설치/제거 작업에는 즉시 반영돼요."
           }
         }
       }
@@ -2552,13 +2552,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Leave empty to use the launch environment, then fallback to ~/.pi/agent. Extension installs and Pi sessions share this directory."
+            "value": "Leave empty to use the launch environment, then fallback to ~/.pi/agent. Extension installs pick this up immediately; running Picky/Pi sessions apply it after restarting Picky."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "비워두면 실행 환경값, ~/.pi/agent 순서로 사용해요. 확장 설치와 Pi 세션이 이 디렉터리를 공유해요."
+            "value": "비워두면 실행 환경값, ~/.pi/agent 순서로 사용해요. 확장 설치에는 즉시 반영되고, 실행 중인 Picky/Pi 세션에는 Picky 재시작 후 적용돼요."
           }
         }
       }

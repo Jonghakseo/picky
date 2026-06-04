@@ -683,8 +683,8 @@ Use **Change**, then **Save** or **Cancel**. Conflicts are rejected. **Reset to 
 | Setting | Values / behavior |
 | --- | --- |
 | Picky cwd | Applies to captured Picky context and the next Picky session. Defaults to the seeded Picky workspace at `~/Library/Application Support/Picky/Workspace`. Must be an existing directory. See **Customizing the Picky workspace** below. |
-| Pi binary | Optional path to the `pi` executable. Leave empty to auto-discover via `PI_CODING_AGENT_DIR/bin/pi`, then `PATH` (`which pi`), then `~/.pi/agent/bin/pi`. Applies after restarting Picky. |
-| PI_CODING_AGENT_DIR | Optional Pi coding-agent directory for Pi sessions and extension/skill installs. Leave empty to use the launch environment's `PI_CODING_AGENT_DIR`, then fallback to `~/.pi/agent`. Must be an existing directory when set. |
+| Pi binary | Optional path to the `pi` executable. Leave empty to auto-discover via `PI_CODING_AGENT_DIR/bin/pi`, then `PATH` (`which pi`), then `~/.pi/agent/bin/pi`. Used when Picky runs `pi install/remove`; install/remove actions pick it up immediately. |
+| PI_CODING_AGENT_DIR | Optional Pi coding-agent directory for Pi sessions and extension/skill installs. Leave empty to use the launch environment's `PI_CODING_AGENT_DIR`, then fallback to `~/.pi/agent`. Must be an existing directory when set. Extension/skill installs pick it up immediately; running Picky/Pi sessions apply it after restarting Picky. |
 | Runtime | Pi or OpenAI Realtime, when realtime opt-in is enabled. |
 | Pi model | Automatic or a pinned model pattern. |
 | Reasoning level | Off, Minimal, Low, Medium, High, Extra High. |

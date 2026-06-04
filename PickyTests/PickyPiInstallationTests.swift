@@ -44,18 +44,18 @@ struct PickyPiInstallationTests {
         #expect(environment["PATH"]?.split(separator: ":").first == Substring(agentDir.appendingPathComponent("bin").path))
     }
 
-    @Test func pathLookupBehavesLikeWhichPiAndInfersAgentDirFromBinPi() throws {
+    @Test func pathLookupBehavesLikeWhichPiWithoutChangingDefaultAgentDir() throws {
         let scratch = try ScratchPiInstallation()
-        let agentDir = scratch.tmp.appendingPathComponent("elsewhere/agent", isDirectory: true)
-        let pi = try scratch.makeExecutable(at: "elsewhere/agent/bin/pi")
+        let binDir = scratch.tmp.appendingPathComponent("elsewhere/bin", isDirectory: true)
+        let pi = try scratch.makeExecutable(at: "elsewhere/bin/pi")
 
         let resolved = PickyPiInstallation.resolve(
             homeURL: scratch.home,
-            environment: ["PATH": agentDir.appendingPathComponent("bin").path]
+            environment: ["PATH": binDir.path]
         )
 
         #expect(resolved.binaryURL?.path == pi.path)
-        #expect(resolved.codingAgentDirURL.path == agentDir.path)
+        #expect(resolved.codingAgentDirURL.path == scratch.home.appendingPathComponent(".pi/agent").path)
     }
 
     @Test func fallsBackToLegacyHomeAgentPi() throws {

@@ -3,8 +3,9 @@
 //  Picky
 //
 //  Resolves the user's Pi CLI and Pi coding-agent directory. Picky defaults to
-//  auto-discovery so non-standard Pi installs do not need goofy symlinks, while
-//  still preserving ~/.pi/agent compatibility for existing users.
+//  auto-discovery for the executable so non-standard Pi installs do not need
+//  goofy symlinks, while still preserving ~/.pi/agent compatibility for the
+//  coding-agent directory unless the user or environment explicitly overrides it.
 //
 
 import Foundation
@@ -60,7 +61,6 @@ enum PickyPiInstallation {
 
         let codingAgentDirURL = configuredAgentDirURL
             ?? environmentAgentDirURL
-            ?? inferredAgentDir(fromBinaryURL: binaryURL)
             ?? defaultAgentDir(homeURL: homeURL)
 
         return PickyResolvedPiInstallation(binaryURL: binaryURL, codingAgentDirURL: codingAgentDirURL)

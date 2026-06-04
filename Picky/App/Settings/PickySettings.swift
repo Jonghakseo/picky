@@ -834,7 +834,7 @@ struct PickySettings: Codable, Equatable {
     /// then the legacy ~/.pi/agent/bin/pi fallback.
     var piBinaryPath: String
     /// Empty means use PI_CODING_AGENT_DIR from the launch environment when present,
-    /// infer from the resolved `pi` binary when possible, then fallback to ~/.pi/agent.
+    /// then fallback to ~/.pi/agent.
     var piCodingAgentDir: String
     var sttProvider: PickyVoiceProviderSelection
     var ttsProvider: PickyVoiceProviderSelection

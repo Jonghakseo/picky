@@ -344,10 +344,12 @@ enum PickySkillInstaller {
     }
 
     fileprivate static func targetURL(for name: String, homeURL: URL) -> URL {
-        let preferences: PickyPiInstallationPreferences = homeURL.path == FileManager.default.homeDirectoryForCurrentUser.path
+        let isDefaultHome = homeURL.path == FileManager.default.homeDirectoryForCurrentUser.path
+        let preferences: PickyPiInstallationPreferences = isDefaultHome
             ? PickyPiInstallation.preferences(from: PickySettingsStore().load())
             : .init()
-        return PickyPiInstallation.resolve(preferences: preferences, homeURL: homeURL)
+        let environment = isDefaultHome ? ProcessInfo.processInfo.environment : [:]
+        return PickyPiInstallation.resolve(preferences: preferences, homeURL: homeURL, environment: environment)
             .codingAgentDirURL
             .appendingPathComponent("skills", isDirectory: true)
             .appendingPathComponent(name, isDirectory: true)

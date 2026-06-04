@@ -830,6 +830,12 @@ struct PickySettings: Codable, Equatable {
     var readOnlyInvestigationPreference: Bool
     var daemonPath: String
     var logPath: String
+    /// Empty means auto-discover: PI_CODING_AGENT_DIR/bin/pi, PATH (`which pi`),
+    /// then the legacy ~/.pi/agent/bin/pi fallback.
+    var piBinaryPath: String
+    /// Empty means use PI_CODING_AGENT_DIR from the launch environment when present,
+    /// infer from the resolved `pi` binary when possible, then fallback to ~/.pi/agent.
+    var piCodingAgentDir: String
     var sttProvider: PickyVoiceProviderSelection
     var ttsProvider: PickyVoiceProviderSelection
     /// When false, Picky still shows text replies but skips spoken TTS playback.
@@ -999,6 +1005,8 @@ struct PickySettings: Codable, Equatable {
         readOnlyInvestigationPreference: Bool,
         daemonPath: String,
         logPath: String,
+        piBinaryPath: String = "",
+        piCodingAgentDir: String = "",
         sttProvider: PickyVoiceProviderSelection = .local,
         ttsProvider: PickyVoiceProviderSelection = .local,
         ttsEnabled: Bool = true,
@@ -1065,6 +1073,8 @@ struct PickySettings: Codable, Equatable {
         self.readOnlyInvestigationPreference = readOnlyInvestigationPreference
         self.daemonPath = daemonPath
         self.logPath = logPath
+        self.piBinaryPath = piBinaryPath
+        self.piCodingAgentDir = piCodingAgentDir
         self.sttProvider = sttProvider
         self.ttsProvider = ttsProvider
         self.ttsEnabled = ttsEnabled
@@ -1155,6 +1165,8 @@ struct PickySettings: Codable, Equatable {
             readOnlyInvestigationPreference: true,
             daemonPath: "bundled picky-agentd or local development agentd",
             logPath: appSupportRoot.appendingPathComponent("Logs", isDirectory: true).path,
+            piBinaryPath: "",
+            piCodingAgentDir: "",
             // Fresh installs default to Apple Speech so push-to-talk works
             // without requiring Codex/ChatGPT OAuth, OpenAI API keys, or Azure
             // credentials. Existing users keep whatever they previously chose
@@ -1228,6 +1240,16 @@ struct PickySettings: Codable, Equatable {
         if !worktreeParent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             copy.worktreeParent = NSString(string: worktreeParent).expandingTildeInPath
         }
+        if let normalizedPiBinaryPath = PickyPiInstallation.normalizedPath(piBinaryPath) {
+            copy.piBinaryPath = normalizedPiBinaryPath
+        } else {
+            copy.piBinaryPath = ""
+        }
+        if let normalizedPiCodingAgentDir = PickyPiInstallation.normalizedPath(piCodingAgentDir) {
+            copy.piCodingAgentDir = normalizedPiCodingAgentDir
+        } else {
+            copy.piCodingAgentDir = ""
+        }
         copy.azureOpenAIEndpoint = azureOpenAIEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.azureOpenAIAPIKey = azureOpenAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.azureOpenAITTSEndpoint = azureOpenAITTSEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1294,6 +1316,8 @@ struct PickySettings: Codable, Equatable {
         case readOnlyInvestigationPreference
         case daemonPath
         case logPath
+        case piBinaryPath
+        case piCodingAgentDir
         case sttProvider
         case ttsProvider
         case ttsEnabled
@@ -1365,6 +1389,8 @@ struct PickySettings: Codable, Equatable {
         readOnlyInvestigationPreference = try container.decodeIfPresent(Bool.self, forKey: .readOnlyInvestigationPreference) ?? defaults.readOnlyInvestigationPreference
         daemonPath = try container.decodeIfPresent(String.self, forKey: .daemonPath) ?? defaults.daemonPath
         logPath = try container.decodeIfPresent(String.self, forKey: .logPath) ?? defaults.logPath
+        piBinaryPath = try container.decodeIfPresent(String.self, forKey: .piBinaryPath) ?? defaults.piBinaryPath
+        piCodingAgentDir = try container.decodeIfPresent(String.self, forKey: .piCodingAgentDir) ?? defaults.piCodingAgentDir
         sttProvider = try container.decodeIfPresent(PickyVoiceProviderSelection.self, forKey: .sttProvider) ?? defaults.sttProvider
         ttsProvider = try container.decodeIfPresent(PickyVoiceProviderSelection.self, forKey: .ttsProvider) ?? defaults.ttsProvider
         ttsEnabled = try container.decodeIfPresent(Bool.self, forKey: .ttsEnabled) ?? defaults.ttsEnabled
@@ -1488,12 +1514,16 @@ enum PickySettingsValidationError: LocalizedError, Equatable {
     case invalidDefaultCwd(String)
     case invalidMainAgentCwd(String)
     case invalidWorktreeParent(String)
+    case invalidPiCodingAgentDir(String)
+    case invalidPiBinaryPath(String)
 
     var errorDescription: String? {
         switch self {
         case .invalidDefaultCwd(let path): "Pickle default cwd does not exist or is not a directory: \(path)"
         case .invalidMainAgentCwd(let path): "Picky cwd does not exist or is not a directory: \(path)"
         case .invalidWorktreeParent(let path): "Worktree parent does not exist or is not a directory: \(path)"
+        case .invalidPiCodingAgentDir(let path): "PI_CODING_AGENT_DIR does not exist or is not a directory: \(path)"
+        case .invalidPiBinaryPath(let path): "Pi binary path is not executable: \(path)"
         }
     }
 }

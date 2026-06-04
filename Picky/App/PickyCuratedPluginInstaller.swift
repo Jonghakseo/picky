@@ -28,7 +28,7 @@ enum PickyCuratedPluginInstaller {
         var errorDescription: String? {
             switch self {
             case .piMissing:
-                return "Pi CLI was not found at ~/.pi/agent/bin/pi. Install Pi first, then try again."
+                return "Pi CLI was not found. Set the Pi binary path in Settings or make `pi` discoverable on PATH."
             case .failed(let command, let exitCode, let output):
                 let detail = output.trimmingCharacters(in: .whitespacesAndNewlines)
                 if detail.isEmpty {
@@ -39,14 +39,15 @@ enum PickyCuratedPluginInstaller {
         }
     }
 
-    typealias CommandRunner = (_ arguments: [String], _ homeURL: URL, _ fileManager: FileManager) throws -> CommandResult
+    typealias CommandRunner = (_ arguments: [String], _ homeURL: URL, _ fileManager: FileManager, _ preferences: PickyPiInstallationPreferences) throws -> CommandResult
 
     static func status(
         source: String,
         homeURL: URL = FileManager.default.homeDirectoryForCurrentUser,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        preferences: PickyPiInstallationPreferences? = nil
     ) -> Status {
-        installedPackageSources(homeURL: homeURL, fileManager: fileManager).contains(source) ? .installed : .notInstalled
+        installedPackageSources(homeURL: homeURL, fileManager: fileManager, preferences: resolvedPreferences(preferences, homeURL: homeURL)).contains(source) ? .installed : .notInstalled
     }
 
     @discardableResult
@@ -54,9 +55,10 @@ enum PickyCuratedPluginInstaller {
         source: String,
         homeURL: URL = FileManager.default.homeDirectoryForCurrentUser,
         fileManager: FileManager = .default,
+        preferences: PickyPiInstallationPreferences? = nil,
         commandRunner: CommandRunner = runPiCommand
     ) -> Result<Void, CommandError> {
-        runPi(command: "install", source: source, homeURL: homeURL, fileManager: fileManager, commandRunner: commandRunner)
+        runPi(command: "install", source: source, homeURL: homeURL, fileManager: fileManager, preferences: resolvedPreferences(preferences, homeURL: homeURL), commandRunner: commandRunner)
     }
 
     @discardableResult
@@ -64,9 +66,10 @@ enum PickyCuratedPluginInstaller {
         source: String,
         homeURL: URL = FileManager.default.homeDirectoryForCurrentUser,
         fileManager: FileManager = .default,
+        preferences: PickyPiInstallationPreferences? = nil,
         commandRunner: CommandRunner = runPiCommand
     ) -> Result<Void, CommandError> {
-        runPi(command: "remove", source: source, homeURL: homeURL, fileManager: fileManager, commandRunner: commandRunner)
+        runPi(command: "remove", source: source, homeURL: homeURL, fileManager: fileManager, preferences: resolvedPreferences(preferences, homeURL: homeURL), commandRunner: commandRunner)
     }
 
     private static func runPi(
@@ -74,10 +77,11 @@ enum PickyCuratedPluginInstaller {
         source: String,
         homeURL: URL,
         fileManager: FileManager,
+        preferences: PickyPiInstallationPreferences,
         commandRunner: CommandRunner
     ) -> Result<Void, CommandError> {
         do {
-            let result = try commandRunner([command, source], homeURL, fileManager)
+            let result = try commandRunner([command, source], homeURL, fileManager, preferences)
             guard result.exitCode == 0 else {
                 return .failure(.failed(command: command, exitCode: result.exitCode, output: result.output))
             }
@@ -89,8 +93,11 @@ enum PickyCuratedPluginInstaller {
         }
     }
 
-    private static func installedPackageSources(homeURL: URL, fileManager: FileManager) -> Set<String> {
-        let settingsURL = settingsURL(homeURL: homeURL)
+    private static func installedPackageSources(homeURL: URL, fileManager: FileManager, preferences: PickyPiInstallationPreferences) -> Set<String> {
+        let environment = homeURL.path == FileManager.default.homeDirectoryForCurrentUser.path
+            ? ProcessInfo.processInfo.environment
+            : [:]
+        let settingsURL = PickyPiInstallation.settingsURL(preferences: preferences, homeURL: homeURL, environment: environment, fileManager: fileManager)
         guard let data = try? Data(contentsOf: settingsURL),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let packages = json["packages"] as? [String] else {
@@ -99,24 +106,21 @@ enum PickyCuratedPluginInstaller {
         return Set(packages)
     }
 
-    private static func settingsURL(homeURL: URL) -> URL {
-        homeURL.appendingPathComponent(".pi/agent/settings.json", isDirectory: false)
-    }
-
     private static func runPiCommand(
         arguments: [String],
         homeURL: URL,
-        fileManager: FileManager
+        fileManager: FileManager,
+        preferences: PickyPiInstallationPreferences
     ) throws -> CommandResult {
-        let preferredPi = homeURL.appendingPathComponent(".pi/agent/bin/pi", isDirectory: false)
-        guard fileManager.isExecutableFile(atPath: preferredPi.path) else {
+        let resolved = PickyPiInstallation.resolve(preferences: preferences, homeURL: homeURL, fileManager: fileManager)
+        guard let piURL = resolved.binaryURL, fileManager.isExecutableFile(atPath: piURL.path) else {
             throw CommandError.piMissing
         }
 
         let process = Process()
-        process.executableURL = preferredPi
+        process.executableURL = piURL
         process.arguments = arguments
-        process.environment = mergedEnvironment(homeURL: homeURL)
+        process.environment = PickyPiInstallation.mergedEnvironment(preferences: preferences, homeURL: homeURL, fileManager: fileManager)
 
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -130,18 +134,9 @@ enum PickyCuratedPluginInstaller {
         return CommandResult(exitCode: process.terminationStatus, output: output)
     }
 
-    private static func mergedEnvironment(homeURL: URL) -> [String: String] {
-        var environment = ProcessInfo.processInfo.environment
-        let existingPath = environment["PATH"].map { ":\($0)" } ?? ""
-        environment["PATH"] = [
-            homeURL.appendingPathComponent(".pi/agent/bin", isDirectory: true).path,
-            "/opt/homebrew/bin",
-            "/usr/local/bin",
-            "/usr/bin",
-            "/bin",
-            "/usr/sbin",
-            "/sbin"
-        ].joined(separator: ":") + existingPath
-        return environment
+    private static func resolvedPreferences(_ preferences: PickyPiInstallationPreferences?, homeURL: URL) -> PickyPiInstallationPreferences {
+        if let preferences { return preferences }
+        guard homeURL.path == FileManager.default.homeDirectoryForCurrentUser.path else { return .init() }
+        return PickyPiInstallation.preferences(from: PickySettingsStore().load())
     }
 }

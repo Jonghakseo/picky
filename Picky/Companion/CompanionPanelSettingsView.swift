@@ -181,6 +181,8 @@ struct CompanionPanelSettingsView: View {
     /// view model so the menu bar panel and the HUD see the same data.
     @ObservedObject var sessionListViewModel: PickySessionListViewModel
     @State private var mainAgentCwdDraft: String = ""
+    @State private var piBinaryPathDraft: String = ""
+    @State private var piCodingAgentDirDraft: String = ""
     @State private var pickleCwdDraft: String = ""
     @State private var azureSTTEndpointDraft: String = ""
     @State private var azureSTTAPIKeyDraft: String = ""
@@ -231,6 +233,8 @@ struct CompanionPanelSettingsView: View {
         .animation(.easeOut(duration: 0.16), value: route)
         .onAppear {
             mainAgentCwdDraft = viewModel.settings.mainAgentCwd
+            piBinaryPathDraft = viewModel.settings.piBinaryPath
+            piCodingAgentDirDraft = viewModel.settings.piCodingAgentDir
             pickleCwdDraft = viewModel.settings.defaultCwd
             syncVoiceDrafts()
             oauthLoginController.refreshAll()
@@ -696,7 +700,7 @@ struct CompanionPanelSettingsView: View {
                         placeholder: "~/",
                         text: $mainAgentCwdDraft,
                         onChange: { newValue in
-                            updateDraftStatus(for: .mainAgent, isDirty: newValue != viewModel.settings.mainAgentCwd)
+                            updateDraftStatus(for: .mainAgent, isDirty: isMainAgentDraftDirty(mainAgentCwd: newValue))
                         },
                         onSubmit: commitMainAgentCwdField,
                         onChoose: chooseMainAgentDirectory
@@ -712,6 +716,40 @@ struct CompanionPanelSettingsView: View {
                 }
 
                 mainAgentRuntimePicker
+
+                VStack(alignment: .leading, spacing: 6) {
+                    fieldLabel("settings.field.piBinaryPath")
+                    cwdField(
+                        placeholder: L10n.t("settings.field.piBinaryPath.placeholder"),
+                        text: $piBinaryPathDraft,
+                        onChange: { newValue in
+                            updateDraftStatus(for: .mainAgent, isDirty: isMainAgentDraftDirty(piBinaryPath: newValue))
+                        },
+                        onSubmit: commitMainAgentCwdField,
+                        onChoose: choosePiBinaryFile
+                    )
+                    Text("settings.field.piBinaryPath.note")
+                        .pickyFont(size: 10.5, weight: .medium)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    fieldLabel("settings.field.piCodingAgentDir")
+                    cwdField(
+                        placeholder: L10n.t("settings.field.piCodingAgentDir.placeholder"),
+                        text: $piCodingAgentDirDraft,
+                        onChange: { newValue in
+                            updateDraftStatus(for: .mainAgent, isDirty: isMainAgentDraftDirty(piCodingAgentDir: newValue))
+                        },
+                        onSubmit: commitMainAgentCwdField,
+                        onChoose: choosePiCodingAgentDirectory
+                    )
+                    Text("settings.field.piCodingAgentDir.note")
+                        .pickyFont(size: 10.5, weight: .medium)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 if isMainAgentRuntimeRestartPending {
                     runtimeRestartNotice
@@ -2022,8 +2060,20 @@ struct CompanionPanelSettingsView: View {
         NSApp.terminate(nil)
     }
 
+    private func isMainAgentDraftDirty(
+        mainAgentCwd: String? = nil,
+        piBinaryPath: String? = nil,
+        piCodingAgentDir: String? = nil
+    ) -> Bool {
+        (mainAgentCwd ?? mainAgentCwdDraft) != viewModel.settings.mainAgentCwd
+            || (piBinaryPath ?? piBinaryPathDraft) != viewModel.settings.piBinaryPath
+            || (piCodingAgentDir ?? piCodingAgentDirDraft) != viewModel.settings.piCodingAgentDir
+    }
+
     private func commitMainAgentCwdField() {
         viewModel.settings.mainAgentCwd = mainAgentCwdDraft
+        viewModel.settings.piBinaryPath = piBinaryPathDraft
+        viewModel.settings.piCodingAgentDir = piCodingAgentDirDraft
         saveImmediately(for: .mainAgent)
     }
 
@@ -2065,6 +2115,20 @@ struct CompanionPanelSettingsView: View {
         }
     }
 
+    private func choosePiCodingAgentDirectory() {
+        chooseDirectory(initialPath: piCodingAgentDirDraft) { url in
+            piCodingAgentDirDraft = url.path
+            commitMainAgentCwdField()
+        }
+    }
+
+    private func choosePiBinaryFile() {
+        chooseFile(initialPath: piBinaryPathDraft.isEmpty ? piCodingAgentDirDraft : piBinaryPathDraft) { url in
+            piBinaryPathDraft = url.path
+            commitMainAgentCwdField()
+        }
+    }
+
     private func choosePickleDirectory() {
         chooseDirectory(initialPath: pickleCwdDraft) { url in
             pickleCwdDraft = url.path
@@ -2073,13 +2137,24 @@ struct CompanionPanelSettingsView: View {
     }
 
     private func chooseDirectory(initialPath: String, commit: (URL) -> Void) {
+        choosePath(initialPath: initialPath, canChooseFiles: false, canChooseDirectories: true, commit: commit)
+    }
+
+    private func chooseFile(initialPath: String, commit: (URL) -> Void) {
+        choosePath(initialPath: initialPath, canChooseFiles: true, canChooseDirectories: false, commit: commit)
+    }
+
+    private func choosePath(initialPath: String, canChooseFiles: Bool, canChooseDirectories: Bool, commit: (URL) -> Void) {
         NSApp.activate(ignoringOtherApps: true)
 
         let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
+        panel.canChooseFiles = canChooseFiles
+        panel.canChooseDirectories = canChooseDirectories
         panel.allowsMultipleSelection = false
-        panel.directoryURL = URL(fileURLWithPath: NSString(string: initialPath).expandingTildeInPath, isDirectory: true)
+        let expanded = NSString(string: initialPath).expandingTildeInPath
+        if !expanded.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: expanded, isDirectory: canChooseDirectories)
+        }
         guard panel.runModal() == .OK, let url = panel.url else { return }
         commit(url)
     }
@@ -2089,8 +2164,16 @@ struct CompanionPanelSettingsView: View {
     /// section falls back to dirty; the validation message itself renders at the
     /// bottom of the form.
     private func saveImmediately(for section: CompanionPanelSettingsSection) {
-        if section == .mainAgent, mainAgentCwdDraft != viewModel.settings.mainAgentCwd {
-            viewModel.settings.mainAgentCwd = mainAgentCwdDraft
+        if section == .mainAgent {
+            if mainAgentCwdDraft != viewModel.settings.mainAgentCwd {
+                viewModel.settings.mainAgentCwd = mainAgentCwdDraft
+            }
+            if piBinaryPathDraft != viewModel.settings.piBinaryPath {
+                viewModel.settings.piBinaryPath = piBinaryPathDraft
+            }
+            if piCodingAgentDirDraft != viewModel.settings.piCodingAgentDir {
+                viewModel.settings.piCodingAgentDir = piCodingAgentDirDraft
+            }
         }
         let shouldPreserveDirtyPickleDraft = section == .pickle && pickleCwdDraft != viewModel.settings.defaultCwd
         let succeeded = viewModel.save()
@@ -2113,6 +2196,8 @@ struct CompanionPanelSettingsView: View {
         switch section {
         case .mainAgent:
             mainAgentCwdDraft = viewModel.settings.mainAgentCwd
+            piBinaryPathDraft = viewModel.settings.piBinaryPath
+            piCodingAgentDirDraft = viewModel.settings.piCodingAgentDir
         case .pickle:
             pickleCwdDraft = viewModel.settings.defaultCwd
         case .general, .oauth, .overlayAndNotifications, .shortcuts, .builtinTools, .onboarding:

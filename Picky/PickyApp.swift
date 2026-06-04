@@ -61,7 +61,9 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             mainAgentModelPattern: settings.mainAgentModelPattern,
             pickleAgentThinkingLevel: settings.pickleAgentThinkingLevel,
             pickleAgentModelPattern: settings.pickleAgentModelPattern,
-            mainAgentRuntimeMode: effectiveRuntimeMode
+            mainAgentRuntimeMode: effectiveRuntimeMode,
+            piBinaryPath: settings.piBinaryPath,
+            piCodingAgentDir: settings.piCodingAgentDir
         )
     }()
     private lazy var daemonLauncher = PickyAgentDaemonLauncher(configuration: daemonConfiguration)

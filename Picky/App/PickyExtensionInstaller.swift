@@ -3,7 +3,8 @@
 //  Picky
 //
 //  Bridges the extensions Picky bundles in `Contents/Resources/pi-extensions/`
-//  into the user's global Pi extensions directory (`~/.pi/agent/extensions/`).
+//  into the user's global Pi extensions directory (`PI_CODING_AGENT_DIR/extensions`,
+//  auto-discovered with a legacy `~/.pi/agent/extensions` fallback).
 //  Earlier builds used a symlink into the .app bundle, but that breaks when
 //  the user runs Picky directly from a mounted DMG and then ejects it. We now
 //  copy the bundled tree into the target directory and write a small metadata
@@ -381,8 +382,12 @@ enum PickyExtensionInstaller {
     }
 
     fileprivate static func targetURL(for name: String, homeURL: URL) -> URL {
-        homeURL
-            .appendingPathComponent(".pi/agent/extensions", isDirectory: true)
+        let preferences: PickyPiInstallationPreferences = homeURL.path == FileManager.default.homeDirectoryForCurrentUser.path
+            ? PickyPiInstallation.preferences(from: PickySettingsStore().load())
+            : .init()
+        return PickyPiInstallation.resolve(preferences: preferences, homeURL: homeURL)
+            .codingAgentDirURL
+            .appendingPathComponent("extensions", isDirectory: true)
             .appendingPathComponent(name, isDirectory: true)
     }
 

@@ -2483,6 +2483,102 @@
         }
       }
     },
+    "settings.field.piBinaryPath": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi binary"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pi 실행 파일"
+          }
+        }
+      }
+    },
+    "settings.field.piBinaryPath.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leave empty to auto-discover with PI_CODING_AGENT_DIR/bin/pi, PATH (`which pi`), then ~/.pi/agent/bin/pi. Applies after restarting Picky."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "비워두면 PI_CODING_AGENT_DIR/bin/pi, PATH(`which pi`), ~/.pi/agent/bin/pi 순서로 자동 탐색해요. Picky 재시작 후 적용돼요."
+          }
+        }
+      }
+    },
+    "settings.field.piBinaryPath.placeholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto (which pi)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자동 (which pi)"
+          }
+        }
+      }
+    },
+    "settings.field.piCodingAgentDir": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PI_CODING_AGENT_DIR"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PI_CODING_AGENT_DIR"
+          }
+        }
+      }
+    },
+    "settings.field.piCodingAgentDir.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leave empty to use the launch environment, infer from the resolved pi binary, then fallback to ~/.pi/agent. Extension installs and Pi sessions share this directory."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "비워두면 실행 환경값, 찾은 pi 실행 파일 위치, ~/.pi/agent 순서로 사용해요. 확장 설치와 Pi 세션이 이 디렉터리를 공유해요."
+          }
+        }
+      }
+    },
+    "settings.field.piCodingAgentDir.placeholder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto (~/.pi/agent)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자동 (~/.pi/agent)"
+          }
+        }
+      }
+    },
     "settings.field.defaultCwd": {
       "localizations": {
         "en": {

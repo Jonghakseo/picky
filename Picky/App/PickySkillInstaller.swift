@@ -3,7 +3,8 @@
 //  Picky
 //
 //  Bridges the skills Picky bundles in `Contents/Resources/pi-skills/` into
-//  the user's global Pi skills directory (`~/.pi/agent/skills/`). Like bundled
+//  the user's global Pi skills directory (`PI_CODING_AGENT_DIR/skills`, auto-discovered
+//  with a legacy `~/.pi/agent/skills` fallback). Like bundled
 //  extensions, installs are opt-in and protected by a small metadata file so
 //  Picky only updates/removes copies it owns.
 //
@@ -343,8 +344,12 @@ enum PickySkillInstaller {
     }
 
     fileprivate static func targetURL(for name: String, homeURL: URL) -> URL {
-        homeURL
-            .appendingPathComponent(".pi/agent/skills", isDirectory: true)
+        let preferences: PickyPiInstallationPreferences = homeURL.path == FileManager.default.homeDirectoryForCurrentUser.path
+            ? PickyPiInstallation.preferences(from: PickySettingsStore().load())
+            : .init()
+        return PickyPiInstallation.resolve(preferences: preferences, homeURL: homeURL)
+            .codingAgentDirURL
+            .appendingPathComponent("skills", isDirectory: true)
             .appendingPathComponent(name, isDirectory: true)
     }
 

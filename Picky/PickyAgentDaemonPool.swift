@@ -151,6 +151,8 @@ final class PickyAgentDaemonPool: ObservableObject {
             appSupportRoot: configuration.appSupportRoot,
             pickleAgentThinkingLevel: settings.pickleAgentThinkingLevel,
             pickleAgentModelPattern: settings.pickleAgentModelPattern,
+            piBinaryPath: settings.piBinaryPath,
+            piCodingAgentDir: settings.piCodingAgentDir,
             environment: configuration.environment,
             bundleResourceURL: configuration.bundleResourceURL
         )

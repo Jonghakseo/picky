@@ -52,6 +52,8 @@ struct PickyAgentDaemonConfiguration: Equatable {
     var pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel = .automatic
     var pickleAgentModelPattern: String = ""
     var mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi
+    var piBinaryPath: String = ""
+    var piCodingAgentDir: String = ""
     var runtime: String?
     var workingDirectory: URL
     var executableURL: URL
@@ -83,6 +85,8 @@ struct PickyAgentDaemonConfiguration: Equatable {
         pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel = .automatic,
         pickleAgentModelPattern: String = "",
         mainAgentRuntimeMode: PickyMainAgentRuntimeMode = .pi,
+        piBinaryPath: String = "",
+        piCodingAgentDir: String = "",
         environment: [String: String] = ProcessInfo.processInfo.environment,
         bundleResourceURL: URL? = Bundle.main.resourceURL,
         fileManager: FileManager = .default
@@ -104,6 +108,8 @@ struct PickyAgentDaemonConfiguration: Equatable {
             pickleAgentThinkingLevel: pickleAgentThinkingLevel,
             pickleAgentModelPattern: pickleAgentModelPattern,
             mainAgentRuntimeMode: mainAgentRuntimeMode,
+            piBinaryPath: piBinaryPath,
+            piCodingAgentDir: piCodingAgentDir,
             runtime: environment["PICKY_AGENTD_RUNTIME"],
             environment: environment,
             bundleResourceURL: bundleResourceURL,
@@ -130,6 +136,8 @@ struct PickyAgentDaemonConfiguration: Equatable {
         pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel,
         pickleAgentModelPattern: String,
         mainAgentRuntimeMode: PickyMainAgentRuntimeMode,
+        piBinaryPath: String,
+        piCodingAgentDir: String,
         runtime: String?,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         bundleResourceURL: URL? = Bundle.main.resourceURL,
@@ -163,6 +171,8 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 pickleAgentThinkingLevel: pickleAgentThinkingLevel,
                 pickleAgentModelPattern: pickleAgentModelPattern,
                 mainAgentRuntimeMode: mainAgentRuntimeMode,
+                piBinaryPath: piBinaryPath,
+                piCodingAgentDir: piCodingAgentDir,
                 runtime: runtime,
                 workingDirectory: root,
                 executableURL: URL(fileURLWithPath: "/usr/bin/env"),
@@ -186,6 +196,8 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 pickleAgentThinkingLevel: pickleAgentThinkingLevel,
                 pickleAgentModelPattern: pickleAgentModelPattern,
                 mainAgentRuntimeMode: mainAgentRuntimeMode,
+                piBinaryPath: piBinaryPath,
+                piCodingAgentDir: piCodingAgentDir,
                 runtime: runtime,
                 workingDirectory: root,
                 executableURL: command.0,
@@ -210,6 +222,8 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 pickleAgentThinkingLevel: pickleAgentThinkingLevel,
                 pickleAgentModelPattern: pickleAgentModelPattern,
                 mainAgentRuntimeMode: mainAgentRuntimeMode,
+                piBinaryPath: piBinaryPath,
+                piCodingAgentDir: piCodingAgentDir,
                 runtime: runtime,
                 workingDirectory: root,
                 executableURL: command.0,
@@ -236,6 +250,8 @@ struct PickyAgentDaemonConfiguration: Equatable {
                 pickleAgentThinkingLevel: pickleAgentThinkingLevel,
                 pickleAgentModelPattern: pickleAgentModelPattern,
                 mainAgentRuntimeMode: mainAgentRuntimeMode,
+                piBinaryPath: piBinaryPath,
+                piCodingAgentDir: piCodingAgentDir,
                 runtime: runtime,
                 workingDirectory: root,
                 executableURL: command.0,
@@ -263,6 +279,8 @@ struct PickyAgentDaemonConfiguration: Equatable {
         appSupportRoot: URL = PickyAppSupport.defaultRoot(),
         pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel = .automatic,
         pickleAgentModelPattern: String = "",
+        piBinaryPath: String = "",
+        piCodingAgentDir: String = "",
         environment: [String: String] = ProcessInfo.processInfo.environment,
         bundleResourceURL: URL? = Bundle.main.resourceURL,
         fileManager: FileManager = .default,
@@ -285,6 +303,8 @@ struct PickyAgentDaemonConfiguration: Equatable {
             pickleAgentThinkingLevel: pickleAgentThinkingLevel,
             pickleAgentModelPattern: pickleAgentModelPattern,
             mainAgentRuntimeMode: .pi,
+            piBinaryPath: piBinaryPath,
+            piCodingAgentDir: piCodingAgentDir,
             runtime: environment["PICKY_AGENTD_RUNTIME"],
             environment: environment,
             bundleResourceURL: bundleResourceURL,
@@ -313,6 +333,15 @@ struct PickyAgentDaemonConfiguration: Equatable {
         env["PICKY_AGENTD_TOKEN"] = token
         env["PICKY_AGENTD_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         env["PICKY_APP_SUPPORT_DIR"] = appSupportRoot.path
+        let piAgentDir = PickyPiInstallation.resolve(
+            preferences: PickyPiInstallationPreferences(binaryPath: piBinaryPath, codingAgentDir: piCodingAgentDir),
+            environment: env
+        ).codingAgentDirURL
+        env[PickyPiInstallation.environmentAgentDirKey] = piAgentDir.path
+        let piBinPath = piAgentDir.appendingPathComponent("bin", isDirectory: true).path
+        if !(env["PATH"] ?? "").split(separator: ":").contains(Substring(piBinPath)) {
+            env["PATH"] = "\(piBinPath):\(env["PATH"] ?? "")"
+        }
         return env
     }
 

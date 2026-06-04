@@ -61,11 +61,23 @@ struct PickySettingsStore {
         if !settings.worktreeParent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             try validateDirectory(settings.worktreeParent, error: .invalidWorktreeParent(settings.worktreeParent))
         }
+        if !settings.piCodingAgentDir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            try validateDirectory(settings.piCodingAgentDir, error: .invalidPiCodingAgentDir(settings.piCodingAgentDir))
+        }
+        if !settings.piBinaryPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            try validateExecutable(settings.piBinaryPath, error: .invalidPiBinaryPath(settings.piBinaryPath))
+        }
     }
 
     private func validateDirectory(_ path: String, error: PickySettingsValidationError) throws {
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: NSString(string: path).expandingTildeInPath, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw error
+        }
+    }
+
+    private func validateExecutable(_ path: String, error: PickySettingsValidationError) throws {
+        guard fileManager.isExecutableFile(atPath: NSString(string: path).expandingTildeInPath) else {
             throw error
         }
     }

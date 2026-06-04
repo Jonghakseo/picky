@@ -13,7 +13,11 @@ struct PickyCuratedPluginInstallerTests {
     @Test func statusReportsNotInstalledWhenSettingsAreMissing() throws {
         let scratch = try ScratchCuratedPlugin()
 
-        let status = PickyCuratedPluginInstaller.status(source: source, homeURL: scratch.home)
+        let status = PickyCuratedPluginInstaller.status(
+            source: source,
+            homeURL: scratch.home,
+            preferences: PickyPiInstallationPreferences(codingAgentDir: scratch.home.appendingPathComponent(".pi/agent").path)
+        )
 
         #expect(status == .notInstalled)
     }
@@ -22,7 +26,25 @@ struct PickyCuratedPluginInstallerTests {
         let scratch = try ScratchCuratedPlugin()
         try scratch.writeSettings(packages: ["npm:@example/other", source])
 
-        let status = PickyCuratedPluginInstaller.status(source: source, homeURL: scratch.home)
+        let status = PickyCuratedPluginInstaller.status(
+            source: source,
+            homeURL: scratch.home,
+            preferences: PickyPiInstallationPreferences(codingAgentDir: scratch.home.appendingPathComponent(".pi/agent").path)
+        )
+
+        #expect(status == .installed)
+    }
+
+    @Test func statusUsesConfiguredPiCodingAgentDir() throws {
+        let scratch = try ScratchCuratedPlugin()
+        let customAgentDir = scratch.tmp.appendingPathComponent("custom-agent", isDirectory: true)
+        try scratch.writeSettings(packages: [source], agentDir: customAgentDir)
+
+        let status = PickyCuratedPluginInstaller.status(
+            source: source,
+            homeURL: scratch.home,
+            preferences: PickyPiInstallationPreferences(codingAgentDir: customAgentDir.path)
+        )
 
         #expect(status == .installed)
     }
@@ -34,7 +56,7 @@ struct PickyCuratedPluginInstallerTests {
         let result = PickyCuratedPluginInstaller.install(
             source: source,
             homeURL: scratch.home,
-            commandRunner: { arguments, _, _ in
+            commandRunner: { arguments, _, _, _ in
                 receivedArguments.append(arguments)
                 return PickyCuratedPluginInstaller.CommandResult(exitCode: 0, output: "installed")
             }
@@ -51,7 +73,7 @@ struct PickyCuratedPluginInstallerTests {
         let result = PickyCuratedPluginInstaller.remove(
             source: source,
             homeURL: scratch.home,
-            commandRunner: { arguments, _, _ in
+            commandRunner: { arguments, _, _, _ in
                 receivedArguments.append(arguments)
                 return PickyCuratedPluginInstaller.CommandResult(exitCode: 0, output: "removed")
             }
@@ -67,7 +89,7 @@ struct PickyCuratedPluginInstallerTests {
         let result = PickyCuratedPluginInstaller.install(
             source: source,
             homeURL: scratch.home,
-            commandRunner: { _, _, _ in
+            commandRunner: { _, _, _, _ in
                 PickyCuratedPluginInstaller.CommandResult(exitCode: 2, output: "network failed")
             }
         )
@@ -94,8 +116,9 @@ private struct ScratchCuratedPlugin {
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
     }
 
-    func writeSettings(packages: [String]) throws {
-        let settingsURL = home.appendingPathComponent(".pi/agent/settings.json", isDirectory: false)
+    func writeSettings(packages: [String], agentDir: URL? = nil) throws {
+        let settingsURL = (agentDir ?? home.appendingPathComponent(".pi/agent", isDirectory: true))
+            .appendingPathComponent("settings.json", isDirectory: false)
         try FileManager.default.createDirectory(
             at: settingsURL.deletingLastPathComponent(),
             withIntermediateDirectories: true

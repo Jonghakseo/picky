@@ -25,8 +25,10 @@ struct PickyHUDKeyboardShortcutPolicyTests {
         #expect(PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: 36, modifiers: .command) == false)
     }
 
-    @Test func terminalFocusOnlyInterceptsHUDOwnedCommandTAndCommandW() {
+    @Test func terminalFocusInterceptsHUDShellShortcutsButPassesInputShortcutsThrough() {
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .command) == true)
+        #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 14, charactersIgnoringModifiers: "e", modifiers: .command) == true)
+        #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 0, charactersIgnoringModifiers: "E", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 13, charactersIgnoringModifiers: "w", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 0, charactersIgnoringModifiers: "W", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 8, charactersIgnoringModifiers: "c", modifiers: .command) == false)

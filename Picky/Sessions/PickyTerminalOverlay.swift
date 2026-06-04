@@ -797,13 +797,12 @@ final class PickySwiftTermView: LocalProcessTerminalView {
     /// emacs word-motion escapes Pi's line editor does not interpret, so the keys
     /// look dead in the inline TUI. SwiftTerm declares `keyDown` as `public` (not
     /// `open`), so we cannot override it; instead the window/monitor chokepoints
-    /// call this before the event reaches SwiftTerm. When the kitty keyboard
-    /// protocol is off we send the readline control bytes Pi understands; when Pi
-    /// enables kitty we defer so SwiftTerm encodes the chord natively.
+    /// call this before the event reaches SwiftTerm. Always send the readline
+    /// control bytes directly: SwiftTerm's native command-arrow/delete handling is
+    /// inconsistent even after a TUI enables keyboard enhancement flags.
     @discardableResult
     func handleMacLineEditingShortcut(_ event: NSEvent) -> Bool {
-        guard terminal.keyboardEnhancementFlags.isEmpty,
-              let bytes = Self.macLineEditingShortcutBytes(for: event) else { return false }
+        guard let bytes = Self.macLineEditingShortcutBytes(for: event) else { return false }
         send(bytes)
         return true
     }

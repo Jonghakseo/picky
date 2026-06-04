@@ -1213,9 +1213,11 @@ struct PickySessionViewModelTests {
         #expect(PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: 36, modifiers: []) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: 76, modifiers: []) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.isComposerFocusShortcut(keyCode: 36, modifiers: .command) == false)
-        // While the TUI terminal is focused only ⌘T and ⌘W are owned by the HUD;
-        // every other key (including all other cmd combos) passes through to Pi.
+        // While a terminal is focused, HUD shell controls stay owned by the HUD;
+        // ordinary terminal input shortcuts still pass through to Pi/the shell.
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 17, charactersIgnoringModifiers: "t", modifiers: .command) == true)
+        #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 14, charactersIgnoringModifiers: "e", modifiers: .command) == true)
+        #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 0, charactersIgnoringModifiers: "E", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 13, charactersIgnoringModifiers: "w", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 0, charactersIgnoringModifiers: "W", modifiers: .command) == true)
         #expect(PickyHUDKeyboardShortcutPolicy.shouldInterceptWhileTerminalFocused(keyCode: 8, charactersIgnoringModifiers: "c", modifiers: .command) == false)

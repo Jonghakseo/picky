@@ -22,7 +22,21 @@ final class PickyHUDPanel: NSPanel, PickyScreenCaptureExcludedWindow {
                 resignFocusedControl()
             }
         }
+        if event.type == .keyDown,
+           let terminal = focusedTerminalView,
+           terminal.handleMacLineEditingShortcut(event) {
+            return
+        }
         super.sendEvent(event)
+    }
+
+    private var focusedTerminalView: PickySwiftTermView? {
+        var currentView = firstResponder as? NSView
+        while let view = currentView {
+            if let terminal = view as? PickySwiftTermView { return terminal }
+            currentView = view.superview
+        }
+        return nil
     }
 
     /// Re-clicking the already-focused control (e.g. the composer NSTextView)

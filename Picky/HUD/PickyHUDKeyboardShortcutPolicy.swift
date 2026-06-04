@@ -27,8 +27,9 @@ enum PickyHUDKeyboardShortcutPolicy {
 
     /// While a Pi TUI terminal is focused, the HUD forwards virtually every key to
     /// the terminal so cmd-based TUI shortcuts (⌘C, ⌘V, ⌘arrows, etc.) reach Pi.
-    /// Only ⌘T (toggle back to chat) and ⌘W (close the held card) stay owned by the
-    /// HUD because they have no useful meaning inside the embedded terminal here.
+    /// Cmd+T (toggle back to chat), Cmd+E (hide the local extended terminal),
+    /// and Cmd+W (close the held card) stay owned by the HUD because they control
+    /// the Picky shell around the terminal instead of terminal input.
     static func shouldInterceptWhileTerminalFocused(
         keyCode: UInt16,
         charactersIgnoringModifiers: String?,
@@ -36,6 +37,13 @@ enum PickyHUDKeyboardShortcutPolicy {
     ) -> Bool {
         guard modifiers == .command else { return false }
         if isInlineTerminalToggleShortcut(
+            keyCode: keyCode,
+            charactersIgnoringModifiers: charactersIgnoringModifiers,
+            modifiers: modifiers
+        ) {
+            return true
+        }
+        if isExtendedTerminalShortcut(
             keyCode: keyCode,
             charactersIgnoringModifiers: charactersIgnoringModifiers,
             modifiers: modifiers

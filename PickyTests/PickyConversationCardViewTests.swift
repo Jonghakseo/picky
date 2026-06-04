@@ -887,6 +887,29 @@ struct PickyConversationCardViewTests {
         #expect(command.sessionId == "running-session")
     }
 
+    @Test func composerRestoresQueuedMessagesIntoDraftInQueueOrder() {
+        let earlyFollowUp = PickyQueueItem(text: "follow first", enqueuedAt: baseDate.addingTimeInterval(1))
+        let laterSteer = PickyQueueItem(text: "steer second", enqueuedAt: baseDate.addingTimeInterval(2))
+
+        let restored = PickyConversationComposerView.draftRestoringQueuedMessages(
+            draft: "existing draft",
+            queuedSteers: [laterSteer],
+            queuedFollowUps: [earlyFollowUp]
+        )
+
+        #expect(restored == "existing draft\n\nfollow first\n\nsteer second")
+    }
+
+    @Test func composerQueuedMessageRestoreReturnsNilWhenQueueHasNoText() {
+        let restored = PickyConversationComposerView.draftRestoringQueuedMessages(
+            draft: "existing draft",
+            queuedSteers: [PickyQueueItem(text: "", enqueuedAt: baseDate)],
+            queuedFollowUps: []
+        )
+
+        #expect(restored == nil)
+    }
+
     @Test func menuEnablementMatchesSessionStatus() {
         let viewModel = makeViewModel()
         let activeWithPiSession = makeConversationSession(status: .running, logs: ["pi session: /tmp/picky.pi-session"])

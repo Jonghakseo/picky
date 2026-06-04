@@ -1209,18 +1209,36 @@ struct PickyConversationComposerView: View {
 
     @discardableResult
     private func clearQueuedMessages() -> Bool {
-        let queued = (session.queuedSteers + session.queuedFollowUps).sorted { $0.enqueuedAt < $1.enqueuedAt }
-        guard !queued.isEmpty else { return false }
-        // Move the queued texts back into the composer so option+up acts as 'pop the queue back
-        // into the editor for revision' instead of silently throwing away unsent input. Existing
-        // composer text is preserved by appending the queued payload after it.
-        let merged = queued.map(\.text).filter { !$0.isEmpty }.joined(separator: "\n\n")
-        if !merged.isEmpty {
-            draft = draft.isEmpty ? merged : "\(draft)\n\n\(merged)"
-            isFocused = true
-        }
+        guard restoreQueuedMessagesToDraft() else { return false }
         Task { try? await viewModel.clearQueue(sessionID: session.id, kind: .all) }
         return true
+    }
+
+    @discardableResult
+    private func restoreQueuedMessagesToDraft() -> Bool {
+        guard let restoredDraft = Self.draftRestoringQueuedMessages(
+            draft: draft,
+            queuedSteers: session.queuedSteers,
+            queuedFollowUps: session.queuedFollowUps
+        ) else { return false }
+        draft = restoredDraft
+        isFocused = true
+        return true
+    }
+
+    static func draftRestoringQueuedMessages(
+        draft: String,
+        queuedSteers: [PickyQueueItem],
+        queuedFollowUps: [PickyQueueItem]
+    ) -> String? {
+        let queued = (queuedSteers + queuedFollowUps).sorted { $0.enqueuedAt < $1.enqueuedAt }
+        guard !queued.isEmpty else { return nil }
+        // Move queued texts back into the composer so clearing/stopping the queue preserves
+        // unsent input for revision instead of silently throwing it away. Existing composer text
+        // is preserved by appending the queued payload after it.
+        let merged = queued.map(\.text).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        guard !merged.isEmpty else { return nil }
+        return draft.isEmpty ? merged : "\(draft)\n\n\(merged)"
     }
 
     private func cycleThinkingLevel() {
@@ -1260,7 +1278,13 @@ struct PickyConversationComposerView: View {
 
     private func stopIfPossible() {
         guard [.running, .queued, .waiting_for_input].contains(session.status) else { return }
-        Task { try? await viewModel.abort(sessionID: session.id) }
+        let restoredQueuedMessages = restoreQueuedMessagesToDraft()
+        Task {
+            if restoredQueuedMessages {
+                try? await viewModel.clearQueue(sessionID: session.id, kind: .all)
+            }
+            try? await viewModel.abort(sessionID: session.id)
+        }
     }
 }
 

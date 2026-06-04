@@ -11,6 +11,7 @@ import UserNotifications
 
 enum PickyGitContextRefreshPolicy {
     static let completedSessionRefreshIntervalNanoseconds: UInt64 = 60_000_000_000
+    static let updatedAtRefreshBucketSeconds: TimeInterval = 5
 
     static func shouldAutoRefreshGit(for status: PickySessionStatus) -> Bool {
         status == .completed
@@ -58,7 +59,10 @@ struct PickyConversationContextLineView: View {
     }
 
     private var contextRefreshKey: String {
-        "\(session.cwd ?? "")|\(session.updatedAt.timeIntervalSince1970)|\(manualRefreshTick)"
+        let updatedAtBucket = Int(
+            session.updatedAt.timeIntervalSince1970 / PickyGitContextRefreshPolicy.updatedAtRefreshBucketSeconds
+        )
+        return "\(session.cwd ?? "")|\(updatedAtBucket)|\(manualRefreshTick)"
     }
 
     private var completedSessionRefreshKey: String {

@@ -172,6 +172,7 @@ interface ExpectedInputDelivery {
   text: string;
   originatedBy: "user" | "main_agent" | "internal" | "pi_extension";
   suppress: boolean;
+  queueKind?: "steering" | "followUp";
 }
 
 class PiSdkRuntimeSession implements RuntimeSessionHandle {
@@ -794,7 +795,15 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
 
     if (role === "user") {
       const expected = this.consumeExpectedInputDelivery(text);
-      if (expected?.suppress !== false) return undefined;
+      if (expected.suppress !== false) {
+        return {
+          type: "input_delivery",
+          role,
+          text: expected.text,
+          originatedBy: expected.originatedBy,
+          ...(expected.queueKind ? { queueKind: expected.queueKind } : {}),
+        };
+      }
       return { type: "input_message", role, text, originatedBy: expected.originatedBy };
     }
 
@@ -816,8 +825,13 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     };
   }
 
-  private expectInputDelivery(text: string, originatedBy: "user" | "main_agent" | "internal" = "internal", suppress = true): ExpectedInputDelivery {
-    const delivery = { id: randomUUID(), text, originatedBy, suppress };
+  private expectInputDelivery(
+    text: string,
+    originatedBy: "user" | "main_agent" | "internal" = "internal",
+    suppress = true,
+    queueKind?: "steering" | "followUp",
+  ): ExpectedInputDelivery {
+    const delivery = { id: randomUUID(), text, originatedBy, suppress, ...(queueKind ? { queueKind } : {}) };
     this.expectedInputDeliveries.push(delivery);
     return delivery;
   }
@@ -1039,7 +1053,7 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       rejectAccepted(error);
     };
 
-    const expected = this.expectInputDelivery(text);
+    const expected = this.expectInputDelivery(text, "internal", true, queueKindFromStreamingBehavior(options.streamingBehavior));
     const queueBeforeSlashExpansion = this.snapshotQueueForSlashExpansion(text);
     const pendingSlashSubmission = queueBeforeSlashExpansion ? { raw: text.trim(), beforeQueue: queueBeforeSlashExpansion } : undefined;
     if (pendingSlashSubmission) this.pendingSlashSubmissions.push(pendingSlashSubmission);
@@ -1127,6 +1141,12 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
   private emit(event: RuntimeEvent): void {
     for (const listener of this.listeners) listener(event);
   }
+}
+
+function queueKindFromStreamingBehavior(streamingBehavior?: "steer" | "followUp"): "steering" | "followUp" | undefined {
+  if (streamingBehavior === "steer") return "steering";
+  if (streamingBehavior === "followUp") return "followUp";
+  return undefined;
 }
 
 async function imageOptions(imagePaths: string[] | undefined): Promise<Array<{ type: "image"; data: string; mimeType: string }> | undefined> {

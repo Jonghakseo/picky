@@ -199,6 +199,24 @@ class SkillExpansionFakeSession extends FakeSession {
   }
 }
 
+class QueuedPromptStartSession extends FakeSession {
+  override async prompt(text: string, options?: unknown): Promise<void> {
+    this.prompts.push(text);
+    this.promptOptions.push(options);
+    const streamingBehavior = (options as { streamingBehavior?: "steer" | "followUp" } | undefined)?.streamingBehavior;
+    if (this.isStreaming && streamingBehavior === "steer") {
+      this.steeringQueue.push(text);
+      this.emit("event", { type: "queue_update", steering: [...this.steeringQueue], followUp: [...this.followUpQueue] });
+    }
+    if (this.isStreaming && streamingBehavior === "followUp") {
+      this.followUpQueue.push(text);
+      this.emit("event", { type: "queue_update", steering: [...this.steeringQueue], followUp: [...this.followUpQueue] });
+    }
+    (options as { preflightResult?: (success: boolean) => void } | undefined)?.preflightResult?.(true);
+    await new Promise<void>(() => undefined);
+  }
+}
+
 class RaceSkillExpansionFakeSession extends SkillExpansionFakeSession {
   override async prompt(text: string, options?: unknown): Promise<void> {
     this.prompts.push(text);
@@ -378,6 +396,23 @@ describe("PiSdkRuntime", () => {
     expect(fakeSession.prompts).toEqual(["initial", "focus on the previous result"]);
     expect(fakeSession.steers).toEqual([]);
     expect(fakeSession.promptOptions[1]).toMatchObject({ source: "rpc", streamingBehavior: "steer" });
+  });
+
+  it("emits input_delivery when a queued steering prompt starts without a trailing queue_update", async () => {
+    const fakeSession = new QueuedPromptStartSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-1" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+    fakeSession.isStreaming = true;
+
+    await handle.steer({ text: "retry stopped session", imagePaths: [] });
+    fakeSession.emit("event", { type: "message_start", message: { role: "user", content: "retry stopped session" } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(events).toContainEqual({ type: "queue_update", steering: ["retry stopped session"], followUp: [] });
+    expect(events).toContainEqual({ type: "input_delivery", role: "user", text: "retry stopped session", originatedBy: "internal", queueKind: "steering" });
+    expect(events).not.toContainEqual({ type: "input_message", role: "user", text: "retry stopped session", originatedBy: "internal" });
   });
 
   it("interrupts an active Pi turn before sending replacement input", async () => {

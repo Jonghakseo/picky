@@ -4728,6 +4728,29 @@ describe("SessionSupervisor", () => {
     expect(userTexts(supervisor.get(session.id))).toEqual([]);
   });
 
+  it("clears a pending steer when a revived cancelled session starts the queued input without a final queue_update", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-cancelled-steer-delivery-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("cancelled retry"));
+    runtime.handle!.isStreaming = true;
+
+    await supervisor.abort(session.id);
+    expect(supervisor.get(session.id)?.status).toBe("cancelled");
+
+    await supervisor.steer(session.id, "x");
+    await waitUntil(() => supervisor.get(session.id)?.queuedSteers?.length === 1);
+    expect(userTexts(supervisor.get(session.id))).toEqual([]);
+    expect(supervisor.get(session.id)?.queuedSteers?.map((item) => item.text)).toEqual(["x"]);
+
+    runtime.handle?.emit({ type: "input_delivery", role: "user", text: "x", originatedBy: "internal", queueKind: "steering" });
+    await waitUntil(() => userTexts(supervisor.get(session.id)).length === 1);
+
+    expect(userTexts(supervisor.get(session.id))).toEqual(["x"]);
+    expect(supervisor.get(session.id)?.queuedSteers).toEqual([]);
+  });
+
   it("commits assistant text before queued follow-up turn", async () => {
     const runtime = new ManualRuntime();
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-message-queued-turn-"));

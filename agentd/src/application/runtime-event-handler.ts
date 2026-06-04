@@ -122,6 +122,7 @@ export class RuntimeEventHandler {
     if (event.type === "session_info") return this.applySessionInfoEvent(sessionId, event.name);
     if (event.type === "context_usage") return this.applyContextUsageEvent(sessionId, event.usage);
     if (event.type === "session_replaced") return;
+    if (event.type === "input_delivery") return;
     // turn_text_complete is a main-runtime-only signal used by SessionSupervisor.applyMainRuntimeEvent
     // to flush per-turn assistant text as a separate quickReply for TTS playback. Pickle session
     // runtimes already flush assistant text via assistant_delta + terminal status, so this event

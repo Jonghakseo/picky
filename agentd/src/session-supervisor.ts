@@ -2436,7 +2436,8 @@ export class SessionSupervisor extends EventEmitter {
     // resolve back to the raw text we submitted. That lets this raw-text lookup match correctly
     // even when Pi enqueues an expanded form, which is the regression that previously caused
     // `drainPendingTextOnce` to fire prematurely and duplicate the user bubble.
-    return handle.getFollowUpMessages().includes(text) || handle.getSteeringMessages().includes(text);
+    const matches = (entry: string) => queueTextMatchesUserText(entry, text);
+    return handle.getFollowUpMessages().some(matches) || handle.getSteeringMessages().some(matches);
   }
 
   private async recordNonSkillSlashCommandReceipt(sessionId: string, text: string): Promise<string | undefined> {
@@ -2445,18 +2446,23 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async drainPendingTextOnce(sessionId: string, text: string): Promise<void> {
+    await this.drainPendingQueueDeliveryOnce(sessionId, (entry) => entry.text === text);
+  }
+
+  private async drainPendingQueueDeliveryOnce(sessionId: string, matches: (entry: PendingQueueDelivery) => boolean): Promise<PendingQueueDelivery | undefined> {
     const pending = this.pendingQueueDeliveries.get(sessionId);
-    if (!pending || pending.length === 0) return;
-    const index = pending.findIndex((entry) => entry.text === text);
-    if (index < 0) return;
+    if (!pending || pending.length === 0) return undefined;
+    const index = pending.findIndex(matches);
+    if (index < 0) return undefined;
     const [entry] = pending.splice(index, 1);
-    if (!entry) return;
+    if (!entry) return undefined;
     if (pending.length === 0) this.pendingQueueDeliveries.delete(sessionId);
     this.rememberMaterializedQueueDelivery(sessionId, entry);
     await this.removeMaterializedQueueItem(sessionId, entry);
     await this.messageBuilder.recordUserText(sessionId, entry.text, entry.originatedBy, {
       attachedImagesCount: entry.attachedImagesCount,
     });
+    return entry;
   }
 
   private discardPendingTextOnce(sessionId: string, text: string): void {
@@ -2474,7 +2480,7 @@ export class SessionSupervisor extends EventEmitter {
 
     const removeOne = (items: readonly PickyQueueItem[]): { items: PickyQueueItem[]; changed: boolean } => {
       const indexById = items.findIndex((item) => item.id === delivery.id);
-      const index = indexById >= 0 ? indexById : items.findIndex((item) => !item.id && item.text === delivery.text);
+      const index = indexById >= 0 ? indexById : items.findIndex((item) => queueItemMatchesDelivery(item, delivery));
       if (index < 0) return { items: [...items], changed: false };
       const next = [...items];
       next.splice(index, 1);
@@ -2555,7 +2561,7 @@ export class SessionSupervisor extends EventEmitter {
     if (!pending || pending.length === 0) return;
     for (const item of removedItems) {
       const indexById = item.id ? pending.findIndex((entry) => entry.id === item.id) : -1;
-      const index = indexById >= 0 ? indexById : pending.findIndex((entry) => entry.text === item.text);
+      const index = indexById >= 0 ? indexById : pending.findIndex((entry) => queueTextMatchesUserText(item.text, entry.text));
       if (index < 0) continue;
       const [entry] = pending.splice(index, 1);
       if (!entry) continue;
@@ -2656,6 +2662,25 @@ export class SessionSupervisor extends EventEmitter {
     if (!queueChanged && !modeChanged) return;
     const seq = this.nextSeq(sessionId);
     await this.chainEmit(sessionId, async () => { this.emit("queueUpdated", sessionId, queuedSteers, queuedFollowUps, emittedSteeringMode, emittedFollowUpMode, seq); });
+  }
+
+  private async handleRuntimeInputDelivery(sessionId: string, event: Extract<RuntimeEvent, { type: "input_delivery" }>): Promise<void> {
+    if (!this.sessions.has(sessionId)) return;
+    const deliveredText = extractPickyPromptUserInstruction(event.text) ?? event.text;
+    const exactMatch = await this.drainPendingQueueDeliveryOnce(sessionId, (entry) => {
+      if (event.queueKind && entry.kind !== event.queueKind) return false;
+      return entry.text === deliveredText || entry.text === event.text;
+    });
+    if (exactMatch || !event.queueKind) return;
+
+    // Some Pi SDK paths can surface the built prompt as the message_start text while Picky tracks
+    // the raw user instruction in pendingQueueDeliveries. If there is exactly one pending item of
+    // the delivered queue kind, the message_start is still authoritative evidence that Pi consumed
+    // that pending input even when no trailing queue_update [] is emitted.
+    const sameKindPending = (this.pendingQueueDeliveries.get(sessionId) ?? []).filter((entry) => entry.kind === event.queueKind);
+    if (sameKindPending.length === 1) {
+      await this.drainPendingQueueDeliveryOnce(sessionId, (entry) => entry.id === sameKindPending[0]!.id);
+    }
   }
 
   private async handleRuntimeInputMessage(sessionId: string, event: Extract<RuntimeEvent, { type: "input_message" }>): Promise<void> {
@@ -2914,6 +2939,10 @@ export class SessionSupervisor extends EventEmitter {
       if (event.type === "queue_update") {
         if (!this.sessions.has(sessionId) || isTerminalStatus(this.mustGet(sessionId).status)) return;
         await this.applyQueueUpdateWithModes(sessionId, event.steering, event.followUp, queueModes!.steeringMode, queueModes!.followUpMode);
+        return;
+      }
+      if (event.type === "input_delivery") {
+        await this.handleRuntimeInputDelivery(sessionId, event);
         return;
       }
       await this.runtimeEventHandler.handle(sessionId, event);
@@ -3373,6 +3402,45 @@ function piSessionFilePathFromLogLine(line: string): string | undefined {
   const path = normalizeOptionalString(match?.[1]);
   if (path && !path.startsWith("(") && path !== "ephemeral" && path !== "unavailable") return path;
   return undefined;
+}
+
+function queueItemMatchesDelivery(item: PickyQueueItem, delivery: PendingQueueDelivery): boolean {
+  return queueTextMatchesUserText(item.text, delivery.text);
+}
+
+function queueTextMatchesUserText(queueText: string, userText: string): boolean {
+  return queueText === userText || extractPickyPromptUserInstruction(queueText) === userText;
+}
+
+function extractPickyPromptUserInstruction(text: string): string | undefined {
+  const envelopes: Array<{ parent: string; userSection: string }> = [
+    { parent: "# Picky steering message", userSection: "## User steering instruction" },
+    { parent: "# Picky follow-up", userSection: "## User follow-up" },
+  ];
+  const envelope = envelopes.find((candidate) => text.includes(candidate.parent));
+  if (!envelope) return undefined;
+  const headingIndex = text.indexOf(envelope.userSection);
+  if (headingIndex < 0) return undefined;
+
+  const body = text.slice(headingIndex + envelope.userSection.length);
+  const lines = body.split("\n");
+  const extracted: string[] = [];
+  let hasStarted = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!hasStarted && trimmed.length === 0) continue;
+    if (hasStarted && trimmed.startsWith("## ")) break;
+    hasStarted = true;
+    extracted.push(line);
+  }
+
+  if (extracted[0]?.trim().startsWith("- Source:")) {
+    extracted.shift();
+    if (extracted[0]?.trim().length === 0) extracted.shift();
+  }
+
+  const result = extracted.join("\n").trim();
+  return result.length > 0 ? result : undefined;
 }
 
 function quickReplyOriginFromContextSource(source: string | undefined): QuickReplyMetadata["originSource"] {

@@ -230,6 +230,8 @@ struct PickyTests {
             mediumMetrics.topPadding + mediumMetrics.handleAreaHeight + 2 + PickyHUDDockLayout.dockRailSessionsHeight(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics) + mediumMetrics.bottomPadding
         )
         #expect(PickyHUDDockLayout.dockRailHeight(sessionCount: 3, isAddSlotExpanded: true, metrics: mediumMetrics) - PickyHUDDockLayout.dockRailHeight(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics) == mediumMetrics.addSlotCollapsedExpansionReserve)
+        #expect(PickyHUDDockLayout.dockGroupHeaderExtraLength(groupHeaderCount: 3) == CGFloat(3) * (PickyHUDDockGroupHeaderHeight + PickyHUDDockGroupContentSpacing))
+        #expect(PickyHUDDockLayout.horizontalDockRailCrossSize(hasGroupHeaders: true, metrics: mediumMetrics) == mediumMetrics.railWidth + PickyHUDDockGroupHeaderHeight + PickyHUDDockGroupContentSpacing)
 
         let horizontalSessionsAndSlot = (3 * mediumMetrics.sessionTileWidth) + (2 * mediumMetrics.sessionSpacing) + 2 + mediumMetrics.collapsedAddSlotVisualHeight
         #expect(PickyHUDDockLayout.horizontalDockRailLength(sessionCount: 3, isAddSlotExpanded: false, metrics: mediumMetrics) ==

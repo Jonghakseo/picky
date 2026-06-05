@@ -14,6 +14,7 @@ import AppKit
 /// member icons. Used by both the rendered view and `railHeight` math so the
 /// dock capsule reserves matching vertical space.
 let PickyHUDDockGroupHeaderHeight: CGFloat = 14
+let PickyHUDDockGroupContentSpacing: CGFloat = 2
 
 /// Named SwiftUI coordinate space the rail establishes so child icons and
 /// group headers can publish their layout centers in a single shared frame.
@@ -164,7 +165,7 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
         // that holds the members. The group color is carried as a subtle
         // tint on the drawer (see `pickyDockGroupDrawer`), so there is no
         // left accent bar and no chevron.
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: PickyHUDDockGroupContentSpacing) {
             header
             content()
         }

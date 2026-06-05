@@ -297,9 +297,9 @@ enum PickyHUDDockLayout {
     ) -> CGFloat {
         let base = metrics.railWidth
         guard hasGroupHeaders else { return base }
-        // 2pt matches the VStack spacing between the header and the drawer in
+        // Matches the VStack spacing between the header and the drawer in
         // `PickyHUDDockGroupContainer`.
-        return base + PickyHUDDockGroupHeaderHeight + 2
+        return base + PickyHUDDockGroupHeaderHeight + PickyHUDDockGroupContentSpacing
     }
 
     /// Long-axis (X) length of the dock rail in horizontal orientation.
@@ -345,6 +345,10 @@ enum PickyHUDDockLayout {
     /// instead of clipping it.
     static func miniPreviewHorizontalReserve(metrics: PickyHUDDockMetrics) -> CGFloat {
         max(0, (metrics.previewCardWidth - metrics.sessionTileWidth) / 2)
+    }
+
+    static func dockGroupHeaderExtraLength(groupHeaderCount: Int) -> CGFloat {
+        CGFloat(groupHeaderCount) * (PickyHUDDockGroupHeaderHeight + PickyHUDDockGroupContentSpacing)
     }
 
     static func contentSizeReservingAddSlotExpansion(

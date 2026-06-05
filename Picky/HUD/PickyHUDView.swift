@@ -1806,7 +1806,7 @@ private struct PickyHUDDockRailView: View {
                 includesFullscreenControl: PickyFullscreenFeatureFlags.isEnabled
             ) + emptyDropExtraLength
         }
-        let headersExtraLength = CGFloat(groupHeaderCount) * (PickyHUDDockGroupHeaderHeight + metrics.sessionSpacing)
+        let headersExtraLength = PickyHUDDockLayout.dockGroupHeaderExtraLength(groupHeaderCount: groupHeaderCount)
         let emptyDropExtraLength = CGFloat(emptyGroupDropTileCount) * (metrics.sessionTileHeight + metrics.sessionSpacing)
         let base = PickyHUDDockLayout.dockRailHeight(
             sessionCount: sessions.count,

@@ -367,7 +367,7 @@ struct PickyDockMiniPickleGlyph: View {
 /// container laid out as a 2x2 grid; the visible glyph count communicates
 /// the member count (so the header no longer needs a count chip). When more
 /// than four members exist, the fourth cell collapses into a `+N` tile. An
-/// unread chip in the bottom-right corner mirrors the per-Pickle blue
+/// unread chip in the top-right corner mirrors the per-Pickle blue
 /// unread dot pattern.
 struct PickyHUDDockCollapsedGroupBadge: View {
     let members: [PickySessionListViewModel.SessionCard]
@@ -424,7 +424,7 @@ struct PickyHUDDockCollapsedGroupBadge: View {
         let glyphSide = cellSide * 0.74
         let grid = cells
 
-        ZStack(alignment: .bottomTrailing) {
+        ZStack(alignment: .topTrailing) {
             VStack(spacing: gap) {
                 ForEach(0..<2, id: \.self) { row in
                     HStack(spacing: gap) {
@@ -456,7 +456,8 @@ struct PickyHUDDockCollapsedGroupBadge: View {
                             .stroke(DS.Colors.background, lineWidth: 0.8)
                     )
                     .shadow(color: DS.Colors.accent.opacity(0.45), radius: 2.5, x: 0, y: 0)
-                    .offset(x: 4, y: 4)
+                    .offset(x: 4, y: -4)
+                    .opacity(isCommandShortcutHintVisible ? 0 : 1)
                     .allowsHitTesting(false)
                     .accessibilityLabel("\(unreadCount) unread")
             }

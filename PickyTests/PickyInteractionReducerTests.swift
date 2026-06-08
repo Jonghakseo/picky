@@ -529,6 +529,22 @@ struct PickyInteractionReducerTests {
         #expect(terminated.journalRecords.last?.kind == .staleEvent)
     }
 
+    @Test func sessionTerminatedClearsExternalAcceptedRequestWithoutInputID() {
+        // External CLI Pickle creation gets a client-side synthetic inputID when
+        // context capture begins, but agentd's later accepted event only carries
+        // contextID + sessionID. The terminal cleanup must still release the
+        // cursor by matching the stable contextID.
+        let packet = context(id: "context-cli-accepted", source: "cli", transcript: "hello")
+        var state = reduce(PickyInteractionState(), .externalContextCaptured(inputID: inputA, text: "hello", context: packet), id: timerA).state
+        state = reduce(state, .agentSubmissionAccepted(contextID: "context-cli-accepted", sessionID: "pickle-external", inputID: nil), id: timerB).state
+        #expect(state.output == .waitingForAgent(inputID: inputA, contextID: "context-cli-accepted", promptPreview: "hello"))
+
+        let terminated = reduce(state, .sessionTerminated(sessionID: "pickle-external"), id: UUID())
+
+        #expect(terminated.state.output == .idle)
+        #expect(terminated.state.pendingAgentRequestsBySession["pickle-external"] == nil)
+    }
+
     @Test func sessionTerminatedIsIdempotent() {
         // After quickReply already cleared .waitingForAgent, or after a previous
         // sessionTerminated already ran, another .sessionTerminated for the same

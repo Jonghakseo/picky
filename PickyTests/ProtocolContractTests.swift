@@ -55,6 +55,29 @@ struct ProtocolContractTests {
         #expect(event.event == .unknown(type: "newFutureEvent"))
     }
 
+    @Test func decodesExternalEntryAcceptedEvent() throws {
+        let json = """
+        {
+          "id":"event-external-accepted-001",
+          "protocolVersion":"2026-05-09",
+          "timestamp":"2026-05-01T00:00:00.000Z",
+          "type":"externalEntryAccepted",
+          "commandId":"cli-1",
+          "kind":"createPickle",
+          "contextId":"context-cli-1",
+          "sessionId":"session-cli-1"
+        }
+        """.data(using: .utf8)!
+
+        let envelope = try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: json)
+        #expect(envelope.event == .externalEntryAccepted(PickyExternalEntryAcceptedEvent(
+            commandId: "cli-1",
+            kind: .createPickle,
+            contextId: "context-cli-1",
+            sessionId: "session-cli-1"
+        )))
+    }
+
     @Test func encodesRouteTaskCommandWithContractVersion() throws {
         let context = PickyContextPacket(
             id: "context-test-001",

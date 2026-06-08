@@ -447,6 +447,13 @@ export class AgentdServer {
         // Surface both the session id (when route created a Pickle) and the context id
         // (always available, used by the CLI's --wait flag to filter the matching
         // quickReply / main-message broadcast).
+        this.broadcastToCapability("externalEntry", {
+          type: "externalEntryAccepted",
+          commandId,
+          kind,
+          contextId: finalContext.id,
+          ...(session ? { sessionId: session.id } : {}),
+        });
         this.send(ws, {
           type: "externalEntryAck",
           commandId,
@@ -459,6 +466,13 @@ export class AgentdServer {
           title: payload.title!,
           instructions: payload.instructions!,
           ...(payload.cwd ? { cwd: payload.cwd } : {}),
+        });
+        this.broadcastToCapability("externalEntry", {
+          type: "externalEntryAccepted",
+          commandId,
+          kind,
+          sessionId: session.id,
+          contextId: finalContext.id,
         });
         this.send(ws, {
           type: "externalEntryAck",
@@ -555,6 +569,20 @@ export class AgentdServer {
       type = sent.type;
     }
     logAgentd("event broadcast", { type, clients: this.clients.size, bytes });
+  }
+
+  private broadcastToCapability(capability: string, event: EventPayload): void {
+    let bytes = 0;
+    let type: string | undefined;
+    let clients = 0;
+    for (const client of this.clients) {
+      if (!this.appCapabilities.get(client)?.has(capability)) continue;
+      const sent = this.send(client, event);
+      bytes = sent.bytes;
+      type = sent.type;
+      clients += 1;
+    }
+    logAgentd("event broadcast", { type, clients, bytes });
   }
 
   private send(ws: WebSocket, payload: EventPayload): { bytes: number; type: string } {
@@ -804,6 +832,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, requestId: event.requestId, kind: event.kind, textChars: event.text?.length, titleChars: event.title?.length, instructionChars: event.instructions?.length, cwd: event.cwd };
     case "externalEntryAck":
       return { eventId: event.id, type: event.type, commandId: event.commandId, kind: event.kind, sessionId: event.sessionId, contextId: event.contextId, errorChars: event.errorMessage?.length };
+    case "externalEntryAccepted":
+      return { eventId: event.id, type: event.type, commandId: event.commandId, kind: event.kind, sessionId: event.sessionId, contextId: event.contextId };
     case "pushToTalkControlRequested":
       return { eventId: event.id, type: event.type, requestId: event.requestId, action: event.action };
     case "pushToTalkControlAck":

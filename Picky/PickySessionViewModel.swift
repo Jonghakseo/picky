@@ -2143,7 +2143,7 @@ final class PickySessionListViewModel: ObservableObject {
              .transcriptionStreamStarted, .transcriptionDelta, .transcriptionCompleted,
              .transcriptionStreamFailed, .transcriptionStreamClosed,
              .pointerOverlayRequested, .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested,
-             .pushToTalkControlRequested, .hello, .pluginsReloaded, .unknown:
+             .externalEntryAccepted, .pushToTalkControlRequested, .hello, .pluginsReloaded, .unknown:
             break
         }
     }

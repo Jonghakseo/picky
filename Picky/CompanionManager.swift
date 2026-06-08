@@ -2331,6 +2331,12 @@ final class CompanionManager: ObservableObject {
                 let spoken = stripParentheticalsForSpeech(reply.text)
                 finishAwaitingAgentResponse(visibleText: reply.text, spokenText: spoken, enforceMinimumProcessingDuration: true)
             }
+        case .externalEntryAccepted(let accepted):
+            guard let sessionId = accepted.sessionId else { break }
+            interactionCoordinator.accept(
+                .agentSubmissionAccepted(contextID: accepted.contextId, sessionID: sessionId, inputID: nil),
+                correlation: PickyInteractionCorrelation(contextID: accepted.contextId, sessionID: sessionId, source: .agent)
+            )
         case .mainMessagesSnapshot(let messages):
             mainAgentMessages = Array(messages.suffix(100))
             // Snapshot fires on session load/reset for the whole transcript,

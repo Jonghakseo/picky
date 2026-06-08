@@ -525,6 +525,13 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
     errorMessage: z.string().min(1).optional(),
   }),
   EventBaseSchema.extend({
+    type: z.literal("externalEntryAccepted"),
+    commandId: z.string().min(1),
+    kind: z.enum(["submitMain", "createPickle"]),
+    contextId: z.string().min(1),
+    sessionId: z.string().min(1).optional(),
+  }),
+  EventBaseSchema.extend({
     type: z.literal("pushToTalkControlRequested"),
     requestId: z.string().min(1),
     action: PickyPushToTalkControlActionSchema,

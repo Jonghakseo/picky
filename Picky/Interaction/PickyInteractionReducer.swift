@@ -379,8 +379,8 @@ enum PickyInteractionReducer {
             // newer submission's .waitingForAgent for a different inputID/contextID,
             // must not be clobbered by a late terminal signal.
             if case .waitingForAgent(let waitingInputID, let waitingContextID, _) = state.output,
-               waitingInputID == pending.inputID,
-               waitingContextID == pending.contextID {
+               waitingContextID == pending.contextID,
+               (pending.inputID == nil || waitingInputID == pending.inputID) {
                 state.output = .idle
                 state = state.removingOverlayReason(.waitingForVoiceResponse)
                 record(.stateChanged, "Session terminated; released cursor waitingForAgent for \(sessionID)")

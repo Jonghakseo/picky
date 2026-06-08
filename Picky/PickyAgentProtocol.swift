@@ -321,6 +321,7 @@ enum PickyEvent: Equatable {
     case pickleHandoffRequested(PickyPickleHandoffRequest)
     case pickleBridgeRequested(PickyPickleBridgeRequest)
     case externalEntryRequested(PickyExternalEntryRequest)
+    case externalEntryAccepted(PickyExternalEntryAcceptedEvent)
     case pushToTalkControlRequested(PickyPushToTalkControlRequest)
     case slashCommandsSnapshot(sessionId: String, requestId: String?, commands: [PickySlashCommand])
     case sessionMessageAppended(sessionId: String, message: PickySessionMessage, seq: Int)
@@ -422,6 +423,8 @@ enum PickyEvent: Equatable {
             self = .pickleBridgeRequested(try PickyPickleBridgeRequest(from: decoder))
         case "externalEntryRequested":
             self = .externalEntryRequested(try PickyExternalEntryRequest(from: decoder))
+        case "externalEntryAccepted":
+            self = .externalEntryAccepted(try PickyExternalEntryAcceptedEvent(from: decoder))
         case "pushToTalkControlRequested":
             self = .pushToTalkControlRequested(try PickyPushToTalkControlRequest(from: decoder))
         case "slashCommandsSnapshot":
@@ -588,6 +591,13 @@ struct PickyExternalEntryRequest: Decodable, Equatable {
     let title: String?
     let instructions: String?
     let cwd: String?
+}
+
+struct PickyExternalEntryAcceptedEvent: Decodable, Equatable {
+    let commandId: String
+    let kind: PickyExternalEntryKind
+    let contextId: String
+    let sessionId: String?
 }
 
 enum PickyPushToTalkControlAction: String, Codable, Equatable {

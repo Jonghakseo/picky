@@ -364,6 +364,7 @@ describe("AgentdServer", () => {
       source: "cli",
       cwd: "/tmp/captured",
     };
+    trackEvents(cliWs);
     appWs.send(JSON.stringify({
       id: "cmd-complete-external",
       protocolVersion: PROTOCOL_VERSION,
@@ -371,6 +372,10 @@ describe("AgentdServer", () => {
       requestId,
       context: capturedContext,
     }));
+
+    const accepted = await waitForEvent(appWs, "externalEntryAccepted");
+    expect(accepted).toMatchObject({ commandId: "cmd-cli-pickle-bridge", kind: "createPickle", contextId: "context-cli-bridge" });
+    if (accepted.type === "externalEntryAccepted") expect(accepted.sessionId).toBeDefined();
 
     const ack = await waitForEvent(cliWs, "externalEntryAck");
     expect(ack).toMatchObject({ commandId: "cmd-cli-pickle-bridge", kind: "createPickle" });

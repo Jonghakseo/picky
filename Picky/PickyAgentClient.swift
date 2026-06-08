@@ -431,6 +431,8 @@ private extension PickyEventEnvelope {
             return "type=pickleBridgeRequested id=\(id) request=\(request.requestId) operation=\(request.operation.rawValue) session=\(request.sessionId ?? "none")"
         case .externalEntryRequested(let request):
             return "type=externalEntryRequested id=\(id) request=\(request.requestId) kind=\(request.kind.rawValue) cwd=\(request.cwd ?? "none")"
+        case .externalEntryAccepted(let event):
+            return "type=externalEntryAccepted id=\(id) command=\(event.commandId) kind=\(event.kind.rawValue) context=\(event.contextId) session=\(event.sessionId ?? "none")"
         case .pushToTalkControlRequested(let request):
             return "type=pushToTalkControlRequested id=\(id) request=\(request.requestId) action=\(request.action.rawValue)"
         case .slashCommandsSnapshot(let sessionId, let requestId, let commands):

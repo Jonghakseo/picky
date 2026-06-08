@@ -679,7 +679,7 @@ struct BlueCursorView: View {
                                 .preference(key: VoicePromptBubbleSizePreferenceKey.self, value: geo.size)
                         }
                     )
-                    .position(cursorBubbleCenter(for: voicePromptBubbleSize))
+                    .position(cursorChromeBubbleCenter(for: voicePromptBubbleSize))
                     .animation(cursorFollowAnimation, value: cursorPosition)
                     .animation(.easeOut(duration: 0.2), value: companionManager.voiceState)
                     .animation(.easeOut(duration: 0.16), value: companionManager.voicePromptBubbleState)
@@ -744,7 +744,7 @@ struct BlueCursorView: View {
                                 .preference(key: ResponseBubbleSizePreferenceKey.self, value: geo.size)
                         }
                     )
-                    .position(cursorBubbleCenter(for: responseBubbleSize))
+                    .position(cursorChromeBubbleCenter(for: responseBubbleSize))
                     .animation(cursorFollowAnimation, value: cursorPosition)
                     .animation(.easeOut(duration: 0.2), value: companionManager.voiceState)
                     .onPreferenceChange(ResponseBubbleSizePreferenceKey.self) { newSize in
@@ -760,7 +760,7 @@ struct BlueCursorView: View {
                                 .preference(key: CursorWaitingIndicatorSizePreferenceKey.self, value: geo.size)
                         }
                     )
-                    .position(cursorBubbleCenter(for: cursorWaitingIndicatorSize, horizontalGap: 10, verticalGap: 16))
+                    .position(cursorChromeBubbleCenter(for: cursorWaitingIndicatorSize))
                     .animation(cursorFollowAnimation, value: cursorPosition)
                     .animation(.easeOut(duration: 0.16), value: hiddenCursorWaitingIndicatorIsVisible)
                     .onPreferenceChange(CursorWaitingIndicatorSizePreferenceKey.self) { newSize in
@@ -886,6 +886,18 @@ struct BlueCursorView: View {
 
     private func cursorBuddyPosition(for screenPoint: CGPoint) -> CGPoint {
         PickyOverlayGeometry.cursorBuddyPosition(for: screenPoint, in: screenFrame)
+    }
+
+    private var systemCursorPosition: CGPoint {
+        PickyOverlayGeometry.swiftUICoordinates(for: effectiveCursorGlobalPoint, in: screenFrame)
+    }
+
+    private var compactCursorChromePlacementIsPreferred: Bool {
+        !cursorPreferencesStore.preferences.showPiCursor
+            && buddyNavigationMode == .followingCursor
+            && activePointerID == nil
+            && !companionManager.inkOverlayState.isActive
+            && companionManager.screenContextTargetSessionID == nil
     }
 
     private var isShakeReactionActive: Bool {
@@ -1062,11 +1074,12 @@ struct BlueCursorView: View {
     /// it can plug straight into `.position(_:)`.
     private func cursorBubbleCenter(
         for bubbleSize: CGSize,
+        anchorPosition: CGPoint? = nil,
         horizontalGap: CGFloat = 12,
         verticalGap: CGFloat = 20
     ) -> CGPoint {
         let placement = PickyCursorBubblePlacement.compute(
-            cursorPosition: cursorPosition,
+            cursorPosition: anchorPosition ?? cursorPosition,
             bubbleSize: bubbleSize,
             screenSize: CGSize(width: screenFrame.width, height: screenFrame.height),
             horizontalGap: horizontalGap,
@@ -1076,6 +1089,21 @@ struct BlueCursorView: View {
             x: placement.topLeading.x + bubbleSize.width / 2,
             y: placement.topLeading.y + bubbleSize.height / 2
         )
+    }
+
+    private func cursorChromeBubbleCenter(for bubbleSize: CGSize) -> CGPoint {
+        if compactCursorChromePlacementIsPreferred {
+            // When the mascot is hidden, anchor transient cursor chrome to the real
+            // system pointer instead of the mascot's offset position. Use a tighter
+            // gap too: there is no buddy icon to clear visually.
+            return cursorBubbleCenter(
+                for: bubbleSize,
+                anchorPosition: systemCursorPosition,
+                horizontalGap: 6,
+                verticalGap: 8
+            )
+        }
+        return cursorBubbleCenter(for: bubbleSize)
     }
 
     private var pointerTargetPosition: CGPoint? {

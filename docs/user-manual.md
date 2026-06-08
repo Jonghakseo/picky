@@ -822,7 +822,7 @@ Combined page for everything Picky surfaces back to you — cursor overlay, spee
 | Smooth cursor follow | On | Enables springy cursor-follow animation. |
 | Idle animations | On | Enables idle cursor animations. |
 
-If **Show Picky Cursor** is off, smooth follow and idle animations are disabled.
+If **Show Picky Cursor** is off, smooth follow and idle animations are disabled. Picky still shows a minimal waiting indicator near the system cursor while a cursor-side request is in flight, then hides it again when the response arrives or the request ends.
 
 **Bubbles**
 

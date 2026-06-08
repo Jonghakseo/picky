@@ -762,7 +762,7 @@ struct BlueCursorView: View {
                                 .preference(key: CursorWaitingIndicatorSizePreferenceKey.self, value: geo.size)
                         }
                     )
-                    .position(cursorChromeBubbleCenter(for: cursorWaitingIndicatorSize))
+                    .position(cursorChromeBubbleCenter(for: cursorWaitingIndicatorSize, compactHorizontalGap: 12, compactVerticalGap: 14))
                     .animation(cursorFollowAnimation, value: cursorPosition)
                     .animation(.easeOut(duration: 0.16), value: hiddenCursorWaitingIndicatorIsVisible)
                     .onPreferenceChange(CursorWaitingIndicatorSizePreferenceKey.self) { newSize in
@@ -1093,7 +1093,11 @@ struct BlueCursorView: View {
         )
     }
 
-    private func cursorChromeBubbleCenter(for bubbleSize: CGSize) -> CGPoint {
+    private func cursorChromeBubbleCenter(
+        for bubbleSize: CGSize,
+        compactHorizontalGap: CGFloat = 6,
+        compactVerticalGap: CGFloat = 8
+    ) -> CGPoint {
         if compactCursorChromePlacementIsPreferred {
             // When the mascot is hidden, anchor transient cursor chrome to the real
             // system pointer instead of the mascot's offset position. Use a tighter
@@ -1101,8 +1105,8 @@ struct BlueCursorView: View {
             return cursorBubbleCenter(
                 for: bubbleSize,
                 anchorPosition: systemCursorPosition,
-                horizontalGap: 6,
-                verticalGap: 8
+                horizontalGap: compactHorizontalGap,
+                verticalGap: compactVerticalGap
             )
         }
         return cursorBubbleCenter(for: bubbleSize)
@@ -1513,32 +1517,32 @@ private struct CursorWaitingIndicatorView: View {
     @State private var isAnimating = false
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 4) {
             ForEach(0..<3, id: \.self) { index in
                 Circle()
-                    .fill(Color.white.opacity(0.92))
-                    .frame(width: 4.5, height: 4.5)
-                    .scaleEffect(isAnimating ? 1.0 : 0.58)
-                    .opacity(isAnimating ? 0.95 : 0.35)
+                    .fill(DS.Colors.overlayCursorBlue.opacity(isAnimating ? 0.95 : 0.42))
+                    .frame(width: 4, height: 4)
+                    .scaleEffect(isAnimating ? 1.0 : 0.72)
+                    .offset(y: isAnimating ? -1.0 : 1.0)
                     .animation(
-                        .easeInOut(duration: 0.62)
+                        .easeInOut(duration: 0.58)
                             .repeatForever(autoreverses: true)
-                            .delay(Double(index) * 0.16),
+                            .delay(Double(index) * 0.13),
                         value: isAnimating
                     )
             }
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5.5)
         .background(
             Capsule(style: .continuous)
-                .fill(DS.Colors.surface1.opacity(0.94))
-                .shadow(color: Color.black.opacity(0.24), radius: 10, x: 0, y: 3)
-                .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.30), radius: 8, x: 0, y: 0)
+                .fill(DS.Colors.surface1.opacity(0.88))
+                .shadow(color: Color.black.opacity(0.16), radius: 8, x: 0, y: 3)
+                .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.18), radius: 6, x: 0, y: 0)
         )
         .overlay(
             Capsule(style: .continuous)
-                .stroke(Color.white.opacity(0.22), lineWidth: 0.8)
+                .stroke(DS.Colors.overlayCursorBlue.opacity(0.26), lineWidth: 0.8)
         )
         .fixedSize()
         .onAppear { isAnimating = true }

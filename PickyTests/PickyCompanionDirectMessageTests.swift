@@ -119,6 +119,7 @@ struct PickyCompanionDirectMessageTests {
         #expect(client.submissions.count == 1)
         #expect(client.submissions.first?.transcript == "hello from cursor")
         #expect(manager.voiceState == .processing)
+        #expect(manager.isWaitingForCursorResponse)
         #expect(manager.overlayVisibilityReasons.contains(.waitingForVoiceResponse))
 
         manager.applyAgentEvent(.quickReply(PickyQuickReplyEvent(contextId: "typed-context", text: "cursor reply")))
@@ -126,6 +127,7 @@ struct PickyCompanionDirectMessageTests {
 
         #expect(manager.latestAgentSessionSummary == "cursor reply")
         #expect(manager.voiceState == .responding)
+        #expect(!manager.isWaitingForCursorResponse)
     }
 
     private func waitUntil(_ predicate: @escaping @MainActor () -> Bool) async throws {

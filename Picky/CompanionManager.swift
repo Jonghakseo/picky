@@ -430,6 +430,7 @@ final class CompanionManager: ObservableObject {
     @Published private(set) var isOverlayVisible: Bool = false
     @Published private(set) var overlayVisibilityReasons: Set<PickyOverlayReason> = []
     @Published private(set) var isQuickInputPanelVisible: Bool = false
+    @Published private(set) var isWaitingForCursorResponse: Bool = false
     @Published private(set) var inkOverlayState: PickyInkOverlayState = .inactive
 
     private var localOverlayVisibilityReasons: Set<PickyOverlayReason> = []
@@ -1749,6 +1750,7 @@ final class CompanionManager: ObservableObject {
 
     private func applyInteractionProjection(_ projection: PickyInteractionProjection) {
         isSendingDirectMessage = projection.hasPendingTextSubmission
+        isWaitingForCursorResponse = projection.isWaitingForCursorResponse
         setInteractionOverlayReasons(from: projection.state.overlay)
 
         switch projection.state.output {

@@ -500,6 +500,7 @@ struct BlueCursorView: View {
     @State private var voicePromptBubbleSize: CGSize = .zero
     @State private var onboardingBubbleSize: CGSize = .zero
     @State private var shakeReactionBubbleSize: CGSize = .zero
+    @State private var cursorWaitingIndicatorSize: CGSize = .zero
     @State private var cursorOpacity: Double = 1.0
 
     @State private var shakeWindowStartAt: TimeInterval?
@@ -751,6 +752,22 @@ struct BlueCursorView: View {
                     }
             }
 
+            if hiddenCursorWaitingIndicatorIsVisible {
+                CursorWaitingIndicatorView()
+                    .overlay(
+                        GeometryReader { geo in
+                            Color.clear
+                                .preference(key: CursorWaitingIndicatorSizePreferenceKey.self, value: geo.size)
+                        }
+                    )
+                    .position(cursorBubbleCenter(for: cursorWaitingIndicatorSize, horizontalGap: 10, verticalGap: 16))
+                    .animation(cursorFollowAnimation, value: cursorPosition)
+                    .animation(.easeOut(duration: 0.16), value: hiddenCursorWaitingIndicatorIsVisible)
+                    .onPreferenceChange(CursorWaitingIndicatorSizePreferenceKey.self) { newSize in
+                        cursorWaitingIndicatorSize = newSize
+                    }
+            }
+
             if isCursorOnThisScreen, isShakeReactionActive {
                 PickyShakeReactionBubbleView(text: PickyShakeReactionText.current)
                     .overlay(
@@ -883,6 +900,21 @@ struct BlueCursorView: View {
             && isCursorOnThisScreen
             && !companionManager.isQuickInputPanelVisible
             && !companionManager.inkOverlayState.isActive
+    }
+
+    /// Minimal in-flight affordance for users who intentionally hide the idle cursor buddy.
+    /// The full mascot stays hidden, but quick-input / cursor-owned requests still leave a
+    /// tiny status dot near the system pointer until the matching reply, failure, or abort lands.
+    private var hiddenCursorWaitingIndicatorIsVisible: Bool {
+        !cursorPreferencesStore.preferences.showPiCursor
+            && companionManager.isWaitingForCursorResponse
+            && isCursorOnThisScreen
+            && systemCursorVisible
+            && buddyNavigationMode == .followingCursor
+            && activePointerID == nil
+            && !companionManager.isQuickInputPanelVisible
+            && !companionManager.inkOverlayState.isActive
+            && companionManager.onboardingBubbleText == nil
     }
 
     /// Whether the buddy pi icon should be visible on this screen.
@@ -1444,6 +1476,43 @@ private enum PickyShakeReactionText {
         case "th": return "ว้าย!"
         default: return "Eek!"
         }
+    }
+}
+
+private struct CursorWaitingIndicatorView: View {
+    @State private var isAnimating = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .fill(Color.white.opacity(0.92))
+                    .frame(width: 4.5, height: 4.5)
+                    .scaleEffect(isAnimating ? 1.0 : 0.58)
+                    .opacity(isAnimating ? 0.95 : 0.35)
+                    .animation(
+                        .easeInOut(duration: 0.62)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(index) * 0.16),
+                        value: isAnimating
+                    )
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(
+            Capsule(style: .continuous)
+                .fill(DS.Colors.surface1.opacity(0.94))
+                .shadow(color: Color.black.opacity(0.24), radius: 10, x: 0, y: 3)
+                .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.30), radius: 8, x: 0, y: 0)
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .stroke(Color.white.opacity(0.22), lineWidth: 0.8)
+        )
+        .fixedSize()
+        .onAppear { isAnimating = true }
+        .onDisappear { isAnimating = false }
     }
 }
 

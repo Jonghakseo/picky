@@ -44,6 +44,13 @@ struct ShakeReactionBubbleSizePreferenceKey: PreferenceKey {
     }
 }
 
+struct CursorWaitingIndicatorSizePreferenceKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
+}
+
 enum PickyBubbleLayout {
     static func textWidth(for text: String, font: NSFont, maxWidth: CGFloat) -> CGFloat {
         let lines = text.components(separatedBy: .newlines)

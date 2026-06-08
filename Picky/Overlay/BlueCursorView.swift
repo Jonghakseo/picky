@@ -762,7 +762,7 @@ struct BlueCursorView: View {
                                 .preference(key: CursorWaitingIndicatorSizePreferenceKey.self, value: geo.size)
                         }
                     )
-                    .position(cursorChromeBubbleCenter(for: cursorWaitingIndicatorSize, compactHorizontalGap: 12, compactVerticalGap: 14))
+                    .position(cursorChromeBubbleCenter(for: cursorWaitingIndicatorSize))
                     .animation(cursorFollowAnimation, value: cursorPosition)
                     .animation(.easeOut(duration: 0.16), value: hiddenCursorWaitingIndicatorIsVisible)
                     .onPreferenceChange(CursorWaitingIndicatorSizePreferenceKey.self) { newSize in
@@ -1095,13 +1095,13 @@ struct BlueCursorView: View {
 
     private func cursorChromeBubbleCenter(
         for bubbleSize: CGSize,
-        compactHorizontalGap: CGFloat = 6,
-        compactVerticalGap: CGFloat = 8
+        compactHorizontalGap: CGFloat = 14,
+        compactVerticalGap: CGFloat = 16
     ) -> CGPoint {
         if compactCursorChromePlacementIsPreferred {
             // When the mascot is hidden, anchor transient cursor chrome to the real
-            // system pointer instead of the mascot's offset position. Use a tighter
-            // gap too: there is no buddy icon to clear visually.
+            // system pointer instead of the mascot's offset position. Keep a moderate
+            // gap so the chrome feels related to the cursor without crowding it.
             return cursorBubbleCenter(
                 for: bubbleSize,
                 anchorPosition: systemCursorPosition,

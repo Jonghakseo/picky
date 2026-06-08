@@ -663,6 +663,7 @@ struct BlueCursorView: View {
             // don't overlap; the onboarding flow takes priority during the
             // demo and the prompt is already in the user's head anyway.
             if isCursorOnThisScreen,
+               !companionManager.isQuickInputPanelVisible,
                overlayBubblePreferencesStore.preferences.showUserSpeechRecognitionBubble,
                companionManager.voicePromptBubbleState.isVisible,
                companionManager.onboardingBubbleText == nil {
@@ -693,6 +694,7 @@ struct BlueCursorView: View {
             // Also suppressed during onboarding so the guide bubble is the
             // single signal driving the cursor at that moment.
             if isCursorOnThisScreen,
+               !companionManager.isQuickInputPanelVisible,
                overlayBubblePreferencesStore.preferences.showPickyResponseBubble,
                companionManager.voiceState == .responding,
                let responseText = companionManager.latestAgentSessionSummary,
@@ -938,7 +940,7 @@ struct BlueCursorView: View {
     /// the one animating), hide the cursor so only one buddy is ever visible.
     private var buddyIsVisibleOnThisScreen: Bool {
         guard cursorPreferencesStore.preferences.showPiCursor || companionManager.inkOverlayState.isActive || companionManager.screenContextTargetSessionID != nil else { return false }
-        if companionManager.isQuickInputPanelVisible && !companionManager.inkOverlayState.isActive { return false }
+        if companionManager.isQuickInputPanelVisible { return false }
         switch buddyNavigationMode {
         case .followingCursor:
             // If another screen's BlueCursorView is navigating to an element,

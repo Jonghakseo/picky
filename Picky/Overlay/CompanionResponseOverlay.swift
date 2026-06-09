@@ -15,11 +15,11 @@ private final class CompanionResponsePanel: NSPanel, PickyScreenCaptureExcludedW
 
 /// Single source of truth for the cursor response bubble's typography and line budget.
 /// Shared by the SwiftUI view (truncation + lineLimit) and the panel sizing path
-/// (`resizePanelToFitContent`) so the host panel never grows past the visible 8-line cap
+/// (`resizePanelToFitContent`) so the host panel never grows past the visible 16-line cap
 /// even when `NSHostingView.fittingSize` ignores SwiftUI's lineLimit on multi-paragraph
 /// AttributedStrings.
 private enum CompanionResponseOverlayMetrics {
-    static let maxLines: Int = 8
+    static let maxLines: Int = 16
     static let bubbleFontSize: CGFloat = 13
     static let lineSpacing: CGFloat = 3
     static let horizontalPadding: CGFloat = 14
@@ -193,7 +193,7 @@ final class CompanionResponseOverlayManager {
         // Cap the host panel at the visible-line budget. `NSHostingView.fittingSize` can return
         // the ideal vertical size for the entire AttributedString (ignoring SwiftUI's lineLimit)
         // when `fixedSize(vertical: true)` is in play, which previously let multi-paragraph
-        // replies grow the bubble well past 8 lines. The truncation inside the SwiftUI view
+        // replies grow the bubble well past 16 lines. The truncation inside the SwiftUI view
         // keeps the visible text bounded; this min() keeps the host panel from expanding past
         // that same budget even if the SwiftUI cap is ever bypassed.
         let maxHeight = CompanionResponseOverlayMetrics.maxBubbleHeight()
@@ -244,7 +244,7 @@ private struct CompanionResponseOverlayView: View {
                 maxWidth: 300
             )
             // Pre-truncate to the visible-line budget so the resulting `fittingSize` and the
-            // rendered text agree on "8 lines max". SwiftUI's `.lineLimit` is kept as a
+            // rendered text agree on "16 lines max". SwiftUI's `.lineLimit` is kept as a
             // belt-and-braces safety net for the rare case CoreText line counting disagrees
             // with SwiftUI's wrapping (different font fallback, locale-specific shaping).
             let attributedText = PickyBubbleLayout.truncatedAttributedText(

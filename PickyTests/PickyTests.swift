@@ -98,7 +98,7 @@ struct PickyTests {
     // MARK: - Cursor response bubble truncation
     //
     // Regression coverage for the cursor-following companion response bubble. The previous
-    // implementation declared `.lineLimit(8)` on the SwiftUI Text, but the host panel sized
+    // implementation declared `.lineLimit(N)` on the SwiftUI Text, but the host panel sized
     // itself from `NSHostingView.fittingSize`, which ignored that cap on multi-paragraph
     // AttributedStrings and let the bubble grow to 30+ lines (user-reported regression on
     // 2026-05-24). The pre-truncation + `maxBubbleHeight()` cap below is the source of truth
@@ -112,7 +112,7 @@ struct PickyTests {
             font: font,
             lineSpacing: 3,
             width: 300,
-            maxLines: 8
+            maxLines: 16
         )
 
         // Single-line content fits well within the budget, so the helper must round-trip
@@ -126,7 +126,7 @@ struct PickyTests {
         let lineSpacing: CGFloat = 3
         let width: CGFloat = 300
         // 30 short paragraphs separated by blank lines — mirrors the user-reported scenario
-        // where the bubble swelled to dozens of lines despite `.lineLimit(8)`.
+        // where the bubble swelled to dozens of lines despite `.lineLimit(N)`.
         let paragraphs = (1...30).map { "단락 \($0): 이것은 몇 줄 이상이 될 수 있는 긴 한국어 문장입니다." }
         let longText = paragraphs.joined(separator: "\n\n")
         let source = PickyBubbleMarkdown.attributedText(for: longText)
@@ -136,7 +136,7 @@ struct PickyTests {
             font: font,
             lineSpacing: lineSpacing,
             width: width,
-            maxLines: 8
+            maxLines: 16
         )
 
         // The truncated text must end in an ellipsis to signal that content was dropped.
@@ -144,14 +144,14 @@ struct PickyTests {
         // It must also be strictly shorter than the source so we know content was actually
         // removed (not just the ellipsis appended).
         #expect(truncated.characters.count < source.characters.count)
-        // And the visible-line count for the truncated string must respect the 8-line cap.
+        // And the visible-line count for the truncated string must respect the 16-line cap.
         let visibleLines = PickyBubbleLayout.visualLineCount(
             truncated,
             font: font,
             lineSpacing: lineSpacing,
             width: width
         )
-        #expect(visibleLines <= 8)
+        #expect(visibleLines <= 16)
     }
 
     @Test func truncatedAttributedTextHandlesWrappedSingleParagraph() throws {
@@ -168,7 +168,7 @@ struct PickyTests {
             font: font,
             lineSpacing: lineSpacing,
             width: width,
-            maxLines: 8
+            maxLines: 16
         )
 
         let visibleLines = PickyBubbleLayout.visualLineCount(
@@ -177,7 +177,7 @@ struct PickyTests {
             lineSpacing: lineSpacing,
             width: width
         )
-        #expect(visibleLines <= 8)
+        #expect(visibleLines <= 16)
         #expect(String(truncated.characters).hasSuffix("\u{2026}"))
     }
 

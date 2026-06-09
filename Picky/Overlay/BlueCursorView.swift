@@ -700,7 +700,7 @@ struct BlueCursorView: View {
                let responseText = companionManager.latestAgentSessionSummary,
                !responseText.isEmpty,
                companionManager.onboardingBubbleText == nil {
-                // The voice-response cursor bubble uses the same 8-line visible cap as the
+                // The voice-response cursor bubble uses the same 16-line visible cap as the
                 // longer-running CompanionResponseOverlay so multi-paragraph TTS replies do
                 // not balloon the bubble past the cursor area. SwiftUI's `.lineLimit` alone
                 // does not constrain `fixedSize(vertical: true)` bubbles either, so we
@@ -718,13 +718,13 @@ struct BlueCursorView: View {
                     font: bubbleFont,
                     lineSpacing: 0,
                     width: textWidth,
-                    maxLines: 8
+                    maxLines: 16
                 )
                 Text(attributedText)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.leading)
-                    .lineLimit(8)
+                    .lineLimit(16)
                     .truncationMode(.tail)
                     .frame(width: textWidth, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)

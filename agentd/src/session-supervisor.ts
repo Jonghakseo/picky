@@ -2757,9 +2757,17 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   private async tryResumeRuntimeHandle(session: PickyAgentSession): Promise<RuntimeSessionHandle | undefined> {
+    const attached = this.runtimeHandles.get(session.id);
+    if (attached) return attached;
+    const pending = await this.pendingRuntimeHandle(session.id, "resume runtime");
+    if (pending) return pending;
     if (!this.runtime.resume) return undefined;
     const sessionFilePath = piSessionFilePathForSession(session);
     if (!sessionFilePath) return undefined;
+
+    const pendingHandle = createPendingRuntimeHandle();
+    this.pendingRuntimeHandles.set(session.id, pendingHandle.promise);
+    this.pendingRuntimeAbortControllers.set(session.id, new AbortController());
 
     try {
       logAgentd("runtime resume requested", { sessionId: session.id, sessionFilePath });
@@ -2771,9 +2779,11 @@ export class SessionSupervisor extends EventEmitter {
         } catch (abortError) {
           logAgentd("runtime resume aborted after terminal state failed", { sessionId: session.id, error: abortError instanceof Error ? abortError.message : String(abortError) });
         }
+        pendingHandle.reject(new Error(`Runtime resume discarded because session is ${currentBeforeAttach.status}`));
         return undefined;
       }
       await this.attachRuntimeHandle(session.id, handle);
+      pendingHandle.resolve(handle);
       await this.appendLog(session.id, `runtime reattached from pi session: ${sessionFilePath}`);
       const interrupted = await this.interruptedRuntimeLiveStatePatch(session.id);
       const current = this.mustGet(session.id);
@@ -2792,9 +2802,13 @@ export class SessionSupervisor extends EventEmitter {
       return handle;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      pendingHandle.reject(error);
       logAgentd("runtime resume failed", { sessionId: session.id, sessionFilePath, error: message });
       await this.appendLog(session.id, `runtime reattach failed: ${message}`);
       return undefined;
+    } finally {
+      if (this.pendingRuntimeHandles.get(session.id) === pendingHandle.promise) this.pendingRuntimeHandles.delete(session.id);
+      this.pendingRuntimeAbortControllers.delete(session.id);
     }
   }
 

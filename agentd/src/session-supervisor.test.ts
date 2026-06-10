@@ -2,7 +2,7 @@ import { appendFile, mkdir, mkdtemp, readFile, truncate, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { PickyAgentSession, PickyContextPacket, PickyMainAgentState } from "./protocol.js";
+import type { ModelCycleDirection, PickyAgentSession, PickyContextPacket, PickyMainAgentState } from "./protocol.js";
 import { MockRuntime } from "./runtime/mock-runtime.js";
 import type { BuiltPrompt } from "./prompt-builder.js";
 import type { AgentRuntime, AnswerExtensionUiOptions, RuntimeAssistantRunMetadata, RuntimeEvent, RuntimeSessionHandle, RuntimeSlashCommand, ThinkingLevel } from "./runtime/types.js";
@@ -4358,6 +4358,44 @@ describe("SessionSupervisor", () => {
     expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/product-pi-session.jsonl", cwd: "/tmp/product", sessionId: "restored-product-session" }]);
   });
 
+  it("shares a pending resumed Pickle runtime between slash command listing and model cycling", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-resume-single-flight-"));
+    const store = new SessionStore(dir);
+    await store.save({
+      id: "restored-product-session",
+      title: "Restored product session",
+      status: "completed",
+      cwd: "/tmp/product",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:10.000Z",
+      logs: ["Picky handoff: investigate", "pi session: /tmp/product-pi-session.jsonl"],
+      tools: [],
+      artifacts: [],
+      changedFiles: [],
+    });
+    const runtime = new DeferredResumeRuntime();
+    const supervisor = new SessionSupervisor(runtime, store);
+    await supervisor.load();
+
+    const listing = supervisor.listSlashCommands("restored-product-session");
+    await waitUntil(() => runtime.resumeCalls.length === 1);
+    runtime.handle!.slashCommands = [{ name: "skill:general-click-event-insight", description: "Product insight", source: "skill" }];
+    runtime.handle!.modelCycleResults = [{ model: "anthropic/claude-opus-4-7", thinkingLevel: "high" }];
+
+    const cycling = supervisor.cycleSessionModel("restored-product-session", "forward");
+    await settle();
+
+    expect(runtime.resumeCalls).toEqual([{ sessionFilePath: "/tmp/product-pi-session.jsonl", cwd: "/tmp/product", sessionId: "restored-product-session" }]);
+
+    runtime.resolvePendingResume();
+
+    await expect(listing).resolves.toEqual([
+      { name: "skill:general-click-event-insight", description: "Product insight", source: "skill" },
+    ]);
+    await expect(cycling).resolves.toMatchObject({ currentAssistantRun: { model: "anthropic/claude-opus-4-7", thinkingLevel: "high" } });
+    expect(runtime.handle!.modelCycleDirections).toEqual(["forward"]);
+  });
+
   it("falls back to the main runtime command catalog when the session handle is missing", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-test-"));
     const runtime = new ManualRuntime();
@@ -6458,6 +6496,8 @@ class ManualHandle implements RuntimeSessionHandle {
   stalePendingRequestIds = new Set<string>();
   thinkingLevels: string[] = [];
   modelPatterns: Array<string | undefined> = [];
+  modelCycleDirections: ModelCycleDirection[] = [];
+  modelCycleResults: RuntimeAssistantRunMetadata[] = [];
   userBashExecutions: Array<{ command: string; excludeFromContext?: boolean }> = [];
   newSessionCalls = 0;
   sessionFilePath?: string;
@@ -6534,6 +6574,12 @@ class ManualHandle implements RuntimeSessionHandle {
     const normalized = pattern?.trim() || undefined;
     this.modelPatterns.push(normalized);
     this.assistantRunMetadata = normalized ? { model: normalized } : undefined;
+    return this.assistantRunMetadata;
+  }
+  async cycleModel(direction: ModelCycleDirection): Promise<RuntimeAssistantRunMetadata | undefined> {
+    this.modelCycleDirections.push(direction);
+    const next = this.modelCycleResults.shift();
+    if (next) this.assistantRunMetadata = next;
     return this.assistantRunMetadata;
   }
   getAssistantRunMetadata(): RuntimeAssistantRunMetadata | undefined {

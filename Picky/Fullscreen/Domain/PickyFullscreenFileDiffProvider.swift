@@ -77,8 +77,7 @@ final class PickyFullscreenFileDiffProvider {
         }
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["git", "-C", cwd] + arguments
+        PickyGitRepositoryStatus.configureBackgroundGitProbeProcess(process, arguments: arguments, cwd: cwd)
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()

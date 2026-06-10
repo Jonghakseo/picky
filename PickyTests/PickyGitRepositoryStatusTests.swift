@@ -29,6 +29,24 @@ struct PickyGitRepositoryStatusTests {
         #expect(position.behind == 4)
     }
 
+    @Test func backgroundGitProbeDisablesOptionalLocksWithoutDroppingEnvironment() {
+        let environment = PickyGitRepositoryStatus.backgroundGitProbeEnvironment(
+            base: ["PATH": "/usr/bin", "GIT_OPTIONAL_LOCKS": "1"]
+        )
+        #expect(environment["PATH"] == "/usr/bin")
+        #expect(environment["GIT_OPTIONAL_LOCKS"] == "0")
+
+        let process = Process()
+        PickyGitRepositoryStatus.configureBackgroundGitProbeProcess(
+            process,
+            arguments: ["status", "--porcelain"],
+            cwd: "/tmp/repo"
+        )
+        #expect(process.executableURL?.path == "/usr/bin/env")
+        #expect(process.arguments == ["git", "-C", "/tmp/repo", "status", "--porcelain"])
+        #expect(process.environment?["GIT_OPTIONAL_LOCKS"] == "0")
+    }
+
     @Test func loadReturnsNilOutsideGitRepository() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

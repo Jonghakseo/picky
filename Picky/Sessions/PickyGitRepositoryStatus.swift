@@ -57,6 +57,35 @@ struct PickyGitRepositoryStatus: Equatable {
     /// auth prompt or filter from pinning a queue slot forever.
     static let userInitiatedSubprocessTimeout: TimeInterval = 300.0
 
+    /// Environment for background git metadata probes. Git documents
+    /// `GIT_OPTIONAL_LOCKS=0` as the way for background processes to avoid
+    /// optional lock-taking side effects, notably `git status` refreshing the
+    /// index and contending with foreground git commands.
+    static func backgroundGitProbeEnvironment(
+        base: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String: String] {
+        var environment = base
+        environment["GIT_OPTIONAL_LOCKS"] = "0"
+        return environment
+    }
+
+    static func configureBackgroundGitProbeProcess(_ process: Process, arguments: [String], cwd: String) {
+        configureGitProcess(process, arguments: arguments, cwd: cwd, disablesOptionalLocks: true)
+    }
+
+    private static func configureGitProcess(
+        _ process: Process,
+        arguments: [String],
+        cwd: String,
+        disablesOptionalLocks: Bool
+    ) {
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["git", "-C", cwd] + arguments
+        if disablesOptionalLocks {
+            process.environment = backgroundGitProbeEnvironment()
+        }
+    }
+
     let repositoryName: String
     let branchName: String
     let hasUncommittedChanges: Bool
@@ -312,10 +341,14 @@ struct PickyGitRepositoryStatus: Equatable {
         case failure(message: String)
     }
 
-    private static func runGitProcess(_ arguments: [String], cwd: String, timeout: TimeInterval = subprocessTimeout) -> GitProcessResult {
+    private static func runGitProcess(
+        _ arguments: [String],
+        cwd: String,
+        timeout: TimeInterval = subprocessTimeout,
+        disablesOptionalLocks: Bool = true
+    ) -> GitProcessResult {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["git", "-C", cwd] + arguments
+        configureGitProcess(process, arguments: arguments, cwd: cwd, disablesOptionalLocks: disablesOptionalLocks)
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()
@@ -407,7 +440,12 @@ struct PickyGitRepositoryStatus: Equatable {
         await withCheckedContinuation { continuation in
             userInitiatedSubprocessQueue.addOperation {
                 let outcome: GitCommandOutcome
-                switch runGitProcess(arguments, cwd: cwd, timeout: userInitiatedSubprocessTimeout) {
+                switch runGitProcess(
+                    arguments,
+                    cwd: cwd,
+                    timeout: userInitiatedSubprocessTimeout,
+                    disablesOptionalLocks: false
+                ) {
                 case .failure(let message):
                     outcome = GitCommandOutcome(exitCode: -1, combinedOutput: message)
                 case .success(let exitCode, let stdout, let stderr):

@@ -256,7 +256,7 @@ The dock icon color, glyph, unread dot, and completion flash reflect these state
 | Press and hold a Pickle | Archives it after a ~1.2s hold timer; a progress ring fills around the dock icon, and moving the cursor more than ~10pt away cancels the archive before it fires. Archives are recoverable from the undo toast or Settings → Pickle → Archived sessions. |
 | Drag a Pickle | Reorders dock Pickles, or drags one into / out of a group. The move is committed when you release. Hold it clearly **outside** the dock for a moment and an **Archive** label appears; release there to archive it (macOS Dock style). |
 | Right-click / Control-click | Opens the dock context menu (Send Context / Compact / Archive / Stop). |
-| Click the `+` slot | Opens a popover with recent folders, **Choose Folder…**, and **New Group…**. |
+| Click the `+` slot | Opens a popover with pinned/recent folders, **Choose Folder…**, and **New Group…**. |
 | Drag the dock handle | Move the dock along or across screen edges. |
 | Double-click the dock handle | Toggle the dock between vertical and horizontal layouts. |
 
@@ -266,7 +266,9 @@ Number shortcuts (`Cmd + 1`…`9`) apply to the first 9 visible dock slots, top 
 
 Click the `+` slot in the dock to open the **Recent folders** popover:
 
-- Pick a recent working folder to start an empty Pickle there immediately.
+- Pick a pinned or recent working folder to start an empty Pickle there immediately.
+- Use the pin button on a recent folder to keep it at the top of the list. Pinned folders stay visible ahead of recents and are not removed by the recent-folder cap.
+- Use the unpin button to move a pinned folder back into the regular recent list, or the remove button to hide an unpinned recent folder.
 - **Choose Folder…** opens the macOS folder picker for any other folder.
 - **New Group…** creates a dock group instead of a Pickle (see §7.4).
 

@@ -74,6 +74,8 @@ When the user asks about a feature, start here before broad searching:
 - OpenAI Realtime voice mode (opt-in): `Picky/Companion/Realtime/`, `agentd/src/runtime/openai-realtime-main-runtime.ts`, `agentd/src/runtime/selectable-main-runtime.ts`, runtime selection in `agentd/src/bootstrap.ts`
 - Screen/context capture: `Picky/Context/`, `Picky/PickyAdvancedContext.swift`, `Picky/Context/PickyContextPacketAssembler.swift`
 - HUD shell / dock / Pickle container: `Picky/HUD/`, `Picky/HUD/PickyHUDView.swift`, `Picky/PickySessionViewModel.swift`
+- HUD dock rail / dock icon / size reporting / recent-folder picker: `Picky/HUD/PickyHUDDockRailView.swift`, `Picky/HUD/PickyHUDDockIconView.swift`, `Picky/HUD/PickyHUDSizeReporting.swift`, `Picky/HUD/PickyRecentPickleFolderPicker.swift`
+- HUD presentation policies (status tone, artifact badges, slash-command autocomplete): `Picky/HUD/PickySessionStatusPresentation.swift`, `Picky/HUD/PickyArtifactPresentation.swift`, `Picky/HUD/PickySlashCommandAutocompletePolicy.swift`
 - Fullscreen workspace (feature-gated): `Picky/Fullscreen/`, `Picky/Fullscreen/PickyFullscreenFeatureFlags.swift`, `Picky/Fullscreen/PickyFullscreenModeController.swift`, `Picky/Fullscreen/Views/`, `docs/picky-fullscreen-mode/`
 - Conversation card UI: `Picky/HUD/Conversation/`, particularly `PickyConversationCardView`, `PickyConversationListView`, `PickyConversationComposerView`, `PickyConversationMenu`
 - Conversation bubble components: `Picky/HUD/Conversation/Bubbles/`
@@ -87,6 +89,7 @@ When the user asks about a feature, start here before broad searching:
 - agentd session lifecycle/orchestration: `agentd/src/session-supervisor.ts`, `agentd/src/session-store.ts`
 - Backend message journal / source mapping: `agentd/src/session-message-builder.ts`, `agentd/src/domain/log-prefixes.ts`
 - Tool categorizer/activity counts: `agentd/src/domain/tool-categorizer.ts`, `agentd/src/domain/tool-activity.ts`
+- Session policy helpers (user bash format, slash commands, pi session files, handoff pin, main-agent limits): `agentd/src/domain/user-bash-format.ts`, `agentd/src/domain/slash-commands.ts`, `agentd/src/domain/pi-session-files.ts`, `agentd/src/domain/pickle-handoff-context.ts`, `agentd/src/domain/main-agent-policy.ts`, `agentd/src/domain/queue-policy.ts`
 - agentd prompt/context construction: `agentd/src/prompt-builder.ts`, `contracts/prompts/`, `contracts/context/`
 - Pi SDK runtime adapter: `agentd/src/runtime/pi-sdk-runtime.ts`, `agentd/src/runtime/types.ts`, `agentd/src/runtime/mock-runtime.ts`, `agentd/src/runtime/selectable-main-runtime.ts`
 - Picky/Pickle session tools: `agentd/src/application/handoff-tool.ts`

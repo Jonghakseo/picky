@@ -51,7 +51,7 @@ type_body_length:
 
 function_body_length:
   warning: 120
-  error: 420 # ratchet: current max 397 (PickyInteractionReducer.reduce)
+  error: 150 # ratchet: current max 122
 
 function_parameter_count:
   warning: 5
@@ -63,7 +63,7 @@ large_tuple:
 
 cyclomatic_complexity:
   warning: 18
-  error: 80 # ratchet: current max 77 (PickyInteractionReducer.reduce)
+  error: 35 # ratchet: current max 30 (reducer dispatch switches)
 
 empty_count:
   severity: warning

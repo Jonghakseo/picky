@@ -4532,7 +4532,7 @@ describe("SessionSupervisor", () => {
     expect(new Set(queued.map((item) => item.id)).size).toBe(2);
 
     runtime.handle?.emit({ type: "queue_update", steering: [], followUp: ["repeat"] });
-    await settle();
+    await waitUntil(() => userTexts(supervisor.get(session.id)).length === 1);
 
     expect(userTexts(supervisor.get(session.id))).toEqual(["repeat"]);
     expect(supervisor.get(session.id)?.queuedFollowUps?.map((item) => ({ id: item.id, text: item.text }))).toEqual([
@@ -4540,7 +4540,7 @@ describe("SessionSupervisor", () => {
     ]);
 
     runtime.handle?.emit({ type: "queue_update", steering: [], followUp: [] });
-    await settle();
+    await waitUntil(() => userTexts(supervisor.get(session.id)).length === 2);
 
     expect(userTexts(supervisor.get(session.id))).toEqual(["repeat", "repeat"]);
     expect(supervisor.get(session.id)?.queuedFollowUps).toEqual([]);

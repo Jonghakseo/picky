@@ -87,3 +87,42 @@ export function diffQueueRemovedItems(
     ...previousFollowUps.filter((_, index) => !usedFollowUps.has(index)),
   ];
 }
+
+export function queueTextMatchesUserText(queueText: string, userText: string): boolean {
+  return queueText === userText || extractPickyPromptUserInstruction(queueText) === userText;
+}
+
+/**
+ * Extract the raw user instruction from a Picky steering/follow-up prompt envelope so queue
+ * entries materialized from prompt text can be matched back to the original user input.
+ */
+export function extractPickyPromptUserInstruction(text: string): string | undefined {
+  const envelopes: Array<{ parent: string; userSection: string }> = [
+    { parent: "# Picky steering message", userSection: "## User steering instruction" },
+    { parent: "# Picky follow-up", userSection: "## User follow-up" },
+  ];
+  const envelope = envelopes.find((candidate) => text.includes(candidate.parent));
+  if (!envelope) return undefined;
+  const headingIndex = text.indexOf(envelope.userSection);
+  if (headingIndex < 0) return undefined;
+
+  const body = text.slice(headingIndex + envelope.userSection.length);
+  const lines = body.split("\n");
+  const extracted: string[] = [];
+  let hasStarted = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!hasStarted && trimmed.length === 0) continue;
+    if (hasStarted && trimmed.startsWith("## ")) break;
+    hasStarted = true;
+    extracted.push(line);
+  }
+
+  if (extracted[0]?.trim().startsWith("- Source:")) {
+    extracted.shift();
+    if (extracted[0]?.trim().length === 0) extracted.shift();
+  }
+
+  const result = extracted.join("\n").trim();
+  return result.length > 0 ? result : undefined;
+}

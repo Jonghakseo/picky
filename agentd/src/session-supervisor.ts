@@ -29,6 +29,13 @@ import { cleanFinalAnswer } from "./domain/session-summary.js";
 import { settleActiveTools } from "./domain/tool-activity.js";
 import { isTransientAgentBusyError } from "./domain/transient-runtime-error.js";
 import { titleFromContext } from "./domain/session-title.js";
+import { normalizeOptionalString } from "./domain/strings.js";
+import { appendLiveBashOutput, formatUserBashFailureSystemMessage, formatUserBashRunningSystemMessage, formatUserBashSystemMessage, parseUserBashInput, userBashSummary, type UserBashInput } from "./domain/user-bash-format.js";
+import { isCompactSlashCommand, isNameSlashCommand, isNonSkillSlashCommand, isNoTurnStateRestoringSlashCommand, isReloadSlashCommand, normalizeSlashCommands } from "./domain/slash-commands.js";
+import { appendUniqueLog, hasPickleSessionMarkerLog, piSessionFilePathForSession, piSessionFilePathFromLogLine, piSessionFilePathFromLogs, withPiSessionFileFromLogs } from "./domain/pi-session-files.js";
+import { buildPinnedPickleSessionLogs, isPickyHandoffCommandMessage, lastTurns, PINNED_SOURCE_TURN_COUNT, piSessionFilePathFromHandoffTranscript, titleForEmptyPickleSession } from "./domain/pickle-handoff-context.js";
+import { extractPickyPromptUserInstruction, queueTextMatchesUserText } from "./domain/queue-policy.js";
+import { MAIN_AGENT_COMPACT_SUMMARY_LIMIT, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT, MAIN_AGENT_ROLLOVER_TURN_LIMIT, MAIN_AGENT_SUMMARY_MESSAGE_LIMIT, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, normalizeMainAgentState, PICKY_USER_MEMORY_ITEM_CHAR_LIMIT, PICKY_USER_MEMORY_ITEM_LIMIT, PICKY_USER_MEMORY_TOTAL_CHAR_LIMIT, quickReplyOriginFromContextSource, truncateMainSummaryText, type QuickReplyMetadata } from "./domain/main-agent-policy.js";
 import type { ToolCategory } from "./domain/tool-categorizer.js";
 import { logAgentd } from "./local-log.js";
 import { SessionMessageBuilder } from "./session-message-builder.js";
@@ -70,8 +77,6 @@ interface SessionSupervisorOptions {
   mainCustomToolsBuilder?: (disabled: ReadonlySet<string>) => import("@mariozechner/pi-coding-agent").ToolDefinition[];
 }
 
-type QuickReplyEvent = Extract<EventEnvelope, { type: "quickReply" }>;
-type QuickReplyMetadata = Pick<QuickReplyEvent, "originSource" | "replyKind" | "sessionId" | "inputId">;
 
 const ARCHIVED_SESSION_RETENTION_DAYS = 7;
 const ARCHIVED_SESSION_RETENTION_MS = ARCHIVED_SESSION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
@@ -3140,59 +3145,6 @@ export class SessionSupervisor extends EventEmitter {
   }
 }
 
-type UserBashInput = { command: string; excludeFromContext: boolean };
-
-const LIVE_USER_BASH_OUTPUT_MAX_CHARS = 8000;
-
-function parseUserBashInput(text: string): UserBashInput | undefined {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("!")) return undefined;
-  const excludeFromContext = trimmed.startsWith("!!");
-  const command = (excludeFromContext ? trimmed.slice(2) : trimmed.slice(1)).trim();
-  return command ? { command, excludeFromContext } : undefined;
-}
-
-function formatUserBashSystemMessage(input: UserBashInput, result: RuntimeBashExecutionResult): string {
-  const output = result.output.trimEnd() || "(no output)";
-  const status = result.cancelled
-    ? "⚠️ Cancelled"
-    : result.exitCode && result.exitCode !== 0
-      ? `❌ Failed · exit ${result.exitCode}`
-      : "✅ Completed · exit 0";
-  const contextVisibility = input.excludeFromContext ? "hidden from Pi context" : "added to Pi context";
-  const truncated = result.truncated ? `\n\n⚠️ Output truncated${result.fullOutputPath ? `; full output: ${result.fullOutputPath}` : ""}.` : "";
-  return formatUserBashMessage(input.command, `${status} · ${contextVisibility}`, output, truncated);
-}
-
-function formatUserBashRunningSystemMessage(input: UserBashInput, output: string, elapsedMs: number): string {
-  const contextVisibility = input.excludeFromContext ? "hidden from Pi context" : "will be added to Pi context";
-  const elapsed = Math.max(0, Math.floor(elapsedMs / 1000));
-  const preview = output.trimEnd() || "(waiting for output…)";
-  return formatUserBashMessage(input.command, `⏳ Running · ${elapsed}s elapsed · ${contextVisibility}`, preview);
-}
-
-function formatUserBashFailureSystemMessage(input: UserBashInput, errorMessage: string, output: string): string {
-  const contextVisibility = input.excludeFromContext ? "hidden from Pi context" : "would be added to Pi context";
-  const preview = output.trimEnd() || "(no output before failure)";
-  return formatUserBashMessage(input.command, `❌ Failed · ${contextVisibility}`, `${preview}\n\nError: ${errorMessage}`);
-}
-
-function formatUserBashMessage(command: string, statusLine: string, output: string, suffix = ""): string {
-  return `### 🖥️ ${command}\n\n${statusLine}\n\n\`\`\`console\n${output}\n\`\`\`${suffix}`;
-}
-
-function appendLiveBashOutput(current: string, chunk: string): string {
-  if (!chunk) return current;
-  const next = current + chunk;
-  return next.length > LIVE_USER_BASH_OUTPUT_MAX_CHARS ? next.slice(-LIVE_USER_BASH_OUTPUT_MAX_CHARS) : next;
-}
-
-function userBashSummary(command: string, result: RuntimeBashExecutionResult): string {
-  if (result.cancelled) return `Bash cancelled: ${command}`;
-  if (result.exitCode && result.exitCode !== 0) return `Bash exited ${result.exitCode}: ${command}`;
-  return `Bash finished: ${command}`;
-}
-
 function makePointerOverlayRequestForContext(context: PickyContextPacket, request: PickyShowPointerRequest): PickyShowPointerResult["request"] {
   const screenshot = selectPointerScreenshot(context.screenshots, request);
   if (!screenshot.bounds) throw new Error(`No display bounds are available for ${screenshot.screenId ?? screenshot.id}.`);
@@ -3219,11 +3171,6 @@ function readImageSize(path: string): { width: number; height: number } | undefi
   } catch {
     return undefined;
   }
-}
-
-function normalizeOptionalString(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
 }
 
 function awaitPendingRuntimeHandle(pending: Promise<RuntimeSessionHandle>, signal?: AbortSignal): Promise<RuntimeSessionHandle> {
@@ -3253,8 +3200,6 @@ function createPendingRuntimeHandle(): { promise: Promise<RuntimeSessionHandle>;
   return { promise, resolve, reject };
 }
 
-const PINNED_SOURCE_TURN_COUNT = 2;
-
 async function readRecentPinnedSourceMessages(sessionFilePath: string | undefined): Promise<PickySessionMessage[]> {
   if (!sessionFilePath) return [];
   try {
@@ -3264,64 +3209,6 @@ async function readRecentPinnedSourceMessages(sessionFilePath: string | undefine
   } catch {
     return [];
   }
-}
-
-function lastTurns(messages: PickySessionMessage[], turnCount: number): PickySessionMessage[] {
-  if (messages.length === 0) return [];
-  const userIndices = messages.flatMap((message, index) => message.kind === "user_text" ? [index] : []);
-  if (userIndices.length === 0) return messages;
-  const startIndex = userIndices[Math.max(0, userIndices.length - turnCount)];
-  return messages.slice(startIndex);
-}
-
-function isPickyHandoffCommandMessage(message: PickySessionMessage): boolean {
-  return message.kind === "user_text" && /^\s*\/handoff-to-picky(\s|$)/.test(message.text ?? "");
-}
-
-function buildPinnedPickleSessionLogs(context: PickyContextPacket): string[] {
-  const logs = ["pi-extension handoff pin: completed idle Pi session", `source context id: ${context.id}`];
-  if (context.cwd) logs.push(`source cwd: ${context.cwd}`);
-  const sessionFile = piSessionFilePathFromHandoffTranscript(context.transcript);
-  if (sessionFile) logs.push(`pi session: ${sessionFile}`);
-  if (context.transcript?.trim()) logs.push(`source transcript:\n${context.transcript.trim()}`);
-  return logs;
-}
-
-function piSessionFilePathFromHandoffTranscript(transcript: string | undefined): string | undefined {
-  if (!transcript) return undefined;
-  for (const line of transcript.split(/\r?\n/)) {
-    const match = line.match(/^\s*-\s*Session file:\s*(.+)$/);
-    const path = match?.[1]?.trim();
-    if (path && !path.startsWith("(") && path !== "ephemeral" && path !== "unavailable") return path;
-  }
-  return undefined;
-}
-
-function isNameSlashCommand(text: string): boolean {
-  return /^\s*\/name(\s|$)/.test(text);
-}
-
-function isCompactSlashCommand(text: string): boolean {
-  return /^\s*\/compact(\s|$)/.test(text);
-}
-
-function isReloadSlashCommand(text: string): boolean {
-  return /^\s*\/reload(\s|$)/.test(text);
-}
-
-function isNoTurnStateRestoringSlashCommand(text: string): boolean {
-  return isNameSlashCommand(text) || isCompactSlashCommand(text) || isReloadSlashCommand(text);
-}
-
-// Matches `/name`, `/name args` where name is an identifier-like token without `/` or `:`.
-// Intentionally rejects `/skill:context7-cli` (skill commands stay visible as user text) and
-// `/Users/foo` (path-like inputs).
-function isNonSkillSlashCommand(text: string): boolean {
-  return /^\s*\/[a-zA-Z][\w-]*(\s|$)/.test(text);
-}
-
-function piSessionFilePathForSession(session: PickyAgentSession): string | undefined {
-  return normalizeOptionalString(session.piSessionFilePath) ?? piSessionFilePathFromLogs(session.logs);
 }
 
 /**
@@ -3381,151 +3268,12 @@ function isOrphanedChildSessionRecovery(session: PickyAgentSession): boolean {
   return session.logs.includes(ORPHANED_CHILD_SESSION_RECOVERY_LOG);
 }
 
-function withPiSessionFileFromLogs(session: PickyAgentSession): PickyAgentSession {
-  if (normalizeOptionalString(session.piSessionFilePath)) return session;
-  const piSessionFilePath = piSessionFilePathFromLogs(session.logs);
-  return piSessionFilePath ? { ...session, piSessionFilePath } : session;
-}
-
-function piSessionFilePathFromLogs(logs: string[]): string | undefined {
-  for (const line of [...logs].reverse()) {
-    const path = piSessionFilePathFromLogLine(line);
-    if (path) return path;
-  }
-  return undefined;
-}
-
-function piSessionFilePathFromLogLine(line: string): string | undefined {
-  const match = line.match(/^pi session:\s*(.+)$/)
-    ?? line.match(/^runtime reattached from pi session:\s*(.+)$/)
-    ?? line.match(/^\s*-\s*Session file:\s*(.+)$/);
-  const path = normalizeOptionalString(match?.[1]);
-  if (path && !path.startsWith("(") && path !== "ephemeral" && path !== "unavailable") return path;
-  return undefined;
-}
-
 function queueItemMatchesDelivery(item: PickyQueueItem, delivery: PendingQueueDelivery): boolean {
   return queueTextMatchesUserText(item.text, delivery.text);
 }
 
-function queueTextMatchesUserText(queueText: string, userText: string): boolean {
-  return queueText === userText || extractPickyPromptUserInstruction(queueText) === userText;
-}
-
-function extractPickyPromptUserInstruction(text: string): string | undefined {
-  const envelopes: Array<{ parent: string; userSection: string }> = [
-    { parent: "# Picky steering message", userSection: "## User steering instruction" },
-    { parent: "# Picky follow-up", userSection: "## User follow-up" },
-  ];
-  const envelope = envelopes.find((candidate) => text.includes(candidate.parent));
-  if (!envelope) return undefined;
-  const headingIndex = text.indexOf(envelope.userSection);
-  if (headingIndex < 0) return undefined;
-
-  const body = text.slice(headingIndex + envelope.userSection.length);
-  const lines = body.split("\n");
-  const extracted: string[] = [];
-  let hasStarted = false;
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!hasStarted && trimmed.length === 0) continue;
-    if (hasStarted && trimmed.startsWith("## ")) break;
-    hasStarted = true;
-    extracted.push(line);
-  }
-
-  if (extracted[0]?.trim().startsWith("- Source:")) {
-    extracted.shift();
-    if (extracted[0]?.trim().length === 0) extracted.shift();
-  }
-
-  const result = extracted.join("\n").trim();
-  return result.length > 0 ? result : undefined;
-}
-
-function quickReplyOriginFromContextSource(source: string | undefined): QuickReplyMetadata["originSource"] {
-  switch (source) {
-    case "voice":
-      return "voice";
-    case "voice-follow-up":
-    case "voiceFollowUp":
-    case "voice_follow_up":
-      return "voiceFollowUp";
-    case "text":
-      return "text";
-    case "text-follow-up":
-    case "textFollowUp":
-    case "text_follow_up":
-      return "textFollowUp";
-    case "cli":
-      // External picky CLI submissions surface as cursor bubble + TTS in the app
-      // (PickyContextOwner.cli mirrors .quickInputText semantics), so propagate the
-      // dedicated origin instead of collapsing to "unknown" which would render as a
-      // silent text-reply update.
-      return "cli";
-    default:
-      return "unknown";
-  }
-}
-
-function normalizeSlashCommands(commands: RuntimeSlashCommand[]): RuntimeSlashCommand[] {
-  const normalized: RuntimeSlashCommand[] = [];
-  const seen = new Set<string>();
-  for (const command of commands) {
-    const name = command.name.trim();
-    if (!name) continue;
-    const source = command.source;
-    if (source !== "extension" && source !== "prompt" && source !== "skill" && source !== "builtin") continue;
-    const key = `${source}:${name}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const description = command.description?.trim();
-    normalized.push({ name, source, ...(description ? { description } : {}) });
-  }
-  return normalized;
-}
-
-const MAIN_AGENT_MESSAGE_LIMIT = 100;
-// User-memory caps. Items are inlined into every Realtime session.update so
-// the instruction budget needs to stay bounded. 50 items × 500 chars = 25k
-// chars worst-case, but the total cap of 4k chars is the actual gate: once
-// that's hit the model is told to forget something before adding more.
-const PICKY_USER_MEMORY_ITEM_LIMIT = 50;
-const PICKY_USER_MEMORY_ITEM_CHAR_LIMIT = 500;
-const PICKY_USER_MEMORY_TOTAL_CHAR_LIMIT = 4_000;
-const MAIN_AGENT_ROLLOVER_TURN_LIMIT = 40;
-const MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT = 70;
-const MAIN_AGENT_COMPACT_SUMMARY_LIMIT = 4_000;
-const MAIN_AGENT_SUMMARY_MESSAGE_LIMIT = 16;
-const MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT = 10;
-
-function normalizeMainAgentState(state: PickyMainAgentState): PickyMainAgentState {
-  const compactSummary = state.compactSummary ? truncateMainSummaryText(state.compactSummary, MAIN_AGENT_COMPACT_SUMMARY_LIMIT) : undefined;
-  return { ...state, messages: state.messages.slice(-MAIN_AGENT_MESSAGE_LIMIT), ...(compactSummary ? { compactSummary } : { compactSummary: undefined }) };
-}
-
-function truncateMainSummaryText(value: string, maxChars: number): string {
-  const normalized = value.replace(/[\t ]+\n/g, "\n").trim();
-  if (normalized.length <= maxChars) return normalized;
-  return `${sliceUtf16Safe(normalized, Math.max(0, maxChars - 1))}…`;
-}
-
-function appendUniqueLog(logs: string[], line: string): string[] {
-  return logs.includes(line) ? logs : [...logs, line];
-}
-
 function countSystemMessages(session: PickyAgentSession, text: string): number {
   return (session.messages ?? []).filter((message) => message.kind === "system" && message.text === text).length;
-}
-
-function hasPickleSessionMarkerLog(session: PickyAgentSession): boolean {
-  return session.logs.some(
-    (line) => line.startsWith(HANDOFF_PREFIX.trimEnd())
-      || line.startsWith("Picky handoff cwd:")
-      || line.startsWith("pi-extension handoff pin:")
-      || line.startsWith("manual pickle:")
-      || line.startsWith("manual pickle cwd:"),
-  );
 }
 
 /**
@@ -3546,9 +3294,3 @@ async function snapshotPiSessionFile(sourcePath: string, newSessionId: string): 
   return destinationPath;
 }
 
-function titleForEmptyPickleSession(context: PickyContextPacket): string {
-  const cwd = normalizeOptionalString(context.cwd);
-  if (!cwd) return "New Pickle";
-  const basename = cwd.split(/[\\/]/).filter(Boolean).at(-1);
-  return basename ? `New Pickle · ${basename}` : "New Pickle";
-}

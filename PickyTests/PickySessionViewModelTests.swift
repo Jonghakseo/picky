@@ -1847,7 +1847,13 @@ struct PickySessionViewModelTests {
     }
 
     @Test func hudAppKitRepresentableTeardownSuppressesCallbacksThatMutateSwiftUIState() throws {
-        let source = try String(contentsOfFile: "\(testProjectCwd)/Picky/HUD/PickyHUDView.swift")
+        // The AppKit representable hosts live in PickyHUDDockIconView.swift; scan the
+        // whole HUD shell source set so future moves keep the teardown invariant covered.
+        let source = try [
+            "\(testProjectCwd)/Picky/HUD/PickyHUDView.swift",
+            "\(testProjectCwd)/Picky/HUD/PickyHUDDockIconView.swift",
+            "\(testProjectCwd)/Picky/HUD/PickyHUDDockRailView.swift",
+        ].map { try String(contentsOfFile: $0) }.joined(separator: "\n")
 
         #expect(source.components(separatedBy: "static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator)").count - 1 == 3)
         #expect(!source.contains("static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {\n        (nsView as?"))

@@ -197,10 +197,9 @@ function checkFileSizeRatchet() {
     ts: 1500,
   };
   const allowlist = new Map([
-    ["Picky/HUD/PickyHUDView.swift", 4100],
     ["Picky/PickySessionViewModel.swift", 2970],
     ["Picky/CompanionManager.swift", 3040],
-    ["Picky/Companion/CompanionPanelSettingsView.swift", 2300],
+    ["Picky/Companion/CompanionPanelSettingsView.swift", 2150],
     ["Picky/Overlay/BlueCursorView.swift", 1830],
     ["Picky/App/Settings/PickySettings.swift", 1550],
     ["agentd/src/session-supervisor.ts", 3320],

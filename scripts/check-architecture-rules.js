@@ -198,7 +198,7 @@ function checkFileSizeRatchet() {
   };
   const allowlist = new Map([
     ["Picky/HUD/PickyHUDView.swift", 4100],
-    ["Picky/PickySessionViewModel.swift", 3150],
+    ["Picky/PickySessionViewModel.swift", 2970],
     ["Picky/CompanionManager.swift", 3040],
     ["Picky/Companion/CompanionPanelSettingsView.swift", 2300],
     ["Picky/Overlay/BlueCursorView.swift", 1830],

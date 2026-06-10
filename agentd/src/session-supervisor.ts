@@ -8,13 +8,13 @@ import { ArtifactMaterializer } from "./application/artifact-materializer.js";
 import { RuntimeEventHandler } from "./application/runtime-event-handler.js";
 import { summarizeExtensionUiAnswer } from "./application/extension-ui-request-mapper.js";
 import { buildFollowUpPrompt, buildInitialTaskPrompt, buildMainAgentBootstrapPair, buildMainAgentPrompt, buildMainAgentPickleCompletionPrompt, buildPicklePrompt, buildSteerPrompt, type BuiltPrompt } from "./prompt-builder.js";
-import type { EventEnvelope, MainAgentRuntimeMode, ModelCycleDirection, OpenAIRealtimeAuthConfig, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage, PickyUserMemory } from "./protocol.js";
+import type { MainAgentRuntimeMode, ModelCycleDirection, OpenAIRealtimeAuthConfig, PickyActivitySummary, PickyAgentSession, PickyContextPacket, PickyMainAgentMessage, PickyMainAgentModelOption, PickyMainAgentState, PickyQueueItem, PickyQueueMode, PickySessionMessage, PickyUserMemory } from "./protocol.js";
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
 import { PiSessionTailWatcher, type PiSessionTailEntry } from "./application/pi-session-tail-watcher.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
-import { isMainRealtimeRuntime, type AgentRuntime, type RuntimeBashExecutionResult, type RuntimeEvent, type RuntimeSessionHandle, type RuntimeSlashCommand, type RuntimeSteerResult, type ThinkingLevel } from "./runtime/types.js";
+import { isMainRealtimeRuntime, type AgentRuntime, type RuntimeEvent, type RuntimeSessionHandle, type RuntimeSlashCommand, type RuntimeSteerResult, type ThinkingLevel } from "./runtime/types.js";
 import { OpenAIRealtimeTranscriptionSession } from "./runtime/openai-realtime-transcription.js";
 import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
@@ -24,15 +24,14 @@ import { clampPointerCoordinates, screenshotSizeFromMetadata, selectPointerScree
 import { diffQueueRemovedItems, queueItems, sameQueueItems } from "./domain/queue-policy.js";
 import { isTerminalStatus } from "./domain/session-status.js";
 import { HANDOFF_PREFIX, FOLLOWUP_PREFIX, STEER_PREFIX, EXTENSION_ANSWER_PREFIX } from "./domain/log-prefixes.js";
-import { sliceUtf16Safe } from "./domain/safe-truncate.js";
 import { cleanFinalAnswer } from "./domain/session-summary.js";
 import { settleActiveTools } from "./domain/tool-activity.js";
 import { isTransientAgentBusyError } from "./domain/transient-runtime-error.js";
 import { titleFromContext } from "./domain/session-title.js";
 import { normalizeOptionalString } from "./domain/strings.js";
 import { appendLiveBashOutput, formatUserBashFailureSystemMessage, formatUserBashRunningSystemMessage, formatUserBashSystemMessage, parseUserBashInput, userBashSummary, type UserBashInput } from "./domain/user-bash-format.js";
-import { isCompactSlashCommand, isNameSlashCommand, isNonSkillSlashCommand, isNoTurnStateRestoringSlashCommand, isReloadSlashCommand, normalizeSlashCommands } from "./domain/slash-commands.js";
-import { appendUniqueLog, hasPickleSessionMarkerLog, piSessionFilePathForSession, piSessionFilePathFromLogLine, piSessionFilePathFromLogs, withPiSessionFileFromLogs } from "./domain/pi-session-files.js";
+import { isNonSkillSlashCommand, isNoTurnStateRestoringSlashCommand, isReloadSlashCommand, normalizeSlashCommands } from "./domain/slash-commands.js";
+import { appendUniqueLog, hasPickleSessionMarkerLog, piSessionFilePathForSession, piSessionFilePathFromLogLine, withPiSessionFileFromLogs } from "./domain/pi-session-files.js";
 import { buildPinnedPickleSessionLogs, isPickyHandoffCommandMessage, lastTurns, PINNED_SOURCE_TURN_COUNT, piSessionFilePathFromHandoffTranscript, titleForEmptyPickleSession } from "./domain/pickle-handoff-context.js";
 import { extractPickyPromptUserInstruction, queueTextMatchesUserText } from "./domain/queue-policy.js";
 import { MAIN_AGENT_COMPACT_SUMMARY_LIMIT, MAIN_AGENT_MESSAGE_LIMIT, MAIN_AGENT_ROLLOVER_CONTEXT_PERCENT, MAIN_AGENT_ROLLOVER_TURN_LIMIT, MAIN_AGENT_SUMMARY_MESSAGE_LIMIT, MAIN_AGENT_SUMMARY_PICKLE_SESSION_LIMIT, normalizeMainAgentState, PICKY_USER_MEMORY_ITEM_CHAR_LIMIT, PICKY_USER_MEMORY_ITEM_LIMIT, PICKY_USER_MEMORY_TOTAL_CHAR_LIMIT, quickReplyOriginFromContextSource, truncateMainSummaryText, type QuickReplyMetadata } from "./domain/main-agent-policy.js";
@@ -3293,4 +3292,3 @@ async function snapshotPiSessionFile(sourcePath: string, newSessionId: string): 
   await writeFile(destinationPath, trimmed);
   return destinationPath;
 }
-

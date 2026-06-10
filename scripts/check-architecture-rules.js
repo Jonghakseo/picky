@@ -188,18 +188,23 @@ function lineCount(file) {
 }
 
 function checkFileSizeRatchet() {
+  // Hard ratchet: existing oversized files may only shrink. Growing past the
+  // pinned ratchet, or adding a new file above the threshold, is an error.
+  // When a refactor lowers a file below its ratchet, tighten the pin to the
+  // new size + small headroom (or delete the entry once under the threshold).
   const thresholds = {
     swift: 1500,
     ts: 1500,
   };
   const allowlist = new Map([
-    ["Picky/HUD/PickyHUDView.swift", 4300],
-    ["Picky/PickySessionViewModel.swift", 3200],
-    ["Picky/CompanionManager.swift", 3100],
+    ["Picky/HUD/PickyHUDView.swift", 4100],
+    ["Picky/PickySessionViewModel.swift", 3150],
+    ["Picky/CompanionManager.swift", 3040],
     ["Picky/Companion/CompanionPanelSettingsView.swift", 2300],
-    ["Picky/Overlay/BlueCursorView.swift", 1800],
-    ["agentd/src/session-supervisor.ts", 3750],
-    ["agentd/src/runtime/openai-realtime-main-runtime.ts", 2200],
+    ["Picky/Overlay/BlueCursorView.swift", 1830],
+    ["Picky/App/Settings/PickySettings.swift", 1550],
+    ["agentd/src/session-supervisor.ts", 3590],
+    ["agentd/src/runtime/openai-realtime-main-runtime.ts", 2110],
   ]);
 
   const swiftFiles = walk("Picky", (file) => file.endsWith(".swift"));
@@ -211,11 +216,11 @@ function checkFileSizeRatchet() {
     const lines = lineCount(file);
     const allowedMax = allowlist.get(relative);
     if (allowedMax !== undefined) {
-      if (lines > allowedMax) addWarning(`${relative} grew to ${lines} lines, above ratchet ${allowedMax}.`);
+      if (lines > allowedMax) addError(`${relative} grew to ${lines} lines, above ratchet ${allowedMax}. Shrink the file; do not raise the ratchet.`);
       continue;
     }
     if (lines > thresholds[ext]) {
-      addWarning(`${relative} is ${lines} lines, above new-file ${ext} warning threshold ${thresholds[ext]}.`);
+      addError(`${relative} is ${lines} lines, above the ${ext} file-size limit ${thresholds[ext]}. Split by responsibility (docs/refactoring-principles.md) or, for a deliberate exception, add a pinned ratchet entry in checkFileSizeRatchet.`);
     }
   }
 }

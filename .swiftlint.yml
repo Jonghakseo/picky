@@ -3,6 +3,12 @@
 # Structural refactors should reduce these warnings over time, but existing large
 # facades must not be split just to satisfy a line-count gate. See:
 # - docs/refactoring-principles.md
+#
+# Ratchet policy: `error` thresholds are pinned just above the current worst
+# offender so the build stays green while any regression fails immediately.
+# When a refactor lands and lowers the worst case, tighten the error value to
+# the new worst case + small headroom. Never raise an error threshold without
+# an explicit decision recorded in docs/refactoring-principles.md.
 
 included:
   - Picky
@@ -28,7 +34,7 @@ opt_in_rules:
 
 line_length:
   warning: 120
-  error: 1000
+  error: 750 # ratchet: current max 721
   ignores_comments: false
   ignores_urls: true
   ignores_function_declarations: false
@@ -36,28 +42,28 @@ line_length:
 
 file_length:
   warning: 1500
-  error: 20000
+  error: 3900 # ratchet: current max 3806 (PickySessionViewModelTests)
   ignore_comment_only_lines: true
 
 type_body_length:
   warning: 700
-  error: 10000
+  error: 3400 # ratchet: current max 3308 (PickySessionViewModelTests)
 
 function_body_length:
   warning: 120
-  error: 2000
+  error: 420 # ratchet: current max 397 (PickyInteractionReducer.reduce)
 
 function_parameter_count:
   warning: 5
-  error: 100
+  error: 16 # ratchet: current max 14 (PickyAgentDaemonLauncher)
 
 large_tuple:
   warning: 2
-  error: 20
+  error: 5
 
 cyclomatic_complexity:
   warning: 18
-  error: 200
+  error: 80 # ratchet: current max 77 (PickyInteractionReducer.reduce)
 
 empty_count:
   severity: warning

@@ -10,11 +10,14 @@ import SwiftUI
 
 struct PickyFullscreenSidebarView: View {
     let sessions: [PickySessionListViewModel.SessionCard]
+    let pinnedPickleCwds: [String]
     let recentPickleCwds: [String]
     let isCreatingPickle: Bool
     let onCreatePickleInRecentFolder: (String) -> Void
     let onChoosePickleFolder: () -> Void
     let onRemoveRecentPickleFolder: (String) -> Void
+    let onPinPickleFolder: (String) -> Void
+    let onUnpinPickleFolder: (String) -> Void
     @Binding var selectedSessionID: String?
     @State private var isRecentPickleFolderPickerPresented = false
 
@@ -84,10 +87,13 @@ struct PickyFullscreenSidebarView: View {
             .recentPickleFolderPicker(
                 isPresented: $isRecentPickleFolderPickerPresented,
                 arrowEdge: .leading,
+                pinnedPickleCwds: pinnedPickleCwds,
                 recentPickleCwds: recentPickleCwds,
                 onCreatePickleInRecentFolder: onCreatePickleInRecentFolder,
                 onChooseFolder: onChoosePickleFolder,
-                onRemoveRecentPickleFolder: onRemoveRecentPickleFolder
+                onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
+                onPinPickleFolder: onPinPickleFolder,
+                onUnpinPickleFolder: onUnpinPickleFolder
             )
             .help("최근 폴더에서 Pickle을 시작하거나 작업 폴더를 선택합니다.")
             .accessibilityLabel("새 Pickle")

@@ -490,9 +490,12 @@ struct PickyHUDView: View {
                 onArchiveSession: archiveSession,
                 onStopSession: stopSession,
                 onCreatePickle: chooseFolderForEmptyPickle,
+                pinnedPickleCwds: visiblePinnedPickleCwds,
                 recentPickleCwds: visibleRecentPickleCwds,
                 onCreatePickleInRecentFolder: startEmptyPickle,
                 onRemoveRecentPickleFolder: viewModel.removeRecentPickleFolder,
+                onPinPickleFolder: viewModel.pinPickleFolder,
+                onUnpinPickleFolder: viewModel.unpinPickleFolder,
                 onCreateDockGroup: { name, memberIDs in
                     viewModel.createDockGroup(name: name, withMemberIDs: memberIDs)
                 },
@@ -599,8 +602,16 @@ struct PickyHUDView: View {
         hoverPreviewSessionID == sessionID && heldSession?.sessionID != sessionID
     }
 
+    private var visiblePinnedPickleCwds: [String] {
+        PickyRecentPickleFolderPolicy.visiblePinnedCwds(viewModel.pinnedPickleCwds, exists: Self.isExistingDirectory)
+    }
+
     private var visibleRecentPickleCwds: [String] {
-        PickyRecentPickleFolderPolicy.visibleCwds(viewModel.recentPickleCwds, exists: Self.isExistingDirectory)
+        PickyRecentPickleFolderPolicy.visibleRecentCwds(
+            viewModel.recentPickleCwds,
+            pinned: viewModel.pinnedPickleCwds,
+            exists: Self.isExistingDirectory
+        )
     }
 
     private static func isExistingDirectory(_ path: String) -> Bool {

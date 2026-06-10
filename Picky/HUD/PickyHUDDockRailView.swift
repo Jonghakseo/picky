@@ -129,9 +129,12 @@ struct PickyHUDDockRailView: View {
     let onArchiveSession: (String) -> Void
     let onStopSession: (String) -> Void
     let onCreatePickle: () -> Void
+    let pinnedPickleCwds: [String]
     let recentPickleCwds: [String]
     let onCreatePickleInRecentFolder: (String) -> Void
     let onRemoveRecentPickleFolder: (String) -> Void
+    let onPinPickleFolder: (String) -> Void
+    let onUnpinPickleFolder: (String) -> Void
     /// Create a new group with a name and (optionally) an initial set of
     /// member sessions. Returns the new group's id so callers can chain
     /// follow-up actions (e.g. focus the new group), though the dock
@@ -1236,10 +1239,13 @@ struct PickyHUDDockRailView: View {
         .recentPickleFolderPicker(
             isPresented: $isRecentPickleFolderPickerPresented,
             arrowEdge: recentPickleFolderPickerArrowEdge,
+            pinnedPickleCwds: pinnedPickleCwds,
             recentPickleCwds: recentPickleCwds,
             onCreatePickleInRecentFolder: onCreatePickleInRecentFolder,
             onChooseFolder: onCreatePickle,
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
+            onPinPickleFolder: onPinPickleFolder,
+            onUnpinPickleFolder: onUnpinPickleFolder,
             availableSessionsForGroupCreation: sessions,
             suggestedGroupColor: nextSuggestedGroupColor,
             onCreateGroup: { name, memberIDs in
@@ -1304,10 +1310,13 @@ struct PickyHUDDockRailView: View {
         .recentPickleFolderPicker(
             isPresented: $isRecentPickleFolderPickerPresented,
             arrowEdge: recentPickleFolderPickerArrowEdge,
+            pinnedPickleCwds: pinnedPickleCwds,
             recentPickleCwds: recentPickleCwds,
             onCreatePickleInRecentFolder: onCreatePickleInRecentFolder,
             onChooseFolder: onCreatePickle,
             onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
+            onPinPickleFolder: onPinPickleFolder,
+            onUnpinPickleFolder: onUnpinPickleFolder,
             availableSessionsForGroupCreation: sessions,
             suggestedGroupColor: nextSuggestedGroupColor,
             onCreateGroup: { name, memberIDs in

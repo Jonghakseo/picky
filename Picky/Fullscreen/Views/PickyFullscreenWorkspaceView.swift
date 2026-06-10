@@ -25,11 +25,14 @@ struct PickyFullscreenWorkspaceView: View {
         HStack(spacing: 0) {
             PickyFullscreenSidebarView(
                 sessions: viewModel.sessions,
+                pinnedPickleCwds: visiblePinnedPickleCwds,
                 recentPickleCwds: visibleRecentPickleCwds,
                 isCreatingPickle: isCreatingPickle,
                 onCreatePickleInRecentFolder: startEmptyPickle,
                 onChoosePickleFolder: chooseFolderForEmptyPickle,
                 onRemoveRecentPickleFolder: viewModel.removeRecentPickleFolder,
+                onPinPickleFolder: viewModel.pinPickleFolder,
+                onUnpinPickleFolder: viewModel.unpinPickleFolder,
                 selectedSessionID: $stateStore.selectedSessionID
             )
             .accessibilitySortPriority(4)
@@ -68,8 +71,16 @@ struct PickyFullscreenWorkspaceView: View {
         .onChange(of: viewModel.selectedSessionID) { _, _ in reconcileSelectedSession() }
     }
 
+    private var visiblePinnedPickleCwds: [String] {
+        PickyRecentPickleFolderPolicy.visiblePinnedCwds(viewModel.pinnedPickleCwds, exists: Self.isExistingDirectory)
+    }
+
     private var visibleRecentPickleCwds: [String] {
-        PickyRecentPickleFolderPolicy.visibleCwds(viewModel.recentPickleCwds, exists: Self.isExistingDirectory)
+        PickyRecentPickleFolderPolicy.visibleRecentCwds(
+            viewModel.recentPickleCwds,
+            pinned: viewModel.pinnedPickleCwds,
+            exists: Self.isExistingDirectory
+        )
     }
 
     private static func isExistingDirectory(_ path: String) -> Bool {

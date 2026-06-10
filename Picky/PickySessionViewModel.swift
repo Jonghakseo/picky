@@ -108,8 +108,11 @@ struct PickyPasteboardClipboardWriter: PickyClipboardWriting {
 
 protocol PickyRecentPickleFolderStoring {
     var recentPickleCwds: [String] { get }
+    var pinnedPickleCwds: [String] { get }
     func record(cwd: String) throws -> [String]
     func remove(cwd: String) throws -> [String]
+    func pin(cwd: String) throws -> (pinned: [String], recent: [String])
+    func unpin(cwd: String) throws -> (pinned: [String], recent: [String])
 }
 
 /// Read/write access to the persisted dock layout (groups + ordered
@@ -141,8 +144,11 @@ struct PickySettingsDockLayoutStore: PickyDockLayoutStoring {
 
 struct PickyNoopRecentPickleFolderStore: PickyRecentPickleFolderStoring {
     var recentPickleCwds: [String] { [] }
+    var pinnedPickleCwds: [String] { [] }
     func record(cwd: String) throws -> [String] { [] }
     func remove(cwd: String) throws -> [String] { [] }
+    func pin(cwd: String) throws -> (pinned: [String], recent: [String]) { ([], []) }
+    func unpin(cwd: String) throws -> (pinned: [String], recent: [String]) { ([], []) }
 }
 
 struct PickySettingsRecentPickleFolderStore: PickyRecentPickleFolderStoring {
@@ -152,20 +158,40 @@ struct PickySettingsRecentPickleFolderStore: PickyRecentPickleFolderStoring {
         settingsStore.load().recentPickleCwds
     }
 
+    var pinnedPickleCwds: [String] {
+        settingsStore.load().pinnedPickleCwds
+    }
+
     func record(cwd: String) throws -> [String] {
         var settings = settingsStore.load()
         settings.recordRecentPickleCwd(cwd)
-        let updatedRecent = settings.normalizedPaths().recentPickleCwds
+        settings = settings.normalizedPaths()
         try settingsStore.save(settings)
-        return updatedRecent
+        return settings.recentPickleCwds
     }
 
     func remove(cwd: String) throws -> [String] {
         var settings = settingsStore.load()
         settings.removeRecentPickleCwd(cwd)
-        let updatedRecent = settings.normalizedPaths().recentPickleCwds
+        settings = settings.normalizedPaths()
         try settingsStore.save(settings)
-        return updatedRecent
+        return settings.recentPickleCwds
+    }
+
+    func pin(cwd: String) throws -> (pinned: [String], recent: [String]) {
+        var settings = settingsStore.load()
+        settings.pinPickleCwd(cwd)
+        settings = settings.normalizedPaths()
+        try settingsStore.save(settings)
+        return (settings.pinnedPickleCwds, settings.recentPickleCwds)
+    }
+
+    func unpin(cwd: String) throws -> (pinned: [String], recent: [String]) {
+        var settings = settingsStore.load()
+        settings.unpinPickleCwd(cwd)
+        settings = settings.normalizedPaths()
+        try settingsStore.save(settings)
+        return (settings.pinnedPickleCwds, settings.recentPickleCwds)
     }
 }
 
@@ -426,6 +452,7 @@ final class PickySessionListViewModel: ObservableObject {
     /// dock instances render the indicator in sync.
     @Published private(set) var unreadSessionIDs: Set<String> = []
     @Published private(set) var recentPickleCwds: [String]
+    @Published private(set) var pinnedPickleCwds: [String]
     @Published private(set) var isLoadingInitialSessionSnapshot = true
     @Published private(set) var openSessionRequest: PickyHUDOpenSessionRequest?
     /// Fires every time a dock card is opened (the user clicked it to expand).
@@ -546,6 +573,7 @@ final class PickySessionListViewModel: ObservableObject {
         )
         self.recentPickleFolderStore = recentPickleFolderStore
         self.recentPickleCwds = recentPickleFolderStore.recentPickleCwds
+        self.pinnedPickleCwds = recentPickleFolderStore.pinnedPickleCwds
         let dockLayoutController = PickySessionDockLayoutController(store: dockLayoutStore) { error in
             pickySessionLog("dockLayout save failed: \(error)")
         }
@@ -710,6 +738,28 @@ final class PickySessionListViewModel: ObservableObject {
     func removeRecentPickleFolder(_ cwd: String) {
         do {
             recentPickleCwds = try recentPickleFolderStore.remove(cwd: cwd)
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func pinPickleFolder(_ cwd: String) {
+        do {
+            let updated = try recentPickleFolderStore.pin(cwd: cwd)
+            pinnedPickleCwds = updated.pinned
+            recentPickleCwds = updated.recent
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func unpinPickleFolder(_ cwd: String) {
+        do {
+            let updated = try recentPickleFolderStore.unpin(cwd: cwd)
+            pinnedPickleCwds = updated.pinned
+            recentPickleCwds = updated.recent
             lastError = nil
         } catch {
             lastError = error.localizedDescription

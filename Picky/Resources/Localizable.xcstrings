@@ -6678,6 +6678,134 @@
         }
       }
     },
+    "dock.recentFolders.pin": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pin folder"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "폴더 고정"
+          }
+        }
+      }
+    },
+    "dock.recentFolders.pin.hint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep this folder at the top of the picker"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 폴더를 목록 상단에 고정합니다"
+          }
+        }
+      }
+    },
+    "dock.recentFolders.pinned.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pinned"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "고정됨"
+          }
+        }
+      }
+    },
+    "dock.recentFolders.recent.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recent"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최근"
+          }
+        }
+      }
+    },
+    "dock.recentFolders.remove": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove from recent folders"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최근 폴더에서 제거"
+          }
+        }
+      }
+    },
+    "dock.recentFolders.remove.hint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This does not delete the folder"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "폴더 자체는 삭제하지 않습니다"
+          }
+        }
+      }
+    },
+    "dock.recentFolders.unpin": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unpin folder"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "폴더 고정 해제"
+          }
+        }
+      }
+    },
+    "dock.recentFolders.unpin.hint": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move this folder back to recent folders"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 폴더를 최근 폴더로 되돌립니다"
+          }
+        }
+      }
+    },
     "dock.recentFolders.title": {
       "localizations": {
         "en": {

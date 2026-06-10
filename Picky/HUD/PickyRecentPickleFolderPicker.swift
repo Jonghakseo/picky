@@ -1,8 +1,23 @@
+import AppKit
+import Combine
 import SwiftUI
 
 struct PickyRecentPickleFolderPolicy {
     static func visibleCwds(_ cwds: [String], exists: (String) -> Bool) -> [String] {
-        Array(cwds.filter(exists).prefix(PickySettings.maxVisibleRecentPickleCwds))
+        visibleRecentCwds(cwds, pinned: [], exists: exists)
+    }
+
+    static func visiblePinnedCwds(_ pinnedCwds: [String], exists: (String) -> Bool) -> [String] {
+        pinnedCwds.filter(exists)
+    }
+
+    static func visibleRecentCwds(_ recentCwds: [String], pinned pinnedCwds: [String], exists: (String) -> Bool) -> [String] {
+        let visiblePinned = visiblePinnedCwds(pinnedCwds, exists: exists)
+        let pinned = Set(pinnedCwds)
+        let limit = visiblePinned.isEmpty
+            ? PickySettings.maxVisibleRecentPickleCwds
+            : PickySettings.maxVisibleRecentPickleCwdsWhenPinned
+        return Array(recentCwds.filter { exists($0) && !pinned.contains($0) }.prefix(limit))
     }
 }
 
@@ -10,10 +25,13 @@ extension View {
     func recentPickleFolderPicker(
         isPresented: Binding<Bool>,
         arrowEdge: Edge,
+        pinnedPickleCwds: [String],
         recentPickleCwds: [String],
         onCreatePickleInRecentFolder: @escaping (String) -> Void,
         onChooseFolder: @escaping () -> Void,
         onRemoveRecentPickleFolder: @escaping (String) -> Void,
+        onPinPickleFolder: @escaping (String) -> Void,
+        onUnpinPickleFolder: @escaping (String) -> Void,
         availableSessionsForGroupCreation: [PickySessionListViewModel.SessionCard] = [],
         suggestedGroupColor: PickyDockGroupColor = .teal,
         onCreateGroup: ((_ name: String, _ memberIDs: [String]) -> Void)? = nil
@@ -21,10 +39,13 @@ extension View {
         popover(isPresented: isPresented, arrowEdge: arrowEdge) {
             PickyRecentPickleFolderPickerView(
                 isPresented: isPresented,
+                pinnedPickleCwds: pinnedPickleCwds,
                 recentPickleCwds: recentPickleCwds,
                 onCreatePickleInRecentFolder: onCreatePickleInRecentFolder,
                 onChooseFolder: onChooseFolder,
                 onRemoveRecentPickleFolder: onRemoveRecentPickleFolder,
+                onPinPickleFolder: onPinPickleFolder,
+                onUnpinPickleFolder: onUnpinPickleFolder,
                 availableSessionsForGroupCreation: availableSessionsForGroupCreation,
                 suggestedGroupColor: suggestedGroupColor,
                 onCreateGroup: onCreateGroup
@@ -35,10 +56,13 @@ extension View {
 
 struct PickyRecentPickleFolderPickerView: View {
     @Binding var isPresented: Bool
+    let pinnedPickleCwds: [String]
     let recentPickleCwds: [String]
     let onCreatePickleInRecentFolder: (String) -> Void
     let onChooseFolder: () -> Void
     let onRemoveRecentPickleFolder: (String) -> Void
+    let onPinPickleFolder: (String) -> Void
+    let onUnpinPickleFolder: (String) -> Void
     let availableSessionsForGroupCreation: [PickySessionListViewModel.SessionCard]
     let suggestedGroupColor: PickyDockGroupColor
     let onCreateGroup: ((_ name: String, _ memberIDs: [String]) -> Void)?
@@ -71,23 +95,10 @@ struct PickyRecentPickleFolderPickerView: View {
     private var folderPickerContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            if recentPickleCwds.isEmpty {
+            if pinnedPickleCwds.isEmpty, recentPickleCwds.isEmpty {
                 emptyState
             } else {
-                VStack(spacing: 2) {
-                    ForEach(recentPickleCwds, id: \.self) { cwd in
-                        PickyRecentPickleFolderRow(
-                            cwd: cwd,
-                            onCreate: {
-                                isPresented = false
-                                onCreatePickleInRecentFolder(cwd)
-                            },
-                            onRemove: {
-                                onRemoveRecentPickleFolder(cwd)
-                            }
-                        )
-                    }
-                }
+                folderList
             }
             Divider()
             Button {
@@ -128,6 +139,73 @@ struct PickyRecentPickleFolderPickerView: View {
         }
     }
 
+    private var folderList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 6) {
+                if !pinnedPickleCwds.isEmpty {
+                    sectionTitle(L10n.t("dock.recentFolders.pinned.title"), systemImage: "pin.fill")
+                    VStack(spacing: 2) {
+                        ForEach(pinnedPickleCwds, id: \.self) { cwd in
+                            PickyRecentPickleFolderRow(
+                                cwd: cwd,
+                                isPinned: true,
+                                onCreate: {
+                                    isPresented = false
+                                    onCreatePickleInRecentFolder(cwd)
+                                },
+                                onPin: {},
+                                onUnpin: {
+                                    onUnpinPickleFolder(cwd)
+                                },
+                                onRemove: {}
+                            )
+                        }
+                    }
+                }
+
+                if !pinnedPickleCwds.isEmpty, !recentPickleCwds.isEmpty {
+                    Divider()
+                        .padding(.vertical, 2)
+                }
+
+                if !recentPickleCwds.isEmpty {
+                    if !pinnedPickleCwds.isEmpty {
+                        sectionTitle(L10n.t("dock.recentFolders.recent.title"), systemImage: "clock")
+                    }
+                    VStack(spacing: 2) {
+                        ForEach(recentPickleCwds, id: \.self) { cwd in
+                            PickyRecentPickleFolderRow(
+                                cwd: cwd,
+                                isPinned: false,
+                                onCreate: {
+                                    isPresented = false
+                                    onCreatePickleInRecentFolder(cwd)
+                                },
+                                onPin: {
+                                    onPinPickleFolder(cwd)
+                                },
+                                onUnpin: {},
+                                onRemove: {
+                                    onRemoveRecentPickleFolder(cwd)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxHeight: 320)
+    }
+
+    private func sectionTitle(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .pickyFont(size: 11, weight: .semibold)
+            .foregroundStyle(DS.Colors.textTertiary)
+            .labelStyle(.titleAndIcon)
+            .padding(.horizontal, 4)
+            .accessibilityAddTraits(.isHeader)
+    }
+
     private var emptyState: some View {
         Text(L10n.t("dock.recentFolders.empty"))
             .pickyFont(size: 12)
@@ -139,7 +217,10 @@ struct PickyRecentPickleFolderPickerView: View {
 
 private struct PickyRecentPickleFolderRow: View {
     let cwd: String
+    let isPinned: Bool
     let onCreate: () -> Void
+    let onPin: () -> Void
+    let onUnpin: () -> Void
     let onRemove: () -> Void
     @State private var isHovered = false
 
@@ -147,7 +228,7 @@ private struct PickyRecentPickleFolderRow: View {
         HStack(spacing: 6) {
             Button(action: onCreate) {
                 HStack(spacing: 9) {
-                    Image(systemName: "folder")
+                    Image(systemName: isPinned ? "folder.fill" : "folder")
                         .pickyFont(size: 14, weight: .medium)
                         .foregroundStyle(DS.Colors.accentText)
                         .frame(width: 22, height: 22)
@@ -171,21 +252,50 @@ private struct PickyRecentPickleFolderRow: View {
             .accessibilityLabel(L10n.t("dock.startPickleIn", displayName))
             .accessibilityHint(compactPath)
 
-            Button(action: onRemove) {
-                Image(systemName: "xmark")
-                    .pickyFont(size: 10, weight: .medium)
-                    .foregroundStyle(DS.Colors.textTertiary)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
+            if isPinned {
+                rowActionButton(
+                    systemImage: "pin.slash",
+                    accessibilityLabel: L10n.t("dock.recentFolders.unpin"),
+                    accessibilityHint: L10n.t("dock.recentFolders.unpin.hint"),
+                    action: onUnpin
+                )
+            } else {
+                rowActionButton(
+                    systemImage: "pin",
+                    accessibilityLabel: L10n.t("dock.recentFolders.pin"),
+                    accessibilityHint: L10n.t("dock.recentFolders.pin.hint"),
+                    action: onPin
+                )
+                rowActionButton(
+                    systemImage: "xmark",
+                    accessibilityLabel: L10n.t("dock.recentFolders.remove"),
+                    accessibilityHint: L10n.t("dock.recentFolders.remove.hint"),
+                    action: onRemove
+                )
             }
-            .buttonStyle(.plain)
-            .opacity(isHovered ? 1 : 0.35)
-            .accessibilityLabel("Remove from recent folders")
-            .accessibilityHint("This does not delete the folder")
         }
         .background(isHovered ? DS.Colors.surface2 : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onHover { isHovered = $0 }
+    }
+
+    private func rowActionButton(
+        systemImage: String,
+        accessibilityLabel: String,
+        accessibilityHint: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .pickyFont(size: 10, weight: .medium)
+                .foregroundStyle(DS.Colors.textTertiary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(isHovered ? 1 : 0.35)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityHint(accessibilityHint)
     }
 
     private var displayName: String {

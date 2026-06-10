@@ -71,14 +71,19 @@ private final class FakeManualPickleChildSpawner: PickyManualPickleChildSpawning
 private final class FakeRecentPickleFolderStore: PickyRecentPickleFolderStoring {
     private(set) var recorded: [String] = []
     private(set) var removed: [String] = []
+    private(set) var pinned: [String] = []
+    private(set) var unpinned: [String] = []
     var recentPickleCwds: [String]
+    var pinnedPickleCwds: [String]
 
-    init(recentPickleCwds: [String] = []) {
+    init(recentPickleCwds: [String] = [], pinnedPickleCwds: [String] = []) {
         self.recentPickleCwds = recentPickleCwds
+        self.pinnedPickleCwds = pinnedPickleCwds
     }
 
     func record(cwd: String) throws -> [String] {
         recorded.append(cwd)
+        guard !pinnedPickleCwds.contains(cwd) else { return recentPickleCwds }
         recentPickleCwds.removeAll { $0 == cwd }
         recentPickleCwds.insert(cwd, at: 0)
         return recentPickleCwds
@@ -88,6 +93,26 @@ private final class FakeRecentPickleFolderStore: PickyRecentPickleFolderStoring 
         removed.append(cwd)
         recentPickleCwds.removeAll { $0 == cwd }
         return recentPickleCwds
+    }
+
+    func pin(cwd: String) throws -> (pinned: [String], recent: [String]) {
+        pinned.append(cwd)
+        if !pinnedPickleCwds.contains(cwd) {
+            pinnedPickleCwds.append(cwd)
+        }
+        recentPickleCwds.removeAll { $0 == cwd }
+        return (pinnedPickleCwds, recentPickleCwds)
+    }
+
+    func unpin(cwd: String) throws -> (pinned: [String], recent: [String]) {
+        unpinned.append(cwd)
+        let wasPinned = pinnedPickleCwds.contains(cwd)
+        pinnedPickleCwds.removeAll { $0 == cwd }
+        if wasPinned {
+            recentPickleCwds.removeAll { $0 == cwd }
+            recentPickleCwds.insert(cwd, at: 0)
+        }
+        return (pinnedPickleCwds, recentPickleCwds)
     }
 }
 
@@ -399,6 +424,36 @@ struct PickySessionViewModelTests {
         #expect(viewModel.recentPickleCwds == ["/tmp/old"])
     }
 
+    @Test func pinPickleFolderUpdatesStoreBackedLists() {
+        let recentStore = FakeRecentPickleFolderStore(recentPickleCwds: ["/tmp/picky", "/tmp/old"])
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            recentPickleFolderStore: recentStore
+        )
+
+        viewModel.pinPickleFolder("/tmp/picky")
+
+        #expect(recentStore.pinned == ["/tmp/picky"])
+        #expect(viewModel.pinnedPickleCwds == ["/tmp/picky"])
+        #expect(viewModel.recentPickleCwds == ["/tmp/old"])
+    }
+
+    @Test func unpinPickleFolderRestoresFolderToRecentList() {
+        let recentStore = FakeRecentPickleFolderStore(recentPickleCwds: ["/tmp/old"], pinnedPickleCwds: ["/tmp/picky"])
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            recentPickleFolderStore: recentStore
+        )
+
+        viewModel.unpinPickleFolder("/tmp/picky")
+
+        #expect(recentStore.unpinned == ["/tmp/picky"])
+        #expect(viewModel.pinnedPickleCwds.isEmpty)
+        #expect(viewModel.recentPickleCwds == ["/tmp/picky", "/tmp/old"])
+    }
+
     @Test func recentPickleCwdsNormalizeDedupeAndCapStoredPaths() {
         var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
 
@@ -417,6 +472,27 @@ struct PickySessionViewModelTests {
         #expect(settings.recentPickleCwds == ["/tmp/p5", "/tmp/p1", "/tmp/p2", "/tmp/p4", "/tmp/p6", "/tmp/p7", "/tmp/p8"])
     }
 
+    @Test func pinnedPickleCwdsNormalizeDedupeAndStayOutOfRecentList() {
+        var settings = PickySettings.defaults(appSupportRoot: FileManager.default.temporaryDirectory)
+        settings.recentPickleCwds = ["/tmp/p1", "/tmp/p2", "/tmp/pinned"]
+        settings.pinnedPickleCwds = [" /tmp/pinned ", "/tmp/pinned", "/tmp/p3"]
+        settings = settings.normalizedPaths()
+
+        #expect(settings.pinnedPickleCwds == ["/tmp/pinned", "/tmp/p3"])
+        #expect(settings.recentPickleCwds == ["/tmp/p1", "/tmp/p2"])
+
+        settings.recordRecentPickleCwd("/tmp/pinned")
+        #expect(settings.recentPickleCwds == ["/tmp/p1", "/tmp/p2"])
+
+        settings.pinPickleCwd("/tmp/p2")
+        #expect(settings.pinnedPickleCwds == ["/tmp/pinned", "/tmp/p3", "/tmp/p2"])
+        #expect(settings.recentPickleCwds == ["/tmp/p1"])
+
+        settings.unpinPickleCwd("/tmp/p3")
+        #expect(settings.pinnedPickleCwds == ["/tmp/pinned", "/tmp/p2"])
+        #expect(settings.recentPickleCwds == ["/tmp/p3", "/tmp/p1"])
+    }
+
     @Test func visibleRecentPickleCwdsHideMissingPathsAndCapAtFive() {
         let candidates = ["/tmp/p1", "/tmp/missing", "/tmp/p2", "/tmp/p3", "/tmp/p4", "/tmp/p5", "/tmp/p6"]
         let existing: Set<String> = ["/tmp/p1", "/tmp/p2", "/tmp/p3", "/tmp/p4", "/tmp/p5", "/tmp/p6"]
@@ -424,6 +500,18 @@ struct PickySessionViewModelTests {
         let visible = PickyRecentPickleFolderPolicy.visibleCwds(candidates) { existing.contains($0) }
 
         #expect(visible == ["/tmp/p1", "/tmp/p2", "/tmp/p3", "/tmp/p4", "/tmp/p5"])
+    }
+
+    @Test func visibleRecentPickleCwdsExcludePinnedAndCapAtThreeWhenPinsExist() {
+        let recent = ["/tmp/p1", "/tmp/pinned", "/tmp/p2", "/tmp/p3", "/tmp/p4"]
+        let pinned = ["/tmp/pinned", "/tmp/missing-pin"]
+        let existing: Set<String> = ["/tmp/p1", "/tmp/pinned", "/tmp/p2", "/tmp/p3", "/tmp/p4"]
+
+        let visiblePinned = PickyRecentPickleFolderPolicy.visiblePinnedCwds(pinned) { existing.contains($0) }
+        let visibleRecent = PickyRecentPickleFolderPolicy.visibleRecentCwds(recent, pinned: pinned) { existing.contains($0) }
+
+        #expect(visiblePinned == ["/tmp/pinned"])
+        #expect(visibleRecent == ["/tmp/p1", "/tmp/p2", "/tmp/p3"])
     }
 
     @Test func duplicateSendsDuplicateSessionCommandWithSourceID() async throws {

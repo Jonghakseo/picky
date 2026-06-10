@@ -966,6 +966,9 @@ struct PickySettings: Codable, Equatable {
     /// Recently used working folders for manual Pickle creation. Kept small so
     /// the dock picker stays lightweight and focused on the common paths.
     var recentPickleCwds: [String]
+    /// User-pinned working folders for manual Pickle creation. Pinned folders are
+    /// shown ahead of recent folders and are not capped by the recent-folder limit.
+    var pinnedPickleCwds: [String]
     /// Last user-moved frame for each kind of detached panel (markdown report
     /// viewer, tool history viewer, Pi terminal overlay), keyed by
     /// `PickyDetachedPanelKind.rawValue`. Empty/missing entries fall back to
@@ -988,6 +991,7 @@ struct PickySettings: Codable, Equatable {
     static let defaultDockTopAnchorPercent: Double = 22.0
     static let maxStoredRecentPickleCwds = 8
     static let maxVisibleRecentPickleCwds = 5
+    static let maxVisibleRecentPickleCwdsWhenPinned = 3
 
     /// Clamp any incoming value (slider, persisted file, programmatic) to the supported
     /// range. Out-of-range values can come from corrupted settings files or a future
@@ -1062,6 +1066,7 @@ struct PickySettings: Codable, Equatable {
         mainThreadWatchdogEnabled: Bool = true,
         appLanguage: PickyLanguage = .system,
         recentPickleCwds: [String] = [],
+        pinnedPickleCwds: [String] = [],
         detachedPanelFrames: [String: PickyDetachedPanelFrame] = [:],
         gitChipActions: PickyGitChipActions = .empty,
         dockLayout: PickyDockLayout = .empty
@@ -1129,7 +1134,9 @@ struct PickySettings: Codable, Equatable {
         self.shellCommandAutoInstallOptedOut = shellCommandAutoInstallOptedOut
         self.mainThreadWatchdogEnabled = mainThreadWatchdogEnabled
         self.appLanguage = appLanguage
-        self.recentPickleCwds = PickySettings.normalizedRecentPickleCwds(recentPickleCwds)
+        let normalizedPinnedPickleCwds = PickySettings.normalizedPinnedPickleCwds(pinnedPickleCwds)
+        self.pinnedPickleCwds = normalizedPinnedPickleCwds
+        self.recentPickleCwds = PickySettings.normalizedRecentPickleCwds(recentPickleCwds, excluding: normalizedPinnedPickleCwds)
         self.detachedPanelFrames = detachedPanelFrames
         self.gitChipActions = gitChipActions
         self.dockLayout = dockLayout
@@ -1227,6 +1234,7 @@ struct PickySettings: Codable, Equatable {
             mainThreadWatchdogEnabled: true,
             appLanguage: .system,
             recentPickleCwds: [],
+            pinnedPickleCwds: [],
             detachedPanelFrames: [:],
             gitChipActions: .empty,
             dockLayout: .empty
@@ -1276,7 +1284,8 @@ struct PickySettings: Codable, Equatable {
         copy.mainAgentModelPattern = mainAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.pickleAgentModelPattern = pickleAgentModelPattern.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.hudCardSizes = hudCardSizes.mapValues { $0.clamped() }
-        copy.recentPickleCwds = Self.normalizedRecentPickleCwds(recentPickleCwds)
+        copy.pinnedPickleCwds = Self.normalizedPinnedPickleCwds(pinnedPickleCwds)
+        copy.recentPickleCwds = Self.normalizedRecentPickleCwds(recentPickleCwds, excluding: copy.pinnedPickleCwds)
         return copy
     }
 
@@ -1286,10 +1295,20 @@ struct PickySettings: Codable, Equatable {
         return (NSString(string: trimmed).expandingTildeInPath as NSString).standardizingPath
     }
 
-    static func normalizedRecentPickleCwds(_ cwds: [String]) -> [String] {
+    static func normalizedPinnedPickleCwds(_ cwds: [String]) -> [String] {
         var normalized: [String] = []
         for cwd in cwds {
             guard let path = normalizedRecentPickleCwd(cwd), !normalized.contains(path) else { continue }
+            normalized.append(path)
+        }
+        return normalized
+    }
+
+    static func normalizedRecentPickleCwds(_ cwds: [String], excluding pinnedCwds: [String] = []) -> [String] {
+        let pinned = Set(normalizedPinnedPickleCwds(pinnedCwds))
+        var normalized: [String] = []
+        for cwd in cwds {
+            guard let path = normalizedRecentPickleCwd(cwd), !pinned.contains(path), !normalized.contains(path) else { continue }
             normalized.append(path)
             if normalized.count == maxStoredRecentPickleCwds { break }
         }
@@ -1298,6 +1317,11 @@ struct PickySettings: Codable, Equatable {
 
     mutating func recordRecentPickleCwd(_ cwd: String) {
         guard let path = Self.normalizedRecentPickleCwd(cwd) else { return }
+        pinnedPickleCwds = Self.normalizedPinnedPickleCwds(pinnedPickleCwds)
+        if pinnedPickleCwds.contains(path) {
+            recentPickleCwds.removeAll { $0 == path }
+            return
+        }
         recentPickleCwds.removeAll { $0 == path }
         recentPickleCwds.insert(path, at: 0)
         recentPickleCwds = Array(recentPickleCwds.prefix(Self.maxStoredRecentPickleCwds))
@@ -1306,6 +1330,24 @@ struct PickySettings: Codable, Equatable {
     mutating func removeRecentPickleCwd(_ cwd: String) {
         guard let path = Self.normalizedRecentPickleCwd(cwd) else { return }
         recentPickleCwds.removeAll { $0 == path }
+    }
+
+    mutating func pinPickleCwd(_ cwd: String) {
+        guard let path = Self.normalizedRecentPickleCwd(cwd) else { return }
+        pinnedPickleCwds = Self.normalizedPinnedPickleCwds(pinnedPickleCwds)
+        if !pinnedPickleCwds.contains(path) {
+            pinnedPickleCwds.append(path)
+        }
+        recentPickleCwds.removeAll { $0 == path }
+    }
+
+    mutating func unpinPickleCwd(_ cwd: String) {
+        guard let path = Self.normalizedRecentPickleCwd(cwd) else { return }
+        pinnedPickleCwds = Self.normalizedPinnedPickleCwds(pinnedPickleCwds)
+        let wasPinned = pinnedPickleCwds.contains(path)
+        pinnedPickleCwds.removeAll { $0 == path }
+        guard wasPinned else { return }
+        recordRecentPickleCwd(path)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -1373,6 +1415,7 @@ struct PickySettings: Codable, Equatable {
         case mainThreadWatchdogEnabled
         case appLanguage
         case recentPickleCwds
+        case pinnedPickleCwds
         case detachedPanelFrames
         case gitChipActions
         case dockLayout
@@ -1459,7 +1502,11 @@ struct PickySettings: Codable, Equatable {
         // they'll follow whatever language they were already comfortable with
         // (the OS preference) without any visible change.
         appLanguage = try container.decodeIfPresent(PickyLanguage.self, forKey: .appLanguage) ?? defaults.appLanguage
-        recentPickleCwds = Self.normalizedRecentPickleCwds(try container.decodeIfPresent([String].self, forKey: .recentPickleCwds) ?? defaults.recentPickleCwds)
+        pinnedPickleCwds = Self.normalizedPinnedPickleCwds(try container.decodeIfPresent([String].self, forKey: .pinnedPickleCwds) ?? defaults.pinnedPickleCwds)
+        recentPickleCwds = Self.normalizedRecentPickleCwds(
+            try container.decodeIfPresent([String].self, forKey: .recentPickleCwds) ?? defaults.recentPickleCwds,
+            excluding: pinnedPickleCwds
+        )
         detachedPanelFrames = try container.decodeIfPresent([String: PickyDetachedPanelFrame].self, forKey: .detachedPanelFrames) ?? defaults.detachedPanelFrames
         gitChipActions = try container.decodeIfPresent(PickyGitChipActions.self, forKey: .gitChipActions) ?? defaults.gitChipActions
         // Missing dockLayout means the user is on a pre-grouping build. Decode

@@ -200,7 +200,9 @@ struct PickySettingsPolishTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let project = root.appendingPathComponent("project", isDirectory: true)
+        let pinnedProject = root.appendingPathComponent("pinned-project", isDirectory: true)
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: pinnedProject, withIntermediateDirectories: true)
         let store = PickySettingsStore(appSupportRoot: root)
         var settings = PickySettings.defaults(appSupportRoot: root)
         settings.defaultCwd = project.path
@@ -211,6 +213,7 @@ struct PickySettingsPolishTests {
         let viewModel = PickySettingsViewModel(store: store)
         var runtimeSettings = store.load()
         runtimeSettings.recordRecentPickleCwd(project.path)
+        runtimeSettings.pinPickleCwd(pinnedProject.path)
         try store.save(runtimeSettings)
 
         viewModel.settings.mainAgentThinkingLevel = .high
@@ -219,6 +222,7 @@ struct PickySettingsPolishTests {
         let saved = store.load()
         #expect(saved.mainAgentThinkingLevel == .high)
         #expect(saved.recentPickleCwds == [project.path])
+        #expect(saved.pinnedPickleCwds == [pinnedProject.path])
     }
 
     @Test func settingsLoadDefaultsMainAgentRuntimeToPiWhenLegacyFileLacksField() throws {
@@ -239,6 +243,7 @@ struct PickySettingsPolishTests {
         #expect(settings.openAIRealtime.modelOrDeployment == "gpt-realtime-2")
         #expect(settings.openAIRealtime.provider == .openAI)
         #expect(settings.openAIRealtime.azureRealtimeURL.isEmpty)
+        #expect(settings.pinnedPickleCwds.isEmpty)
     }
 
     @Test func effectiveRuntimeModeUsesLaunchSnapshotUntilCacheReset() throws {

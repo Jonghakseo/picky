@@ -11,6 +11,7 @@
 //
 
 import AppKit
+import Darwin
 import Foundation
 
 // MARK: - Argument parsing
@@ -103,7 +104,7 @@ private func showAlert(samplePath: String, icon: NSImage?) -> AlertChoice {
 
     \(samplePath)
 
-    Restarting Picky will recover the UI. Your active sessions are kept alive by the agentd daemon and will reattach.
+    Restarting Picky will recover the UI and restart the local agentd daemon. Persisted sessions will reconnect after launch.
     """
     alert.addButton(withTitle: "Restart Picky")
     alert.addButton(withTitle: "Reveal Sample in Finder")
@@ -115,11 +116,104 @@ private func showAlert(samplePath: String, icon: NSImage?) -> AlertChoice {
     }
 }
 
+// MARK: - Agentd cleanup
+
+private func runProcess(_ executable: String, _ arguments: [String]) -> String? {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: executable)
+    process.arguments = arguments
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = Pipe()
+    do {
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)
+    } catch {
+        return nil
+    }
+}
+
+private func childProcessIds(of parentPid: pid_t) -> [pid_t] {
+    guard let output = runProcess("/usr/bin/pgrep", ["-P", String(parentPid)]) else { return [] }
+    return output
+        .split(whereSeparator: \.isNewline)
+        .compactMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+}
+
+private func commandLine(for pid: pid_t) -> String {
+    runProcess("/bin/ps", ["-p", String(pid), "-o", "command="])?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+}
+
+private func isPickyAgentdCommand(_ command: String) -> Bool {
+    let markers = [
+        "/Contents/Resources/agentd/dist/index.js",
+        "/Contents/Resources/agentd/",
+        "/agentd/dist/index.js",
+        "/agentd/src/index.ts",
+        "picky-agentd",
+    ]
+    return markers.contains { command.contains($0) }
+}
+
+private func descendantProcessIds(of rootPid: pid_t) -> [pid_t] {
+    var result: [pid_t] = []
+    var queue = childProcessIds(of: rootPid)
+    while !queue.isEmpty {
+        let pid = queue.removeFirst()
+        result.append(pid)
+        queue.append(contentsOf: childProcessIds(of: pid))
+    }
+    return result
+}
+
+private func processExists(_ pid: pid_t) -> Bool {
+    if Darwin.kill(pid, 0) == 0 { return true }
+    return errno == EPERM
+}
+
+private func terminateProcessTree(_ pids: [pid_t], graceMicroseconds: useconds_t = 1_000_000) {
+    guard !pids.isEmpty else { return }
+    for pid in pids where processExists(pid) {
+        Darwin.kill(pid, SIGTERM)
+    }
+
+    let deadline = Date().addingTimeInterval(TimeInterval(graceMicroseconds) / 1_000_000)
+    while Date() < deadline, pids.contains(where: processExists) {
+        usleep(50_000)
+    }
+
+    for pid in pids where processExists(pid) {
+        Darwin.kill(pid, SIGKILL)
+    }
+}
+
+private func terminateAgentdChildren(of parentPid: pid_t) {
+    let directChildren = childProcessIds(of: parentPid)
+    let agentdRoots = directChildren.filter { isPickyAgentdCommand(commandLine(for: $0)) }
+    guard !agentdRoots.isEmpty else { return }
+
+    var victims: [pid_t] = []
+    for root in agentdRoots {
+        // Stop descendants before the daemon root so long-running Pi subprocesses
+        // do not survive as orphans when the watchdog relaunches the app.
+        victims.append(contentsOf: descendantProcessIds(of: root).reversed())
+        victims.append(root)
+    }
+    var seen = Set<pid_t>()
+    let uniqueVictims = victims.filter { seen.insert($0).inserted }
+    terminateProcessTree(uniqueVictims)
+}
+
 // MARK: - Restart
 
 private func restartParent(parentPid: pid_t, bundleURL: URL?) {
+    terminateAgentdChildren(of: parentPid)
     kill(parentPid, SIGKILL)
-    // Give launchd a beat to reap the dead process.
+    // Give launchd a beat to reap the dead process and release inherited ports.
     usleep(200_000)
     guard let bundleURL else { return }
     let configuration = NSWorkspace.OpenConfiguration()

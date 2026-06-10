@@ -12,6 +12,11 @@
 import Foundation
 
 final class PickyMainThreadWatchdog {
+    enum SuspensionReason: Hashable {
+        case displaySleep
+        case screenLock
+    }
+
     // MARK: - Configuration
 
     private let clock: () -> Date
@@ -33,6 +38,11 @@ final class PickyMainThreadWatchdog {
     /// can only fire after a fresh heartbeat (or a wake reset) advances
     /// `_heartbeatAt` to a new value.
     private var _lastSpinFiredHeartbeatAt: Date?
+    /// Reasons that make the main run loop an invalid responsiveness signal.
+    /// Display sleep and screen lock can pause WindowServer-driven callbacks
+    /// while the app is otherwise healthy, so the utility poller must stand
+    /// down until every reason has cleared.
+    private var _suspensionReasons: Set<SuspensionReason> = []
 
     // MARK: - Run-loop / poll handles
 
@@ -130,6 +140,30 @@ final class PickyMainThreadWatchdog {
         _lastSpinFiredHeartbeatAt = nil
     }
 
+    /// Temporarily disables spin detection while macOS is expected to pause or
+    /// heavily throttle main-thread UI callbacks without indicating a real app
+    /// hang, such as display sleep or the login-window screen lock.
+    func suspendMonitoring(for reason: SuspensionReason, at date: Date) {
+        lock.lock(); defer { lock.unlock() }
+        _suspensionReasons.insert(reason)
+        _heartbeatAt = date
+        _lastSpinFiredHeartbeatAt = nil
+    }
+
+    /// Re-enables spin detection for `reason`. The final resume gets the same
+    /// cooldown treatment as system wake so post-unlock display/layout catch-up
+    /// does not immediately look like a stale main-thread heartbeat.
+    func resumeMonitoring(for reason: SuspensionReason, at date: Date) {
+        lock.lock(); defer { lock.unlock() }
+        _suspensionReasons.remove(reason)
+        if _suspensionReasons.isEmpty {
+            _heartbeatAt = date.addingTimeInterval(sleepCooldown)
+            _lastSpinFiredHeartbeatAt = nil
+        } else {
+            _heartbeatAt = date
+        }
+    }
+
     // MARK: - Internal seams (called by run loop / poll timer / tests)
 
     func heartbeat(at date: Date) {
@@ -141,8 +175,11 @@ final class PickyMainThreadWatchdog {
         lock.lock()
         let heartbeatAt = _heartbeatAt ?? startedAt
         let lastFired = _lastSpinFiredHeartbeatAt
+        let isSuspended = !_suspensionReasons.isEmpty
         lock.unlock()
 
+        // Screen lock/display sleep can stop the heartbeat without a real app hang.
+        if isSuspended { return }
         // Within initial grace window — too early to judge.
         if date.timeIntervalSince(startedAt) < grace { return }
         // Already fired against this stale heartbeat reference.

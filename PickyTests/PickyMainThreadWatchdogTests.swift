@@ -40,6 +40,12 @@ struct PickyMainThreadWatchdogTests {
 
         func heartbeat() { watchdog.heartbeat(at: currentTime) }
         func check() { watchdog.checkForSpin(at: currentTime) }
+        func suspend(_ reason: PickyMainThreadWatchdog.SuspensionReason) {
+            watchdog.suspendMonitoring(for: reason, at: currentTime)
+        }
+        func resume(_ reason: PickyMainThreadWatchdog.SuspensionReason) {
+            watchdog.resumeMonitoring(for: reason, at: currentTime)
+        }
     }
 
     @Test("heartbeat이 임계값 안에서 갱신되면 spin 콜백 호출 안 함")
@@ -141,6 +147,54 @@ struct PickyMainThreadWatchdogTests {
         #expect(h.spinCount == 0)
         // After cooldown plus another threshold without heartbeat, spin should fire.
         h.advance(by: 11)
+        h.check()
+        #expect(h.spinCount == 1)
+    }
+
+    @Test("screen lock 중에는 stale heartbeat여도 spin 콜백 호출 안 함")
+    func screenLockSuspensionSuppressesSpinUntilUnlockCooldownExpires() {
+        let h = TestHarness(sleepCooldown: 5)
+        h.advance(by: 60)
+        h.heartbeat()
+        h.suspend(.screenLock)
+
+        h.advance(by: 60)
+        h.check()
+        #expect(h.spinCount == 0)
+
+        h.resume(.screenLock)
+        h.advance(by: 11) // resume time + cooldown is still within threshold
+        h.check()
+        #expect(h.spinCount == 0)
+
+        h.advance(by: 5)
+        h.check()
+        #expect(h.spinCount == 1)
+    }
+
+    @Test("display sleep과 screen lock이 겹치면 모든 suspension이 해제될 때까지 spin 감지 안 함")
+    func overlappingSuspensionsRequireAllReasonsToResume() {
+        let h = TestHarness(sleepCooldown: 5)
+        h.advance(by: 60)
+        h.heartbeat()
+        h.suspend(.displaySleep)
+        h.suspend(.screenLock)
+
+        h.advance(by: 60)
+        h.resume(.displaySleep)
+        h.check()
+        #expect(h.spinCount == 0)
+
+        h.advance(by: 60)
+        h.check()
+        #expect(h.spinCount == 0)
+
+        h.resume(.screenLock)
+        h.advance(by: 11)
+        h.check()
+        #expect(h.spinCount == 0)
+
+        h.advance(by: 5)
         h.check()
         #expect(h.spinCount == 1)
     }

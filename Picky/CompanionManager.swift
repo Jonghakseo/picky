@@ -2311,28 +2311,7 @@ final class CompanionManager: ObservableObject {
         case .extensionUiRequest(let request):
             latestAgentSessionSummary = request.prompt ?? request.title ?? "Agent is waiting for input"
         case .quickReply(let reply):
-            let owner = interactionOwner(for: reply.contextId)
-            let originSource = reply.originSource ?? owner.map { $0.isVoiceOwned ? .voice : .text }
-            let replyKind = reply.replyKind ?? .main
-            if quickReplyWouldUseTTS(owner: owner, replyKind: replyKind), shouldSuppressDuplicateQuickReplyTTS(reply, replyKind: replyKind) {
-                break
-            }
-            if owner != nil || originSource != nil || reply.replyKind != nil {
-                interactionCoordinator.accept(
-                    .quickReply(
-                        contextID: reply.contextId,
-                        text: reply.text,
-                        originSource: originSource,
-                        replyKind: replyKind,
-                        sessionID: reply.sessionId,
-                        inputID: reply.inputId
-                    ),
-                    correlation: PickyInteractionCorrelation(contextID: reply.contextId, sessionID: reply.sessionId, source: .agent)
-                )
-            } else {
-                let spoken = stripParentheticalsForSpeech(reply.text)
-                finishAwaitingAgentResponse(visibleText: reply.text, spokenText: spoken, enforceMinimumProcessingDuration: true)
-            }
+            applyQuickReplyEvent(reply)
         case .externalEntryAccepted(let accepted):
             guard let sessionId = accepted.sessionId else { break }
             interactionCoordinator.accept(
@@ -2365,19 +2344,7 @@ final class CompanionManager: ObservableObject {
             currentVoicePromptPreview = transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : transcript
             reduceVoiceInteraction(.sttFinal(inputID: inputId, text: transcript, now: Date()))
         case .mainRealtimeOutputAudioDelta(_, let audioBase64):
-            isRealtimePlaybackResponseActive = true
-            stopCurrentSpeech()
-            hideVoicePromptBubbleForRealtimeResponse()
-            reduceVoiceInteraction(.realtimeAudioStarted)
-            guard ttsPlaybackEnabled else {
-                realtimeAudioPlaybackEngine.stop()
-                isRealtimePlaybackResponseActive = false
-                clearPendingAgentResponseTiming()
-                break
-            }
-            realtimeAudioPlaybackEngine.enqueuePCM16Base64(audioBase64)
-            clearPendingAgentResponseTiming()
-            reduceVoiceInteraction(.realtimeAudioStarted)
+            applyRealtimeOutputAudioDelta(audioBase64: audioBase64)
         case .mainRealtimeOutputAudioDone:
             break
         case .mainRealtimeOutputTranscriptDelta(let inputId, let delta):
@@ -2393,26 +2360,7 @@ final class CompanionManager: ObservableObject {
             latestAgentSessionSummary = transcript
             realtimeOutputTranscriptByInputID.removeValue(forKey: key)
         case .mainRealtimeTurnDone(let done):
-            if let inputId = done.inputId {
-                realtimeOutputTranscriptByInputID.removeValue(forKey: inputId)
-                if realtimeVoiceInputID == inputId {
-                    realtimeVoiceInputID = nil
-                    teardownRealtimeAudioPump()
-                    completeVoiceInteractionIfCurrent(inputID: inputId)
-                }
-            }
-            if let final = done.finalTranscript, !final.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                latestAgentSessionSummary = final
-            }
-            if !realtimeAudioPlaybackEngine.isPlaying {
-                if isRealtimePlaybackResponseActive {
-                    finishRealtimePlaybackResponse(reason: "turn-done-without-playback")
-                } else {
-                    clearPendingAgentResponseTiming()
-                    reduceVoiceInteraction(.realtimeTurnDone)
-                    scheduleTransientHideIfNeeded()
-                }
-            }
+            applyRealtimeTurnDone(done)
         case .transcriptionStreamStarted(let streamId):
             NotificationCenter.default.post(name: .pickyTranscriptionStreamStarted, object: nil, userInfo: ["streamId": streamId])
         case .transcriptionDelta(let streamId, let delta):
@@ -2431,6 +2379,70 @@ final class CompanionManager: ObservableObject {
              .sessionMessageAppended, .sessionMessageReplaced, .sessionMessageRemoved, .sessionQueueUpdated, .sessionActivityUpdated, .terminalSessionSyncOutcome,
              .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested, .pushToTalkControlRequested:
             break
+        }
+    }
+
+    private func applyQuickReplyEvent(_ reply: PickyQuickReplyEvent) {
+        let owner = interactionOwner(for: reply.contextId)
+        let originSource = reply.originSource ?? owner.map { $0.isVoiceOwned ? .voice : .text }
+        let replyKind = reply.replyKind ?? .main
+        if quickReplyWouldUseTTS(owner: owner, replyKind: replyKind), shouldSuppressDuplicateQuickReplyTTS(reply, replyKind: replyKind) {
+            return
+        }
+        if owner != nil || originSource != nil || reply.replyKind != nil {
+            interactionCoordinator.accept(
+                .quickReply(
+                    contextID: reply.contextId,
+                    text: reply.text,
+                    originSource: originSource,
+                    replyKind: replyKind,
+                    sessionID: reply.sessionId,
+                    inputID: reply.inputId
+                ),
+                correlation: PickyInteractionCorrelation(contextID: reply.contextId, sessionID: reply.sessionId, source: .agent)
+            )
+        } else {
+            let spoken = stripParentheticalsForSpeech(reply.text)
+            finishAwaitingAgentResponse(visibleText: reply.text, spokenText: spoken, enforceMinimumProcessingDuration: true)
+        }
+    }
+
+    private func applyRealtimeOutputAudioDelta(audioBase64: String) {
+        isRealtimePlaybackResponseActive = true
+        stopCurrentSpeech()
+        hideVoicePromptBubbleForRealtimeResponse()
+        reduceVoiceInteraction(.realtimeAudioStarted)
+        guard ttsPlaybackEnabled else {
+            realtimeAudioPlaybackEngine.stop()
+            isRealtimePlaybackResponseActive = false
+            clearPendingAgentResponseTiming()
+            return
+        }
+        realtimeAudioPlaybackEngine.enqueuePCM16Base64(audioBase64)
+        clearPendingAgentResponseTiming()
+        reduceVoiceInteraction(.realtimeAudioStarted)
+    }
+
+    private func applyRealtimeTurnDone(_ done: PickyMainRealtimeTurnDoneEvent) {
+        if let inputId = done.inputId {
+            realtimeOutputTranscriptByInputID.removeValue(forKey: inputId)
+            if realtimeVoiceInputID == inputId {
+                realtimeVoiceInputID = nil
+                teardownRealtimeAudioPump()
+                completeVoiceInteractionIfCurrent(inputID: inputId)
+            }
+        }
+        if let final = done.finalTranscript, !final.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            latestAgentSessionSummary = final
+        }
+        if !realtimeAudioPlaybackEngine.isPlaying {
+            if isRealtimePlaybackResponseActive {
+                finishRealtimePlaybackResponse(reason: "turn-done-without-playback")
+            } else {
+                clearPendingAgentResponseTiming()
+                reduceVoiceInteraction(.realtimeTurnDone)
+                scheduleTransientHideIfNeeded()
+            }
         }
     }
 

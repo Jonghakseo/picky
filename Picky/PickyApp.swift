@@ -42,6 +42,13 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
     private var mainThreadWatchdogResponder: PickyWatchdogResponder?
     private var mainThreadWatchdogWorkspaceObservers: [NSObjectProtocol] = []
     private var mainThreadWatchdogDistributedObservers: [NSObjectProtocol] = []
+    private let mainThreadWatchdogNotificationQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "com.jonghakseo.picky.watchdog.notifications"
+        queue.maxConcurrentOperationCount = 1
+        queue.qualityOfService = .utility
+        return queue
+    }()
     /// Single source of truth for the user-selected light/dark mode. Both the menu bar
     /// companion panel and the HUD overlay observe this object so flipping the toggle
     /// in the companion footer flips the entire UI surface.
@@ -431,21 +438,21 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.didWakeNotification,
                 object: nil,
-                queue: .main
+                queue: mainThreadWatchdogNotificationQueue
             ) { [weak watchdog] _ in
                 watchdog?.noteWoke(at: Date())
             },
             NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.screensDidSleepNotification,
                 object: nil,
-                queue: .main
+                queue: mainThreadWatchdogNotificationQueue
             ) { [weak watchdog] _ in
                 watchdog?.suspendMonitoring(for: .displaySleep, at: Date())
             },
             NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.screensDidWakeNotification,
                 object: nil,
-                queue: .main
+                queue: mainThreadWatchdogNotificationQueue
             ) { [weak watchdog] _ in
                 watchdog?.resumeMonitoring(for: .displaySleep, at: Date())
             },
@@ -456,18 +463,41 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
             distributedCenter.addObserver(
                 forName: Notification.Name("com.apple.screenIsLocked"),
                 object: nil,
-                queue: .main
+                queue: mainThreadWatchdogNotificationQueue
             ) { [weak watchdog] _ in
                 watchdog?.suspendMonitoring(for: .screenLock, at: Date())
             },
             distributedCenter.addObserver(
                 forName: Notification.Name("com.apple.screenIsUnlocked"),
                 object: nil,
-                queue: .main
+                queue: mainThreadWatchdogNotificationQueue
             ) { [weak watchdog] _ in
                 watchdog?.resumeMonitoring(for: .screenLock, at: Date())
             },
         ]
+
+        reconcileInitialWatchdogSuspensionState(watchdog)
+    }
+
+    private func reconcileInitialWatchdogSuspensionState(_ watchdog: PickyMainThreadWatchdog) {
+        let now = Date()
+        if Self.currentSessionIsScreenLocked() {
+            watchdog.suspendMonitoring(for: .screenLock, at: now)
+        }
+        if Self.mainDisplayIsAsleep() {
+            watchdog.suspendMonitoring(for: .displaySleep, at: now)
+        }
+    }
+
+    private static func currentSessionIsScreenLocked() -> Bool {
+        guard let session = CGSessionCopyCurrentDictionary() as? [String: Any] else { return false }
+        if let locked = session["CGSSessionScreenIsLocked"] as? Bool { return locked }
+        if let locked = session["CGSSessionScreenIsLocked"] as? NSNumber { return locked.boolValue }
+        return false
+    }
+
+    private static func mainDisplayIsAsleep() -> Bool {
+        CGDisplayIsAsleep(CGMainDisplayID()) != 0
     }
 
     private func stopMainThreadWatchdog() {

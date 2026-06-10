@@ -172,25 +172,20 @@ final class PickyMainThreadWatchdog {
     }
 
     func checkForSpin(at date: Date) {
+        var shouldFire = false
+
         lock.lock()
         let heartbeatAt = _heartbeatAt ?? startedAt
         let lastFired = _lastSpinFiredHeartbeatAt
-        let isSuspended = !_suspensionReasons.isEmpty
+        if _suspensionReasons.isEmpty,
+           date.timeIntervalSince(startedAt) >= grace,
+           lastFired != heartbeatAt,
+           date.timeIntervalSince(heartbeatAt) > threshold {
+            _lastSpinFiredHeartbeatAt = heartbeatAt
+            shouldFire = true
+        }
         lock.unlock()
 
-        // Screen lock/display sleep can stop the heartbeat without a real app hang.
-        if isSuspended { return }
-        // Within initial grace window — too early to judge.
-        if date.timeIntervalSince(startedAt) < grace { return }
-        // Already fired against this stale heartbeat reference.
-        if lastFired == heartbeatAt { return }
-        // Heartbeat is fresh enough.
-        if date.timeIntervalSince(heartbeatAt) <= threshold { return }
-
-        lock.lock()
-        _lastSpinFiredHeartbeatAt = heartbeatAt
-        lock.unlock()
-
-        onSpinDetected()
+        if shouldFire { onSpinDetected() }
     }
 }

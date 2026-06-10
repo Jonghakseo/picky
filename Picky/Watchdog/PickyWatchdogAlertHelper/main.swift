@@ -149,14 +149,25 @@ private func commandLine(for pid: pid_t) -> String {
 }
 
 private func isPickyAgentdCommand(_ command: String) -> Bool {
-    let markers = [
+    if command.contains("picky-agentd") { return true }
+
+    let compiledMarkers = [
         "/Contents/Resources/agentd/dist/index.js",
-        "/Contents/Resources/agentd/",
         "/agentd/dist/index.js",
-        "/agentd/src/index.ts",
-        "picky-agentd",
     ]
-    return markers.contains { command.contains($0) }
+    if compiledMarkers.contains(where: { command.contains($0) }) { return true }
+
+    // Development/source mode launches as:
+    //   pnpm --dir <...>/agentd exec tsx src/index.ts
+    // In `ps`, the agentd root and source entry point are separate argv
+    // fragments, so there is no contiguous `/agentd/src/index.ts` substring.
+    let launchesSourceEntry = command.contains(" src/index.ts") || command.hasSuffix("src/index.ts")
+    let referencesAgentdRoot = command.contains("/agentd ") || command.contains("/agentd/")
+    let usesSourceRunner = command.contains(" pnpm ")
+        || command.hasPrefix("pnpm ")
+        || command.contains(" exec tsx ")
+        || command.contains(" tsx ")
+    return launchesSourceEntry && referencesAgentdRoot && usesSourceRunner
 }
 
 private func descendantProcessIds(of rootPid: pid_t) -> [pid_t] {

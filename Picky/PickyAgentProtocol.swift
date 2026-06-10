@@ -335,113 +335,130 @@ enum PickyEvent: Equatable {
 
 
     init(type: String, decoder: Decoder) throws {
+        if let event = try Self.decodeMainAgentEvent(type: type, decoder: decoder)
+            ?? Self.decodeRealtimeEvent(type: type, decoder: decoder)
+            ?? Self.decodeTranscriptionEvent(type: type, decoder: decoder)
+            ?? Self.decodeSessionEvent(type: type, decoder: decoder)
+            ?? Self.decodeBridgeEvent(type: type, decoder: decoder) {
+            self = event
+        } else {
+            self = .unknown(type: type)
+        }
+    }
+
+    /// Main companion conversation events (hello, quick replies, transcript, models, errors).
+    private static func decodeMainAgentEvent(type: String, decoder: Decoder) throws -> PickyEvent? {
         switch type {
-        case "hello": self = .hello(try PickyHelloEvent(from: decoder))
+        case "hello": return .hello(try PickyHelloEvent(from: decoder))
         case "quickReply":
-            self = .quickReply(try PickyQuickReplyEvent(from: decoder))
+            return .quickReply(try PickyQuickReplyEvent(from: decoder))
         case "mainMessagesSnapshot":
             let payload = try PickyMainMessagesSnapshotPayload(from: decoder)
-            self = .mainMessagesSnapshot(payload.messages)
+            return .mainMessagesSnapshot(payload.messages)
         case "mainMessageAppended":
             let payload = try PickyMainMessageAppendedPayload(from: decoder)
-            self = .mainMessageAppended(payload.message)
+            return .mainMessageAppended(payload.message)
         case "mainAgentSessionInfoUpdated":
             let payload = try PickyMainAgentSessionInfoUpdatedPayload(from: decoder)
-            self = .mainAgentSessionInfoUpdated(sessionFilePath: payload.sessionFilePath, cwd: payload.cwd)
+            return .mainAgentSessionInfoUpdated(sessionFilePath: payload.sessionFilePath, cwd: payload.cwd)
         case "mainAgentModelsSnapshot":
             let payload = try PickyMainAgentModelsSnapshotPayload(from: decoder)
-            self = .mainAgentModelsSnapshot(payload.models)
+            return .mainAgentModelsSnapshot(payload.models)
+        case "error": return .error(try PickyErrorEvent(from: decoder))
+        default: return nil
+        }
+    }
+
+    /// OpenAI Realtime voice-mode events.
+    private static func decodeRealtimeEvent(type: String, decoder: Decoder) throws -> PickyEvent? {
+        switch type {
         case "mainRealtimeStateChanged":
-            self = .mainRealtimeStateChanged(try PickyMainRealtimeStateEvent(from: decoder))
+            return .mainRealtimeStateChanged(try PickyMainRealtimeStateEvent(from: decoder))
         case "mainRealtimeInputTranscriptDelta":
             let payload = try PickyMainRealtimeInputTranscriptDeltaPayload(from: decoder)
-            self = .mainRealtimeInputTranscriptDelta(inputId: payload.inputId, delta: payload.delta)
+            return .mainRealtimeInputTranscriptDelta(inputId: payload.inputId, delta: payload.delta)
         case "mainRealtimeInputTranscriptCompleted":
             let payload = try PickyMainRealtimeInputTranscriptCompletedPayload(from: decoder)
-            self = .mainRealtimeInputTranscriptCompleted(inputId: payload.inputId, transcript: payload.transcript)
+            return .mainRealtimeInputTranscriptCompleted(inputId: payload.inputId, transcript: payload.transcript)
         case "mainRealtimeOutputAudioDelta":
             let payload = try PickyMainRealtimeOutputAudioDeltaPayload(from: decoder)
-            self = .mainRealtimeOutputAudioDelta(inputId: payload.inputId, audioBase64: payload.audioBase64)
+            return .mainRealtimeOutputAudioDelta(inputId: payload.inputId, audioBase64: payload.audioBase64)
         case "mainRealtimeOutputAudioDone":
             let payload = try PickyMainRealtimeOutputAudioDonePayload(from: decoder)
-            self = .mainRealtimeOutputAudioDone(inputId: payload.inputId)
+            return .mainRealtimeOutputAudioDone(inputId: payload.inputId)
         case "mainRealtimeOutputTranscriptDelta":
             let payload = try PickyMainRealtimeOutputTranscriptDeltaPayload(from: decoder)
-            self = .mainRealtimeOutputTranscriptDelta(inputId: payload.inputId, delta: payload.delta)
+            return .mainRealtimeOutputTranscriptDelta(inputId: payload.inputId, delta: payload.delta)
         case "mainRealtimeOutputTranscriptCompleted":
             let payload = try PickyMainRealtimeOutputTranscriptCompletedPayload(from: decoder)
-            self = .mainRealtimeOutputTranscriptCompleted(inputId: payload.inputId, transcript: payload.transcript)
+            return .mainRealtimeOutputTranscriptCompleted(inputId: payload.inputId, transcript: payload.transcript)
         case "mainRealtimeTurnDone":
-            self = .mainRealtimeTurnDone(try PickyMainRealtimeTurnDoneEvent(from: decoder))
+            return .mainRealtimeTurnDone(try PickyMainRealtimeTurnDoneEvent(from: decoder))
+        default: return nil
+        }
+    }
+
+    /// Streaming transcription bridge events.
+    private static func decodeTranscriptionEvent(type: String, decoder: Decoder) throws -> PickyEvent? {
+        switch type {
         case "transcriptionStreamStarted":
             let payload = try PickyTranscriptionStreamIdPayload(from: decoder)
-            self = .transcriptionStreamStarted(streamId: payload.streamId)
+            return .transcriptionStreamStarted(streamId: payload.streamId)
         case "transcriptionDelta":
             let payload = try PickyTranscriptionDeltaPayload(from: decoder)
-            self = .transcriptionDelta(streamId: payload.streamId, delta: payload.delta)
+            return .transcriptionDelta(streamId: payload.streamId, delta: payload.delta)
         case "transcriptionCompleted":
             let payload = try PickyTranscriptionCompletedPayload(from: decoder)
-            self = .transcriptionCompleted(streamId: payload.streamId, transcript: payload.transcript)
+            return .transcriptionCompleted(streamId: payload.streamId, transcript: payload.transcript)
         case "transcriptionStreamFailed":
             let payload = try PickyTranscriptionFailedPayload(from: decoder)
-            self = .transcriptionStreamFailed(streamId: payload.streamId, message: payload.message)
+            return .transcriptionStreamFailed(streamId: payload.streamId, message: payload.message)
         case "transcriptionStreamClosed":
             let payload = try PickyTranscriptionStreamIdPayload(from: decoder)
-            self = .transcriptionStreamClosed(streamId: payload.streamId)
+            return .transcriptionStreamClosed(streamId: payload.streamId)
+        default: return nil
+        }
+    }
+
+    /// Pickle session lifecycle, journal, queue, and artifact events.
+    private static func decodeSessionEvent(type: String, decoder: Decoder) throws -> PickyEvent? {
+        switch type {
         case "sessionSnapshot":
             let payload = try PickySessionSnapshotPayload(from: decoder)
-            self = .sessionSnapshot(payload.sessions)
+            return .sessionSnapshot(payload.sessions)
         case "sessionUpdated":
             let payload = try PickySessionUpdatedPayload(from: decoder)
-            self = .sessionUpdated(payload.session)
+            return .sessionUpdated(payload.session)
         case "sessionArchivedAuthoritative":
             let payload = try PickySessionArchivedAuthoritativePayload(from: decoder)
-            self = .sessionArchivedAuthoritative(sessionId: payload.sessionId, archived: payload.archived)
+            return .sessionArchivedAuthoritative(sessionId: payload.sessionId, archived: payload.archived)
         case "sessionResourcesReloaded":
             let payload = try PickySessionResourcesReloadedPayload(from: decoder)
-            self = .sessionResourcesReloaded(sessionId: payload.sessionId)
-        case "pluginsReloaded":
-            self = .pluginsReloaded(try PickyPluginsReloadedEvent(from: decoder))
+            return .sessionResourcesReloaded(sessionId: payload.sessionId)
         case "sessionLogAppended":
             let payload = try PickySessionLogAppendedPayload(from: decoder)
-            self = .sessionLogAppended(sessionId: payload.sessionId, line: payload.line)
+            return .sessionLogAppended(sessionId: payload.sessionId, line: payload.line)
         case "toolActivityUpdated":
             let payload = try PickyToolActivityUpdatedPayload(from: decoder)
-            self = .toolActivityUpdated(sessionId: payload.sessionId, tool: payload.tool)
-        case "extensionUiRequest":
-            let payload = try PickyExtensionUiRequestPayload(from: decoder)
-            self = .extensionUiRequest(payload.request)
+            return .toolActivityUpdated(sessionId: payload.sessionId, tool: payload.tool)
         case "artifactUpdated":
             let payload = try PickyArtifactUpdatedPayload(from: decoder)
-            self = .artifactUpdated(sessionId: payload.sessionId, artifact: payload.artifact)
-        case "pointerOverlayRequested":
-            let payload = try PickyPointerOverlayRequestedPayload(from: decoder)
-            self = .pointerOverlayRequested(payload.request)
-        case "pickleHandoffRequested":
-            self = .pickleHandoffRequested(try PickyPickleHandoffRequest(from: decoder))
-        case "pickleBridgeRequested":
-            self = .pickleBridgeRequested(try PickyPickleBridgeRequest(from: decoder))
-        case "externalEntryRequested":
-            self = .externalEntryRequested(try PickyExternalEntryRequest(from: decoder))
-        case "externalEntryAccepted":
-            self = .externalEntryAccepted(try PickyExternalEntryAcceptedEvent(from: decoder))
-        case "pushToTalkControlRequested":
-            self = .pushToTalkControlRequested(try PickyPushToTalkControlRequest(from: decoder))
+            return .artifactUpdated(sessionId: payload.sessionId, artifact: payload.artifact)
         case "slashCommandsSnapshot":
             let payload = try PickySlashCommandsSnapshotPayload(from: decoder)
-            self = .slashCommandsSnapshot(sessionId: payload.sessionId, requestId: payload.requestId, commands: payload.commands)
+            return .slashCommandsSnapshot(sessionId: payload.sessionId, requestId: payload.requestId, commands: payload.commands)
         case "sessionMessageAppended":
             let payload = try PickySessionMessageAppendedPayload(from: decoder)
-            self = .sessionMessageAppended(sessionId: payload.sessionId, message: payload.message, seq: payload.seq)
+            return .sessionMessageAppended(sessionId: payload.sessionId, message: payload.message, seq: payload.seq)
         case "sessionMessageReplaced":
             let payload = try PickySessionMessageReplacedPayload(from: decoder)
-            self = .sessionMessageReplaced(sessionId: payload.sessionId, messageId: payload.messageId, message: payload.message, seq: payload.seq)
+            return .sessionMessageReplaced(sessionId: payload.sessionId, messageId: payload.messageId, message: payload.message, seq: payload.seq)
         case "sessionMessageRemoved":
             let payload = try PickySessionMessageRemovedPayload(from: decoder)
-            self = .sessionMessageRemoved(sessionId: payload.sessionId, messageId: payload.messageId, seq: payload.seq)
+            return .sessionMessageRemoved(sessionId: payload.sessionId, messageId: payload.messageId, seq: payload.seq)
         case "sessionQueueUpdated":
             let payload = try PickySessionQueueUpdatedPayload(from: decoder)
-            self = .sessionQueueUpdated(
+            return .sessionQueueUpdated(
                 sessionId: payload.sessionId,
                 steering: payload.steering,
                 followUp: payload.followUp,
@@ -451,11 +468,35 @@ enum PickyEvent: Equatable {
             )
         case "sessionActivityUpdated":
             let payload = try PickySessionActivityUpdatedPayload(from: decoder)
-            self = .sessionActivityUpdated(sessionId: payload.sessionId, activitySummary: payload.activitySummary, seq: payload.seq)
+            return .sessionActivityUpdated(sessionId: payload.sessionId, activitySummary: payload.activitySummary, seq: payload.seq)
         case "terminalSessionSyncOutcome":
-            self = .terminalSessionSyncOutcome(try PickyTerminalSessionSyncOutcome(from: decoder))
-        case "error": self = .error(try PickyErrorEvent(from: decoder))
-        default: self = .unknown(type: type)
+            return .terminalSessionSyncOutcome(try PickyTerminalSessionSyncOutcome(from: decoder))
+        default: return nil
+        }
+    }
+
+    /// Extension UI, pointer overlay, handoff, and external entry bridge events.
+    private static func decodeBridgeEvent(type: String, decoder: Decoder) throws -> PickyEvent? {
+        switch type {
+        case "pluginsReloaded":
+            return .pluginsReloaded(try PickyPluginsReloadedEvent(from: decoder))
+        case "extensionUiRequest":
+            let payload = try PickyExtensionUiRequestPayload(from: decoder)
+            return .extensionUiRequest(payload.request)
+        case "pointerOverlayRequested":
+            let payload = try PickyPointerOverlayRequestedPayload(from: decoder)
+            return .pointerOverlayRequested(payload.request)
+        case "pickleHandoffRequested":
+            return .pickleHandoffRequested(try PickyPickleHandoffRequest(from: decoder))
+        case "pickleBridgeRequested":
+            return .pickleBridgeRequested(try PickyPickleBridgeRequest(from: decoder))
+        case "externalEntryRequested":
+            return .externalEntryRequested(try PickyExternalEntryRequest(from: decoder))
+        case "externalEntryAccepted":
+            return .externalEntryAccepted(try PickyExternalEntryAcceptedEvent(from: decoder))
+        case "pushToTalkControlRequested":
+            return .pushToTalkControlRequested(try PickyPushToTalkControlRequest(from: decoder))
+        default: return nil
         }
     }
 }

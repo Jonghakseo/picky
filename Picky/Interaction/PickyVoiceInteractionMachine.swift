@@ -143,239 +143,301 @@ enum PickyVoiceInteractionMachine {
         state: PickyVoiceInteractionState,
         event: PickyVoiceInteractionEvent
     ) -> PickyVoiceInteractionTransition {
-        var state = state
-        var effects: [PickyVoiceInteractionEffect] = []
-        state.effectsToRun = []
+        var reducing = PickyVoiceInteractionReducing(state: state)
+        reducing.state.effectsToRun = []
+        reducing.apply(event)
+        reducing.state.effectsToRun = reducing.effects
+        return PickyVoiceInteractionTransition(state: reducing.state, effects: reducing.effects)
+    }
+}
 
-        func normalized(_ text: String?) -> String? {
-            let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return trimmed.isEmpty ? nil : trimmed
-        }
+/// Single reduction pass over one event. Each event has a dedicated handler so
+/// the dispatch switch stays a flat routing table and the shared transitions
+/// (begin input, start/complete speech, clear to idle) live in one place.
+private struct PickyVoiceInteractionReducing {
+    var state: PickyVoiceInteractionState
+    var effects: [PickyVoiceInteractionEffect] = []
 
-        func promptBubbleTextIfVisible(_ text: String?) -> String? {
-            state.context.promptBubbleVisibility == .visible ? normalized(text) : nil
-        }
+    private var minimumDisplayDuration: TimeInterval { PickyVoiceInteractionMachine.minimumDisplayDuration }
 
-        func beginInput(inputID: UUID, targetSessionID: String?, mode: PickyVoiceInteractionMode) {
-            if state.phase == .speaking || state.phase == .loading {
-                if state.context.activeSpeechID != nil {
-                    effects.append(.stopSpeech(speechID: state.context.activeSpeechID))
-                }
-                if state.context.mode == .realtime {
-                    effects.append(.cancelRealtimeTurn(inputID: state.context.inputID))
-                } else {
-                    effects.append(.abortMainAgent)
-                }
-                if let previousTarget = state.context.targetSessionID {
-                    effects.append(.abortPickle(sessionID: previousTarget))
-                }
-            }
-
-            state.phase = .pttInput
-            state.context = PickyVoiceInteractionContext(
-                inputID: inputID,
-                targetSessionID: targetSessionID,
-                mode: mode
-            )
-            if mode == .realtime {
-                effects.append(.startRealtimeTurn(inputID: inputID))
-            } else {
-                effects.append(.startDictation(inputID: inputID))
-            }
-        }
-
-        func clearToIdle(scheduleHide: Bool = false) {
-            state.phase = .idle
-            state.context = PickyVoiceInteractionContext()
-            if scheduleHide { effects.append(.scheduleTransientHide) }
-        }
-
-        func startSpeaking(_ item: PickyVoiceSpeechQueueItem, now: Date) {
-            state.phase = .speaking
-            state.context.activeSpeechID = item.speechID
-            state.context.activeSpeechTimerID = item.timerID
-            state.context.responseBubbleText = item.text
-            state.context.promptBubbleText = nil
-            state.context.minimumDisplayUntil = now.addingTimeInterval(minimumDisplayDuration)
-            state.context.isSpeechFinishPending = false
-            effects.append(.scheduleMinimumDisplay(
-                timerID: item.timerID,
-                speechID: item.speechID,
-                inputID: item.inputID,
-                delay: minimumDisplayDuration
-            ))
-            effects.append(.speak(speechID: item.speechID, text: item.text))
-        }
-
-        func startNextQueuedSpeechIfAvailable(now: Date) -> Bool {
-            guard !state.context.speechQueue.isEmpty else { return false }
-            let next = state.context.speechQueue.removeFirst()
-            startSpeaking(next, now: now)
-            return true
-        }
-
-        func completeCurrentSpeech(now: Date) {
-            guard state.phase == .speaking else { return }
-            if let until = state.context.minimumDisplayUntil, now < until {
-                state.context.isSpeechFinishPending = true
-                return
-            }
-            if startNextQueuedSpeechIfAvailable(now: now) { return }
-            clearToIdle(scheduleHide: true)
-        }
-
+    mutating func apply(_ event: PickyVoiceInteractionEvent) {
         switch event {
         case .pttPressed(let inputID, let targetSessionID, let mode):
             beginInput(inputID: inputID, targetSessionID: targetSessionID, mode: mode)
-
         case .pttReleased(let inputID):
-            guard state.context.inputID == inputID else { break }
-            state.phase = .loading
-            if state.context.mode == .realtime {
-                effects.append(.commitRealtimeTurn(inputID: inputID))
-            } else {
-                effects.append(.stopDictation(inputID: inputID))
-            }
-
+            applyPTTReleased(inputID: inputID)
         case .sttPartial(let inputID, let text):
-            guard state.context.inputID == inputID else { break }
-            state.context.transcript = text
-            state.context.promptBubbleText = promptBubbleTextIfVisible(text)
-
+            applySTTPartial(inputID: inputID, text: text)
         case .sttFinal(let inputID, let text, let now):
-            guard state.context.inputID == inputID else { break }
-            let transcript = normalized(text)
-            state.phase = .loading
-            state.context.transcript = transcript
-            state.context.promptBubbleText = promptBubbleTextIfVisible(text)
-            state.context.pendingSince = now
-            if let transcript {
-                if state.context.promptBubbleVisibility == .visible {
-                    effects.append(.schedulePromptBubbleAutoHide)
-                }
-                effects.append(.captureContext(inputID: inputID, transcript: transcript, targetSessionID: state.context.targetSessionID))
-            }
-
+            applySTTFinal(inputID: inputID, text: text, now: now)
         case .sttFailed(let inputID, _):
-            guard state.context.inputID == inputID else { break }
-            clearToIdle(scheduleHide: true)
-
+            applySTTFailed(inputID: inputID)
         case .loadingStarted(let inputID, let transcript, let targetSessionID, let mode, let now, let promptBubbleVisibility):
-            let normalizedTranscript = normalized(transcript)
-            state.phase = .loading
-            state.context.inputID = inputID
-            state.context.targetSessionID = targetSessionID
-            state.context.transcript = normalizedTranscript
-            state.context.promptBubbleVisibility = promptBubbleVisibility
-            state.context.promptBubbleText = promptBubbleTextIfVisible(transcript)
-            state.context.pendingSince = now
-            state.context.responseBubbleText = nil
+            applyLoadingStarted(
+                inputID: inputID,
+                transcript: transcript,
+                targetSessionID: targetSessionID,
+                mode: mode,
+                now: now,
+                promptBubbleVisibility: promptBubbleVisibility
+            )
+        case .agentReply(let text, let shouldSpeak, let speechID, let timerID, let inputID, let now):
+            applyAgentReply(text: text, shouldSpeak: shouldSpeak, speechID: speechID, timerID: timerID, inputID: inputID, now: now)
+        case .textReply(let text):
+            applyTextReply(text: text)
+        case .speechFinished(let speechID, let now), .speechFailed(let speechID, let now):
+            applySpeechCompleted(speechID: speechID, now: now)
+        case .minimumDisplayTimerFired(let timerID, let now):
+            applyMinimumDisplayTimerFired(timerID: timerID, now: now)
+        case .promptBubbleAutoHide:
+            state.context.promptBubbleText = nil
+        case .realtimeStateChanged(let realtimeState):
+            applyRealtimeStateChanged(realtimeState)
+        case .realtimeAudioStarted:
+            applyRealtimeAudioStarted()
+        case .realtimeTurnDone:
+            clearToIdle(scheduleHide: true)
+        case .abort:
+            applyAbort()
+        case .reset:
+            clearToIdle(scheduleHide: false)
+        }
+    }
+
+    // MARK: - Event handlers
+
+    private mutating func applyPTTReleased(inputID: UUID) {
+        guard state.context.inputID == inputID else { return }
+        state.phase = .loading
+        if state.context.mode == .realtime {
+            effects.append(.commitRealtimeTurn(inputID: inputID))
+        } else {
+            effects.append(.stopDictation(inputID: inputID))
+        }
+    }
+
+    private mutating func applySTTPartial(inputID: UUID, text: String) {
+        guard state.context.inputID == inputID else { return }
+        state.context.transcript = text
+        state.context.promptBubbleText = promptBubbleTextIfVisible(text)
+    }
+
+    private mutating func applySTTFinal(inputID: UUID, text: String, now: Date) {
+        guard state.context.inputID == inputID else { return }
+        let transcript = normalized(text)
+        state.phase = .loading
+        state.context.transcript = transcript
+        state.context.promptBubbleText = promptBubbleTextIfVisible(text)
+        state.context.pendingSince = now
+        if let transcript {
+            if state.context.promptBubbleVisibility == .visible {
+                effects.append(.schedulePromptBubbleAutoHide)
+            }
+            effects.append(.captureContext(inputID: inputID, transcript: transcript, targetSessionID: state.context.targetSessionID))
+        }
+    }
+
+    private mutating func applySTTFailed(inputID: UUID) {
+        guard state.context.inputID == inputID else { return }
+        clearToIdle(scheduleHide: true)
+    }
+
+    private mutating func applyLoadingStarted(
+        inputID: UUID?,
+        transcript: String?,
+        targetSessionID: String?,
+        mode: PickyVoiceInteractionMode,
+        now: Date,
+        promptBubbleVisibility: PickyVoicePromptBubbleVisibility
+    ) {
+        let normalizedTranscript = normalized(transcript)
+        state.phase = .loading
+        state.context.inputID = inputID
+        state.context.targetSessionID = targetSessionID
+        state.context.transcript = normalizedTranscript
+        state.context.promptBubbleVisibility = promptBubbleVisibility
+        state.context.promptBubbleText = promptBubbleTextIfVisible(transcript)
+        state.context.pendingSince = now
+        state.context.responseBubbleText = nil
+        state.context.activeSpeechID = nil
+        state.context.activeSpeechTimerID = nil
+        state.context.minimumDisplayUntil = nil
+        state.context.isSpeechFinishPending = false
+        state.context.speechQueue.removeAll()
+        state.context.mode = mode
+        if promptBubbleVisibility == .visible, normalizedTranscript != nil {
+            effects.append(.schedulePromptBubbleAutoHide)
+        }
+    }
+
+    private mutating func applyAgentReply(text: String, shouldSpeak: Bool, speechID: UUID, timerID: UUID, inputID: UUID?, now: Date) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        state.context.pendingSince = nil
+        if shouldSpeak {
+            let item = PickyVoiceSpeechQueueItem(text: trimmed, speechID: speechID, timerID: timerID, inputID: inputID)
+            if state.phase == .speaking {
+                state.context.speechQueue.append(item)
+            } else {
+                startSpeaking(item, now: now)
+            }
+        } else {
+            state.phase = .idle
+            state.context.responseBubbleText = trimmed
+            state.context.promptBubbleText = nil
             state.context.activeSpeechID = nil
             state.context.activeSpeechTimerID = nil
             state.context.minimumDisplayUntil = nil
             state.context.isSpeechFinishPending = false
             state.context.speechQueue.removeAll()
-            state.context.mode = mode
-            if promptBubbleVisibility == .visible, normalizedTranscript != nil {
-                effects.append(.schedulePromptBubbleAutoHide)
-            }
+            effects.append(.scheduleTransientHide)
+        }
+    }
 
-        case .agentReply(let text, let shouldSpeak, let speechID, let timerID, let inputID, let now):
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { break }
-            state.context.pendingSince = nil
-            if shouldSpeak {
-                let item = PickyVoiceSpeechQueueItem(text: trimmed, speechID: speechID, timerID: timerID, inputID: inputID)
-                if state.phase == .speaking {
-                    state.context.speechQueue.append(item)
-                } else {
-                    startSpeaking(item, now: now)
-                }
-            } else {
-                state.phase = .idle
-                state.context.responseBubbleText = trimmed
-                state.context.promptBubbleText = nil
-                state.context.activeSpeechID = nil
-                state.context.activeSpeechTimerID = nil
-                state.context.minimumDisplayUntil = nil
-                state.context.isSpeechFinishPending = false
-                state.context.speechQueue.removeAll()
-                effects.append(.scheduleTransientHide)
-            }
+    private mutating func applyTextReply(text: String) {
+        state.phase = .idle
+        state.context.responseBubbleText = normalized(text)
+        state.context.promptBubbleText = nil
+        state.context.activeSpeechID = nil
+        state.context.speechQueue.removeAll()
+    }
 
-        case .textReply(let text):
-            state.phase = .idle
-            state.context.responseBubbleText = normalized(text)
-            state.context.promptBubbleText = nil
-            state.context.activeSpeechID = nil
-            state.context.speechQueue.removeAll()
+    private mutating func applySpeechCompleted(speechID: UUID, now: Date) {
+        guard state.context.activeSpeechID == speechID else { return }
+        completeCurrentSpeech(now: now)
+    }
 
-        case .speechFinished(let speechID, let now), .speechFailed(let speechID, let now):
-            guard state.context.activeSpeechID == speechID else { break }
-            completeCurrentSpeech(now: now)
+    private mutating func applyMinimumDisplayTimerFired(timerID: UUID, now: Date) {
+        guard state.context.activeSpeechTimerID == timerID else { return }
+        state.context.minimumDisplayUntil = nil
+        if state.context.isSpeechFinishPending {
+            state.context.isSpeechFinishPending = false
+            if startNextQueuedSpeechIfAvailable(now: now) { return }
+            clearToIdle(scheduleHide: true)
+        }
+    }
 
-        case .minimumDisplayTimerFired(let timerID, let now):
-            guard state.context.activeSpeechTimerID == timerID else { break }
-            state.context.minimumDisplayUntil = nil
-            if state.context.isSpeechFinishPending {
-                state.context.isSpeechFinishPending = false
-                if startNextQueuedSpeechIfAvailable(now: now) { break }
+    private mutating func applyRealtimeStateChanged(_ realtimeState: PickyMainRealtimeState) {
+        switch realtimeState {
+        case .connecting, .thinking:
+            state.phase = .loading
+            state.context.pendingSince = state.context.pendingSince ?? Date()
+            state.context.mode = .realtime
+        case .ready:
+            if state.context.activeSpeechID == nil {
                 clearToIdle(scheduleHide: true)
             }
-
-        case .promptBubbleAutoHide:
-            state.context.promptBubbleText = nil
-
-        case .realtimeStateChanged(let realtimeState):
-            switch realtimeState {
-            case .connecting, .thinking:
-                state.phase = .loading
-                state.context.pendingSince = state.context.pendingSince ?? Date()
-                state.context.mode = .realtime
-            case .ready:
-                if state.context.activeSpeechID == nil {
-                    clearToIdle(scheduleHide: true)
-                }
-            case .listening:
-                state.phase = .pttInput
-                state.context.mode = .realtime
-            case .speaking:
-                state.phase = .speaking
-                state.context.mode = .realtime
-                state.context.promptBubbleText = nil
-            case .failed:
-                clearToIdle(scheduleHide: true)
-            }
-
-        case .realtimeAudioStarted:
+        case .listening:
+            state.phase = .pttInput
+            state.context.mode = .realtime
+        case .speaking:
             state.phase = .speaking
             state.context.mode = .realtime
-            state.context.pendingSince = nil
             state.context.promptBubbleText = nil
-
-        case .realtimeTurnDone:
+        case .failed:
             clearToIdle(scheduleHide: true)
+        }
+    }
 
-        case .abort:
+    private mutating func applyRealtimeAudioStarted() {
+        state.phase = .speaking
+        state.context.mode = .realtime
+        state.context.pendingSince = nil
+        state.context.promptBubbleText = nil
+    }
+
+    private mutating func applyAbort() {
+        if state.context.activeSpeechID != nil {
+            effects.append(.stopSpeech(speechID: state.context.activeSpeechID))
+        }
+        if state.context.mode == .realtime {
+            effects.append(.cancelRealtimeTurn(inputID: state.context.inputID))
+        } else if state.phase == .loading || state.phase == .speaking {
+            effects.append(.abortMainAgent)
+        }
+        if let targetSessionID = state.context.targetSessionID,
+           state.phase == .loading || state.phase == .speaking {
+            effects.append(.abortPickle(sessionID: targetSessionID))
+        }
+        clearToIdle(scheduleHide: true)
+    }
+
+    // MARK: - Shared transitions
+
+    private func normalized(_ text: String?) -> String? {
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func promptBubbleTextIfVisible(_ text: String?) -> String? {
+        state.context.promptBubbleVisibility == .visible ? normalized(text) : nil
+    }
+
+    private mutating func beginInput(inputID: UUID, targetSessionID: String?, mode: PickyVoiceInteractionMode) {
+        if state.phase == .speaking || state.phase == .loading {
             if state.context.activeSpeechID != nil {
                 effects.append(.stopSpeech(speechID: state.context.activeSpeechID))
             }
             if state.context.mode == .realtime {
                 effects.append(.cancelRealtimeTurn(inputID: state.context.inputID))
-            } else if state.phase == .loading || state.phase == .speaking {
+            } else {
                 effects.append(.abortMainAgent)
             }
-            if let targetSessionID = state.context.targetSessionID,
-               state.phase == .loading || state.phase == .speaking {
-                effects.append(.abortPickle(sessionID: targetSessionID))
+            if let previousTarget = state.context.targetSessionID {
+                effects.append(.abortPickle(sessionID: previousTarget))
             }
-            clearToIdle(scheduleHide: true)
-
-        case .reset:
-            clearToIdle(scheduleHide: false)
         }
 
-        state.effectsToRun = effects
-        return PickyVoiceInteractionTransition(state: state, effects: effects)
+        state.phase = .pttInput
+        state.context = PickyVoiceInteractionContext(
+            inputID: inputID,
+            targetSessionID: targetSessionID,
+            mode: mode
+        )
+        if mode == .realtime {
+            effects.append(.startRealtimeTurn(inputID: inputID))
+        } else {
+            effects.append(.startDictation(inputID: inputID))
+        }
+    }
+
+    private mutating func clearToIdle(scheduleHide: Bool = false) {
+        state.phase = .idle
+        state.context = PickyVoiceInteractionContext()
+        if scheduleHide { effects.append(.scheduleTransientHide) }
+    }
+
+    private mutating func startSpeaking(_ item: PickyVoiceSpeechQueueItem, now: Date) {
+        state.phase = .speaking
+        state.context.activeSpeechID = item.speechID
+        state.context.activeSpeechTimerID = item.timerID
+        state.context.responseBubbleText = item.text
+        state.context.promptBubbleText = nil
+        state.context.minimumDisplayUntil = now.addingTimeInterval(minimumDisplayDuration)
+        state.context.isSpeechFinishPending = false
+        effects.append(.scheduleMinimumDisplay(
+            timerID: item.timerID,
+            speechID: item.speechID,
+            inputID: item.inputID,
+            delay: minimumDisplayDuration
+        ))
+        effects.append(.speak(speechID: item.speechID, text: item.text))
+    }
+
+    private mutating func startNextQueuedSpeechIfAvailable(now: Date) -> Bool {
+        guard !state.context.speechQueue.isEmpty else { return false }
+        let next = state.context.speechQueue.removeFirst()
+        startSpeaking(next, now: now)
+        return true
+    }
+
+    private mutating func completeCurrentSpeech(now: Date) {
+        guard state.phase == .speaking else { return }
+        if let until = state.context.minimumDisplayUntil, now < until {
+            state.context.isSpeechFinishPending = true
+            return
+        }
+        if startNextQueuedSpeechIfAvailable(now: now) { return }
+        clearToIdle(scheduleHide: true)
     }
 }

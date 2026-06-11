@@ -336,7 +336,7 @@ The card contains:
 
 - Header with title, status badge, and menu.
 - Context line with working folder, Git/PR/link badges.
-- Conversation history.
+- Conversation history with Markdown-rendered replies. The latest Picky reply is shown in full in the HUD, including Markdown tables rendered as cell grids; older replies may stay compact and can still be opened as reports.
 - Composer for steer/follow-up input.
 - Inline question forms when Pi/tools need user input.
 - Optional inline Pi terminal mode.

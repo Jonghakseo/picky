@@ -200,7 +200,8 @@ export class SessionSupervisor extends EventEmitter {
     });
     this.runtimeEventHandler = new RuntimeEventHandler({
       getSession: (sessionId) => this.mustGet(sessionId),
-      patchSession: (sessionId, patch) => this.patch(sessionId, patch),
+      patchSession: (sessionId, patch, options) => this.patch(sessionId, patch, options),
+      emitToolActivityUpdated: (sessionId, tool) => this.emit("toolActivityUpdated", sessionId, tool),
       consumeNoTurnRanSessionStateRestore: (sessionId) => this.consumeNoTurnRanSessionStateRestore(sessionId),
       appendLog: (sessionId, line) => this.appendLog(sessionId, line),
       materializeTerminalArtifacts: (sessionId) => this.materializeTerminalArtifacts(sessionId),

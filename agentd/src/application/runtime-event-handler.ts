@@ -8,7 +8,7 @@ import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js"
 import { settleActiveTools } from "../domain/tool-activity.js";
 import { categorizeTool, type ToolCategory } from "../domain/tool-categorizer.js";
 import { logAgentd } from "../local-log.js";
-import type { PickyActivitySummary, PickyAgentSession, PickyAssistantRunMetadata, PickyExtensionUiRequest } from "../protocol.js";
+import type { PickyActivitySummary, PickyAgentSession, PickyAssistantRunMetadata, PickyExtensionUiRequest, PickyToolActivity } from "../protocol.js";
 import type { RuntimeEvent } from "../runtime/types.js";
 import { extensionUiLogLine, extensionUiWaitingSummary, mapExtensionUiRequest } from "./extension-ui-request-mapper.js";
 
@@ -29,7 +29,8 @@ interface RuntimeMessageJournal {
 
 interface RuntimeEventHandlerDependencies {
   getSession(sessionId: string): PickyAgentSession;
-  patchSession(sessionId: string, patch: Partial<PickyAgentSession>): Promise<void>;
+  patchSession(sessionId: string, patch: Partial<PickyAgentSession>, options?: { emitSession?: boolean }): Promise<void>;
+  emitToolActivityUpdated(sessionId: string, tool: PickyToolActivity): void;
   consumeNoTurnRanSessionStateRestore?(sessionId: string): Partial<PickyAgentSession> | undefined;
   appendLog(sessionId: string, line: string): Promise<void>;
   materializeTerminalArtifacts(sessionId: string): Promise<void>;
@@ -398,7 +399,7 @@ export class RuntimeEventHandler {
       return;
     }
     const tools = session.tools.filter((tool) => tool.toolCallId !== event.toolCallId);
-    tools.push({
+    const nextTool: PickyToolActivity = {
       ...previous,
       toolCallId: event.toolCallId,
       name: event.name,
@@ -408,9 +409,11 @@ export class RuntimeEventHandler {
       resultPreview: event.resultPreview ?? previous?.resultPreview,
       startedAt: previous?.startedAt ?? new Date().toISOString(),
       endedAt: event.status === "running" ? previous?.endedAt : new Date().toISOString(),
-    });
+    };
+    tools.push(nextTool);
     logAgentd("tool activity", { sessionId, tool: event.name, status: event.status, previewChars: event.preview?.length });
-    await this.dependencies.patchSession(sessionId, { tools });
+    await this.dependencies.patchSession(sessionId, { tools }, { emitSession: false });
+    this.dependencies.emitToolActivityUpdated(sessionId, nextTool);
   }
 }
 

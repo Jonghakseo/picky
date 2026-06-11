@@ -287,6 +287,30 @@ describe("SessionSupervisor", () => {
     expect(events.map((event) => event.seq)).toEqual([1]);
   });
 
+  it("broadcasts tool activity via toolActivityUpdated without an accompanying full sessionUpdated", async () => {
+    const runtime = new ManualRuntime();
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-tool-activity-no-session-update-"));
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("tool activity no session emit"));
+
+    const sessionEvents: PickyAgentSession[] = [];
+    const toolEvents: Array<{ sessionId: string; toolCallId: string; status: string; preview?: string }> = [];
+    supervisor.on("session", (emitted: PickyAgentSession) => sessionEvents.push(emitted));
+    supervisor.on("toolActivityUpdated", (sessionId, tool) => toolEvents.push({ sessionId, toolCallId: tool.toolCallId, status: tool.status, preview: tool.preview }));
+
+    runtime.handle!.emit({ type: "tool", toolCallId: "tool-1", name: "bash", status: "running", preview: "npm test" });
+    await waitUntil(() => toolEvents.length === 1);
+
+    expect(toolEvents).toEqual([{ sessionId: session.id, toolCallId: "tool-1", status: "running", preview: "npm test" }]);
+    expect(sessionEvents).toHaveLength(0);
+    expect(supervisor.get(session.id)?.tools).toMatchObject([{ toolCallId: "tool-1", name: "bash", status: "running", preview: "npm test" }]);
+
+    const persisted = await new SessionStore(dir).loadAll();
+    const restored = persisted.find((entry) => entry.id === session.id);
+    expect(restored?.tools).toMatchObject([{ toolCallId: "tool-1", name: "bash", status: "running", preview: "npm test" }]);
+  });
+
   it("broadcasts activitySummary via sessionActivityUpdated without an accompanying full sessionUpdated", async () => {
     // Phase 1 of the live-update slim-down: streaming tool/thinking turns previously fired a full
     // sessionUpdated (full PickyAgentSession payload) on top of every sessionActivityUpdated, which
@@ -304,7 +328,7 @@ describe("SessionSupervisor", () => {
     supervisor.on("activityUpdated", (_sessionId, summary, seq) => activityEvents.push({ seq, summary }));
 
     // Drive a thinking-only turn so the only patches in flight are activity + thinking preview.
-    // Tool/queue paths still legitimately emit a session for their own fields and would mask the
+    // Queue paths still legitimately emit sessions for their own fields and would mask the
     // assertion we care about here.
     runtime.handle!.emit({ type: "thinking_delta", delta: "reasoning step" });
     await waitUntil(() => activityEvents.length === 1);

@@ -67,6 +67,20 @@ describe("AgentdServer", () => {
     ws.close();
   });
 
+  it("broadcasts toolActivityUpdated events", async () => {
+    const { ws } = await connectWithHello();
+    const pendingToolEvent = waitForEvent(ws, "toolActivityUpdated");
+
+    supervisor.emit("toolActivityUpdated", "session-tools", { toolCallId: "tool-1", name: "bash", status: "running", preview: "npm test" });
+
+    await expect(pendingToolEvent).resolves.toMatchObject({
+      type: "toolActivityUpdated",
+      sessionId: "session-tools",
+      tool: { toolCallId: "tool-1", name: "bash", status: "running", preview: "npm test" },
+    });
+    ws.close();
+  });
+
   it("broadcasts sessionArchivedAuthoritative when setSessionArchived runs (regression for picky_unarchive_pickle not reaching the dock)", async () => {
     const session = await supervisor.create(context("to be archived"));
     const { ws } = await connectWithHello();

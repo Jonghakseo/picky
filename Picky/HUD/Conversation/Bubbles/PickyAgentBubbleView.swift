@@ -11,6 +11,9 @@ struct PickyAgentBubbleView: View {
     let message: PickySessionMessage
     var onOpenAsReport: (() -> Void)? = nil
     var onCopyText: ((String) -> Void)? = nil
+    /// The newest LLM response stays fully visible in the HUD. Older agent
+    /// bubbles still use the compact preview so history remains scannable.
+    var isLatestAgentResponse = false
     var isLatestResponseShortcutHintVisible = false
 
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
@@ -19,8 +22,9 @@ struct PickyAgentBubbleView: View {
         let _ = PickyPerf.event("agent_bubble_body")
         HStack(spacing: PickyConversationBubbleLayout.horizontalStackSpacing) {
             PickyAgentBubbleSurfaceView(
-                markdown: previewText,
+                markdown: displayedMarkdown,
                 maxBubbleWidth: bubbleMaxWidth,
+                codeBlockMaxLines: displayedCodeBlockMaxLines,
                 showsShortcutBadge: isLatestResponseShortcutHintVisible,
                 onOpenAsReport: hoverIconAction,
                 onCopyText: copyTextAction
@@ -35,10 +39,14 @@ struct PickyAgentBubbleView: View {
         PickyConversationBubbleLayout.maxBubbleWidth(forDetailWidth: pickyHUDDetailWidth)
     }
 
-    private var previewText: String {
+    var displayedMarkdown: String {
         let text = displayText
-        guard message.kind == .agentText else { return text }
+        guard message.kind == .agentText, !isLatestAgentResponse else { return text }
         return PickyAgentResponsePreview.truncatedMarkdown(text)
+    }
+
+    var displayedCodeBlockMaxLines: Int {
+        isLatestAgentResponse ? 0 : PickyAgentResponsePreview.codeBlockMaxLines
     }
 
     private var copyTextAction: (() -> Void)? {
@@ -47,11 +55,18 @@ struct PickyAgentBubbleView: View {
         return { onCopyText(text) }
     }
 
-    /// Only expose the hover icon when the bubble's full text wouldn't fit in
-    /// the card preview — i.e., the user is currently looking at a truncated
-    /// view and might want to open the message in the markdown viewer.
+    /// Older bubbles expose the report affordance only when their preview is
+    /// visibly truncated. The latest LLM response is already shown in full, but
+    /// still keeps the same large-window report affordance on hover/context menu.
+    var shouldOfferReport: Bool {
+        if isLatestAgentResponse {
+            return message.openAsReportMarkdown != nil
+        }
+        return PickyAgentResponsePreview.isTruncated(displayText)
+    }
+
     private var hoverIconAction: (() -> Void)? {
-        guard let onOpenAsReport, PickyAgentResponsePreview.isTruncated(displayText) else { return nil }
+        guard let onOpenAsReport, shouldOfferReport else { return nil }
         return onOpenAsReport
     }
 

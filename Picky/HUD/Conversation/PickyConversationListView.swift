@@ -234,6 +234,7 @@ struct PickyConversationListView: View {
                 message: message,
                 onOpenAsReport: openMessageReportAction(for: message),
                 onCopyText: { viewModel.copyMessageText($0) },
+                isLatestAgentResponse: isLatestAgentResponse(message),
                 isLatestResponseShortcutHintVisible: shouldShowLatestResponseShortcutHint(for: message)
             )
         case .agentThinking:
@@ -300,8 +301,12 @@ struct PickyConversationListView: View {
         }
     }
 
+    private func isLatestAgentResponse(_ message: PickySessionMessage) -> Bool {
+        message.kind == .agentText && message.id == session.latestAgentResponseReportMessageID
+    }
+
     private func shouldShowLatestResponseShortcutHint(for message: PickySessionMessage) -> Bool {
-        isCommandShortcutHintVisible && message.id == session.latestAgentResponseReportMessageID
+        isCommandShortcutHintVisible && isLatestAgentResponse(message)
     }
 
     /// Returns a closure that re-sends `session.lastRequestText` via `steer`, but

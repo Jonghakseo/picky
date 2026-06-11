@@ -235,6 +235,15 @@ struct PickyUserBubblePixelWidthTests {
             "tables should render through the AppKit table block view, not flatten into a paragraph-only text view (types=\(typeNames))"
         )
     }
+
+    @Test func agentSurfaceCanDisableCodeBlockTruncationForLatestResponse() {
+        let code = "```\n" + (1...6).map { "line \($0)" }.joined(separator: "\n") + "\n```"
+        let defaultSurface = configuredAgentSurface(markdown: code, codeBlockMaxLines: PickyAgentResponsePreview.codeBlockMaxLines)
+        let fullSurface = configuredAgentSurface(markdown: code, codeBlockMaxLines: 0)
+
+        #expect(collectTextFieldStrings(defaultSurface).contains { $0.contains("more lines") })
+        #expect(!collectTextFieldStrings(fullSurface).contains { $0.contains("more lines") })
+    }
 }
 
 private func collectUserBubbleSurfaces(_ root: NSView) -> [PickyUserBubbleSurfaceNSView] {
@@ -255,6 +264,34 @@ private func collectAgentBubbleSurfaces(_ root: NSView) -> [PickyAgentBubbleSurf
     }
     for sub in root.subviews {
         out.append(contentsOf: collectAgentBubbleSurfaces(sub))
+    }
+    return out
+}
+
+@MainActor
+private func configuredAgentSurface(markdown: String, codeBlockMaxLines: Int) -> PickyAgentBubbleSurfaceNSView {
+    let surface = PickyAgentBubbleSurfaceNSView()
+    surface.configure(
+        markdown: markdown,
+        maxBubbleWidth: 600,
+        codeBlockMaxLines: codeBlockMaxLines,
+        showsShortcutBadge: false,
+        onOpenAsReport: {},
+        onCopyText: nil
+    )
+    let size = surface.measuredSize(forRootWidth: 600)
+    surface.frame = NSRect(origin: .zero, size: size)
+    surface.layoutSubtreeIfNeeded()
+    return surface
+}
+
+private func collectTextFieldStrings(_ root: NSView) -> [String] {
+    var out: [String] = []
+    if let field = root as? NSTextField {
+        out.append(field.stringValue)
+    }
+    for subview in root.subviews {
+        out.append(contentsOf: collectTextFieldStrings(subview))
     }
     return out
 }

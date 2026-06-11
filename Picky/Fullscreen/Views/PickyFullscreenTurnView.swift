@@ -213,6 +213,7 @@ private struct PickyFullscreenAgentMessageView: View {
             PickyAgentBubbleSurfaceView(
                 markdown: displayText,
                 maxBubbleWidth: bubbleMaxWidth,
+                codeBlockMaxLines: PickyAgentResponsePreview.codeBlockMaxLines,
                 showsShortcutBadge: false,
                 onOpenAsReport: nil,
                 onCopyText: copyTextAction

@@ -981,6 +981,25 @@ struct PickyConversationCardViewTests {
         #expect(longBubble.displayedMarkdownPreview == exactCharacters + "...")
     }
 
+    @Test func latestAgentBubbleShowsFullMarkdownAndStillOffersReport() {
+        let eightLines = (1...8).map { "line \($0)" }.joined(separator: "\n")
+        let nineLines = eightLines + "\nline 9"
+        let agentMessage = message("m-agent", kind: .agentText, text: nineLines)
+
+        let olderBubble = PickyAgentBubbleView(message: agentMessage, onOpenAsReport: {})
+        let latestBubble = PickyAgentBubbleView(
+            message: agentMessage,
+            onOpenAsReport: {},
+            isLatestAgentResponse: true
+        )
+
+        #expect(olderBubble.displayedMarkdown == eightLines + "...")
+        #expect(olderBubble.displayedCodeBlockMaxLines == PickyAgentResponsePreview.codeBlockMaxLines)
+        #expect(latestBubble.displayedMarkdown == nineLines)
+        #expect(latestBubble.displayedCodeBlockMaxLines == 0)
+        #expect(latestBubble.shouldOfferReport)
+    }
+
     // MARK: - PR11 regression: per-turn agent_activity snapshot
 
     @Test func multipleTurnsRenderSeparateActivitySnapshots() {

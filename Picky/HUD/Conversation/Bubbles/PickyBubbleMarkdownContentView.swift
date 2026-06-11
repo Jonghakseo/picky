@@ -28,6 +28,9 @@ final class PickyBubbleMarkdownContentView: NSView {
     private let linkDelegate = PickyMarkdownLinkTextViewDelegate()
     private var blockViews: [PickyMarkdownBlockNSView] = []
     private var cachedBlocks: [RenderBlock] = []
+    /// Last per-code-block line cap used to build block views. `0` means no
+    /// code-block truncation, used for the newest LLM response bubble.
+    private var cachedCodeBlockMaxLines = PickyAgentResponsePreview.codeBlockMaxLines
     /// Last global app font scale this view rendered with. When the user hits
     /// ⌘+ / ⌘-, `PickyAppFontScaleStore.staticScale` changes and the cached
     /// `RenderBlock` array would otherwise short-circuit the rebuild because
@@ -60,6 +63,7 @@ final class PickyBubbleMarkdownContentView: NSView {
 
     func configure(
         markdown: String,
+        codeBlockMaxLines: Int = PickyAgentResponsePreview.codeBlockMaxLines,
         onOpenAsReport: (() -> Void)?,
         onCopyText: (() -> Void)?,
         onEditText: (() -> Void)?
@@ -68,20 +72,22 @@ final class PickyBubbleMarkdownContentView: NSView {
         let currentScale = PickyAppFontScaleStore.staticCGScale
         let markdownDidChange = markdown != lastMarkdown
         let scaleDidChange = currentScale != cachedFontScale
+        let codeBlockLimitDidChange = codeBlockMaxLines != cachedCodeBlockMaxLines
 
-        // Short-circuit when both the markdown payload and the global font
-        // scale are unchanged from the last configure call. Callback setters
-        // still run below so hover/copy actions stay current. Skipping
-        // `renderBlocks` + `needsLayout` + `invalidateIntrinsicContentSize`
-        // is the streaming hot-path win: an unrelated session republish that
-        // re-invokes SwiftUI's `updateNSView` for this bubble now costs only
-        // three property assignments instead of a full cmark parse.
-        if markdownDidChange || scaleDidChange {
+        // Short-circuit when the markdown payload, global font scale, and
+        // code-block preview policy are unchanged from the last configure call.
+        // Callback setters still run below so hover/copy actions stay current.
+        // Skipping `renderBlocks` + `needsLayout` +
+        // `invalidateIntrinsicContentSize` is the streaming hot-path win: an
+        // unrelated session republish that re-invokes SwiftUI's `updateNSView`
+        // for this bubble now costs only three property assignments instead of
+        // a full cmark parse.
+        if markdownDidChange || scaleDidChange || codeBlockLimitDidChange {
             let blocks = PickyPerf.interval("render_blocks") { renderBlocks(from: markdown) }
-            if blocks != cachedBlocks || scaleDidChange {
+            if blocks != cachedBlocks || scaleDidChange || codeBlockLimitDidChange {
                 PickyPerf.interval("rebuild_block_views") {
                     blockViews.forEach { $0.removeFromSuperview() }
-                    blockViews = blocks.map { makeBlockView(for: $0) }
+                    blockViews = blocks.map { makeBlockView(for: $0, codeBlockMaxLines: codeBlockMaxLines) }
                     blockViews.forEach { addSubview($0) }
                     cachedBlocks = blocks
                 }
@@ -96,6 +102,7 @@ final class PickyBubbleMarkdownContentView: NSView {
             // re-enter this branch and re-parse markdown until the next
             // mutation, defeating the short-circuit.
             cachedFontScale = currentScale
+            cachedCodeBlockMaxLines = codeBlockMaxLines
             lastMarkdown = markdown
             needsLayout = true
             invalidateIntrinsicContentSize()
@@ -197,7 +204,7 @@ final class PickyBubbleMarkdownContentView: NSView {
         return groups.isEmpty ? [.inline([.paragraph("")])] : groups
     }
 
-    private func makeBlockView(for block: RenderBlock) -> PickyMarkdownBlockNSView {
+    private func makeBlockView(for block: RenderBlock, codeBlockMaxLines: Int) -> PickyMarkdownBlockNSView {
         let view: PickyMarkdownBlockNSView
         switch block {
         case .inline(let blocks):
@@ -205,7 +212,7 @@ final class PickyBubbleMarkdownContentView: NSView {
         case .table(let headers, let rows):
             view = PickyTableMarkdownBlockView(headers: headers, rows: rows)
         case .codeBlock(let text):
-            view = PickyCodeMarkdownBlockView(text: text)
+            view = PickyCodeMarkdownBlockView(text: text, maxLines: codeBlockMaxLines)
         }
         view.onOpenAsReport = onOpenAsReport
         view.onCopyText = onCopyText
@@ -322,9 +329,8 @@ private final class PickyCodeMarkdownBlockView: PickyMarkdownBlockNSView {
     private let displayText: String
     private let omittedCount: Int
 
-    init(text: String) {
+    init(text: String, maxLines: Int = PickyAgentResponsePreview.codeBlockMaxLines) {
         let lines = text.components(separatedBy: "\n")
-        let maxLines = PickyAgentResponsePreview.codeBlockMaxLines
         let isTruncated = maxLines > 0 && lines.count > maxLines
         displayText = isTruncated ? lines.prefix(maxLines).joined(separator: "\n") : text
         omittedCount = isTruncated ? lines.count - maxLines : 0

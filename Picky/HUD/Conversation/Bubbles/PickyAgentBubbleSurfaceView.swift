@@ -13,6 +13,9 @@ import SwiftUI
 struct PickyAgentBubbleSurfaceView: NSViewRepresentable {
     let markdown: String
     let maxBubbleWidth: CGFloat
+    /// `0` disables per-code-block preview truncation. The latest agent
+    /// response uses that so the HUD shows the whole LLM reply inline.
+    let codeBlockMaxLines: Int
     let showsShortcutBadge: Bool
     let onOpenAsReport: (() -> Void)?
     let onCopyText: (() -> Void)?
@@ -35,6 +38,7 @@ struct PickyAgentBubbleSurfaceView: NSViewRepresentable {
         view.configure(
             markdown: markdown,
             maxBubbleWidth: maxBubbleWidth,
+            codeBlockMaxLines: codeBlockMaxLines,
             showsShortcutBadge: showsShortcutBadge,
             onOpenAsReport: onOpenAsReport,
             onCopyText: onCopyText
@@ -135,12 +139,14 @@ final class PickyAgentBubbleSurfaceNSView: NSView {
     func configure(
         markdown: String,
         maxBubbleWidth: CGFloat,
+        codeBlockMaxLines: Int,
         showsShortcutBadge: Bool,
         onOpenAsReport: (() -> Void)?,
         onCopyText: (() -> Void)?
     ) {
         markdownView.configure(
             markdown: markdown,
+            codeBlockMaxLines: codeBlockMaxLines,
             onOpenAsReport: onOpenAsReport,
             onCopyText: { [weak self] in self?.copyTextClicked() },
             onEditText: nil

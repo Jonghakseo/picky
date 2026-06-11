@@ -422,23 +422,26 @@ private final class PickyCodeMarkdownBlockView: PickyMarkdownBlockNSView {
 
 private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
     private enum Metrics {
-        static let padding: CGFloat = 8
-        static let rowSpacing: CGFloat = 3
         static let cornerRadius: CGFloat = 7
     }
 
-    private let headerField = NSTextField(labelWithString: "")
-    private let bodyField = NSTextField(labelWithString: "")
+    private let scrollView = NSScrollView()
+    private let gridView: GridDocumentView
+    private let columnWidths: [CGFloat]
+    private var cachedTableLayout: (rowHeights: [CGFloat], size: NSSize)?
 
     init(headers: [String], rows: [[String]]) {
+        columnWidths = Self.tableColumnWidths(columnCount: headers.count, firstHeader: headers.first ?? "")
+        gridView = GridDocumentView(headers: headers, rows: rows, columnWidths: columnWidths)
         super.init(frame: .zero)
-        configure(field: headerField, font: NSFont.systemFont(ofSize: PickyHUDTypography.Size.supporting, weight: .semibold), color: NSColor(DS.Colors.textPrimary))
-        configure(field: bodyField, font: NSFont.monospacedSystemFont(ofSize: PickyHUDTypography.Size.supporting, weight: .regular), color: NSColor(DS.Colors.textPrimary.opacity(0.92)))
-        headerField.stringValue = headers.joined(separator: " · ")
-        bodyField.stringValue = rows.map { $0.joined(separator: " · ") }.joined(separator: "\n")
-        bodyField.isHidden = rows.isEmpty
-        addSubview(headerField)
-        addSubview(bodyField)
+
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasHorizontalScroller = true
+        scrollView.hasVerticalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.documentView = gridView
+        addSubview(scrollView)
     }
 
     @available(*, unavailable)
@@ -447,39 +450,16 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
     override func computeMeasuredSize(forWidth width: CGFloat) -> NSSize {
         let cap = max(0, width)
         guard cap > 0 else { return .zero }
-        let textCap = max(0, cap - 2 * Metrics.padding)
-        let headerSize = headerField.attributedStringValue.boundingRect(
-            with: NSSize(width: textCap, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        ).size
-        let bodySize = bodyField.isHidden ? .zero : bodyField.attributedStringValue.boundingRect(
-            with: NSSize(width: textCap, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        ).size
-        let contentWidth = max(ceil(headerSize.width), ceil(bodySize.width))
-        let bodySpacing = bodyField.isHidden ? 0 : Metrics.rowSpacing
-        return NSSize(
-            width: min(cap, contentWidth + 2 * Metrics.padding),
-            height: Metrics.padding + ceil(headerSize.height) + bodySpacing + ceil(bodySize.height) + Metrics.padding
-        )
+        let layout = measuredTableLayout()
+        return NSSize(width: min(cap, layout.size.width), height: layout.size.height)
     }
 
     override func layout() {
         super.layout()
-        let textWidth = max(0, bounds.width - 2 * Metrics.padding)
-        let headerHeight = ceil(headerField.attributedStringValue.boundingRect(
-            with: NSSize(width: textWidth, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        ).height)
-        headerField.frame = NSRect(x: Metrics.padding, y: Metrics.padding, width: textWidth, height: headerHeight)
-        if !bodyField.isHidden {
-            bodyField.frame = NSRect(
-                x: Metrics.padding,
-                y: Metrics.padding + headerHeight + Metrics.rowSpacing,
-                width: textWidth,
-                height: max(0, bounds.height - Metrics.padding * 2 - headerHeight - Metrics.rowSpacing)
-            )
-        }
+        let layout = measuredTableLayout()
+        scrollView.frame = bounds
+        gridView.frame = NSRect(origin: .zero, size: layout.size)
+        gridView.apply(rowHeights: layout.rowHeights)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -487,16 +467,178 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
         let path = NSBezierPath(roundedRect: bounds, xRadius: Metrics.cornerRadius, yRadius: Metrics.cornerRadius)
         NSColor(DS.Colors.surface2).setFill()
         path.fill()
+        NSColor(DS.Colors.borderSubtle).setStroke()
+        path.lineWidth = 0.8
+        path.stroke()
     }
 
-    private func configure(field: NSTextField, font: NSFont, color: NSColor) {
-        field.font = font
-        field.textColor = color
-        field.backgroundColor = .clear
-        field.isBordered = false
-        field.isEditable = false
-        field.isSelectable = true
-        field.lineBreakMode = .byWordWrapping
-        field.maximumNumberOfLines = 0
+    private func measuredTableLayout() -> (rowHeights: [CGFloat], size: NSSize) {
+        if let cachedTableLayout { return cachedTableLayout }
+        let rowHeights = gridView.measureRowHeights()
+        let size = NSSize(
+            width: columnWidths.reduce(0, +),
+            height: rowHeights.reduce(0, +)
+        )
+        let layout = (rowHeights: rowHeights, size: size)
+        cachedTableLayout = layout
+        return layout
+    }
+
+    private static func tableColumnWidths(columnCount: Int, firstHeader: String) -> [CGFloat] {
+        let firstIsIndex = isIndexColumnHeader(firstHeader)
+        return (0..<columnCount).map {
+            tableColumnWidth(index: $0, columnCount: columnCount, firstIsIndex: firstIsIndex)
+        }
+    }
+
+    private static func isIndexColumnHeader(_ header: String) -> Bool {
+        let trimmed = header.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if trimmed.isEmpty { return true }
+        return ["#", "no", "no.", "번호", "순번", "idx", "index"].contains(trimmed)
+    }
+
+    private static func tableColumnWidth(index: Int, columnCount: Int, firstIsIndex: Bool) -> CGFloat {
+        let scale = PickyAppFontScaleStore.staticCGScale
+        if index == 0 && columnCount > 2 && firstIsIndex { return 46 * scale }
+        if columnCount >= 5 {
+            if index == 1 { return 104 * scale }
+            if index == columnCount - 1 { return 280 * scale }
+            return 260 * scale
+        }
+        if columnCount == 4 { return 220 * scale }
+        return 190 * scale
+    }
+
+    private final class GridDocumentView: NSView {
+        private enum Metrics {
+            static let horizontalPadding: CGFloat = 8
+            static let verticalPadding: CGFloat = 6
+            static let minRowHeight: CGFloat = 28
+            static let separatorWidth: CGFloat = 0.5
+        }
+
+        private let columnWidths: [CGFloat]
+        private let cellFields: [[NSTextField]]
+        private var rowHeights: [CGFloat] = []
+
+        override var isFlipped: Bool { true }
+        override var isOpaque: Bool { false }
+
+        init(headers: [String], rows: [[String]], columnWidths: [CGFloat]) {
+            self.columnWidths = columnWidths
+            let tableRows = [headers] + rows
+            self.cellFields = tableRows.enumerated().map { rowIndex, cells in
+                cells.enumerated().map { columnIndex, cell in
+                    Self.makeCellField(
+                        text: cell,
+                        isHeader: rowIndex == 0,
+                        columnIndex: columnIndex
+                    )
+                }
+            }
+            super.init(frame: .zero)
+            cellFields.flatMap { $0 }.forEach { addSubview($0) }
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+        func measureRowHeights() -> [CGFloat] {
+            cellFields.map { row in
+                let maxCellHeight = row.enumerated().map { columnIndex, field in
+                    let columnWidth = columnWidths.indices.contains(columnIndex) ? columnWidths[columnIndex] : columnWidths.last ?? 160
+                    let textWidth = max(1, columnWidth - 2 * Metrics.horizontalPadding)
+                    let rect = field.attributedStringValue.boundingRect(
+                        with: NSSize(width: textWidth, height: .greatestFiniteMagnitude),
+                        options: [.usesLineFragmentOrigin, .usesFontLeading]
+                    )
+                    return ceil(rect.height) + 2 * Metrics.verticalPadding
+                }.max() ?? 0
+                return max(Metrics.minRowHeight, maxCellHeight)
+            }
+        }
+
+        func apply(rowHeights: [CGFloat]) {
+            self.rowHeights = rowHeights
+            needsLayout = true
+            needsDisplay = true
+        }
+
+        override func layout() {
+            super.layout()
+            var y: CGFloat = 0
+            for rowIndex in cellFields.indices {
+                let rowHeight = rowHeights.indices.contains(rowIndex) ? rowHeights[rowIndex] : Metrics.minRowHeight
+                var x: CGFloat = 0
+                for columnIndex in cellFields[rowIndex].indices {
+                    let columnWidth = columnWidths.indices.contains(columnIndex) ? columnWidths[columnIndex] : columnWidths.last ?? 160
+                    cellFields[rowIndex][columnIndex].frame = NSRect(
+                        x: x + Metrics.horizontalPadding,
+                        y: y + Metrics.verticalPadding,
+                        width: max(0, columnWidth - 2 * Metrics.horizontalPadding),
+                        height: max(0, rowHeight - 2 * Metrics.verticalPadding)
+                    )
+                    x += columnWidth
+                }
+                y += rowHeight
+            }
+        }
+
+        override func draw(_ dirtyRect: NSRect) {
+            super.draw(dirtyRect)
+            var y: CGFloat = 0
+            for rowIndex in cellFields.indices {
+                let rowHeight = rowHeights.indices.contains(rowIndex) ? rowHeights[rowIndex] : Metrics.minRowHeight
+                let rowRect = NSRect(x: 0, y: y, width: bounds.width, height: rowHeight)
+                let fillColor = rowIndex == 0 ? NSColor(DS.Colors.surface3.opacity(0.72)) : NSColor(DS.Colors.surface2.opacity(0.38))
+                fillColor.setFill()
+                rowRect.fill()
+                NSColor(DS.Colors.borderSubtle.opacity(0.72)).setFill()
+                NSRect(x: 0, y: y + rowHeight - Metrics.separatorWidth, width: bounds.width, height: Metrics.separatorWidth).fill()
+                y += rowHeight
+            }
+
+            var x: CGFloat = 0
+            for width in columnWidths.dropLast() {
+                x += width
+                NSColor(DS.Colors.borderSubtle.opacity(0.72)).setFill()
+                NSRect(x: x - Metrics.separatorWidth, y: 0, width: Metrics.separatorWidth, height: bounds.height).fill()
+            }
+        }
+
+        private static func makeCellField(text: String, isHeader: Bool, columnIndex: Int) -> NSTextField {
+            let field = NSTextField(labelWithString: "")
+            field.attributedStringValue = attributedCellString(text, isHeader: isHeader, columnIndex: columnIndex)
+            field.backgroundColor = .clear
+            field.isBordered = false
+            field.isEditable = false
+            field.isSelectable = true
+            field.lineBreakMode = .byWordWrapping
+            field.maximumNumberOfLines = 0
+            return field
+        }
+
+        private static func attributedCellString(_ text: String, isHeader: Bool, columnIndex: Int) -> NSAttributedString {
+            let content = text.isEmpty ? " " : text
+            let attr = NSMutableAttributedString(
+                attributedString: PickyMarkdownInlineTextView.buildAttributedString(from: [.paragraph(content)])
+            )
+            let foreground = isHeader ? NSColor(DS.Colors.textPrimary) : NSColor(DS.Colors.textPrimary.opacity(0.92))
+            attr.addAttribute(.foregroundColor, value: foreground, range: NSRange(location: 0, length: attr.length))
+            if isHeader {
+                attr.enumerateAttribute(.font, in: NSRange(location: 0, length: attr.length)) { value, range, _ in
+                    let current = value as? NSFont ?? NSFont.systemFont(ofSize: PickyHUDTypography.Size.body)
+                    let replacement = NSFont.systemFont(ofSize: current.pointSize, weight: .semibold)
+                    attr.addAttribute(.font, value: replacement, range: range)
+                }
+            }
+            if columnIndex == 0 && !isHeader {
+                let style = NSMutableParagraphStyle()
+                style.alignment = .center
+                style.lineHeightMultiple = 1.1
+                attr.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: attr.length))
+            }
+            return attr
+        }
     }
 }

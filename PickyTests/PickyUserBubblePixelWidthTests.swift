@@ -236,6 +236,20 @@ struct PickyUserBubblePixelWidthTests {
         )
     }
 
+    @Test func agentTableRendersCellsSeparatelyInsteadOfDotJoinedPlainText() {
+        let markdown = "| # | 일시 | 사용자/출처 | 대상 |\n| --- | --- | --- | --- |\n| 1 | 2026-05 | `npribeiro` | ChatGPT + Codex |"
+        let surface = configuredAgentSurface(markdown: markdown, codeBlockMaxLines: PickyAgentResponsePreview.codeBlockMaxLines)
+        let strings = collectTextFieldStrings(surface)
+
+        #expect(strings.contains("#"))
+        #expect(strings.contains("일시"))
+        #expect(strings.contains("사용자/출처"))
+        #expect(strings.contains("1"))
+        #expect(strings.contains("2026-05"))
+        #expect(strings.contains("npribeiro"))
+        #expect(!strings.contains { $0.contains(" · ") })
+    }
+
     @Test func agentSurfaceCanDisableCodeBlockTruncationForLatestResponse() {
         let code = "```\n" + (1...6).map { "line \($0)" }.joined(separator: "\n") + "\n```"
         let defaultSurface = configuredAgentSurface(markdown: code, codeBlockMaxLines: PickyAgentResponsePreview.codeBlockMaxLines)

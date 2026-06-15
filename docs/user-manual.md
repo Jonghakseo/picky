@@ -522,6 +522,7 @@ The Pickle card menu contains:
 | Menu item | Description |
 | --- | --- |
 | Duplicate | Duplicate this Pickle session. |
+| Compact | Ask Pi to compress older session context (see [§9.3](#93-compaction-ux)). Available only when the session is not running or compacting. |
 | Stop session | Abort the active session. |
 | Archive | Archive the Pickle. |
 

@@ -167,7 +167,7 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
         // left accent bar and no chevron.
         VStack(alignment: .leading, spacing: PickyHUDDockGroupContentSpacing) {
             header
-            content()
+            collapsibleContent
         }
         .opacity(pullOutBadgeText != nil ? 0.5 : 1)
         .overlay(alignment: .top) {
@@ -223,6 +223,28 @@ struct PickyHUDDockGroupContainer<Content: View>: View {
             onRenameCommit(trimmed)
         } else {
             onRenameCancel()
+        }
+    }
+
+    /// Wraps the group body so the collapsed folder badge (or collapsed empty
+    /// slot) carries the same right-click settings menu as the header. When
+    /// expanded, members keep their own per-Pickle menus untouched.
+    @ViewBuilder
+    private var collapsibleContent: some View {
+        if group.isCollapsed {
+            content()
+                .contextMenu {
+                    PickyHUDDockGroupContextMenu(
+                        group: group,
+                        onRename: { presentRenameDialog() },
+                        onToggleCollapsed: onToggleCollapsed,
+                        onSetColor: onSetColor,
+                        onUngroup: onUngroup,
+                        onDeleteWithArchive: onDeleteWithArchive
+                    )
+                }
+        } else {
+            content()
         }
     }
 

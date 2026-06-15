@@ -202,8 +202,18 @@ extension PickyDockLayout {
     /// Drop any session id no longer present in `universe` from both
     /// top-level entries and every group's member list. Returns `true`
     /// when any change was applied.
+    ///
+    /// `retainedGroupMemberIDs` are kept inside their groups even when absent
+    /// from `universe`. This preserves group membership for archived Pickles
+    /// (which leave the active session universe) so restoring one returns it
+    /// to its original group/position instead of leaking out to the top
+    /// level. Retention applies to group members only — a top-level archived
+    /// Pickle still follows the existing prune-and-reappend behavior.
     @discardableResult
-    mutating func pruneUnknownSessions(universe: Set<String>) -> Bool {
+    mutating func pruneUnknownSessions(
+        universe: Set<String>,
+        retainedGroupMemberIDs: Set<String> = []
+    ) -> Bool {
         var changed = false
         var newEntries: [PickyDockEntry] = []
         newEntries.reserveCapacity(entries.count)
@@ -217,7 +227,9 @@ extension PickyDockLayout {
                 }
             case .group(var g):
                 let before = g.memberSessionIDs.count
-                g.memberSessionIDs.removeAll { !universe.contains($0) }
+                g.memberSessionIDs.removeAll {
+                    !universe.contains($0) && !retainedGroupMemberIDs.contains($0)
+                }
                 if g.memberSessionIDs.count != before { changed = true }
                 newEntries.append(.group(g))
             }

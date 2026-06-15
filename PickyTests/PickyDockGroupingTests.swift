@@ -38,6 +38,28 @@ final class PickyDockGroupingTests: XCTestCase {
         XCTAssertEqual(g.memberSessionIDs, ["b"])
     }
 
+    func testPruneRetainsArchivedGroupMembersButStillDropsTopLevelAndUnknown() {
+        var layout = PickyDockLayout(entries: [
+            .session(id: "a"),
+            .session(id: "archivedTop"),
+            .group(PickyDockGroup(id: "g1", name: "G", color: .teal, memberSessionIDs: ["b", "archivedMember", "gone"]))
+        ])
+        let changed = layout.pruneUnknownSessions(
+            universe: ["a", "b"],
+            retainedGroupMemberIDs: ["archivedMember", "archivedTop"]
+        )
+        XCTAssertTrue(changed)
+        // Top-level retention does not apply: archivedTop is dropped because
+        // the active universe no longer contains it.
+        XCTAssertEqual(layout.entries.count, 2)
+        // "gone" (neither active nor retained) is pruned; "archivedMember" is
+        // kept so an archived Pickle restores back into its group.
+        guard case .group(let g) = layout.entries[1] else {
+            return XCTFail("expected group entry retained")
+        }
+        XCTAssertEqual(g.memberSessionIDs, ["b", "archivedMember"])
+    }
+
     func testMoveSessionAcrossContainersIsAtomic() {
         var layout = PickyDockLayout(entries: [
             .session(id: "a"),

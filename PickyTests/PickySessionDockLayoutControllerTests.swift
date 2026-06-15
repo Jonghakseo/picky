@@ -94,6 +94,52 @@ final class PickySessionDockLayoutControllerTests: XCTestCase {
         XCTAssertEqual(store.savedLayouts.map(\.sessionIDs), [["a"]])
     }
 
+    func testArchivedGroupMemberIsRetainedAndRestoresIntoOriginalGroup() {
+        let store = FakeDockLayoutStore(layout: PickyDockLayout(entries: [
+            .session(id: "a"),
+            .group(PickyDockGroup(id: "g", name: "G", color: .teal, memberSessionIDs: ["b", "c"]))
+        ]))
+        let controller = PickySessionDockLayoutController(store: store)
+
+        // Archive "b": it leaves the active universe but is still known
+        // (archived), so its group membership must be retained.
+        XCTAssertFalse(controller.reconcile(
+            activeSessionIDs: ["c", "a"],
+            archivedSessionIDs: ["b"],
+            legacyManualOrder: []
+        ))
+        XCTAssertEqual(controller.layout.entryDescriptions, ["session:a", "group:g[b,c]"])
+
+        // Unarchive "b": it re-enters the active universe and stays inside its
+        // original group at its original member position instead of leaking
+        // out to the top level.
+        XCTAssertFalse(controller.reconcile(
+            activeSessionIDs: ["b", "c", "a"],
+            archivedSessionIDs: [],
+            legacyManualOrder: []
+        ))
+        XCTAssertEqual(controller.layout.entryDescriptions, ["session:a", "group:g[b,c]"])
+        // No layout change was ever persisted across the archive/restore cycle.
+        XCTAssertEqual(store.savedLayouts.map(\.entryDescriptions), [])
+    }
+
+    func testDeletedGroupMemberIsPrunedWhenNeitherActiveNorArchived() {
+        let store = FakeDockLayoutStore(layout: PickyDockLayout(entries: [
+            .session(id: "a"),
+            .group(PickyDockGroup(id: "g", name: "G", color: .teal, memberSessionIDs: ["b", "gone"]))
+        ]))
+        let controller = PickySessionDockLayoutController(store: store)
+
+        // "gone" is permanently deleted: absent from both active and archived
+        // universes, so it must be pruned from the group.
+        XCTAssertTrue(controller.reconcile(
+            activeSessionIDs: ["b", "a"],
+            archivedSessionIDs: [],
+            legacyManualOrder: []
+        ))
+        XCTAssertEqual(controller.layout.entryDescriptions, ["session:a", "group:g[b]"])
+    }
+
     func testArchivedGroupMembersReconcileBackAsUngroupedBottomSessionsWhenUnarchived() {
         let store = FakeDockLayoutStore(layout: PickyDockLayout(entries: [
             .session(id: "a"),

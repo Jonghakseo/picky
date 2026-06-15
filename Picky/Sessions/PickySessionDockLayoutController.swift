@@ -30,10 +30,19 @@ final class PickySessionDockLayoutController {
     /// sessions are therefore appended by iterating the active list in reverse
     /// so the newest session lands at the visual bottom/end slot.
     @discardableResult
-    func reconcile(activeSessionIDs: [String], legacyManualOrder: [String]) -> Bool {
+    func reconcile(
+        activeSessionIDs: [String],
+        archivedSessionIDs: [String] = [],
+        legacyManualOrder: [String]
+    ) -> Bool {
         let universe = Set(activeSessionIDs)
         var next = layout
-        var changed = next.pruneUnknownSessions(universe: universe)
+        // Archived Pickles leave the active universe but are still known, so
+        // keep them inside their group to survive an archive/restore cycle.
+        var changed = next.pruneUnknownSessions(
+            universe: universe,
+            retainedGroupMemberIDs: Set(archivedSessionIDs)
+        )
 
         if next.entries.isEmpty && !legacyManualOrder.isEmpty {
             for sessionID in legacyManualOrder.reversed() where universe.contains(sessionID) {

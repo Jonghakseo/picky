@@ -2570,7 +2570,11 @@ final class PickySessionListViewModel: ObservableObject {
     /// first and `entries` is top-down = oldest first). New sessions then
     /// fall through to the standard "append to end" branch below.
     private func reconcileDockLayout() {
-        guard dockLayoutController.reconcile(activeSessionIDs: sessions.map(\.id), legacyManualOrder: manualOrder) else { return }
+        guard dockLayoutController.reconcile(
+            activeSessionIDs: sessions.map(\.id),
+            archivedSessionIDs: archivedSessions.map(\.id),
+            legacyManualOrder: manualOrder
+        ) else { return }
         dockLayout = dockLayoutController.layout
     }
 

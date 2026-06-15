@@ -1257,13 +1257,10 @@ struct PickyHUDDockRailView: View {
     }
 
     /// Accent color the next group will adopt. Surfaced to the creator
-    /// popover so the user sees the upcoming swatch alongside the name
-    /// field instead of being surprised by the auto-rotation after
-    /// pressing Create. Derived from how many group entries already live
-    /// in the layout via the projection's items.
+    /// popover so the user sees the swatch alongside the name field. New
+    /// groups always default to a neutral gray.
     private var nextSuggestedGroupColor: PickyDockGroupColor {
-        let existingGroupCount = layout.groups.count
-        return PickyDockGroupColor.nextColor(forExistingGroupCount: existingGroupCount)
+        PickyDockGroupColor.defaultColor
     }
 
     private var collapsibleAddAgentSlot: some View {

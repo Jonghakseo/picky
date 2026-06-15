@@ -61,7 +61,7 @@ final class PickySessionDockLayoutControllerTests: XCTestCase {
             return XCTFail("expected created group at bottom")
         }
         XCTAssertEqual(created.name, "Product")
-        XCTAssertEqual(created.color, PickyDockGroupColor.amber)
+        XCTAssertEqual(created.color, PickyDockGroupColor.defaultColor)
         XCTAssertEqual(store.savedLayouts.last?.entryDescriptions, ["session:b", "group:old[d]", "group:\(groupID)[a,c,e]"])
     }
 

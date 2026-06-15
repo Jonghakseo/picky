@@ -298,18 +298,17 @@ final class PickyDockGroupingTests: XCTestCase {
         XCTAssertEqual(createdGroup.memberSessionIDs, ["a", "c", "e"])
     }
 
-    // MARK: - Color rotation
+    // MARK: - Color defaults
 
-    func testGroupColorRotationCyclesPalette() {
-        let palette = PickyDockGroupColor.palette
-        for i in 0..<(palette.count * 2) {
-            let expected = palette[i % palette.count]
-            XCTAssertEqual(
-                PickyDockGroupColor.nextColor(forExistingGroupCount: i),
-                expected,
-                "color rotation off at i=\(i)"
-            )
-        }
+    func testNewGroupsDefaultToGray() {
+        XCTAssertEqual(PickyDockGroupColor.defaultColor, .gray)
+    }
+
+    func testPaletteUsesNotionDisplayOrder() {
+        XCTAssertEqual(
+            PickyDockGroupColor.palette,
+            [.gray, .amber, .teal, .blue, .purple, .pink, .red]
+        )
     }
 
     // MARK: - Drag drop resolution (PickyDockDropResolver)

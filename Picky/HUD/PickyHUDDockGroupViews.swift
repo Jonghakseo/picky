@@ -566,7 +566,16 @@ struct PickyHUDDockGroupContextMenu: View {
         Button(L10n.t("group.menu.rename"), action: onRename)
         Menu(L10n.t("group.menu.color")) {
             ForEach(PickyDockGroupColor.palette) { color in
-                Button(color.localizedName) { onSetColor(color) }
+                Button {
+                    onSetColor(color)
+                } label: {
+                    Label {
+                        Text(color.localizedName)
+                    } icon: {
+                        Image(nsImage: color.menuSwatchImage)
+                    }
+                }
+                .labelStyle(.titleAndIcon)
             }
         }
         Button(group.isCollapsed ? L10n.t("group.menu.expand") : L10n.t("group.menu.collapse"), action: onToggleCollapsed)

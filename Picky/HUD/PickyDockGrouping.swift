@@ -13,10 +13,13 @@
 
 import Foundation
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#endif
 
-/// Auto-rotated group accent palette. Index wraps modulo `count`.
-/// Stored as an integer so future re-ordering of palette entries does not
-/// invalidate persisted user choices — only the resolved color may shift.
+/// Group accent palette. Stored as an integer so re-ordering palette entries
+/// does not invalidate persisted user choices — only the picker/menu order
+/// shifts, never the resolved color for an existing group.
 enum PickyDockGroupColor: Int, Codable, CaseIterable, Identifiable {
     case teal = 0
     case amber = 1
@@ -28,18 +31,14 @@ enum PickyDockGroupColor: Int, Codable, CaseIterable, Identifiable {
 
     var id: Int { rawValue }
 
-    /// 7-color palette. Order is the auto-rotation sequence used on
-    /// `PickyDockGroup` creation.
-    static var palette: [PickyDockGroupColor] {
-        [.teal, .amber, .blue, .pink, .purple, .red, .gray]
-    }
+    /// Default color for newly created groups. Neutral gray so color-sensitive
+    /// users get a predictable swatch instead of a random/rotating accent.
+    static let defaultColor: PickyDockGroupColor = .gray
 
-    /// Next color in rotation given the count of groups already in the
-    /// layout. Wraps so creating many groups keeps cycling.
-    static func nextColor(forExistingGroupCount count: Int) -> PickyDockGroupColor {
-        let palette = Self.palette
-        guard !palette.isEmpty else { return .teal }
-        return palette[((count % palette.count) + palette.count) % palette.count]
+    /// 7-color palette in picker/menu display order (matches Notion's order:
+    /// gray, amber, teal, blue, purple, pink, red).
+    static var palette: [PickyDockGroupColor] {
+        [.gray, .amber, .teal, .blue, .purple, .pink, .red]
     }
 
     /// Solid accent color used for the 2px bar and group header text.
@@ -68,6 +67,22 @@ enum PickyDockGroupColor: Int, Codable, CaseIterable, Identifiable {
         case .gray:   L10n.t("group.color.gray")
         }
     }
+
+    #if canImport(AppKit)
+    /// Small filled-circle swatch (macOS Finder-label style) in the accent
+    /// color, shown beside each entry in the color picker submenu.
+    var menuSwatchImage: NSImage {
+        let diameter: CGFloat = 10
+        let size = NSSize(width: diameter, height: diameter)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor(accent).setFill()
+        NSBezierPath(ovalIn: NSRect(origin: .zero, size: size)).fill()
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
+    }
+    #endif
 }
 
 /// A single user-created group in the dock. Membership order matches the
@@ -87,7 +102,7 @@ struct PickyDockGroup: Codable, Equatable, Identifiable {
     init(
         id: String = UUID().uuidString,
         name: String = "",
-        color: PickyDockGroupColor = .teal,
+        color: PickyDockGroupColor = .defaultColor,
         memberSessionIDs: [String] = [],
         isCollapsed: Bool = false
     ) {

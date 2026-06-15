@@ -63,7 +63,6 @@ final class PickySessionDockLayoutController {
 
     @discardableResult
     func createGroup(name: String = "", withMemberIDs memberSessionIDs: [String] = []) -> String {
-        let nextColor = PickyDockGroupColor.nextColor(forExistingGroupCount: layout.groups.count)
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         var next = layout
         var orderedMembers: [String] = []
@@ -75,7 +74,7 @@ final class PickySessionDockLayoutController {
         }
         let group = PickyDockGroup(
             name: trimmedName,
-            color: nextColor,
+            color: PickyDockGroupColor.defaultColor,
             memberSessionIDs: orderedMembers
         )
         next.entries.append(.group(group))

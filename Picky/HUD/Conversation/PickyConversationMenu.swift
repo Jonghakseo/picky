@@ -23,6 +23,7 @@ struct PickyConversationMenu: View {
     var canSyncFromPiSession: Bool { session.piSessionFilePath != nil }
     var canDuplicate: Bool { session.piSessionFilePath != nil }
     var canStop: Bool { !session.status.isTerminal }
+    var canCompact: Bool { session.canRequestDockCompaction }
 
     var body: some View {
         Section("QUICK") {
@@ -62,6 +63,11 @@ struct PickyConversationMenu: View {
                 Task { try? await viewModel.duplicate(sessionID: session.id) }
             }
             .disabled(!canDuplicate)
+
+            Button("hud.menu.compact") {
+                Task { await viewModel.requestCompaction(sessionID: session.id) }
+            }
+            .disabled(!canCompact)
 
             Button("hud.menu.stopSession") {
                 Task { try? await viewModel.abortRestoringQueuedInputs(sessionID: session.id) }

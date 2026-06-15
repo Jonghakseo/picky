@@ -776,17 +776,7 @@ struct PickyHUDView: View {
 
     private func compactSession(_ sessionID: String) {
         cancelPendingClose()
-        guard let session = viewModel.sessions.first(where: { $0.id == sessionID }), session.canRequestDockCompaction else { return }
-        Task {
-            switch session.status {
-            case .failed, .cancelled:
-                try? await viewModel.steer(text: "/compact", sessionID: sessionID)
-            case .completed, .blocked:
-                try? await viewModel.followUp(text: "/compact", sessionID: sessionID)
-            case .queued, .running, .waiting_for_input:
-                break
-            }
-        }
+        Task { await viewModel.requestCompaction(sessionID: sessionID) }
     }
 
     private func archiveSession(_ sessionID: String) {

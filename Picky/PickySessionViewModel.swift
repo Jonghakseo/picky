@@ -729,6 +729,23 @@ final class PickySessionListViewModel: ObservableObject {
         }
     }
 
+    /// Request Pi context compaction (`/compact`) for a session. Routes via
+    /// `steer` for terminal-but-recoverable states and `followUp` otherwise,
+    /// mirroring the dock icon's compact action. No-op while the session is
+    /// busy or already compacting.
+    func requestCompaction(sessionID: String) async {
+        guard let session = sessions.first(where: { $0.id == sessionID }),
+              session.canRequestDockCompaction else { return }
+        switch session.status {
+        case .failed, .cancelled:
+            try? await steer(text: "/compact", sessionID: sessionID)
+        case .completed, .blocked:
+            try? await followUp(text: "/compact", sessionID: sessionID)
+        case .queued, .running, .waiting_for_input:
+            break
+        }
+    }
+
     func beginHoveredVoiceFollowUp(sessionID: String) {
         // Dedup before mutating @Published — SwiftUI onHover can fire repeated
         // hovering=true callbacks (e.g. on scroll or layout updates), and any

@@ -1006,6 +1006,22 @@
         }
       }
     },
+    "hud.menu.compact": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compact"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "압축"
+          }
+        }
+      }
+    },
     "hud.menu.copyResume": {
       "localizations": {
         "en": {

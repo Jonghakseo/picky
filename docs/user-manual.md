@@ -293,7 +293,7 @@ Collapse and expand:
 - Collapse state is remembered **per display**, so the same group can stay open on one monitor and collapsed on another.
 - Collapsing a group automatically closes any open conversation card that belongs to one of its members.
 
-Right-click a group header for more actions:
+Right-click a group header — or the collapsed group's **folder drawer** badge — for more actions:
 
 | Action | Behavior |
 | --- | --- |

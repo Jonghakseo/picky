@@ -257,7 +257,7 @@ The dock icon color, glyph, unread dot, and completion flash reflect these state
 | Drag a Pickle | Reorders dock Pickles, or drags one into / out of a group. The move is committed when you release. Hold it clearly **outside** the dock for a moment and an **Archive** label appears; release there to archive it (macOS Dock style). |
 | Right-click / Control-click | Opens the dock context menu (Send Context / Compact / Archive / Stop). |
 | Click the `+` slot | Opens a popover with pinned/recent folders, **Choose Folder…**, and **New Group…**. |
-| Drag the dock handle | Move the dock along or across screen edges. |
+| Drag the dock handle | Move the dock along or across screen edges. The dock may tuck partly off-screen, but its handle slot stays visible so it remains grabbable. |
 | Double-click the dock handle | Toggle the dock between vertical and horizontal layouts. |
 
 Number shortcuts (`Cmd + 1`…`9`) apply to the first 9 visible dock slots, top to bottom. A collapsed group counts as one slot: pressing its number **expands the group** instead of opening a Pickle, after which each member gets its own number — so a second press reaches the individual Pickle. While `Cmd` is held, every numbered slot (including collapsed groups) shows its badge.
@@ -379,7 +379,7 @@ Interactions:
 
 ### 8.3 Composer behavior
 
-The composer changes behavior based on Pickle status.
+The composer stays pinned to the bottom of a resized Pickle card. It changes behavior based on Pickle status.
 
 | Session status | Default Return action |
 | --- | --- |

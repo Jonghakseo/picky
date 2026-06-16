@@ -987,7 +987,11 @@ struct PickySettings: Codable, Equatable {
     /// from the legacy `manualOrder` UserDefaults on first migration.
     var dockLayout: PickyDockLayout
 
-    static let dockTopAnchorPercentRange: ClosedRange<Double> = 2.0...70.0
+    /// Absolute persistence bounds. The live drag clamp narrows the upper bound
+    /// further per-screen so at least one dock handle slot (`keepVisible`) stays
+    /// on-screen; this wide range only exists so a value dragged on a tall display
+    /// survives reload instead of being snapped back to the old 70% cap.
+    static let dockTopAnchorPercentRange: ClosedRange<Double> = 1.0...98.0
     static let defaultDockTopAnchorPercent: Double = 22.0
     static let maxStoredRecentPickleCwds = 8
     static let maxVisibleRecentPickleCwds = 5

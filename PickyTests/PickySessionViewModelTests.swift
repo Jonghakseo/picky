@@ -1463,18 +1463,19 @@ struct PickySessionViewModelTests {
                 == (visibleFrame.maxX - PickyHUDDockLayout.screenMargin - (panelWidth / 2)).rounded(.toNearestOrEven)
         )
 
-        // With a dock-rail length passed in, the clamp keeps the dock fully
-        // visible: the dock CENTER stays at least `dockRailLength / 2 +
-        // screenMargin` from each visible-frame edge.
+        // With a dock-rail length passed in, the clamp lets the rail overhang
+        // until only one dock handle slot remains visible.
         let dockLength: CGFloat = 200
+        let keepVisible: CGFloat = 62
         let dockClampedRight = PickyHUDDockLayout.clampedHorizontalXOffset(
             10_000,
             visibleFrame: visibleFrame,
             panelWidth: panelWidth,
-            dockRailLength: dockLength
+            dockRailLength: dockLength,
+            keepVisible: keepVisible
         )
         let dockCenterX = visibleFrame.midX + dockClampedRight
-        #expect(dockCenterX == visibleFrame.maxX - PickyHUDDockLayout.screenMargin - (dockLength / 2))
+        #expect(dockCenterX == visibleFrame.maxX - keepVisible + (dockLength / 2))
     }
 
     @Test func hudDockHorizontalPanelWidthAndClampReserveFullscreenControl() throws {
@@ -1502,9 +1503,10 @@ struct PickySessionViewModelTests {
             10_000,
             visibleFrame: visibleFrame,
             panelWidth: panelWidth,
-            dockRailLength: railLength
+            dockRailLength: railLength,
+            keepVisible: metrics.railWidth
         )
-        #expect(visibleFrame.midX + clampedRight == visibleFrame.maxX - PickyHUDDockLayout.screenMargin - (railLength / 2))
+        #expect(visibleFrame.midX + clampedRight == visibleFrame.maxX - metrics.railWidth + (railLength / 2))
     }
 
     @Test func hudDockHorizontalSideUsesFortySixtySnapHysteresis() throws {
@@ -1545,20 +1547,19 @@ struct PickySessionViewModelTests {
         #expect(leftOutward == visibleFrame.minX + PickyHUDDockLayout.dockLeftEdgeMargin - 100)
     }
 
-    @Test func hudDockPanelXOffsetClampedToScreenEdgesAndOverhang() throws {
+    @Test func hudDockPanelXOffsetClampedToScreenEdgesAndHandleVisibility() throws {
         let visibleFrame = CGRect(x: 0, y: 0, width: 1200, height: 800)
         let panelWidth: CGFloat = 540
         let margin = PickyHUDDockLayout.screenMargin
-        let overhang = PickyHUDDockLayout.dockOverhangLimit
 
-        // Right-docked, large positive xOffset (outward, off-screen): capped at +overhang
+        // Right-docked, large positive xOffset (outward): keep the full handle width visible.
         let rightOutwardClamped = PickyHUDDockLayout.clampedXOffset(
             10_000,
             visibleFrame: visibleFrame,
             panelWidth: panelWidth,
             dockSide: .right
         )
-        #expect(rightOutwardClamped == overhang)
+        #expect(rightOutwardClamped == 0)
 
         // Right-docked, large negative xOffset (inward): capped at the visible-frame edge
         let rightInwardClamped = PickyHUDDockLayout.clampedXOffset(
@@ -1571,14 +1572,14 @@ struct PickySessionViewModelTests {
         let minRightX = visibleFrame.minX + margin
         #expect(rightInwardClamped == -(naturalRightX - minRightX))
 
-        // Left-docked, large negative xOffset (outward, off-screen): capped at -overhang
+        // Left-docked, large negative xOffset (outward): keep the full handle width visible.
         let leftOutwardClamped = PickyHUDDockLayout.clampedXOffset(
             -10_000,
             visibleFrame: visibleFrame,
             panelWidth: panelWidth,
             dockSide: .left
         )
-        #expect(leftOutwardClamped == -overhang)
+        #expect(leftOutwardClamped == 0)
 
         // Left-docked, large positive xOffset (inward): capped at the visible-frame edge
         let leftInwardClamped = PickyHUDDockLayout.clampedXOffset(
@@ -1595,7 +1596,6 @@ struct PickySessionViewModelTests {
     @Test func hudDockPanelXClampsPersistedOffsetsBeforePlacement() throws {
         let visibleFrame = CGRect(x: 0, y: 0, width: 1200, height: 800)
         let panelWidth: CGFloat = 540
-        let overhang = PickyHUDDockLayout.dockOverhangLimit
 
         let naturalRightX = PickyHUDDockLayout.panelX(
             visibleFrame: visibleFrame,
@@ -1608,7 +1608,7 @@ struct PickySessionViewModelTests {
                 panelWidth: panelWidth,
                 dockSide: .right,
                 xOffset: 10_000
-            ) == naturalRightX + overhang
+            ) == naturalRightX
         )
 
         let naturalLeftX = PickyHUDDockLayout.panelX(
@@ -1622,7 +1622,7 @@ struct PickySessionViewModelTests {
                 panelWidth: panelWidth,
                 dockSide: .left,
                 xOffset: -10_000
-            ) == naturalLeftX - overhang
+            ) == naturalLeftX
         )
     }
 
@@ -1702,13 +1702,22 @@ struct PickySessionViewModelTests {
 
     @Test func dockTopAnchorPercentClampsToSupportedRange() throws {
         #expect(PickySettings.clampedDockTopAnchorPercent(22.0) == 22.0)
-        #expect(PickySettings.clampedDockTopAnchorPercent(0.0) == 2.0)
-        #expect(PickySettings.clampedDockTopAnchorPercent(1.99) == 2.0)
-        #expect(PickySettings.clampedDockTopAnchorPercent(70.0) == 70.0)
-        #expect(PickySettings.clampedDockTopAnchorPercent(120.5) == 70.0)
+        #expect(PickySettings.clampedDockTopAnchorPercent(0.0) == 1.0)
+        #expect(PickySettings.clampedDockTopAnchorPercent(0.99) == 1.0)
+        #expect(PickySettings.clampedDockTopAnchorPercent(98.0) == 98.0)
+        #expect(PickySettings.clampedDockTopAnchorPercent(120.5) == 98.0)
         // Non-finite values fall back to the default rather than poisoning the saved settings file.
         #expect(PickySettings.clampedDockTopAnchorPercent(.nan) == PickySettings.defaultDockTopAnchorPercent)
         #expect(PickySettings.clampedDockTopAnchorPercent(.infinity) == PickySettings.defaultDockTopAnchorPercent)
+    }
+
+    @Test func dockTopAnchorPercentMaxKeepsHandleVisiblePerScreen() throws {
+        let visibleHeight: CGFloat = 876
+        let maxAnchor = PickyHUDDockLayout.maxDockTopAnchorPercent(visibleHeight: visibleHeight, keepVisible: 62)
+        #expect(abs(maxAnchor - 92.922374) < 0.0001)
+
+        let cappedOnVeryTallDisplay = PickyHUDDockLayout.maxDockTopAnchorPercent(visibleHeight: 10_000, keepVisible: 62)
+        #expect(cappedOnVeryTallDisplay == PickySettings.dockTopAnchorPercentRange.upperBound)
     }
 
     @Test func dockTopScreenYMatchesAnchorPercentRelativeToVisibleFrameTop() throws {
@@ -1716,10 +1725,10 @@ struct PickySessionViewModelTests {
         // 22% from the visible-frame top: 0.22 * 876 = 192.72 below visibleFrame.maxY.
         let dockTop = PickyHUDDockLayout.dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: 22.0)
         #expect(abs(dockTop - (visibleFrame.maxY - 192.72)) < 0.01)
-        // Boundary clamps reflect the supported anchor range.
+        // Boundary clamps reflect the persisted anchor range.
         let atFloor = PickyHUDDockLayout.dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: 100.0)
-        let at70 = PickyHUDDockLayout.dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: 70.0)
-        #expect(atFloor == at70)
+        let at98 = PickyHUDDockLayout.dockTopScreenY(visibleFrame: visibleFrame, anchorPercent: 98.0)
+        #expect(atFloor == at98)
     }
 
     @Test func dockTopAnchoredPanelKeepsDockTopAtAnchorWithinSupportedHeight() throws {

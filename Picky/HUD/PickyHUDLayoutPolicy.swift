@@ -567,7 +567,8 @@ enum PickyHUDDockLayout {
             xOffset,
             visibleFrame: visibleFrame,
             panelWidth: panelWidth,
-            dockSide: dockSide
+            dockSide: dockSide,
+            keepVisible: railWidth
         )
         return panelX(
             visibleFrame: visibleFrame,
@@ -618,7 +619,8 @@ enum PickyHUDDockLayout {
         visibleFrame: CGRect,
         panelWidth: CGFloat,
         dockSide: PickyHUDDockSide,
-        dockRailWidth: CGFloat = railWidth
+        dockRailWidth: CGFloat = railWidth,
+        keepVisible: CGFloat = railWidth
     ) -> CGFloat {
         let naturalPanelX = panelX(
             visibleFrame: visibleFrame,
@@ -637,32 +639,54 @@ enum PickyHUDDockLayout {
             visibleFrame: visibleFrame,
             panelWidth: panelWidth,
             dockSide: dockSide,
-            dockRailWidth: dockRailWidth
+            dockRailWidth: dockRailWidth,
+            keepVisible: keepVisible
         )
     }
 
-    static func horizontalPanelX(visibleFrame: CGRect, panelWidth: CGFloat, xOffset: CGFloat = 0) -> CGFloat {
-        let safeOffset = clampedHorizontalXOffset(xOffset, visibleFrame: visibleFrame, panelWidth: panelWidth)
+    static func horizontalPanelX(
+        visibleFrame: CGRect,
+        panelWidth: CGFloat,
+        xOffset: CGFloat = 0,
+        dockRailLength: CGFloat = 0,
+        keepVisible: CGFloat = railWidth
+    ) -> CGFloat {
+        let safeOffset = clampedHorizontalXOffset(
+            xOffset,
+            visibleFrame: visibleFrame,
+            panelWidth: panelWidth,
+            dockRailLength: dockRailLength,
+            keepVisible: keepVisible
+        )
         let raw = visibleFrame.midX - (panelWidth / 2) + safeOffset
         return raw.rounded(.toNearestOrEven)
     }
 
-    /// Clamp the horizontal mode's X-axis nudge so the dock rail — which
-    /// sits centered inside the (much wider) panel — can slide all the way
-    /// to either screen edge. The transparent panel is allowed to overhang
-    /// the visible frame; only the dock's visible center is kept inside
-    /// `visibleFrame` minus `screenMargin`. Pass `dockRailLength` so the
-    /// clamp accounts for the dock's actual visible half-width; callers
-    /// without it (e.g. older tests) get a conservative fallback.
+    /// Clamp the horizontal mode's X-axis nudge. With `dockRailLength`, the
+    /// leading handle slot must remain visible while the rest of the rail may
+    /// slide off the trailing edge. Without a rail length, fall back to the
+    /// historical center-within-screen-margin behavior.
     static func clampedHorizontalXOffset(
         _ xOffset: CGFloat,
         visibleFrame: CGRect,
         panelWidth: CGFloat,
-        dockRailLength: CGFloat = 0
+        dockRailLength: CGFloat = 0,
+        keepVisible: CGFloat = railWidth
     ) -> CGFloat {
         let dockHalfLength = max(dockRailLength / 2, 0)
-        let minDockCenter = visibleFrame.minX + screenMargin + dockHalfLength
-        let maxDockCenter = visibleFrame.maxX - screenMargin - dockHalfLength
+        let minDockCenter: CGFloat
+        let maxDockCenter: CGFloat
+        if dockRailLength > 0 {
+            // Horizontal rail's drag handle is the leading slot. Let the rest of
+            // the rail slide off the trailing edge, but keep that full handle
+            // slot on-screen so the dock always remains grabbable.
+            let keep = min(max(keepVisible, 0), dockRailLength)
+            minDockCenter = visibleFrame.minX + dockHalfLength
+            maxDockCenter = visibleFrame.maxX - keep + dockHalfLength
+        } else {
+            minDockCenter = visibleFrame.minX + screenMargin
+            maxDockCenter = visibleFrame.maxX - screenMargin
+        }
         guard maxDockCenter >= minDockCenter else { return 0 }
         // Panel center = visibleFrame.midX + xOffset (since panel is
         // centered at xOffset == 0). Dock center == panel center because
@@ -708,9 +732,10 @@ enum PickyHUDDockLayout {
         visibleFrame: CGRect,
         panelHeight: CGFloat,
         dockSide: PickyHUDDockSide,
-        dockRailHeight: CGFloat
+        dockRailHeight: CGFloat,
+        keepVisible: CGFloat = railWidth
     ) -> CGFloat {
-        let overhangLimit = dockOverhangLimit(forRailWidth: dockRailHeight)
+        let overhangLimit = max(0, dockRailHeight - keepVisible)
         switch dockSide {
         case .top:
             let minY = visibleFrame.minY + screenMargin
@@ -749,25 +774,25 @@ enum PickyHUDDockLayout {
     }
 
     /// Maximum number of points the dock capsule may slide past the screen edge
-    /// in either direction. Half the dock rail width keeps half of the capsule
-    /// visible so the handle is always grabbable.
+    /// when only half the rail must remain visible. Retained for callers/tests that
+    /// intentionally choose a smaller `keepVisible` than a full handle slot.
     static let dockOverhangLimit: CGFloat = (railWidth / 2).rounded(.down)
 
-    static func dockOverhangLimit(forRailWidth dockRailWidth: CGFloat) -> CGFloat {
-        (dockRailWidth / 2).rounded(.down)
+    static func dockOverhangLimit(forRailWidth dockRailWidth: CGFloat, keepVisible: CGFloat = railWidth / 2) -> CGFloat {
+        max(0, dockRailWidth - keepVisible).rounded(.down)
     }
 
-    /// Clamp an X offset so the dock can move inward freely but only slide up to
-    /// `dockOverhangLimit` past the screen edge. The dock capsule itself never
-    /// fully disappears, but users can tuck it partially off-screen if they want.
+    /// Clamp a vertical-mode X offset so the dock can move inward freely while the
+    /// requested visible width of the handle slot remains on-screen.
     static func clampedXOffset(
         _ xOffset: CGFloat,
         visibleFrame: CGRect,
         panelWidth: CGFloat,
         dockSide: PickyHUDDockSide,
-        dockRailWidth: CGFloat = railWidth
+        dockRailWidth: CGFloat = railWidth,
+        keepVisible: CGFloat = railWidth
     ) -> CGFloat {
-        let overhangLimit = dockOverhangLimit(forRailWidth: dockRailWidth)
+        let overhangLimit = dockOverhangLimit(forRailWidth: dockRailWidth, keepVisible: keepVisible)
         switch dockSide {
         case .right, .top, .bottom:
             let minX = visibleFrame.minX + screenMargin
@@ -784,7 +809,18 @@ enum PickyHUDDockLayout {
 
     // MARK: - Dock-top anchored placement
 
-    /// Screen Y of the dock's top edge for a given anchor percent (2–70% from the top of
+    /// Largest anchor percent that still keeps `keepVisible` (one dock handle slot)
+    /// of the rail above the screen's bottom edge. Screen-aware so taller displays
+    /// allow dragging the dock farther down than the old flat 70% cap.
+    static func maxDockTopAnchorPercent(visibleHeight: CGFloat, keepVisible: CGFloat = railWidth) -> Double {
+        guard visibleHeight > 0 else { return PickySettings.dockTopAnchorPercentRange.upperBound }
+        let raw = 100.0 * (1.0 - Double(max(keepVisible, 0)) / Double(visibleHeight))
+        let lower = PickySettings.dockTopAnchorPercentRange.lowerBound
+        let upper = PickySettings.dockTopAnchorPercentRange.upperBound
+        return min(max(raw, lower), upper)
+    }
+
+    /// Screen Y of the dock's top edge for a given anchor percent (from the top of
     /// `visibleFrame`). Returned in NSPanel screen coords (bottom-up).
     static func dockTopScreenY(visibleFrame: CGRect, anchorPercent: Double) -> CGFloat {
         let pct = PickySettings.clampedDockTopAnchorPercent(anchorPercent)

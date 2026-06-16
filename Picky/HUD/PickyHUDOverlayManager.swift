@@ -561,8 +561,7 @@ final class PickyHUDOverlayManager {
                 visibleFrame: visibleFrame,
                 panelHeight: targetHeight,
                 dockSide: pos.side,
-                dockRailHeight: dockMetrics.railWidth,
-                keepVisible: keepVisible
+                dockRailHeight: dockMetrics.railWidth
             )
             originX = PickyHUDDockLayout.horizontalPanelX(
                 visibleFrame: visibleFrame,
@@ -583,8 +582,7 @@ final class PickyHUDOverlayManager {
                 visibleFrame: visibleFrame,
                 panelWidth: panelWidth,
                 dockSide: pos.side,
-                dockRailWidth: dockMetrics.railWidth,
-                keepVisible: keepVisible
+                dockRailWidth: dockMetrics.railWidth
             )
             safeYOffset = 0
             originX = PickyHUDDockLayout.panelX(
@@ -789,8 +787,7 @@ final class PickyHUDOverlayManager {
                     visibleFrame: visibleFrame,
                     panelHeight: panelHeight,
                     dockSide: pos.side,
-                    dockRailHeight: railThickness,
-                    keepVisible: keepVisible
+                    dockRailHeight: railThickness
                 )
             }
         } else {
@@ -823,8 +820,7 @@ final class PickyHUDOverlayManager {
                 visibleFrame: visibleFrame,
                 panelWidth: panelWidth(for: displayID, dockSide: pos.side),
                 dockSide: pos.side,
-                dockRailWidth: dockMetrics.railWidth,
-                keepVisible: keepVisible
+                dockRailWidth: dockMetrics.railWidth
             )
         }
 

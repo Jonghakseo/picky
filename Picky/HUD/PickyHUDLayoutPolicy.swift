@@ -567,8 +567,7 @@ enum PickyHUDDockLayout {
             xOffset,
             visibleFrame: visibleFrame,
             panelWidth: panelWidth,
-            dockSide: dockSide,
-            keepVisible: railWidth
+            dockSide: dockSide
         )
         return panelX(
             visibleFrame: visibleFrame,
@@ -620,7 +619,7 @@ enum PickyHUDDockLayout {
         panelWidth: CGFloat,
         dockSide: PickyHUDDockSide,
         dockRailWidth: CGFloat = railWidth,
-        keepVisible: CGFloat = railWidth
+        keepVisible: CGFloat = railWidth / 2
     ) -> CGFloat {
         let naturalPanelX = panelX(
             visibleFrame: visibleFrame,
@@ -733,9 +732,9 @@ enum PickyHUDDockLayout {
         panelHeight: CGFloat,
         dockSide: PickyHUDDockSide,
         dockRailHeight: CGFloat,
-        keepVisible: CGFloat = railWidth
+        keepVisible: CGFloat = railWidth / 2
     ) -> CGFloat {
-        let overhangLimit = max(0, dockRailHeight - keepVisible)
+        let overhangLimit = dockOverhangLimit(forRailWidth: dockRailHeight, keepVisible: keepVisible)
         switch dockSide {
         case .top:
             let minY = visibleFrame.minY + screenMargin
@@ -790,7 +789,7 @@ enum PickyHUDDockLayout {
         panelWidth: CGFloat,
         dockSide: PickyHUDDockSide,
         dockRailWidth: CGFloat = railWidth,
-        keepVisible: CGFloat = railWidth
+        keepVisible: CGFloat = railWidth / 2
     ) -> CGFloat {
         let overhangLimit = dockOverhangLimit(forRailWidth: dockRailWidth, keepVisible: keepVisible)
         switch dockSide {

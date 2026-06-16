@@ -1547,19 +1547,20 @@ struct PickySessionViewModelTests {
         #expect(leftOutward == visibleFrame.minX + PickyHUDDockLayout.dockLeftEdgeMargin - 100)
     }
 
-    @Test func hudDockPanelXOffsetClampedToScreenEdgesAndHandleVisibility() throws {
+    @Test func hudDockPanelXOffsetClampedToScreenEdgesAndOverhang() throws {
         let visibleFrame = CGRect(x: 0, y: 0, width: 1200, height: 800)
         let panelWidth: CGFloat = 540
         let margin = PickyHUDDockLayout.screenMargin
+        let overhang = PickyHUDDockLayout.dockOverhangLimit
 
-        // Right-docked, large positive xOffset (outward): keep the full handle width visible.
+        // Right-docked, large positive xOffset (outward, off-screen): capped at +overhang.
         let rightOutwardClamped = PickyHUDDockLayout.clampedXOffset(
             10_000,
             visibleFrame: visibleFrame,
             panelWidth: panelWidth,
             dockSide: .right
         )
-        #expect(rightOutwardClamped == 0)
+        #expect(rightOutwardClamped == overhang)
 
         // Right-docked, large negative xOffset (inward): capped at the visible-frame edge
         let rightInwardClamped = PickyHUDDockLayout.clampedXOffset(
@@ -1572,14 +1573,14 @@ struct PickySessionViewModelTests {
         let minRightX = visibleFrame.minX + margin
         #expect(rightInwardClamped == -(naturalRightX - minRightX))
 
-        // Left-docked, large negative xOffset (outward): keep the full handle width visible.
+        // Left-docked, large negative xOffset (outward, off-screen): capped at -overhang.
         let leftOutwardClamped = PickyHUDDockLayout.clampedXOffset(
             -10_000,
             visibleFrame: visibleFrame,
             panelWidth: panelWidth,
             dockSide: .left
         )
-        #expect(leftOutwardClamped == 0)
+        #expect(leftOutwardClamped == -overhang)
 
         // Left-docked, large positive xOffset (inward): capped at the visible-frame edge
         let leftInwardClamped = PickyHUDDockLayout.clampedXOffset(
@@ -1596,6 +1597,7 @@ struct PickySessionViewModelTests {
     @Test func hudDockPanelXClampsPersistedOffsetsBeforePlacement() throws {
         let visibleFrame = CGRect(x: 0, y: 0, width: 1200, height: 800)
         let panelWidth: CGFloat = 540
+        let overhang = PickyHUDDockLayout.dockOverhangLimit
 
         let naturalRightX = PickyHUDDockLayout.panelX(
             visibleFrame: visibleFrame,
@@ -1608,7 +1610,7 @@ struct PickySessionViewModelTests {
                 panelWidth: panelWidth,
                 dockSide: .right,
                 xOffset: 10_000
-            ) == naturalRightX
+            ) == naturalRightX + overhang
         )
 
         let naturalLeftX = PickyHUDDockLayout.panelX(
@@ -1622,7 +1624,7 @@ struct PickySessionViewModelTests {
                 panelWidth: panelWidth,
                 dockSide: .left,
                 xOffset: -10_000
-            ) == naturalLeftX
+            ) == naturalLeftX - overhang
         )
     }
 

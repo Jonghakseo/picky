@@ -427,12 +427,27 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
 
     private let scrollView = NSScrollView()
     private let gridView: GridDocumentView
-    private let columnWidths: [CGFloat]
-    private var cachedTableLayout: (rowHeights: [CGFloat], size: NSSize)?
+    /// Content-derived width per column: the widest single-line cell plus
+    /// padding, capped so a very long cell wraps instead of stretching the
+    /// whole table.
+    private let naturalColumnWidths: [CGFloat]
+    /// Uncapped single-line width per column. Used to hand any slack width to
+    /// the columns that actually wanted more room rather than padding every
+    /// column up to a shared minimum.
+    private let desiredColumnWidths: [CGFloat]
+    private var layoutCache: [CGFloat: TableLayout] = [:]
+
+    private struct TableLayout {
+        let columnWidths: [CGFloat]
+        let rowHeights: [CGFloat]
+        let size: NSSize
+    }
 
     init(headers: [String], rows: [[String]]) {
-        columnWidths = Self.tableColumnWidths(columnCount: headers.count, firstHeader: headers.first ?? "")
-        gridView = GridDocumentView(headers: headers, rows: rows, columnWidths: columnWidths)
+        let measured = Self.measureColumns(headers: headers, rows: rows)
+        naturalColumnWidths = measured.capped
+        desiredColumnWidths = measured.uncapped
+        gridView = GridDocumentView(headers: headers, rows: rows, columnWidths: measured.capped)
         super.init(frame: .zero)
 
         scrollView.drawsBackground = false
@@ -450,16 +465,16 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
     override func computeMeasuredSize(forWidth width: CGFloat) -> NSSize {
         let cap = max(0, width)
         guard cap > 0 else { return .zero }
-        let layout = measuredTableLayout()
+        let layout = tableLayout(forWidth: cap)
         return NSSize(width: min(cap, layout.size.width), height: layout.size.height)
     }
 
     override func layout() {
         super.layout()
-        let layout = measuredTableLayout()
+        let layout = tableLayout(forWidth: bounds.width)
         scrollView.frame = bounds
         gridView.frame = NSRect(origin: .zero, size: layout.size)
-        gridView.apply(rowHeights: layout.rowHeights)
+        gridView.apply(columnWidths: layout.columnWidths, rowHeights: layout.rowHeights)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -472,52 +487,77 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
         path.stroke()
     }
 
-    private func measuredTableLayout() -> (rowHeights: [CGFloat], size: NSSize) {
-        if let cachedTableLayout { return cachedTableLayout }
-        let rowHeights = gridView.measureRowHeights()
+    private func tableLayout(forWidth available: CGFloat) -> TableLayout {
+        let key = available.rounded()
+        if let cached = layoutCache[key] { return cached }
+        let columnWidths = resolvedColumnWidths(forWidth: available)
+        let rowHeights = gridView.measureRowHeights(columnWidths: columnWidths)
         let size = NSSize(
             width: columnWidths.reduce(0, +),
             height: rowHeights.reduce(0, +)
         )
-        let layout = (rowHeights: rowHeights, size: size)
-        cachedTableLayout = layout
+        let layout = TableLayout(columnWidths: columnWidths, rowHeights: rowHeights, size: size)
+        layoutCache[key] = layout
         return layout
     }
 
-    private static func tableColumnWidths(columnCount: Int, firstHeader: String) -> [CGFloat] {
-        let firstIsIndex = isIndexColumnHeader(firstHeader)
-        return (0..<columnCount).map {
-            tableColumnWidth(index: $0, columnCount: columnCount, firstIsIndex: firstIsIndex)
-        }
+    /// Resolve the final column widths for the given available width. Columns
+    /// are sized to their content; when the table is narrower than the space
+    /// available, the slack goes to the columns whose text was clipped by the
+    /// cap, so short columns (an index, a status) stay tight instead of every
+    /// column sharing one fixed minimum.
+    private func resolvedColumnWidths(forWidth available: CGFloat) -> [CGFloat] {
+        let natural = naturalColumnWidths
+        let total = natural.reduce(0, +)
+        guard available > 0, total > 0, available > total else { return natural }
+        let desire = zip(desiredColumnWidths, natural).map { max($0 - $1, 0) }
+        let desireTotal = desire.reduce(0, +)
+        guard desireTotal > 0 else { return natural }
+        let extra = available - total
+        return zip(natural, desire).map { $0 + extra * ($1 / desireTotal) }
     }
 
-    private static func isIndexColumnHeader(_ header: String) -> Bool {
-        let trimmed = header.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if trimmed.isEmpty { return true }
-        return ["#", "no", "no.", "번호", "순번", "idx", "index"].contains(trimmed)
-    }
-
-    private static func tableColumnWidth(index: Int, columnCount: Int, firstIsIndex: Bool) -> CGFloat {
+    private static func measureColumns(
+        headers: [String],
+        rows: [[String]]
+    ) -> (capped: [CGFloat], uncapped: [CGFloat]) {
+        let columnCount = headers.count
+        guard columnCount > 0 else { return ([], []) }
         let scale = PickyAppFontScaleStore.staticCGScale
-        if index == 0 && columnCount > 2 && firstIsIndex { return 46 * scale }
-        if columnCount >= 5 {
-            if index == 1 { return 104 * scale }
-            if index == columnCount - 1 { return 280 * scale }
-            return 260 * scale
+        let horizontalPadding = 2 * GridDocumentView.horizontalPadding
+        let maxColumnWidth = 360 * scale
+        let minColumnWidth = 44 * scale
+
+        var uncapped = [CGFloat](repeating: 0, count: columnCount)
+        let allRows = [headers] + rows
+        for (rowIndex, cells) in allRows.enumerated() {
+            for columnIndex in 0..<columnCount where columnIndex < cells.count {
+                let attr = GridDocumentView.attributedCellString(
+                    cells[columnIndex],
+                    isHeader: rowIndex == 0,
+                    columnIndex: columnIndex
+                )
+                let rect = attr.boundingRect(
+                    with: NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading]
+                )
+                uncapped[columnIndex] = max(uncapped[columnIndex], ceil(rect.width))
+            }
         }
-        if columnCount == 4 { return 220 * scale }
-        return 190 * scale
+        let uncappedPadded = uncapped.map { $0 + horizontalPadding }
+        let capped = uncappedPadded.map { min(max($0, minColumnWidth), maxColumnWidth) }
+        return (capped, uncappedPadded)
     }
 
     private final class GridDocumentView: NSView {
+        static let horizontalPadding: CGFloat = 8
         private enum Metrics {
-            static let horizontalPadding: CGFloat = 8
             static let verticalPadding: CGFloat = 6
             static let minRowHeight: CGFloat = 28
             static let separatorWidth: CGFloat = 0.5
         }
 
-        private let columnWidths: [CGFloat]
+        private var columnWidths: [CGFloat]
         private let cellFields: [[NSTextField]]
         private var rowHeights: [CGFloat] = []
 
@@ -543,11 +583,11 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
         @available(*, unavailable)
         required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-        func measureRowHeights() -> [CGFloat] {
+        func measureRowHeights(columnWidths: [CGFloat]) -> [CGFloat] {
             cellFields.map { row in
                 let maxCellHeight = row.enumerated().map { columnIndex, field in
                     let columnWidth = columnWidths.indices.contains(columnIndex) ? columnWidths[columnIndex] : columnWidths.last ?? 160
-                    let textWidth = max(1, columnWidth - 2 * Metrics.horizontalPadding)
+                    let textWidth = max(1, columnWidth - 2 * Self.horizontalPadding)
                     let rect = field.attributedStringValue.boundingRect(
                         with: NSSize(width: textWidth, height: .greatestFiniteMagnitude),
                         options: [.usesLineFragmentOrigin, .usesFontLeading]
@@ -558,7 +598,8 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
             }
         }
 
-        func apply(rowHeights: [CGFloat]) {
+        func apply(columnWidths: [CGFloat], rowHeights: [CGFloat]) {
+            self.columnWidths = columnWidths
             self.rowHeights = rowHeights
             needsLayout = true
             needsDisplay = true
@@ -573,9 +614,9 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
                 for columnIndex in cellFields[rowIndex].indices {
                     let columnWidth = columnWidths.indices.contains(columnIndex) ? columnWidths[columnIndex] : columnWidths.last ?? 160
                     cellFields[rowIndex][columnIndex].frame = NSRect(
-                        x: x + Metrics.horizontalPadding,
+                        x: x + Self.horizontalPadding,
                         y: y + Metrics.verticalPadding,
-                        width: max(0, columnWidth - 2 * Metrics.horizontalPadding),
+                        width: max(0, columnWidth - 2 * Self.horizontalPadding),
                         height: max(0, rowHeight - 2 * Metrics.verticalPadding)
                     )
                     x += columnWidth
@@ -618,7 +659,7 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
             return field
         }
 
-        private static func attributedCellString(_ text: String, isHeader: Bool, columnIndex: Int) -> NSAttributedString {
+        static func attributedCellString(_ text: String, isHeader: Bool, columnIndex: Int) -> NSAttributedString {
             let content = text.isEmpty ? " " : text
             let attr = NSMutableAttributedString(
                 attributedString: PickyMarkdownInlineTextView.buildAttributedString(from: [.paragraph(content)])

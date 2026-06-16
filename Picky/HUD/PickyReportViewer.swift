@@ -217,6 +217,10 @@ struct PickyMarkdownReportView: View {
     /// publishes a new app scale.
     @Environment(\.pickyAppFontScale) private var appFontScale
     private let renderer = PickyReportMarkdownRenderer()
+    /// Width of the content column, measured from the enclosing scroll view so
+    /// tables can size their columns to the text they hold and spend any slack
+    /// on the columns that actually need it instead of a fixed per-column floor.
+    @State private var containerWidth: CGFloat = 0
 
     /// Body copy size at scale 1.0. Bumped from the original 13.5pt because users
     /// reported the dense report column was hard to read at default macOS Retina
@@ -231,6 +235,13 @@ struct PickyMarkdownReportView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { containerWidth = proxy.size.width }
+                    .onChange(of: proxy.size.width) { _, newValue in containerWidth = newValue }
+            }
+        )
         .textSelection(.enabled)
     }
 
@@ -280,7 +291,7 @@ struct PickyMarkdownReportView: View {
     }
 
     private func tableView(headers: [String], rows: [[String]]) -> some View {
-        let widths = tableColumnWidths(columnCount: headers.count, firstHeader: headers.first ?? "")
+        let widths = tableColumnWidths(headers: headers, rows: rows, availableWidth: containerWidth)
         return ScrollView(.horizontal, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 0) {
                 tableRow(headers, widths: widths, isHeader: true)
@@ -325,17 +336,45 @@ struct PickyMarkdownReportView: View {
         }
     }
 
-    private func tableColumnWidths(columnCount: Int, firstHeader: String) -> [CGFloat] {
-        let firstIsIndex = isIndexColumnHeader(firstHeader)
-        return (0..<columnCount).map {
-            tableColumnWidth(index: $0, columnCount: columnCount, firstIsIndex: firstIsIndex)
-        }
-    }
+    /// Content-driven column widths. Each column is measured against the widest
+    /// single-line cell it holds (capped so a long cell wraps instead of
+    /// stretching the table). When the table is narrower than the available
+    /// width, the slack is handed to the columns whose text was clipped by the
+    /// cap, so short columns stay tight rather than sharing a fixed floor.
+    private func tableColumnWidths(headers: [String], rows: [[String]], availableWidth: CGFloat) -> [CGFloat] {
+        let columnCount = headers.count
+        guard columnCount > 0 else { return [] }
+        let horizontalPadding: CGFloat = 20
+        let maxColumnWidth = scaled(360)
+        let minColumnWidth = scaled(44)
+        let bodyFont = NSFont.systemFont(ofSize: scaled(Self.bodyBaseSize - 1))
+        let headerFont = NSFont.systemFont(ofSize: scaled(Self.bodyBaseSize - 1), weight: .semibold)
 
-    private func isIndexColumnHeader(_ header: String) -> Bool {
-        let trimmed = header.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if trimmed.isEmpty { return true }
-        return ["#", "no", "no.", "번호", "순번", "idx", "index"].contains(trimmed)
+        func textWidth(_ text: String, font: NSFont) -> CGFloat {
+            let content = text.isEmpty ? " " : text
+            return content.components(separatedBy: "\n").reduce(CGFloat(0)) { widest, line in
+                max(widest, (line as NSString).size(withAttributes: [.font: font]).width)
+            }
+        }
+
+        var uncapped = [CGFloat](repeating: 0, count: columnCount)
+        for column in 0..<columnCount {
+            var widest = textWidth(headers[column], font: headerFont)
+            for row in rows where column < row.count {
+                widest = max(widest, textWidth(row[column], font: bodyFont))
+            }
+            uncapped[column] = ceil(widest) + horizontalPadding
+        }
+
+        let capped = uncapped.map { min(max($0, minColumnWidth), maxColumnWidth) }
+        let total = capped.reduce(0, +)
+        guard availableWidth > total else { return capped }
+
+        let desire = zip(uncapped, capped).map { max($0 - $1, 0) }
+        let desireTotal = desire.reduce(0, +)
+        guard desireTotal > 0 else { return capped }
+        let extra = availableWidth - total
+        return zip(capped, desire).map { $0 + extra * ($1 / desireTotal) }
     }
 
     private func tableSeparatorOffsets(widths: [CGFloat]) -> [CGFloat] {
@@ -346,17 +385,6 @@ struct PickyMarkdownReportView: View {
             offsets.append(runningWidth)
         }
         return offsets
-    }
-
-    private func tableColumnWidth(index: Int, columnCount: Int, firstIsIndex: Bool) -> CGFloat {
-        if index == 0 && columnCount > 2 && firstIsIndex { return scaled(52) }
-        if columnCount >= 5 {
-            if index == 1 { return scaled(120) }
-            if index == columnCount - 1 { return scaled(300) }
-            return scaled(340)
-        }
-        if columnCount == 4 { return scaled(260) }
-        return scaled(220)
     }
 
     private func font(forHeadingLevel level: Int) -> Font {

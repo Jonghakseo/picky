@@ -45,7 +45,7 @@ struct PickyConversationCardView: View {
                     onArchiveSession: onArchiveSession
                 )
             } else {
-                chatContent
+                chatContent(fillsAvailableHeight: resolvedHeight != nil)
             }
         }
         .frame(width: PickyHUDDockLayout.detailContentWidth(for: width), alignment: .topLeading)
@@ -76,7 +76,7 @@ struct PickyConversationCardView: View {
         session.piSessionFilePath != nil && viewModel.isInlineTerminalMode(sessionID: session.id)
     }
 
-    private var chatContent: some View {
+    private func chatContent(fillsAvailableHeight: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             PickyConversationHeaderView(
                 viewModel: viewModel,
@@ -88,7 +88,8 @@ struct PickyConversationCardView: View {
             PickyConversationListView(
                 session: session,
                 viewModel: viewModel,
-                isCommandShortcutHintVisible: isCommandShortcutHintVisible
+                isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+                fillsAvailableHeight: fillsAvailableHeight
             )
             PickyConversationComposerView(
                 session: session,

@@ -11,6 +11,10 @@ struct PickyConversationListView: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
     var isCommandShortcutHintVisible = false
+    /// When the enclosing card has an explicit (user-resized) height, let the list
+    /// grow to consume the leftover vertical space so the composer stays pinned to
+    /// the card's bottom edge instead of floating below a hardcoded 640pt cap.
+    var fillsAvailableHeight = false
     @State private var hasAppeared = false
     @State private var delayedQuestionCollapseScrollTask: Task<Void, Never>?
 
@@ -72,7 +76,7 @@ struct PickyConversationListView: View {
                     PickyCompactingOverlayView()
                 }
             }
-            .frame(minHeight: 80, maxHeight: 640)
+            .frame(minHeight: 80, maxHeight: fillsAvailableHeight ? .infinity : 640)
             .task(id: session.id) {
                 // VStack is eager so the bottom sentinel is in the view tree by the
                 // time this runs. A single non-animated scroll dispatched onto the

@@ -19,9 +19,9 @@
     "test:contracts": "vitest run src/protocol.test.ts src/prompt-builder.test.ts src/pi-event-normalizer.test.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.79.4",
-    "@earendil-works/pi-coding-agent": "0.79.4",
-    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.79.4",
+    "@earendil-works/pi-ai": "0.79.7",
+    "@earendil-works/pi-coding-agent": "0.79.7",
+    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.79.7",
     "commander": "^14.0.3",
     "typebox": "^1.1.37",
     "ws": "^8.18.0",

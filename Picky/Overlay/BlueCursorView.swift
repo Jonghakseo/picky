@@ -206,6 +206,30 @@ private final class PickyOverlayBubblePreferencesStore: ObservableObject {
 // two upper circles are the eyes, and the large lower V/check stroke is the
 // mouth. Keeping it as SwiftUI vector paths lets the overlay recolor and
 // animate the mascot per state at runtime.
+/// Blurred glow halo behind the mascot. Extracted into its own `Equatable`
+/// view so SwiftUI rasterizes the expensive `.blur` once and reuses it across
+/// frames. The per-frame breathing `scale` is applied as a cheap `.scaleEffect`
+/// transform on the cached layer (see call site), instead of re-running the
+/// blur every display refresh. Inputs here only change on expression/mood/style
+/// changes, never per frame, so `.equatable()` skips re-rasterization while idle.
+struct MascotGlowLayer: View, Equatable {
+    let assetName: String
+    let tint: Color
+    let glowOpacity: Double
+    let glowSize: Double
+    let glowBlur: Double
+
+    var body: some View {
+        Image(assetName)
+            .resizable()
+            .renderingMode(.template)
+            .foregroundStyle(tint.opacity(glowOpacity))
+            .scaledToFit()
+            .frame(width: CGFloat(glowSize), height: CGFloat(glowSize))
+            .blur(radius: CGFloat(glowBlur))
+    }
+}
+
 private struct PickyCursorMascotView: View {
     let style: PickyCursorStyle
     let tint: Color
@@ -248,10 +272,18 @@ private struct PickyCursorMascotView: View {
         let assetName = assetName(for: expression)
 
         return ZStack {
-            cursorAsset(named: assetName, tint: tint.opacity(style.glowOpacity))
-                .frame(width: CGFloat(style.glowSize), height: CGFloat(style.glowSize))
-                .blur(radius: CGFloat(style.glowBlur))
-                .scaleEffect(CGFloat(style.glowScale) * scale)
+            // Cached blurred glow + cheap per-frame transform. The blur is
+            // rasterized once (inputs unchanged per frame) and only the
+            // breathing `scale` animates via `.scaleEffect`.
+            MascotGlowLayer(
+                assetName: assetName,
+                tint: tint,
+                glowOpacity: style.glowOpacity,
+                glowSize: style.glowSize,
+                glowBlur: style.glowBlur
+            )
+            .equatable()
+            .scaleEffect(CGFloat(style.glowScale) * scale)
 
             cursorAsset(named: assetName, tint: tint)
                 .frame(width: CGFloat(style.mascotSize), height: CGFloat(style.mascotSize))

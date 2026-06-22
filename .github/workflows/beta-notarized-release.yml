@@ -312,6 +312,13 @@ jobs:
           xcrun stapler validate "${final_dmg}"
           /usr/sbin/spctl -a -vvv --type open --context context:primary-signature "${final_dmg}"
 
+          # The DMG notarization submission also yields a ticket for the signed
+          # app bundle inside it. Staple the export app before the Sparkle
+          # update-zip step packages the app as a separate distribution payload.
+          xcrun stapler staple "${app}"
+          xcrun stapler validate "${app}"
+          /usr/sbin/spctl -a -vvv --type exec "${app}"
+
           sha256="$(shasum -a 256 "${final_dmg}" | awk '{print $1}')"
           final_dmg_name="$(basename "${final_dmg}")"
 

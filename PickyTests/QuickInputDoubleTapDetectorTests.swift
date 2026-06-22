@@ -58,10 +58,29 @@ struct QuickInputDoubleTapDetectorTests {
     }
 
     @Test
-    func twoControlTapsOutsideWindowDoNotFire() async {
+    func secondControlTapJustInsideWindowStillFiresAfterGuardDelay() async {
         let detector = QuickInputDoubleTapDetector()
         let collector = EventCollector(detector: detector)
         let base = Date(timeIntervalSince1970: 3_000)
+
+        controlDown(detector, at: base)
+        controlUp(detector, at: base.addingTimeInterval(0.05))
+        detector.forceCommitPendingPressForTesting(at: base.addingTimeInterval(QuickInputDoubleTapDetector.pttGuardWindow))
+
+        let secondPress = base.addingTimeInterval(QuickInputDoubleTapDetector.doubleTapWindow - 0.001)
+        controlDown(detector, at: secondPress)
+        controlUp(detector, at: secondPress.addingTimeInterval(0.05))
+        detector.forceCommitPendingPressForTesting(at: secondPress.addingTimeInterval(QuickInputDoubleTapDetector.pttGuardWindow))
+
+        #expect(collector.events.count == 1)
+        #expect(detector.firstPressAtForTesting == nil)
+    }
+
+    @Test
+    func twoControlTapsOutsideWindowDoNotFire() async {
+        let detector = QuickInputDoubleTapDetector()
+        let collector = EventCollector(detector: detector)
+        let base = Date(timeIntervalSince1970: 3_100)
 
         controlDown(detector, at: base)
         detector.forceCommitPendingPressForTesting(at: base)

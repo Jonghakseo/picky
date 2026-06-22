@@ -234,7 +234,7 @@ final class QuickInputDoubleTapDetector {
         pendingPressAt = nil
         pendingPressGuardTask = nil
 
-        if let firstPressAt, now.timeIntervalSince(firstPressAt) <= Self.doubleTapWindow {
+        if let firstPressAt, pressedAt.timeIntervalSince(firstPressAt) <= Self.doubleTapWindow {
             self.firstPressAt = nil
             emitDoubleTap()
             return

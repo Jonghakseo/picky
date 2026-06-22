@@ -57,6 +57,8 @@ struct PickyDiagnosticsBundleTests {
         #expect(names.contains("agentd.stderr.tail.log"))
         #expect(names.contains("agentd.port-occupants.txt"))
         #expect(names.contains("agentd.tool-events.txt"))
+        #expect(names.contains("watchdog.summary.txt"))
+        #expect(names.contains("watchdog.samples.txt"))
         #expect(!names.contains("agentd.stdout.tail.log"))
         #expect(!names.contains("agentd.stdout.log"))
         #expect(names.contains("picky-oslog.txt"))
@@ -297,6 +299,58 @@ struct PickyDiagnosticsBundleTests {
         let staged = try extractZipEntryText(named: "agentd.node-preflight.json", from: bundle.zipURL)
         #expect(staged.contains("timedOut"))
         #expect(staged.contains("/Users/<redacted-user>/.local/bin/node"))
+    }
+
+    @Test func watchdogDiagnosticsSummarizeStallsAndRedactBoundedSamples() throws {
+        let fixture = try makeFixture(scope: .logsOnly)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+        let logsDir = fixture.appendingPathComponent("Logs", isDirectory: true)
+        let sampleText = """
+        Path: /Users/jane/Library/Application Support/Picky/Picky.app
+        apiKey=supersecretvalue
+        Thread 0 Crashed:: Dispatch queue: com.apple.main-thread
+        0   Picky  PickyBubbleMarkdownContentView.measuredSize
+        \(String(repeating: "sample frame\n", count: 40))
+        SHOULD_NOT_APPEAR_AFTER_CAP
+        """
+        let sampleURL = logsDir.appendingPathComponent("spin-2026-06-22T01-54-50.txt")
+        try sampleText.write(to: sampleURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 1_781_000_000)],
+            ofItemAtPath: sampleURL.path
+        )
+
+        let oslog = """
+        2026-06-22T01:54:40Z notice [com.jonghakseo.picky] main thread soft stall detected ageMs=2310 thresholdMs=2000
+        2026-06-22T01:54:42Z notice [com.jonghakseo.picky] main thread soft stall recovered ageMs=2450
+        user chat should never appear in watchdog summary
+        """
+        let bundle = try PickyDiagnosticsBundleBuilder.build(
+            scope: .logsOnly,
+            metadata: makeMetadata(),
+            appSupportRoot: fixture,
+            maxWatchdogSampleBytes: 180,
+            oslogProvider: { oslog }
+        )
+        defer { try? FileManager.default.removeItem(at: bundle.zipURL.deletingLastPathComponent()) }
+
+        let summary = try extractZipEntryText(named: "watchdog.summary.txt", from: bundle.zipURL)
+        #expect(summary.contains("softStallDetectedCount=1"))
+        #expect(summary.contains("softStallRecoveredCount=1"))
+        #expect(summary.contains("maxSoftStallAgeMs=2310"))
+        #expect(summary.contains("maxSoftStallRecoveryAgeMs=2450"))
+        #expect(summary.contains("maxSoftStallThresholdMs=2000"))
+        #expect(summary.contains("spinSampleFileCount=1"))
+        #expect(!summary.contains("user chat should never appear"))
+
+        let samples = try extractZipEntryText(named: "watchdog.samples.txt", from: bundle.zipURL)
+        #expect(samples.contains("spin-2026-06-22T01-54-50.txt"))
+        #expect(samples.contains("truncated=true"))
+        #expect(!samples.contains("/Users/jane"))
+        #expect(samples.contains("/Users/<redacted-user>"))
+        #expect(!samples.contains("supersecretvalue"))
+        #expect(samples.contains("<redacted>"))
+        #expect(!samples.contains("SHOULD_NOT_APPEAR_AFTER_CAP"))
     }
 
     @Test func portOccupancyDiagnosticsProbePortsFromEADDRINUSEStderr() throws {

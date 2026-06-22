@@ -118,6 +118,8 @@ enum PickyDiagnosticsBundleBuilder {
     /// user chat, prompts, tool arguments, and tool results; only a tool-name
     /// lifecycle summary is derived from it locally.
     static let defaultMaxLogBytes = 1_000_000
+    static let defaultMaxWatchdogSampleBytes = 120_000
+    private static let maxWatchdogSampleFiles = 3
 
     /// Builds a zip in a unique temp directory and returns its URL. Caller is
     /// responsible for deleting `zipURL` and its parent directory after upload.
@@ -127,6 +129,7 @@ enum PickyDiagnosticsBundleBuilder {
         appSupportRoot: URL = PickyAppSupport.defaultRoot(),
         fileManager: FileManager = .default,
         maxLogBytes: Int = defaultMaxLogBytes,
+        maxWatchdogSampleBytes: Int = defaultMaxWatchdogSampleBytes,
         oslogProvider: () -> String = { PickyOSLogCollector.collectCurrentProcess() },
         portOccupancyProvider: ([Int]) -> String = { PickyPortOccupancyCollector.collect(ports: $0) }
     ) throws -> PickyDiagnosticsBundle {
@@ -149,6 +152,7 @@ enum PickyDiagnosticsBundleBuilder {
             appSupportRoot: appSupportRoot,
             fileManager: fileManager,
             maxLogBytes: maxLogBytes,
+            maxWatchdogSampleBytes: maxWatchdogSampleBytes,
             oslogProvider: oslogProvider,
             portOccupancyProvider: portOccupancyProvider
         )
@@ -173,6 +177,7 @@ enum PickyDiagnosticsBundleBuilder {
         appSupportRoot: URL,
         fileManager: FileManager,
         maxLogBytes: Int,
+        maxWatchdogSampleBytes: Int,
         oslogProvider: () -> String,
         portOccupancyProvider: ([Int]) -> String
     ) throws {
@@ -225,6 +230,14 @@ enum PickyDiagnosticsBundleBuilder {
                 to: oslogPath, atomically: true, encoding: .utf8
             )
         }
+
+        stageWatchdogDiagnostics(
+            from: logsDir,
+            to: stagingRoot,
+            oslogText: oslogText,
+            fileManager: fileManager,
+            maxSampleBytes: maxWatchdogSampleBytes
+        )
 
         let metadataPath = stagingRoot.appendingPathComponent("metadata.txt")
         do {
@@ -307,6 +320,181 @@ enum PickyDiagnosticsBundleBuilder {
         }
         let redacted = PickyDiagnosticTextRedactor.redact(text)
         try? redacted.write(to: destinationURL, atomically: true, encoding: .utf8)
+    }
+
+    private struct WatchdogSampleEntry {
+        let url: URL
+        let modifiedAt: Date
+        let sizeBytes: UInt64
+    }
+
+    private struct WatchdogStallSummary {
+        var softStallDetectedCount = 0
+        var softStallRecoveredCount = 0
+        var maxSoftStallAgeMs = 0
+        var maxSoftStallRecoveryAgeMs = 0
+        var maxSoftStallThresholdMs = 0
+    }
+
+    private static func stageWatchdogDiagnostics(
+        from logsDir: URL,
+        to stagingRoot: URL,
+        oslogText: String,
+        fileManager: FileManager,
+        maxSampleBytes: Int
+    ) {
+        let samples = watchdogSampleEntries(in: logsDir, fileManager: fileManager)
+        let summary = renderWatchdogSummary(
+            stallSummary: watchdogStallSummary(from: oslogText),
+            sampleEntries: samples
+        )
+        try? summary.write(
+            to: stagingRoot.appendingPathComponent("watchdog.summary.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let sampleExcerpts = renderWatchdogSampleExcerpts(
+            sampleEntries: samples,
+            fileManager: fileManager,
+            maxSampleBytes: maxSampleBytes
+        )
+        try? sampleExcerpts.write(
+            to: stagingRoot.appendingPathComponent("watchdog.samples.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    private static func watchdogSampleEntries(in logsDir: URL, fileManager: FileManager) -> [WatchdogSampleEntry] {
+        guard let urls = try? fileManager.contentsOfDirectory(
+            at: logsDir,
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        return urls.compactMap { url -> WatchdogSampleEntry? in
+            guard url.lastPathComponent.hasPrefix("spin-"), url.pathExtension == "txt" else { return nil }
+            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+            let modifiedAt = values?.contentModificationDate ?? .distantPast
+            let sizeBytes = UInt64(values?.fileSize ?? 0)
+            return WatchdogSampleEntry(url: url, modifiedAt: modifiedAt, sizeBytes: sizeBytes)
+        }
+        .sorted { lhs, rhs in
+            if lhs.modifiedAt != rhs.modifiedAt { return lhs.modifiedAt > rhs.modifiedAt }
+            return lhs.url.lastPathComponent > rhs.url.lastPathComponent
+        }
+    }
+
+    private static func renderWatchdogSummary(
+        stallSummary: WatchdogStallSummary,
+        sampleEntries: [WatchdogSampleEntry]
+    ) -> String {
+        var lines = [
+            "Picky watchdog diagnostics summary",
+            "Privacy: scalar counts/durations plus bounded, redacted spin sample excerpts only; user chat, tool arguments, and tool results are excluded.",
+            "softStallDetectedCount=\(stallSummary.softStallDetectedCount)",
+            "softStallRecoveredCount=\(stallSummary.softStallRecoveredCount)",
+            "maxSoftStallAgeMs=\(stallSummary.maxSoftStallAgeMs)",
+            "maxSoftStallRecoveryAgeMs=\(stallSummary.maxSoftStallRecoveryAgeMs)",
+            "maxSoftStallThresholdMs=\(stallSummary.maxSoftStallThresholdMs)",
+            "spinSampleFileCount=\(sampleEntries.count)",
+            "includedSpinSampleFileCount=\(min(sampleEntries.count, maxWatchdogSampleFiles))"
+        ]
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withTimeZone]
+        for (index, sample) in sampleEntries.prefix(maxWatchdogSampleFiles).enumerated() {
+            lines.append("sample[\(index)].filename=\(sample.url.lastPathComponent)")
+            lines.append("sample[\(index)].sizeBytes=\(sample.sizeBytes)")
+            lines.append("sample[\(index)].modifiedAt=\(formatter.string(from: sample.modifiedAt))")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func renderWatchdogSampleExcerpts(
+        sampleEntries: [WatchdogSampleEntry],
+        fileManager: FileManager,
+        maxSampleBytes: Int
+    ) -> String {
+        guard !sampleEntries.isEmpty else {
+            return "No spin-*.txt watchdog sample files found in Logs."
+        }
+        guard maxSampleBytes > 0 else {
+            return "Watchdog sample excerpt capture disabled because maxSampleBytes=0."
+        }
+
+        let included = Array(sampleEntries.prefix(maxWatchdogSampleFiles))
+        let perFileLimit = max(1, maxSampleBytes / max(1, included.count))
+        var remainingBudget = maxSampleBytes
+        var sections = [
+            "Picky watchdog spin sample excerpts",
+            "Privacy: excerpts are capped and redacted; raw sample files are not bundled in full.",
+            "maxTotalExcerptBytes=\(maxSampleBytes)",
+            "maxFiles=\(maxWatchdogSampleFiles)"
+        ]
+
+        for sample in included {
+            guard remainingBudget > 0 else { break }
+            let readLimit = min(perFileLimit, remainingBudget)
+            let data = prefixData(from: sample.url, maxBytes: readLimit, fileManager: fileManager) ?? Data()
+            remainingBudget -= data.count
+            let truncated = UInt64(data.count) < sample.sizeBytes
+            let excerpt: String
+            if let text = String(data: data, encoding: .utf8) {
+                excerpt = PickyDiagnosticTextRedactor.redact(text)
+            } else {
+                excerpt = "(sample excerpt was not valid UTF-8; \(data.count) bytes omitted)"
+            }
+            sections.append("""
+
+# \(sample.url.lastPathComponent)
+originalSizeBytes=\(sample.sizeBytes)
+excerptBytes=\(data.count)
+truncated=\(truncated)
+\(excerpt)
+""")
+        }
+        return sections.joined(separator: "\n")
+    }
+
+    private static func prefixData(from sourceURL: URL, maxBytes: Int, fileManager: FileManager) -> Data? {
+        guard fileManager.fileExists(atPath: sourceURL.path) else { return nil }
+        guard let handle = try? FileHandle(forReadingFrom: sourceURL) else { return nil }
+        defer { try? handle.close() }
+        return handle.readData(ofLength: max(1, maxBytes))
+    }
+
+    private static func watchdogStallSummary(from oslogText: String) -> WatchdogStallSummary {
+        var summary = WatchdogStallSummary()
+        for line in oslogText.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            if let values = firstIntCaptures(
+                in: line,
+                pattern: #"main thread soft stall detected ageMs=(\d+) thresholdMs=(\d+)"#
+            ), values.count == 2 {
+                summary.softStallDetectedCount += 1
+                summary.maxSoftStallAgeMs = max(summary.maxSoftStallAgeMs, values[0])
+                summary.maxSoftStallThresholdMs = max(summary.maxSoftStallThresholdMs, values[1])
+            }
+            if let values = firstIntCaptures(
+                in: line,
+                pattern: #"main thread soft stall recovered ageMs=(\d+)"#
+            ), values.count == 1 {
+                summary.softStallRecoveredCount += 1
+                summary.maxSoftStallRecoveryAgeMs = max(summary.maxSoftStallRecoveryAgeMs, values[0])
+            }
+        }
+        return summary
+    }
+
+    private static func firstIntCaptures(in text: String, pattern: String) -> [Int]? {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, range: range), match.numberOfRanges > 1 else { return nil }
+        return (1..<match.numberOfRanges).compactMap { index in
+            guard let range = Range(match.range(at: index), in: text) else { return nil }
+            return Int(text[range])
+        }
     }
 
     static func parseEADDRINUSEPorts(from text: String) -> [Int] {

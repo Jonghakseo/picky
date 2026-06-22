@@ -470,6 +470,8 @@ final class PickySessionListViewModel: ObservableObject {
     private var slashCommandsEpochBySessionID: [String: UInt64] = [:]
     private var slashCommandRequestEpochByID: [String: UInt64] = [:]
     private var slashCommandRequestSessionByID: [String: String] = [:]
+    private var slashCommandRequestStartedAtByID: [String: Date] = [:]
+    private let slashCommandSuggestionSlowLogThreshold: TimeInterval = 0.02
     private var lastIncrementalSeqBySessionID: [String: Int] = [:]
     private var pendingFullscreenTurnSnapshotsBySessionID: [String: [PickyPendingFullscreenTurnSnapshot]] = [:]
     private var pendingNewFullscreenTurnSnapshots: [PickyPendingFullscreenTurnSnapshot] = []
@@ -813,11 +815,7 @@ final class PickySessionListViewModel: ObservableObject {
         slashCommandsBySessionID.removeValue(forKey: sessionID)
         slashCommandRequestedSessionIDs.remove(sessionID)
         slashCommandsEpochBySessionID.removeValue(forKey: sessionID)
-        let removedRequestIDs = slashCommandRequestSessionByID.filter { $0.value == sessionID }.map(\.key)
-        for requestID in removedRequestIDs {
-            slashCommandRequestSessionByID.removeValue(forKey: requestID)
-            slashCommandRequestEpochByID.removeValue(forKey: requestID)
-        }
+        clearSlashCommandRequests(sessionID: sessionID)
         lastIncrementalSeqBySessionID.removeValue(forKey: sessionID)
         releasedArchivedChildSessionIDs.remove(sessionID)
         if screenContextTargetSessionID == sessionID {
@@ -847,28 +845,48 @@ final class PickySessionListViewModel: ObservableObject {
         let command = PickyCommandEnvelope(type: .listSlashCommands, sessionId: sessionID)
         slashCommandRequestEpochByID[command.id] = epoch
         slashCommandRequestSessionByID[command.id] = sessionID
-        pickySessionLog("slash commands requested session=\(sessionID) epoch=\(epoch)")
+        slashCommandRequestStartedAtByID[command.id] = Date()
+        pickySessionLog("slash commands requested session=\(sessionID) request=\(command.id) epoch=\(epoch)")
         Task { [weak self] in
             guard let self else { return }
             do {
                 try await client.send(command)
             } catch {
+                let startedAt = slashCommandRequestStartedAtByID.removeValue(forKey: command.id)
                 slashCommandRequestEpochByID.removeValue(forKey: command.id)
                 slashCommandRequestSessionByID.removeValue(forKey: command.id)
                 if !slashCommandRequestSessionByID.values.contains(sessionID) {
                     slashCommandRequestedSessionIDs.remove(sessionID)
                 }
+                pickySessionLog("slash commands request failed session=\(sessionID) request=\(command.id) latencyMs=\(Self.millisecondsSince(startedAt))")
                 lastError = error.localizedDescription
             }
         }
     }
 
     func slashCommandSuggestions(for text: String, sessionID: String, limit: Int = PickySlashCommandAutocompletePolicy.maxSuggestions) -> [PickySlashCommand] {
-        PickySlashCommandAutocompletePolicy.suggestions(for: text, commands: slashCommandsBySessionID[sessionID] ?? [], limit: limit)
+        let commands = slashCommandsBySessionID[sessionID] ?? []
+        let queryLength = PickySlashCommandAutocompletePolicy.query(in: text)?.count ?? 0
+        let startedAt = Date()
+        let suggestions = PickySlashCommandAutocompletePolicy.suggestions(for: text, commands: commands, limit: limit)
+        let elapsed = Date().timeIntervalSince(startedAt)
+        if elapsed >= slashCommandSuggestionSlowLogThreshold {
+            pickySessionLog("slash command suggestions slow session=\(sessionID) queryChars=\(queryLength) commands=\(commands.count) suggestions=\(suggestions.count) durationMs=\(Self.milliseconds(elapsed))")
+        }
+        return suggestions
     }
 
     func hasLoadedSlashCommands(sessionID: String) -> Bool {
         slashCommandsBySessionID[sessionID] != nil
+    }
+
+    private static func millisecondsSince(_ date: Date?) -> String {
+        guard let date else { return "unknown" }
+        return String(milliseconds(Date().timeIntervalSince(date)))
+    }
+
+    private static func milliseconds(_ interval: TimeInterval) -> Int {
+        max(0, Int((interval * 1_000).rounded()))
     }
 
     func composerDraftRequest(for sessionID: String) -> PickyComposerDraftRequest? {
@@ -1787,11 +1805,7 @@ final class PickySessionListViewModel: ObservableObject {
         slashCommandsBySessionID.removeValue(forKey: sessionID)
         slashCommandRequestedSessionIDs.remove(sessionID)
         slashCommandsEpochBySessionID.removeValue(forKey: sessionID)
-        let removedRequestIDs = slashCommandRequestSessionByID.filter { $0.value == sessionID }.map(\.key)
-        for requestID in removedRequestIDs {
-            slashCommandRequestSessionByID.removeValue(forKey: requestID)
-            slashCommandRequestEpochByID.removeValue(forKey: requestID)
-        }
+        clearSlashCommandRequests(sessionID: sessionID)
         lastIncrementalSeqBySessionID.removeValue(forKey: sessionID)
         if screenContextTargetSessionID == sessionID {
             clearScreenContextTargetState()
@@ -2095,13 +2109,16 @@ final class PickySessionListViewModel: ObservableObject {
         PickyPerf.event("vm_event_slash_commands_snapshot")
         let currentEpoch = slashCommandsEpochBySessionID[sessionId] ?? 0
         let requestEpoch: UInt64?
+        var requestStartedAt: Date?
         if let requestId {
             guard let requestSessionId = slashCommandRequestSessionByID.removeValue(forKey: requestId),
                   let matchedRequestEpoch = slashCommandRequestEpochByID.removeValue(forKey: requestId),
                   requestSessionId == sessionId else {
-                pickySessionLog("slash commands snapshot discarded session=\(sessionId) reason=unknown-request commands=\(commands.count)")
+                let startedAt = slashCommandRequestStartedAtByID.removeValue(forKey: requestId)
+                pickySessionLog("slash commands snapshot discarded session=\(sessionId) request=\(requestId) reason=unknown-request commands=\(commands.count) latencyMs=\(Self.millisecondsSince(startedAt))")
                 return
             }
+            requestStartedAt = slashCommandRequestStartedAtByID.removeValue(forKey: requestId)
             requestEpoch = matchedRequestEpoch
         } else {
             let staleRequestIDs = slashCommandRequestSessionByID
@@ -2113,6 +2130,7 @@ final class PickySessionListViewModel: ObservableObject {
                 for staleRequestID in staleRequestIDs {
                     slashCommandRequestSessionByID.removeValue(forKey: staleRequestID)
                     slashCommandRequestEpochByID.removeValue(forKey: staleRequestID)
+                    slashCommandRequestStartedAtByID.removeValue(forKey: staleRequestID)
                 }
                 pickySessionLog("slash commands snapshot discarded session=\(sessionId) reason=no-request-id-after-epoch-invalidation staleRequests=\(staleRequestIDs.count) commands=\(commands.count)")
                 return
@@ -2126,14 +2144,17 @@ final class PickySessionListViewModel: ObservableObject {
                 pickySessionLog("slash commands snapshot discarded session=\(sessionId) reason=no-request-id-without-inflight commands=\(commands.count)")
                 return
             }
+            requestStartedAt = matchingRequestIDs
+                .compactMap { slashCommandRequestStartedAtByID[$0] }
+                .min()
             requestEpoch = currentEpoch
         }
         guard requestEpoch == currentEpoch else {
-            pickySessionLog("slash commands snapshot discarded session=\(sessionId) requestEpoch=\(requestEpoch ?? 0) currentEpoch=\(currentEpoch) commands=\(commands.count)")
+            pickySessionLog("slash commands snapshot discarded session=\(sessionId) requestEpoch=\(requestEpoch ?? 0) currentEpoch=\(currentEpoch) commands=\(commands.count) latencyMs=\(Self.millisecondsSince(requestStartedAt))")
             return
         }
         clearSlashCommandRequests(sessionID: sessionId)
-        pickySessionLog("slash commands snapshot session=\(sessionId) epoch=\(currentEpoch) commands=\(commands.count)")
+        pickySessionLog("slash commands snapshot session=\(sessionId) epoch=\(currentEpoch) commands=\(commands.count) latencyMs=\(Self.millisecondsSince(requestStartedAt))")
         slashCommandsBySessionID[sessionId] = commands
         slashCommandRequestedSessionIDs.insert(sessionId)
     }
@@ -2275,6 +2296,7 @@ final class PickySessionListViewModel: ObservableObject {
         for requestID in requestIDs {
             slashCommandRequestSessionByID.removeValue(forKey: requestID)
             slashCommandRequestEpochByID.removeValue(forKey: requestID)
+            slashCommandRequestStartedAtByID.removeValue(forKey: requestID)
         }
     }
 
@@ -2284,6 +2306,7 @@ final class PickySessionListViewModel: ObservableObject {
         slashCommandRequestedSessionIDs = slashCommandRequestedSessionIDs.filter { knownSessionIDs.contains($0) }
         slashCommandRequestSessionByID = slashCommandRequestSessionByID.filter { knownSessionIDs.contains($0.value) }
         slashCommandRequestEpochByID = slashCommandRequestEpochByID.filter { slashCommandRequestSessionByID[$0.key] != nil }
+        slashCommandRequestStartedAtByID = slashCommandRequestStartedAtByID.filter { slashCommandRequestSessionByID[$0.key] != nil }
         composerDraftController.prune(knownSessionIDs: knownSessionIDs)
         syncComposerDraftRequests()
         thinkingBlocksHiddenBySessionID = thinkingBlocksHiddenBySessionID.filter { knownSessionIDs.contains($0.key) }

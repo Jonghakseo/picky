@@ -93,6 +93,42 @@ cleanup() {
 }
 trap cleanup EXIT
 
+wait_for_finder_metadata() {
+  local ds_store="${MOUNT_PATH}/.DS_Store"
+  local last_state=""
+  local stable_polls=0
+
+  for ((attempt = 1; attempt <= 50; attempt += 1)); do
+    sync
+    if [[ -s "${ds_store}" ]]; then
+      local current_state
+      if ! current_state="$(/usr/bin/stat -f '%z:%m' "${ds_store}"):$({ /usr/bin/shasum -a 256 "${ds_store}" || true; } | awk '{print $1}')" || [[ "${current_state}" == *: ]]; then
+        last_state=""
+        stable_polls=0
+        sleep 0.2
+        continue
+      fi
+      if [[ "${current_state}" == "${last_state}" ]]; then
+        stable_polls=$((stable_polls + 1))
+      else
+        last_state="${current_state}"
+        stable_polls=1
+      fi
+
+      if [[ ${stable_polls} -ge 3 ]]; then
+        return 0
+      fi
+    else
+      last_state=""
+      stable_polls=0
+    fi
+    sleep 0.2
+  done
+
+  echo "Finder did not flush stable ${ds_store}; refusing to create an unstyled DMG." >&2
+  return 1
+}
+
 mkdir -p "${STAGING}"
 
 echo "Staging app bundle..."
@@ -165,8 +201,8 @@ end tell
 APPLESCRIPT
 
 # Make sure Finder has flushed .DS_Store to the volume before we unmount.
-sync
-sleep 2
+echo "Waiting for Finder metadata..."
+wait_for_finder_metadata
 
 echo "Detaching..."
 /usr/bin/hdiutil detach "${MOUNT_DEV}" -force >/dev/null

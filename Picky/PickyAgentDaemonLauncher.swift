@@ -527,6 +527,22 @@ struct PickyDaemonStatusSnapshot: Codable, Equatable {
     var lastUpdatedAt: String
     /// ISO-8601 timestamp of the most recent successful `.running` entry.
     var lastRunningAt: String?
+    /// Main-agent runtime mode requested for this launch (`pi`, `openai-realtime`, ...).
+    var mainAgentRuntimeMode: String?
+    /// Optional PICKY_AGENTD_RUNTIME override (`mock`, etc.). Nil for the default runtime.
+    var agentdRuntimeOverride: String?
+    /// How Node was resolved for compiled/bundled launches.
+    var nodeSource: String?
+    /// Executable path used for launch. Redacted before diagnostics upload.
+    var executablePath: String?
+    /// Agentd package root used as the process working directory. Redacted before diagnostics upload.
+    var workingDirectory: String?
+    /// Last classified startup/runtime failure observed in stderr or preflight.
+    var lastFailureKind: String?
+    /// TCP port associated with `lastFailureKind` when applicable.
+    var lastFailurePort: Int?
+    /// ISO-8601 timestamp of the last classified failure.
+    var lastFailureAt: String?
 }
 
 enum PickyAgentdRuntimeLocation: Equatable {
@@ -583,6 +599,15 @@ enum PickyDaemonLaunchPreflightError: LocalizedError, Equatable {
             message
         case .missingRequiredExecutable(let name):
             "\(name) not found in PATH. Install \(name) or launch Picky with a PATH that includes it."
+        }
+    }
+
+    var diagnosticsKind: String {
+        switch self {
+        case .missingAgentdPackage: return "missingAgentdPackage"
+        case .missingAgentdEntryPoint: return "missingAgentdEntryPoint"
+        case .missingRequiredExecutable: return "missingRequiredExecutable"
+        case .missingExecutableAtPath: return "missingExecutableAtPath"
         }
     }
 }
@@ -647,6 +672,10 @@ struct PickyNodePreflightSnapshot: Codable, Equatable {
     var requiredNodeVersion: String
     var nodePath: String?
     var nodeSource: String?
+    var mainAgentRuntimeMode: String?
+    var agentdRuntimeOverride: String?
+    var executablePath: String?
+    var workingDirectory: String?
     var status: String
     var version: String?
     var failureReason: String?
@@ -853,6 +882,9 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     /// into the on-disk status snapshot so diagnostics can spot a daemon that
     /// started successfully but stalled before the handshake.
     private var lastRunningAt: Date?
+    private var lastFailureKind: String?
+    private var lastFailurePort: Int?
+    private var lastFailureAt: Date?
     /// On-disk path of the status snapshot JSON used by the diagnostics
     /// bundle. Lives alongside `agentd.stderr.log` / `agentd.stdout.log` so
     /// users do not have to opt into anything extra to surface it.
@@ -893,6 +925,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         intentionallyStopped = false
         terminalLaunchFailureMessage = nil
         stderrDiagnosticBuffer = ""
+        clearLastFailureClassification()
         purgeStaleChildSessionStatusFiles()
         launch()
     }
@@ -907,6 +940,7 @@ final class PickyAgentDaemonLauncher: ObservableObject {
     }
 
     private func launch() {
+        clearLastFailureClassification()
         pickyDaemonLog("launching executable=\(configuration.executableURL.path) args=\(configuration.arguments.joined(separator: " "))")
         updateState(.starting)
         do {
@@ -926,10 +960,12 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             updateState(.running)
             pickyDaemonLog("running pid=\(runner.processIdentifier.map(String.init) ?? "unknown") logDir=\(logDirectory.path)")
         } catch let error as PickyDaemonLaunchPreflightError {
-            pickyDaemonLog("preflight failed error=\(error.localizedDescription)")
+            recordLastFailure(kind: error.diagnosticsKind)
+            pickyDaemonLog("preflight failed kind=\(error.diagnosticsKind)")
             updateState(.failedToStart(error.localizedDescription))
         } catch {
-            pickyDaemonLog("launch failed error=\(error.localizedDescription)")
+            recordLastFailure(kind: "launchError")
+            pickyDaemonLog("launch failed")
             // Child daemons must fail fast (see processTerminated()). A generic launch error
             // in child role surfaces as .failedToStart so the pool's spawn promise rejects;
             // primary daemons keep the historical backoff-restart loop.
@@ -1041,8 +1077,12 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         if stderrDiagnosticBuffer.count > Self.stderrDiagnosticBufferLimit {
             stderrDiagnosticBuffer = String(stderrDiagnosticBuffer.suffix(Self.stderrDiagnosticBufferLimit))
         }
+        if let port = Self.eaddrinusePort(from: stderrDiagnosticBuffer, fallbackPort: configuration.port) {
+            recordLastFailure(kind: "portConflict", port: port)
+        }
         guard let message = Self.unsupportedNodeFailureMessage(from: stderrDiagnosticBuffer) else { return }
         terminalLaunchFailureMessage = message
+        recordLastFailure(kind: "unsupportedNode")
         updateState(.failedToStart(message))
     }
 
@@ -1056,6 +1096,23 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             return "Node \(installed) is too old for picky-agentd. Install Node \(required.isEmpty ? Self.minimumSupportedNodeVersion : required) or newer and relaunch Picky."
         }
         return nil
+    }
+
+    private static func eaddrinusePort(from stderr: String, fallbackPort: Int) -> Int? {
+        guard stderr.range(of: "EADDRINUSE", options: [.caseInsensitive]) != nil else { return nil }
+        let patterns = [
+            #"address already in use\s+127\.0\.0\.1:(\d+)"#,
+            #"port:\s*(\d+)"#
+        ]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
+            let range = NSRange(stderr.startIndex..<stderr.endIndex, in: stderr)
+            guard let match = regex.firstMatch(in: stderr, range: range), match.numberOfRanges > 1,
+                  let portRange = Range(match.range(at: 1), in: stderr),
+                  let port = Int(stderr[portRange]) else { continue }
+            return port
+        }
+        return fallbackPort > 0 ? fallbackPort : nil
     }
 
     private func appendStdout(_ data: Data) {
@@ -1152,6 +1209,28 @@ final class PickyAgentDaemonLauncher: ObservableObject {
         }
     }
 
+    private func recordLastFailure(kind: String, port: Int? = nil) {
+        let previousKind = lastFailureKind
+        let previousPort = lastFailurePort
+        lastFailureKind = kind
+        lastFailurePort = port
+        lastFailureAt = Date()
+        if previousKind != kind || previousPort != port {
+            if let port {
+                pickyDaemonLog("failure classified kind=\(kind) port=\(port) role=\(roleLabel)")
+            } else {
+                pickyDaemonLog("failure classified kind=\(kind) role=\(roleLabel)")
+            }
+        }
+        writeStatusSnapshot()
+    }
+
+    private func clearLastFailureClassification() {
+        lastFailureKind = nil
+        lastFailurePort = nil
+        lastFailureAt = nil
+    }
+
     // MARK: - Status snapshot
 
     /// Updates the in-memory state, publishes it (SwiftUI/Combine observers),
@@ -1172,7 +1251,15 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             port: configuration.port,
             attempts: attempts,
             lastUpdatedAt: Self.iso8601Formatter.string(from: Date()),
-            lastRunningAt: lastRunningAt.map(Self.iso8601Formatter.string(from:))
+            lastRunningAt: lastRunningAt.map(Self.iso8601Formatter.string(from:)),
+            mainAgentRuntimeMode: configuration.mainAgentRuntimeMode.agentdEnvironmentValue,
+            agentdRuntimeOverride: configuration.runtime,
+            nodeSource: nodeSourceDiagnosticsValue,
+            executablePath: configuration.executableURL.path,
+            workingDirectory: configuration.workingDirectory.path,
+            lastFailureKind: lastFailureKind,
+            lastFailurePort: lastFailurePort,
+            lastFailureAt: lastFailureAt.map(Self.iso8601Formatter.string(from:))
         )
         let urls = statusSnapshotFileNames().map { logDirectory.appendingPathComponent($0) }
         do {
@@ -1216,6 +1303,10 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             requiredNodeVersion: Self.minimumSupportedNodeVersion,
             nodePath: path,
             nodeSource: nodeSourceDiagnosticsValue,
+            mainAgentRuntimeMode: configuration.mainAgentRuntimeMode.agentdEnvironmentValue,
+            agentdRuntimeOverride: configuration.runtime,
+            executablePath: configuration.executableURL.path,
+            workingDirectory: configuration.workingDirectory.path,
             status: result.diagnosticsStatus,
             version: result.versionString,
             failureReason: result.failureReason,
@@ -1239,6 +1330,10 @@ final class PickyAgentDaemonLauncher: ObservableObject {
             requiredNodeVersion: Self.minimumSupportedNodeVersion,
             nodePath: path,
             nodeSource: nodeSourceDiagnosticsValue,
+            mainAgentRuntimeMode: configuration.mainAgentRuntimeMode.agentdEnvironmentValue,
+            agentdRuntimeOverride: configuration.runtime,
+            executablePath: configuration.executableURL.path,
+            workingDirectory: configuration.workingDirectory.path,
             status: "deferredToAgentd",
             version: nil,
             failureReason: "Node version is validated by agentd at startup via process.versions.node.",

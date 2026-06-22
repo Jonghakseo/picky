@@ -779,7 +779,43 @@ struct PickyAgentDaemonLauncherTests {
         let snapshot = try String(contentsOf: temp.appendingPathComponent("Logs/agentd.node-preflight.json"))
         #expect(snapshot.contains(#""status" : "deferredToAgentd""#))
         #expect(snapshot.contains(#""nodeSource" : "external""#))
+        #expect(snapshot.contains(#""mainAgentRuntimeMode" : "pi""#))
+        #expect(snapshot.contains(#""executablePath" : "\/usr\/bin\/env""#))
         #expect(snapshot.contains("process.versions.node"))
+    }
+
+    @Test func statusSnapshotRecordsRuntimeAndPortConflictClassification() throws {
+        let temp = FileManager.default.temporaryDirectory.appendingPathComponent("picky-launcher-\(UUID().uuidString)", isDirectory: true)
+        let agentd = temp.appendingPathComponent("agentd", isDirectory: true)
+        try makeAgentdPackage(at: agentd)
+        let runner = FakeProcessRunner()
+        var configuration = PickyAgentDaemonConfiguration(
+            port: 17631,
+            token: "token-123",
+            appSupportRoot: temp,
+            defaultCwd: "/tmp",
+            runtime: "mock",
+            workingDirectory: agentd,
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: ["node", "dist/index.js"]
+        )
+        configuration.nodeSource = .external
+        let logs = temp.appendingPathComponent("Logs")
+        let launcher = PickyAgentDaemonLauncher(configuration: configuration, runner: runner, logDirectory: logs)
+
+        launcher.start()
+        runner.emitStderr("Error: listen EADDRINUSE: address already in use 127.0.0.1:17631\n")
+
+        let snapshot = try decodeStatus(at: logs.appendingPathComponent("agentd.status.json"))
+        #expect(snapshot.state == "running")
+        #expect(snapshot.mainAgentRuntimeMode == "pi")
+        #expect(snapshot.agentdRuntimeOverride == "mock")
+        #expect(snapshot.nodeSource == "external")
+        #expect(snapshot.executablePath == "/usr/bin/env")
+        #expect(snapshot.workingDirectory == agentd.path)
+        #expect(snapshot.lastFailureKind == "portConflict")
+        #expect(snapshot.lastFailurePort == 17631)
+        #expect(snapshot.lastFailureAt != nil)
     }
 
     @Test func unsupportedNodeDiagnosticStopsRestartLoopWithActionableState() async throws {

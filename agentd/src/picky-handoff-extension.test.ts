@@ -7,12 +7,15 @@ import { CommandEnvelopeSchema, PROTOCOL_VERSION } from "./protocol.js";
 
 const extensionPath = join(process.cwd(), "..", "pi-extensions", "picky-handoff", "index.ts");
 const originalConnectionFile = process.env.PICKY_AGENTD_CONNECTION_FILE;
+const originalWaitForIdleTimeout = process.env.PICKY_HANDOFF_WAIT_FOR_IDLE_TIMEOUT_MS;
 const hadOriginalWebSocket = "WebSocket" in globalThis;
 const originalWebSocket = (globalThis as { WebSocket?: unknown }).WebSocket;
 
 afterEach(() => {
   if (originalConnectionFile === undefined) delete process.env.PICKY_AGENTD_CONNECTION_FILE;
   else process.env.PICKY_AGENTD_CONNECTION_FILE = originalConnectionFile;
+  if (originalWaitForIdleTimeout === undefined) delete process.env.PICKY_HANDOFF_WAIT_FOR_IDLE_TIMEOUT_MS;
+  else process.env.PICKY_HANDOFF_WAIT_FOR_IDLE_TIMEOUT_MS = originalWaitForIdleTimeout;
   if (hadOriginalWebSocket) (globalThis as { WebSocket?: unknown }).WebSocket = originalWebSocket;
   else delete (globalThis as { WebSocket?: unknown }).WebSocket;
 });
@@ -95,6 +98,30 @@ describe("picky-handoff extension protocol contract", () => {
       expect(parsed.cwd).toBe("/Users/me/repo");
       expect(parsed.context.cwd).toBe("/Users/me/repo");
     }
+  });
+
+  it("reports an error instead of hanging forever when a busy Pi turn never becomes idle", async () => {
+    process.env.PICKY_HANDOFF_WAIT_FOR_IDLE_TIMEOUT_MS = "10";
+    const registered = await registerExtensionCommand();
+    const notifications: Array<{ message: string; level?: string }> = [];
+    let abortCalled = 0;
+
+    await registered.handler("continue in Picky", {
+      cwd: "/Users/me/repo",
+      ui: { notify: (message, level) => { notifications.push({ message, level }); } },
+      isIdle: () => false,
+      abort: () => { abortCalled += 1; },
+      waitForIdle: async () => await new Promise<void>(() => undefined),
+      sessionManager: {
+        getSessionFile: () => "/tmp/pi-session.jsonl",
+        getBranch: () => [],
+      },
+    });
+
+    expect(abortCalled).toBe(1);
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0].level).toBe("error");
+    expect(notifications[0].message).toContain("Timed out waiting for the Pi turn to stop");
   });
 });
 

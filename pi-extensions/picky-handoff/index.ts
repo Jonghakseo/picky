@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 const DEFAULT_PROTOCOL_VERSION = "2026-05-09";
 const DEFAULT_CONNECTION_FILE = join(homedir(), "Library", "Application Support", "Picky", "agentd-connection.json");
+const DEFAULT_WAIT_FOR_IDLE_TIMEOUT_MS = 10_000;
 const MAX_BRANCH_ENTRIES = 16;
 const MAX_BRANCH_CHARS = 12_000;
 
@@ -68,7 +69,7 @@ function registerHandoffCommand(pi: PiExtensionAPI, name: string): void {
         const wasIdle = ctx.isIdle();
         if (!wasIdle) {
           ctx.abort();
-          await ctx.waitForIdle();
+          await waitForIdleWithTimeout(ctx);
         }
         const sessionName = pi.getSessionName();
         const cwd = ctx.cwd;
@@ -144,6 +145,28 @@ async function readConnectionInfo(): Promise<PickyAgentdConnectionInfo> {
 
 function isMissingConnectionFileError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT";
+}
+
+async function waitForIdleWithTimeout(ctx: PiCommandContext): Promise<void> {
+  const timeoutMs = configuredWaitForIdleTimeoutMs();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      ctx.waitForIdle(),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Timed out waiting for the Pi turn to stop after ${timeoutMs}ms.`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+function configuredWaitForIdleTimeoutMs(): number {
+  const raw = process.env.PICKY_HANDOFF_WAIT_FOR_IDLE_TIMEOUT_MS?.trim();
+  if (!raw) return DEFAULT_WAIT_FOR_IDLE_TIMEOUT_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.max(1, Math.floor(parsed)) : DEFAULT_WAIT_FOR_IDLE_TIMEOUT_MS;
 }
 
 async function sendPickyCommand(

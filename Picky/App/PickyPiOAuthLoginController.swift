@@ -270,18 +270,28 @@ final class PickyPiOAuthLoginProcessRunner: PickyPiOAuthLoginRunning {
         return NodeInvocation(executableURL: URL(fileURLWithPath: "/usr/bin/env"), argumentPrefix: ["node"])
     }
 
+    nonisolated private static let defaultPATHEntries = [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ]
+
+    nonisolated static func mergedPATH(existingPATH: String?) -> String {
+        var entries = existingPATH?
+            .split(separator: ":", omittingEmptySubsequences: true)
+            .map(String.init) ?? []
+        for entry in defaultPATHEntries where !entries.contains(entry) {
+            entries.append(entry)
+        }
+        return entries.joined(separator: ":")
+    }
+
     private static func processEnvironment() -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
-        let defaultPATH = [
-            "/opt/homebrew/bin",
-            "/usr/local/bin",
-            "/usr/bin",
-            "/bin",
-            "/usr/sbin",
-            "/sbin",
-        ].joined(separator: ":")
-        let existingPATH = environment["PATH"] ?? ""
-        environment["PATH"] = existingPATH.isEmpty ? defaultPATH : "\(defaultPATH):\(existingPATH)"
+        environment["PATH"] = mergedPATH(existingPATH: environment["PATH"])
         if environment["LANG"]?.isEmpty ?? true {
             environment["LANG"] = "en_US.UTF-8"
         }

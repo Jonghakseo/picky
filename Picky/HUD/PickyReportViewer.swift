@@ -11,6 +11,8 @@ import Foundation
 import SwiftUI
 
 struct PickyReportMarkdownRenderer {
+    private static let slowBlockParseLogThreshold: TimeInterval = 0.05
+
     enum Block: Equatable {
         case heading(level: Int, text: String)
         case paragraph(String)
@@ -24,7 +26,16 @@ struct PickyReportMarkdownRenderer {
         if let cached = Self.blockCache.object(forKey: key) {
             return cached.blocks
         }
+        let startedAt = Date()
         let computed = computeBlocks(from: markdown)
+        let elapsed = Date().timeIntervalSince(startedAt)
+        if elapsed >= Self.slowBlockParseLogThreshold {
+            Self.logSlowMarkdownWork(
+                name: "markdown blocks parse slow",
+                duration: elapsed,
+                details: "markdownChars=\(markdown.count) blocks=\(computed.count)"
+            )
+        }
         Self.blockCache.setObject(BlockCacheEntry(blocks: computed), forKey: key, cost: markdown.utf8.count)
         return computed
     }
@@ -193,6 +204,20 @@ struct PickyReportMarkdownRenderer {
         return cache
     }()
 
+    private static func logSlowMarkdownWork(name: String, duration: TimeInterval, details: String) {
+        PickyLog.noticeRateLimited(
+            .markdown,
+            key: "markdown.renderer.\(name)",
+            cooldown: 5,
+            prefix: "🧾 Picky markdown —",
+            message: "\(name) durationMs=\(milliseconds(duration)) \(details)"
+        )
+    }
+
+    private static func milliseconds(_ interval: TimeInterval) -> Int {
+        max(0, Int((interval * 1_000).rounded()))
+    }
+
     private final class BlockCacheEntry {
         let blocks: [Block]
         init(blocks: [Block]) { self.blocks = blocks }
@@ -227,6 +252,7 @@ struct PickyMarkdownReportView: View {
     /// scaling. Heading sizes derive from this so the type ladder stays balanced.
     private static let bodyBaseSize: CGFloat = 15
     private static let codeBaseSize: CGFloat = 14
+    private static let slowTableWidthLogThreshold: TimeInterval = 0.05
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -342,6 +368,22 @@ struct PickyMarkdownReportView: View {
     /// width, the slack is handed to the columns whose text was clipped by the
     /// cap, so short columns stay tight rather than sharing a fixed floor.
     private func tableColumnWidths(headers: [String], rows: [[String]], availableWidth: CGFloat) -> [CGFloat] {
+        let startedAt = Date()
+        let widths = computeTableColumnWidths(headers: headers, rows: rows, availableWidth: availableWidth)
+        let elapsed = Date().timeIntervalSince(startedAt)
+        if elapsed >= Self.slowTableWidthLogThreshold {
+            PickyLog.noticeRateLimited(
+                .markdown,
+                key: "markdown.report.table-widths",
+                cooldown: 5,
+                prefix: "🧾 Picky markdown —",
+                message: "report table widths slow durationMs=\(Self.milliseconds(elapsed)) columns=\(headers.count) rows=\(rows.count) availableWidth=\(Int(availableWidth.rounded()))"
+            )
+        }
+        return widths
+    }
+
+    private func computeTableColumnWidths(headers: [String], rows: [[String]], availableWidth: CGFloat) -> [CGFloat] {
         let columnCount = headers.count
         guard columnCount > 0 else { return [] }
         let horizontalPadding: CGFloat = 20
@@ -375,6 +417,10 @@ struct PickyMarkdownReportView: View {
         guard desireTotal > 0 else { return capped }
         let extra = availableWidth - total
         return zip(capped, desire).map { $0 + extra * ($1 / desireTotal) }
+    }
+
+    private static func milliseconds(_ interval: TimeInterval) -> Int {
+        max(0, Int((interval * 1_000).rounded()))
     }
 
     private func tableSeparatorOffsets(widths: [CGFloat]) -> [CGFloat] {

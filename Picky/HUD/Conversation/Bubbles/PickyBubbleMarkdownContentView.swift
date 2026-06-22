@@ -16,6 +16,7 @@ final class PickyBubbleMarkdownContentView: NSView {
         static let blockSpacing: CGFloat = 5
         static let blockPadding: CGFloat = 8
         static let codeCornerRadius: CGFloat = 7
+        static let slowMeasureLogThreshold: TimeInterval = 0.05
     }
 
     private enum RenderBlock: Equatable {
@@ -132,6 +133,7 @@ final class PickyBubbleMarkdownContentView: NSView {
         if let cached = measuredSizeCache[width] {
             return cached
         }
+        let startedAt = Date()
         let measured: NSSize = PickyPerf.interval("bubble_measured_size") {
             let clamped = max(0, width)
             guard clamped > 0, !blockViews.isEmpty else { return .zero }
@@ -148,6 +150,11 @@ final class PickyBubbleMarkdownContentView: NSView {
             }
             return NSSize(width: min(clamped, ceil(measuredWidth)), height: ceil(measuredHeight))
         }
+        logSlowMeasurementIfNeeded(
+            name: "bubble measured size slow",
+            duration: Date().timeIntervalSince(startedAt),
+            details: "width=\(Int(max(0, width).rounded())) blocks=\(blockViews.count) measuredWidth=\(Int(measured.width.rounded())) measuredHeight=\(Int(measured.height.rounded()))"
+        )
         if measuredSizeCache.count >= Self.measuredSizeCacheLimit {
             measuredSizeCache.removeAll(keepingCapacity: true)
         }
@@ -159,6 +166,21 @@ final class PickyBubbleMarkdownContentView: NSView {
     /// `blockViews` are rebuilt so the next layout pass measures fresh.
     private func invalidateMeasuredSizeCache() {
         measuredSizeCache.removeAll(keepingCapacity: true)
+    }
+
+    private static func milliseconds(_ interval: TimeInterval) -> Int {
+        max(0, Int((interval * 1_000).rounded()))
+    }
+
+    private func logSlowMeasurementIfNeeded(name: String, duration: TimeInterval, details: String) {
+        guard duration >= Metrics.slowMeasureLogThreshold else { return }
+        PickyLog.noticeRateLimited(
+            .markdown,
+            key: "markdown.bubble.\(name)",
+            cooldown: 5,
+            prefix: "🧾 Picky markdown —",
+            message: "\(name) durationMs=\(Self.milliseconds(duration)) \(details)"
+        )
     }
 
     override func layout() {
@@ -423,6 +445,7 @@ private final class PickyCodeMarkdownBlockView: PickyMarkdownBlockNSView {
 private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
     private enum Metrics {
         static let cornerRadius: CGFloat = 7
+        static let slowTableLayoutLogThreshold: TimeInterval = 0.05
     }
 
     private let scrollView = NSScrollView()
@@ -435,6 +458,8 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
     /// the columns that actually wanted more room rather than padding every
     /// column up to a shared minimum.
     private let desiredColumnWidths: [CGFloat]
+    private let dataRowCount: Int
+    private let columnCount: Int
     private var layoutCache: [CGFloat: TableLayout] = [:]
 
     private struct TableLayout {
@@ -447,6 +472,8 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
         let measured = Self.measureColumns(headers: headers, rows: rows)
         naturalColumnWidths = measured.capped
         desiredColumnWidths = measured.uncapped
+        dataRowCount = rows.count
+        columnCount = headers.count
         gridView = GridDocumentView(headers: headers, rows: rows, columnWidths: measured.capped)
         super.init(frame: .zero)
 
@@ -490,6 +517,7 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
     private func tableLayout(forWidth available: CGFloat) -> TableLayout {
         let key = available.rounded()
         if let cached = layoutCache[key] { return cached }
+        let startedAt = Date()
         let columnWidths = resolvedColumnWidths(forWidth: available)
         let rowHeights = gridView.measureRowHeights(columnWidths: columnWidths)
         let size = NSSize(
@@ -497,8 +525,22 @@ private final class PickyTableMarkdownBlockView: PickyMarkdownBlockNSView {
             height: rowHeights.reduce(0, +)
         )
         let layout = TableLayout(columnWidths: columnWidths, rowHeights: rowHeights, size: size)
+        let elapsed = Date().timeIntervalSince(startedAt)
+        if elapsed >= Metrics.slowTableLayoutLogThreshold {
+            PickyLog.noticeRateLimited(
+                .markdown,
+                key: "markdown.bubble.table-layout",
+                cooldown: 5,
+                prefix: "🧾 Picky markdown —",
+                message: "bubble table layout slow durationMs=\(Self.milliseconds(elapsed)) columns=\(columnCount) rows=\(dataRowCount) availableWidth=\(Int(available.rounded())) layoutWidth=\(Int(size.width.rounded())) layoutHeight=\(Int(size.height.rounded()))"
+            )
+        }
         layoutCache[key] = layout
         return layout
+    }
+
+    private static func milliseconds(_ interval: TimeInterval) -> Int {
+        max(0, Int((interval * 1_000).rounded()))
     }
 
     /// Resolve the final column widths for the given available width. Columns

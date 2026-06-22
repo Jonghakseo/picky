@@ -27,6 +27,7 @@ enum PickyLog {
         case sessionUI = "session-ui"
         case speech = "speech"
         case watchdog = "watchdog"
+        case markdown = "markdown"
     }
 
     /// Returns a fresh `Logger` for `category`. `Logger` is a thin wrapper
@@ -53,5 +54,30 @@ enum PickyLog {
         logger(category).notice("\(message, privacy: .public)")
     }
 
+    static func noticeRateLimited(
+        _ category: Category,
+        key: String,
+        cooldown: TimeInterval,
+        prefix: String,
+        message: String
+    ) {
+        guard shouldEmitRateLimitedNotice(key: key, cooldown: cooldown) else { return }
+        notice(category, prefix: prefix, message: message)
+    }
+
+    private static func shouldEmitRateLimitedNotice(key: String, cooldown: TimeInterval) -> Bool {
+        let now = Date()
+        rateLimitedNoticeLock.lock()
+        defer { rateLimitedNoticeLock.unlock() }
+        if let lastEmittedAt = rateLimitedNoticeLastEmittedAtByKey[key],
+           now.timeIntervalSince(lastEmittedAt) < cooldown {
+            return false
+        }
+        rateLimitedNoticeLastEmittedAtByKey[key] = now
+        return true
+    }
+
     private static let isRunningTests: Bool = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    private static let rateLimitedNoticeLock = NSLock()
+    private static var rateLimitedNoticeLastEmittedAtByKey: [String: Date] = [:]
 }

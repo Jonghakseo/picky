@@ -26,6 +26,7 @@ enum PickyLog {
         case daemonLauncher = "daemon-launcher"
         case sessionUI = "session-ui"
         case speech = "speech"
+        case watchdog = "watchdog"
     }
 
     /// Returns a fresh `Logger` for `category`. `Logger` is a thin wrapper

@@ -16,21 +16,31 @@ struct PickyMainThreadWatchdogTests {
     private final class TestHarness {
         var currentTime = Date(timeIntervalSinceReferenceDate: 1_000)
         var spinCount = 0
+        var softStallAges: [TimeInterval] = []
+        var softStallRecoveryAges: [TimeInterval] = []
         let watchdog: PickyMainThreadWatchdog
 
-        init(threshold: TimeInterval = 10, grace: TimeInterval = 30, sleepCooldown: TimeInterval = 5) {
+        init(
+            threshold: TimeInterval = 10,
+            softStallThreshold: TimeInterval = 2,
+            grace: TimeInterval = 30,
+            sleepCooldown: TimeInterval = 5
+        ) {
             var capturedSelf: TestHarness?
             let now: () -> Date = { capturedSelf?.currentTime ?? Date() }
             self.watchdog = PickyMainThreadWatchdog(
                 clock: now,
                 threshold: threshold,
+                softStallThreshold: softStallThreshold,
                 grace: grace,
                 sleepCooldown: sleepCooldown,
                 onSpinDetected: { /* set after init */ }
             )
             capturedSelf = self
-            // Inject the spin counter callback now that `self` is fully initialized.
+            // Inject counters now that `self` is fully initialized.
             self.watchdog.onSpinDetected = { [weak self] in self?.spinCount += 1 }
+            self.watchdog.onSoftStallDetected = { [weak self] age, _ in self?.softStallAges.append(age) }
+            self.watchdog.onSoftStallRecovered = { [weak self] age in self?.softStallRecoveryAges.append(age) }
             self.watchdog.startedAt = currentTime
         }
 
@@ -77,6 +87,46 @@ struct PickyMainThreadWatchdogTests {
         h.advance(by: 10) // still within grace
         h.check()
         #expect(h.spinCount == 0)
+        #expect(h.softStallAges.isEmpty)
+    }
+
+    @Test("soft stall은 hard spin 전 낮은 임계값에서 로그 콜백만 호출")
+    func softStallTriggersBeforeHardSpin() {
+        let h = TestHarness(threshold: 10, softStallThreshold: 2)
+        h.advance(by: 60)
+        h.heartbeat()
+        h.advance(by: 3)
+        h.check()
+        #expect(h.softStallAges.count == 1)
+        #expect(h.softStallAges.first == 3)
+        #expect(h.spinCount == 0)
+    }
+
+    @Test("soft stall 콜백은 같은 stale 윈도우에서 한 번만 호출")
+    func softStallFiresOncePerStaleWindow() {
+        let h = TestHarness(threshold: 10, softStallThreshold: 2)
+        h.advance(by: 60)
+        h.heartbeat()
+        h.advance(by: 3)
+        h.check()
+        h.check()
+        h.check()
+        #expect(h.softStallAges.count == 1)
+    }
+
+    @Test("soft stall 후 heartbeat 회복 시 recovery 콜백 1회 호출")
+    func softStallRecoveryFiresOnceOnHeartbeat() {
+        let h = TestHarness(threshold: 10, softStallThreshold: 2)
+        h.advance(by: 60)
+        h.heartbeat()
+        h.advance(by: 3)
+        h.check()
+        h.advance(by: 1)
+        h.heartbeat()
+        h.heartbeat()
+        #expect(h.softStallAges.count == 1)
+        #expect(h.softStallRecoveryAges.count == 1)
+        #expect(h.softStallRecoveryAges.first == 4)
     }
 
     @Test("spin 콜백은 같은 stale 윈도우에서 한 번만 호출")
@@ -161,6 +211,7 @@ struct PickyMainThreadWatchdogTests {
         h.advance(by: 60)
         h.check()
         #expect(h.spinCount == 0)
+        #expect(h.softStallAges.isEmpty)
 
         h.resume(.screenLock)
         h.advance(by: 11) // resume time + cooldown is still within threshold

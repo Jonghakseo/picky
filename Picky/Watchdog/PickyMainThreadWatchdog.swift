@@ -21,6 +21,7 @@ final class PickyMainThreadWatchdog {
 
     private let clock: () -> Date
     private let threshold: TimeInterval
+    private let softStallThreshold: TimeInterval
     private let grace: TimeInterval
     private let sleepCooldown: TimeInterval
 
@@ -28,6 +29,8 @@ final class PickyMainThreadWatchdog {
 
     var startedAt: Date
     var onSpinDetected: () -> Void
+    var onSoftStallDetected: (_ age: TimeInterval, _ threshold: TimeInterval) -> Void
+    var onSoftStallRecovered: (_ age: TimeInterval) -> Void
 
     // MARK: - State (lock-protected, touched from both main and utility queue)
 
@@ -38,6 +41,13 @@ final class PickyMainThreadWatchdog {
     /// can only fire after a fresh heartbeat (or a wake reset) advances
     /// `_heartbeatAt` to a new value.
     private var _lastSpinFiredHeartbeatAt: Date?
+    /// Tracks the heartbeat that produced the last soft-stall log. This keeps
+    /// diagnostics useful without spamming OSLog every second while the main
+    /// thread remains pinned in the same stale window.
+    private var _lastSoftStallFiredHeartbeatAt: Date?
+    /// The stale heartbeat currently considered a soft stall. A later heartbeat
+    /// clears it and emits a single recovery log with the total stale age.
+    private var _activeSoftStallHeartbeatAt: Date?
     /// Reasons that make the main run loop an invalid responsiveness signal.
     /// Display sleep and screen lock can pause WindowServer-driven callbacks
     /// while the app is otherwise healthy, so the utility poller must stand
@@ -55,15 +65,19 @@ final class PickyMainThreadWatchdog {
     init(
         clock: @escaping () -> Date = Date.init,
         threshold: TimeInterval = 10,
+        softStallThreshold: TimeInterval = 2,
         grace: TimeInterval = 30,
         sleepCooldown: TimeInterval = 5,
         onSpinDetected: @escaping () -> Void
     ) {
         self.clock = clock
         self.threshold = threshold
+        self.softStallThreshold = softStallThreshold
         self.grace = grace
         self.sleepCooldown = sleepCooldown
         self.onSpinDetected = onSpinDetected
+        self.onSoftStallDetected = Self.defaultSoftStallDetected(age:threshold:)
+        self.onSoftStallRecovered = Self.defaultSoftStallRecovered(age:)
         self.startedAt = clock()
     }
 
@@ -138,6 +152,8 @@ final class PickyMainThreadWatchdog {
         lock.lock(); defer { lock.unlock() }
         _heartbeatAt = date.addingTimeInterval(sleepCooldown)
         _lastSpinFiredHeartbeatAt = nil
+        _lastSoftStallFiredHeartbeatAt = nil
+        _activeSoftStallHeartbeatAt = nil
     }
 
     /// Temporarily disables spin detection while macOS is expected to pause or
@@ -148,6 +164,8 @@ final class PickyMainThreadWatchdog {
         _suspensionReasons.insert(reason)
         _heartbeatAt = date
         _lastSpinFiredHeartbeatAt = nil
+        _lastSoftStallFiredHeartbeatAt = nil
+        _activeSoftStallHeartbeatAt = nil
     }
 
     /// Re-enables spin detection for `reason`. The final resume gets the same
@@ -159,6 +177,8 @@ final class PickyMainThreadWatchdog {
         if _suspensionReasons.isEmpty {
             _heartbeatAt = date.addingTimeInterval(sleepCooldown)
             _lastSpinFiredHeartbeatAt = nil
+            _lastSoftStallFiredHeartbeatAt = nil
+            _activeSoftStallHeartbeatAt = nil
         } else {
             _heartbeatAt = date
         }
@@ -167,25 +187,71 @@ final class PickyMainThreadWatchdog {
     // MARK: - Internal seams (called by run loop / poll timer / tests)
 
     func heartbeat(at date: Date) {
-        lock.lock(); defer { lock.unlock() }
+        var recoveredAge: TimeInterval?
+
+        lock.lock()
+        if let activeSoftStallHeartbeatAt = _activeSoftStallHeartbeatAt,
+           let heartbeatAt = _heartbeatAt,
+           activeSoftStallHeartbeatAt == heartbeatAt,
+           date > heartbeatAt {
+            recoveredAge = date.timeIntervalSince(heartbeatAt)
+            _activeSoftStallHeartbeatAt = nil
+        }
         _heartbeatAt = date
+        lock.unlock()
+
+        if let recoveredAge {
+            onSoftStallRecovered(recoveredAge)
+        }
     }
 
     func checkForSpin(at date: Date) {
         var shouldFire = false
+        var softStallAge: TimeInterval?
 
         lock.lock()
         let heartbeatAt = _heartbeatAt ?? startedAt
-        let lastFired = _lastSpinFiredHeartbeatAt
+        let age = date.timeIntervalSince(heartbeatAt)
         if _suspensionReasons.isEmpty,
-           date.timeIntervalSince(startedAt) >= grace,
-           lastFired != heartbeatAt,
-           date.timeIntervalSince(heartbeatAt) > threshold {
-            _lastSpinFiredHeartbeatAt = heartbeatAt
-            shouldFire = true
+           date.timeIntervalSince(startedAt) >= grace {
+            if softStallThreshold > 0,
+               _lastSoftStallFiredHeartbeatAt != heartbeatAt,
+               age > softStallThreshold {
+                _lastSoftStallFiredHeartbeatAt = heartbeatAt
+                _activeSoftStallHeartbeatAt = heartbeatAt
+                softStallAge = age
+            }
+            if _lastSpinFiredHeartbeatAt != heartbeatAt,
+               age > threshold {
+                _lastSpinFiredHeartbeatAt = heartbeatAt
+                shouldFire = true
+            }
         }
         lock.unlock()
 
+        if let softStallAge {
+            onSoftStallDetected(softStallAge, softStallThreshold)
+        }
         if shouldFire { onSpinDetected() }
+    }
+
+    private static func defaultSoftStallDetected(age: TimeInterval, threshold: TimeInterval) {
+        PickyLog.notice(
+            .watchdog,
+            prefix: "🎯 Picky watchdog:",
+            message: "main thread soft stall detected ageMs=\(milliseconds(age)) thresholdMs=\(milliseconds(threshold))"
+        )
+    }
+
+    private static func defaultSoftStallRecovered(age: TimeInterval) {
+        PickyLog.notice(
+            .watchdog,
+            prefix: "🎯 Picky watchdog:",
+            message: "main thread soft stall recovered ageMs=\(milliseconds(age))"
+        )
+    }
+
+    private static func milliseconds(_ interval: TimeInterval) -> Int {
+        max(0, Int((interval * 1_000).rounded()))
     }
 }

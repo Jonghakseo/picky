@@ -214,12 +214,23 @@ enum PickyDiagnosticsBundleBuilder {
             to: stagingRoot.appendingPathComponent("agentd.node-preflight.json"),
             fileManager: fileManager
         )
+        let stdoutLogURL = logsDir.appendingPathComponent("agentd.stdout.log")
         let toolEventsPath = stagingRoot.appendingPathComponent("agentd.tool-events.txt")
         let toolEvents = PickyAgentdToolEventSummarizer.summarize(
-            from: logsDir.appendingPathComponent("agentd.stdout.log"),
+            from: stdoutLogURL,
             fileManager: fileManager
         )
         try? toolEvents.write(to: toolEventsPath, atomically: true, encoding: .utf8)
+
+        // Privacy-preserving session identity & title timeline derived from the
+        // same stdout log. Surfaces late Pickle title flips and whether two
+        // sessions share a Pi session file, which the raw bundle could not show.
+        let sessionIdentityPath = stagingRoot.appendingPathComponent("agentd.session-identity.txt")
+        let sessionIdentity = PickyAgentdSessionIdentitySummarizer.summarize(
+            from: stdoutLogURL,
+            fileManager: fileManager
+        )
+        try? sessionIdentity.write(to: sessionIdentityPath, atomically: true, encoding: .utf8)
 
         let oslogPath = stagingRoot.appendingPathComponent("picky-oslog.txt")
         let oslogText = oslogProvider()

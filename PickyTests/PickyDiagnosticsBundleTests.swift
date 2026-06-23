@@ -57,6 +57,7 @@ struct PickyDiagnosticsBundleTests {
         #expect(names.contains("agentd.stderr.tail.log"))
         #expect(names.contains("agentd.port-occupants.txt"))
         #expect(names.contains("agentd.tool-events.txt"))
+        #expect(names.contains("agentd.session-identity.txt"))
         #expect(names.contains("watchdog.summary.txt"))
         #expect(names.contains("watchdog.samples.txt"))
         #expect(!names.contains("agentd.stdout.tail.log"))

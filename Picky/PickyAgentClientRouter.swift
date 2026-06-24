@@ -395,9 +395,14 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private func scheduleDrainPendingChildCommandsIfReady(for session: PickyAgentSession) {
         guard session.status != .queued else { return }
         guard pendingChildCommands[session.id]?.isEmpty == false else { return }
+        guard isChildEndpointReadyOrNotBooting(sessionId: session.id) else { return }
         Task { @MainActor [weak self] in
             await self?.drainPendingChildCommands(sessionId: session.id)
         }
+    }
+
+    private func isChildEndpointReadyOrNotBooting(sessionId: String) -> Bool {
+        !bootingChildSessionIds.contains(sessionId) || pool.endpoint(for: sessionId) != nil || childClients[sessionId] != nil
     }
 
     private func drainPendingChildCommands(sessionId: String) async {
@@ -705,18 +710,20 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private func rememberSessionEvent(_ event: PickyEvent) {
         switch event {
         case .sessionUpdated(let session):
-            sessionCache[session.id] = session
-            if session.status != .queued { bootingChildSessionIds.remove(session.id) }
-            scheduleDrainPendingChildCommandsIfReady(for: session)
+            rememberSession(session)
         case .sessionSnapshot(let sessions):
-            for session in sessions {
-                sessionCache[session.id] = session
-                if session.status != .queued { bootingChildSessionIds.remove(session.id) }
-                scheduleDrainPendingChildCommandsIfReady(for: session)
-            }
+            for session in sessions { rememberSession(session) }
         default:
             break
         }
+    }
+
+    private func rememberSession(_ session: PickyAgentSession) {
+        sessionCache[session.id] = session
+        if session.status != .queued, isChildEndpointReadyOrNotBooting(sessionId: session.id) {
+            bootingChildSessionIds.remove(session.id)
+        }
+        scheduleDrainPendingChildCommandsIfReady(for: session)
     }
 
     private func stopForwardingEvents(for key: String) {

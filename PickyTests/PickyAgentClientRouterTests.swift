@@ -823,11 +823,11 @@ struct PickyAgentClientRouterTests {
         let clientFactory = StubClientFactory()
         let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
         await router.connect()
-        primary.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-boot-completed", status: .completed)))
-        await Task.yield()
 
         async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "pickle-boot-completed", cwd: "/tmp/ws")
         _ = try await poolFactory.waitForRunner(sessionId: "pickle-boot-completed")
+        primary.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-boot-completed", status: .completed)))
+        await Task.yield()
 
         try await router.send(PickyCommandEnvelope(type: .followUp, sessionId: "pickle-boot-completed", text: "continue"))
         poolFactory.emitReady(for: "pickle-boot-completed")

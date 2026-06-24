@@ -275,6 +275,7 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         }
         wireExternalEntryProvider(on: hudAgentClientRouter)
         wirePushToTalkControlHandler(on: hudAgentClientRouter)
+        wireDockGroupsProvider(on: hudAgentClientRouter)
         // Wire the appearance store and shared settings store into singletons that live
         // outside the SwiftUI tree (markdown report viewer / terminal overlay) so every
         // secondary NSPanel flips with the rest of the app and the user's per-panel zoom
@@ -398,6 +399,13 @@ final class CompanionAppDelegate: NSObject, NSApplicationDelegate {
         router.pushToTalkControlHandler = { [weak self] request in
             guard let self else { throw PickyAgentClientRouterError.routerUnavailable }
             self.companionManager.controlPushToTalkFromExternal(action: request.action)
+        }
+    }
+
+    private func wireDockGroupsProvider(on router: PickyAgentClientRouter) {
+        router.dockGroupsProvider = { [weak self] in
+            guard let self else { return [] }
+            return self.hudSessionViewModel.dockGroupsSnapshotForCLI()
         }
     }
 

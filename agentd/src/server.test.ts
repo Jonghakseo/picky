@@ -367,6 +367,7 @@ describe("AgentdServer", () => {
       title: "Bridge pickle",
       instructions: "do the bridged thing",
       captureContext: true,
+      group: "Research",
     }));
 
     const requested = await waitForEvent(appWs, "externalEntryRequested");
@@ -388,7 +389,7 @@ describe("AgentdServer", () => {
     }));
 
     const accepted = await waitForEvent(appWs, "externalEntryAccepted");
-    expect(accepted).toMatchObject({ commandId: "cmd-cli-pickle-bridge", kind: "createPickle", contextId: "context-cli-bridge" });
+    expect(accepted).toMatchObject({ commandId: "cmd-cli-pickle-bridge", kind: "createPickle", contextId: "context-cli-bridge", group: "Research" });
     if (accepted.type === "externalEntryAccepted") expect(accepted.sessionId).toBeDefined();
 
     const ack = await waitForEvent(cliWs, "externalEntryAck");
@@ -398,6 +399,35 @@ describe("AgentdServer", () => {
       expect.objectContaining({ id: "context-cli-bridge", source: "cli", cwd: "/tmp/captured" }),
       expect.objectContaining({ title: "Bridge pickle", instructions: "do the bridged thing" }),
     );
+    appWs.close();
+    cliWs.close();
+  });
+
+  it("listDockGroups round-trips groups through the registered app", async () => {
+    const { ws: appWs } = await connectWithHello();
+    appWs.send(JSON.stringify({
+      id: "cmd-register-groups",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["externalEntry"],
+    }));
+    await waitForRegisteredCapability("externalEntry");
+
+    const { ws: cliWs } = await connectWithHello();
+    cliWs.send(JSON.stringify({ id: "cmd-list-groups", protocolVersion: PROTOCOL_VERSION, type: "listDockGroups" }));
+
+    const request = await waitForEvent(appWs, "dockGroupsRequested");
+    const requestId = request.type === "dockGroupsRequested" ? request.requestId : "";
+    appWs.send(JSON.stringify({
+      id: "cmd-complete-groups",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "completeDockGroupsRequest",
+      requestId,
+      groups: [{ id: "group-1", name: "Research", color: 6, memberSessionIds: ["p-1"], collapsed: false }],
+    }));
+
+    const snapshot = await waitForEvent(cliWs, "dockGroupsSnapshot");
+    expect(snapshot).toMatchObject({ type: "dockGroupsSnapshot", groups: [{ id: "group-1", name: "Research", memberSessionIds: ["p-1"] }] });
     appWs.close();
     cliWs.close();
   });

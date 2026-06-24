@@ -376,6 +376,7 @@ final class PickySessionListViewModel: ObservableObject {
     /// created. Empty layout falls back to the legacy `manualOrder` flow.
     @Published private(set) var dockLayout: PickyDockLayout = .empty
     private let dockLayoutController: PickySessionDockLayoutController
+    private var pendingDockGroupAssignments: [String: String] = [:]
     private let composerDraftController: PickySessionComposerDraftController
     private let recentPickleFolderStore: PickyRecentPickleFolderStoring
     private let artifactPathValidator: PickyArtifactPathValidator
@@ -1865,6 +1866,10 @@ final class PickySessionListViewModel: ObservableObject {
             lastError = error.message
         case .terminalSessionSyncOutcome(let outcome):
             applyTerminalSessionSyncOutcome(outcome)
+        case .externalEntryAccepted(let accepted):
+            if let sessionID = accepted.sessionId, let groupName = accepted.group {
+                assignSessionToDockGroup(sessionID: sessionID, groupName: groupName)
+            }
         case .quickReply, .mainMessagesSnapshot, .mainMessageAppended, .mainAgentSessionInfoUpdated, .mainAgentModelsSnapshot,
              .mainRealtimeStateChanged, .mainRealtimeInputTranscriptDelta, .mainRealtimeInputTranscriptCompleted,
              .mainRealtimeOutputAudioDelta, .mainRealtimeOutputAudioDone,
@@ -1872,7 +1877,7 @@ final class PickySessionListViewModel: ObservableObject {
              .transcriptionStreamStarted, .transcriptionDelta, .transcriptionCompleted,
              .transcriptionStreamFailed, .transcriptionStreamClosed,
              .pointerOverlayRequested, .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested,
-             .externalEntryAccepted, .pushToTalkControlRequested, .hello, .pluginsReloaded, .unknown:
+             .dockGroupsRequested, .pushToTalkControlRequested, .hello, .pluginsReloaded, .unknown:
             break
         }
     }
@@ -2558,12 +2563,53 @@ final class PickySessionListViewModel: ObservableObject {
     /// first and `entries` is top-down = oldest first). New sessions then
     /// fall through to the standard "append to end" branch below.
     private func reconcileDockLayout() {
-        guard dockLayoutController.reconcile(
+        let changed = dockLayoutController.reconcile(
             activeSessionIDs: sessions.map(\.id),
             archivedSessionIDs: archivedSessions.map(\.id),
             legacyManualOrder: manualOrder
-        ) else { return }
-        dockLayout = dockLayoutController.layout
+        )
+        if changed { dockLayout = dockLayoutController.layout }
+        drainPendingDockGroupAssignments()
+    }
+
+    func dockGroupsSnapshotForCLI() -> [PickyDockGroupPayload] {
+        dockLayout.groups.map { group in
+            PickyDockGroupPayload(
+                id: group.id,
+                name: group.name,
+                color: group.colorRaw,
+                memberSessionIds: group.memberSessionIDs,
+                collapsed: group.isCollapsed
+            )
+        }
+    }
+
+    func assignSessionToDockGroup(sessionID: String, groupName: String) {
+        if !applyDockGroupAssignment(sessionID: sessionID, groupName: groupName) {
+            pendingDockGroupAssignments[sessionID] = groupName
+        }
+    }
+
+    private func drainPendingDockGroupAssignments() {
+        guard !pendingDockGroupAssignments.isEmpty else { return }
+        for (sessionID, groupName) in Array(pendingDockGroupAssignments) {
+            if applyDockGroupAssignment(sessionID: sessionID, groupName: groupName) {
+                pendingDockGroupAssignments.removeValue(forKey: sessionID)
+            }
+        }
+    }
+
+    private func applyDockGroupAssignment(sessionID: String, groupName: String) -> Bool {
+        guard dockLayout.allKnownSessionIDs.contains(sessionID) else { return false }
+        let target = groupName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !target.isEmpty else { return true }
+        let existing = dockLayout.groups.first {
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(target) == .orderedSame
+        }
+        let groupID = existing?.id ?? createDockGroup(name: target)
+        let memberIndex = dockLayout.group(withID: groupID)?.memberSessionIDs.count ?? 0
+        moveSessionInDock(sessionID: sessionID, to: .group(id: groupID, memberIndex: memberIndex))
+        return true
     }
 
     /// Create a new group at the bottom of the dock (just above the `+`

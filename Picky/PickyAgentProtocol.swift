@@ -58,6 +58,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var errorMessage: String?
     var capabilities: [String]?
     var sessions: [PickyAgentSession]?
+    var groups: [PickyDockGroupPayload]?
     var session: PickyAgentSession?
     var delivered: Bool?
     var prompt: String?
@@ -112,6 +113,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         errorMessage: String? = nil,
         capabilities: [String]? = nil,
         sessions: [PickyAgentSession]? = nil,
+        groups: [PickyDockGroupPayload]? = nil,
         session: PickyAgentSession? = nil,
         delivered: Bool? = nil,
         prompt: String? = nil,
@@ -157,6 +159,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.errorMessage = errorMessage
         self.capabilities = capabilities
         self.sessions = sessions
+        self.groups = groups
         self.session = session
         self.delivered = delivered
         self.prompt = prompt
@@ -212,6 +215,7 @@ enum PickyCommandType: String, Codable, Equatable {
     case registerAppCapabilities
     case completePickleBridgeRequest
     case completeExternalEntryRequest
+    case completeDockGroupsRequest
     case controlPushToTalkFromExternal
     case completePushToTalkControlRequest
     case duplicatePickleSession
@@ -322,6 +326,7 @@ enum PickyEvent: Equatable {
     case pickleBridgeRequested(PickyPickleBridgeRequest)
     case externalEntryRequested(PickyExternalEntryRequest)
     case externalEntryAccepted(PickyExternalEntryAcceptedEvent)
+    case dockGroupsRequested(requestId: String)
     case pushToTalkControlRequested(PickyPushToTalkControlRequest)
     case slashCommandsSnapshot(sessionId: String, requestId: String?, commands: [PickySlashCommand])
     case sessionMessageAppended(sessionId: String, message: PickySessionMessage, seq: Int)
@@ -494,6 +499,9 @@ enum PickyEvent: Equatable {
             return .externalEntryRequested(try PickyExternalEntryRequest(from: decoder))
         case "externalEntryAccepted":
             return .externalEntryAccepted(try PickyExternalEntryAcceptedEvent(from: decoder))
+        case "dockGroupsRequested":
+            let payload = try PickyDockGroupsRequestedPayload(from: decoder)
+            return .dockGroupsRequested(requestId: payload.requestId)
         case "pushToTalkControlRequested":
             return .pushToTalkControlRequested(try PickyPushToTalkControlRequest(from: decoder))
         default: return nil
@@ -639,7 +647,19 @@ struct PickyExternalEntryAcceptedEvent: Decodable, Equatable {
     let kind: PickyExternalEntryKind
     let contextId: String
     let sessionId: String?
+    let group: String?
 }
+
+/// App-owned dock group snapshot exchanged with the CLI via agentd.
+struct PickyDockGroupPayload: Codable, Equatable {
+    let id: String
+    let name: String
+    let color: Int
+    let memberSessionIds: [String]
+    let collapsed: Bool
+}
+
+private struct PickyDockGroupsRequestedPayload: Decodable { let requestId: String }
 
 enum PickyPushToTalkControlAction: String, Codable, Equatable {
     case press

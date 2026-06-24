@@ -4,7 +4,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { isAuthorized } from "./auth.js";
 import { FOLLOWUP_PREFIX, HANDOFF_PREFIX, STEER_PREFIX } from "./domain/log-prefixes.js";
 import { sliceUtf16Safe } from "./domain/safe-truncate.js";
-import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type EventEnvelope, type MainRealtimeQuotaSnapshot, type MainRealtimeUsageSnapshot, type PickyAgentSession, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
+import { PROTOCOL_VERSION, PickyAgentSessionSchema, parseCommand, type DockGroup, type EventEnvelope, type MainRealtimeQuotaSnapshot, type MainRealtimeUsageSnapshot, type PickyAgentSession, type PickyAgentSessionParsed, type PickyContextPacket, type PickyPushToTalkControlAction } from "./protocol.js";
 import type { SessionSupervisor } from "./session-supervisor.js";
 import { logAgentd } from "./local-log.js";
 
@@ -53,6 +53,9 @@ const EXTERNAL_ENTRY_TIMEOUT_MS = 10_000;
 export const APP_PUSH_TO_TALK_CONTROL_UNAVAILABLE = "Picky app push-to-talk control unavailable";
 const APP_PUSH_TO_TALK_CONTROL_TIMEOUT = "Picky app push-to-talk control timed out";
 const PUSH_TO_TALK_CONTROL_TIMEOUT_MS = 2_000;
+export const APP_DOCK_GROUPS_UNAVAILABLE = "Picky app dock groups unavailable";
+const APP_DOCK_GROUPS_TIMEOUT = "Picky app dock groups request timed out";
+const DOCK_GROUPS_TIMEOUT_MS = 4_000;
 
 export class AgentdServer {
   private httpServer?: HttpServer;
@@ -63,6 +66,7 @@ export class AgentdServer {
   private pendingPickleBridgeRequests = new Map<string, { resolve: (result: AppPickleBridgeResult) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private pendingExternalEntries = new Map<string, ExternalEntryPending>();
   private pendingPushToTalkControls = new Map<string, PushToTalkControlPending>();
+  private pendingDockGroupsRequests = new Map<string, DockGroupsPending>();
   /**
    * FIFO queue of external CLI submissions. Per the agreed Q3 policy, only one
    * `submitMainFromExternal` / `createPickleFromExternal` is processed at a time;
@@ -303,7 +307,12 @@ export class AgentdServer {
       registerAppCapabilities: (cmd) => this.registerAppCapabilities(ws, cmd.capabilities),
       completePickleBridgeRequest: (cmd) => this.completePendingPickleBridgeRequest(cmd),
       submitMainFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "submitMain", { text: cmd.text, captureContext: cmd.captureContext, cwd: cmd.cwd }),
-      createPickleFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "createPickle", { title: cmd.title, instructions: cmd.instructions, captureContext: cmd.captureContext, cwd: cmd.cwd }),
+      createPickleFromExternal: (cmd) => this.enqueueExternalEntry(ws, cmd.id, "createPickle", { title: cmd.title, instructions: cmd.instructions, captureContext: cmd.captureContext, cwd: cmd.cwd, group: cmd.group }),
+      listDockGroups: async () => {
+        const groups = await this.requestDockGroups();
+        this.send(ws, { type: "dockGroupsSnapshot", groups });
+      },
+      completeDockGroupsRequest: (cmd) => this.completePendingDockGroupsRequest(cmd),
       controlPushToTalkFromExternal: async (cmd) => {
         await this.requestPushToTalkControl(cmd.action);
         this.send(ws, { type: "pushToTalkControlAck", commandId: cmd.id, action: cmd.action });
@@ -397,7 +406,7 @@ export class AgentdServer {
     ws: WebSocket,
     commandId: string,
     kind: "submitMain" | "createPickle",
-    payload: { text?: string; title?: string; instructions?: string; captureContext: boolean; cwd?: string },
+    payload: { text?: string; title?: string; instructions?: string; captureContext: boolean; cwd?: string; group?: string },
   ): void {
     this.externalEntryPendingCount += 1;
     logAgentd("external entry queued", { commandId, kind, pending: this.externalEntryPendingCount });
@@ -422,7 +431,7 @@ export class AgentdServer {
     ws: WebSocket,
     commandId: string,
     kind: "submitMain" | "createPickle",
-    payload: { text?: string; title?: string; instructions?: string; captureContext: boolean; cwd?: string },
+    payload: { text?: string; title?: string; instructions?: string; captureContext: boolean; cwd?: string; group?: string },
   ): Promise<void> {
     let context: PickyContextPacket;
     if (payload.captureContext) {
@@ -474,6 +483,7 @@ export class AgentdServer {
           kind,
           sessionId: session.id,
           contextId: finalContext.id,
+          ...(payload.group ? { group: payload.group } : {}),
         });
         this.send(ws, {
           type: "externalEntryAck",
@@ -548,6 +558,34 @@ export class AgentdServer {
     });
   }
 
+  private requestDockGroups(timeoutMs = DOCK_GROUPS_TIMEOUT_MS): Promise<DockGroup[]> {
+    const app = this.firstClientWithCapability("externalEntry");
+    if (!app) return Promise.reject(new Error(APP_DOCK_GROUPS_UNAVAILABLE));
+    const requestId = `dock-groups-${randomUUID()}`;
+    return new Promise<DockGroup[]>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const pending = this.pendingDockGroupsRequests.get(requestId);
+        if (!pending) return;
+        this.pendingDockGroupsRequests.delete(requestId);
+        pending.reject(new Error(APP_DOCK_GROUPS_TIMEOUT));
+      }, timeoutMs);
+      this.pendingDockGroupsRequests.set(requestId, { resolve, reject, timer });
+      this.send(app, { type: "dockGroupsRequested", requestId });
+    });
+  }
+
+  private completePendingDockGroupsRequest(command: Extract<ReturnType<typeof parseCommand>, { type: "completeDockGroupsRequest" }>): void {
+    const pending = this.pendingDockGroupsRequests.get(command.requestId);
+    if (!pending) throw new Error(`Unknown dock groups request: ${command.requestId}`);
+    this.pendingDockGroupsRequests.delete(command.requestId);
+    clearTimeout(pending.timer);
+    if (command.errorMessage) {
+      pending.reject(new Error(command.errorMessage));
+      return;
+    }
+    pending.resolve(command.groups ?? []);
+  }
+
   private completePendingPushToTalkControl(command: Extract<ReturnType<typeof parseCommand>, { type: "completePushToTalkControlRequest" }>): void {
     const pending = this.pendingPushToTalkControls.get(command.requestId);
     if (!pending) throw new Error(`Unknown push-to-talk control request: ${command.requestId}`);
@@ -603,6 +641,12 @@ interface ExternalEntryPending {
 
 interface PushToTalkControlPending {
   resolve: () => void;
+  reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
+}
+
+interface DockGroupsPending {
+  resolve: (groups: DockGroup[]) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
 }
@@ -679,6 +723,8 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
       return { commandId: command.id, type: command.type, requestId: command.requestId, errorChars: command.errorMessage?.length };
     case "completeExternalEntryRequest":
       return { commandId: command.id, type: command.type, requestId: command.requestId, hasContext: command.context ? 1 : 0, errorChars: command.errorMessage?.length };
+    case "completeDockGroupsRequest":
+      return { commandId: command.id, type: command.type, requestId: command.requestId, groups: command.groups?.length, errorChars: command.errorMessage?.length };
     case "notifyMainOfPickleCompletion":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, promptChars: command.prompt.length, cwd: command.cwd };
     case "followUp":
@@ -736,6 +782,7 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "cancelTranscriptionStream":
       return { commandId: command.id, type: command.type, streamId: command.streamId };
     case "listSessions":
+    case "listDockGroups":
     case "listMainMessages":
     case "listMainAgentModels":
     case "resetMainAgent":
@@ -834,7 +881,11 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
     case "externalEntryAck":
       return { eventId: event.id, type: event.type, commandId: event.commandId, kind: event.kind, sessionId: event.sessionId, contextId: event.contextId, errorChars: event.errorMessage?.length };
     case "externalEntryAccepted":
-      return { eventId: event.id, type: event.type, commandId: event.commandId, kind: event.kind, sessionId: event.sessionId, contextId: event.contextId };
+      return { eventId: event.id, type: event.type, commandId: event.commandId, kind: event.kind, sessionId: event.sessionId, contextId: event.contextId, group: event.group };
+    case "dockGroupsRequested":
+      return { eventId: event.id, type: event.type, requestId: event.requestId };
+    case "dockGroupsSnapshot":
+      return { eventId: event.id, type: event.type, groups: event.groups.length };
     case "pushToTalkControlRequested":
       return { eventId: event.id, type: event.type, requestId: event.requestId, action: event.action };
     case "pushToTalkControlAck":

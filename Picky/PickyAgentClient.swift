@@ -432,7 +432,9 @@ private extension PickyEventEnvelope {
         case .externalEntryRequested(let request):
             return "type=externalEntryRequested id=\(id) request=\(request.requestId) kind=\(request.kind.rawValue) cwd=\(request.cwd ?? "none")"
         case .externalEntryAccepted(let event):
-            return "type=externalEntryAccepted id=\(id) command=\(event.commandId) kind=\(event.kind.rawValue) context=\(event.contextId) session=\(event.sessionId ?? "none")"
+            return "type=externalEntryAccepted id=\(id) command=\(event.commandId) kind=\(event.kind.rawValue) context=\(event.contextId) session=\(event.sessionId ?? "none") group=\(event.group ?? "none")"
+        case .dockGroupsRequested(let requestId):
+            return "type=dockGroupsRequested id=\(id) request=\(requestId)"
         case .pushToTalkControlRequested(let request):
             return "type=pushToTalkControlRequested id=\(id) request=\(request.requestId) action=\(request.action.rawValue)"
         case .slashCommandsSnapshot(let sessionId, let requestId, let commands):

@@ -131,7 +131,7 @@ describe("picky cli", () => {
     expect(ok.stdout).toContain("Created empty Pickle (session=pickle-empty-1)");
   });
 
-  it("pickle-create forwards instructions, cwd, and captureContext", async () => {
+  it("pickle-create forwards instructions, cwd, captureContext, and group", async () => {
     server.onCommand("createPickleFromExternal", (command, send) => {
       send({ type: "externalEntryAck", commandId: (command as { id: string }).id, kind: "createPickle", sessionId: "pickle-2" });
     });
@@ -142,6 +142,8 @@ describe("picky cli", () => {
       "Check things",
       "--cwd",
       "/tmp/audit",
+      "--group",
+      "Research",
       "--no-context",
     ]);
     expect(result.code).toBe(0);
@@ -150,6 +152,7 @@ describe("picky cli", () => {
       title: "Audit",
       instructions: "Check things",
       cwd: "/tmp/audit",
+      group: "Research",
       captureContext: false,
     });
   });
@@ -198,6 +201,31 @@ describe("picky cli", () => {
     const parsed = JSON.parse(result.stdout);
     expect(parsed).toMatchObject({ type: "sessionSnapshot", sessions: [expect.objectContaining({ id: "visible" })] });
     expect(parsed.sessions).toHaveLength(1);
+  });
+
+  it("pickle-group-list prints dock groups", async () => {
+    server.onCommand("listDockGroups", (command, send) => {
+      void command;
+      send({
+        type: "dockGroupsSnapshot",
+        groups: [
+          { id: "group-1", name: "Research", color: 6, memberSessionIds: ["p-1", "p-2"], collapsed: false },
+        ],
+      });
+    });
+    const result = await runCli(["pickle-group-list"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("group-1\tResearch\tmembers=2");
+  });
+
+  it("pickle-group-list --json emits dock groups JSON", async () => {
+    server.onCommand("listDockGroups", (command, send) => {
+      void command;
+      send({ type: "dockGroupsSnapshot", groups: [{ id: "group-1", name: "Research", color: 6, memberSessionIds: [], collapsed: false }] });
+    });
+    const result = await runCli(["pickle-group-list", "--json"]);
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject([{ id: "group-1", name: "Research" }]);
   });
 
   it("submit surfaces server errorMessage with exit code 1", async () => {

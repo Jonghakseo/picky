@@ -74,7 +74,8 @@ struct ProtocolContractTests {
             commandId: "cli-1",
             kind: .createPickle,
             contextId: "context-cli-1",
-            sessionId: "session-cli-1"
+            sessionId: "session-cli-1",
+            group: nil
         )))
     }
 

@@ -20,8 +20,10 @@ Examples:
   $ picky submit "context-free reminder" --no-context
   $ picky pickle-create "Sentry 조사" --instructions "최근 24h 에러 그룹 정리"
   $ picky pickle-create --empty
+  $ picky pickle-create "리서치" --instructions "경쟁사 조사" --group "Research"
   $ picky pickle-list --json
   $ picky pickle-list --include-archived
+  $ picky pickle-group-list
   $ picky pickle-followup pickle-abc "production 환경으로 다시"
   $ picky pickle-abort pickle-abc
   $ picky ptt press
@@ -79,6 +81,7 @@ const pickleCreate = program
   .option("--instructions <text>", "Instructions to seed the new Pickle's prompt")
   .option("--empty", "Create an empty Pickle session (no title or instructions required)")
   .option("--cwd <path>", "Workspace cwd for the Pickle session (defaults to the captured context cwd)")
+  .option("--group <name>", "Assign the new Pickle to a dock group by name (created if it doesn't exist; first match wins on duplicate names)")
   .option("--no-context", "Skip app-side context capture; build a neutral context using cwd/timestamp only")
   .option("--json", "Emit the raw ack JSON to stdout")
   .addHelpText("after", `
@@ -86,9 +89,10 @@ Examples:
   $ picky pickle-create "Sentry 조사" --instructions "최근 24h 에러 그룹 정리"
   $ picky pickle-create --empty
   $ picky pickle-create "release audit" --instructions "지난 주 머지 PR QA" --cwd "$PWD"
+  $ picky pickle-create "리서치" --instructions "경쟁사 조사" --group "Research"
 `)
   .option("--wait", "Keep the connection open until the Pickle finishes, then print its final answer (default: fire-and-forget)")
-  .action(async (title: string | undefined, options: SharedOptions & { instructions?: string; empty?: boolean; context?: boolean; cwd?: string; wait?: boolean }) => {
+  .action(async (title: string | undefined, options: SharedOptions & { instructions?: string; empty?: boolean; context?: boolean; cwd?: string; group?: string; wait?: boolean }) => {
     await runWithErrorHandling(async () => {
       const connection = await loadCliConnection();
       if (options.empty) {
@@ -101,6 +105,7 @@ Examples:
           instructions: "(empty pickle session)",
           captureContext: options.context !== false,
           ...(options.cwd ? { cwd: options.cwd } : {}),
+          ...(options.group ? { group: options.group } : {}),
         } as const;
         if (!options.wait) {
           const ack = await sendCommand(connection, emptyCmd, { matchEvent: matchExternalEntryAck("createPickle") });
@@ -126,6 +131,7 @@ Examples:
         instructions: options.instructions,
         captureContext: options.context !== false,
         ...(options.cwd ? { cwd: options.cwd } : {}),
+        ...(options.group ? { group: options.group } : {}),
       } as const;
       if (!options.wait) {
         const ack = await sendCommand(connection, namedCmd, { matchEvent: matchExternalEntryAck("createPickle") });
@@ -166,6 +172,38 @@ program
       for (const session of sessions) {
         const cwd = session.cwd ? ` cwd=${session.cwd}` : "";
         process.stdout.write(`${session.id}\t${session.status}\t${session.title}${cwd}\n`);
+      }
+    });
+  });
+
+program
+  .command("pickle-group-list")
+  .description("List Pickle dock groups defined in the Picky app dock.")
+  .option("--json", "Emit the dock groups JSON to stdout")
+  .addHelpText("after", `
+Examples:
+  $ picky pickle-group-list
+  $ picky pickle-group-list --json
+`)
+  .action(async (options: SharedOptions) => {
+    await runWithErrorHandling(async () => {
+      const connection = await loadCliConnection();
+      const snapshot = await sendCommand(connection, { type: "listDockGroups" }, {
+        matchEvent: (event) => (event.type === "dockGroupsSnapshot" ? event : null),
+      });
+      if (snapshot.type !== "dockGroupsSnapshot") return;
+      const groups = snapshot.groups;
+      if (options.json) {
+        process.stdout.write(`${JSON.stringify(groups, null, 2)}\n`);
+        return;
+      }
+      if (groups.length === 0) {
+        process.stdout.write("(no groups)\n");
+        return;
+      }
+      for (const group of groups) {
+        const name = group.name.trim().length > 0 ? group.name : "(untitled)";
+        process.stdout.write(`${group.id}\t${name}\tmembers=${group.memberSessionIds.length}\n`);
       }
     });
   });

@@ -161,6 +161,9 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     /// same app-side press/release path as the global keyboard shortcut.
     var pushToTalkControlHandler: ((PickyPushToTalkControlRequest) async throws -> Void)?
 
+    /// Provides app-owned dock groups for `picky pickle-group-list`.
+    var dockGroupsProvider: (() async -> [PickyDockGroupPayload])?
+
     init(
         primaryClient: PickyAgentClient,
         pool: PickyAgentDaemonPool,
@@ -615,6 +618,11 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                                 await self?.handlePushToTalkControlRequest(request)
                             }
                             continue
+                        case .dockGroupsRequested(let requestId):
+                            Task { @MainActor [weak self] in
+                                await self?.handleDockGroupsRequest(requestId: requestId)
+                            }
+                            continue
                         default:
                             break
                         }
@@ -656,6 +664,15 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
                 errorMessage: error.localizedDescription
             ))
         }
+    }
+
+    private func handleDockGroupsRequest(requestId: String) async {
+        let groups = await dockGroupsProvider?() ?? []
+        try? await primaryClient.send(PickyCommandEnvelope(
+            type: .completeDockGroupsRequest,
+            requestId: requestId,
+            groups: groups
+        ))
     }
 
     private func handlePushToTalkControlRequest(_ request: PickyPushToTalkControlRequest) async {

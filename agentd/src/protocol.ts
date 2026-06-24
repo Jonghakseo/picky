@@ -317,6 +317,16 @@ export const PickyPointerOverlayRequestSchema = z.object({
 });
 export type PickyPointerOverlayRequest = z.infer<typeof PickyPointerOverlayRequestSchema>;
 
+// App-owned Pickle dock group snapshot for CLI commands.
+export const DockGroupSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: z.number().int(),
+  memberSessionIds: z.array(z.string()),
+  collapsed: z.boolean(),
+});
+export type DockGroup = z.infer<typeof DockGroupSchema>;
+
 const CommandBaseSchema = z.object({ id: z.string(), protocolVersion: z.literal(PROTOCOL_VERSION) });
 export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("routeTask"), context: PickyContextPacketSchema }),
@@ -326,10 +336,12 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("completePickleHandoff"), requestId: z.string().min(1), sessionId: z.string().min(1).optional(), title: z.string().min(1).optional(), cwd: z.string().optional(), errorMessage: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("registerAppCapabilities"), capabilities: z.array(z.enum(["pickleHandoff", "pickleBridge", "externalEntry", "pushToTalkControl"])).min(1) }),
   CommandBaseSchema.extend({ type: z.literal("submitMainFromExternal"), text: z.string().min(1), captureContext: z.boolean().default(true), cwd: z.string().min(1).optional() }),
-  CommandBaseSchema.extend({ type: z.literal("createPickleFromExternal"), title: z.string().min(1), instructions: z.string().min(1), captureContext: z.boolean().default(true), cwd: z.string().min(1).optional() }),
+  CommandBaseSchema.extend({ type: z.literal("createPickleFromExternal"), title: z.string().min(1), instructions: z.string().min(1), captureContext: z.boolean().default(true), cwd: z.string().min(1).optional(), group: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("controlPushToTalkFromExternal"), action: PickyPushToTalkControlActionSchema }),
   CommandBaseSchema.extend({ type: z.literal("completePushToTalkControlRequest"), requestId: z.string().min(1), errorMessage: z.string().min(1).optional() }),
   CommandBaseSchema.extend({ type: z.literal("completeExternalEntryRequest"), requestId: z.string().min(1), context: PickyContextPacketSchema.optional(), errorMessage: z.string().min(1).optional() }),
+  CommandBaseSchema.extend({ type: z.literal("listDockGroups") }),
+  CommandBaseSchema.extend({ type: z.literal("completeDockGroupsRequest"), requestId: z.string().min(1), groups: z.array(DockGroupSchema).optional(), errorMessage: z.string().min(1).optional() }),
   CommandBaseSchema.extend({
     type: z.literal("completePickleBridgeRequest"),
     requestId: z.string().min(1),
@@ -530,7 +542,10 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
     kind: z.enum(["submitMain", "createPickle"]),
     contextId: z.string().min(1),
     sessionId: z.string().min(1).optional(),
+    group: z.string().min(1).optional(),
   }),
+  EventBaseSchema.extend({ type: z.literal("dockGroupsRequested"), requestId: z.string().min(1) }),
+  EventBaseSchema.extend({ type: z.literal("dockGroupsSnapshot"), groups: z.array(DockGroupSchema) }),
   EventBaseSchema.extend({
     type: z.literal("pushToTalkControlRequested"),
     requestId: z.string().min(1),

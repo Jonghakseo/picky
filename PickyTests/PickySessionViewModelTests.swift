@@ -3521,8 +3521,9 @@ struct PickySessionViewModelTests {
             logs: ["Picky handoff: initial screen check", "steer: summarize the failing case"]
         ))))
 
+        let expectedCompactCwd = testProjectCwd.replacingOccurrences(of: NSHomeDirectory(), with: "~", options: .anchored)
         #expect(viewModel.sessions.first?.lastRequestText == "summarize the failing case")
-        #expect(viewModel.sessions.first?.compactCwdDescription == "~/Documents/picky")
+        #expect(viewModel.sessions.first?.compactCwdDescription == expectedCompactCwd)
 
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionLog(sessionId: "session-1", line: "steer: include CWD in the HUD"))))
         #expect(viewModel.sessions.first?.lastRequestText == "include CWD in the HUD")

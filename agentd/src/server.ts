@@ -206,6 +206,11 @@ export class AgentdServer {
       pending.reject(new Error(APP_PUSH_TO_TALK_CONTROL_UNAVAILABLE));
     }
     this.pendingPushToTalkControls.clear();
+    for (const pending of this.pendingDockGroupsRequests.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error(APP_DOCK_GROUPS_UNAVAILABLE));
+    }
+    this.pendingDockGroupsRequests.clear();
     for (const client of this.clients) client.close();
     await new Promise<void>((resolve) => this.wsServer?.close(() => resolve()) ?? resolve());
     await new Promise<void>((resolve) => this.httpServer?.close(() => resolve()) ?? resolve());
@@ -230,6 +235,14 @@ export class AgentdServer {
           clearTimeout(pending.timer);
           pending.reject(new Error(APP_PUSH_TO_TALK_CONTROL_UNAVAILABLE));
           this.pendingPushToTalkControls.delete(requestId);
+        }
+      }
+      if (lostCapabilities?.has("externalEntry")) {
+        for (const [requestId, pending] of this.pendingDockGroupsRequests) {
+          if (pending.app !== ws) continue;
+          clearTimeout(pending.timer);
+          pending.reject(new Error(APP_DOCK_GROUPS_UNAVAILABLE));
+          this.pendingDockGroupsRequests.delete(requestId);
         }
       }
       logAgentd("ws disconnected", { clients: this.clients.size });
@@ -569,7 +582,7 @@ export class AgentdServer {
         this.pendingDockGroupsRequests.delete(requestId);
         pending.reject(new Error(APP_DOCK_GROUPS_TIMEOUT));
       }, timeoutMs);
-      this.pendingDockGroupsRequests.set(requestId, { resolve, reject, timer });
+      this.pendingDockGroupsRequests.set(requestId, { resolve, reject, timer, app });
       this.send(app, { type: "dockGroupsRequested", requestId });
     });
   }
@@ -649,6 +662,7 @@ interface DockGroupsPending {
   resolve: (groups: DockGroup[]) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
+  app: WebSocket;
 }
 
 function buildNeutralCliContext(payload: { cwd?: string; transcript?: string }): PickyContextPacket {

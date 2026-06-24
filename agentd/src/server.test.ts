@@ -432,6 +432,72 @@ describe("AgentdServer", () => {
     cliWs.close();
   });
 
+  it("rejects pending dock group requests when the registered app disconnects", async () => {
+    const { ws: appWs } = await connectWithHello();
+    appWs.send(JSON.stringify({
+      id: "cmd-register-groups-disconnect",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["externalEntry"],
+    }));
+    await waitForRegisteredCapability("externalEntry");
+
+    const { ws: cliWs } = await connectWithHello();
+    cliWs.send(JSON.stringify({ id: "cmd-list-groups-disconnect", protocolVersion: PROTOCOL_VERSION, type: "listDockGroups" }));
+
+    await waitForEvent(appWs, "dockGroupsRequested");
+    const pendingError = waitForEvent(cliWs, "error", 500);
+    appWs.close();
+
+    await expect(pendingError).resolves.toMatchObject({
+      type: "error",
+      commandId: "cmd-list-groups-disconnect",
+      message: expect.stringContaining("dock groups unavailable"),
+    });
+    cliWs.close();
+  });
+
+  it("keeps pending dock group requests alive when a different registered app disconnects", async () => {
+    const { ws: appWs } = await connectWithHello();
+    appWs.send(JSON.stringify({
+      id: "cmd-register-groups-primary",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["externalEntry"],
+    }));
+    await waitForRegisteredCapability("externalEntry");
+
+    const { ws: otherAppWs } = await connectWithHello();
+    otherAppWs.send(JSON.stringify({
+      id: "cmd-register-groups-secondary",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "registerAppCapabilities",
+      capabilities: ["externalEntry"],
+    }));
+    await sleep(20);
+
+    const { ws: cliWs } = await connectWithHello();
+    cliWs.send(JSON.stringify({ id: "cmd-list-groups-survives-other-close", protocolVersion: PROTOCOL_VERSION, type: "listDockGroups" }));
+
+    const request = await waitForEvent(appWs, "dockGroupsRequested");
+    const requestId = request.type === "dockGroupsRequested" ? request.requestId : "";
+    otherAppWs.close();
+    await sleep(50);
+
+    appWs.send(JSON.stringify({
+      id: "cmd-complete-groups-primary",
+      protocolVersion: PROTOCOL_VERSION,
+      type: "completeDockGroupsRequest",
+      requestId,
+      groups: [{ id: "group-1", name: "Research", color: 6, memberSessionIds: [], collapsed: false }],
+    }));
+
+    const snapshot = await waitForEvent(cliWs, "dockGroupsSnapshot");
+    expect(snapshot).toMatchObject({ type: "dockGroupsSnapshot", groups: [{ id: "group-1", name: "Research" }] });
+    appWs.close();
+    cliWs.close();
+  });
+
   // MARK: - external entry serialisation (Q3)
 
   it("processes two captureContext=false CLI submits serially even when sent back-to-back", async () => {

@@ -131,7 +131,7 @@ describe("picky cli", () => {
     expect(ok.stdout).toContain("Created empty Pickle (session=pickle-empty-1)");
   });
 
-  it("pickle-create forwards instructions, cwd, captureContext, and group", async () => {
+  it("pickle-create forwards instructions, cwd, captureContext, and trimmed group", async () => {
     server.onCommand("createPickleFromExternal", (command, send) => {
       send({ type: "externalEntryAck", commandId: (command as { id: string }).id, kind: "createPickle", sessionId: "pickle-2" });
     });
@@ -143,7 +143,7 @@ describe("picky cli", () => {
       "--cwd",
       "/tmp/audit",
       "--group",
-      "Research",
+      "  Research  ",
       "--no-context",
     ]);
     expect(result.code).toBe(0);
@@ -154,6 +154,25 @@ describe("picky cli", () => {
       cwd: "/tmp/audit",
       group: "Research",
       captureContext: false,
+    });
+  });
+
+  it("pickle-create rejects a blank --group", async () => {
+    const result = await runCli(["pickle-create", "Audit", "--instructions", "Check things", "--group", "   "]);
+    expect(result.code).toBe(64);
+    expect(result.stderr).toContain("--group cannot be empty");
+    expect(server.received).toHaveLength(0);
+  });
+
+  it("pickle-create --empty forwards a trimmed group", async () => {
+    server.onCommand("createPickleFromExternal", (command, send) => {
+      send({ type: "externalEntryAck", commandId: (command as { id: string }).id, kind: "createPickle", sessionId: "pickle-empty-group" });
+    });
+    const result = await runCli(["pickle-create", "--empty", "--group", "  Research  "]);
+    expect(result.code).toBe(0);
+    expect(server.received[0]).toMatchObject({
+      type: "createPickleFromExternal",
+      group: "Research",
     });
   });
 

@@ -95,6 +95,10 @@ Examples:
   .action(async (title: string | undefined, options: SharedOptions & { instructions?: string; empty?: boolean; context?: boolean; cwd?: string; group?: string; wait?: boolean }) => {
     await runWithErrorHandling(async () => {
       const connection = await loadCliConnection();
+      const group = options.group !== undefined ? options.group.trim() : undefined;
+      if (options.group !== undefined && group?.length === 0) {
+        fail("--group cannot be empty", 64);
+      }
       if (options.empty) {
         if (title || options.instructions) {
           fail("--empty cannot be combined with a title or --instructions", 64);
@@ -105,7 +109,7 @@ Examples:
           instructions: "(empty pickle session)",
           captureContext: options.context !== false,
           ...(options.cwd ? { cwd: options.cwd } : {}),
-          ...(options.group ? { group: options.group } : {}),
+          ...(group ? { group } : {}),
         } as const;
         if (!options.wait) {
           const ack = await sendCommand(connection, emptyCmd, { matchEvent: matchExternalEntryAck("createPickle") });
@@ -131,7 +135,7 @@ Examples:
         instructions: options.instructions,
         captureContext: options.context !== false,
         ...(options.cwd ? { cwd: options.cwd } : {}),
-        ...(options.group ? { group: options.group } : {}),
+        ...(group ? { group } : {}),
       } as const;
       if (!options.wait) {
         const ack = await sendCommand(connection, namedCmd, { matchEvent: matchExternalEntryAck("createPickle") });

@@ -478,6 +478,7 @@ struct BlueCursorView: View {
     @ObservedObject private var cursorStyleStore = PickyCursorStyleStore.shared
     @ObservedObject private var cursorPreferencesStore = PickyCursorPreferencesStore.shared
     @ObservedObject private var overlayBubblePreferencesStore = PickyOverlayBubblePreferencesStore.shared
+    @StateObject private var responseBubbleLayoutCache = PickyCursorResponseBubbleLayoutCache()
 
     static let cursorTrackingInterval: TimeInterval = 1.0 / 60.0
     static let shakeReactionRequiredDuration: TimeInterval = 2.0
@@ -707,47 +708,9 @@ struct BlueCursorView: View {
                companionManager.voiceState == .responding,
                let responseText = companionManager.latestAgentSessionSummary,
                !responseText.isEmpty,
+               let responseBubbleLayout = responseBubbleLayoutCache.layout(for: responseText),
                companionManager.onboardingBubbleText == nil {
-                // The voice-response cursor bubble uses the same 16-line visible cap as the
-                // longer-running CompanionResponseOverlay so multi-paragraph TTS replies do
-                // not balloon the bubble past the cursor area. SwiftUI's `.lineLimit` alone
-                // does not constrain `fixedSize(vertical: true)` bubbles either, so we
-                // pre-truncate the AttributedString through CoreText with the same helper.
-                let bubbleFont = NSFont.systemFont(ofSize: 11, weight: .medium)
-                let renderedText = PickyBubbleMarkdown.displayString(for: responseText)
-                let rawAttributed = PickyBubbleMarkdown.attributedText(for: responseText)
-                let textWidth = PickyBubbleLayout.textWidth(
-                    for: renderedText,
-                    font: bubbleFont,
-                    maxWidth: 302
-                )
-                let attributedText = PickyBubbleLayout.truncatedAttributedText(
-                    rawAttributed,
-                    font: bubbleFont,
-                    lineSpacing: 0,
-                    width: textWidth,
-                    maxLines: 16
-                )
-                Text(attributedText)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(16)
-                    .truncationMode(.tail)
-                    .frame(width: textWidth, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(DS.Colors.overlayCursorBlue)
-                            .shadow(color: Color.black.opacity(0.28), radius: 12, x: 0, y: 4)
-                            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.48), radius: 8, x: 0, y: 0)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Color.white.opacity(0.38), lineWidth: 0.8)
-                    )
+                PickyCursorResponseBubbleView(layout: responseBubbleLayout)
                     .overlay(
                         GeometryReader { geo in
                             Color.clear
@@ -871,6 +834,7 @@ struct BlueCursorView: View {
             startNavigatingToCurrentPointerTargetIfNeeded()
 
             self.cursorOpacity = 1.0
+            syncResponseBubbleLayout()
         }
         .onDisappear {
             timer?.invalidate()
@@ -887,6 +851,15 @@ struct BlueCursorView: View {
                 return
             }
             startNavigatingToPointerTargetIfPresent(screenLocation: companionManager.detectedElementScreenLocation)
+        }
+        .onChange(of: companionManager.latestAgentSessionSummary) { _, _ in
+            syncResponseBubbleLayout()
+        }
+        .onChange(of: companionManager.voiceState) { _, _ in
+            syncResponseBubbleLayout()
+        }
+        .onChange(of: overlayBubblePreferencesStore.preferences.showPickyResponseBubble) { _, _ in
+            syncResponseBubbleLayout()
         }
     }
 
@@ -922,6 +895,19 @@ struct BlueCursorView: View {
             && isCursorOnThisScreen
             && !companionManager.isQuickInputPanelVisible
             && !companionManager.inkOverlayState.isActive
+    }
+
+    private func syncResponseBubbleLayout() {
+        guard overlayBubblePreferencesStore.preferences.showPickyResponseBubble,
+              companionManager.voiceState == .responding,
+              let responseText = companionManager.latestAgentSessionSummary,
+              !responseText.isEmpty,
+              companionManager.onboardingBubbleText == nil
+        else {
+            responseBubbleLayoutCache.clear()
+            return
+        }
+        responseBubbleLayoutCache.update(for: responseText)
     }
 
     /// Minimal in-flight affordance for users who intentionally hide the idle cursor buddy.
@@ -1555,6 +1541,94 @@ private struct CursorWaitingIndicatorView: View {
         .fixedSize()
         .onAppear { isAnimating = true }
         .onDisappear { isAnimating = false }
+    }
+}
+
+private struct PickyCursorResponseBubbleLayout {
+    enum Metrics {
+        static let maxLines: Int = 16
+        static let fontSize: CGFloat = 11
+        static let maxTextWidth: CGFloat = 302
+        static let horizontalPadding: CGFloat = 9
+        static let verticalPadding: CGFloat = 6
+        static let cornerRadius: CGFloat = 8
+
+        static var font: NSFont {
+            .systemFont(ofSize: fontSize, weight: .medium)
+        }
+    }
+
+    let sourceText: String
+    let attributedText: AttributedString
+    let textWidth: CGFloat
+
+    init(sourceText: String) {
+        self.sourceText = sourceText
+        let renderedText = PickyBubbleMarkdown.displayString(for: sourceText)
+        let rawAttributed = PickyBubbleMarkdown.attributedText(for: sourceText)
+        let measuredWidth = PickyBubbleLayout.textWidth(
+            for: renderedText,
+            font: Metrics.font,
+            maxWidth: Metrics.maxTextWidth
+        )
+        textWidth = measuredWidth
+        attributedText = PickyBubbleLayout.truncatedAttributedText(
+            rawAttributed,
+            font: Metrics.font,
+            lineSpacing: 0,
+            width: measuredWidth,
+            maxLines: Metrics.maxLines
+        )
+    }
+}
+
+private final class PickyCursorResponseBubbleLayoutCache: ObservableObject {
+    @Published private var cachedLayout: PickyCursorResponseBubbleLayout?
+
+    func layout(for sourceText: String) -> PickyCursorResponseBubbleLayout? {
+        guard cachedLayout?.sourceText == sourceText else { return nil }
+        return cachedLayout
+    }
+
+    func update(for sourceText: String) {
+        guard !sourceText.isEmpty else {
+            clear()
+            return
+        }
+        guard cachedLayout?.sourceText != sourceText else { return }
+        cachedLayout = PickyCursorResponseBubbleLayout(sourceText: sourceText)
+    }
+
+    func clear() {
+        guard cachedLayout != nil else { return }
+        cachedLayout = nil
+    }
+}
+
+private struct PickyCursorResponseBubbleView: View {
+    let layout: PickyCursorResponseBubbleLayout
+
+    var body: some View {
+        Text(layout.attributedText)
+            .font(.system(size: PickyCursorResponseBubbleLayout.Metrics.fontSize, weight: .medium))
+            .foregroundColor(.white)
+            .multilineTextAlignment(.leading)
+            .lineLimit(PickyCursorResponseBubbleLayout.Metrics.maxLines)
+            .truncationMode(.tail)
+            .frame(width: layout.textWidth, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, PickyCursorResponseBubbleLayout.Metrics.horizontalPadding)
+            .padding(.vertical, PickyCursorResponseBubbleLayout.Metrics.verticalPadding)
+            .background(
+                RoundedRectangle(cornerRadius: PickyCursorResponseBubbleLayout.Metrics.cornerRadius, style: .continuous)
+                    .fill(DS.Colors.overlayCursorBlue)
+                    .shadow(color: Color.black.opacity(0.28), radius: 12, x: 0, y: 4)
+                    .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.48), radius: 8, x: 0, y: 0)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: PickyCursorResponseBubbleLayout.Metrics.cornerRadius, style: .continuous)
+                    .stroke(Color.white.opacity(0.38), lineWidth: 0.8)
+            )
     }
 }
 

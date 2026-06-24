@@ -126,6 +126,29 @@ final class PickySessionComposerDraftControllerTests: XCTestCase {
         XCTAssertNil(controller.request(for: "session-1"))
     }
 
+    func testPruneWithEmptyKnownSessionIDsKeepsPersistedDraftsAndAttachments() {
+        let draftStore = FakeControllerComposerDraftStore(drafts: [
+            "session-1": "unsent draft"
+        ])
+        let attachmentStore = FakeControllerComposerAttachmentDraftStore(attachments: [
+            "session-1": ["/tmp/unsent.png"]
+        ])
+        let controller = PickySessionComposerDraftController(
+            draftStore: draftStore,
+            attachmentStore: attachmentStore,
+            makeRequestID: { _ in "request-id" }
+        )
+        controller.primeRequest(sessionID: "session-1", requestID: "request-id", text: "unsent draft")
+
+        controller.prune(knownSessionIDs: [])
+
+        XCTAssertNil(controller.request(for: "session-1"))
+        XCTAssertNil(draftStore.prunedKnownSessionIDs)
+        XCTAssertNil(attachmentStore.prunedKnownSessionIDs)
+        XCTAssertEqual(draftStore.drafts, ["session-1": "unsent draft"])
+        XCTAssertEqual(attachmentStore.attachments, ["session-1": ["/tmp/unsent.png"]])
+    }
+
     func testPrimeAndPruneRequestsAndStores() {
         let draftStore = FakeControllerComposerDraftStore(drafts: [
             "keep": "keep draft",

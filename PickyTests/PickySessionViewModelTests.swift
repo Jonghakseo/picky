@@ -818,6 +818,26 @@ struct PickySessionViewModelTests {
         #expect(clipboard.copied == ["  keep surrounding whitespace  "])
     }
 
+    @MainActor @Test func emptySessionSnapshotDoesNotPrunePersistedComposerDrafts() {
+        let draftStore = FakeComposerDraftStore()
+        let attachmentStore = FakeComposerAttachmentDraftStore()
+        draftStore.drafts = ["session-1": "keep me"]
+        attachmentStore.attachments = ["session-1": ["/tmp/keep.png"]]
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            composerDraftStore: draftStore,
+            composerAttachmentDraftStore: attachmentStore
+        )
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.emptySessionSnapshot())))
+
+        #expect(draftStore.prunedKnownSessionIDs == nil)
+        #expect(attachmentStore.prunedKnownSessionIDs == nil)
+        #expect(draftStore.drafts == ["session-1": "keep me"])
+        #expect(attachmentStore.attachments == ["session-1": ["/tmp/keep.png"]])
+    }
+
     @MainActor @Test func sessionSnapshotPrunesPersistedComposerDraftsForRemovedSessions() {
         let draftStore = FakeComposerDraftStore()
         draftStore.drafts = ["session-1": "keep me", "missing-session": "remove me"]
@@ -4640,6 +4660,12 @@ private enum EventJSON {
         let encodedArchived = archived.map { ",\"archived\":\($0)" } ?? ""
         return """
         {"id":"snapshot-\(id)-\(status)","protocolVersion":"2026-05-09","timestamp":"\(updatedAt)","type":"sessionSnapshot","sessions":[{"id":"\(id)","title":"\(title)","status":"\(status)","cwd":"\(testProjectCwd)","createdAt":"\(createdAt)","updatedAt":"\(updatedAt)","lastSummary":"\(summary)","logs":\(encodedLogs),"tools":[],"artifacts":[],"changedFiles":[]\(encodedPiSessionFilePath)\(encodedArchived)}]}
+        """
+    }
+
+    static func emptySessionSnapshot() -> String {
+        """
+        {"id":"snapshot-empty","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:00.000Z","type":"sessionSnapshot","sessions":[]}
         """
     }
 

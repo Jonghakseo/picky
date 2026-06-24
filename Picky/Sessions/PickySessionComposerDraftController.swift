@@ -141,6 +141,10 @@ final class PickySessionComposerDraftController {
 
     func prune(knownSessionIDs: Set<String>) {
         requestsBySessionID = requestsBySessionID.filter { knownSessionIDs.contains($0.key) }
+        // Empty session snapshots can be transient during reconnects/daemon resets. Treat
+        // them as non-authoritative for persisted composer data so unsent user drafts do
+        // not disappear before the next real snapshot rehydrates the Pickle list.
+        guard !knownSessionIDs.isEmpty else { return }
         draftStore.prune(knownSessionIDs: knownSessionIDs)
         attachmentStore.prune(knownSessionIDs: knownSessionIDs)
     }

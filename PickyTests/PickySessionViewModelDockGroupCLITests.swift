@@ -29,6 +29,7 @@ private final class CLIGroupFakePickyAgentClient: PickyAgentClient {
 
 private final class CLIGroupDockLayoutStore: PickyDockLayoutStoring {
     private var storedLayout: PickyDockLayout
+    private(set) var savedLayouts: [PickyDockLayout] = []
 
     init(layout: PickyDockLayout = .empty) {
         self.storedLayout = layout
@@ -38,6 +39,7 @@ private final class CLIGroupDockLayoutStore: PickyDockLayoutStoring {
 
     func save(_ layout: PickyDockLayout) throws {
         storedLayout = layout
+        savedLayouts.append(layout)
     }
 }
 
@@ -55,6 +57,49 @@ private extension PickyDockLayout {
 struct PickySessionViewModelDockGroupCLITests {
     private static func decodeEnvelope(_ json: String) -> PickyEventEnvelope {
         try! JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(json.utf8))
+    }
+
+    @MainActor @Test func dockLayoutStoreSeedsInitialPublishedLayout() {
+        let dockLayoutStore = CLIGroupDockLayoutStore(layout: PickyDockLayout(entries: [
+            .session(id: "a"),
+            .group(PickyDockGroup(
+                id: "g",
+                name: "G",
+                color: .teal,
+                memberSessionIDs: ["b"]
+            ))
+        ]))
+        let viewModel = PickySessionListViewModel(
+            client: CLIGroupFakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            dockLayoutStore: dockLayoutStore
+        )
+
+        #expect(viewModel.dockLayout.cliGroupTestEntryDescriptions == ["session:a", "group:g[b]"])
+        #expect(dockLayoutStore.savedLayouts.isEmpty)
+    }
+
+    @MainActor @Test func moveSessionInDockPublishesControllerLayoutAndPersists() {
+        let dockLayoutStore = CLIGroupDockLayoutStore(layout: PickyDockLayout(entries: [
+            .session(id: "a"),
+            .group(PickyDockGroup(
+                id: "g",
+                name: "G",
+                color: .teal,
+                memberSessionIDs: ["b"]
+            )),
+            .session(id: "c")
+        ]))
+        let viewModel = PickySessionListViewModel(
+            client: CLIGroupFakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            dockLayoutStore: dockLayoutStore
+        )
+
+        viewModel.moveSessionInDock(sessionID: "a", to: .group(id: "g", memberIndex: 1))
+
+        #expect(viewModel.dockLayout.cliGroupTestEntryDescriptions == ["group:g[b,a]", "session:c"])
+        #expect(dockLayoutStore.savedLayouts.map(\.cliGroupTestEntryDescriptions) == [["group:g[b,a]", "session:c"]])
     }
 
     @MainActor @Test func createsMissingGroupAfterReconcile() {

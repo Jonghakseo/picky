@@ -2925,26 +2925,6 @@ struct PickySessionViewModelTests {
 
     // MARK: - Dock layout controller seam
 
-    @MainActor @Test func dockLayoutStoreSeedsInitialPublishedLayout() {
-        let dockLayoutStore = FakeViewModelDockLayoutStore(layout: PickyDockLayout(entries: [
-            .session(id: "a"),
-            .group(PickyDockGroup(
-                id: "g",
-                name: "G",
-                color: .teal,
-                memberSessionIDs: ["b"]
-            ))
-        ]))
-        let viewModel = PickySessionListViewModel(
-            client: FakePickyAgentClient(),
-            notificationCenter: PickyNoopNotificationCenter(),
-            dockLayoutStore: dockLayoutStore
-        )
-
-        #expect(viewModel.dockLayout.testEntryDescriptions == ["session:a", "group:g[b]"])
-        #expect(dockLayoutStore.savedLayouts.isEmpty)
-    }
-
     @MainActor @Test func dockLayoutMigratesManualOrderThroughViewModelReconcile() {
         let orderStore = FakeManualOrderStore()
         orderStore.manualOrder = ["c", "a", "b"]
@@ -2970,29 +2950,6 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.map(\.id) == ["c", "a", "b"])
         #expect(viewModel.dockLayout.testSessionIDs == ["b", "a", "c"])
         #expect(dockLayoutStore.savedLayouts.map(\.testSessionIDs) == [["b", "a", "c"]])
-    }
-
-    @MainActor @Test func moveSessionInDockPublishesControllerLayoutAndPersists() {
-        let dockLayoutStore = FakeViewModelDockLayoutStore(layout: PickyDockLayout(entries: [
-            .session(id: "a"),
-            .group(PickyDockGroup(
-                id: "g",
-                name: "G",
-                color: .teal,
-                memberSessionIDs: ["b"]
-            )),
-            .session(id: "c")
-        ]))
-        let viewModel = PickySessionListViewModel(
-            client: FakePickyAgentClient(),
-            notificationCenter: PickyNoopNotificationCenter(),
-            dockLayoutStore: dockLayoutStore
-        )
-
-        viewModel.moveSessionInDock(sessionID: "a", to: .group(id: "g", memberIndex: 1))
-
-        #expect(viewModel.dockLayout.testEntryDescriptions == ["group:g[b,a]", "session:c"])
-        #expect(dockLayoutStore.savedLayouts.map(\.testEntryDescriptions) == [["group:g[b,a]", "session:c"]])
     }
 
     @Test func removeDockGroupArchivesMembersAndPersistsThroughViewModel() async throws {

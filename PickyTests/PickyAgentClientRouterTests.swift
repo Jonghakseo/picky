@@ -761,6 +761,97 @@ struct PickyAgentClientRouterTests {
         #expect(primary.sentCommands.isEmpty)
     }
 
+    @Test func sendRespawnsRetiredChildSessionFromCacheBeforeForwardingInput() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let agentd = root.appendingPathComponent("agentd", isDirectory: true)
+        try makeStubAgentdPackage(at: agentd)
+        let primary = StubAgentClient(id: "primary")
+        let poolFactory = StubLauncherFactoryForRouter(agentdRoot: agentd)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(
+                token: "tok",
+                appSupportRoot: root,
+                environment: ["PICKY_AGENTD_ROOT": agentd.path, "PATH": "/usr/bin"],
+                bundleResourceURL: nil
+            ),
+            factory: poolFactory
+        )
+        let clientFactory = StubClientFactory()
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+        await router.connect()
+
+        async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "pickle-restored", cwd: "/tmp/ws")
+        let firstRunner = try await poolFactory.waitForRunner(sessionId: "pickle-restored")
+        poolFactory.emitReady(for: "pickle-restored")
+        _ = try await spawned
+        router.releaseChild(sessionId: "pickle-restored")
+        primary.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-restored", status: .completed)))
+        await Task.yield()
+
+        async let sent: Void = router.send(PickyCommandEnvelope(type: .followUp, sessionId: "pickle-restored", text: "continue"))
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            if let runner = poolFactory.runners["pickle-restored"], runner !== firstRunner, runner.launchCount > 0 {
+                poolFactory.emitReady(for: "pickle-restored")
+                break
+            }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        try await sent
+
+        #expect(clientFactory.madeClients.count == 2)
+        #expect(clientFactory.madeClients.last?.client.sentCommands.last?.type == .followUp)
+        #expect(clientFactory.madeClients.last?.client.sentCommands.last?.sessionId == "pickle-restored")
+        #expect(primary.sentCommands.allSatisfy { $0.type != .followUp && $0.type != .steer })
+    }
+
+    @Test func queuesInputWhileRestoredChildSessionIsBootingEvenWhenCachedStatusIsCompleted() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)
+        let agentd = root.appendingPathComponent("agentd", isDirectory: true)
+        try makeStubAgentdPackage(at: agentd)
+        let primary = StubAgentClient(id: "primary")
+        let poolFactory = StubLauncherFactoryForRouter(agentdRoot: agentd)
+        let pool = PickyAgentDaemonPool(
+            configuration: PickyAgentDaemonPool.Configuration(
+                token: "tok",
+                appSupportRoot: root,
+                environment: ["PICKY_AGENTD_ROOT": agentd.path, "PATH": "/usr/bin"],
+                bundleResourceURL: nil
+            ),
+            factory: poolFactory
+        )
+        let clientFactory = StubClientFactory()
+        let router = PickyAgentClientRouter(primaryClient: primary, pool: pool, clientFactory: clientFactory)
+        await router.connect()
+        primary.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-boot-completed", status: .completed)))
+        await Task.yield()
+
+        async let spawned: PickyAgentClient = router.spawnChildClient(sessionId: "pickle-boot-completed", cwd: "/tmp/ws")
+        _ = try await poolFactory.waitForRunner(sessionId: "pickle-boot-completed")
+
+        try await router.send(PickyCommandEnvelope(type: .followUp, sessionId: "pickle-boot-completed", text: "continue"))
+        poolFactory.emitReady(for: "pickle-boot-completed")
+        _ = try await spawned
+        guard let child = clientFactory.madeClients.last?.client else {
+            Issue.record("Expected spawned child client")
+            return
+        }
+        child.emit(.protocolEvent(makeSessionUpdatedEvent(id: "pickle-boot-completed", status: .completed)))
+
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline, !clientFactory.madeClients.contains(where: { made in
+            made.client.sentCommands.contains(where: { $0.type == .followUp })
+        }) {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        let drainedFollowUp = clientFactory.madeClients.contains { made in
+            made.client.sentCommands.contains { command in
+                command.type == .followUp && command.sessionId == "pickle-boot-completed"
+            }
+        }
+        #expect(drainedFollowUp)
+    }
+
     @Test func pickleBridgeListIncludesPrimarySnapshotSessions() async throws {
         let primary = StubAgentClient(id: "primary")
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-router-\(UUID().uuidString)", isDirectory: true)

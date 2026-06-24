@@ -357,6 +357,9 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
     private func connectedClient(for sessionId: String?) async throws -> PickyAgentClient {
         guard let sessionId else { return primaryClient }
         guard let endpoint = pool.endpoint(for: sessionId) else {
+            if retiredChildSessionIds.contains(sessionId), let cwd = cachedCwdForRetiredChild(sessionId) {
+                return try await spawnChildClient(sessionId: sessionId, cwd: cwd)
+            }
             if knownChildSessionIds.contains(sessionId) || retiredChildSessionIds.contains(sessionId) {
                 throw PickyAgentClientRouterError.missingChildEndpoint(sessionId: sessionId)
             }
@@ -370,13 +373,18 @@ final class PickyAgentClientRouter: PickyAgentClient, PickyManualPickleChildSpaw
         return client
     }
 
+    private func cachedCwdForRetiredChild(_ sessionId: String) -> String? {
+        guard let cwd = sessionCache[sessionId]?.cwd?.trimmingCharacters(in: .whitespacesAndNewlines), !cwd.isEmpty else { return nil }
+        return cwd
+    }
+
     private func enqueueIfChildIsBooting(_ command: PickyCommandEnvelope) -> Bool {
         guard command.type == .followUp || command.type == .steer else { return false }
         guard let sessionId = command.sessionId else { return false }
         let isChildSession = knownChildSessionIds.contains(sessionId) || pool.endpoint(for: sessionId) != nil
         guard isChildSession else { return false }
         let status = sessionCache[sessionId]?.status
-        let isBooting = status == .queued || (status == nil && bootingChildSessionIds.contains(sessionId))
+        let isBooting = bootingChildSessionIds.contains(sessionId) || status == .queued
         guard isBooting else { return false }
         pendingChildCommands[sessionId, default: []].append(command)
         let statusText = status?.rawValue ?? "not-yet-created"

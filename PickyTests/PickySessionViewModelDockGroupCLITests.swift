@@ -55,8 +55,8 @@ private extension PickyDockLayout {
 }
 
 struct PickySessionViewModelDockGroupCLITests {
-    private static func decodeEnvelope(_ json: String) -> PickyEventEnvelope {
-        try! JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(json.utf8))
+    private static func decodeEnvelope(_ json: String) throws -> PickyEventEnvelope {
+        try JSONDecoder.pickyAgentProtocolDecoder().decode(PickyEventEnvelope.self, from: Data(json.utf8))
     }
 
     @MainActor @Test func dockLayoutStoreSeedsInitialPublishedLayout() {
@@ -98,11 +98,12 @@ struct PickySessionViewModelDockGroupCLITests {
 
         viewModel.moveSessionInDock(sessionID: "a", to: .group(id: "g", memberIndex: 1))
 
-        #expect(viewModel.dockLayout.cliGroupTestEntryDescriptions == ["group:g[b,a]", "session:c"])
-        #expect(dockLayoutStore.savedLayouts.map(\.cliGroupTestEntryDescriptions) == [["group:g[b,a]", "session:c"]])
+        let expectedLayout = ["group:g[b,a]", "session:c"]
+        #expect(viewModel.dockLayout.cliGroupTestEntryDescriptions == expectedLayout)
+        #expect(dockLayoutStore.savedLayouts.map(\.cliGroupTestEntryDescriptions) == [expectedLayout])
     }
 
-    @MainActor @Test func createsMissingGroupAfterReconcile() {
+    @MainActor @Test func createsMissingGroupAfterReconcile() throws {
         let dockLayoutStore = CLIGroupDockLayoutStore()
         let viewModel = PickySessionListViewModel(
             client: CLIGroupFakePickyAgentClient(),
@@ -111,10 +112,28 @@ struct PickySessionViewModelDockGroupCLITests {
         )
 
         viewModel.assignSessionToDockGroup(sessionID: "a", groupName: "Research")
-        viewModel.apply(.protocolEvent(Self.decodeEnvelope("""
-        {"id":"snapshot-cli-group","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:30.000Z","type":"sessionSnapshot","sessions":[
-            {"id":"a","title":"A","status":"running","cwd":"/tmp/ws","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"a","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}
-        ]}
+        viewModel.apply(.protocolEvent(try Self.decodeEnvelope("""
+        {
+          "id": "snapshot-cli-group",
+          "protocolVersion": "2026-05-09",
+          "timestamp": "2026-05-01T00:00:30.000Z",
+          "type": "sessionSnapshot",
+          "sessions": [
+            {
+              "id": "a",
+              "title": "A",
+              "status": "running",
+              "cwd": "/tmp/ws",
+              "createdAt": "2026-05-01T00:00:00.000Z",
+              "updatedAt": "2026-05-01T00:00:00.000Z",
+              "lastSummary": "a",
+              "logs": [],
+              "tools": [],
+              "artifacts": [],
+              "changedFiles": []
+            }
+          ]
+        }
         """)))
 
         let group = viewModel.dockLayout.groups.first

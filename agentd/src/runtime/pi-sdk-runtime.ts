@@ -4,6 +4,7 @@ import { extname } from "node:path";
 import {
   type AgentSession,
   type AgentSessionRuntime,
+  type AgentSessionServices,
   type CreateAgentSessionRuntimeFactory,
   type CreateAgentSessionFromServicesOptions,
   type CreateAgentSessionServicesOptions,
@@ -13,7 +14,7 @@ import {
   createAgentSessionServices,
   getAgentDir,
   SessionManager,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
@@ -100,7 +101,7 @@ export class PiSdkRuntime implements AgentRuntime {
     const agentDir = this.options.agentDir ?? (this.options.getAgentDir ?? getAgentDir)();
     const services = await createServices({ cwd: options.cwd ?? process.cwd(), agentDir, resourceLoaderOptions: this.options.resourceLoaderOptions });
     const available = await availableModelsFromServices(services);
-    return available.map(runtimeModelOptionFromModel).filter((option): option is RuntimeModelOption => Boolean(option));
+    return available.map(runtimeModelOptionFromModel);
   }
 
   async create(prompt: BuiltPrompt, options: { cwd?: string; sessionId?: string }): Promise<RuntimeSessionHandle> {
@@ -137,7 +138,7 @@ export class PiSdkRuntime implements AgentRuntime {
       const services = await createServices({ cwd: runtimeCwd, agentDir, resourceLoaderOptions: this.options.resourceLoaderOptions });
       const fixedModel = await modelFromServices(services, this.modelPattern);
       const scopedModels = fixedModel
-        ? [{ model: fixedModel as ScopedModelOption["model"], ...(this.thinkingLevel ? { thinkingLevel: this.thinkingLevel } : {}) }]
+        ? [{ model: fixedModel, ...(this.thinkingLevel ? { thinkingLevel: this.thinkingLevel } : {}) }]
         : await scopedModelsFromServices(services);
       const sessionResult = await createSessionFromServices({
         services,
@@ -145,7 +146,7 @@ export class PiSdkRuntime implements AgentRuntime {
         sessionStartEvent,
         customTools,
         thinkingLevel: this.thinkingLevel,
-        ...(fixedModel ? { model: fixedModel as ScopedModelOption["model"], scopedModels } : {}),
+        ...(fixedModel ? { model: fixedModel, scopedModels } : {}),
       });
       if (!fixedModel) applyScopedModelsForCycling(sessionResult.session, scopedModels);
       return {
@@ -389,14 +390,14 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     if (normalized) {
       const model = await modelFromServices(services, normalized);
       if (!model) throw new Error(`No Pi model matched pattern: ${normalized}`);
-      const scopedModel: ScopedModelOption = { model: model as ScopedModelOption["model"], ...(this.configuredThinkingLevel ? { thinkingLevel: this.configuredThinkingLevel } : {}) };
+      const scopedModel: ScopedModelOption = { model, ...(this.configuredThinkingLevel ? { thinkingLevel: this.configuredThinkingLevel } : {}) };
       applyScopedModelsForCycling(this.runtime.session, [scopedModel]);
       await this.runtime.session.setModel(scopedModel.model);
     } else {
       const scopedModels = await scopedModelsFromServices(services);
       applyScopedModelsForCycling(this.runtime.session, scopedModels);
       const automaticModel = await automaticModelFromServices(services, scopedModels);
-      if (automaticModel) await this.runtime.session.setModel(automaticModel as ScopedModelOption["model"]);
+      if (automaticModel) await this.runtime.session.setModel(automaticModel);
     }
     const metadata = this.currentAssistantRunMetadata();
     logAgentd("pi model set", { sessionId: this.id, modelPattern: normalized, model: metadata?.model, thinkingLevel: metadata?.thinkingLevel });
@@ -594,14 +595,12 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       return;
     }
 
-    const model = asRecord((session.state as unknown as Record<string, unknown>).model);
-    const api = stringValue(model.api);
-    const provider = stringValue(model.provider);
-    const modelId = stringValue(model.id);
-    if (!api || !provider || !modelId) {
+    const modelMetadata = piReadModelMetadata(session);
+    if (!modelMetadata?.api || !modelMetadata.provider || !modelMetadata.modelId) {
       logAgentd("pi inject bootstrap skipped", { sessionId: this.id, reason: "model metadata missing" });
       return;
     }
+    const { api, provider, modelId } = modelMetadata;
 
     const now = Date.now();
     const userMessage = {
@@ -1253,38 +1252,30 @@ function isAbortedTerminalPiEvent(record: Record<string, unknown>): boolean {
 }
 
 type ScopedModelOption = NonNullable<CreateAgentSessionFromServicesOptions["scopedModels"]>[number];
+type RuntimeModel = ScopedModelOption["model"];
 
-async function scopedModelsFromServices(services: Awaited<ReturnType<NonNullable<PiSdkRuntimeOptions["createServices"]>>>): Promise<ScopedModelOption[]> {
-  const settingsManager = asRecord(services.settingsManager);
-  const getEnabledModels = settingsManager.getEnabledModels;
-  if (typeof getEnabledModels !== "function") return [];
-
-  const patterns = getEnabledModels.call(services.settingsManager);
-  if (!Array.isArray(patterns) || patterns.length === 0) return [];
+async function scopedModelsFromServices(services: AgentSessionServices): Promise<ScopedModelOption[]> {
+  const patterns = services.settingsManager?.getEnabledModels?.();
+  if (!patterns?.length) return [];
 
   const available = await availableModelsFromServices(services);
   if (available.length === 0) return [];
 
   const scoped: ScopedModelOption[] = [];
-  for (const patternValue of patterns) {
-    if (typeof patternValue !== "string") continue;
-    const parsed = parseScopedModelPattern(patternValue);
+  for (const pattern of patterns) {
+    const parsed = parseScopedModelPattern(pattern);
     const model = findScopedModel(parsed.modelPattern, available);
     if (!model || scoped.some((entry) => modelsEqual(entry.model, model))) continue;
-    scoped.push({ model: model as ScopedModelOption["model"], ...(parsed.thinkingLevel ? { thinkingLevel: parsed.thinkingLevel } : {}) });
+    scoped.push({ model, ...(parsed.thinkingLevel ? { thinkingLevel: parsed.thinkingLevel } : {}) });
   }
   return scoped;
 }
 
-async function availableModelsFromServices(services: Awaited<ReturnType<NonNullable<PiSdkRuntimeOptions["createServices"]>>>): Promise<unknown[]> {
-  const modelRegistry = asRecord(services.modelRegistry);
-  const getAvailable = modelRegistry.getAvailable;
-  if (typeof getAvailable !== "function") return [];
-  const available = await getAvailable.call(services.modelRegistry);
-  return Array.isArray(available) ? available : [];
+async function availableModelsFromServices(services: AgentSessionServices): Promise<RuntimeModel[]> {
+  return services.modelRegistry?.getAvailable?.() ?? [];
 }
 
-async function modelFromServices(services: Awaited<ReturnType<NonNullable<PiSdkRuntimeOptions["createServices"]>>>, pattern: string | undefined): Promise<unknown | undefined> {
+async function modelFromServices(services: AgentSessionServices, pattern: string | undefined): Promise<RuntimeModel | undefined> {
   if (!pattern) return undefined;
   const available = await availableModelsFromServices(services);
   const model = findScopedModel(pattern, available);
@@ -1293,39 +1284,25 @@ async function modelFromServices(services: Awaited<ReturnType<NonNullable<PiSdkR
 }
 
 async function automaticModelFromServices(
-  services: Awaited<ReturnType<NonNullable<PiSdkRuntimeOptions["createServices"]>>>,
+  services: AgentSessionServices,
   scopedModels: ScopedModelOption[],
-): Promise<unknown | undefined> {
-  const settingsManager = asRecord(services.settingsManager);
-  const getDefaultModel = settingsManager.getDefaultModel;
-  if (typeof getDefaultModel === "function") {
-    const defaultPattern = stringValue(getDefaultModel.call(services.settingsManager));
-    const defaultModel = await modelFromServices(services, defaultPattern);
-    if (defaultModel) return defaultModel;
-  }
+): Promise<RuntimeModel | undefined> {
+  const defaultModel = await modelFromServices(services, services.settingsManager?.getDefaultModel?.());
+  if (defaultModel) return defaultModel;
+
   const scopedModel = scopedModels[0]?.model;
   if (scopedModel) return scopedModel;
 
   const available = await availableModelsFromServices(services);
-  const modelRegistry = asRecord(services.modelRegistry);
-  const hasConfiguredAuth = modelRegistry.hasConfiguredAuth;
-  if (typeof hasConfiguredAuth === "function") {
-    return available.find((model) => hasConfiguredAuth.call(services.modelRegistry, model));
-  }
-  return available[0];
+  return available.find((model) => services.modelRegistry?.hasConfiguredAuth?.(model)) ?? available[0];
 }
 
-function runtimeModelOptionFromModel(model: unknown): RuntimeModelOption | undefined {
-  const record = asRecord(model);
-  const provider = stringValue(record.provider);
-  const modelId = stringValue(record.id) ?? stringValue(record.model);
-  if (!provider || !modelId) return undefined;
-  const name = stringValue(record.name);
+function runtimeModelOptionFromModel(model: RuntimeModel): RuntimeModelOption {
   return {
-    provider,
-    modelId,
-    displayName: name && name !== modelId ? `${name} (${provider}/${modelId})` : `${provider}/${modelId}`,
-    pattern: `${provider}/${modelId}`,
+    provider: model.provider,
+    modelId: model.id,
+    displayName: model.name && model.name !== model.id ? `${model.name} (${model.provider}/${model.id})` : `${model.provider}/${model.id}`,
+    pattern: `${model.provider}/${model.id}`,
   };
 }
 
@@ -1344,29 +1321,20 @@ function parseScopedModelPattern(pattern: string): { modelPattern: string; think
   return { modelPattern: trimmed.slice(0, colonIndex), thinkingLevel };
 }
 
-function findScopedModel(pattern: string, available: unknown[]): unknown | undefined {
+function findScopedModel(pattern: string, available: RuntimeModel[]): RuntimeModel | undefined {
   const normalized = pattern.trim().toLowerCase();
   if (!normalized) return undefined;
   const exact = available.find((model) => {
-    const record = asRecord(model);
-    const provider = stringValue(record.provider)?.toLowerCase();
-    const id = stringValue(record.id)?.toLowerCase();
-    return id === normalized || (provider && id && `${provider}/${id}` === normalized);
+    const provider = model.provider.toLowerCase();
+    const id = model.id.toLowerCase();
+    return id === normalized || `${provider}/${id}` === normalized;
   });
   if (exact) return exact;
-  return available.find((model) => {
-    const record = asRecord(model);
-    const id = stringValue(record.id)?.toLowerCase();
-    const name = stringValue(record.name)?.toLowerCase();
-    return id?.includes(normalized) || name?.includes(normalized);
-  });
+  return available.find((model) => model.id.toLowerCase().includes(normalized) || model.name?.toLowerCase().includes(normalized));
 }
 
-function modelsEqual(left: unknown, right: unknown): boolean {
-  const leftRecord = asRecord(left);
-  const rightRecord = asRecord(right);
-  return stringValue(leftRecord.provider) === stringValue(rightRecord.provider)
-    && stringValue(leftRecord.id) === stringValue(rightRecord.id);
+function modelsEqual(left: RuntimeModel, right: RuntimeModel): boolean {
+  return left.provider === right.provider && left.id === right.id;
 }
 
 function applyScopedModelsForCycling(session: AgentSession, scopedModels: ScopedModelOption[]): void {
@@ -1377,9 +1345,7 @@ function applyScopedModelsForCycling(session: AgentSession, scopedModels: Scoped
 }
 
 function currentModelId(session: AgentSession): string | undefined {
-  const directModel = asRecord((session as unknown as Record<string, unknown>).model);
-  const stateModel = asRecord(asRecord((session as unknown as Record<string, unknown>).state).model);
-  return stringValue(directModel.id) ?? stringValue(directModel.model) ?? stringValue(stateModel.id) ?? stringValue(stateModel.model);
+  return piReadModelMetadata(session)?.modelId;
 }
 
 function currentThinkingLevel(session: AgentSession): ThinkingLevel | undefined {

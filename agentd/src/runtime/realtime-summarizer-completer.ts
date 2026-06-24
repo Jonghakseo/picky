@@ -1,5 +1,5 @@
-import { completeSimple, getEnvApiKey, getModel } from "@earendil-works/pi-ai";
-import type { Api, KnownProvider, Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { RealtimeSummarizerCompleter } from "./realtime-output-summarizer.js";
 
 /** Resolves the apiKey for a given pi-ai provider just-in-time, so the
@@ -8,6 +8,8 @@ import type { RealtimeSummarizerCompleter } from "./realtime-output-summarizer.j
  *  Picky settings on the previous turn. Returning undefined falls back to
  *  the env-var chain inside pi-ai. */
 export type RealtimeSummarizerApiKeyResolver = (provider: string) => Promise<string | undefined> | string | undefined;
+
+const models = builtinModels();
 
 /** Wire a pi-ai backed completer for the realtime output summarizer.
  *  The function parses `provider/modelId`, resolves credentials, and asks
@@ -18,7 +20,7 @@ export function createPiAiCompleter(options?: { resolveApiKey?: RealtimeSummariz
     if (!parsed) throw new Error(`Invalid summarizer model id: ${model}`);
     const resolvedModel = resolveModel(parsed.provider, parsed.modelId);
     const apiKey = await resolveApiKey(parsed.provider, options?.resolveApiKey);
-    const assistant = await completeSimple(
+    const assistant = await models.completeSimple(
       resolvedModel,
       {
         systemPrompt,
@@ -59,8 +61,9 @@ function parseProviderModel(input: string): ParsedProviderModel | undefined {
 }
 
 function resolveModel(provider: string, modelId: string): Model<Api> {
-  // getModel is strongly typed over MODELS keys; we narrow at runtime.
-  return getModel(provider as KnownProvider, modelId as never) as Model<Api>;
+  const model = models.getModel(provider, modelId);
+  if (!model) throw new Error(`Unknown summarizer model id: ${provider}/${modelId}`);
+  return model;
 }
 
 async function resolveApiKey(provider: string, resolver?: RealtimeSummarizerApiKeyResolver): Promise<string | undefined> {
@@ -68,5 +71,5 @@ async function resolveApiKey(provider: string, resolver?: RealtimeSummarizerApiK
     const fromResolver = await resolver(provider);
     if (fromResolver?.trim()) return fromResolver.trim();
   }
-  return getEnvApiKey(provider) || undefined;
+  return undefined;
 }

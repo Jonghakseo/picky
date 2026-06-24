@@ -243,7 +243,7 @@ export function primeSessionIdFactoryForResume(result: ComposeResult): "consumed
 
 interface PrimaryMainRuntimeBundle {
   runtime: AgentRuntime;
-  toolsBuilder: (disabled: ReadonlySet<string>) => import("@mariozechner/pi-coding-agent").ToolDefinition[];
+  toolsBuilder: (disabled: ReadonlySet<string>) => import("@earendil-works/pi-coding-agent").ToolDefinition[];
 }
 
 function buildPrimaryMainRuntime(
@@ -326,7 +326,7 @@ function buildPrimaryMainRuntime(
   // on the main runtime and it is registered separately on Pickle child
   // runtimes. The user can disable individual entries from the settings UI;
   // `toolsBuilder` returns the subset that should be active.
-  const allBuiltinTools: import("@mariozechner/pi-coding-agent").ToolDefinition[] = [
+  const allBuiltinTools: import("@earendil-works/pi-coding-agent").ToolDefinition[] = [
     createPickyStartPickleTool(startPickleFromMainContext),
     createPickyPickleSessionsTool(listPickleSessions),
     createPickySteerPickleTool(steerPickleSession),

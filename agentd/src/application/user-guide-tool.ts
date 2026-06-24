@@ -1,7 +1,7 @@
 import { access, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { defineTool, type ToolDefinition } from "@mariozechner/pi-coding-agent";
+import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { sliceUtf16Safe } from "../domain/safe-truncate.js";
 

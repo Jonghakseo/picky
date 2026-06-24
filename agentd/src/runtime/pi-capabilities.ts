@@ -2,7 +2,7 @@
 // pi-capabilities.ts
 //
 // Centralised wrappers for the pi-coding-agent AgentSession surfaces Picky drives.
-// As of pi 0.79.x these methods are part of the public AgentSession type, so each
+// As of pi 0.80.x these methods are part of the public AgentSession type, so each
 // wrapper narrows the session to `Partial<Pick<AgentSession, ...>>` instead of an
 // `as unknown as { ... }` hand-written shape: the method signatures are now checked
 // against pi's real types, while `Partial` keeps every capability optional so the
@@ -29,7 +29,7 @@
 // instead of a capability wrapper.
 //
 
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { ModelCycleDirection } from "../protocol.js";
 import type { RuntimeBashExecutionResult, ThinkingLevel } from "./types.js";
 import { logAgentd } from "../local-log.js";
@@ -232,13 +232,17 @@ export function tryGetBashSurface(session: AgentSession, sessionId: string): PiB
 // MARK: - Model + thinking-level metadata
 
 export function readModelMetadata(session: AgentSession): PiModelMetadata | undefined {
-  const raw = (session as Partial<Pick<AgentSession, "state">>).state?.model as Record<string, unknown> | undefined;
-  if (!raw || typeof raw !== "object") return undefined;
+  const model = session.model ?? readStateModelFallback(session);
+  if (!model) return undefined;
   return {
-    api: stringValue(raw.api),
-    provider: stringValue(raw.provider),
-    modelId: stringValue(raw.id),
+    api: model.api,
+    provider: model.provider,
+    modelId: model.id,
   };
+}
+
+function readStateModelFallback(session: AgentSession): AgentSession["model"] | undefined {
+  return ((session as Partial<Pick<AgentSession, "state">>).state as { model?: AgentSession["model"] } | undefined)?.model;
 }
 
 export function readThinkingLevel(session: AgentSession): ThinkingLevel | undefined {

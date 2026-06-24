@@ -1,8 +1,7 @@
 # pi-coding-agent coupling map
 
 This doc is the running inventory of every place picky-agentd reaches into
-`@earendil-works/pi-coding-agent` (the upstream `@mariozechner/pi-coding-agent`
-mirror is aliased to the same package). It exists because pi is a fast-moving
+`@earendil-works/pi-coding-agent`. It exists because pi is a fast-moving
 runtime and a silent behavioural change there has bitten Picky before — the
 `runtime.session.sessionFile` timing race that hid the Messages tab's "Open in
 Pi" / "Copy resume command" buttons after the pi 0.74 bump. Treat this doc as
@@ -14,7 +13,7 @@ the **pre-upgrade checklist for every pi version bump**.
 |------|----------|---------------------|---------------------|
 | **T1 — Public API** | `defineTool`, `loadSkills`, `createAgentSessionServices`, `SettingsManager`, `DefaultPackageManager`, `AgentSession.prompt`, `AgentSession.subscribe`, `AgentSession.bindExtensions` | Daemon cannot boot or pi cannot answer at all | `src/__tests__/pi-contract.test.ts` (hard fail), TypeScript types |
 | **T2 — Capability sniffs** | `setThinkingLevel`, `cycleThinkingLevel`, `cycleModel`, `getContextUsage`, `compact`, `reload`, `executeBash`, `recordBashResult`, `isCompacting`, `extensionRunner.emitUserBash` | One pi runtime feature silently no-ops (e.g. `/compact` becomes "not supported", thinking level cycling does nothing) | `src/runtime/pi-capabilities.ts` wraps each sniff, logs `pi capability absent` per session; `pi-contract.test.ts` warns (not fails) on absence so back-compat builds keep passing |
-| **T3 — Internal shapes** | `session.state.messages` array layout, `assistantMessage.content[]` blocks (`{type:"text"}` / `{type:"toolCall"}` / `{type:"toolResult"}`), `session.state.model.{api,provider,id}`, pi `subscribe()` event types (`agent_start`, `message_update`, `turn_end`, `agent_end`, ...) and field names (`stopReason`, `toolCallId`, `toolName`) | Subtle, hard-to-detect regressions (lost session file path, dropped status events, malformed bootstrap, stale tool-call repair) | Centralised in `pi-event-normalizer.ts` + `pi-capabilities.ts.readModelMetadata`/`readThinkingLevel`; no compile-time gate yet (TODO — track in a "T3 hardening" issue) |
+| **T3 — Internal shapes** | `session.state.messages` array layout, `assistantMessage.content[]` blocks (`{type:"text"}` / `{type:"toolCall"}` / `{type:"toolResult"}`), `session.model.{api,provider,id}` with `state.model` fallback, pi `subscribe()` event types (`agent_start`, `message_update`, `turn_end`, `agent_end`, ...) and field names (`stopReason`, `toolCallId`, `toolName`) | Subtle, hard-to-detect regressions (lost session file path, dropped status events, malformed bootstrap, stale tool-call repair) | Centralised in `pi-event-normalizer.ts` + `pi-capabilities.ts.readModelMetadata`/`readThinkingLevel`; no compile-time gate yet (TODO — track in a "T3 hardening" issue) |
 | **T4 — Lifecycle assumptions** | `runtime.session.sessionFile` exposed synchronously after `createHandle()`, `reportDiagnostics()` scheduled via `setTimeout(0)`, `setRebindSession` invoked when pi swaps the inner session | Race conditions that drop events between handle creation and subscription | Documented inline in `pi-sdk-runtime.ts` (`bindCurrentSession` race guard, `createPrewarmedMainHandle` early-attach comment); fragile, no automated guard |
 
 ## File-by-file inventory

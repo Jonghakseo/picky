@@ -73,7 +73,7 @@ interface SessionSupervisorOptions {
   // returns the filtered ToolDefinition[] that should be active. bootstrap.ts
   // owns the tool registry; supervisor only stores the disabled set and asks
   // for a refreshed list when it changes.
-  mainCustomToolsBuilder?: (disabled: ReadonlySet<string>) => import("@mariozechner/pi-coding-agent").ToolDefinition[];
+  mainCustomToolsBuilder?: (disabled: ReadonlySet<string>) => import("@earendil-works/pi-coding-agent").ToolDefinition[];
 }
 
 

@@ -24,7 +24,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import * as pi from "@mariozechner/pi-coding-agent";
+import * as pi from "@earendil-works/pi-coding-agent";
 
 const HARD_PACKAGE_EXPORTS = [
   // Session factories that PiSdkRuntime calls in every path.

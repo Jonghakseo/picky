@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import type { ExtensionUIContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { PickyExtensionNotifyType, PickyExtensionUiRequest } from "../protocol.js";
 
 type ExtensionUiMethod = PickyExtensionUiRequest["method"];

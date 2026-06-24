@@ -257,7 +257,3 @@ function parseThinkingLevel(value: unknown): ThinkingLevel | undefined {
   if (value === "off" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh") return value;
   return undefined;
 }
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}

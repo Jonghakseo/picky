@@ -672,6 +672,19 @@ The subsections below describe each leaf in the order it appears on the index.
 | App language | System default, English, 한국어 | Most UI retranslates immediately. Some macOS-owned surfaces require relaunch. |
 | Install `picky` shell command | Button | Installs or uninstalls the `picky` launcher in `/usr/local/bin` (or the closest writable directory). Useful because Picky is an `LSUIElement` app whose panels never activate the macOS top menu bar, so a normal "Install Shell Command…" menu item would never be visible. |
 
+After installing the shell command, use it to drive Picky from a terminal or hardware automation:
+
+```bash
+picky submit "summarize the current screen"
+picky pickle-create "Research" --instructions "Compare the open tabs" --group "Research"
+picky pickle-group-list
+picky pickle-followup <session-id> "focus on production impact"
+picky ptt press
+picky ptt release
+```
+
+`picky pickle-create --group <name>` places the new Pickle in the named dock group, creating that group when needed. If multiple groups share the same name, Picky uses the first matching group in dock order. `picky pickle-group-list --json` returns group IDs, names, colors, collapsed state, and member session IDs for scripting.
+
 ### 13.2 Shortcuts
 
 | Setting | Default | Notes |

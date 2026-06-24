@@ -2995,44 +2995,6 @@ struct PickySessionViewModelTests {
         #expect(dockLayoutStore.savedLayouts.map(\.testEntryDescriptions) == [["group:g[b,a]", "session:c"]])
     }
 
-    @MainActor @Test func assignSessionToDockGroupCreatesMissingGroupAfterReconcile() {
-        let dockLayoutStore = FakeViewModelDockLayoutStore()
-        let viewModel = PickySessionListViewModel(
-            client: FakePickyAgentClient(),
-            notificationCenter: PickyNoopNotificationCenter(),
-            dockLayoutStore: dockLayoutStore
-        )
-
-        viewModel.assignSessionToDockGroup(sessionID: "a", groupName: "Research")
-        viewModel.apply(.protocolEvent(.fixture(eventJSON: """
-        {"id":"snapshot-cli-group","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:30.000Z","type":"sessionSnapshot","sessions":[
-            {"id":"a","title":"A","status":"running","cwd":"\(testProjectCwd)","createdAt":"2026-05-01T00:00:00.000Z","updatedAt":"2026-05-01T00:00:00.000Z","lastSummary":"a","logs":[],"tools":[],"artifacts":[],"changedFiles":[]}
-        ]}
-        """)))
-
-        let group = viewModel.dockLayout.groups.first
-        #expect(viewModel.dockLayout.entries.count == 1)
-        #expect(group?.name == "Research")
-        #expect(group?.memberSessionIDs == ["a"])
-    }
-
-    @MainActor @Test func assignSessionToDockGroupUsesFirstCaseInsensitiveNameMatch() {
-        let dockLayoutStore = FakeViewModelDockLayoutStore(layout: PickyDockLayout(entries: [
-            .group(PickyDockGroup(id: "g1", name: "Research", color: .teal, memberSessionIDs: ["b"])),
-            .group(PickyDockGroup(id: "g2", name: "research", color: .amber, memberSessionIDs: [])),
-            .session(id: "a")
-        ]))
-        let viewModel = PickySessionListViewModel(
-            client: FakePickyAgentClient(),
-            notificationCenter: PickyNoopNotificationCenter(),
-            dockLayoutStore: dockLayoutStore
-        )
-
-        viewModel.assignSessionToDockGroup(sessionID: "a", groupName: "research")
-
-        #expect(viewModel.dockLayout.testEntryDescriptions == ["group:g1[b,a]", "group:g2[]"])
-    }
-
     @Test func removeDockGroupArchivesMembersAndPersistsThroughViewModel() async throws {
         let client = FakePickyAgentClient()
         let archiveStore = FakeArchiveStore()

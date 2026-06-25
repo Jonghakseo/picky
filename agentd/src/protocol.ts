@@ -176,6 +176,12 @@ const PickySlashCommandSchema = z.object({
   description: z.string().optional(),
   source: PickySlashCommandSourceSchema,
 });
+export const PickyRewindTargetSchema = z.object({
+  entryId: z.string().min(1),
+  text: z.string(),
+  createdAt: isoTimestamp.optional(),
+});
+export type PickyRewindTarget = z.infer<typeof PickyRewindTargetSchema>;
 const PickyChangedFileSchema = z.object({ path: z.string(), status: z.string(), summary: z.string().optional() });
 export const PickyArtifactSchema = z.object({ id: z.string(), kind: z.string(), title: z.string(), path: z.string().optional(), url: z.string().url().optional(), updatedAt: isoTimestamp });
 export type PickyArtifact = z.infer<typeof PickyArtifactSchema>;
@@ -391,6 +397,8 @@ export const CommandEnvelopeSchema = z.discriminatedUnion("type", [
   CommandBaseSchema.extend({ type: z.literal("abortMainAgent") }),
   CommandBaseSchema.extend({ type: z.literal("setMainAgentThinkingLevel"), mainAgentThinkingLevel: ThinkingLevelSchema }),
   CommandBaseSchema.extend({ type: z.literal("listSlashCommands"), sessionId: z.string() }),
+  CommandBaseSchema.extend({ type: z.literal("listRewindTargets"), sessionId: z.string() }),
+  CommandBaseSchema.extend({ type: z.literal("rewindSession"), sessionId: z.string(), entryId: z.string().min(1) }),
   CommandBaseSchema.extend({ type: z.literal("getSession"), sessionId: z.string() }),
   CommandBaseSchema.extend({ type: z.literal("answerExtensionUi"), sessionId: z.string(), requestId: z.string(), value: z.unknown().optional() }),
   CommandBaseSchema.extend({ type: z.literal("reloadPlugins") }),
@@ -557,6 +565,8 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
     action: PickyPushToTalkControlActionSchema,
   }),
   EventBaseSchema.extend({ type: z.literal("slashCommandsSnapshot"), sessionId: z.string(), requestId: z.string().optional(), commands: z.array(PickySlashCommandSchema) }),
+  EventBaseSchema.extend({ type: z.literal("rewindTargetsSnapshot"), sessionId: z.string(), requestId: z.string().optional(), targets: z.array(PickyRewindTargetSchema) }),
+  EventBaseSchema.extend({ type: z.literal("sessionRewound"), sessionId: z.string(), editorText: z.string().optional(), removedIds: z.array(z.string()) }),
   EventBaseSchema.extend({ type: z.literal("sessionMessageAppended"), sessionId: z.string(), message: PickySessionMessageSchema, seq: z.number().int() }),
   EventBaseSchema.extend({ type: z.literal("sessionMessageReplaced"), sessionId: z.string(), messageId: z.string(), message: PickySessionMessageSchema, seq: z.number().int() }),
   EventBaseSchema.extend({ type: z.literal("sessionMessageRemoved"), sessionId: z.string(), messageId: z.string(), seq: z.number().int() }),

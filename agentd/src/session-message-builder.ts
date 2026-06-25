@@ -243,6 +243,12 @@ export class SessionMessageBuilder {
     await this.enqueue(sessionId, async () => this.clearAllThinkingNow(sessionId));
   }
 
+  async removeMessages(sessionId: string, messageIds: readonly string[]): Promise<void> {
+    await this.enqueue(sessionId, async () => {
+      for (const messageId of messageIds) await this.removeInternal(sessionId, messageId);
+    });
+  }
+
   hydrateSession(sessionId: string, messages: readonly PickySessionMessage[] | undefined): void {
     if (!messages?.length) return;
     this.states.set(sessionId, {

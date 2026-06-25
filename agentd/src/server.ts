@@ -108,6 +108,7 @@ export class AgentdServer {
     this.options.supervisor.on("messageAppended", (sessionId, message, seq) => this.broadcast({ type: "sessionMessageAppended", sessionId, message, seq }));
     this.options.supervisor.on("messageReplaced", (sessionId, messageId, message, seq) => this.broadcast({ type: "sessionMessageReplaced", sessionId, messageId, message, seq }));
     this.options.supervisor.on("messageRemoved", (sessionId, messageId, seq) => this.broadcast({ type: "sessionMessageRemoved", sessionId, messageId, seq }));
+    this.options.supervisor.on("sessionRewound", (sessionId: string, editorText: string | undefined, removedIds: string[]) => this.broadcast({ type: "sessionRewound", sessionId, ...(editorText !== undefined ? { editorText } : {}), removedIds }));
     this.options.supervisor.on("quickReply", (contextId, text, metadata = {}) => this.broadcast({ type: "quickReply", contextId, text, ...metadata }));
     this.options.supervisor.on("mainMessage", (message) => this.broadcast({ type: "mainMessageAppended", message }));
     this.options.supervisor.on("mainAgentSessionInfo", (info: { sessionFilePath?: string; cwd?: string }) => this.broadcast({
@@ -306,6 +307,14 @@ export class AgentdServer {
       listSlashCommands: async (cmd) => {
         const commands = await this.options.supervisor.listSlashCommands(cmd.sessionId);
         this.send(ws, { type: "slashCommandsSnapshot", sessionId: cmd.sessionId, requestId: cmd.id, commands });
+      },
+      listRewindTargets: async (cmd) => {
+        const targets = await this.options.supervisor.listRewindTargets(cmd.sessionId);
+        this.send(ws, { type: "rewindTargetsSnapshot", sessionId: cmd.sessionId, requestId: cmd.id, targets });
+      },
+      rewindSession: async (cmd) => {
+        const session = await this.options.supervisor.rewindToEntry(cmd.sessionId, cmd.entryId);
+        this.broadcast({ type: "sessionUpdated", session: protocolSession(session) });
       },
       getSession: (cmd) => {
         const session = this.options.supervisor.get(cmd.sessionId);
@@ -763,8 +772,11 @@ export function commandLogFields(command: ReturnType<typeof parseCommand>): Reco
     case "abort":
     case "getSession":
     case "listSlashCommands":
+    case "listRewindTargets":
     case "duplicatePickleSession":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId };
+    case "rewindSession":
+      return { commandId: command.id, type: command.type, sessionId: command.sessionId, entryId: command.entryId };
     case "answerExtensionUi":
       return { commandId: command.id, type: command.type, sessionId: command.sessionId, requestId: command.requestId };
     case "setDefaultCwd":
@@ -906,6 +918,10 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, commandId: event.commandId, action: event.action };
     case "slashCommandsSnapshot":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, commands: event.commands.length };
+    case "rewindTargetsSnapshot":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, targets: event.targets.length };
+    case "sessionRewound":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, editorTextChars: event.editorText?.length, removedIds: event.removedIds.length };
     case "sessionMessageAppended":
     case "sessionMessageReplaced":
     case "sessionMessageRemoved":

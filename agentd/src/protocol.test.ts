@@ -159,6 +159,43 @@ describe("protocol contract fixtures", () => {
     }
   });
 
+  it("parses message rewind commands and events", () => {
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-list-rewind",
+      protocolVersion: "2026-05-09",
+      type: "listRewindTargets",
+      sessionId: "session-001",
+    })).toMatchObject({ type: "listRewindTargets", sessionId: "session-001" });
+
+    expect(CommandEnvelopeSchema.parse({
+      id: "cmd-rewind",
+      protocolVersion: "2026-05-09",
+      type: "rewindSession",
+      sessionId: "session-001",
+      entryId: "entry-user-2",
+    })).toMatchObject({ type: "rewindSession", entryId: "entry-user-2" });
+
+    expect(EventEnvelopeSchema.parse({
+      id: "event-rewind-targets",
+      protocolVersion: "2026-05-09",
+      timestamp: "2026-05-09T00:00:00.000Z",
+      type: "rewindTargetsSnapshot",
+      sessionId: "session-001",
+      requestId: "cmd-list-rewind",
+      targets: [{ entryId: "entry-user-1", text: "A", createdAt: "2026-05-09T00:00:00.000Z" }],
+    })).toMatchObject({ type: "rewindTargetsSnapshot", targets: [{ entryId: "entry-user-1", text: "A" }] });
+
+    expect(EventEnvelopeSchema.parse({
+      id: "event-rewound",
+      protocolVersion: "2026-05-09",
+      timestamp: "2026-05-09T00:00:00.000Z",
+      type: "sessionRewound",
+      sessionId: "session-001",
+      editorText: "B",
+      removedIds: ["msg-user-b", "msg-agent-b"],
+    })).toMatchObject({ type: "sessionRewound", editorText: "B", removedIds: ["msg-user-b", "msg-agent-b"] });
+  });
+
   it("parses external push-to-talk control command and events", () => {
     expect(CommandEnvelopeSchema.parse({
       id: "cmd-ptt-press",

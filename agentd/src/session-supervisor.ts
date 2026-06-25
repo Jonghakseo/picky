@@ -14,7 +14,7 @@ import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./applicat
 import { PiSessionTailWatcher, type PiSessionTailEntry } from "./application/pi-session-tail-watcher.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
-import { isMainRealtimeRuntime, type AgentRuntime, type RuntimeEvent, type RuntimeSessionHandle, type RuntimeSlashCommand, type RuntimeSteerResult, type ThinkingLevel } from "./runtime/types.js";
+import { isMainRealtimeRuntime, type AgentRuntime, type RewindBranchMessage, type RewindTarget, type RuntimeEvent, type RuntimeSessionHandle, type RuntimeSlashCommand, type RuntimeSteerResult, type ThinkingLevel } from "./runtime/types.js";
 import { OpenAIRealtimeTranscriptionSession } from "./runtime/openai-realtime-transcription.js";
 import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
@@ -2022,6 +2022,44 @@ export class SessionSupervisor extends EventEmitter {
     return this.mustGet(sessionId);
   }
 
+  async listRewindTargets(sessionId: string): Promise<RewindTarget[]> {
+    const handle = await this.runtimeHandleForSessionCommand(sessionId, "list rewind targets");
+    return handle.listRewindTargets?.() ?? [];
+  }
+
+  async rewindToEntry(sessionId: string, entryId: string): Promise<PickyAgentSession> {
+    const handle = await this.runtimeHandleForSessionCommand(sessionId, "rewind session");
+    if (!handle.rewindToEntry) throw new Error("Runtime session does not support rewind");
+    logAgentd("session rewind requested", { sessionId, entryId, streaming: handle.isStreaming });
+
+    if (handle.isStreaming) {
+      await handle.abort();
+      await this.waitForRuntimeEvents(sessionId);
+    }
+    this.pendingQueueDeliveries.delete(sessionId);
+    this.materializedQueueDeliveries.delete(sessionId);
+    handle.clearQueue();
+    await this.applyQueueUpdate(sessionId, [], []);
+
+    const result = await handle.rewindToEntry(entryId);
+    const newBranch = handle.getActiveBranchTranscript?.() ?? [];
+    const removedIds = rewindRemovedMessageIds(this.mustGet(sessionId).messages ?? [], newBranch);
+    await this.messageBuilder.removeMessages(sessionId, removedIds);
+
+    const latestAssistantText = [...newBranch].reverse().find((message) => message.role === "assistant")?.text.trim();
+    const current = this.mustGet(sessionId);
+    const patch: Partial<PickyAgentSession> = {
+      thinkingPreview: undefined,
+      lastSummary: latestAssistantText || undefined,
+      finalAnswer: latestAssistantText || undefined,
+    };
+    if ((current.status === "failed" || current.status === "cancelled") && latestAssistantText) patch.status = "completed";
+    await this.patch(sessionId, patch);
+    this.emit("sessionRewound", sessionId, result.editorText, removedIds);
+    logAgentd("session rewound", { sessionId, entryId, removedCount: removedIds.length, branchMessages: newBranch.length });
+    return this.mustGet(sessionId);
+  }
+
   private async runtimeHandleForSessionCommand(sessionId: string, action: string): Promise<RuntimeSessionHandle> {
     const session = this.mustGet(sessionId);
     const handle = this.runtimeHandles.get(sessionId)
@@ -3223,6 +3261,38 @@ async function readRecentPinnedSourceMessages(sessionFilePath: string | undefine
   } catch {
     return [];
   }
+}
+
+function rewindRemovedMessageIds(messages: readonly PickySessionMessage[], branch: readonly RewindBranchMessage[]): string[] {
+  // Rewinding to user message U moves the live Pi leaf to U's parent, so the HUD journal must drop U
+  // and every message after it. The Pi branch and the HUD journal are NOT 1:1: the branch also carries
+  // entries the journal never recorded (the kickoff prompt, handoff/source-context messages, tool-only
+  // turns). So we anchor ONLY on the last branch message (the newest message that must remain) and cut
+  // the journal after its most recent occurrence. An empty branch means we rewound past the first
+  // message (leaf reset to null), so the whole journal is dropped. If the anchor text cannot be found
+  // in the journal we return [] (no removal) rather than risk dropping messages that must remain.
+  if (branch.length === 0) return messages.map((message) => message.id);
+  const anchor = branch[branch.length - 1];
+  if (!anchor) return [];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message && journalMessageMatchesBranch(message, anchor)) {
+      return messages.slice(index + 1).map((entry) => entry.id);
+    }
+  }
+  return [];
+}
+
+function journalMessageMatchesBranch(message: PickySessionMessage, branchMessage: RewindBranchMessage): boolean {
+  const text = message.text?.trim();
+  if (!text || text !== branchMessage.text.trim()) return false;
+  if (branchMessage.role === "user") {
+    // Accept HUD-originated user turns and Pi-derived user turns (terminal sync imports them as
+    // originatedBy "pi_extension"; legacy entries may omit the field).
+    return message.kind === "user_text"
+      && (message.originatedBy === "user" || message.originatedBy === "pi_extension" || message.originatedBy === undefined);
+  }
+  return message.kind === "agent_text";
 }
 
 /**

@@ -19,7 +19,7 @@ import type { BuiltPrompt } from "../prompt-builder.js";
 import { ExtensionUiBridge } from "../application/extension-ui-bridge.js";
 import { runtimeEventFromPiEvent } from "../domain/pi-event-normalizer.js";
 import { isTransientAgentBusyError } from "../domain/transient-runtime-error.js";
-import type { AgentRuntime, AnswerExtensionUiOptions, RuntimeAssistantRunMetadata, RuntimeBashExecutionResult, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
+import type { AgentRuntime, AnswerExtensionUiOptions, RewindBranchMessage, RewindResult, RewindTarget, RuntimeAssistantRunMetadata, RuntimeBashExecutionResult, RuntimeEvent, RuntimeModelOption, RuntimeSessionHandle, RuntimeSlashCommand, RuntimeSteerResult, ThinkingLevel } from "./types.js";
 import type { ModelCycleDirection, PickyQueueMode } from "../protocol.js";
 import { logAgentd } from "../local-log.js";
 import {
@@ -466,6 +466,37 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
     // slash command before Pi delivers its role="custom" echo.
     for (const entry of [...cleared.steering, ...cleared.followUp]) this.slashExpansions.delete(this.normalizedSlashExpansionKey(entry));
     return cleared;
+  }
+
+  listRewindTargets(): RewindTarget[] {
+    return this.runtime.session.getUserMessagesForForking().map((target) => {
+      const entry = this.runtime.session.sessionManager.getEntry(target.entryId) as { timestamp?: unknown } | undefined;
+      const timestamp = typeof entry?.timestamp === "number"
+        ? new Date(entry.timestamp).toISOString()
+        : typeof entry?.timestamp === "string"
+          ? entry.timestamp
+          : undefined;
+      return {
+        entryId: target.entryId,
+        text: target.text,
+        ...(timestamp ? { createdAt: timestamp } : {}),
+      };
+    });
+  }
+
+  async rewindToEntry(entryId: string): Promise<RewindResult> {
+    if (this.runtime.session.isStreaming) throw new Error("Cannot rewind while Pi session is streaming");
+    const result = await this.runtime.session.navigateTree(entryId);
+    return {
+      ...(result.editorText !== undefined ? { editorText: result.editorText } : {}),
+      cancelled: result.cancelled,
+    };
+  }
+
+  getActiveBranchTranscript(): RewindBranchMessage[] {
+    // sessionManager.getBranch() already returns the active path in root->leaf (oldest->newest)
+    // order. Do NOT reverse it here; the supervisor reconcile anchors on the last (newest) entry.
+    return branchTranscriptFromEntries(this.runtime.session.sessionManager.getBranch());
   }
 
   getSteeringMessages(): readonly string[] {
@@ -1211,6 +1242,24 @@ function shouldEmitContextUsageSnapshotAfterPiEvent(event: unknown, runtimeEvent
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+/**
+ * Map raw Pi session entries (as returned by SessionManager.getBranch(), already root->leaf order)
+ * to the rewind transcript, preserving order. Only user/assistant message entries with non-empty
+ * text are kept. Exported so a test can assert ordering against a real SessionManager branch and
+ * guard against an accidental reverse.
+ */
+export function branchTranscriptFromEntries(entries: readonly unknown[]): RewindBranchMessage[] {
+  return entries.flatMap((entry): RewindBranchMessage[] => {
+    const record = asRecord(entry);
+    if (record.type !== "message") return [];
+    const message = asRecord(record.message);
+    const role = stringValue(message.role);
+    if (role !== "user" && role !== "assistant") return [];
+    const text = textFromPiMessageContent(message.content).trim();
+    return text.length > 0 ? [{ role, text }] : [];
+  });
 }
 
 function textFromPiMessageContent(content: unknown): string {

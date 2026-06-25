@@ -9,6 +9,19 @@ export interface RuntimeSlashCommand {
   description?: string;
   source: RuntimeSlashCommandSource;
 }
+export interface RewindTarget {
+  entryId: string;
+  text: string;
+  createdAt?: string;
+}
+export interface RewindBranchMessage {
+  role: "user" | "assistant";
+  text: string;
+}
+export interface RewindResult {
+  editorText?: string;
+  cancelled: boolean;
+}
 export type RuntimeSessionStatus = "running" | "waiting_for_input" | "blocked" | "completed" | "failed" | "cancelled";
 export interface RuntimeAssistantRunMetadata {
   model?: string;
@@ -133,6 +146,9 @@ export interface RuntimeSessionHandle {
   setModel?(pattern?: string): Promise<RuntimeAssistantRunMetadata | undefined>;
   cycleModel?(direction: ModelCycleDirection): Promise<RuntimeAssistantRunMetadata | undefined>;
   listSlashCommands?(): RuntimeSlashCommand[] | Promise<RuntimeSlashCommand[]>;
+  listRewindTargets?(): RewindTarget[];
+  rewindToEntry?(entryId: string): Promise<RewindResult>;
+  getActiveBranchTranscript?(): RewindBranchMessage[];
   /**
    * Lets the host (supervisor) tell the runtime whether it currently surfaces
    * a pending extension UI request to the user. The runtime uses the callback

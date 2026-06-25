@@ -1071,6 +1071,28 @@ final class PickySessionListViewModel: ObservableObject {
         try await client.send(PickyCommandEnvelope(type: .clearQueue, sessionId: sessionID, kind: kind))
     }
 
+    func loadRewindTargets(sessionID: String) async throws -> [PickyRewindTarget] {
+        pickySessionLog("rewind targets requested session=\(sessionID)")
+        do {
+            let targets = try await client.listRewindTargets(sessionId: sessionID)
+            lastError = nil
+            return targets
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
+    }
+
+    func rewind(sessionID: String, toEntry entryId: String) async {
+        pickySessionLog("rewind session=\(sessionID) entry=\(entryId)")
+        do {
+            try await client.rewindSession(sessionId: sessionID, entryId: entryId)
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     func cycleThinkingLevel(sessionID: String) async throws {
         pickySessionLog("cycle thinking level session=\(sessionID)")
         do {
@@ -1851,6 +1873,10 @@ final class PickySessionListViewModel: ObservableObject {
             invalidateSlashCommandCache(sessionID: sessionId, refreshIfPreviouslyRequested: true)
         case .slashCommandsSnapshot(let sessionId, let requestId, let commands):
             applySlashCommandsSnapshot(sessionID: sessionId, requestID: requestId, commands: commands)
+        case .rewindTargetsSnapshot:
+            break
+        case .sessionRewound(let sessionId, let editorText, _):
+            applySessionRewound(sessionID: sessionId, editorText: editorText)
         case .sessionMessageAppended(let sessionId, let message, let seq):
             applySessionMessageAppended(sessionID: sessionId, message: message, seq: seq)
         case .sessionMessageReplaced(let sessionId, let messageId, let message, let seq):
@@ -2149,6 +2175,13 @@ final class PickySessionListViewModel: ObservableObject {
             card.messages.removeAll { $0.id == messageId }
             card.updatedAt = Date()
         }
+    }
+
+    private func applySessionRewound(sessionID sessionId: String, editorText: String?) {
+        PickyPerf.event("vm_event_session_rewound")
+        pickySessionLog("session rewound session=\(sessionId) editorTextChars=\(editorText?.count ?? 0)")
+        guard let editorText else { return }
+        replaceComposerDraftText(editorText, sessionID: sessionId)
     }
 
     private func applySessionQueueUpdated(sessionID sessionId: String, steering: [PickyQueueItem], followUp: [PickyQueueItem], steeringMode: PickyQueueMode?, followUpMode: PickyQueueMode?, seq: Int) {

@@ -2375,7 +2375,7 @@ final class CompanionManager: ObservableObject {
             applyPointerOverlayRequest(request)
         case .error(let error):
             finishAwaitingAgentResponse(visibleText: error.message, spokenText: nil)
-        case .hello, .sessionSnapshot, .artifactUpdated, .slashCommandsSnapshot, .unknown,
+        case .hello, .sessionSnapshot, .artifactUpdated, .slashCommandsSnapshot, .rewindTargetsSnapshot, .sessionRewound, .unknown,
              .sessionMessageAppended, .sessionMessageReplaced, .sessionMessageRemoved, .sessionQueueUpdated, .sessionActivityUpdated, .terminalSessionSyncOutcome,
              .pickleHandoffRequested, .pickleBridgeRequested, .externalEntryRequested, .dockGroupsRequested, .pushToTalkControlRequested:
             break

@@ -672,6 +672,29 @@ struct PickySessionViewModelTests {
         #expect(answers.last?.value == .object(["cancelled": .bool(true)]))
     }
 
+    @MainActor @Test func sessionRewoundRestoresComposerDraftAndMessageRemovedDropsBubbles() throws {
+        let draftStore = FakeComposerDraftStore()
+        let viewModel = PickySessionListViewModel(
+            client: FakePickyAgentClient(),
+            notificationCenter: PickyNoopNotificationCenter(),
+            composerDraftStore: draftStore
+        )
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "rewind-session", status: "running"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "rewind-session", messageId: "message-1", text: "keep", seq: 1))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "rewind-session", messageId: "message-2", text: "remove", seq: 2))))
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageRemoved(sessionId: "rewind-session", messageId: "message-2", seq: 3))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionRewound(sessionId: "rewind-session", editorText: "다시 질문할 내용", removedIds: ["message-2"]))))
+
+        let card = try #require(viewModel.sessions.first { $0.id == "rewind-session" })
+        #expect(card.messages.map(\.id) == ["message-1"])
+        let draftRequest = try #require(viewModel.composerDraftRequest(for: "rewind-session"))
+        #expect(draftRequest.text == "다시 질문할 내용")
+        #expect(viewModel.composerDraftRequestsBySessionID["rewind-session"] == draftRequest)
+        #expect(viewModel.persistedComposerDraft(for: "rewind-session") == "다시 질문할 내용")
+        #expect(draftStore.drafts["rewind-session"] == "다시 질문할 내용")
+    }
+
     @MainActor @Test func setEditorTextRequestPrimesAndPersistsComposerDraftWithoutWaitingState() throws {
         let draftStore = FakeComposerDraftStore()
         let viewModel = PickySessionListViewModel(
@@ -4685,6 +4708,14 @@ private enum EventJSON {
     static func sessionMessageRemoved(sessionId: String, messageId: String, seq: Int) -> String {
         """
         {"id":"event-message-remove-\(seq)","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionMessageRemoved","sessionId":"\(sessionId)","messageId":"\(messageId)","seq":\(seq)}
+        """
+    }
+
+    static func sessionRewound(sessionId: String, editorText: String?, removedIds: [String]) -> String {
+        let encodedEditorText = editorText.map { String(decoding: try! JSONEncoder().encode($0), as: UTF8.self) } ?? "null"
+        let encodedRemovedIds = String(decoding: try! JSONEncoder().encode(removedIds), as: UTF8.self)
+        return """
+        {"id":"event-session-rewound","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionRewound","sessionId":"\(sessionId)","editorText":\(encodedEditorText),"removedIds":\(encodedRemovedIds)}
         """
     }
 

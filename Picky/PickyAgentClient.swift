@@ -17,6 +17,8 @@ protocol PickyAgentClient: AnyObject {
     func connect() async
     func submit(_ submission: PickyAgentSubmission) async throws -> PickyAgentSubmissionReceipt
     func send(_ command: PickyCommandEnvelope) async throws
+    func listRewindTargets(sessionId: String) async throws -> [PickyRewindTarget]
+    func rewindSession(sessionId: String, entryId: String) async throws
     /// Number of daemons `broadcast(_:)` will attempt to deliver to. Read
     /// synchronously before calling `broadcast` so the caller can set up
     /// reply aggregation. Defaults to 1 (single-daemon clients); the router
@@ -47,7 +49,61 @@ protocol PickyAgentClient: AnyObject {
     func disconnect()
 }
 
+enum PickyRewindTargetRequestError: LocalizedError, Equatable {
+    case timedOut
+    case disconnected
+    case daemonError(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .timedOut: "Timed out waiting for rewind targets"
+        case .disconnected: "picky-agentd disconnected while waiting for rewind targets"
+        case .daemonError(let message): message
+        }
+    }
+}
+
 extension PickyAgentClient {
+    func listRewindTargets(sessionId: String) async throws -> [PickyRewindTarget] {
+        let command = PickyCommandEnvelope(type: .listRewindTargets, sessionId: sessionId)
+        // Subscribe synchronously BEFORE sending. Accessing `events` registers the subscriber
+        // immediately (the router buffers per-subscriber), so a fast daemon reply cannot land
+        // before we are wired up. Deferring this access into the Task would reintroduce the
+        // missed-broadcast race the router explicitly warns about.
+        let stream = events
+        let eventTask = Task { () throws -> [PickyRewindTarget] in
+            for await clientEvent in stream {
+                guard case .protocolEvent(let envelope) = clientEvent else { continue }
+                switch envelope.event {
+                case .rewindTargetsSnapshot(let snapshotSessionId, let requestId, let targets)
+                    where snapshotSessionId == sessionId && requestId == command.id:
+                    return targets
+                case .error(let error) where error.commandId == command.id:
+                    throw PickyRewindTargetRequestError.daemonError(error.message)
+                default:
+                    continue
+                }
+            }
+            throw PickyRewindTargetRequestError.disconnected
+        }
+        defer { eventTask.cancel() }
+        try await send(command)
+        return try await withThrowingTaskGroup(of: [PickyRewindTarget].self) { group in
+            group.addTask { try await eventTask.value }
+            group.addTask {
+                try await Task.sleep(nanoseconds: 5_000_000_000)
+                throw PickyRewindTargetRequestError.timedOut
+            }
+            let targets = try await group.next() ?? []
+            group.cancelAll()
+            return targets
+        }
+    }
+
+    func rewindSession(sessionId: String, entryId: String) async throws {
+        try await send(PickyCommandEnvelope(type: .rewindSession, sessionId: sessionId, entryId: entryId))
+    }
+
     func sendAwaitingError(_ command: PickyCommandEnvelope, timeout: TimeInterval = 1.0) async throws -> PickyErrorEvent? {
         try await send(command)
         return nil
@@ -357,6 +413,7 @@ private extension PickyCommandEnvelope {
         if let modelOrDeployment { parts.append("modelOrDeployment=\(modelOrDeployment)") }
         if apiKey != nil { parts.append("apiKey=<redacted>") }
         if let inputId { parts.append("input=\(inputId.uuidString)") }
+        if let entryId { parts.append("entry=\(entryId)") }
         if let audioBase64 { parts.append("audioBase64Chars=\(audioBase64.count)") }
         if let baselinePiMessageId { parts.append("baselinePiMessage=\(baselinePiMessageId)") }
         if let action { parts.append("action=\(action.rawValue)") }
@@ -439,6 +496,10 @@ private extension PickyEventEnvelope {
             return "type=pushToTalkControlRequested id=\(id) request=\(request.requestId) action=\(request.action.rawValue)"
         case .slashCommandsSnapshot(let sessionId, let requestId, let commands):
             return "type=slashCommandsSnapshot id=\(id) session=\(sessionId) request=\(requestId ?? "none") commands=\(commands.count)"
+        case .rewindTargetsSnapshot(let sessionId, let requestId, let targets):
+            return "type=rewindTargetsSnapshot id=\(id) session=\(sessionId) request=\(requestId ?? "none") targets=\(targets.count)"
+        case .sessionRewound(let sessionId, let editorText, let removedIds):
+            return "type=sessionRewound id=\(id) session=\(sessionId) editorTextChars=\(editorText?.count ?? 0) removed=\(removedIds.count)"
         case .sessionMessageAppended(let sessionId, _, let seq):
             return "type=sessionMessageAppended id=\(id) session=\(sessionId) seq=\(seq)"
         case .sessionMessageReplaced(let sessionId, let messageId, _, let seq):

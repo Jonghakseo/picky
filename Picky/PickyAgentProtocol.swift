@@ -97,6 +97,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
     var model: String?
     var keyterms: [String]?
     var action: PickyPushToTalkControlAction?
+    var entryId: String?
 
     init(
         id: String = "cmd-\(UUID().uuidString)",
@@ -142,7 +143,8 @@ struct PickyCommandEnvelope: Codable, Equatable {
         language: String? = nil,
         model: String? = nil,
         keyterms: [String]? = nil,
-        action: PickyPushToTalkControlAction? = nil
+        action: PickyPushToTalkControlAction? = nil,
+        entryId: String? = nil
     ) {
         self.id = id
         self.protocolVersion = pickyAgentProtocolVersion
@@ -188,6 +190,7 @@ struct PickyCommandEnvelope: Codable, Equatable {
         self.model = model
         self.keyterms = keyterms
         self.action = action
+        self.entryId = entryId
         self.disabledBuiltinTools = disabledBuiltinTools
     }
 }
@@ -247,6 +250,8 @@ enum PickyCommandType: String, Codable, Equatable {
     case cycleSessionThinkingLevel
     case cycleSessionModel
     case listSlashCommands
+    case listRewindTargets
+    case rewindSession
     case getSession
     case answerExtensionUi
     case setNotifyMainOnCompletion
@@ -329,6 +334,8 @@ enum PickyEvent: Equatable {
     case dockGroupsRequested(requestId: String)
     case pushToTalkControlRequested(PickyPushToTalkControlRequest)
     case slashCommandsSnapshot(sessionId: String, requestId: String?, commands: [PickySlashCommand])
+    case rewindTargetsSnapshot(sessionId: String, requestId: String?, targets: [PickyRewindTarget])
+    case sessionRewound(sessionId: String, editorText: String?, removedIds: [String])
     case sessionMessageAppended(sessionId: String, message: PickySessionMessage, seq: Int)
     case sessionMessageReplaced(sessionId: String, messageId: String, message: PickySessionMessage, seq: Int)
     case sessionMessageRemoved(sessionId: String, messageId: String, seq: Int)
@@ -452,6 +459,12 @@ enum PickyEvent: Equatable {
         case "slashCommandsSnapshot":
             let payload = try PickySlashCommandsSnapshotPayload(from: decoder)
             return .slashCommandsSnapshot(sessionId: payload.sessionId, requestId: payload.requestId, commands: payload.commands)
+        case "rewindTargetsSnapshot":
+            let payload = try PickyRewindTargetsSnapshotPayload(from: decoder)
+            return .rewindTargetsSnapshot(sessionId: payload.sessionId, requestId: payload.requestId, targets: payload.targets)
+        case "sessionRewound":
+            let payload = try PickySessionRewoundPayload(from: decoder)
+            return .sessionRewound(sessionId: payload.sessionId, editorText: payload.editorText, removedIds: payload.removedIds)
         case "sessionMessageAppended":
             let payload = try PickySessionMessageAppendedPayload(from: decoder)
             return .sessionMessageAppended(sessionId: payload.sessionId, message: payload.message, seq: payload.seq)
@@ -541,6 +554,8 @@ private struct PickyExtensionUiRequestPayload: Decodable { let request: PickyExt
 private struct PickyArtifactUpdatedPayload: Decodable { let sessionId: String; let artifact: PickyArtifact }
 private struct PickyPointerOverlayRequestedPayload: Decodable { let request: PickyPointerOverlayRequest }
 private struct PickySlashCommandsSnapshotPayload: Decodable { let sessionId: String; let requestId: String?; let commands: [PickySlashCommand] }
+private struct PickyRewindTargetsSnapshotPayload: Decodable { let sessionId: String; let requestId: String?; let targets: [PickyRewindTarget] }
+private struct PickySessionRewoundPayload: Decodable { let sessionId: String; let editorText: String?; let removedIds: [String] }
 private struct PickySessionMessageAppendedPayload: Decodable { let sessionId: String; let message: PickySessionMessage; let seq: Int }
 private struct PickySessionMessageReplacedPayload: Decodable { let sessionId: String; let messageId: String; let message: PickySessionMessage; let seq: Int }
 private struct PickySessionMessageRemovedPayload: Decodable { let sessionId: String; let messageId: String; let seq: Int }
@@ -716,6 +731,13 @@ struct PickySlashCommand: Codable, Equatable, Identifiable {
     let name: String
     let description: String?
     let source: PickySlashCommandSource
+}
+
+struct PickyRewindTarget: Decodable, Equatable, Identifiable {
+    var id: String { entryId }
+    let entryId: String
+    let text: String
+    let createdAt: Date?
 }
 
 struct PickyMainAgentMessage: Codable, Equatable, Identifiable {

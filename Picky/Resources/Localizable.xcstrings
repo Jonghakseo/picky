@@ -1070,6 +1070,22 @@
         }
       }
     },
+    "hud.menu.rewind": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rewind message…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메시지 되돌리기…"
+          }
+        }
+      }
+    },
     "hud.menu.showChatUI": {
       "localizations": {
         "en": {
@@ -1130,6 +1146,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pi 세션에서 동기화"
+          }
+        }
+      }
+    },
+    "hud.rewind.cancel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소"
+          }
+        }
+      }
+    },
+    "hud.rewind.confirm": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rewind"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "되돌리기"
+          }
+        }
+      }
+    },
+    "hud.rewind.currentPosition": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current position"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 위치"
+          }
+        }
+      }
+    },
+    "hud.rewind.empty": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No rewindable user messages found."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "되돌릴 수 있는 사용자 메시지가 없습니다."
+          }
+        }
+      }
+    },
+    "hud.rewind.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rewind message"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메시지 되돌리기"
           }
         }
       }

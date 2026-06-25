@@ -11,6 +11,7 @@ struct PickyConversationMenu: View {
     let session: PickySessionListViewModel.SessionCard
     @ObservedObject var viewModel: PickySessionListViewModel
     var onArchive: (() -> Void)?
+    var onRewind: (() -> Void)?
 
     var canOpenPiTerminal: Bool { session.piSessionFilePath != nil }
     var canShowInlinePiTerminal: Bool { session.piSessionFilePath != nil }
@@ -22,6 +23,10 @@ struct PickyConversationMenu: View {
     /// JSONL watcher).
     var canSyncFromPiSession: Bool { session.piSessionFilePath != nil }
     var canDuplicate: Bool { session.piSessionFilePath != nil }
+    // Requires a Pi session file AND a wired sheet host. The shared menu is also hosted by
+    // PickyInlineTerminalCardView, which does not present the rewind picker, so without the
+    // `onRewind` check the item would render enabled there and tap to a silent no-op.
+    var canRewind: Bool { session.piSessionFilePath != nil && onRewind != nil }
     var canStop: Bool { !session.status.isTerminal }
     var canCompact: Bool { session.canRequestDockCompaction }
 
@@ -63,6 +68,11 @@ struct PickyConversationMenu: View {
                 Task { try? await viewModel.duplicate(sessionID: session.id) }
             }
             .disabled(!canDuplicate)
+
+            Button("hud.menu.rewind") {
+                onRewind?()
+            }
+            .disabled(!canRewind)
 
             Button("hud.menu.compact") {
                 Task { await viewModel.requestCompaction(sessionID: session.id) }

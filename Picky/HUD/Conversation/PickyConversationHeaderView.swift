@@ -55,6 +55,7 @@ struct PickyConversationHeaderView: View {
     @State private var titleDraft = ""
     @State private var isTitleHovered = false
     @State private var stickyHoldFeedbackStartTask: Task<Void, Never>?
+    @State private var showingRewindPicker = false
     @State private var isStickyHolding = false
     @State private var stickyHoldProgress: Double = 0
     @State private var didCompleteStickyHold = false
@@ -223,7 +224,8 @@ struct PickyConversationHeaderView: View {
             PickyConversationMenu(
                 session: session,
                 viewModel: viewModel,
-                onArchive: { onArchiveSession(session.id) }
+                onArchive: { onArchiveSession(session.id) },
+                onRewind: { showingRewindPicker = true }
             )
         } label: {
             Image(systemName: "ellipsis")
@@ -236,6 +238,9 @@ struct PickyConversationHeaderView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .accessibilityLabel("Conversation menu")
+        .sheet(isPresented: $showingRewindPicker) {
+            PickyRewindPickerView(session: session, viewModel: viewModel)
+        }
     }
 
     private var piBadgeSlot: some View {

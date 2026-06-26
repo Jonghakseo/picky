@@ -523,6 +523,7 @@ The Pickle card menu contains:
 | --- | --- |
 | Duplicate | Duplicate this Pickle session. |
 | Compact | Ask Pi to compress older session context (see [§9.3](#93-compaction-ux)). Available only when the session is not running or compacting. |
+| Rewind message… | Jump the conversation back to an earlier user message (see [§9.4](#94-message-rewind)). Available when the Pickle has a Pi session file. |
 | Stop session | Abort the active session. |
 | Archive | Archive the Pickle. |
 
@@ -548,6 +549,18 @@ What you will see:
 - While compaction is running, the card shows a **Compacting…** overlay and the composer is disabled.
 - On success, a **Session compacted** system bubble appears in the conversation.
 - On failure, an error bubble explains the reason.
+
+### 9.4 Message rewind
+
+Selecting **Rewind message…** opens a picker that mirrors Pi's `/tree`: it lists the Pickle's previous user messages (newest marked as the current position), with a short preview and relative time.
+
+Pick an earlier message and confirm to rewind the conversation to that point:
+
+- The chosen message and everything after it are removed from the card.
+- The chosen message's text is restored into the composer so you can edit it and continue from there.
+- The earlier branch is preserved in the on-disk Pi session file (recover it with **Sync from Pi session** or the terminal overlay).
+
+Rewind requires a Pi session file, so it is unavailable for sessions that have not produced one yet. If the Pickle is mid-turn, the active turn is stopped before rewinding.
 
 ## 10. HUD keyboard shortcuts
 

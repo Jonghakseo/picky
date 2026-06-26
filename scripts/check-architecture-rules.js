@@ -202,7 +202,7 @@ function checkFileSizeRatchet() {
     ["Picky/Companion/CompanionPanelSettingsView.swift", 2150],
     ["Picky/Overlay/BlueCursorView.swift", 1830],
     ["Picky/App/Settings/PickySettings.swift", 1550],
-    ["agentd/src/session-supervisor.ts", 3320],
+    ["agentd/src/session-supervisor.ts", 3283],
     ["agentd/src/runtime/openai-realtime-main-runtime.ts", 2110],
   ]);
 

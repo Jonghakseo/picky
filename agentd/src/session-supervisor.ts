@@ -12,9 +12,11 @@ import type { MainAgentRuntimeMode, ModelCycleDirection, OpenAIRealtimeAuthConfi
 import { makePointerOverlayRequest, type PickyShowPointerRequest, type PickyShowPointerResult } from "./application/pointer-tool.js";
 import { readPiSessionInfoName, readPiTerminalSessionMessages } from "./application/pi-session-syncer.js";
 import { PiSessionTailWatcher, type PiSessionTailEntry } from "./application/pi-session-tail-watcher.js";
+import { inferTerminalStatusFromEntries } from "./application/terminal-tail-status.js";
 import { ORPHANED_CHILD_SESSION_RECOVERY_LOG, ORPHANED_CHILD_SESSION_RECOVERY_SUMMARY, SessionStore } from "./session-store.js";
 import type { TaskRouter } from "./task-router.js";
-import { isMainRealtimeRuntime, type AgentRuntime, type RewindBranchMessage, type RewindTarget, type RuntimeEvent, type RuntimeSessionHandle, type RuntimeSlashCommand, type RuntimeSteerResult, type ThinkingLevel } from "./runtime/types.js";
+import { isMainRealtimeRuntime, type AgentRuntime, type RewindTarget, type RuntimeEvent, type RuntimeSessionHandle, type RuntimeSlashCommand, type RuntimeSteerResult, type ThinkingLevel } from "./runtime/types.js";
+import { listRewindTargets as rewindListTargets, rewindToEntry as runRewindToEntry, type RewindDeps } from "./application/session-rewind.js";
 import { OpenAIRealtimeTranscriptionSession } from "./runtime/openai-realtime-transcription.js";
 import { hasActivity, zeroActivitySummary } from "./domain/activity-summary.js";
 import { mergeArtifacts } from "./domain/artifacts.js";
@@ -2023,41 +2025,23 @@ export class SessionSupervisor extends EventEmitter {
   }
 
   async listRewindTargets(sessionId: string): Promise<RewindTarget[]> {
-    const handle = await this.runtimeHandleForSessionCommand(sessionId, "list rewind targets");
-    return handle.listRewindTargets?.() ?? [];
+    return rewindListTargets(this.rewindDeps(), sessionId);
   }
 
   async rewindToEntry(sessionId: string, entryId: string): Promise<PickyAgentSession> {
-    const handle = await this.runtimeHandleForSessionCommand(sessionId, "rewind session");
-    if (!handle.rewindToEntry) throw new Error("Runtime session does not support rewind");
-    logAgentd("session rewind requested", { sessionId, entryId, streaming: handle.isStreaming });
+    return runRewindToEntry(this.rewindDeps(), sessionId, entryId);
+  }
 
-    if (handle.isStreaming) {
-      await handle.abort();
-      await this.waitForRuntimeEvents(sessionId);
-    }
-    this.pendingQueueDeliveries.delete(sessionId);
-    this.materializedQueueDeliveries.delete(sessionId);
-    handle.clearQueue();
-    await this.applyQueueUpdate(sessionId, [], []);
-
-    const result = await handle.rewindToEntry(entryId);
-    const newBranch = handle.getActiveBranchTranscript?.() ?? [];
-    const removedIds = rewindRemovedMessageIds(this.mustGet(sessionId).messages ?? [], newBranch);
-    await this.messageBuilder.removeMessages(sessionId, removedIds);
-
-    const latestAssistantText = [...newBranch].reverse().find((message) => message.role === "assistant")?.text.trim();
-    const current = this.mustGet(sessionId);
-    const patch: Partial<PickyAgentSession> = {
-      thinkingPreview: undefined,
-      lastSummary: latestAssistantText || undefined,
-      finalAnswer: latestAssistantText || undefined,
+  private rewindDeps(): RewindDeps {
+    return {
+      handle: (id, action) => this.runtimeHandleForSessionCommand(id, action),
+      session: (id) => this.mustGet(id),
+      removeMessages: (id, ids) => this.messageBuilder.removeMessages(id, ids),
+      drainQueue: async (id, handle) => { this.pendingQueueDeliveries.delete(id); this.materializedQueueDeliveries.delete(id); handle.clearQueue(); await this.applyQueueUpdate(id, [], []); },
+      patch: (id, patch) => this.patch(id, patch),
+      emitRewound: (id, editorText, removedIds) => this.emit("sessionRewound", id, editorText, removedIds),
+      waitSettled: (id) => this.waitForRuntimeEvents(id),
     };
-    if ((current.status === "failed" || current.status === "cancelled") && latestAssistantText) patch.status = "completed";
-    await this.patch(sessionId, patch);
-    this.emit("sessionRewound", sessionId, result.editorText, removedIds);
-    logAgentd("session rewound", { sessionId, entryId, removedCount: removedIds.length, branchMessages: newBranch.length });
-    return this.mustGet(sessionId);
   }
 
   private async runtimeHandleForSessionCommand(sessionId: string, action: string): Promise<RuntimeSessionHandle> {
@@ -3261,87 +3245,6 @@ async function readRecentPinnedSourceMessages(sessionFilePath: string | undefine
   } catch {
     return [];
   }
-}
-
-function rewindRemovedMessageIds(messages: readonly PickySessionMessage[], branch: readonly RewindBranchMessage[]): string[] {
-  // Rewinding to user message U moves the live Pi leaf to U's parent, so the HUD journal must drop U
-  // and every message after it. The Pi branch and the HUD journal are NOT 1:1: the branch also carries
-  // entries the journal never recorded (the kickoff prompt, handoff/source-context messages, tool-only
-  // turns). So we anchor ONLY on the last branch message (the newest message that must remain) and cut
-  // the journal after its most recent occurrence. An empty branch means we rewound past the first
-  // message (leaf reset to null), so the whole journal is dropped. If the anchor text cannot be found
-  // in the journal we return [] (no removal) rather than risk dropping messages that must remain.
-  if (branch.length === 0) return messages.map((message) => message.id);
-  const anchor = branch[branch.length - 1];
-  if (!anchor) return [];
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message && journalMessageMatchesBranch(message, anchor)) {
-      return messages.slice(index + 1).map((entry) => entry.id);
-    }
-  }
-  return [];
-}
-
-function journalMessageMatchesBranch(message: PickySessionMessage, branchMessage: RewindBranchMessage): boolean {
-  const text = message.text?.trim();
-  if (!text || text !== branchMessage.text.trim()) return false;
-  if (branchMessage.role === "user") {
-    // Accept HUD-originated user turns and Pi-derived user turns (terminal sync imports them as
-    // originatedBy "pi_extension"; legacy entries may omit the field).
-    return message.kind === "user_text"
-      && (message.originatedBy === "user" || message.originatedBy === "pi_extension" || message.originatedBy === undefined);
-  }
-  return message.kind === "agent_text";
-}
-
-/**
- * Picky-registered Pi tools that block the turn waiting for explicit user input. When the most
- * recent assistant entry has an open toolCall from this set, the dock should render the
- * "awaiting input" attention state instead of the running-breath. Extension authors who wrap
- * `ui.askUserQuestion` inside their own tool won't show up here — their open toolCall stays
- * classified as running because the wrapping tool name isn't on this list.
- */
-const INPUT_BLOCKING_TOOL_NAMES = new Set(["ask_user_question"]);
-
-/**
- * Walks newly-tailed JSONL entries in reverse and returns the most decisive status transition
- * we can claim. Used by `handleTerminalTailEntries` to keep the HUD dock icon animating while
- * the user is driving a Pickle through the Pi terminal overlay / inline TUI.
- *
- * Mapping (last decisive entry wins):
- * - user entry                     -> running   (a fresh prompt just hit the queue)
- * - assistant entry, no open tool  -> completed (turn finished)
- * - assistant entry, blocking tool -> waiting_for_input (e.g. ask_user_question is pending)
- * - assistant entry, other tool    -> running   (mid-turn, tool still resolving)
- */
-function inferTerminalStatusFromEntries(entries: PiSessionTailEntry[]): PickyAgentSession["status"] | undefined {
-  for (let i = entries.length - 1; i >= 0; i -= 1) {
-    const entry = entries[i];
-    if (!entry) continue;
-    if (entry.type === "session_info") continue;
-    const role = entry.message?.role;
-    if (role === "user") return "running";
-    if (role === "assistant") {
-      const openTools = openToolCallNames(entry.message?.content);
-      if (openTools.length === 0) return "completed";
-      if (openTools.some((name) => INPUT_BLOCKING_TOOL_NAMES.has(name))) return "waiting_for_input";
-      return "running";
-    }
-  }
-  return undefined;
-}
-
-function openToolCallNames(content: unknown): string[] {
-  if (!Array.isArray(content)) return [];
-  const names: string[] = [];
-  for (const block of content) {
-    if (!block || typeof block !== "object") continue;
-    const candidate = block as { type?: string; name?: unknown; toolResult?: unknown };
-    if (candidate.type !== "toolCall" || candidate.toolResult !== undefined) continue;
-    names.push(typeof candidate.name === "string" ? candidate.name : "");
-  }
-  return names;
 }
 
 function shouldReattachBlockedSessionOnStartup(session: PickyAgentSession): boolean {

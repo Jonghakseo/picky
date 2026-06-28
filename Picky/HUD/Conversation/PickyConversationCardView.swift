@@ -28,6 +28,7 @@ struct PickyConversationCardView: View {
     var onToggleExtendedTerminal: () -> Void = { }
     @State private var droppedFilePaths: [String] = []
     @State private var isFileDropTargeted = false
+    @State private var showingRewindPicker = false
 
     var body: some View {
         let _ = PickyPerf.event("conversation_card_body")
@@ -42,7 +43,8 @@ struct PickyConversationCardView: View {
                     session: session,
                     contentWidth: PickyHUDDockLayout.detailContentWidth(for: width),
                     isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-                    onArchiveSession: onArchiveSession
+                    onArchiveSession: onArchiveSession,
+                    onRewindSession: { _ in showingRewindPicker = true }
                 )
             } else {
                 chatContent(fillsAvailableHeight: resolvedHeight != nil)
@@ -67,6 +69,9 @@ struct PickyConversationCardView: View {
         .environment(\.pickyHUDDetailWidth, width)
         .onDrop(of: PickyConversationFileDrop.acceptedTypeIdentifiers, isTargeted: $isFileDropTargeted, perform: handleFileDrop)
         .onHover(perform: updateVoiceFollowUpHover)
+        .sheet(isPresented: $showingRewindPicker) {
+            PickyRewindPickerView(session: session, viewModel: viewModel)
+        }
     }
 
     private static let minimumHeight: CGFloat = 320
@@ -82,7 +87,8 @@ struct PickyConversationCardView: View {
                 viewModel: viewModel,
                 session: session,
                 onArchiveSession: onArchiveSession,
-                isCommandShortcutHintVisible: isCommandShortcutHintVisible
+                isCommandShortcutHintVisible: isCommandShortcutHintVisible,
+                onRewind: { showingRewindPicker = true }
             )
             PickyConversationContextLineView(viewModel: viewModel, session: session)
             PickyConversationListView(
@@ -99,7 +105,8 @@ struct PickyConversationCardView: View {
                 focusRequestID: focusRequestID,
                 isExtendedTerminalOpen: isExtendedTerminalOpen,
                 isCommandShortcutHintVisible: isCommandShortcutHintVisible,
-                onToggleExtendedTerminal: onToggleExtendedTerminal
+                onToggleExtendedTerminal: onToggleExtendedTerminal,
+                onRequestRewind: { showingRewindPicker = true }
             )
         }
     }

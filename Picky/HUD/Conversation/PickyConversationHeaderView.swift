@@ -35,12 +35,14 @@ struct PickyConversationHeaderView: View {
     let session: PickySessionListViewModel.SessionCard
     var onArchiveSession: (String) -> Void = { _ in }
     var isCommandShortcutHintVisible = false
+    var onRewind: (() -> Void)?
 
     init(
         viewModel: PickySessionListViewModel,
         session: PickySessionListViewModel.SessionCard,
         onArchiveSession: @escaping (String) -> Void = { _ in },
         isCommandShortcutHintVisible: Bool = false,
+        onRewind: (() -> Void)? = nil,
         voiceFollowUpHoverState: PickyVoiceFollowUpHoverState? = nil
     ) {
         self.viewModel = viewModel
@@ -48,6 +50,7 @@ struct PickyConversationHeaderView: View {
         self.session = session
         self.onArchiveSession = onArchiveSession
         self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
+        self.onRewind = onRewind
     }
 
     @Environment(\.pickyHUDDetailWidth) private var pickyHUDDetailWidth
@@ -55,7 +58,6 @@ struct PickyConversationHeaderView: View {
     @State private var titleDraft = ""
     @State private var isTitleHovered = false
     @State private var stickyHoldFeedbackStartTask: Task<Void, Never>?
-    @State private var showingRewindPicker = false
     @State private var isStickyHolding = false
     @State private var stickyHoldProgress: Double = 0
     @State private var didCompleteStickyHold = false
@@ -225,7 +227,7 @@ struct PickyConversationHeaderView: View {
                 session: session,
                 viewModel: viewModel,
                 onArchive: { onArchiveSession(session.id) },
-                onRewind: { showingRewindPicker = true }
+                onRewind: onRewind
             )
         } label: {
             Image(systemName: "ellipsis")
@@ -238,9 +240,6 @@ struct PickyConversationHeaderView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .accessibilityLabel("Conversation menu")
-        .sheet(isPresented: $showingRewindPicker) {
-            PickyRewindPickerView(session: session, viewModel: viewModel)
-        }
     }
 
     private var piBadgeSlot: some View {

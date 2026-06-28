@@ -814,7 +814,7 @@ final class PickySessionListViewModel: ObservableObject {
     }
 
     func slashCommandSuggestions(for text: String, sessionID: String, limit: Int = PickySlashCommandAutocompletePolicy.maxSuggestions) -> [PickySlashCommand] {
-        let commands = slashCommandsBySessionID[sessionID] ?? []
+        let commands = slashCommandsIncludingRewindTreeCommand(slashCommandsBySessionID[sessionID] ?? [], sessionID: sessionID)
         let queryLength = PickySlashCommandAutocompletePolicy.query(in: text)?.count ?? 0
         let startedAt = Date()
         let suggestions = PickySlashCommandAutocompletePolicy.suggestions(for: text, commands: commands, limit: limit)

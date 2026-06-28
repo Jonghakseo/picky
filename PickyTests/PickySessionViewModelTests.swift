@@ -3731,6 +3731,7 @@ struct PickySessionViewModelTests {
         let client = FakePickyAgentClient()
         let viewModel = PickySessionListViewModel(client: client, notificationCenter: PickyNoopNotificationCenter())
         viewModel.start()
+        client.emit(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "session-commands", piSessionFilePath: "/tmp/pi-session.jsonl"))))
 
         viewModel.ensureSlashCommandsLoaded(sessionID: "session-commands")
         try await settle()
@@ -3747,6 +3748,7 @@ struct PickySessionViewModelTests {
         try await wait { viewModel.hasLoadedSlashCommands(sessionID: "session-commands") }
 
         #expect(viewModel.hasLoadedSlashCommands(sessionID: "session-commands"))
+        #expect(viewModel.slashCommandSuggestions(for: "/tr", sessionID: "session-commands").map(\.name) == ["tree"])
         #expect(viewModel.slashCommandSuggestions(for: "/dep", sessionID: "session-commands").map(\.name) == ["deploy"])
         #expect(viewModel.slashCommandSuggestions(for: "/skill:cont", sessionID: "session-commands").map(\.name) == ["skill:context7-cli"])
         #expect(viewModel.slashCommandSuggestions(for: "/deploy now", sessionID: "session-commands").isEmpty)

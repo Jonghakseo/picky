@@ -52,6 +52,7 @@ struct PickyConversationComposerView: View {
     let isCommandShortcutHintVisible: Bool
     let copyStyle: PickyConversationComposerCopyStyle
     var onToggleExtendedTerminal: () -> Void
+    var onRequestRewind: () -> Void
     @State private var draft: String = ""
     @State private var attachments: [PickyComposerAttachment] = []
     @State private var attachmentContentWidth: CGFloat = 0
@@ -74,7 +75,8 @@ struct PickyConversationComposerView: View {
         isExtendedTerminalOpen: Bool = false,
         isCommandShortcutHintVisible: Bool = false,
         copyStyle: PickyConversationComposerCopyStyle = .default,
-        onToggleExtendedTerminal: @escaping () -> Void = { }
+        onToggleExtendedTerminal: @escaping () -> Void = { },
+        onRequestRewind: @escaping () -> Void = { }
     ) {
         self.session = session
         self.viewModel = viewModel
@@ -85,6 +87,7 @@ struct PickyConversationComposerView: View {
         self.isCommandShortcutHintVisible = isCommandShortcutHintVisible
         self.copyStyle = copyStyle
         self.onToggleExtendedTerminal = onToggleExtendedTerminal
+        self.onRequestRewind = onRequestRewind
     }
 
     var body: some View {
@@ -1160,6 +1163,12 @@ struct PickyConversationComposerView: View {
         let submittedAttachmentIDs = Set(attachments.map(\.id))
         let attachmentPaths = attachments.map(\.path)
         let text = Self.submissionText(draft: draft, attachmentPaths: attachmentPaths)
+        if attachmentPaths.isEmpty && draft.trimmingCharacters(in: .whitespacesAndNewlines) == "/tree" {
+            onRequestRewind()
+            draft = ""
+            viewModel.clearComposerDraft(sessionID: submittedSessionID)
+            return
+        }
         guard !text.isEmpty, let kind else { return }
         let originalDraft = draft
         Task {

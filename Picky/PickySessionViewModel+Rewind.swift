@@ -8,6 +8,12 @@
 import Foundation
 
 extension PickySessionListViewModel {
+    func slashCommandsIncludingRewindTreeCommand(_ commands: [PickySlashCommand], sessionID: String) -> [PickySlashCommand] {
+        guard sessions.contains(where: { $0.id == sessionID && $0.piSessionFilePath != nil }) else { return commands }
+        guard !commands.contains(where: { $0.name == "tree" }) else { return commands }
+        return [PickySlashCommand(name: "tree", description: "Rewind to an earlier message", source: .builtin)] + commands
+    }
+
     func loadRewindTargets(sessionID: String) async throws -> [PickyRewindTarget] {
         pickySessionLog("rewind targets requested session=\(sessionID)")
         do {

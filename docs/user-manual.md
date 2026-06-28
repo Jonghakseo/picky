@@ -431,7 +431,7 @@ Safety behavior:
 
 ### 8.6 Slash command autocomplete
 
-Type `/` in the composer to show slash command suggestions.
+Type `/` in the composer to show slash command suggestions. Picky also adds local HUD commands where useful; for example, `/tree` opens the Pickle message rewind picker instead of sending the text to Pi.
 
 Controls:
 
@@ -552,7 +552,7 @@ What you will see:
 
 ### 9.4 Message rewind
 
-Selecting **Rewind message…** opens a picker that mirrors Pi's `/tree`: it lists the Pickle's previous user messages (newest marked as the current position), with a short preview and relative time.
+Selecting **Rewind message…** opens a picker that mirrors Pi's `/tree`: it lists the Pickle's previous user messages (newest marked as the current position), with a short preview and relative time. You can open the same picker by typing `/tree` in the composer and submitting it.
 
 Pick an earlier message and confirm to rewind the conversation to that point:
 

@@ -1486,7 +1486,7 @@ struct PickySessionViewModelTests {
     @Test func hudDockHorizontalPanelWidthAndClampReserveFullscreenControl() throws {
         let metrics = PickyHUDDockMetrics(preset: .medium)
         let visibleFrame = CGRect(x: 100, y: 80, width: 1200, height: 800)
-        let sessionCount = PickyHUDDockLayout.visibleSessionLimit
+        let sessionCount = 12
         let railLength = PickyHUDDockLayout.horizontalDockRailLength(
             sessionCount: sessionCount,
             isAddSlotExpanded: false,
@@ -2785,10 +2785,10 @@ struct PickySessionViewModelTests {
         #expect(viewModel.sessions.map(\.id) == ["a", "b", "c"]) // newest first, no manual order yet
         #expect(orderStore.manualOrder.isEmpty)
 
-        // Visible order = sessions.prefix.reversed() = [c, b, a]. Drag the
-        // icon at visual idx 2 (a) to visual idx 0. Standard move semantics:
-        // visible becomes [a, c, b]. Reversing back to underlying sessions
-        // order (= prefix.reversed of visible) gives [b, c, a].
+        // Visible order = sessions.reversed() = [c, b, a]. Drag the icon at
+        // visual idx 2 (a) to visual idx 0. Standard move semantics: visible
+        // becomes [a, c, b]. Reversing back to underlying sessions order gives
+        // [b, c, a].
         let moved = viewModel.moveSession(sessionID: "a", toVisibleIndex: 0)
         #expect(moved)
         #expect(viewModel.sessions.map(\.id) == ["b", "c", "a"])

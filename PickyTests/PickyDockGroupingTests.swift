@@ -239,7 +239,7 @@ final class PickyDockGroupingTests: XCTestCase {
             .group(PickyDockGroup(id: "g1", name: "G", color: .teal, memberSessionIDs: ["s2", "s3"])),
             .session(id: "s4")
         ])
-        // Pretend s3 is older than the visible cap.
+        // Pretend the caller's visible universe excludes s3.
         let projection = PickyDockProjector.project(
             layout: layout,
             visibleSessionIDs: ["s1", "s2", "s4"]

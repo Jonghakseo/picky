@@ -343,11 +343,11 @@ struct PickyHUDDockRailView: View {
     }
 
     /// Number of empty-group drop tiles rendered (one per expanded group
-    /// with zero visible members, plus one per collapsed group whose only
-    /// member is outside the visible cap). Each tile occupies a full
-    /// session tile slot below its header but does NOT appear in
-    /// `projection.slots`, so the rail height must account for them
-    /// explicitly or the dashed drop slot overflows the capsule.
+    /// with zero projected members, plus one per collapsed group with no
+    /// projected top member). Each tile occupies a full session tile slot
+    /// below its header but does NOT appear in `projection.slots`, so the
+    /// rail height must account for them explicitly or the dashed drop slot
+    /// overflows the capsule.
     private var emptyGroupDropTileCount: Int {
         var count = 0
         for item in projection.items {
@@ -990,10 +990,9 @@ struct PickyHUDDockRailView: View {
 
     /// Translate a visible top-entry index back to its index in
     /// `dockLayout.entries`. Necessary when the visible projection is a
-    /// strict subset of the persisted layout (some sessions outside the
-    /// `visibleSessionLimit` cap). When the visible entry id maps to a
-    /// layout entry that no longer exists, returns nil so the caller can
-    /// no-op safely.
+    /// strict subset of the persisted layout (for example archived or
+    /// missing sessions). When the visible entry id maps to a layout entry
+    /// that no longer exists, returns nil so the caller can no-op safely.
     private func layoutEntryIndex(forVisibleTopEntryID entryID: String) -> Int? {
         layout.entries.firstIndex { entry in
             switch entry {

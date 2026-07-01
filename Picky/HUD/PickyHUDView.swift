@@ -59,14 +59,12 @@ struct PickyHUDView: View {
         PickyHUDDockMetrics(preset: placement.dockSizePreset)
     }
 
-    /// Universe of session ids the dock is allowed to render this frame.
-    /// Capped at `visibleSessionLimit` against the *newest* sessions so the
-    /// rail never grows beyond the screen-edge budget. Order matches the
-    /// legacy `prefix.reversed()` convention (oldest-of-window first,
+    /// Universe of active session ids the dock renders this frame. Order
+    /// matches the legacy `sessions.reversed()` convention (oldest first,
     /// newest last) so the projector's fallback branch keeps newcomers at
     /// the bottom of the dock next to the `+` slot.
     private var visibleSessionUniverse: [String] {
-        Array(viewModel.sessions.prefix(PickyHUDDockLayout.visibleSessionLimit).reversed().map(\.id))
+        Array(viewModel.sessions.reversed().map(\.id))
     }
 
     /// Projection of the persisted dock layout against the current visible
@@ -114,8 +112,8 @@ struct PickyHUDView: View {
     }
 
     /// Session cards in their final top-to-bottom dock order. Replaces the
-    /// pre-grouping `sessions.prefix.reversed()` helper. When the layout is
-    /// empty (fresh install or no manual reorders), the projector falls back
+    /// pre-grouping `sessions.reversed()` helper. When the layout is empty
+    /// (fresh install or no manual reorders), the projector falls back
     /// to appending sessions in newest-last order so the visual ordering
     /// matches the legacy behavior.
     private var visibleSessions: [PickySessionListViewModel.SessionCard] {

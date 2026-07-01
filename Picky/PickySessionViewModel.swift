@@ -366,7 +366,7 @@ final class PickySessionListViewModel: ObservableObject {
     private let archiveStore: PickySessionArchiveStoring
     private let manualOrderStore: PickySessionManualOrderStoring
     /// User-controlled dock order. Stored in the same direction as `sessions`
-    /// (newest at index 0 = visually-end slot after `prefix.reversed()`). IDs
+    /// (newest at index 0 = visually-end slot after `sessions.reversed()`). IDs
     /// not yet present here are auto-prepended when first observed, so brand
     /// new Pickles always land on the visually-end slot, regardless of any
     /// past drag the user did to existing sessions.
@@ -2492,19 +2492,18 @@ final class PickySessionListViewModel: ObservableObject {
 
     /// Move a visible dock icon to a new display position. `toVisibleIndex` is
     /// in *visible* space — the same axis the dock renders along (top→bottom
-    /// in a vertical dock, left→right in a horizontal dock), which is the
-    /// `prefix(visibleSessionLimit).reversed()` slice of `sessions`. Clamps
-    /// out-of-range targets and is a no-op when the index does not change.
-    /// Returns `true` if the order actually changed.
+    /// in a vertical dock, left→right in a horizontal dock), which is
+    /// `sessions.reversed()` in active-session space. Clamps out-of-range
+    /// targets and is a no-op when the index does not change. Returns `true`
+    /// if the order actually changed.
     @discardableResult
     func moveSession(sessionID: String, toVisibleIndex visibleTargetRaw: Int) -> Bool {
-        let visibleLimit = PickyHUDDockLayout.visibleSessionLimit
-        let visibleCount = min(sessions.count, visibleLimit)
+        let visibleCount = sessions.count
         guard visibleCount > 0 else { return false }
 
-        // Visible space is `sessions.prefix(N).reversed()`. Underlying
-        // sessions-index = (N - 1) - visibleIndex.
-        guard let underlyingCurrent = sessions.prefix(visibleCount).firstIndex(where: { $0.id == sessionID }) else { return false }
+        // Visible space is `sessions.reversed()`. Underlying sessions-index =
+        // (N - 1) - visibleIndex.
+        guard let underlyingCurrent = sessions.firstIndex(where: { $0.id == sessionID }) else { return false }
         let visibleCurrent = (visibleCount - 1) - underlyingCurrent
         let visibleTarget = max(0, min(visibleCount - 1, visibleTargetRaw))
         guard visibleCurrent != visibleTarget else { return false }
@@ -2951,7 +2950,7 @@ extension Array where Element == PickySessionListViewModel.SessionCard {
     }
 
     /// Order according to `manualOrder` (lower index = newer = visually-end
-    /// slot after `prefix.reversed()`). IDs absent from `manualOrder` are
+    /// slot after `sessions.reversed()`). IDs absent from `manualOrder` are
     /// appended after manually-ordered entries, sorted by `sortedForHUD()`.
     func sortedByManualOrder(_ manualOrder: [String]) -> [Element] {
         let positionByID: [String: Int] = Dictionary(uniqueKeysWithValues: manualOrder.enumerated().map { ($1, $0) })

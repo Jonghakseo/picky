@@ -180,18 +180,21 @@ final class PickyHUDOverlayManager {
         return PickyHUDDockLayout.panelWidth(
             cardWidth: cardWidth(for: displayID),
             dockSide: side,
-            sessionCount: visibleSessionCount(),
+            sessionCount: projectedDockSessionCount(for: displayID),
             isAddSlotExpanded: false,
             metrics: PickyHUDDockMetrics(preset: currentDockSizePreset)
         )
     }
 
-    /// Number of session tiles currently rendered in the dock rail. Caps at
-    /// `visibleSessionLimit` to match `PickyHUDView.visibleSessions` so the
-    /// dock-length math used for horizontal X clamping matches what's on
-    /// screen.
-    private func visibleSessionCount() -> Int {
-        min(viewModel.sessions.count, PickyHUDDockLayout.visibleSessionLimit)
+    /// Number of session tiles currently projected for this display's dock
+    /// rail. Uses every active session so panel sizing/clamping follows the
+    /// actual dock projection without a count cap.
+    private func projectedDockSessionCount(for displayID: CGDirectDisplayID) -> Int {
+        PickyDockProjector.project(
+            layout: viewModel.dockLayout,
+            visibleSessionIDs: Array(viewModel.sessions.reversed().map(\.id)),
+            collapsedOverrides: dockGroupCollapse(for: displayID)
+        ).slots.count
     }
 
     func start() {
@@ -544,7 +547,7 @@ final class PickyHUDOverlayManager {
         let originY: CGFloat
         if pos.side.orientation == .horizontal {
             let horizontalDockLength = PickyHUDDockLayout.horizontalDockRailLength(
-                sessionCount: visibleSessionCount(),
+                sessionCount: projectedDockSessionCount(for: displayID),
                 isAddSlotExpanded: false,
                 metrics: dockMetrics,
                 includesFullscreenControl: PickyFullscreenFeatureFlags.isEnabled
@@ -747,7 +750,7 @@ final class PickyHUDOverlayManager {
         let startPanelWidth = panelWidth(for: displayID, dockSide: startPos.side)
         if startPos.side.orientation == .horizontal {
             let horizontalDockLength = PickyHUDDockLayout.horizontalDockRailLength(
-                sessionCount: visibleSessionCount(),
+                sessionCount: projectedDockSessionCount(for: displayID),
                 isAddSlotExpanded: false,
                 metrics: dockMetrics,
                 includesFullscreenControl: PickyFullscreenFeatureFlags.isEnabled

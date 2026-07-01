@@ -228,7 +228,6 @@ enum PickyHUDDockLabelPolicy {
 }
 
 enum PickyHUDDockLayout {
-    static let visibleSessionLimit = 12
     static let panelWidth: CGFloat = 540
     static let detailWidth: CGFloat = 446
     static let detailHorizontalPadding: CGFloat = 12

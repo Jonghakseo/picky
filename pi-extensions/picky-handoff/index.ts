@@ -74,7 +74,7 @@ function registerHandoffCommand(pi: PiExtensionAPI, name: string): void {
         const sessionName = pi.getSessionName();
         const cwd = ctx.cwd;
         const sessionFile = ctx.sessionManager.getSessionFile();
-        const branch = ctx.sessionManager.getBranch() as unknown[];
+        const branch = ctx.sessionManager.getBranch();
         const connection = await readConnectionInfo();
         const protocolVersion = connection.protocolVersion || DEFAULT_PROTOCOL_VERSION;
         const id = `pi-handoff-${Date.now()}-${Math.random().toString(16).slice(2)}`;

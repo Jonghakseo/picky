@@ -15,7 +15,9 @@ description: Decide how to delegate, steer, inspect, archive, or abort Pickles w
 3. **Shape `picky_start_pickle.instructions` as a delta.** Compact what the Pickle needs to act: goal, constraints, the one or two files / URLs / IDs that ground it. Skip backstory the Pickle can re-derive.
 4. **Check progress without spawning.** When the user asks how something is going, call `picky_inspect_active_pickle({ sessionId })`. Never start a new Pickle just to read another one's state.
 5. **Abort only on explicit request.** `picky_abort_pickle` runs only when the user clearly says stop / cancel / kill. Resolve the right `sessionId` via `picky_pickle_sessions` first.
-6. **Unarchive then route by status.** To find archived candidates, call `picky_pickle_sessions({ includeArchive: true })` first. `picky_unarchive_pickle` flips visibility only. After it returns, push the user toward `picky_steer_pickle` if still running, or `picky_start_pickle` if the status is terminal.
+6. **Archive / unarchive explicitly.** Archive only when the user asks to hide/clean up a Pickle. Archived terminal Pickles are recoverable only inside Picky's current 7-day retention window.
+7. **Unarchive then route by status.** To find archived candidates, call `picky_pickle_sessions({ includeArchive: true })` first. `picky_unarchive_pickle` flips visibility only. After it returns, push the user toward `picky_steer_pickle` if still running, or `picky_start_pickle` if the status is terminal.
+8. **CLI fallback for operators.** When operating from a shell, use `picky pickle-list --archived [--query text]` to explore archived Pickles, `picky pickle-archive <session-id>` to archive, and `picky pickle-unarchive <session-id>` to restore.
 
 ## What NOT to do
 - Don't run long tasks inline via `picky_run_bash` / `picky_read_file` loops. Delegate to a Pickle.

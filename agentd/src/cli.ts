@@ -1,5 +1,5 @@
 import { Command, Option } from "commander";
-import type { EventEnvelope } from "./protocol.js";
+import type { EventEnvelope, PickyAgentSession } from "./protocol.js";
 import { loadCliConnection, PickyCliDaemonNotRunningError } from "./cli/connection-loader.js";
 import { sendCommand, sendCommandAndWaitForReply, PickyCliConnectionError, PickyCliServerError, PickyCliTimeoutError } from "./cli/ws-client.js";
 
@@ -8,6 +8,9 @@ const VERSION = "0.1.0";
 interface SharedOptions {
   json?: boolean;
 }
+
+type SessionSnapshotEvent = Extract<EventEnvelope, { type: "sessionSnapshot" }>;
+type SessionArchivedAuthoritativeEvent = Extract<EventEnvelope, { type: "sessionArchivedAuthoritative" }>;
 
 const program = new Command();
 program
@@ -23,6 +26,9 @@ Examples:
   $ picky pickle-create "리서치" --instructions "경쟁사 조사" --group "Research"
   $ picky pickle-list --json
   $ picky pickle-list --include-archived
+  $ picky pickle-list --archived --query "sentry"
+  $ picky pickle-archive pickle-abc
+  $ picky pickle-unarchive pickle-abc
   $ picky pickle-group-list
   $ picky pickle-followup pickle-abc "production 환경으로 다시"
   $ picky pickle-abort pickle-abc
@@ -156,14 +162,23 @@ program
   .description("List non-archived Pickle sessions shown in the Picky dock.")
   .option("--json", "Emit the session snapshot JSON to stdout")
   .option("--include-archived", "Include archived Pickle sessions hidden from the Picky dock")
-  .action(async (options: SharedOptions & { includeArchived?: boolean }) => {
+  .option("--archived", "List only archived Pickle sessions hidden from the Picky dock")
+  .option("--query <text>", "Filter the selected Pickle set by id, title, cwd, status, summary, or final answer")
+  .addHelpText("after", `
+Examples:
+  $ picky pickle-list
+  $ picky pickle-list --include-archived
+  $ picky pickle-list --archived
+  $ picky pickle-list --archived --query "sentry"
+`)
+  .action(async (options: SharedOptions & { includeArchived?: boolean; archived?: boolean; query?: string }) => {
     await runWithErrorHandling(async () => {
+      if (options.archived && options.includeArchived) {
+        fail("--archived cannot be combined with --include-archived", 64);
+      }
       const connection = await loadCliConnection();
-      const snapshot = await sendCommand(connection, { type: "listSessions" }, {
-        matchEvent: (event) => (event.type === "sessionSnapshot" ? event : null),
-      });
-      if (snapshot.type !== "sessionSnapshot") return;
-      const sessions = options.includeArchived ? snapshot.sessions : snapshot.sessions.filter((session) => session.archived !== true);
+      const snapshot = await fetchSessionSnapshot(connection);
+      const sessions = filterSessionsForList(snapshot.sessions, options);
       const visibleSnapshot = { ...snapshot, sessions };
       if (options.json) {
         process.stdout.write(`${JSON.stringify(visibleSnapshot, null, 2)}\n`);
@@ -174,9 +189,50 @@ program
         return;
       }
       for (const session of sessions) {
-        const cwd = session.cwd ? ` cwd=${session.cwd}` : "";
-        process.stdout.write(`${session.id}\t${session.status}\t${session.title}${cwd}\n`);
+        process.stdout.write(`${formatSessionListRow(session)}\n`);
       }
+    });
+  });
+
+program
+  .command("pickle-archive <session-id>")
+  .description("Archive a Pickle session so it is hidden from the Picky dock. Archived terminal Pickles follow Picky's 7-day retention window.")
+  .option("--json", "Emit the archive-state event JSON to stdout")
+  .addHelpText("after", `
+Examples:
+  $ picky pickle-archive pickle-abc
+`)
+  .action(async (sessionId: string, options: SharedOptions) => {
+    await runWithErrorHandling(async () => {
+      const connection = await loadCliConnection();
+      const session = await requireSessionForArchiveAction(connection, sessionId);
+      if (session.archived === true) {
+        printArchiveNoop(sessionId, true, options.json, session);
+        return;
+      }
+      const event = await setPickleArchiveState(connection, sessionId, true);
+      printArchiveStateResult(event, options.json, `Archived Pickle ${sessionId}`);
+    });
+  });
+
+program
+  .command("pickle-unarchive <session-id>")
+  .description("Restore an archived Pickle session so it reappears in the Picky dock, if it is still within the retention window.")
+  .option("--json", "Emit the archive-state event JSON to stdout")
+  .addHelpText("after", `
+Examples:
+  $ picky pickle-unarchive pickle-abc
+`)
+  .action(async (sessionId: string, options: SharedOptions) => {
+    await runWithErrorHandling(async () => {
+      const connection = await loadCliConnection();
+      const session = await requireSessionForArchiveAction(connection, sessionId);
+      if (session.archived !== true) {
+        printArchiveNoop(sessionId, false, options.json, session);
+        return;
+      }
+      const event = await setPickleArchiveState(connection, sessionId, false);
+      printArchiveStateResult(event, options.json, `Restored Pickle ${sessionId}`);
     });
   });
 
@@ -322,15 +378,80 @@ Examples:
  * command at all.
  */
 async function ensureSessionIsSteerable(connection: Awaited<ReturnType<typeof loadCliConnection>>, sessionId: string, action: "follow-up" | "abort"): Promise<void> {
-  const snapshot = await sendCommand(connection, { type: "listSessions" }, {
-    matchEvent: (event) => (event.type === "sessionSnapshot" ? event : null),
-  });
-  if (snapshot.type !== "sessionSnapshot") return;
+  const snapshot = await fetchSessionSnapshot(connection);
   const target = snapshot.sessions.find((session) => session.id === sessionId);
   if (!target) fail(`Pickle session not found: ${sessionId}`, 1);
   if (target.archived === true) {
     fail(`Pickle session ${sessionId} is archived; un-archive it from the Picky dock before sending a ${action}.`, 1);
   }
+}
+
+async function requireSessionForArchiveAction(connection: Awaited<ReturnType<typeof loadCliConnection>>, sessionId: string): Promise<PickyAgentSession> {
+  const snapshot = await fetchSessionSnapshot(connection);
+  const target = snapshot.sessions.find((session) => session.id === sessionId);
+  if (!target) fail(`Pickle session not found: ${sessionId}`, 1);
+  return target;
+}
+
+async function fetchSessionSnapshot(connection: Awaited<ReturnType<typeof loadCliConnection>>): Promise<SessionSnapshotEvent> {
+  return await sendCommand(connection, { type: "listSessions" }, {
+    matchEvent: (event) => (event.type === "sessionSnapshot" ? event as SessionSnapshotEvent : null),
+  });
+}
+
+function filterSessionsForList(sessions: PickyAgentSession[], options: { includeArchived?: boolean; archived?: boolean; query?: string }): PickyAgentSession[] {
+  const selected = options.archived
+    ? sessions.filter((session) => session.archived === true)
+    : options.includeArchived
+      ? sessions
+      : sessions.filter((session) => session.archived !== true);
+  const query = options.query?.trim().toLowerCase();
+  if (!query) return selected;
+  return selected.filter((session) => sessionSearchText(session).includes(query));
+}
+
+function sessionSearchText(session: PickyAgentSession): string {
+  return [
+    session.id,
+    session.title,
+    session.cwd,
+    session.status,
+    session.lastSummary,
+    session.finalAnswer,
+  ].filter((value): value is string => typeof value === "string" && value.length > 0).join(" ").toLowerCase();
+}
+
+function formatSessionListRow(session: PickyAgentSession): string {
+  const cwd = session.cwd ? ` cwd=${session.cwd}` : "";
+  const archived = session.archived === true ? " archived=true" : "";
+  const archivedAt = session.archived === true && session.archivedAt ? ` archivedAt=${session.archivedAt}` : "";
+  return `${session.id}\t${session.status}\t${session.title}${cwd}${archived}${archivedAt}`;
+}
+
+async function setPickleArchiveState(connection: Awaited<ReturnType<typeof loadCliConnection>>, sessionId: string, archived: boolean): Promise<SessionArchivedAuthoritativeEvent> {
+  return await sendCommand(connection, { type: "setSessionArchived", sessionId, archived }, {
+    matchEvent: (event) => {
+      if (event.type !== "sessionArchivedAuthoritative") return null;
+      const archiveEvent = event as SessionArchivedAuthoritativeEvent;
+      return archiveEvent.sessionId === sessionId && archiveEvent.archived === archived ? archiveEvent : null;
+    },
+  });
+}
+
+function printArchiveStateResult(event: SessionArchivedAuthoritativeEvent, asJson: boolean | undefined, message: string): void {
+  if (asJson) {
+    process.stdout.write(`${JSON.stringify(event, null, 2)}\n`);
+    return;
+  }
+  process.stdout.write(`${message}\n`);
+}
+
+function printArchiveNoop(sessionId: string, archived: boolean, asJson: boolean | undefined, session: PickyAgentSession): void {
+  if (asJson) {
+    process.stdout.write(`${JSON.stringify({ session, noop: true }, null, 2)}\n`);
+    return;
+  }
+  process.stdout.write(archived ? `Pickle already archived: ${sessionId}\n` : `Pickle already visible: ${sessionId}\n`);
 }
 
 async function runWithErrorHandling(action: () => Promise<void>): Promise<void> {

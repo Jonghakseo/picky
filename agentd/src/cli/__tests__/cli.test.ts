@@ -222,6 +222,98 @@ describe("picky cli", () => {
     expect(parsed.sessions).toHaveLength(1);
   });
 
+  it("pickle-list --archived prints only archived sessions with archive metadata", async () => {
+    server.onCommand("listSessions", (command, send) => {
+      void command;
+      send({
+        type: "sessionSnapshot",
+        sessions: [
+          sessionFixture({ id: "visible", title: "Visible", status: "running" }),
+          sessionFixture({ id: "archived", title: "Archived", status: "completed", archived: true, archivedAt: "2026-07-01T00:00:00.000Z" }),
+        ],
+      });
+    });
+    const result = await runCli(["pickle-list", "--archived"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).not.toContain("visible\trunning\tVisible");
+    expect(result.stdout).toContain("archived\tcompleted\tArchived archived=true archivedAt=2026-07-01T00:00:00.000Z");
+  });
+
+  it("pickle-list --query filters the selected session set", async () => {
+    server.onCommand("listSessions", (command, send) => {
+      void command;
+      send({
+        type: "sessionSnapshot",
+        sessions: [
+          sessionFixture({ id: "p-1", title: "Sentry audit", status: "completed", archived: true }),
+          sessionFixture({ id: "p-2", title: "Release notes", status: "completed", archived: true }),
+        ],
+      });
+    });
+    const result = await runCli(["pickle-list", "--archived", "--query", "sentry"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("p-1\tcompleted\tSentry audit");
+    expect(result.stdout).not.toContain("p-2\tcompleted\tRelease notes");
+  });
+
+  it("pickle-list rejects ambiguous archive filters", async () => {
+    const result = await runCli(["pickle-list", "--archived", "--include-archived"]);
+    expect(result.code).toBe(64);
+    expect(result.stderr).toContain("--archived cannot be combined with --include-archived");
+  });
+
+  it("pickle-archive sends setSessionArchived(true) and waits for the authoritative event", async () => {
+    server.onCommand("listSessions", (command, send) => {
+      void command;
+      send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-1", title: "Archive me", status: "completed" })] });
+    });
+    server.onCommand("setSessionArchived", (command, send) => {
+      const cmd = command as { sessionId: string; archived: boolean };
+      send({ type: "sessionArchivedAuthoritative", sessionId: cmd.sessionId, archived: cmd.archived });
+    });
+    const result = await runCli(["pickle-archive", "p-1"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("Archived Pickle p-1");
+    expect(server.received.find((command) => (command as { type?: string }).type === "setSessionArchived")).toMatchObject({ type: "setSessionArchived", sessionId: "p-1", archived: true });
+  });
+
+  it("pickle-archive is a safe no-op for an already archived session", async () => {
+    server.onCommand("listSessions", (command, send) => {
+      void command;
+      send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-archived", title: "Archived", status: "completed", archived: true })] });
+    });
+    const result = await runCli(["pickle-archive", "p-archived"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("Pickle already archived: p-archived");
+    expect(server.received.some((command) => (command as { type?: string }).type === "setSessionArchived")).toBe(false);
+  });
+
+  it("pickle-unarchive sends setSessionArchived(false) and waits for the authoritative event", async () => {
+    server.onCommand("listSessions", (command, send) => {
+      void command;
+      send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-1", title: "Restore me", status: "completed", archived: true })] });
+    });
+    server.onCommand("setSessionArchived", (command, send) => {
+      const cmd = command as { sessionId: string; archived: boolean };
+      send({ type: "sessionArchivedAuthoritative", sessionId: cmd.sessionId, archived: cmd.archived });
+    });
+    const result = await runCli(["pickle-unarchive", "p-1"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("Restored Pickle p-1");
+    expect(server.received.find((command) => (command as { type?: string }).type === "setSessionArchived")).toMatchObject({ type: "setSessionArchived", sessionId: "p-1", archived: false });
+  });
+
+  it("pickle-unarchive refuses an unknown session id", async () => {
+    server.onCommand("listSessions", (command, send) => {
+      void command;
+      send({ type: "sessionSnapshot", sessions: [sessionFixture({ id: "p-1", title: "Known", status: "completed", archived: true })] });
+    });
+    const result = await runCli(["pickle-unarchive", "missing"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("Pickle session not found: missing");
+    expect(server.received.some((command) => (command as { type?: string }).type === "setSessionArchived")).toBe(false);
+  });
+
   it("pickle-group-list prints dock groups", async () => {
     server.onCommand("listDockGroups", (command, send) => {
       void command;

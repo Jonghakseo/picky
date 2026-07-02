@@ -746,6 +746,11 @@ final class PickySwiftTermView: LocalProcessTerminalView {
         caretViewTracksFocus = false
         antiAliasCustomBlockGlyphs = false
         postsFrameChangedNotifications = true
+        // SwiftTerm's macOS view has no NSDraggingDestination support, so file drops
+        // (e.g. dragging an image into the Pickle TUI) were rejected at the AppKit
+        // level before any text could reach the pty. Register here so every Picky
+        // terminal surface (inline card, extended view, overlay) accepts them.
+        registerForDraggedTypes([.fileURL])
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -816,6 +821,70 @@ final class PickySwiftTermView: LocalProcessTerminalView {
         case 124: return [0x05]  // ⌘→ -> Ctrl-E (move to end of line)
         default: return nil
         }
+    }
+
+    // MARK: - File drag & drop
+
+    // Mirrors the Terminal.app/iTerm2/Ghostty convention: dropping files types their
+    // shell-escaped paths into the terminal input, so Pi's TUI sees them exactly as
+    // if the user had typed the paths.
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        droppedFileURLs(from: sender).isEmpty ? [] : .copy
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        !droppedFileURLs(from: sender).isEmpty
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = droppedFileURLs(from: sender)
+        guard !urls.isEmpty else { return false }
+        let text = Self.droppedFilesInputText(for: urls.map(\.path))
+        // Wrap in bracketed paste when the TUI enabled it, matching SwiftTerm's own
+        // paste path, so Pi's line editor receives the paths as one literal chunk.
+        if terminal.bracketedPasteMode {
+            send(data: EscapeSequences.bracketedPasteStart[0...])
+            send(txt: text)
+            send(data: EscapeSequences.bracketedPasteEnd[0...])
+        } else {
+            send(txt: text)
+        }
+        window?.makeFirstResponder(self)
+        return true
+    }
+
+    private func droppedFileURLs(from sender: NSDraggingInfo) -> [URL] {
+        let urls = sender.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [URL]
+        return urls ?? []
+    }
+
+    /// Space-separated shell-escaped paths with a trailing space so the user can
+    /// keep typing (or drop more files) without inserting a separator manually.
+    static func droppedFilesInputText(for paths: [String]) -> String {
+        paths.map(shellEscapedPath).joined(separator: " ") + " "
+    }
+
+    /// Backslash-escapes shell metacharacters the way Terminal.app does for file
+    /// drops. Alphanumerics (including non-ASCII letters) and common path chars
+    /// pass through untouched so ordinary paths stay readable.
+    static func shellEscapedPath(_ path: String) -> String {
+        let safeScalars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "/._-+@%,:=~"))
+        guard path.unicodeScalars.contains(where: { !safeScalars.contains($0) }) else { return path }
+        var escaped = ""
+        escaped.reserveCapacity(path.count * 2)
+        for character in path {
+            if character.unicodeScalars.allSatisfy({ safeScalars.contains($0) }) {
+                escaped.append(character)
+            } else {
+                escaped.append("\\")
+                escaped.append(character)
+            }
+        }
+        return escaped
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {

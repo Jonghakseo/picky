@@ -6663,7 +6663,7 @@ function commandReceipts(session: PickyAgentSession | undefined): Array<{ comman
 }
 
 async function settle(): Promise<void> {
-  await delay(25);
+  await delay(10);
 }
 
 async function waitUntil(predicate: () => boolean): Promise<void> {

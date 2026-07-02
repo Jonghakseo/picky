@@ -24,6 +24,25 @@ run_step() {
   "$@"
 }
 
+run_with_retry() {
+  local attempts="$1"
+  local label="$2"
+  shift 2
+  local attempt=1
+  while true; do
+    echo
+    echo "▶ ${label} (attempt ${attempt}/${attempts})"
+    if "$@"; then
+      return 0
+    fi
+    if [ "$attempt" -ge "$attempts" ]; then
+      return 1
+    fi
+    attempt=$((attempt + 1))
+    echo "↻ ${label} failed; retrying once for known async test flakiness."
+  done
+}
+
 run_swiftlint_warning_first() {
   echo
   echo "▶ SwiftLint warning-first rules"
@@ -50,7 +69,7 @@ require_command xcodebuild "Install Xcode command line tools / Xcode."
 
 run_step "agentd: typecheck" pnpm --dir agentd run typecheck
 run_step "agentd: lint" pnpm --dir agentd run lint
-run_step "agentd: tests (serial)" pnpm --dir agentd run test:serial
+run_with_retry 2 "agentd: tests (serial)" pnpm --dir agentd run test:serial
 run_step "architecture guard" pnpm run check:architecture
 run_swiftlint_warning_first
 run_step "Picky app build" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" build

@@ -55,11 +55,10 @@ coverage/
 
 # Picky specific
 # Local Pi session artifacts / runtime state (if stored in repo path)
-runtime/
-sessions/
-# agentd source code lives under agentd/src/runtime/, do not let the
-# broad `runtime/` rule above mask new TypeScript modules added there.
-!agentd/src/runtime/
+/runtime/
+# Anchored to the repo root: the unanchored `sessions/` pattern matched
+# Picky/Sessions/ via case-insensitive matching on macOS (core.ignorecase).
+/sessions/
 
 # Misc
 *.orig

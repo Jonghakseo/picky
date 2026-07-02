@@ -4796,27 +4796,11 @@ private extension PickySessionListViewModel.SessionCard {
             cwd: "/tmp/project",
             createdAt: Date(timeIntervalSince1970: 1_800_000_000),
             updatedAt: Date(timeIntervalSince1970: 1_800_000_100),
-            lastSummary: "Done",
-            thinkingPreview: nil,
-            logPreview: "",
-            lastRequestText: nil,
-            lastRequestAt: nil,
-            tools: [],
-            artifacts: artifacts,
-            changedFiles: [],
-            messages: [],
-            queuedSteers: [],
-            queuedFollowUps: [],
-            steeringMode: .oneAtATime,
-            followUpMode: .oneAtATime,
-            activitySummary: .zero,
-            pendingExtensionUiRequest: nil,
-            piSessionFilePath: nil,
-            notifyMainOnCompletion: nil,
-            pinned: false,
-            archived: false,
-            hasRuntimeDetachedFollowUpRejection: false,
-            isMainAgentHandoff: false
+            lastSummary: "Done", thinkingPreview: nil, logPreview: "", lastRequestText: nil, lastRequestAt: nil,
+            tools: [], artifacts: artifacts, changedFiles: [], messages: [], queuedSteers: [], queuedFollowUps: [],
+            steeringMode: .oneAtATime, followUpMode: .oneAtATime, activitySummary: .zero,
+            pendingExtensionUiRequest: nil, piSessionFilePath: nil, notifyMainOnCompletion: nil,
+            pinned: false, archived: false, hasRuntimeDetachedFollowUpRejection: false, isMainAgentHandoff: false
         )
     }
 }
@@ -4840,12 +4824,7 @@ private extension PickyAgentSession {
             cwd: "/tmp/project",
             createdAt: Date(timeIntervalSince1970: 1_800_000_000),
             updatedAt: Date(timeIntervalSince1970: 1_800_000_100),
-            lastSummary: lastSummary,
-            logs: [],
-            tools: tools,
-            artifacts: [],
-            changedFiles: [],
-            pendingExtensionUiRequest: nil
+            lastSummary: lastSummary, logs: [], tools: tools, artifacts: [], changedFiles: [], pendingExtensionUiRequest: nil
         )
     }
 }

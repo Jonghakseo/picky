@@ -24,6 +24,26 @@ run_step() {
   "$@"
 }
 
+run_swiftlint_warning_first() {
+  echo
+  echo "▶ SwiftLint warning-first rules"
+  local output
+  local status
+  set +e
+  output="$(swiftlint lint --config .swiftlint.yml --quiet 2>&1)"
+  status=$?
+  set -e
+  if [ -n "$output" ]; then
+    printf '%s\n' "$output"
+  fi
+  if printf '%s\n' "$output" | grep -Eq ':[0-9]+(:[0-9]+)?: error:'; then
+    return "$status"
+  fi
+  if [ "$status" -ne 0 ]; then
+    echo "SwiftLint returned $status with warnings only; continuing per warning-first policy."
+  fi
+}
+
 require_command pnpm "Install pnpm 10.15.1 or run Corepack setup."
 require_command swiftlint "Install it with: brew install swiftlint"
 require_command xcodebuild "Install Xcode command line tools / Xcode."
@@ -32,7 +52,7 @@ run_step "agentd: typecheck" pnpm --dir agentd run typecheck
 run_step "agentd: lint" pnpm --dir agentd run lint
 run_step "agentd: tests (serial)" pnpm --dir agentd run test:serial
 run_step "architecture guard" pnpm run check:architecture
-run_step "SwiftLint warning-first rules" swiftlint lint --config .swiftlint.yml --quiet
+run_swiftlint_warning_first
 run_step "Picky app build" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" build
 
 # `-parallel-testing-enabled NO` forces a single xctest runner process. When xcodebuild

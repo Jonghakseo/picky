@@ -1,10 +1,3 @@
-//
-//  PickySessionViewModel.swift
-//  Picky
-//
-//  Long-running session state for the Picky HUD.
-//
-
 import AppKit
 import Combine
 import Foundation
@@ -278,11 +271,6 @@ final class PickySessionListViewModel: ObservableObject {
     @Published private(set) var sessions: [SessionCard] = []
     @Published private(set) var archivedSessions: [SessionCard] = []
     @Published private(set) var selectedSessionID: String?
-    /// Voice-follow-up hover state lives in its own ObservableObject so views
-    /// that don't read it (every conversation subview except the header) do
-    /// not invalidate on cursor enter/exit of the card. Read-only forwarding
-    /// getter `hoveredVoiceFollowUpSessionID` below keeps existing callers and
-    /// tests working unchanged.
     let voiceFollowUpHoverState = PickyVoiceFollowUpHoverState()
     var hoveredVoiceFollowUpSessionID: String? { voiceFollowUpHoverState.sessionID }
     @Published private(set) var activeVoiceFollowUpSessionID: String?
@@ -291,11 +279,6 @@ final class PickySessionListViewModel: ObservableObject {
     /// the user clicks it again or arms another. `false` is the legacy one-shot
     /// behavior. Always `false` when `screenContextTargetSessionID` is nil.
     @Published private(set) var screenContextTargetSticky: Bool = false
-    /// Bumped to a fresh UUID every time the user arms a Pickle (one-shot or
-    /// sticky). The HUD observes this token and collapses any expanded card so
-    /// the user can immediately drive the armed Pickle from another app. Using
-    /// a UUID rather than a flag avoids missed transitions when the user arms
-    /// the same Pickle twice in a row from different entry points.
     @Published private(set) var screenContextArmCollapseToken: UUID = UUID()
     @Published var lastError: String?
     @Published private(set) var lastOpenedArtifactPath: String?
@@ -319,10 +302,6 @@ final class PickySessionListViewModel: ObservableObject {
     /// NSView/process is retained here so collapsing/reopening the HUD card reuses
     /// the same TUI instead of launching a fresh `pi --session` process.
     private var inlineTerminalSessionsBySessionID: [String: PickyInlineTerminalSession] = [:]
-    /// Inline terminal sessions that have been closed from the UI but are still
-    /// waiting for the `pi --session` process to exit/fallback before daemon sync.
-    /// This mirrors the separate terminal overlay, which retains its model until
-    /// the post-close sync callback fires.
     private var closingInlineTerminalSessionsByCloseID: [UUID: PickyInlineTerminalSession] = [:]
     /// The one local shell terminal add-on attachment that may render its AppKit
     /// terminal view. Multiple HUD panels can exist, but a single NSView cannot be

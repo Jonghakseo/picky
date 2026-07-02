@@ -78,7 +78,6 @@ interface SessionSupervisorOptions {
   mainCustomToolsBuilder?: (disabled: ReadonlySet<string>) => import("@earendil-works/pi-coding-agent").ToolDefinition[];
 }
 
-
 const ARCHIVED_SESSION_RETENTION_DAYS = 7;
 const ARCHIVED_SESSION_RETENTION_MS = ARCHIVED_SESSION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 

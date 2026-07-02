@@ -479,7 +479,10 @@ enum PickyDockProjector {
                         items.append(contentsOf: [])
                         slots.append(PickyDockSlot(
                             sessionID: topID,
-                            container: .group(id: group.id, memberIndex: 0),
+                            container: .group(
+                                id: group.id,
+                                memberIndex: group.memberSessionIDs.firstIndex(of: topID) ?? 0
+                            ),
                             visibleIndex: slotIndex
                         ))
                         slotIndex += 1
@@ -487,15 +490,25 @@ enum PickyDockProjector {
                     seen.formUnion(visibleMembers)
                 } else {
                     items.append(.groupHeader(group: group))
-                    for (memberIdx, sid) in visibleMembers.enumerated() {
+                    for sid in visibleMembers {
                         items.append(.groupMember(
                             groupID: group.id,
                             sessionID: sid,
                             color: group.color
                         ))
+                        // Slot containers must address the FULL member list
+                        // (including archived-but-retained members hidden
+                        // from the dock): `move`/`insertSession` interpret
+                        // `memberIndex` against `memberSessionIDs`. Using the
+                        // visible enumeration index here made drops land
+                        // before hidden members near the head of the list,
+                        // so the bottom visible positions were unreachable.
                         slots.append(PickyDockSlot(
                             sessionID: sid,
-                            container: .group(id: group.id, memberIndex: memberIdx),
+                            container: .group(
+                                id: group.id,
+                                memberIndex: group.memberSessionIDs.firstIndex(of: sid) ?? 0
+                            ),
                             visibleIndex: slotIndex
                         ))
                         slotIndex += 1
@@ -579,6 +592,21 @@ enum PickyDockDropResolver {
             }
         }
 
+        // Give expanded groups forgiving edge zones before their first member
+        // and after their last member. Without these virtual targets, dropping
+        // just below a group's final Pickle can still resolve to the final
+        // member's center, which inserts above it instead of appending at the
+        // visual bottom of the group.
+        if let edgeInsertion = resolveGroupEdgeInsertion(
+            draggedSessionID: draggedSessionID,
+            cursorAxis: cursorAxis,
+            slotCandidates: slotCandidates,
+            layout: layout,
+            edgeMargin: slotPitch * 0.4
+        ) {
+            nearest = edgeInsertion
+        }
+
         let realCenters = slotCandidates.map(\.center)
         if let minCenter = realCenters.min(), let maxCenter = realCenters.max() {
             let escapeMargin = slotPitch * 0.6
@@ -592,6 +620,65 @@ enum PickyDockDropResolver {
         }
 
         return nearest
+    }
+
+    private static func resolveGroupEdgeInsertion(
+        draggedSessionID: String,
+        cursorAxis: CGFloat,
+        slotCandidates: [SlotCandidate],
+        layout: PickyDockLayout,
+        edgeMargin: CGFloat
+    ) -> PickyDockContainer? {
+        struct GroupSlot {
+            let memberIndex: Int
+            let center: CGFloat
+        }
+
+        var slotsByGroupID: [String: [GroupSlot]] = [:]
+        for candidate in slotCandidates {
+            guard case .group(let groupID, let memberIndex) = candidate.container else { continue }
+            slotsByGroupID[groupID, default: []].append(.init(
+                memberIndex: memberIndex,
+                center: candidate.center
+            ))
+        }
+
+        var best: (container: PickyDockContainer, distance: CGFloat)?
+        func consider(_ container: PickyDockContainer, distance: CGFloat) {
+            guard distance >= 0 else { return }
+            if best == nil || distance < best!.distance {
+                best = (container, distance)
+            }
+        }
+
+        for (groupID, slots) in slotsByGroupID {
+            guard let group = layout.group(withID: groupID), !group.isCollapsed else { continue }
+            let sorted = slots.sorted { $0.center < $1.center }
+            guard let first = sorted.first, let last = sorted.last else { continue }
+            let isDraggedMember = group.memberSessionIDs.contains(draggedSessionID)
+            let isFirstEntry = isGroup(layout.entries.first, id: groupID)
+            let isLastEntry = isGroup(layout.entries.last, id: groupID)
+
+            if cursorAxis < first.center,
+               cursorAxis >= first.center - edgeMargin || (isFirstEntry && !isDraggedMember) {
+                consider(.group(id: groupID, memberIndex: 0), distance: first.center - cursorAxis)
+            }
+
+            if cursorAxis > last.center,
+               cursorAxis <= last.center + edgeMargin || (isLastEntry && !isDraggedMember) {
+                consider(
+                    .group(id: groupID, memberIndex: last.memberIndex + 1),
+                    distance: cursorAxis - last.center
+                )
+            }
+        }
+
+        return best?.container
+    }
+
+    private static func isGroup(_ entry: PickyDockEntry?, id: String) -> Bool {
+        guard case .group(let group) = entry else { return false }
+        return group.id == id
     }
 
     /// Whether dragging past `entry` (the first or last dock entry) should

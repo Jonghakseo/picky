@@ -629,6 +629,23 @@ struct CompanionPanelSettingsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
+                    fieldLabel("settings.field.armedPickleDispatchMode")
+                    Picker("settings.field.armedPickleDispatchMode", selection: $viewModel.settings.armedPickleDispatchMode) {
+                        ForEach(PickyArmedPickleDispatchMode.allCases) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onChange(of: viewModel.settings.armedPickleDispatchMode) { _, _ in saveImmediately(for: .mainAgent) }
+                    Text("settings.field.armedPickleDispatchMode.note")
+                        .pickyFont(size: 10.5, weight: .medium)
+                        .foregroundColor(DS.Colors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
                     HStack {
                         Text("settings.field.attachScreenshotsOnlyWhenInked")
                             .pickyFont(size: 11.5, weight: .medium)

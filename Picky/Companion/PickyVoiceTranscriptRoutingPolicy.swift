@@ -16,13 +16,19 @@ enum PickyVoiceTranscriptRoutingPolicy {
 
     static func route(
         voiceFollowUpSessionID: String?,
-        screenContextTargetSessionID: String?
+        screenContextTargetSessionID: String?,
+        armedDispatchMode: PickyArmedPickleDispatchMode = .followUp
     ) -> Route {
         guard let targetSessionID = normalizedSessionID(voiceFollowUpSessionID) else {
             return .submitToMain
         }
         if screenContextTargetSessionID == targetSessionID {
-            return .steerPickle(sessionID: targetSessionID)
+            switch armedDispatchMode {
+            case .followUp:
+                return .followUpPickle(sessionID: targetSessionID)
+            case .steer:
+                return .steerPickle(sessionID: targetSessionID)
+            }
         }
         return .followUpPickle(sessionID: targetSessionID)
     }

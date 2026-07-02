@@ -83,7 +83,7 @@ struct PickyRealtimeVoiceTurnPolicyTests {
         #expect(PickyVoiceTranscriptRoutingPolicy.route(
             voiceFollowUpSessionID: "screen-pickle",
             screenContextTargetSessionID: "screen-pickle"
-        ) == .steerPickle(sessionID: "screen-pickle"))
+        ) == .followUpPickle(sessionID: "screen-pickle"))
 
         #expect(PickyRealtimeVoiceTurnPolicy.mode(
             targetSessionID: "hovered-pickle",

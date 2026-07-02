@@ -32,10 +32,18 @@ struct PickyVoiceTranscriptRoutingPolicyTests {
         ) == .followUpPickle(sessionID: "pickle-session"))
     }
 
-    @Test func routesVoiceTargetToPickleSteerWhenItMatchesScreenContextTarget() {
+    @Test func routesVoiceTargetToPickleFollowUpWhenItMatchesScreenContextTargetByDefault() {
         #expect(PickyVoiceTranscriptRoutingPolicy.route(
             voiceFollowUpSessionID: "pickle-session",
             screenContextTargetSessionID: "pickle-session"
+        ) == .followUpPickle(sessionID: "pickle-session"))
+    }
+
+    @Test func routesVoiceTargetToPickleSteerWhenScreenContextTargetUsesSteerMode() {
+        #expect(PickyVoiceTranscriptRoutingPolicy.route(
+            voiceFollowUpSessionID: "pickle-session",
+            screenContextTargetSessionID: "pickle-session",
+            armedDispatchMode: .steer
         ) == .steerPickle(sessionID: "pickle-session"))
     }
 

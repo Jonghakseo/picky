@@ -232,6 +232,22 @@
         }
       }
     },
+    "directMessage.followUpDelivered": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Queued the follow-up message for the selected Pickle."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 Pickle에 follow-up 메시지를 예약했어요."
+          }
+        }
+      }
+    },
     "directMessage.steerDelivered": {
       "localizations": {
         "en": {
@@ -3046,6 +3062,38 @@
         }
       }
     },
+    "settings.field.armedPickleDispatchMode": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Armed Pickle delivery"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Armed Pickle 전달 방식"
+          }
+        }
+      }
+    },
+    "settings.field.armedPickleDispatchMode.note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose whether PTT and Quick Input sent to an armed Pickle wait as a follow-up or interrupt the current turn as a steer. Idle Pickles start immediately either way."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Armed Pickle로 보내는 PTT와 Quick Input을 follow-up으로 기다리게 할지, steer로 현재 턴에 끼어들게 할지 선택해요. idle 상태의 Pickle은 어느 쪽이든 바로 시작돼요."
+          }
+        }
+      }
+    },
     "settings.field.screenshotQuality": {
       "localizations": {
         "en": {
@@ -3474,6 +3522,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "활성 화면만"
+          }
+        }
+      }
+    },
+    "enum.armedPickleDispatchMode.followUp": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follow-up"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follow-up"
+          }
+        }
+      }
+    },
+    "enum.armedPickleDispatchMode.steer": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steer"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Steer"
           }
         }
       }

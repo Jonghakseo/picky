@@ -548,6 +548,23 @@ struct PickySettingsPolishTests {
         #expect(settings.screenContextScope == .focusedScreen)
     }
 
+    @Test func settingsLoadDefaultsArmedPickleDispatchModeToFollowUpWhenLegacyFileLacksField() throws {
+        let legacyJSON = """
+        {
+          "defaultCwd": "/tmp",
+          "worktreeParent": "",
+          "preferredToolVisibility": "visible in context only",
+          "readOnlyInvestigationPreference": true,
+          "daemonPath": "/tmp/agentd",
+          "logPath": "/tmp/logs"
+        }
+        """.data(using: .utf8)!
+
+        let settings = try JSONDecoder().decode(PickySettings.self, from: legacyJSON)
+
+        #expect(settings.armedPickleDispatchMode == .followUp)
+    }
+
     @Test func settingsLoadDefaultsScreenshotQualityToOnePointFiveWhenLegacyFileLacksField() throws {
         let legacyJSON = """
         {
@@ -721,6 +738,21 @@ struct PickySettingsPolishTests {
         try store.save(settings)
 
         #expect(store.load().screenContextScope == .focusedScreen)
+    }
+
+    @Test func settingsRoundTripPreservesArmedPickleDispatchMode() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("picky-settings-\(UUID().uuidString)", isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        let store = PickySettingsStore(appSupportRoot: root)
+        var settings = PickySettings.defaults(appSupportRoot: root)
+        settings.defaultCwd = project.path
+        settings.worktreeParent = project.path
+        settings.armedPickleDispatchMode = .steer
+
+        try store.save(settings)
+
+        #expect(store.load().armedPickleDispatchMode == .steer)
     }
 
     @Test func settingsRoundTripPreservesScreenshotQuality() throws {

@@ -460,6 +460,20 @@ enum PickyScreenContextScope: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum PickyArmedPickleDispatchMode: String, Codable, CaseIterable, Identifiable {
+    case followUp
+    case steer
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .followUp: L10n.t("enum.armedPickleDispatchMode.followUp")
+        case .steer: L10n.t("enum.armedPickleDispatchMode.steer")
+        }
+    }
+}
+
 enum PickyScreenshotQuality: String, Codable, CaseIterable, Identifiable {
     case standard
     case onePointFive
@@ -908,6 +922,7 @@ struct PickySettings: Codable, Equatable {
     var pickleAgentModelPattern: String
     var pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel
     var screenContextScope: PickyScreenContextScope
+    var armedPickleDispatchMode: PickyArmedPickleDispatchMode
     var screenshotQuality: PickyScreenshotQuality
     /// When `true`, Picky drops the captured screenshots (and the otherwise
     /// empty `inkMarks`) from the context packet sent to the model unless the
@@ -1054,6 +1069,7 @@ struct PickySettings: Codable, Equatable {
         pickleAgentModelPattern: String = "",
         pickleAgentThinkingLevel: PickyPickleAgentThinkingLevel = .automatic,
         screenContextScope: PickyScreenContextScope = .focusedScreen,
+        armedPickleDispatchMode: PickyArmedPickleDispatchMode = .followUp,
         screenshotQuality: PickyScreenshotQuality = .onePointFive,
         attachScreenshotsOnlyWhenInked: Bool = false,
         useConversationCard: Bool = true,
@@ -1123,6 +1139,7 @@ struct PickySettings: Codable, Equatable {
         self.pickleAgentModelPattern = pickleAgentModelPattern
         self.pickleAgentThinkingLevel = pickleAgentThinkingLevel
         self.screenContextScope = screenContextScope
+        self.armedPickleDispatchMode = armedPickleDispatchMode
         self.screenshotQuality = screenshotQuality
         self.attachScreenshotsOnlyWhenInked = attachScreenshotsOnlyWhenInked
         self.useConversationCard = useConversationCard
@@ -1222,6 +1239,7 @@ struct PickySettings: Codable, Equatable {
             pickleAgentModelPattern: "",
             pickleAgentThinkingLevel: .automatic,
             screenContextScope: .focusedScreen,
+            armedPickleDispatchMode: .followUp,
             screenshotQuality: .onePointFive,
             attachScreenshotsOnlyWhenInked: false,
             useConversationCard: true,
@@ -1342,6 +1360,7 @@ struct PickySettings: Codable, Equatable {
         case pickleAgentModelPattern
         case pickleAgentThinkingLevel
         case screenContextScope
+        case armedPickleDispatchMode
         case screenshotQuality
         case attachScreenshotsOnlyWhenInked
         case useConversationCard
@@ -1416,6 +1435,7 @@ struct PickySettings: Codable, Equatable {
         pickleAgentModelPattern = try container.decodeIfPresent(String.self, forKey: .pickleAgentModelPattern) ?? defaults.pickleAgentModelPattern
         pickleAgentThinkingLevel = try container.decodeIfPresent(PickyPickleAgentThinkingLevel.self, forKey: .pickleAgentThinkingLevel) ?? defaults.pickleAgentThinkingLevel
         screenContextScope = try container.decodeIfPresent(PickyScreenContextScope.self, forKey: .screenContextScope) ?? defaults.screenContextScope
+        armedPickleDispatchMode = try container.decodeIfPresent(PickyArmedPickleDispatchMode.self, forKey: .armedPickleDispatchMode) ?? defaults.armedPickleDispatchMode
         screenshotQuality = try container.decodeIfPresent(PickyScreenshotQuality.self, forKey: .screenshotQuality) ?? defaults.screenshotQuality
         // Missing key on an existing settings file means the user updated in
         // place from a build that predates this toggle — preserve always-attach

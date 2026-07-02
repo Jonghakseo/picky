@@ -260,6 +260,7 @@ final class CompanionManager: ObservableObject {
     private var ttsPlaybackEnabled: Bool
     private let speechWatchdogTimeoutOverride: TimeInterval?
     private let voiceContextCaptureCoordinator: PickyVoiceContextCaptureCoordinator
+    private var armedPickleDispatchMode: PickyArmedPickleDispatchMode
     private let realtimeVoiceInputManager = OpenAIRealtimeVoiceInputManager()
     private let realtimeAudioPlaybackEngine: any PickyRealtimeAudioPlaybacking
 
@@ -273,7 +274,8 @@ final class CompanionManager: ObservableObject {
         realtimeAudioPlaybackEngine: (any PickyRealtimeAudioPlaybacking)? = nil,
         inkCaptureCoordinator: any PickyInkCaptureCoordinating = PickyInkCaptureCenter.shared,
         appearanceStore: PickyAppearanceStore? = nil,
-        speechWatchdogTimeout: TimeInterval? = nil
+        speechWatchdogTimeout: TimeInterval? = nil,
+        armedPickleDispatchMode: PickyArmedPickleDispatchMode? = nil
     ) {
         let initialSettings = PickySettingsStore().load()
         self.agentClient = agentClient
@@ -294,6 +296,7 @@ final class CompanionManager: ObservableObject {
         self.ttsPlaybackEnabled = speechPlaybackProvider == nil ? initialSettings.ttsEnabled : true
         self.speechWatchdogTimeoutOverride = speechWatchdogTimeout
         self.voiceContextCaptureCoordinator = voiceContextCaptureCoordinator ?? PickyVoiceContextCaptureCoordinator()
+        self.armedPickleDispatchMode = armedPickleDispatchMode ?? initialSettings.armedPickleDispatchMode
         self.realtimeAudioPlaybackEngine = realtimeAudioPlaybackEngine ?? OpenAIRealtimeAudioPlaybackEngine()
         self.inkCaptureCoordinator = inkCaptureCoordinator
         self.quickInputPanelManager = QuickInputPanelManager(appearanceStore: appearanceStore)
@@ -821,6 +824,7 @@ final class CompanionManager: ObservableObject {
             .sink { [weak self] _ in
                 let settings = PickySettingsStore().load()
                 self?.reloadVoiceProvidersFromSettings(settings)
+                self?.armedPickleDispatchMode = settings.armedPickleDispatchMode
                 self?.syncDaemonSettings(settings)
                 self?.applyShortcutSpecsFromSettings(settings)
                 self?.pushQuickInputScreenshotStateIfPanelVisible()
@@ -1559,7 +1563,8 @@ final class CompanionManager: ObservableObject {
     ) async throws -> PickyAgentSubmissionReceipt {
         switch PickyVoiceTranscriptRoutingPolicy.route(
             voiceFollowUpSessionID: voiceFollowUpSessionID,
-            screenContextTargetSessionID: selectionStore.screenContextTargetSessionID
+            screenContextTargetSessionID: selectionStore.screenContextTargetSessionID,
+            armedDispatchMode: armedPickleDispatchMode
         ) {
         case .steerPickle(let targetSessionID):
             print("🎙️ Picky voice route — STEER Pickle=\(targetSessionID)")
@@ -1640,11 +1645,12 @@ final class CompanionManager: ObservableObject {
         applyScreenContextTarget(nil)
     }
 
-    private func sendPickleSteerFromInput(
+    private func sendPickleMessageFromInput(
         targetSessionID: String,
         text: String,
         source: String,
-        inkCapture: PickyInkCapture?
+        inkCapture: PickyInkCapture?,
+        dispatchMode: PickyArmedPickleDispatchMode
     ) async -> Bool {
         do {
             guard let captureResult = try await voiceContextCaptureCoordinator.captureContext(
@@ -1662,10 +1668,20 @@ final class CompanionManager: ObservableObject {
             // target Pickle lives in a child daemon the router can't reach).
             // agentd has no positive ack today, so absence of error within
             // the window is treated as success.
+            let commandType: PickyCommandType
+            let context: PickyContextPacket
+            switch dispatchMode {
+            case .steer:
+                commandType = .steer
+                context = captureResult.contextPacket
+            case .followUp:
+                commandType = .followUp
+                context = pickleFollowUpContext(captureResult.contextPacket, sessionID: targetSessionID)
+            }
             let rejection = try await agentClient.sendAwaitingError(
                 PickyCommandEnvelope(
-                    type: .steer,
-                    context: captureResult.contextPacket,
+                    type: commandType,
+                    context: context,
                     sessionId: targetSessionID,
                     text: text
                 ),
@@ -1677,7 +1693,9 @@ final class CompanionManager: ObservableObject {
                 clearScreenContextTargetIfCurrent(targetSessionID)
                 return false
             }
-            latestAgentSessionSummary = L10n.t("directMessage.steerDelivered")
+            latestAgentSessionSummary = dispatchMode == .steer
+                ? L10n.t("directMessage.steerDelivered")
+                : L10n.t("directMessage.followUpDelivered")
             clearScreenContextTargetIfCurrent(targetSessionID)
             return true
         } catch {
@@ -1715,7 +1733,7 @@ final class CompanionManager: ObservableObject {
             let pickleFollowUpTargetID = source == .quickInput
                 ? normalizedVoiceFollowUpSessionID(selectionStore.screenContextTargetSessionID)
                 : nil
-            // A Pickle steer goes to the running Pi pickle, not main — do not
+            // Armed Pickle input goes to the running Pi pickle, not main — do not
             // block that path on Realtime auth.
             if pickleFollowUpTargetID == nil {
                 let authStatus = PickyRealtimeAuthStatusInspector.currentStatus()
@@ -1727,11 +1745,12 @@ final class CompanionManager: ObservableObject {
         }
 
         if source == .quickInput, let targetSessionID = normalizedVoiceFollowUpSessionID(selectionStore.screenContextTargetSessionID) {
-            return await sendPickleSteerFromInput(
+            return await sendPickleMessageFromInput(
                 targetSessionID: targetSessionID,
                 text: trimmedText,
                 source: "text-follow-up",
-                inkCapture: inkCapture
+                inkCapture: inkCapture,
+                dispatchMode: armedPickleDispatchMode
             )
         }
 

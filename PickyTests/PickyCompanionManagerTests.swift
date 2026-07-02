@@ -180,11 +180,29 @@ struct PickyCompanionManagerTests {
         #expect(client.submissions.isEmpty)
     }
 
-    @Test func voiceTranscriptWithScreenContextTargetSendsSteerAndClearsTarget() async throws {
+    @Test func voiceTranscriptWithScreenContextTargetSendsFollowUpAndClearsTargetByDefault() async throws {
         let client = FakeVoiceClient()
         let selection = FakeVoiceSelectionStore()
         selection.screenContextTargetSessionID = "pickle-session"
-        let manager = CompanionManager(agentClient: client, selectionStore: selection)
+        let manager = CompanionManager(agentClient: client, selectionStore: selection, armedPickleDispatchMode: .followUp)
+        let context = context(source: "voice-follow-up")
+
+        let receipt = try await manager.routeVoiceTranscript(transcript: "pickle delta", contextPacket: context, voiceFollowUpSessionID: "pickle-session")
+
+        #expect(receipt.sessionID == "pickle-session")
+        #expect(client.commands.first?.type == .followUp)
+        #expect(client.commands.first?.sessionId == "pickle-session")
+        #expect(client.commands.first?.text == "pickle delta")
+        #expect(client.commands.first?.context?.id == "context-voice")
+        #expect(client.submissions.isEmpty)
+        #expect(selection.screenContextTargetSessionID == nil)
+    }
+
+    @Test func voiceTranscriptWithScreenContextTargetSendsSteerWhenConfigured() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.screenContextTargetSessionID = "pickle-session"
+        let manager = CompanionManager(agentClient: client, selectionStore: selection, armedPickleDispatchMode: .steer)
         let context = context(source: "voice-follow-up")
 
         let receipt = try await manager.routeVoiceTranscript(transcript: "pickle delta", contextPacket: context, voiceFollowUpSessionID: "pickle-session")
@@ -1057,14 +1075,15 @@ struct PickyCompanionManagerTests {
         try await waitUntil { manager.voiceState == .idle }
     }
 
-    @Test func quickInputWithScreenContextTargetSendsSteerWithContextAndClearsTarget() async throws {
+    @Test func quickInputWithScreenContextTargetSendsFollowUpWithContextAndClearsTargetByDefault() async throws {
         let client = FakeVoiceClient()
         let selection = FakeVoiceSelectionStore()
         selection.screenContextTargetSessionID = "pickle-target"
         let manager = CompanionManager(
             agentClient: client,
             selectionStore: selection,
-            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(screenshots: [screenshot(path: "/tmp/picky/shot-1.jpg")])
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(screenshots: [screenshot(path: "/tmp/picky/shot-1.jpg")]),
+            armedPickleDispatchMode: .followUp
         )
 
         let didSend = await manager.sendDirectMessage("표시한 부분 봐줘", source: .quickInput)
@@ -1073,7 +1092,7 @@ struct PickyCompanionManagerTests {
         #expect(didSend)
         #expect(client.submissions.isEmpty)
         let command = try #require(client.commands.first)
-        #expect(command.type == .steer)
+        #expect(command.type == .followUp)
         #expect(command.sessionId == "pickle-target")
         #expect(command.text == "표시한 부분 봐줘")
         #expect(command.context?.source == "text-follow-up")
@@ -1083,14 +1102,37 @@ struct PickyCompanionManagerTests {
         #expect(selection.screenContextTargetSessionID == nil)
     }
 
-    @Test func quickInputWithStickyScreenContextTargetKeepsTargetArmedAfterSteer() async throws {
+    @Test func quickInputWithScreenContextTargetSendsSteerWhenConfigured() async throws {
+        let client = FakeVoiceClient()
+        let selection = FakeVoiceSelectionStore()
+        selection.screenContextTargetSessionID = "pickle-target"
+        let manager = CompanionManager(
+            agentClient: client,
+            selectionStore: selection,
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(screenshots: [screenshot(path: "/tmp/picky/shot-1.jpg")]),
+            armedPickleDispatchMode: .steer
+        )
+
+        let didSend = await manager.sendDirectMessage("표시한 부분 봐줘", source: .quickInput)
+        try await settle()
+
+        #expect(didSend)
+        let command = try #require(client.commands.first)
+        #expect(command.type == .steer)
+        #expect(command.sessionId == "pickle-target")
+        #expect(command.context?.screenshots.map(\.path) == ["/tmp/picky/shot-1.jpg"])
+        #expect(selection.screenContextTargetSessionID == nil)
+    }
+
+    @Test func quickInputWithStickyScreenContextTargetKeepsTargetArmedAfterFollowUp() async throws {
         let client = FakeVoiceClient()
         let selection = FakeVoiceSelectionStore()
         selection.setScreenContextTarget(sessionID: "pickle-locked", sticky: true)
         let manager = CompanionManager(
             agentClient: client,
             selectionStore: selection,
-            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(screenshots: [screenshot(path: "/tmp/picky/shot-locked.jpg")])
+            voiceContextCaptureCoordinator: fakeContextCaptureCoordinator(screenshots: [screenshot(path: "/tmp/picky/shot-locked.jpg")]),
+            armedPickleDispatchMode: .followUp
         )
 
         let didSend = await manager.sendDirectMessage("잠긴 피클에 고정 입력", source: .quickInput)
@@ -1098,9 +1140,9 @@ struct PickyCompanionManagerTests {
 
         #expect(didSend)
         let command = try #require(client.commands.first)
-        #expect(command.type == .steer)
+        #expect(command.type == .followUp)
         #expect(command.sessionId == "pickle-locked")
-        // Sticky armed Pickles persist across steer dispatches so the user can
+        // Sticky armed Pickles persist across dispatches so the user can
         // keep speaking/typing without re-arming after every input.
         #expect(selection.screenContextTargetSessionID == "pickle-locked")
         #expect(selection.screenContextTargetSticky == true)

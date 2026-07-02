@@ -1855,6 +1855,8 @@ final class PickySessionListViewModel: ObservableObject {
         case .sessionRewound(let sessionId, let editorText, _): applySessionRewound(sessionID: sessionId, editorText: editorText)
         case .sessionMessageAppended(let sessionId, let message, let seq):
             applySessionMessageAppended(sessionID: sessionId, message: message, seq: seq)
+        case .sessionMessagesImported(let sessionId, let messages, let seq):
+            applySessionMessagesImported(sessionID: sessionId, messages: messages, seq: seq)
         case .sessionMessageReplaced(let sessionId, let messageId, let message, let seq):
             applySessionMessageReplaced(sessionID: sessionId, messageID: messageId, message: message, seq: seq)
         case .sessionMessageRemoved(let sessionId, let messageId, let seq):
@@ -2124,6 +2126,25 @@ final class PickySessionListViewModel: ObservableObject {
         if message.kind == .userText || message.kind == .commandReceipt,
            let messages = card(sessionID: sessionId)?.messages {
             bindPendingFullscreenTurnSnapshots(sessionID: sessionId, messages: messages)
+        }
+    }
+
+    private func applySessionMessagesImported(sessionID sessionId: String, messages: [PickySessionMessage], seq: Int) {
+        PickyPerf.event("vm_event_session_messages_imported")
+        guard acceptIncrementalEvent(sessionID: sessionId, seq: seq) else { return }
+        var appendedMessages: [PickySessionMessage] = []
+        update(sessionID: sessionId) { card in
+            let existingIDs = Set(card.messages.map(\.id))
+            appendedMessages = messages.filter { !existingIDs.contains($0.id) }
+            guard !appendedMessages.isEmpty else { return }
+            card.messages.append(contentsOf: appendedMessages)
+            if let latestCreatedAt = appendedMessages.map(\.createdAt).max() {
+                card.updatedAt = max(card.updatedAt, latestCreatedAt)
+            }
+        }
+        if appendedMessages.contains(where: { $0.kind == .userText || $0.kind == .commandReceipt }),
+           let allMessages = card(sessionID: sessionId)?.messages {
+            bindPendingFullscreenTurnSnapshots(sessionID: sessionId, messages: allMessages)
         }
     }
 

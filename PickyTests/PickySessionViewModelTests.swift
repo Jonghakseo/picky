@@ -4323,6 +4323,29 @@ struct PickySessionViewModelTests {
         #expect(card.messages.isEmpty)
     }
 
+    @MainActor @Test func sessionMessagesImportedAppendsBatchInOneUpdateAndIgnoresStaleSeqAndDuplicates() throws {
+        let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "import-session"))))
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessageAppended(sessionId: "import-session", messageId: "m-hud", text: "hud message", seq: 1))))
+
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessagesImported(
+            sessionId: "import-session",
+            entries: [("m-pi-1", "pi turn 1"), ("m-hud", "duplicate of hud"), ("m-pi-2", "pi turn 2")],
+            seq: 2
+        ))))
+        let card = try #require(viewModel.sessions.first)
+        #expect(card.messages.map(\.id) == ["m-hud", "m-pi-1", "m-pi-2"])
+        #expect(card.messages.first?.text == "hud message")
+
+        // A stale-seq replay of the same import must be dropped by the incremental guard.
+        viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionMessagesImported(
+            sessionId: "import-session",
+            entries: [("m-pi-3", "stale import")],
+            seq: 2
+        ))))
+        #expect(viewModel.sessions.first?.messages.map(\.id) == ["m-hud", "m-pi-1", "m-pi-2"])
+    }
+
     @MainActor @Test func commandReceiptMessageDecodesAndAppends() throws {
         let viewModel = PickySessionListViewModel(client: FakePickyAgentClient(), notificationCenter: PickyNoopNotificationCenter())
         viewModel.apply(.protocolEvent(.fixture(eventJSON: EventJSON.sessionUpdated(id: "command-session"))))
@@ -4663,6 +4686,16 @@ private enum EventJSON {
 
     static func sessionMessageAppended(sessionId: String, messageId: String, text: String, seq: Int) -> String {
         sessionMessageEvent(type: "sessionMessageAppended", sessionId: sessionId, messageId: messageId, text: text, seq: seq)
+    }
+
+    static func sessionMessagesImported(sessionId: String, entries: [(messageId: String, text: String)], seq: Int) -> String {
+        let messages = entries.map { entry -> String in
+            let encodedText = String(decoding: try! JSONEncoder().encode(entry.text), as: UTF8.self)
+            return "{\"id\":\"\(entry.messageId)\",\"kind\":\"agent_text\",\"createdAt\":\"2026-05-01T00:00:04.000Z\",\"originatedBy\":\"pi_extension\",\"text\":\(encodedText)}"
+        }.joined(separator: ",")
+        return """
+        {"id":"event-messages-imported-\(seq)","protocolVersion":"2026-05-09","timestamp":"2026-05-01T00:00:04.000Z","type":"sessionMessagesImported","sessionId":"\(sessionId)","messages":[\(messages)],"seq":\(seq)}
+        """
     }
 
     static func sessionMessageReplaced(sessionId: String, messageId: String, text: String, seq: Int) -> String {

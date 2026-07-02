@@ -502,6 +502,8 @@ private extension PickyEventEnvelope {
             return "type=sessionRewound id=\(id) session=\(sessionId) editorTextChars=\(editorText?.count ?? 0) removed=\(removedIds.count)"
         case .sessionMessageAppended(let sessionId, _, let seq):
             return "type=sessionMessageAppended id=\(id) session=\(sessionId) seq=\(seq)"
+        case .sessionMessagesImported(let sessionId, let messages, let seq):
+            return "type=sessionMessagesImported id=\(id) session=\(sessionId) messages=\(messages.count) seq=\(seq)"
         case .sessionMessageReplaced(let sessionId, let messageId, _, let seq):
             return "type=sessionMessageReplaced id=\(id) session=\(sessionId) message=\(messageId) seq=\(seq)"
         case .sessionMessageRemoved(let sessionId, let messageId, let seq):

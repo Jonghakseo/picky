@@ -6,9 +6,10 @@ function makeBuilder() {
   let seq = 0;
   let now = "2026-05-01T00:00:00.000Z";
   const messages: PickySessionMessage[] = [];
-  const events: Array<{ type: "appended"; message: PickySessionMessage; seq: number } | { type: "replaced"; messageId: string; message: PickySessionMessage; seq: number } | { type: "removed"; messageId: string; seq: number }> = [];
+  const events: Array<{ type: "appended"; message: PickySessionMessage; seq: number } | { type: "imported"; messages: readonly PickySessionMessage[]; seq: number } | { type: "replaced"; messageId: string; message: PickySessionMessage; seq: number } | { type: "removed"; messageId: string; seq: number }> = [];
   const builder = new SessionMessageBuilder({
     emitAppended: async (_sessionId, message, eventSeq) => { events.push({ type: "appended", message, seq: eventSeq }); },
+    emitImported: async (_sessionId, importedMessages, eventSeq) => { events.push({ type: "imported", messages: importedMessages, seq: eventSeq }); },
     emitReplaced: async (_sessionId, messageId, message, eventSeq) => { events.push({ type: "replaced", messageId, message, seq: eventSeq }); },
     emitRemoved: async (_sessionId, messageId, eventSeq) => { events.push({ type: "removed", messageId, seq: eventSeq }); },
     nextSeq: () => ++seq,
@@ -142,6 +143,31 @@ describe("SessionMessageBuilder", () => {
       { id: "msg-pi-user-b", createdAt: "2026-05-09T09:00:00.000Z" },
       { id: "msg-pi-activity-b", createdAt: "2026-05-09T09:02:15.000Z" },
     ]);
+  });
+
+  it("emits terminal session imports as a single bulk event with one seq", async () => {
+    // Regression: per-message appended events made the HUD replay terminal-sync/history-restore
+    // imports one bubble at a time ("timelapse" effect). The whole batch must land as one
+    // sessionMessagesImported event sharing a single seq.
+    const { builder, events, messages } = makeBuilder();
+
+    await builder.recordUserText("session-1", "existing hud message", "user");
+    const imported: PickySessionMessage[] = [
+      { id: "msg-pi-user-a", kind: "user_text", createdAt: "2026-05-08T12:00:00.000Z", originatedBy: "pi_extension", text: "pi turn 1 user" },
+      { id: "msg-pi-agent-a", kind: "agent_text", createdAt: "2026-05-08T12:01:00.000Z", text: "pi turn 1 answer" },
+    ];
+    await builder.recordTerminalSessionMessages("session-1", imported);
+
+    expect(events).toMatchObject([
+      { type: "appended", seq: 1 },
+      { type: "imported", seq: 2, messages: [{ id: "msg-pi-user-a" }, { id: "msg-pi-agent-a" }] },
+    ]);
+    expect(messages.map((message) => message.id)).toEqual([messages[0].id, "msg-pi-user-a", "msg-pi-agent-a"]);
+
+    // Re-importing the same batch is a no-op: no journal growth, no extra event.
+    await builder.recordTerminalSessionMessages("session-1", imported);
+    expect(events).toHaveLength(2);
+    expect(messages).toHaveLength(3);
   });
 
   it("records questions, cancellations, errors, system messages, and final reports", async () => {

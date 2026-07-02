@@ -1,0 +1,23 @@
+{
+  "id": "event-session-messages-imported",
+  "protocolVersion": "2026-05-09",
+  "timestamp": "2026-05-05T00:00:00.000Z",
+  "type": "sessionMessagesImported",
+  "sessionId": "session-001",
+  "messages": [
+    {
+      "id": "message-101",
+      "kind": "user_text",
+      "createdAt": "2026-05-05T00:00:00.000Z",
+      "originatedBy": "pi_extension",
+      "text": "continue the investigation"
+    },
+    {
+      "id": "message-102",
+      "kind": "agent_text",
+      "createdAt": "2026-05-05T00:01:00.000Z",
+      "text": "Done. Findings summarized below."
+    }
+  ],
+  "seq": 4
+}

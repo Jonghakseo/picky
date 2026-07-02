@@ -7,6 +7,7 @@ type MessageOrigin = "user" | "main_agent" | "pi_extension";
 
 interface SessionMessageBuilderDeps {
   emitAppended(sessionId: string, message: PickySessionMessage, seq: number): Promise<void>;
+  emitImported(sessionId: string, messages: readonly PickySessionMessage[], seq: number): Promise<void>;
   emitReplaced(sessionId: string, messageId: string, message: PickySessionMessage, seq: number): Promise<void>;
   emitRemoved(sessionId: string, messageId: string, seq: number): Promise<void>;
   nextSeq(sessionId: string): number;
@@ -203,7 +204,27 @@ export class SessionMessageBuilder {
     // (PickyTurnSummary.elapsed, agentActivityScope) because priorUserText.createdAt and
     // activity.createdAt become identical, leaving a zero-width range with zero matching tools.
     // Preserve the Pi-supplied timestamps so the in-batch chronology survives.
-    for (const message of messages) await this.appendInternal(sessionId, message, { preserveTimestamp: true });
+    //
+    // The whole batch is journaled first, persisted once, and emitted as a single
+    // `sessionMessagesImported` event. Per-message appendInternal emits used to interleave a
+    // store sync + WebSocket frame per message, which the HUD rendered as a message-by-message
+    // "timelapse" replay after closing the terminal overlay or restoring from history.
+    const state = this.stateFor(sessionId);
+    const importedIndices: number[] = [];
+    for (const message of messages) {
+      if (state.journal.some((entry) => entry.message.id === message.id) || state.removedIds.has(message.id)) continue;
+      importedIndices.push(state.journal.push({ seq: 0, message }) - 1);
+    }
+    if (importedIndices.length === 0) return;
+    await this.sync(sessionId, state);
+    const seq = this.deps.nextSeq(sessionId);
+    const imported: PickySessionMessage[] = [];
+    for (const index of importedIndices) {
+      const entry = state.journal[index]!;
+      state.journal[index] = { seq, message: entry.message };
+      imported.push(entry.message);
+    }
+    await this.deps.emitImported(sessionId, imported, seq);
   }
 
   async recordActivitySnapshot(sessionId: string, activitySnapshot: PickyActivitySummary): Promise<void> {

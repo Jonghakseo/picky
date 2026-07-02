@@ -337,6 +337,10 @@ enum PickyEvent: Equatable {
     case rewindTargetsSnapshot(sessionId: String, requestId: String?, targets: [PickyRewindTarget])
     case sessionRewound(sessionId: String, editorText: String?, removedIds: [String])
     case sessionMessageAppended(sessionId: String, message: PickySessionMessage, seq: Int)
+    /// Bulk append for terminal-sync / history-restore imports. The whole batch
+    /// shares one seq so the conversation updates in a single publish instead of
+    /// replaying the import message-by-message.
+    case sessionMessagesImported(sessionId: String, messages: [PickySessionMessage], seq: Int)
     case sessionMessageReplaced(sessionId: String, messageId: String, message: PickySessionMessage, seq: Int)
     case sessionMessageRemoved(sessionId: String, messageId: String, seq: Int)
     case sessionQueueUpdated(sessionId: String, steering: [PickyQueueItem], followUp: [PickyQueueItem], steeringMode: PickyQueueMode?, followUpMode: PickyQueueMode?, seq: Int)
@@ -468,6 +472,9 @@ enum PickyEvent: Equatable {
         case "sessionMessageAppended":
             let payload = try PickySessionMessageAppendedPayload(from: decoder)
             return .sessionMessageAppended(sessionId: payload.sessionId, message: payload.message, seq: payload.seq)
+        case "sessionMessagesImported":
+            let payload = try PickySessionMessagesImportedPayload(from: decoder)
+            return .sessionMessagesImported(sessionId: payload.sessionId, messages: payload.messages, seq: payload.seq)
         case "sessionMessageReplaced":
             let payload = try PickySessionMessageReplacedPayload(from: decoder)
             return .sessionMessageReplaced(sessionId: payload.sessionId, messageId: payload.messageId, message: payload.message, seq: payload.seq)
@@ -557,6 +564,7 @@ private struct PickySlashCommandsSnapshotPayload: Decodable { let sessionId: Str
 private struct PickyRewindTargetsSnapshotPayload: Decodable { let sessionId: String; let requestId: String?; let targets: [PickyRewindTarget] }
 private struct PickySessionRewoundPayload: Decodable { let sessionId: String; let editorText: String?; let removedIds: [String] }
 private struct PickySessionMessageAppendedPayload: Decodable { let sessionId: String; let message: PickySessionMessage; let seq: Int }
+private struct PickySessionMessagesImportedPayload: Decodable { let sessionId: String; let messages: [PickySessionMessage]; let seq: Int }
 private struct PickySessionMessageReplacedPayload: Decodable { let sessionId: String; let messageId: String; let message: PickySessionMessage; let seq: Int }
 private struct PickySessionMessageRemovedPayload: Decodable { let sessionId: String; let messageId: String; let seq: Int }
 private struct PickySessionQueueUpdatedPayload: Decodable { let sessionId: String; let steering: [PickyQueueItem]; let followUp: [PickyQueueItem]; let steeringMode: PickyQueueMode?; let followUpMode: PickyQueueMode?; let seq: Int }

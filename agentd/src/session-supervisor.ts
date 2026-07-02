@@ -194,6 +194,7 @@ export class SessionSupervisor extends EventEmitter {
     this.artifactMaterializer = new ArtifactMaterializer();
     this.messageBuilder = new SessionMessageBuilder({
       emitAppended: async (sessionId, message, seq) => { await this.chainEmit(sessionId, async () => { this.emit("messageAppended", sessionId, message, seq); }); },
+      emitImported: async (sessionId, messages, seq) => { await this.chainEmit(sessionId, async () => { this.emit("messagesImported", sessionId, messages, seq); }); },
       emitReplaced: async (sessionId, messageId, message, seq) => { await this.chainEmit(sessionId, async () => { this.emit("messageReplaced", sessionId, messageId, message, seq); }); },
       emitRemoved: async (sessionId, messageId, seq) => { await this.chainEmit(sessionId, async () => { this.emit("messageRemoved", sessionId, messageId, seq); }); },
       nextSeq: (sessionId) => this.nextSeq(sessionId),

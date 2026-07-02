@@ -106,6 +106,7 @@ export class AgentdServer {
     this.options.supervisor.on("queueUpdated", (sessionId, steering, followUp, steeringMode, followUpMode, seq) => this.broadcast({ type: "sessionQueueUpdated", sessionId, steering, followUp, steeringMode, followUpMode, seq }));
     this.options.supervisor.on("activityUpdated", (sessionId, activitySummary, seq) => this.broadcast({ type: "sessionActivityUpdated", sessionId, activitySummary, seq }));
     this.options.supervisor.on("messageAppended", (sessionId, message, seq) => this.broadcast({ type: "sessionMessageAppended", sessionId, message, seq }));
+    this.options.supervisor.on("messagesImported", (sessionId, messages, seq) => this.broadcast({ type: "sessionMessagesImported", sessionId, messages, seq }));
     this.options.supervisor.on("messageReplaced", (sessionId, messageId, message, seq) => this.broadcast({ type: "sessionMessageReplaced", sessionId, messageId, message, seq }));
     this.options.supervisor.on("messageRemoved", (sessionId, messageId, seq) => this.broadcast({ type: "sessionMessageRemoved", sessionId, messageId, seq }));
     this.options.supervisor.on("sessionRewound", (sessionId: string, editorText: string | undefined, removedIds: string[]) => this.broadcast({ type: "sessionRewound", sessionId, ...(editorText !== undefined ? { editorText } : {}), removedIds }));
@@ -922,6 +923,8 @@ function eventLogFields(event: EventEnvelope): Record<string, string | number | 
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, requestId: event.requestId, targets: event.targets.length };
     case "sessionRewound":
       return { eventId: event.id, type: event.type, sessionId: event.sessionId, editorTextChars: event.editorText?.length, removedIds: event.removedIds.length };
+    case "sessionMessagesImported":
+      return { eventId: event.id, type: event.type, sessionId: event.sessionId, messages: event.messages.length, seq: event.seq };
     case "sessionMessageAppended":
     case "sessionMessageReplaced":
     case "sessionMessageRemoved":

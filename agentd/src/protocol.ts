@@ -568,6 +568,10 @@ export const EventEnvelopeSchema = z.discriminatedUnion("type", [
   EventBaseSchema.extend({ type: z.literal("rewindTargetsSnapshot"), sessionId: z.string(), requestId: z.string().optional(), targets: z.array(PickyRewindTargetSchema) }),
   EventBaseSchema.extend({ type: z.literal("sessionRewound"), sessionId: z.string(), editorText: z.string().optional(), removedIds: z.array(z.string()) }),
   EventBaseSchema.extend({ type: z.literal("sessionMessageAppended"), sessionId: z.string(), message: PickySessionMessageSchema, seq: z.number().int() }),
+  // Bulk append for terminal-sync / history-restore imports. The whole batch shares one
+  // seq so the client applies it as a single incremental update instead of replaying the
+  // import message-by-message (which renders like a timelapse).
+  EventBaseSchema.extend({ type: z.literal("sessionMessagesImported"), sessionId: z.string(), messages: z.array(PickySessionMessageSchema), seq: z.number().int() }),
   EventBaseSchema.extend({ type: z.literal("sessionMessageReplaced"), sessionId: z.string(), messageId: z.string(), message: PickySessionMessageSchema, seq: z.number().int() }),
   EventBaseSchema.extend({ type: z.literal("sessionMessageRemoved"), sessionId: z.string(), messageId: z.string(), seq: z.number().int() }),
   EventBaseSchema.extend({ type: z.literal("sessionQueueUpdated"), sessionId: z.string(), steering: z.array(PickyQueueItemSchema), followUp: z.array(PickyQueueItemSchema), steeringMode: PickyQueueModeSchema.optional(), followUpMode: PickyQueueModeSchema.optional(), seq: z.number().int() }),

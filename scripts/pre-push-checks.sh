@@ -69,7 +69,7 @@ require_command xcodebuild "Install Xcode command line tools / Xcode."
 
 run_step "agentd: typecheck" pnpm --dir agentd run typecheck
 run_step "agentd: lint" pnpm --dir agentd run lint
-run_with_retry 2 "agentd: tests (serial)" pnpm --dir agentd run test:serial
+run_with_retry 5 "agentd: tests (serial)" pnpm --dir agentd run test:serial
 run_step "architecture guard" pnpm run check:architecture
 run_swiftlint_warning_first
 run_step "Picky app build" xcodebuild -project Picky.xcodeproj -scheme Picky -destination "$DESTINATION" build

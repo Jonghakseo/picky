@@ -188,7 +188,8 @@ You can explicitly arm a Pickle as the target for the next Picky screen-context 
 3. The composer shows: “Next Picky screen input will go to this Pickle”.
 4. Use Push-to-Talk or Quick Input.
 5. The next screen-context input is sent directly to that Pickle.
-6. The target clears after delivery.
+6. By default, the input is delivered as a **follow-up** so it waits for the Pickle's current turn to finish. Change **Settings → Picky → Armed Pickle delivery** to **Steer** if you want armed Push-to-Talk and Quick Input to interrupt the current turn instead.
+7. The target clears after delivery.
 
 ## 5. Quick Input text input
 
@@ -721,6 +722,7 @@ Use **Change**, then **Save** or **Cancel**. Conflicts are rejected. **Reset to 
 | Pi model | Automatic or a pinned model pattern. |
 | Reasoning level | Off, Minimal, Low, Medium, High, Extra High. |
 | Screen context | All screens or Focused screen only. Default is **Focused screen only** so Picky captures only the display the cursor is on. |
+| Armed Pickle delivery | Follow-up (default) or Steer. Controls how Push-to-Talk and Quick Input are delivered when a Pickle is explicitly armed as the screen-context target. Follow-up waits until the Pickle is idle; Steer interrupts the current turn at the next steering point. |
 | Send screenshots only when drawn | Off (default) or On. When **On**, Picky attaches a screenshot to the model turn only if you marked the screen with click and drag during Push-to-Talk or Quick Input. Screen capture still runs locally so the ink overlay can render on top, but the screenshot is omitted from what the model sees. Off keeps the always-attach behavior. |
 | Screenshot quality | 1× 1280 px, 1.5× 1920 px, 2× 2560 px longest edge. Captured screenshots are written to the per-user temporary directory (`FileManager.default.temporaryDirectory/Picky/Screenshots`), not the durable Application Support tree. |
 | Additional instructions | Extra standing instructions baked into the Picky bootstrap; apply on next Picky session/relaunch. |

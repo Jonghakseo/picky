@@ -4801,6 +4801,38 @@
         }
       }
     },
+    "extensions.curated.delayedAction.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delayed action"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delayed action"
+          }
+        }
+      }
+    },
+    "extensions.curated.delayedAction.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schedule delayed follow-up prompts with `/delay` or the `delay` tool."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "`/delay` 명령어 또는 `delay` tool로 지정한 시간 뒤 후속 프롬프트를 예약할 수 있어요."
+          }
+        }
+      }
+    },
     "extensions.curated.clipboard.title": {
       "localizations": {
         "en": {

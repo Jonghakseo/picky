@@ -51,6 +51,14 @@ private struct PickyCuratedPlugin: Identifiable {
         source: "npm:@ryan_nookpi/pi-extension-auto-name"
     )
 
+    static let delayedAction = PickyCuratedPlugin(
+        id: "delayed-action",
+        titleKey: "extensions.curated.delayedAction.title",
+        descriptionKey: "extensions.curated.delayedAction.description",
+        commandName: "/delay",
+        source: "npm:@ryan_nookpi/pi-extension-delayed-action"
+    )
+
     static let clipboard = PickyCuratedPlugin(
         id: "clipboard",
         titleKey: "extensions.curated.clipboard.title",
@@ -88,6 +96,7 @@ private struct PickyCuratedPlugin: Identifiable {
         .askUserQuestion,
         .generativeUI,
         .autoName,
+        .delayedAction,
         .clipboard,
         .claudeMcpBridge,
         .crossAgent,

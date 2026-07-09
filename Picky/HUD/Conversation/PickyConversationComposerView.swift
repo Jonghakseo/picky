@@ -791,11 +791,17 @@ struct PickyConversationComposerView: View {
     }
 
     var isComposerInputDisabled: Bool {
+        // Compaction is a runtime submit barrier, not an editor lock: keep draft
+        // typing/editing and persistence alive so in-progress text is not lost.
+        false
+    }
+
+    private var isComposerSubmissionBlocked: Bool {
         session.isCompacting
     }
 
     private var isSendDisabled: Bool {
-        isComposerInputDisabled || defaultSubmitKind == nil || (!hasDraftText && attachments.isEmpty)
+        isComposerSubmissionBlocked || defaultSubmitKind == nil || (!hasDraftText && attachments.isEmpty)
     }
 
     private var hasDraftText: Bool {
@@ -1084,7 +1090,7 @@ struct PickyConversationComposerView: View {
     }
 
     private var defaultSendHelpText: String {
-        if isComposerInputDisabled {
+        if isComposerSubmissionBlocked {
             return "Session is compacting"
         }
         guard defaultSubmitKind != nil else {
@@ -1112,7 +1118,7 @@ struct PickyConversationComposerView: View {
     }
 
     private var fullscreenKoreanSendHelpText: String {
-        if isComposerInputDisabled {
+        if isComposerSubmissionBlocked {
             return "세션이 컨텍스트를 정리 중입니다"
         }
         guard defaultSubmitKind != nil else {
@@ -1158,7 +1164,7 @@ struct PickyConversationComposerView: View {
     }
 
     private func submit(_ kind: PickyConversationComposerSubmitKind?) {
-        guard !isComposerInputDisabled else { return }
+        guard !isComposerSubmissionBlocked else { return }
         let submittedSessionID = session.id
         let submittedAttachmentIDs = Set(attachments.map(\.id))
         let attachmentPaths = attachments.map(\.path)

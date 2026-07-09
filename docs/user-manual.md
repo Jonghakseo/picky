@@ -110,7 +110,7 @@ Currently bundled:
 - **Pi handoff command** — adds a `/handoff-to-picky` slash command to local Pi. When the source Pi turn is idle, it pins the conversation to Picky as a completed Pickle card; when Pi is busy, it aborts the source turn, snapshots that Pi session, resumes it as a Pickle, and sends the handoff instruction (default: `continue`). After installing, restart Pi or run `/reload`.
 - **Picky CLI skill** — teaches local Pi how to use the `picky` shell command for submitting to Picky, creating/steering Pickles, and controlling Picky push-to-talk.
 
-A **Curated extensions** section under the bundled list lists a small set of useful third-party Pi extensions. Each row shows the extension name, a short description, and an install/remove control that installs the extension from npm into the local Pi setup.
+A **Curated extensions** section under the bundled list lists a small set of useful third-party Pi extensions. Each row shows the extension name, the command or tool it adds, a short description, and an install/remove control that installs the extension from npm into the local Pi setup. Examples include `/diff-review` for native diff review, `ask_user_question` for structured clarification forms, `show_widget` for native generative UI windows, and `/delay` for scheduling a one-shot follow-up prompt after a chosen delay.
 
 ### 2.3 Settings tab
 

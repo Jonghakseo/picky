@@ -120,6 +120,7 @@ export class RuntimeEventHandler {
       logAgentd("extension ui event", { sessionId, waitsForInput: event.waitsForInput, method: typeof event.request.method === "string" ? event.request.method : undefined });
       return this.applyExtensionUiEvent(sessionId, event.request, event.waitsForInput);
     }
+    if (event.type === "extension_ui_cancelled") return this.applyExtensionUiCancelledEvent(sessionId, event.requestId);
     if (event.type === "session_info") return this.applySessionInfoEvent(sessionId, event.name);
     if (event.type === "context_usage") return this.applyContextUsageEvent(sessionId, event.usage);
     if (event.type === "session_replaced") return;
@@ -372,6 +373,18 @@ export class RuntimeEventHandler {
     await this.dependencies.patchSession(sessionId, { status: "waiting_for_input", pendingExtensionUiRequest: request, lastSummary: extensionUiWaitingSummary(request) });
     await this.dependencies.messageBuilder.recordExtensionQuestion(sessionId, request);
     this.dependencies.emitExtensionUiRequest(request);
+  }
+
+  private async applyExtensionUiCancelledEvent(sessionId: string, requestId: string): Promise<void> {
+    const current = this.dependencies.getSession(sessionId);
+    if (current.pendingExtensionUiRequest?.id !== requestId) return;
+    await this.dependencies.messageBuilder.cancelExtensionQuestion(sessionId, requestId);
+    const patch: Partial<PickyAgentSession> = { pendingExtensionUiRequest: undefined, thinkingPreview: undefined };
+    if (current.status === "waiting_for_input") {
+      patch.status = "running";
+      patch.lastSummary = "Extension UI cancelled";
+    }
+    await this.dependencies.patchSession(sessionId, patch);
   }
 
   private async applyToolEvent(sessionId: string, event: Extract<RuntimeEvent, { type: "tool" }>): Promise<void> {

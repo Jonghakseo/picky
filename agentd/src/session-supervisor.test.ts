@@ -1090,6 +1090,26 @@ describe("SessionSupervisor", () => {
     expect(runtime.handle?.followUps.map((prompt) => prompt.text)).toContain("continue anyway");
   });
 
+  it("clears a pending extension UI request when the runtime dialog is cancelled", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "picky-agentd-cancelled-pending-ui-"));
+    const runtime = new ManualRuntime();
+    const supervisor = new SessionSupervisor(runtime, new SessionStore(dir));
+    await supervisor.load();
+    const session = await supervisor.create(context("cancelled pending ui"));
+
+    runtime.handle?.emit({ type: "extension_ui", waitsForInput: true, request: { id: "ui-timeout", sessionId: session.id, method: "confirm", prompt: "Confirm?", createdAt: "2026-05-01T00:00:00.000Z" } });
+    await waitUntil(() => supervisor.get(session.id)?.status === "waiting_for_input" && supervisor.get(session.id)?.pendingExtensionUiRequest?.id === "ui-timeout");
+
+    runtime.handle?.emit({ type: "extension_ui_cancelled", requestId: "ui-timeout" });
+    await waitUntil(() => supervisor.get(session.id)?.status === "running" && supervisor.get(session.id)?.pendingExtensionUiRequest === undefined);
+
+    const updated = supervisor.get(session.id)!;
+    expect(updated.status).toBe("running");
+    expect(updated.pendingExtensionUiRequest).toBeUndefined();
+    expect(updated.lastSummary).toBe("Extension UI cancelled");
+    expect(updated.messages?.find((message) => message.id === "ui-timeout")?.cancelledAt).toBeDefined();
+  });
+
   it("clears a pending extension UI request when the runtime turn completes", async () => {
     const dir = await mkdtemp(join(tmpdir(), "picky-agentd-terminal-pending-ui-"));
     const runtime = new ManualRuntime();

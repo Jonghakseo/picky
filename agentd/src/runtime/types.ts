@@ -63,6 +63,7 @@ export type RuntimeEvent =
   | { type: "turn_text_complete"; text: string; inputId?: string; assistantRun?: RuntimeAssistantRunMetadata }
   | { type: "tool"; toolCallId: string; name: string; status: "running" | "succeeded" | "failed"; preview?: string; argsPreview?: string; resultPreview?: string }
   | { type: "extension_ui"; request: Record<string, unknown>; waitsForInput: boolean }
+  | { type: "extension_ui_cancelled"; requestId: string }
   | { type: "session_info"; name: string }
   | { type: "context_usage"; usage: { tokens: number | null; contextWindow: number; percent: number | null } | undefined }
   | { type: "main_realtime_state"; state: MainRealtimeState; message?: string }

@@ -1165,6 +1165,12 @@ class PiSdkRuntimeSession implements RuntimeSessionHandle {
       if (waits) this.pendingExtensionUiRequestIds.add(request.id);
       this.emit({ type: "extension_ui", request, waitsForInput: waits });
     });
+    bridge.on("cancelled", (requestId) => {
+      if (bridge !== this.uiBridge) return;
+      if (typeof requestId !== "string") return;
+      this.pendingExtensionUiRequestIds.delete(requestId);
+      this.emit({ type: "extension_ui_cancelled", requestId });
+    });
     return bridge;
   }
 

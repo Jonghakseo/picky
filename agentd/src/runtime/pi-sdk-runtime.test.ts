@@ -892,6 +892,28 @@ describe("PiSdkRuntime", () => {
     expect(statusEvents(events).map((event) => event.status)).toEqual(["waiting_for_input", "completed"]);
   });
 
+  it("clears pending extension UI request ids when a dialog times out", async () => {
+    const fakeSession = new FakeSession();
+    const runtime = makeRuntime(fakeSession);
+    const handle = await runtime.prewarm({ cwd: "/tmp/project", sessionId: "session-ui-timeout" });
+    const events: unknown[] = [];
+    handle.subscribe((event) => events.push(event));
+
+    const confirm = fakeSession.uiContext?.confirm as ((title: string, message: string, opts?: { timeout?: number }) => Promise<boolean>) | undefined;
+    expect(confirm).toBeTypeOf("function");
+    const answerPromise = confirm!("Need confirmation", "Proceed?", { timeout: 10 });
+    const request = events.find((event) => typeof event === "object" && event && (event as { type?: string }).type === "extension_ui") as { request: { id: string } } | undefined;
+    expect(request?.request.id).toBeTruthy();
+
+    await expect(answerPromise).resolves.toBe(false);
+    await delay(0);
+    expect(events).toContainEqual({ type: "extension_ui_cancelled", requestId: request!.request.id });
+
+    fakeSession.emit("event", { type: "turn_end", message: { role: "assistant", stopReason: "end_turn", content: [{ type: "text", text: "완료" }] }, toolResults: [] });
+
+    expect(statusEvents(events).map((event) => event.status)).toEqual(["completed"]);
+  });
+
   it("clears pending extension UI request ids when rebinding the current Pi session", async () => {
     const fakeSession = new FakeSession();
     const runtime = makeRuntime(fakeSession);

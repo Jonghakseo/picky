@@ -194,6 +194,7 @@ export class ExtensionUiBridge extends EventEmitter {
     this.pending.delete(requestId);
     if (pending.timer) clearTimeout(pending.timer);
     pending.cleanup?.();
+    if (answer.cancelled) this.emit("cancelled", requestId);
     pending.resolve(this.mapAnswer(pending.method, answer));
     return true;
   }
